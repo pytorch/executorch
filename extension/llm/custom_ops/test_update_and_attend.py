@@ -9,9 +9,7 @@ import unittest
 import torch
 import torch.nn.functional as F
 from executorch.extension.llm.custom_ops.op_update_and_attend import (
-    install_cache,
-    set_active,
-    uninstall_cache,
+    REGISTRY,
     update_and_attend,
 )
 
@@ -117,7 +115,7 @@ class UpdateAndAttendTest(unittest.TestCase):
         self.cache_key = "test"
 
     def tearDown(self):
-        uninstall_cache(self.cache_key)
+        REGISTRY.uninstall(self.cache_key)
 
     def _config(self, sizing, capacity):
         return CacheConfig(
@@ -132,7 +130,10 @@ class UpdateAndAttendTest(unittest.TestCase):
         x = torch.randn(1, seq_len, self.hidden)
         pos = _positions(0, seq_len)
         idx = torch.arange(seq_len, dtype=torch.long)
-        return torch.export.export(self.model, (x, pos, idx), strict=True)
+        ep = torch.export.export(self.model, (x, pos, idx), strict=True)
+        # ET always functionalizes; run it here (empty decomp table = functionalize
+        # only) so tests catch functionalization failures plain export would miss.
+        return ep.run_decompositions({})
 
     def test_graph_is_functional(self):
         # Export needs no cache: _export installs none, so the op traces via its
@@ -171,9 +172,9 @@ class UpdateAndAttendTest(unittest.TestCase):
         ]:
             with self.subTest(sizing=sizing):
                 cache = ContiguousReferenceCache(self._config(sizing, cap))
-                install_cache(self.cache_key, cache)
-                set_active(self.cache_key)
-                out = ep.module()(x, _positions(0, seq_len), torch.arange(seq_len))
+                REGISTRY.install(self.cache_key, cache)
+                with REGISTRY.active(self.cache_key):
+                    out = ep.module()(x, _positions(0, seq_len), torch.arange(seq_len))
                 torch.testing.assert_close(out, ref, atol=1e-4, rtol=1e-4)
 
     def test_incremental_decode_matches_baseline(self):
@@ -191,33 +192,50 @@ class UpdateAndAttendTest(unittest.TestCase):
         ]:
             with self.subTest(sizing=sizing):
                 cache = ContiguousReferenceCache(self._config(sizing, cap))
-                install_cache(self.cache_key, cache)
-                set_active(self.cache_key)
-                ep_prefill.module()(
-                    x_full[:, :prefill_len, :],
-                    _positions(0, prefill_len),
-                    torch.arange(prefill_len),
-                )
-                for step in range(prefill_len, total):
-                    set_active(self.cache_key)
-                    out = ep_decode.module()(
-                        x_full[:, step : step + 1, :],
-                        _positions(step, 1),
-                        torch.tensor([0], dtype=torch.long),
+                REGISTRY.install(self.cache_key, cache)
+                with REGISTRY.active(self.cache_key):
+                    ep_prefill.module()(
+                        x_full[:, :prefill_len, :],
+                        _positions(0, prefill_len),
+                        torch.arange(prefill_len),
                     )
-                    torch.testing.assert_close(
-                        out[:, 0, :], ref[:, step, :], atol=1e-4, rtol=1e-4
-                    )
+                    for step in range(prefill_len, total):
+                        out = ep_decode.module()(
+                            x_full[:, step : step + 1, :],
+                            _positions(step, 1),
+                            torch.tensor([0], dtype=torch.long),
+                        )
+                        torch.testing.assert_close(
+                            out[:, 0, :], ref[:, step, :], atol=1e-4, rtol=1e-4
+                        )
 
     def test_static_overflow_raises(self):
         ep = self._export(seq_len=5)
         cache = ContiguousReferenceCache(self._config(CacheSizing.STATIC, capacity=3))
-        install_cache(self.cache_key, cache)
-        set_active(self.cache_key)
-        with self.assertRaises(RuntimeError):
+        REGISTRY.install(self.cache_key, cache)
+        with self.assertRaises(RuntimeError), REGISTRY.active(self.cache_key):
             ep.module()(
                 torch.randn(1, 5, self.hidden), _positions(0, 5), torch.arange(5)
             )
+
+    def test_output_shape_uses_value_head_dim(self):
+        # The output's last dim comes from v, which may differ from q's head dim
+        # (e.g. MLA). Export (fake kernel only) and check the op node's meta.
+        class OneCall(torch.nn.Module):
+            def forward(self, q, k, v, position):
+                return update_and_attend(q, k, v, position, 0, 0.125, torch.float32)
+
+        q = torch.randn(1, 4, 3, 8)
+        k = torch.randn(1, 4, 3, 8)
+        v = torch.randn(1, 4, 3, 5)  # value head dim (5) != q/k head dim (8)
+        ep = torch.export.export(OneCall(), (q, k, v, _positions(0, 3)), strict=True)
+        node = next(
+            n
+            for n in ep.graph_module.graph.nodes
+            if n.op == "call_function"
+            and n.target is torch.ops.kvcache.update_and_attend.default
+        )
+        self.assertEqual(tuple(node.meta["val"].shape), (1, 4, 3, 5))
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ from enum import Enum
 from typing import List, Tuple
 
 import torch
+import torch.nn.functional as F
 
 
 class CacheSizing(Enum):
@@ -38,14 +39,13 @@ class CacheSizing(Enum):
 
 
 class MaskKind(Enum):
-    NONE = "none"  # decode: q_len == 1, one row sees all of history
-    CAUSAL = "causal"  # prefill: q_len > 1, row i sees keys 0..offset+i
+    NONE = "none"  # decode: q_len == 1, the single query sees all of history
+    CAUSAL = "causal"  # prefill/continuation: query i sees keys up to its position
 
 
 @dataclass
 class AttendSpec:
     kind: MaskKind
-    offset: int = 0  # cached tokens preceding this step
 
 
 @dataclass
@@ -105,6 +105,18 @@ class ContiguousReferenceCache:
         This contiguous single-sequence cache appends at its used length, so the
         causal offset is that prior length; non-contiguous (tree) caches will
         consume ``position`` directly to place and to build an Explicit mask.
+
+        Args (BHSD):
+            layer_id: which layer's history to update.
+            k: ``[B, H_kv, q_len, head_dim]`` -- new keys for this step.
+            v: ``[B, H_kv, q_len, v_head_dim]`` -- new values (``v_head_dim`` may
+                differ from ``head_dim``, e.g. MLA).
+            position: ``[q_len, n_dims]`` int -- per-query-token positions.
+
+        Returns:
+            ``(k_hist, v_hist, spec)`` -- history ``[B, H_kv, total, head_dim]`` /
+            ``[B, H_kv, total, v_head_dim]`` (``total`` = prior length + q_len) and
+            the AttendSpec mask semantic.
         """
         q_len = k.shape[-2]
         used = self._used[layer_id]
@@ -131,7 +143,7 @@ class ContiguousReferenceCache:
         self._used[layer_id] = new_used
 
         kind = MaskKind.NONE if q_len == 1 else MaskKind.CAUSAL
-        return k_hist, v_hist, AttendSpec(kind=kind, offset=used)
+        return k_hist, v_hist, AttendSpec(kind=kind)
 
 
 def attend(
@@ -142,7 +154,23 @@ def attend(
     scale: float,
     out_dtype: torch.dtype,
 ) -> torch.Tensor:
-    """Eager attend mechanism: apply SDPA to fetched K/V per the mask semantic."""
+    """Eager attend mechanism: SDPA over fetched K/V per the mask semantic.
+
+    Repeats K/V heads for GQA/MQA (``H_q`` a multiple of ``H_kv``), casts to fp32,
+    and calls ``F.scaled_dot_product_attention`` -- causal for CAUSAL (the cache is
+    contiguous, so causal alignment matches the prior length), unmasked for NONE.
+
+    Args (BHSD):
+        q: ``[B, H_q, q_len, head_dim]`` -- queries (already RoPE-rotated).
+        k: ``[B, H_kv, total, head_dim]`` -- key history.
+        v: ``[B, H_kv, total, v_head_dim]`` -- value history.
+        spec: mask semantic (NONE = attend all; CAUSAL = causal).
+        scale: attention softmax scale.
+        out_dtype: output dtype.
+
+    Returns:
+        ``[B, H_q, q_len, v_head_dim]`` attention output, in ``out_dtype``.
+    """
     n_q_heads = q.shape[1]
     n_kv_heads = k.shape[1]
     if n_q_heads != n_kv_heads:
@@ -150,18 +178,11 @@ def attend(
         k = k.repeat_interleave(rep, dim=1)
         v = v.repeat_interleave(rep, dim=1)
 
-    qf = q.to(torch.float32)
-    kf = k.to(torch.float32)
-    vf = v.to(torch.float32)
-
-    scores = torch.matmul(qf, kf.transpose(-2, -1)) * scale
-    if spec.kind != MaskKind.NONE:
-        q_len = qf.shape[2]
-        total = kf.shape[2]
-        query_pos = spec.offset + torch.arange(q_len, device=q.device)
-        key_pos = torch.arange(total, device=q.device)
-        visible = key_pos[None, :] <= query_pos[:, None]
-        scores = scores.masked_fill(~visible[None, None], float("-inf"))
-    attn = torch.softmax(scores, dim=-1)
-    out = torch.matmul(attn, vf)
+    out = F.scaled_dot_product_attention(
+        q.to(torch.float32),
+        k.to(torch.float32),
+        v.to(torch.float32),
+        is_causal=spec.kind != MaskKind.NONE,
+        scale=scale,
+    )
     return out.to(out_dtype)
