@@ -784,11 +784,7 @@ def _export_dynamic_k16_sdpa_case(
     d: int = K16_D,
     scale: float | None = None,
 ) -> None:
-    from backends.webgpu.test.ops.test_sdpa import (
-        _det_inputs,
-        _golden,
-        SdpaConfig,
-    )
+    from backends.webgpu.test.ops.test_sdpa import _det_inputs, _golden, SdpaConfig
 
     def cfg(s: int) -> "SdpaConfig":
         return SdpaConfig(
@@ -1123,11 +1119,7 @@ ROPE_MAXS = 16
 
 
 def _export_dynamic_rope(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.test_rope import (
-        _golden,
-        _inputs,
-        Shape,
-    )
+    from executorch.backends.webgpu.test.ops.test_rope import _golden, _inputs, Shape
     from executorch.examples.models.llama.rope import RotaryEmbedding
 
     xq, xk, fc, fs = _inputs(Shape("dyn", 1, ROPE_MAXS, ROPE_NH, ROPE_NKV, ROPE_HD))
