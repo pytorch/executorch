@@ -44,6 +44,12 @@ from executorch.backends.webgpu.test.ops.test_logical_and import (
     la_gen_b,
     LogicalAndModule,
 )
+from executorch.backends.webgpu.test.ops.test_logical_or import (
+    BitwiseOrModule,
+    lo_gen_a,
+    lo_gen_b,
+    LogicalOrModule,
+)
 from executorch.backends.webgpu.test.ops.test_bitwise import (
     BitwiseAndModule,
     BitwiseNotModule,
@@ -379,6 +385,49 @@ def _bitwise_not_suite() -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda shape: BitwiseNotModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("logical_or")
+def _logical_or_suite() -> WebGPUTestSuite:
+    # out = (a>0) || (b>0): two bool masks derived on-GPU from float inputs via
+    # gt.Tensor (baked zeros), OR'd -> bool. Distinct a/b seeds (~50% each,
+    # independent -> OR ~75% True, a real mix an AND mutant fails); all shapes
+    # numel % 4 == 0. float32 oracle (byte-exact bool golden).
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=lo_gen_a),
+                InputSpec(shape=shape, gen=lo_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: LogicalOrModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("bitwise_or")
+def _bitwise_or_suite() -> WebGPUTestSuite:
+    # bool bitwise OR == logical_or for canonical 0/1 (shares the handler).
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=lo_gen_a),
+                InputSpec(shape=shape, gen=lo_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: BitwiseOrModule(shape),
         cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
         golden_dtype="float32",
     )
