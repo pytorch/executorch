@@ -1726,20 +1726,84 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
   }
 }
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+uint32_t g_last_route_mask = 0;
+uint32_t g_last_route_conflict_count = 0;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
 namespace {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+constexpr uint32_t kRoutePrefill = 1u << 0;
+constexpr uint32_t kRouteK16 = 1u << 1;
+constexpr uint32_t kRouteMaterializedAttention = 1u << 2;
+constexpr uint32_t kRouteT0Steel = 1u << 3;
+constexpr uint32_t kRouteT1Bk64 = 1u << 4;
+constexpr uint32_t kRouteT1Bk64Qkv = 1u << 5;
+constexpr uint32_t kRouteT2PairedGateUp = 1u << 6;
+constexpr uint32_t kRouteFusedSwiGlu = 1u << 7;
+constexpr uint32_t kRouteGenericFallback = 1u << 8;
+constexpr uint32_t kRouteFlashDecoding = 1u << 10;
+constexpr uint32_t kRouteK16CausalBound = 1u << 11;
+constexpr uint32_t kRouteBicolSubgroup = 1u << 12;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
 // Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
 // WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
 bool should_timestamp_query() {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-  static const bool enabled = std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
-  return enabled;
+  return std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
 #else
   return false;
 #endif
 }
 } // namespace
 
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+void WebGPUGraph::record_active_route(const std::string& kernel_name) {
+  uint32_t bits = 0;
+  if (kernel_name == "sdpa_streaming_attention_k16_causal_bound") {
+    bits = kRoutePrefill | kRouteK16CausalBound;
+  } else if (kernel_name == "sdpa_streaming_attention_k16") {
+    bits = kRoutePrefill | kRouteK16;
+  } else if (
+      kernel_name.rfind("sdpa_compute_", 0) == 0 ||
+      kernel_name == "sdpa_softmax") {
+    bits = kRoutePrefill | kRouteMaterializedAttention;
+  } else if (kernel_name == "fd_split" || kernel_name == "fd_reduce") {
+    bits = kRouteFlashDecoding;
+  } else if (kernel_name == "linear_q4gsw_coop4_bicol_subgroup") {
+    bits = kRouteBicolSubgroup;
+  } else if (kernel_name.rfind("linear_q4gsw_bk64_qkv", 0) == 0) {
+    bits = kRouteT1Bk64Qkv;
+  } else if (kernel_name.rfind("linear_q4gsw_bk64", 0) == 0) {
+    bits = kRouteT1Bk64;
+  } else if (kernel_name.rfind("linear_q4gsw_paired_gate_up", 0) == 0) {
+    bits = kRouteT2PairedGateUp;
+  } else if (kernel_name == "silu_mul_fused") {
+    bits = kRouteFusedSwiGlu;
+  } else if (kernel_name.rfind("linear_q4gsw_steel", 0) == 0) {
+    bits = kRouteT0Steel;
+  } else if (kernel_name.rfind("linear_q4gsw", 0) == 0) {
+    bits = kRouteGenericFallback;
+  }
+
+  constexpr uint32_t kAttentionRoutes = kRouteK16 | kRouteK16CausalBound |
+      kRouteMaterializedAttention | kRouteFlashDecoding;
+  const uint32_t new_attention = bits & kAttentionRoutes;
+  const uint32_t prior_attention = g_last_route_mask & kAttentionRoutes;
+  if (new_attention != 0 && prior_attention != 0 &&
+      (new_attention & prior_attention) == 0) {
+    ++g_last_route_conflict_count;
+  }
+  g_last_route_mask |= bits;
+}
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
 void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  g_last_route_mask = 0;
+  g_last_route_conflict_count = 0;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
   std::vector<bool> enabled_dispatches(n, true);
@@ -1808,6 +1872,9 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
             dispatch.copy_nbytes);
         continue;
       }
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      record_active_route(dispatch.kernel_name);
+#endif // WGPU_BACKEND_ENABLE_PROFILING
       WGPUComputePassDescriptor pass_desc = {};
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
       // tw must outlive BeginComputePass (the descriptor points at it).
@@ -1893,6 +1960,9 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
             dispatches_[i].copy_nbytes);
         continue;
       }
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      record_active_route(dispatches_[i].kernel_name);
+#endif // WGPU_BACKEND_ENABLE_PROFILING
       WGPUComputePassDescriptor pass_desc = {};
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);

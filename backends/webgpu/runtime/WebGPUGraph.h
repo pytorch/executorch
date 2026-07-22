@@ -384,6 +384,10 @@ class WebGPUGraph {
   }
 
  private:
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  void record_active_route(const std::string& kernel_name);
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
   bool f16_accumulate_gemm_ = false;
@@ -490,5 +494,10 @@ class WebGPUGraph {
   // detection maps are empty (inert) when no SwiGLU triple matches.
   void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+extern uint32_t g_last_route_mask;
+extern uint32_t g_last_route_conflict_count;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu
