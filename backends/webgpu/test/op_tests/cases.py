@@ -54,6 +54,9 @@ from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
 from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
     Q8taPixelShuffleModule,
 )
+from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
+    make_q8ta_linear_module,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -826,6 +829,29 @@ def _q8ta_pixel_shuffle_suite() -> WebGPUTestSuite:
             case("nonzero_zp", 4, 2, 2, input_zp=10, output_zp=-20),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("q8ta_linear")
+def _q8ta_linear_suite() -> WebGPUTestSuite:
+    # XNNPACK-static-quantized nn.Linear -> delegated quantize->q8ta_linear->
+    # dequantize (C0 + the new op). Golden = converted eager (fp32 fake-quant).
+    def case(name, m, k, n, **kw):
+        return Case(
+            name=name, construct={"k": k, "n": n, "m": m, **kw}, inputs=((m, k),)
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: make_q8ta_linear_module(**kw),
+        cases=[
+            case("basic", 4, 16, 8),
+            case("gemv", 1, 16, 8),  # M==1
+            case("k32", 8, 32, 4),
+            case("no_bias", 4, 16, 8, bias=False),
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
