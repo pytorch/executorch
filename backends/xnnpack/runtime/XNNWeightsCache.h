@@ -30,6 +30,11 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 
+// Grants the unit test access to private members so it can exercise the
+// internal fresh-write / load paths directly. Test-only; no production code
+// names this type.
+class XNNWeightsCacheTestPeer;
+
 struct PackedDataMeta {
   size_t offset{};
   size_t data_size{0};
@@ -163,6 +168,8 @@ class XNNWeightsCache {
   }
 
  private:
+  friend class XNNWeightsCacheTestPeer;
+
   static constexpr uint32_t kCacheMagic = 0x58505743; // "XPWC"
   // Bump when the on-disk layout (footer or per-entry record) changes.
   // v2: per-entry seed added — old v1 files don't carry seeds and would
