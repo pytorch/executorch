@@ -60,7 +60,7 @@ BufferAllocator& BufferAllocator::GetInstance() {
   return instance;
 };
 
-void* BufferAllocator::Allocate(size_t size) {
+void* BufferAllocator::Allocate(size_t size, bool is_cached) {
   std::scoped_lock Guard(mMutex);
   return allocate_func(allocatorHandle, size);
 }

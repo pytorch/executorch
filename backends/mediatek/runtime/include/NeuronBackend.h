@@ -38,7 +38,7 @@ class NeuronSharedWeights {
   explicit NeuronSharedWeights(const FreeableBuffer& shared_weights_buffer) {
     auto& buffer_allocator = GET_NEURON_ALLOCATOR;
     nbytes_ = shared_weights_buffer.size();
-    data_ = buffer_allocator.Allocate(nbytes_);
+    data_ = buffer_allocator.Allocate(nbytes_, /* cacheable */ false);
     ET_CHECK_MSG(
         data_ != nullptr,
         "Error: Failed to allocate memory for shared weights of size %zu",
