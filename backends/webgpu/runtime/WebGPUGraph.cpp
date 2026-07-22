@@ -33,6 +33,8 @@ namespace {
 // Op name the AOT exporter emits for a prepacked constant (must match the
 // serialized schema); compared in the prepack pre-scan below.
 constexpr const char* kPrepackOpName = "et_vk.prepack.default";
+constexpr const char* kQ4gswLinearOpName = "et_vk.linear_q4gsw.default";
+constexpr size_t kQ4gswOutputArg = 5;
 
 size_t vk_datatype_size(vkgraph::VkDataType dtype) {
   switch (dtype) {
@@ -433,6 +435,12 @@ void WebGPUGraph::build(
       const auto* a = oc->args();
       if (!a) {
         continue;
+      }
+      if (oc->name()->str() == "sym_size.int" && a->size() >= 3 && values) {
+        const auto* out = values->Get(a->Get(2));
+        if (out && out->value_type() == vkgraph::GraphTypes::SymInt) {
+          dynamic_tensor_ids_.insert(static_cast<int>(a->Get(0)));
+        }
       }
       // f16 KV: tag sdpa K/V cache values (args[3],[4]) for half-size alloc.
       // Inert unless kv_f16_ (runtime opt-in) is set.
@@ -1109,7 +1117,7 @@ void WebGPUGraph::build(
               create_scratch_buffer(tensors_[g.out_v].nbytes);
         }
       }
-
+      const size_t dispatch_begin = dispatches_.size();
       webgpu_operator_registry().get_op_fn(op_name)(*this, args);
 
       {
@@ -1143,6 +1151,24 @@ void WebGPUGraph::build(
         auto orl = swiglu_out_release.find(i);
         if (orl != swiglu_out_release.end()) {
           release_scratch(tensors_[swiglu_groups[orl->second][2]].buffer);
+        }
+      }
+
+      const size_t dispatch_end = dispatches_.size();
+
+      if (i + 1 == chain->size() && op_name == kQ4gswLinearOpName &&
+          args.size() > kQ4gswOutputArg && dispatch_end > dispatch_begin) {
+        const int output_id = args[kQ4gswOutputArg];
+        const auto output_it =
+            std::find(output_ids_.begin(), output_ids_.end(), output_id);
+        if (output_it != output_ids_.end() &&
+            std::count(output_ids_.begin(), output_ids_.end(), output_id) ==
+                1) {
+          suppressible_outputs_.push_back(
+              {output_id,
+               static_cast<size_t>(output_it - output_ids_.begin()),
+               dispatch_begin,
+               dispatch_end});
         }
       }
     }
@@ -1710,23 +1736,50 @@ bool should_timestamp_query() {
 }
 } // namespace
 
-void WebGPUGraph::execute() {
+void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
+  std::vector<bool> enabled_dispatches(n, true);
+  for (size_t i = 0; i < n; i++) {
+    if (dispatches_[i].kind != WebGPUDispatch::Kind::Compute) {
+      continue;
+    }
+    const bool zero_x = dispatches_[i].workgroup_count_x == 0;
+    const bool zero_y = dispatches_[i].workgroup_count_y == 0;
+    if (zero_x != zero_y) {
+      throw std::runtime_error("WebGPU: dispatch has a half-zero grid");
+    }
+    enabled_dispatches[i] = !zero_x;
+  }
+  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+      n,
+      output_copies_.size(),
+      execute_config_,
+      suppressible_outputs_,
+      options,
+      enabled_dispatches);
 
   if (chunk == 0 || n <= chunk) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+    size_t active_compute_count = 0;
+    for (size_t i : plan.dispatch_chunks.front()) {
+      if (dispatches_[i].kind == WebGPUDispatch::Kind::Compute) {
+        active_compute_count++;
+      }
+    }
     // Bench: timestamp-query pool, null unless env-gated + feature present.
     WebGPUQueryPool* qp = nullptr;
-    if (should_timestamp_query() && n > 0) {
+    if (should_timestamp_query() && active_compute_count > 0) {
       if (auto* ctx = get_default_webgpu_context()) {
         if (ctx->timestamp_supported) {
-          if (!ctx->querypool || ctx->querypool->capacity() < n) {
+          if (!ctx->querypool ||
+              ctx->querypool->capacity() < active_compute_count) {
             ctx->querypool = std::make_unique<WebGPUQueryPool>();
-            ctx->querypool->initialize(device_, static_cast<uint32_t>(n));
+            ctx->querypool->initialize(
+                device_, static_cast<uint32_t>(active_compute_count));
           }
           qp = ctx->querypool.get();
-          qp->reset(static_cast<uint32_t>(n));
+          qp->reset(static_cast<uint32_t>(active_compute_count));
         }
       }
     }
@@ -1737,7 +1790,10 @@ void WebGPUGraph::execute() {
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
-    for (size_t i = 0; i < n; i++) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    uint32_t query_index = 0;
+#endif
+    for (size_t i : plan.dispatch_chunks.front()) {
       const auto& dispatch = dispatches_[i];
       if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
         wgpuCommandEncoderCopyBufferToBuffer(
@@ -1754,7 +1810,7 @@ void WebGPUGraph::execute() {
       // tw must outlive BeginComputePass (the descriptor points at it).
       WGPUPassTimestampWrites tw = {};
       if (qp) {
-        tw = qp->writes_for(static_cast<uint32_t>(i));
+        tw = qp->writes_for(query_index);
         pass_desc.timestampWrites = &tw;
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -1770,15 +1826,20 @@ void WebGPUGraph::execute() {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
       if (qp) {
         qp->record(
-            static_cast<uint32_t>(i),
+            query_index,
             dispatch.kernel_name,
             {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
             {1, 1, 1});
+        query_index++;
       }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
     }
 
-    for (const auto& copy : output_copies_) {
+    for (size_t i = 0; i < output_copies_.size(); i++) {
+      if (!plan.copy_outputs[i]) {
+        continue;
+      }
+      const auto& copy = output_copies_[i];
       wgpuCommandEncoderCopyBufferToBuffer(
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
     }
@@ -1812,21 +1873,13 @@ void WebGPUGraph::execute() {
         "(multi-submit); disable chunking to use GPU timestamp queries");
   }
 
-  const size_t first_chunk = execute_config_.initial_chunk_size > 0
-      ? execute_config_.initial_chunk_size
-      : chunk;
-
-  size_t start = 0;
-  size_t current_chunk = first_chunk;
-
-  while (start < n) {
-    size_t end = std::min(start + current_chunk, n);
-
+  for (size_t chunk_index = 0; chunk_index < plan.dispatch_chunks.size();
+       chunk_index++) {
     WGPUCommandEncoderDescriptor enc_desc = {};
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    for (size_t i = start; i < end; i++) {
+    for (size_t i : plan.dispatch_chunks[chunk_index]) {
       if (dispatches_[i].kind == WebGPUDispatch::Kind::Copy) {
         wgpuCommandEncoderCopyBufferToBuffer(
             encoder,
@@ -1852,8 +1905,12 @@ void WebGPUGraph::execute() {
       wgpuComputePassEncoderRelease(pass);
     }
 
-    if (end == n) {
-      for (const auto& copy : output_copies_) {
+    if (chunk_index + 1 == plan.dispatch_chunks.size()) {
+      for (size_t i = 0; i < output_copies_.size(); i++) {
+        if (!plan.copy_outputs[i]) {
+          continue;
+        }
+        const auto& copy = output_copies_[i];
         wgpuCommandEncoderCopyBufferToBuffer(
             encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
       }
@@ -1865,9 +1922,6 @@ void WebGPUGraph::execute() {
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
-
-    start = end;
-    current_chunk = chunk;
   }
 }
 
@@ -1888,14 +1942,22 @@ void buffer_map_callback(
 
 } // namespace
 
-void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
+void WebGPUGraph::copy_outputs(
+    std::vector<std::pair<void*, size_t>>& outputs,
+    const WebGPUGraphExecutionOptions& options) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
+  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+      dispatches_.size(),
+      output_copies_.size(),
+      execute_config_,
+      suppressible_outputs_,
+      options);
 
   std::vector<MapCallbackData> cb_data(count);
   std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
   for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second == 0) {
+    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
@@ -1912,14 +1974,14 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
   }
 
   for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second != 0 &&
+    if (plan.copy_outputs[i] && outputs[i].second != 0 &&
         webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
       throw std::runtime_error("WebGPU: WaitAny failed for output map");
     }
   }
 
   for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second == 0) {
+    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
       continue;
     }
     if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
