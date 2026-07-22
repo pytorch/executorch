@@ -11,6 +11,7 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":const_prop_pass",
         ":convert_constant_dim_order_pass",
+        ":cse_pass",
         ":debug_handle_generator_pass",
         ":external_constants_pass",
         ":init_mutable_pass",
