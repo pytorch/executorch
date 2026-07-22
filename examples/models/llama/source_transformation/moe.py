@@ -104,17 +104,15 @@ class QuantizedMoEFFN(nn.Module):
     Buffers (registered, not parameters):
       gate_weight  [E, D]   fp32  — copied from `MOEFeedForward.gate.weight`
       expert_bias  [E] or [0]  fp32 — empty when `use_expert_bias=False`
-      packed_w1    [E, packed_bytes_w1]  uint8 — torchao opaque blobs
-      packed_w3    [E, packed_bytes_w3]  uint8
-      packed_w2    [E, packed_bytes_w2]  uint8
+      packed_w13   [E, packed_bytes_w13]  uint8 — fused w1+w3 torchao blobs
+      packed_w2    [E, packed_bytes_w2]   uint8
     """
 
     def __init__(
         self,
         gate_weight: torch.Tensor,
         expert_bias: torch.Tensor | None,
-        packed_w1: torch.Tensor,
-        packed_w3: torch.Tensor,
+        packed_w13: torch.Tensor,
         packed_w2: torch.Tensor,
         *,
         num_experts: int,
@@ -149,8 +147,7 @@ class QuantizedMoEFFN(nn.Module):
 
         # torchao packed blobs are int8 tensors; reinterpret the bytes as
         # uint8 (no value conversion) for the op schema.
-        self.register_buffer("packed_w1", packed_w1.view(torch.uint8))
-        self.register_buffer("packed_w3", packed_w3.view(torch.uint8))
+        self.register_buffer("packed_w13", packed_w13.view(torch.uint8))
         self.register_buffer("packed_w2", packed_w2.view(torch.uint8))
         self.shared_expert: nn.Module | None = None
 
@@ -178,8 +175,7 @@ class QuantizedMoEFFN(nn.Module):
             x_flat,
             self.gate_weight,
             self.expert_bias,
-            self.packed_w1,
-            self.packed_w3,
+            self.packed_w13,
             self.packed_w2,
             self.num_activated_experts,
             self.num_experts,
@@ -253,18 +249,15 @@ def _build_quantized_moe_ffn_from_eager(
         _torchao_pack_int4_weight if weight_nbit == 4 else _torchao_pack_int8_weight
     )
 
-    packed_w1_list: list[torch.Tensor] = []
-    packed_w3_list: list[torch.Tensor] = []
+    packed_w13_list: list[torch.Tensor] = []
     packed_w2_list: list[torch.Tensor] = []
     for ei in range(e):
-        # w1, w3 share the [F, D] shape, group along K=D.
-        packed_w1_list.append(pack_fn(w1[ei], group_size))
-        packed_w3_list.append(pack_fn(w3[ei], group_size))
-        # w2 packed shape is [D, F], group along K=F.
+        # Fuse w1 and w3 into a single [2F, D] matrix before packing.
+        w13 = torch.cat([w1[ei], w3[ei]], dim=0)  # [2F, D]
+        packed_w13_list.append(pack_fn(w13, group_size))
         packed_w2_list.append(pack_fn(w2_packed_in[ei], group_size))
 
-    packed_w1 = _stack_per_expert_packed(packed_w1_list)
-    packed_w3 = _stack_per_expert_packed(packed_w3_list)
+    packed_w13 = _stack_per_expert_packed(packed_w13_list)
     packed_w2 = _stack_per_expert_packed(packed_w2_list)
 
     expert_bias = (
@@ -276,8 +269,7 @@ def _build_quantized_moe_ffn_from_eager(
     replacement = QuantizedMoEFFN(
         gate_weight=moe.gate.weight.detach().clone(),
         expert_bias=expert_bias,
-        packed_w1=packed_w1,
-        packed_w3=packed_w3,
+        packed_w13=packed_w13,
         packed_w2=packed_w2,
         num_experts=e,
         num_activated_experts=moe.num_activated_experts,

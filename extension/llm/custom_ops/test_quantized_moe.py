@@ -243,10 +243,8 @@ class TestSourceTransform(unittest.TestCase):
         self.assertEqual(replaced.hidden_dim, 32)
         self.assertEqual(tuple(replaced.gate_weight.shape), (4, 32))
         self.assertEqual(replaced.expert_bias.numel(), 4)
-        self.assertEqual(replaced.packed_w1.shape[0], 4)
-        self.assertEqual(replaced.packed_w3.shape[0], 4)
+        self.assertEqual(replaced.packed_w13.shape[0], 4)
         self.assertEqual(replaced.packed_w2.shape[0], 4)
-        self.assertEqual(replaced.packed_w1.shape[1], replaced.packed_w3.shape[1])
 
     def test_torchao_quantized_gate_exports_as_fp32_buffer(self) -> None:
         moe = _build_moe_eager(
@@ -298,7 +296,7 @@ class TestSourceTransform(unittest.TestCase):
         replaced = wrapper.block_sparse_moe
         self.assertEqual(replaced.gate_weight.dtype, torch.float32)
         self.assertEqual(replaced.expert_bias.dtype, torch.float32)
-        self.assertEqual(replaced.packed_w1.dtype, torch.uint8)
+        self.assertEqual(replaced.packed_w13.dtype, torch.uint8)
 
     def test_buffers_stay_fp32_after_to_bfloat16(self) -> None:
         moe = _build_moe_eager(
@@ -325,8 +323,7 @@ class TestSourceTransform(unittest.TestCase):
             x_meta.view(-1, 32),
             replaced.gate_weight.to("meta"),
             replaced.expert_bias.to("meta"),
-            replaced.packed_w1.to("meta"),
-            replaced.packed_w3.to("meta"),
+            replaced.packed_w13.to("meta"),
             replaced.packed_w2.to("meta"),
             replaced.num_activated_experts,
             replaced.num_experts,
@@ -375,8 +372,7 @@ class TestSourceTransform(unittest.TestCase):
             x_meta,
             replaced.gate_weight.to("meta"),
             replaced.expert_bias.to("meta"),
-            replaced.packed_w1.to("meta"),
-            replaced.packed_w3.to("meta"),
+            replaced.packed_w13.to("meta"),
             replaced.packed_w2.to("meta"),
             replaced.num_activated_experts,
             replaced.num_experts,
@@ -401,8 +397,7 @@ class TestSourceTransform(unittest.TestCase):
             x_meta,
             replaced.gate_weight.to("meta"),
             replaced.expert_bias.to("meta"),
-            replaced.packed_w1.to("meta"),
-            replaced.packed_w3.to("meta"),
+            replaced.packed_w13.to("meta"),
             replaced.packed_w2.to("meta"),
             replaced.num_activated_experts,
             replaced.num_experts,
@@ -465,8 +460,7 @@ class TestMetaKernelValidation(unittest.TestCase):
             x=torch.empty((4, r.dim), dtype=torch.float32, device="meta"),
             gate_weight=r.gate_weight.to("meta"),
             expert_bias=r.expert_bias.to("meta"),
-            packed_w1=r.packed_w1.to("meta"),
-            packed_w3=r.packed_w3.to("meta"),
+            packed_w13=r.packed_w13.to("meta"),
             packed_w2=r.packed_w2.to("meta"),
             num_activated_experts=r.num_activated_experts,
             num_experts=r.num_experts,
@@ -502,30 +496,15 @@ class TestMetaKernelValidation(unittest.TestCase):
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
-    def test_rejects_non_uint8_packed_w1(self) -> None:
+    def test_rejects_non_uint8_packed_w13(self) -> None:
         kw = self._make_valid_inputs()
-        kw["packed_w1"] = kw["packed_w1"].to(torch.float32)
+        kw["packed_w13"] = kw["packed_w13"].to(torch.float32)
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_non_uint8_packed_w2(self) -> None:
         kw = self._make_valid_inputs()
         kw["packed_w2"] = kw["packed_w2"].to(torch.float32)
-        with self.assertRaises(AssertionError):
-            torch.ops.llama.quantized_moe_ffn(**kw)
-
-    def test_rejects_non_uint8_packed_w3(self) -> None:
-        kw = self._make_valid_inputs()
-        kw["packed_w3"] = kw["packed_w3"].to(torch.float32)
-        with self.assertRaises(AssertionError):
-            torch.ops.llama.quantized_moe_ffn(**kw)
-
-    def test_rejects_mismatched_packed_w1_w3_sizes(self) -> None:
-        kw = self._make_valid_inputs()
-        e = kw["num_experts"]
-        kw["packed_w3"] = torch.empty(
-            (e, kw["packed_w3"].size(1) + 1), dtype=torch.uint8, device="meta"
-        )
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
