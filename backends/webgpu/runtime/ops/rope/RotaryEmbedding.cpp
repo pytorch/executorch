@@ -620,15 +620,17 @@ void apply_rotary_emb_hf_impl(
   pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
   pipeline_desc.compute.constantCount = 1;
   pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline_q =
+  // Q and K share one pipeline (identical layout/module/entry/constants); only
+  // the bind group differs per dispatch. AddRef so each of the two dispatches
+  // owns a ref and the graph dtor's per-dispatch release stays balanced.
+  WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-  WGPUComputePipeline pipeline_k =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  wgpuComputePipelineAddRef(pipeline);
 
   WGPUBuffer q_ubuf = add_rope_hf_dispatch(
       graph,
       device,
-      pipeline_q,
+      pipeline,
       bgl,
       xq,
       xq_out,
@@ -645,7 +647,7 @@ void apply_rotary_emb_hf_impl(
   WGPUBuffer k_ubuf = add_rope_hf_dispatch(
       graph,
       device,
-      pipeline_k,
+      pipeline,
       bgl,
       xk,
       xk_out,
@@ -688,7 +690,7 @@ void apply_rotary_emb_hf_impl(
     const uint64_t kn = utils::numel_of(kd);
     uint32_t start_pos = baked_start_pos;
     if (dynamic_pos) {
-      const int32_t pos = g.read_symint(start_pos_id);
+      const int64_t pos = g.read_symint(start_pos_id);
       if (pos < 0) {
         throw std::runtime_error(
             "apply_rotary_emb_hf(resize): start_pos must be non-negative");
@@ -725,8 +727,10 @@ void apply_rotary_emb_hf_impl(
     g.set_cur_dims(xq_out_id, qd);
     g.set_cur_dims(xk_out_id, kd);
   };
+  // Register on xq_id only: Q and K share seq (validated) and are resized
+  // together, and every input's cur_dims is set before hooks fire, so one
+  // registration refreshes both dispatches without the redundant double-fire.
   graph.add_tensor_resize_hook(xq_id, rope_hf_hook);
-  graph.add_tensor_resize_hook(xk_id, rope_hf_hook);
   if (dynamic_pos) {
     graph.add_resize_hook(start_pos_id, rope_hf_hook);
   }

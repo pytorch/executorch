@@ -36,10 +36,16 @@ std::string g_dir; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::vector<float> read_bin(const std::string& path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file) {
+    fprintf(stderr, "read_bin: cannot open %s\n", path.c_str());
     return {};
   }
   const std::streamsize bytes = file.tellg();
   if (bytes < 0 || bytes % sizeof(float) != 0) {
+    fprintf(
+        stderr,
+        "read_bin: %s has non-float size %lld\n",
+        path.c_str(),
+        static_cast<long long>(bytes));
     return {};
   }
   file.seekg(0);

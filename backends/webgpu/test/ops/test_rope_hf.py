@@ -40,7 +40,7 @@ class DynamicHfRope(torch.nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         start_pos = input_pos[0].item()
         torch._check_is_size(start_pos)
-        torch._check(start_pos < freqs_cos.shape[0])
+        torch._check(start_pos + xq.shape[1] <= freqs_cos.shape[0])
         return hf_apply_rotary_emb(
             xq,
             xk,
