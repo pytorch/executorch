@@ -11,6 +11,10 @@ math against an fp64 torch reference. The handler reduces one dim at a time via 
 outer/r/inner decomposition: `dim=-1` gives inner=1 (unit-stride reduction), a
 middle dim gives inner>1 (the non-unit-stride path); `keepdim` toggles whether the
 reduced dim survives in the output shape.
+
+`AmaxModule`/`AminModule` (below) are imported by `cases.py` for the amax/amin
+op-test suites. The WebGPU backend supports only the last-dim (per-row) reduction
+on buffer storage, so those reduce over `dim=-1`, mirroring Vulkan's per-row path.
 """
 
 from __future__ import annotations
@@ -121,6 +125,24 @@ def export_reduce_model(
     _fp64_golden(x, op, dim, keepdim).numpy().astype("<f4").tofile(golden_path)
     x.numpy().astype("<f4").tofile(input_path)
     print(f"Exported {pte_path}; golden {golden_path}; input {input_path}")
+
+
+class AmaxModule(torch.nn.Module):
+    def __init__(self, keepdim: bool) -> None:
+        super().__init__()
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.amax(x, dim=-1, keepdim=self.keepdim)
+
+
+class AminModule(torch.nn.Module):
+    def __init__(self, keepdim: bool) -> None:
+        super().__init__()
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.amin(x, dim=-1, keepdim=self.keepdim)
 
 
 if __name__ == "__main__":

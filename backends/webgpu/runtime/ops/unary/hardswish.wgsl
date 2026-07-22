@@ -16,5 +16,6 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    let x = input[idx];
+    output[idx] = select(select(x * (x + 3.0) / 6.0, x, x >= 3.0), 0.0, x <= -3.0);
 }
