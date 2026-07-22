@@ -17,6 +17,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -72,11 +74,6 @@ struct ConstantSource {
   size_t nbytes = 0;
 };
 
-struct ExecuteConfig {
-  size_t chunk_size = 0;
-  size_t initial_chunk_size = 0;
-};
-
 struct WebGPUMemoryStats {
   size_t tensor_buffer_bytes = 0;
   size_t shared_buffer_bytes = 0;
@@ -112,11 +109,13 @@ class WebGPUGraph {
   void copy_inputs(const std::vector<InputData>& inputs);
 
   // Execute all recorded dispatches.
-  void execute();
+  void execute(const WebGPUGraphExecutionOptions& options);
 
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
-  void copy_outputs(std::vector<std::pair<void*, size_t>>& outputs);
+  void copy_outputs(
+      std::vector<std::pair<void*, size_t>>& outputs,
+      const WebGPUGraphExecutionOptions& options);
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
@@ -191,6 +190,14 @@ class WebGPUGraph {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
 
+  bool tensor_has_dynamic_dims(int tensor_id) const {
+    return dynamic_tensor_ids_.count(tensor_id) != 0;
+  }
+
+  bool has_dynamic_shapes() const {
+    return !dynamic_tensor_ids_.empty();
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
@@ -225,6 +232,25 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  size_t register_dispatch_route_group(
+      const std::vector<utils::DispatchRange>& ranges) {
+    return dispatch_routes_.register_group(
+        dispatches_.size(), ranges, [&](size_t i) {
+          return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
+        });
+  }
+
+  void select_dispatch_route(
+      size_t group,
+      size_t active_route,
+      const std::vector<utils::WgCount>& active_grids) {
+    dispatch_routes_.select(
+        group, active_route, active_grids, [&](size_t i, utils::WgCount grid) {
+          dispatches_[i].workgroup_count_x = grid.x;
+          dispatches_[i].workgroup_count_y = grid.y;
+        });
   }
 
   WGPUDevice device() const {
@@ -385,6 +411,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -433,7 +460,10 @@ class WebGPUGraph {
   // Pre-computed output copy descriptors for execute().
   std::vector<OutputCopy> output_copies_;
 
+  std::vector<SuppressibleOutput> suppressible_outputs_;
+
   std::vector<WebGPUDispatch> dispatches_;
+  utils::DispatchRouteRegistry dispatch_routes_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
@@ -450,34 +480,6 @@ class WebGPUGraph {
   std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
-
-  // QKV-concat fusion: one detected attention q/k/v linear
-  // triple sharing an input activation (value ids + shapes), fused in build()
-  // into a single multi-output q4gsw GEMM that scatter-writes q/k/v. Only used
-  // during build(); inert (never populated) when no q/k/v triple matches.
-  struct QkvFusionGroup {
-    int input_id = -1;
-    int out_q = -1, out_k = -1, out_v = -1;
-    int weight_q = -1, weight_k = -1, weight_v = -1;
-    int scales_q = -1, scales_k = -1, scales_v = -1;
-    uint32_t Nq = 0, Nk = 0, Nv = 0; // 2048, 512, 512
-    uint32_t K = 0, K_packed = 0, group_size = 0, num_groups = 0;
-    uint32_t padded_N_q = 0, padded_N_k = 0, padded_N_v = 0;
-    unsigned op_idx[3] = {0, 0, 0}; // the 3 q/k/v linear op-chain indices
-    size_t sep_dispatch[3] = {
-        0,
-        0,
-        0}; // their dispatch indices (filled in build())
-    size_t fused_dispatch = 0; // the fused GEMM dispatch index
-    WGPUBuffer fused_params =
-        nullptr; // the fused params UBO (rewritten by the hook)
-  };
-  // Concat the 3 packed weights (row-stack) + scales (strided gather) into
-  // fused buffers, then record ONE fused-GEMM dispatch (bespoke 8-binding
-  // layout) that writes the 3 original q/k/v output buffers, plus a 3-output
-  // resize hook.
-  void add_qkv_fused_dispatch(QkvFusionGroup& g);
-  void add_qkv_fused_hook(const QkvFusionGroup& g);
 
   // SwiGLU fusion: emit ONE fused elementwise dispatch
   // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2

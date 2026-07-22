@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -61,6 +62,125 @@ inline uint32_t clamp_workgroup_size_pow2(WGPUDevice device, uint32_t desired) {
 struct WgCount {
   uint32_t x;
   uint32_t y;
+};
+
+struct DispatchRange {
+  size_t begin;
+  size_t end;
+};
+
+constexpr bool should_record_q4gsw_dual_route(
+    uint32_t max_m,
+    bool bicol_eligible,
+    bool has_dynamic_shapes) {
+  return max_m > 1u && bicol_eligible && has_dynamic_shapes;
+}
+
+constexpr bool should_record_sdpa_dual_route(
+    bool fd_eligible,
+    bool has_dynamic_sequence) {
+  return fd_eligible && has_dynamic_sequence;
+}
+
+constexpr bool is_q4gsw_bk64_eligible(
+    uint32_t k,
+    uint32_t n,
+    uint32_t group_size,
+    bool has_bias,
+    bool shader_f16_supported,
+    uint32_t max_invocations,
+    uint32_t max_workgroup_storage_bytes) {
+  constexpr uint32_t kRequiredInvocations = 256u;
+  constexpr uint32_t kRequiredStorageBytes = 2u * 64u * 64u * sizeof(uint16_t);
+  const bool ordinary_llama_projection = (k == 2048u && n == 8192u) ||
+      (k == 8192u && n == 2048u) || (k == 2048u && n == 2048u);
+  return ordinary_llama_projection && k % 64u == 0u && group_size == 64u &&
+      !has_bias && shader_f16_supported &&
+      max_invocations >= kRequiredInvocations &&
+      max_workgroup_storage_bytes >= kRequiredStorageBytes;
+}
+
+constexpr bool is_q4gsw_bk64_live_m(uint32_t m) {
+  return m == 128u || m == 508u || m == 512u;
+}
+
+class DispatchRouteRegistry {
+ public:
+  template <typename IsCompute>
+  size_t register_group(
+      size_t dispatch_count,
+      const std::vector<DispatchRange>& ranges,
+      IsCompute&& is_compute) {
+    if (dispatch_count < owners_.size() || ranges.size() < 2) {
+      throw std::runtime_error("invalid WebGPU dispatch route group");
+    }
+
+    std::vector<bool> claimed(dispatch_count, false);
+    for (const auto& range : ranges) {
+      if (range.begin >= range.end || range.end > dispatch_count) {
+        throw std::runtime_error("invalid WebGPU dispatch route range");
+      }
+      for (size_t i = range.begin; i < range.end; i++) {
+        if (!is_compute(i)) {
+          throw std::runtime_error(
+              "WebGPU dispatch route contains a copy command");
+        }
+        if (claimed[i] || (i < owners_.size() && owners_[i] != kNoOwner)) {
+          throw std::runtime_error("overlapping WebGPU dispatch route ranges");
+        }
+        claimed[i] = true;
+      }
+    }
+
+    const size_t group = groups_.size();
+    owners_.resize(dispatch_count, kNoOwner);
+    for (size_t i = 0; i < claimed.size(); i++) {
+      if (claimed[i]) {
+        owners_[i] = group;
+      }
+    }
+    groups_.push_back(ranges);
+    return group;
+  }
+
+  template <typename SetGrid>
+  void select(
+      size_t group,
+      size_t active_route,
+      const std::vector<WgCount>& active_grids,
+      SetGrid&& set_grid) const {
+    if (group >= groups_.size()) {
+      throw std::runtime_error("invalid WebGPU dispatch route group");
+    }
+    const auto& ranges = groups_[group];
+    if (active_route >= ranges.size()) {
+      throw std::runtime_error("invalid active WebGPU dispatch route");
+    }
+    const auto& active = ranges[active_route];
+    if (active_grids.size() != active.end - active.begin) {
+      throw std::runtime_error("WebGPU dispatch route grid count mismatch");
+    }
+    for (const auto& grid : active_grids) {
+      if (grid.x == 0 || grid.y == 0) {
+        throw std::runtime_error(
+            "active WebGPU dispatch route has a zero grid");
+      }
+    }
+
+    for (const auto& range : ranges) {
+      for (size_t i = range.begin; i < range.end; i++) {
+        set_grid(i, {0, 0});
+      }
+    }
+    for (size_t i = 0; i < active_grids.size(); i++) {
+      set_grid(active.begin + i, active_grids[i]);
+    }
+  }
+
+ private:
+  static constexpr size_t kNoOwner = static_cast<size_t>(-1);
+  std::vector<std::vector<DispatchRange>> groups_;
+  std::vector<size_t> owners_;
 };
 
 // Device's max workgroups per dispatch dimension; the WebGPU spec-default floor
