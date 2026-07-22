@@ -60,8 +60,14 @@ class DecomposeWrapWithAutocast(ExportPass):
                 with graph.inserting_before(node):
                     # remap is used to map original node values to new node values,
                     # which ensures that reference to nodes are correctly updated in the new graph
-                    # remap = {"expand_1": node.args[5], "to_4": node.args[6]}
-                    remap = {n_args[i].name: n_args[i] for i in range(5, len(n_args))}
+                    placeholders = [
+                        n
+                        for n in decomposed_module.graph.nodes
+                        if n.op == "placeholder"
+                    ]
+                    remap = {
+                        ph.name: n_args[5 + i] for i, ph in enumerate(placeholders)
+                    }
                     merge_decomposed_graph(
                         remap=remap,
                         target_node=node,
