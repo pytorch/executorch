@@ -1083,7 +1083,9 @@ void WebGPUGraph::build(
       swiglu_anchors[fusion.mul2_op] = fusion_idx;
       swiglu_skipped_ops.insert(fusion.sigmoid_op);
       swiglu_skipped_ops.insert(fusion.mul1_op);
-      swiglu_skipped_ops.insert(fusion.mul2_op);
+      // mul2_op is the fusion anchor: its Phase-3 branch emits the fused
+      // dispatch and continues before the skipped-ops check, so it needs no
+      // swiglu_skipped_ops entry.
       for (unsigned op : pattern_ops) {
         claimed_ops.insert(op);
       }
