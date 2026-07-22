@@ -226,6 +226,16 @@ void im2row_per_tensor_out(
     int64_t dim1,
     ::executorch::aten::Tensor& out);
 
+::executorch::aten::Tensor& quantized_max_pool2d_nhwc_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& input,
+    ::executorch::aten::IntArrayRef kernel_size,
+    ::executorch::aten::IntArrayRef stride,
+    ::executorch::aten::IntArrayRef padding,
+    ::executorch::aten::IntArrayRef dilation,
+    bool ceil_mode,
+    ::executorch::aten::Tensor& output);
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
