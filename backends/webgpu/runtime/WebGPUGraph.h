@@ -34,6 +34,8 @@ struct WebGPUTensor {
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
+  // Exactly int8 (not uint8/bool), so int8-only ops can guard their dtype.
+  bool is_int8 = false;
 };
 
 // Host-side view of one graph input, passed to copy_inputs.
@@ -151,6 +153,9 @@ class WebGPUGraph {
   }
   bool get_bool(int id) const {
     return bools_[id];
+  }
+  const std::string& get_string(int id) const {
+    return strings_[id];
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
@@ -376,6 +381,7 @@ class WebGPUGraph {
   std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::string> strings_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {
