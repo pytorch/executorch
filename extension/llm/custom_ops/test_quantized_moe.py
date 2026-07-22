@@ -90,13 +90,14 @@ def _build_moe_eager(
 def _moe_forward_with_qdq_weights(
     moe: MOEFeedForward, x: torch.Tensor, group_size: int
 ) -> torch.Tensor:
-    """Run `moe.forward(x)` after replacing each per-expert weight with its
-    INT4 group-quantize/dequant round-trip. This is the apples-to-apples
-    reference for the custom op's output.
+    """Independent q-dq reference for `llama::quantized_moe_ffn`.
 
-    We deepcopy the real module (so any attributes added by future
-    `MOEFeedForward.__init__` / `ConditionalFeedForward.__init__` changes
-    are preserved) and only overwrite the per-expert weights in-place.
+    Applies the same INT4 group-quantize/dequant round-trip to each expert
+    weight, then reproduces the op's routing contract (see op_moe.cpp) in
+    eager PyTorch: sigmoid or softmax scoring, expert-bias-shifted top-k
+    selection, un-biased weight renormalization scaled by route_scale for the
+    sigmoid path (softmax path softmaxes the top-k raw scores). Expert compute
+    reuses the q-dq `ConditionalFeedForward`.
     """
     moe_q = copy.deepcopy(moe)
 
@@ -119,7 +120,109 @@ def _moe_forward_with_qdq_weights(
         w2_DF_qdq = _qdq_per_expert(w2_DF)
         cond_q.w2.copy_(w2_DF_qdq.transpose(-2, -1).contiguous())
 
-    return moe_q.forward(x)
+    scores = moe.gate(x)  # [T, E]
+    k = moe.num_activated_experts
+    if moe.score_func == "sigmoid":
+        s = torch.sigmoid(scores)
+        sel = s + moe.expert_bias if getattr(moe, "use_expert_bias", False) else s
+        idx = torch.topk(sel, k, dim=-1).indices
+        weights = torch.gather(s, -1, idx)
+        weights = (
+            weights * moe.route_scale / (weights.sum(dim=-1, keepdim=True) + 1e-20)
+        )
+    else:
+        idx = torch.topk(scores, k, dim=-1).indices
+        weights = torch.gather(scores, -1, idx).softmax(dim=-1)
+
+    expert_outs = moe_q.cond_ffn(x, idx)  # [T, K, D]
+    return torch.einsum("tkd,tk->td", expert_outs, weights)
+
+
+class TestQuantizedMoeFfnOp(unittest.TestCase):
+    """Numerical correctness vs a Python q-dq reference."""
+
+    def setUp(self) -> None:
+        torch.manual_seed(0)
+
+    def _check_against_qdq_reference(
+        self,
+        *,
+        score_func: str,
+        use_expert_bias: bool,
+        route_scale: float,
+        num_tokens: int = 8,
+        atol: float = 5e-3,
+    ) -> None:
+        dim, hidden_dim = 32, 32
+        num_experts, num_activated_experts = 4, 2
+        group_size = 32
+
+        moe = _build_moe_eager(
+            dim=dim,
+            hidden_dim=hidden_dim,
+            num_experts=num_experts,
+            num_activated_experts=num_activated_experts,
+            score_func=score_func,
+            use_expert_bias=use_expert_bias,
+            route_scale=route_scale,
+        )
+        x = torch.randn(num_tokens, dim)
+
+        with torch.no_grad():
+            ref = _moe_forward_with_qdq_weights(moe, x, group_size)
+
+            qmodel = MOEFeedForward.__new__(MOEFeedForward)
+            torch.nn.Module.__init__(qmodel)
+            qmodel.gate = moe.gate
+            qmodel.cond_ffn = moe.cond_ffn
+            qmodel.dim = moe.dim
+            qmodel.num_activated_experts = moe.num_activated_experts
+            qmodel.score_func = moe.score_func
+            qmodel.route_scale = moe.route_scale
+            qmodel.use_expert_bias = moe.use_expert_bias
+            if moe.use_expert_bias:
+                qmodel.expert_bias = moe.expert_bias
+
+            wrapper = torch.nn.Module()
+            wrapper.block_sparse_moe = qmodel
+            replace_moe_with_quantized_op(wrapper, group_size=group_size, weight_nbit=4)
+            test = wrapper.block_sparse_moe(x)
+
+        diff = (ref - test).abs()
+        self.assertTrue(
+            diff.max().item() < atol,
+            f"max abs diff {diff.max().item()} > atol {atol} (mean={diff.mean().item()})",
+        )
+
+    def test_sigmoid_with_bias_route_scale_2p5(self) -> None:
+        self._check_against_qdq_reference(
+            score_func="sigmoid", use_expert_bias=True, route_scale=2.5
+        )
+
+    def test_sigmoid_no_bias(self) -> None:
+        self._check_against_qdq_reference(
+            score_func="sigmoid", use_expert_bias=False, route_scale=1.0
+        )
+
+    def test_softmax(self) -> None:
+        self._check_against_qdq_reference(
+            score_func="softmax", use_expert_bias=False, route_scale=1.0
+        )
+
+    def test_single_token(self) -> None:
+        self._check_against_qdq_reference(
+            score_func="sigmoid",
+            use_expert_bias=True,
+            route_scale=2.5,
+            num_tokens=1,
+        )
+
+    def test_route_scale_zero(self) -> None:
+        self._check_against_qdq_reference(
+            score_func="sigmoid",
+            use_expert_bias=False,
+            route_scale=0.0,
+        )
 
 
 class TestSourceTransform(unittest.TestCase):
