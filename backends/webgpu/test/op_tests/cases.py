@@ -37,6 +37,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
@@ -304,6 +305,21 @@ def _repeat_suite() -> WebGPUTestSuite:
                 construct={"repeats": [2, 1, 2]},
                 inputs=((XS, S, S1),),
             ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("pixel_shuffle")
+def _pixel_shuffle_suite() -> WebGPUTestSuite:
+    # Channel->space rearrange; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda r: PixelShuffleModule(r),
+        cases=[
+            Case(name="r2", construct={"r": 2}, inputs=((1, 8, 2, 3),)),
+            Case(name="r2_batch", construct={"r": 2}, inputs=((2, 4, 3, 3),)),
+            Case(name="r3", construct={"r": 3}, inputs=((1, 9, 2, 2),)),
+            Case(name="r2_3d", construct={"r": 2}, inputs=((4, 2, 2),)),
         ],
         golden_dtype="float32",
     )
