@@ -19,7 +19,7 @@ from typing import Dict, Iterator, Optional
 
 import torch
 
-from executorch.extension.llm.custom_ops.op_update_and_attend_reference import attend
+from executorch.extension.llm.cache.reference_cache import attend
 
 
 class CacheRegistry:
@@ -72,6 +72,8 @@ def update_and_attend(
     out_dtype: torch.dtype,
 ) -> torch.Tensor:
     """Append this step's k/v to the layer's cache, then attend q over history.
+
+    This op and its cache API are experimental and may change without notice.
 
     Tensors are BHSD (batch, heads, seq, dim); GQA/MQA is handled natively
     (``H_q`` is a multiple of ``H_kv``). q/k are already RoPE-rotated.

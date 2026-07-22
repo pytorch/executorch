@@ -32,6 +32,8 @@ from typing import List, Tuple
 import torch
 import torch.nn.functional as F
 
+from executorch.exir._warnings import experimental
+
 
 class CacheSizing(Enum):
     STATIC = "static"
@@ -48,6 +50,9 @@ class AttendSpec:
     kind: MaskKind
 
 
+@experimental(
+    "update_and_attend KV cache is experimental and may change without notice."
+)
 @dataclass
 class CacheConfig:
     n_layers: int
@@ -63,6 +68,9 @@ class CacheConfig:
             raise ValueError("capacity must be positive")
 
 
+@experimental(
+    "update_and_attend KV cache is experimental and may change without notice."
+)
 class ContiguousReferenceCache:
     """Per-layer contiguous float KV history for a single sequence."""
 

@@ -91,14 +91,3 @@ fbcode_target(_kind = runtime.python_test,
         "//caffe2:torch",
     ],
 )
-
-fbcode_target(_kind = runtime.python_test,
-    name = "test_update_and_attend",
-    srcs = [
-        "test_update_and_attend.py",
-    ],
-    deps = [
-        ":update_and_attend_py",
-        "//caffe2:torch",
-    ],
-)

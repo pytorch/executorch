@@ -8,16 +8,12 @@ import unittest
 
 import torch
 import torch.nn.functional as F
-from executorch.extension.llm.custom_ops.op_update_and_attend import (
-    REGISTRY,
-    update_and_attend,
-)
-
-from executorch.extension.llm.custom_ops.op_update_and_attend_reference import (
+from executorch.extension.llm.cache.reference_cache import (
     CacheConfig,
     CacheSizing,
     ContiguousReferenceCache,
 )
+from executorch.extension.llm.cache.update_and_attend import REGISTRY, update_and_attend
 
 
 class TinyAttentionModel(torch.nn.Module):
