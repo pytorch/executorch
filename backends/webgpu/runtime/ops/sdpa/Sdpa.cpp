@@ -209,7 +209,12 @@ constexpr uint32_t kQwen3Q16K16StorageBytes = 512u * 4u * sizeof(float) +
     512u * 4u * sizeof(uint16_t) + 128u * 2u * sizeof(float) +
     3u * 16u * sizeof(float);
 constexpr uint32_t kQwen3K16StorageBytes = kQwen3Q16K16StorageBytes;
-constexpr uint32_t kQwen3Q32K16StorageBytes = 22912u;
+// Mirrors the Q32 shader's workgroup arrays (t_q_tile vec4<f32>x1024, t_kv_tile
+// vec4<f16>x512, t_scores vec2<f32>x256, t_m/t_d/t_alpha f32x32) so the
+// device-support gate stays tied to the declared storage, not a literal.
+constexpr uint32_t kQwen3Q32K16StorageBytes = 1024u * 4u * sizeof(float) +
+    512u * 4u * sizeof(uint16_t) + 256u * 2u * sizeof(float) +
+    3u * 32u * sizeof(float);
 
 constexpr bool streaming_attention_k16_workgroup_count_fits(
     int64_t S,
@@ -615,9 +620,12 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool qwen3_k16_selected = qwen3_q32_selected || qwen3_q16_supported;
   const uint32_t qwen3_query_tile =
       qwen3_q32_selected ? kQwen3Q32K16QueryTile : kQwen3K16QueryTile;
-  const bool llama_k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
-      g == 4 && D == 64 && scale == 0.125f && out.dims == q.dims &&
-      streaming_attention_k16_device_supported(device);
+  const bool llama_k16_eligible =
+      graph.kv_f16() && Hq == 32 && Hkv == 8 && g == 4 && D == 64 &&
+      scale == 0.125f && out.dims == q.dims &&
+      streaming_attention_k16_device_supported(device) &&
+      streaming_attention_k16_workgroup_count_fits(
+          S, Hkv, g, kLlamaK16QueryTile, device_max_workgroups);
   const bool k16_eligible =
       k16_buffers_distinct && (llama_k16_eligible || qwen3_k16_selected);
   const uint32_t k16_query_tile =

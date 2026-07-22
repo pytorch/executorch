@@ -190,12 +190,15 @@ Error WebGPUBackend::execute(
     graph->execute(graph_options);
 
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
-    std::vector<std::pair<void*, size_t>> outputs;
+    std::vector<OutputData> outputs;
     outputs.reserve(num_outputs);
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t arg_idx = num_inputs + i;
       auto& tensor = args[arg_idx]->toTensor();
-      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
+      outputs.push_back(
+          {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
     }
     graph->copy_outputs(outputs, graph_options);
   } catch (const std::exception& e) {

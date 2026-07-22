@@ -2056,7 +2056,7 @@ void buffer_map_callback(
 } // namespace
 
 void WebGPUGraph::copy_outputs(
-    std::vector<std::pair<void*, size_t>>& outputs,
+    std::vector<OutputData>& outputs,
     const WebGPUGraphExecutionOptions& options) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
   const WebGPUExecutionPlan plan = plan_webgpu_execution(
@@ -2074,12 +2074,20 @@ void WebGPUGraph::copy_outputs(
   auto output_map_size = [&](size_t i) -> std::pair<bool, size_t> {
     const auto& tensor = tensors_[output_ids_[i]];
     const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
-        outputs[i].second == tensor.cur_nbytes * 2;
-    return {widen_fp16, widen_fp16 ? tensor.cur_nbytes : outputs[i].second};
+        outputs[i].nbytes == tensor.cur_nbytes * 2;
+    // Require an explicit fp32 host dtype for the widen (mirrors the
+    // copy_inputs narrow guard): a same-2:1-ratio non-fp32 host must not be
+    // silently reinterpreted as fp32, and must not fall through to a memcpy
+    // that would over-read the smaller fp16 staging buffer.
+    if (widen_fp16 && !outputs[i].host_is_fp32) {
+      throw std::runtime_error(
+          "WebGPU: fp16 device output requires an fp32 host tensor");
+    }
+    return {widen_fp16, widen_fp16 ? tensor.cur_nbytes : outputs[i].nbytes};
   };
 
   for (size_t i = 0; i < count; i++) {
-    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
+    if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
@@ -2093,14 +2101,14 @@ void WebGPUGraph::copy_outputs(
   }
 
   for (size_t i = 0; i < count; i++) {
-    if (plan.copy_outputs[i] && outputs[i].second != 0 &&
+    if (plan.copy_outputs[i] && outputs[i].nbytes != 0 &&
         webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
       throw std::runtime_error("WebGPU: WaitAny failed for output map");
     }
   }
 
   for (size_t i = 0; i < count; i++) {
-    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
+    if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
       continue;
     }
     if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
@@ -2110,13 +2118,13 @@ void WebGPUGraph::copy_outputs(
       if (widen_fp16) {
         const auto* src =
             static_cast<const executorch::runtime::etensor::Half*>(mapped);
-        auto* dst = static_cast<float*>(outputs[i].first);
+        auto* dst = static_cast<float*>(outputs[i].data);
         const size_t numel = map_nbytes / sizeof(*src);
         for (size_t e = 0; e < numel; e++) {
           dst[e] = static_cast<float>(src[e]);
         }
       } else {
-        std::memcpy(outputs[i].first, mapped, outputs[i].second);
+        std::memcpy(outputs[i].data, mapped, outputs[i].nbytes);
       }
       wgpuBufferUnmap(output_staging_buffers_[i]);
     } else {

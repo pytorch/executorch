@@ -46,6 +46,14 @@ struct InputData {
   bool host_is_fp32 = false;
 };
 
+// Host destination for a graph output. host_is_fp32 gates the fp16->fp32 widen
+// on readback (mirrors InputData's guard on the copy_inputs narrow path).
+struct OutputData {
+  void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_fp32 = false;
+};
+
 struct WebGPUDispatch {
   WGPUComputePipeline pipeline = nullptr;
   WGPUBindGroup bind_group = nullptr;
@@ -116,7 +124,7 @@ class WebGPUGraph {
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
   void copy_outputs(
-      std::vector<std::pair<void*, size_t>>& outputs,
+      std::vector<OutputData>& outputs,
       const WebGPUGraphExecutionOptions& options);
 
   const std::vector<int>& input_ids() const {
