@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from silu_mul_fused.wgsl - DO NOT EDIT.
-// wgsl-sha256: 4b8ede66c5dbc9829ff48f745eb9ad48fa5a5200058baa532fbf34f78ec2f560
+// wgsl-sha256: 7ba46c3ec15bfe4ab77a6a3e8e9f81dcb53a82328da953a3a9252fc7d470f461
 inline constexpr const char* kSiluMulFusedWGSL = R"(
 @group(0) @binding(0) var<storage, read> gate: array<f32>;
 @group(0) @binding(1) var<storage, read> up: array<f32>;
@@ -24,14 +24,13 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-// Fused SwiGLU activation: output = (g * sigmoid(g)) * up, folding the separate
-// sigmoid(gate) -> mul(gate,sig)=silu -> mul(silu,up) triple into one dispatch.
-// sigmoid + silu are computed in registers (never written to memory), so gate + up
-// are read once and one output is written. The sigmoid form (1/(1+exp(-x))) and the
-// multiply order match the original ops -> bit-exact.
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+override wg_size: u32 = 64u;
+
+@compute @workgroup_size(wg_size, 1, 1)
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= params.num_elements) {
         return;
     }
