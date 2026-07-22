@@ -170,12 +170,14 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
     [[4, 6, 8], [2, 4, 6, 8], [2, 4, 6, 8, 10]],
     ids=lambda x: f"{len(x)}D",
 )
-@pytest.mark.parametrize("use_qat", [False, True], ids=lambda x: "QAT" if x else "PTQ")
+@pytest.mark.parametrize(
+    "use_qat",
+    [True],
+    ids=["QAT"],
+)  # PTQ excluded: prepare_pt2e fuses here due to a TorchAO bug.
 def test_batch_norm_linear_incompatible__full_pipeline(
     bias: bool, input_shape: list[int], use_qat: bool
 ):
-    if not use_qat:
-        pytest.skip("Fusion done by `prepare_pt2e` itself. This is a bug in TorchAO.")
 
     module = LinearBatchNormModule(
         bias, len(input_shape), input_shape[-1], input_shape[1], input_shape[1]
