@@ -70,7 +70,6 @@ def _sparse_moe_forward(self, x):
         expert_weights,
         expert_indices,
         self.top_k,
-        sort_experts=getattr(self, "_sort_experts", False),
     )
 
     shared_out = self.shared_expert(x_flat)
@@ -215,7 +214,7 @@ def _exportable_gated_delta_net_forward(self, x, input_pos):
     return self.out_proj(output)
 
 
-def _swap_moe_experts(model, fuse_gate_up):
+def _swap_moe_experts(model, fuse_gate_up, sort_cutoff=1):
     """FusedMoEExperts → SwitchMLP."""
     from executorch.backends.mlx.llm.switch import SwitchMLP
 
@@ -229,6 +228,7 @@ def _swap_moe_experts(model, fuse_gate_up):
             module.intermediate_size,
             module.num_experts,
             fuse_gate_up=fuse_gate_up,
+            sort_cutoff=sort_cutoff,
         )
         switch_mlp.to(dtype=module.w1_weight.dtype)
 
@@ -321,12 +321,11 @@ def _swap_rms_norm(model):
     return count
 
 
-def _swap_sparse_moe(model, sort_experts):
+def _swap_sparse_moe(model):
     """SparseMoE → no .float() on expert_weights."""
     count = 0
     for _name, module in model.named_modules():
         if isinstance(module, SparseMoE):
-            module._sort_experts = sort_experts
             module.forward = types.MethodType(_sparse_moe_forward, module)
             count += 1
     return count
@@ -336,7 +335,7 @@ def mlx_source_transformations(
     model,
     model_dtype=torch.bfloat16,
     config=None,
-    sort_experts=False,
+    sort_cutoff=1,
     fuse_gate_up=False,
 ):
     """Replace all Triton-dependent modules with MLX-compatible equivalents.
@@ -353,15 +352,16 @@ def mlx_source_transformations(
         model: The Qwen 3.5 MoE model to transform.
         model_dtype: Target dtype for the model (default: bf16).
         config: Model config (Qwen35MoEConfig).
-        sort_experts: Sort tokens by expert index for coalesced memory access.
+        sort_cutoff: Token-count threshold for runtime MoE expert sorting.
+            Sort when M > sort_cutoff (default 1 = sort on prefill only).
         fuse_gate_up: Fuse gate+up into single SwitchLinear.
     """
-    count_moe = _swap_moe_experts(model, fuse_gate_up)
+    count_moe = _swap_moe_experts(model, fuse_gate_up, sort_cutoff)
     count_gdn = _swap_gated_delta_net(model, model_dtype)
     count_attn = _swap_full_attention(model, config)
     count_kv = _swap_kv_cache(model, model_dtype)
     count_norm = _swap_rms_norm(model)
-    count_moe_fwd = _swap_sparse_moe(model, sort_experts)
+    count_moe_fwd = _swap_sparse_moe(model)
 
     logger.info(f"Replaced {count_moe} FusedMoEExperts → SwitchMLP")
     logger.info(f"Replaced {count_gdn} GatedDeltaNet → exportable PyTorch forward")

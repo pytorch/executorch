@@ -6603,12 +6603,28 @@ class QuantizedSwitchLinearTest(OpTestCase):
 class GatherMmModel(nn.Module):
     """Model using mlx::gather_mm for expert selection + matmul."""
 
-    def __init__(self, num_experts: int, in_features: int, out_features: int):
+    def __init__(
+        self,
+        num_experts: int,
+        in_features: int,
+        out_features: int,
+        sorted_indices: bool = False,
+    ):
         super().__init__()
         self.register_buffer(
             "weight",
             torch.randn(num_experts, out_features, in_features),
         )
+        # sorted_indices is Optional[Tensor] (0-d int32) rather than a bool.
+        # Store as buffer so it is part of the exported graph and exercises
+        # the IntOrVid runtime path in the handler.
+        if sorted_indices:
+            self.register_buffer(
+                "sorted_flag",
+                torch.ones((), dtype=torch.int32),
+            )
+        else:
+            self.sorted_flag = None
 
     def forward(self, x: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
         import executorch.backends.mlx.custom_ops as _  # noqa
@@ -6617,13 +6633,20 @@ class GatherMmModel(nn.Module):
         # Transpose weight from [E, out, in] to [E, in, out]
         # gather_mm returns [N, 1, out], squeeze dim -2
         return torch.ops.mlx.gather_mm(
-            x.unsqueeze(-2), self.weight.transpose(-1, -2), rhs_indices=indices
+            x.unsqueeze(-2),
+            self.weight.transpose(-1, -2),
+            rhs_indices=indices,
+            sorted_indices=self.sorted_flag,
         ).squeeze(-2)
 
 
 @register_test
 class GatherMmTest(OpTestCase):
-    """Test case for mlx::gather_mm."""
+    """Test case for mlx::gather_mm.
+
+    Includes a sorted=True config to exercise the Optional[Tensor] ->
+    IntOrVid runtime path in _gather_mm_handler.
+    """
 
     name = "gather_mm"
     rtol = 1e-4
@@ -6636,16 +6659,20 @@ class GatherMmTest(OpTestCase):
         out_features: int = 128,
         batch_size: int = 2,
         dtype: torch.dtype = torch.float32,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
         self.out_features = out_features
         self.batch_size = batch_size
         self.dtype = dtype
+        self.sorted_indices = sorted_indices
 
         parts = ["gather_mm", f"e{num_experts}", f"i{in_features}", f"o{out_features}"]
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6655,15 +6682,28 @@ class GatherMmTest(OpTestCase):
             cls(num_experts=8, in_features=128, out_features=256),
             cls(dtype=torch.bfloat16),
             cls(batch_size=1),
+            # Exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def create_model(self) -> nn.Module:
-        model = GatherMmModel(self.num_experts, self.in_features, self.out_features)
+        model = GatherMmModel(
+            self.num_experts,
+            self.in_features,
+            self.out_features,
+            sorted_indices=self.sorted_indices,
+        )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features, dtype=self.dtype)
         indices = torch.randint(0, self.num_experts, (self.batch_size,))
+        # sorted_indices=True is a contract with the MLX kernel: indices must
+        # actually be sorted. Eager ignores the flag; unsorted + sorted=True
+        # yields large localized numeric errors (max_diff ~ tens).
+        if self.sorted_indices:
+            indices, _ = torch.sort(indices)
         return (x, indices)
 
 
@@ -6681,10 +6721,16 @@ class GatherQmmModel(nn.Module):
         out_features: int,
         group_size: int = 32,
         packed: bool = False,
+        sorted_indices: bool = False,
     ):
         super().__init__()
         self.out_features = out_features
         self.group_size = group_size
+        # Same pattern as GatherMmModel
+        if sorted_indices:
+            self.register_buffer("sorted_flag", torch.ones((), dtype=torch.int32))
+        else:
+            self.sorted_flag = None
 
         # Create per-expert nn.Linear, quantize, extract inner tensors
         from executorch.backends.mlx.llm.quantization import quantize_model_
@@ -6729,12 +6775,17 @@ class GatherQmmModel(nn.Module):
             biases=self.zero_point,
             rhs_indices=indices,
             group_size=self.group_size,
+            sorted_indices=self.sorted_flag,
         ).squeeze(-2)
 
 
 @register_test
 class GatherQmmTest(OpTestCase):
-    """Test case for mlx::gather_qmm."""
+    """Test case for mlx::gather_qmm.
+
+    Includes a sorted=True config to exercise the Optional[Tensor] ->
+    IntOrVid runtime path in _gather_qmm_handler.
+    """
 
     name = "gather_qmm"
     rtol = 0.1
@@ -6749,6 +6800,7 @@ class GatherQmmTest(OpTestCase):
         group_size: int = 32,
         dtype: torch.dtype = torch.float32,
         packed: bool = False,
+        sorted_indices: bool = False,
     ):
         self.num_experts = num_experts
         self.in_features = in_features
@@ -6757,6 +6809,7 @@ class GatherQmmTest(OpTestCase):
         self.group_size = group_size
         self.dtype = dtype
         self.packed = packed
+        self.sorted_indices = sorted_indices
 
         parts = [
             "gather_qmm",
@@ -6769,6 +6822,8 @@ class GatherQmmTest(OpTestCase):
             parts.append("packed")
         if dtype != torch.float32:
             parts.append(str(dtype).split(".")[-1])
+        if sorted_indices:
+            parts.append("sorted")
         self.name = "_".join(parts)
 
     @classmethod
@@ -6782,6 +6837,9 @@ class GatherQmmTest(OpTestCase):
             # to_mlx_qparams prepacked (view -> uint32) lowering path.
             cls(packed=True),
             cls(packed=True, dtype=torch.bfloat16),
+            # Exercise sorted_indices=Tensor (IntOrVid runtime path)
+            cls(sorted_indices=True),
+            cls(sorted_indices=True, dtype=torch.bfloat16),
         ]
 
     def get_edge_compile_config(self):
@@ -6796,12 +6854,15 @@ class GatherQmmTest(OpTestCase):
             self.out_features,
             self.group_size,
             packed=self.packed,
+            sorted_indices=self.sorted_indices,
         )
         return model.to(self.dtype)
 
     def create_inputs(self) -> Tuple[torch.Tensor, ...]:
         x = torch.randn(self.batch_size, self.in_features, dtype=self.dtype)
         indices = torch.randint(0, self.num_experts, (self.batch_size,))
+        if self.sorted_indices:
+            indices, _ = torch.sort(indices)
         return (x, indices)
 
 
@@ -7927,3 +7988,250 @@ class SampleGreedyTest(OpTestCase):
             torch.tensor(self.temperature),
             torch.tensor(0, dtype=torch.int64),
         )
+
+
+# ---------------------------------------------------------------------------
+# MoE runtime expert-sort for decode: moe_gather_inputs / moe_scatter_outputs
+# ---------------------------------------------------------------------------
+
+
+class MoeGatherInputsModel(nn.Module):
+    """Wraps moe_gather_inputs to make it exportable as a single-output model.
+    Returns only x_input (the first of the four outputs) so OpTestCase can
+    compare it against the eager reference using its standard allclose check.
+    The remaining outputs (idx, sort_experts, inv_order) are validated in
+    MoeScatterOutputsModel below via the round-trip prefill test.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )[0]
+        return x_input
+
+
+@register_test
+class MoeGatherInputsTest(OpTestCase):
+    """Test case for mlx::moe_gather_inputs.
+
+    Static configs cover the N=1 (decode, unsorted) and N>sort_cutoff
+    (prefill, sorted) folded paths; the dynamic config keeps N symbolic so
+    both branches and the runtime IfNode selection are exercised from a
+    single exported artifact (the actual point of the runtime sort).
+    """
+
+    name = "moe_gather_inputs"
+    rtol = 1e-5
+    atol = 1e-5
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        dynamic_batch: bool = False,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.dynamic_batch = dynamic_batch
+
+        parts = ["moe_gather_inputs", f"N{batch_size}", f"E{num_experts}", f"k{top_k}"]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+        self.expected_node_counts = self.get_expected_node_counts()
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeGatherInputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),  # N > sort_cutoff -> sorted path
+            cls(batch_size=1, tag="decode"),  # N <= sort_cutoff -> unsorted path
+            cls(batch_size=4, num_experts=16, top_k=4, tag="top4"),
+            # Symbolic N: emits both branches behind an IfNode; exported at
+            # N=4 (sorted at runtime), re-run at N=1 (unsorted at runtime).
+            cls(batch_size=4, dynamic_batch=True, tag="dyn"),
+        ]
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.dynamic_batch:
+            # Both branches are present behind an IfNode; per-branch node
+            # counts depend on how the counter treats branch chains, so only
+            # the runtime-selection structure is asserted elsewhere.
+            return None
+        if self.batch_size > self.sort_cutoff:
+            # sorted path only (condition folds at export time)
+            return {
+                "ArgsortNode": 2,
+                "TakeNode": 2,
+                "FloorDivideNode": 1,
+                "RepeatNode": 0,
+                "ARangeNode": 0,
+                "IfNode": 0,
+            }
+        # unsorted path only
+        return {
+            "ArgsortNode": 0,
+            "TakeNode": 0,
+            "RepeatNode": 1,
+            "ARangeNode": 1,
+            "IfNode": 0,
+        }
+
+    def create_model(self) -> nn.Module:
+        return MoeGatherInputsModel(top_k=self.top_k, sort_cutoff=self.sort_cutoff)
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(
+            0, self.num_experts, (self.batch_size, self.top_k)
+        )
+        return (x, expert_indices)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        # Decode-shaped inputs: forces the runtime IfNode onto the unsorted
+        # branch of the artifact exported at batch_size.
+        x = torch.randn(1, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (1, self.top_k))
+        return (x, expert_indices)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch_dim = Dim("moe_batch", min=1, max=16)
+        return {
+            "x": {0: batch_dim},
+            "expert_indices": {0: batch_dim},
+        }
+
+
+class MoeScatterOutputsModel(nn.Module):
+    """Round-trip: moe_gather_inputs -> identity down_proj -> moe_scatter_outputs.
+    Returns the final [N, top_k, hidden] tensor so OpTestCase can verify
+    the full gather/sort/scatter pipeline end-to-end.
+    """
+
+    def __init__(self, top_k: int = 2, sort_cutoff: int = 1, hidden_out: int = 16):
+        super().__init__()
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.hidden_out = hidden_out
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        import executorch.backends.mlx.custom_ops as _  # noqa: F401
+
+        x_input, idx, sort_experts, inv_order = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, self.top_k, self.sort_cutoff
+        )
+        # Simulate a down_proj output: [N*top_k, 1, hidden_out]. A plain
+        # slice keeps the per-row values distinct, so a wrong or missing
+        # inverse permutation in the lowering shows up as a mismatch.
+        down = x_input[..., : self.hidden_out].contiguous()
+        return torch.ops.mlx.moe_scatter_outputs(
+            down, sort_experts, inv_order, self.top_k
+        )
+
+
+@register_test
+class MoeScatterOutputsTest(OpTestCase):
+    """Test case for mlx::moe_scatter_outputs.
+
+    Validates the round-trip shape and that the unsorted (decode) path
+    produces a result consistent with the sorted (prefill) path. The dynamic
+    config runs both runtime branches from one artifact.
+    """
+
+    name = "moe_scatter_outputs"
+    rtol = 1e-4
+    atol = 1e-4
+
+    def __init__(
+        self,
+        batch_size: int = 4,
+        hidden_size: int = 32,
+        hidden_out: int = 16,
+        num_experts: int = 8,
+        top_k: int = 2,
+        sort_cutoff: int = 1,
+        dynamic_batch: bool = False,
+        tag: str = "",
+    ):
+        self.batch_size = batch_size
+        self.hidden_size = hidden_size
+        self.hidden_out = hidden_out
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.sort_cutoff = sort_cutoff
+        self.dynamic_batch = dynamic_batch
+
+        parts = [
+            "moe_scatter_outputs",
+            f"N{batch_size}",
+            f"E{num_experts}",
+            f"k{top_k}",
+        ]
+        if tag:
+            parts.append(tag)
+        self.name = "_".join(parts)
+        self.expected_node_counts = self.get_expected_node_counts()
+
+    @classmethod
+    def get_test_configs(cls) -> List["MoeScatterOutputsTest"]:
+        return [
+            cls(batch_size=4, tag="prefill"),
+            cls(batch_size=1, tag="decode"),
+            cls(batch_size=4, num_experts=16, top_k=4, hidden_out=32, tag="top4"),
+            cls(batch_size=4, dynamic_batch=True, tag="dyn"),
+        ]
+
+    def get_expected_node_counts(self) -> Optional[Dict[str, int]]:
+        if self.dynamic_batch:
+            return None
+        # With a static batch the sort condition folds at export time, and
+        # the scatter reuses the same folded condition (via the builder's
+        # sorted_indices_flag memo) — so no IfNode survives in either op.
+        return {"IfNode": 0}
+
+    def create_model(self) -> nn.Module:
+        return MoeScatterOutputsModel(
+            top_k=self.top_k,
+            sort_cutoff=self.sort_cutoff,
+            hidden_out=self.hidden_out,
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(self.batch_size, self.hidden_size)
+        expert_indices = torch.randint(
+            0, self.num_experts, (self.batch_size, self.top_k)
+        )
+        return (x, expert_indices)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        if not self.dynamic_batch:
+            return self.create_inputs()
+        x = torch.randn(1, self.hidden_size)
+        expert_indices = torch.randint(0, self.num_experts, (1, self.top_k))
+        return (x, expert_indices)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        if not self.dynamic_batch:
+            return None
+        batch_dim = Dim("moe_batch", min=1, max=16)
+        return {
+            "x": {0: batch_dim},
+            "expert_indices": {0: batch_dim},
+        }
