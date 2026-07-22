@@ -75,6 +75,10 @@ def _write_fp32(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<f4").tofile(path)
 
 
+def _write_int8(t: torch.Tensor, path: str) -> None:
+    t.detach().contiguous().cpu().numpy().astype("<i1").tofile(path)
+
+
 def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[dict]:
     """Export one case; write its .pte + input/golden .bin(s). Returns one manifest
     entry per output tensor (multi-output ops emit N; single-output ops emit one,
@@ -119,17 +123,31 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
     entries: list[dict] = []
     n_out = len(golden_outs)
     for out_index in range(n_out):
-        out_t = golden_outs[out_index].to(torch.float32)
-        # Dual-oracle gate: the fp64 golden must match the fp32 eager within tol —
-        # proves the oracle isn't itself buggy. Skipped for float32 suites.
-        if golden_dtype == "float64" and case.golden_fn is None:
-            torch.testing.assert_close(
-                eager_outs[out_index].to(torch.float32), out_t, atol=atol, rtol=rtol
-            )
+        raw = golden_outs[out_index]
+        is_int8 = raw.dtype == torch.int8
+        if is_int8:
+            # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
+            out_t = raw
+            out_dtype = "int8"
+        else:
+            out_t = raw.to(torch.float32)
+            out_dtype = "float32"
+            # Dual-oracle gate: the fp64 golden must match the fp32 eager within
+            # tol — proves the oracle isn't itself buggy. Skipped for float32.
+            if golden_dtype == "float64" and case.golden_fn is None:
+                torch.testing.assert_close(
+                    eager_outs[out_index].to(torch.float32),
+                    out_t,
+                    atol=atol,
+                    rtol=rtol,
+                )
         # Single-output ops keep the original name/golden; multi-output ops suffix.
         suffix = f"_out{out_index}" if n_out > 1 else ""
         golden_rel = f"{case_id}{suffix}.golden.bin"
-        _write_fp32(out_t, os.path.join(out_dir, golden_rel))
+        if is_int8:
+            _write_int8(out_t, os.path.join(out_dir, golden_rel))
+        else:
+            _write_fp32(out_t, os.path.join(out_dir, golden_rel))
         entries.append(
             {
                 "op": op,
@@ -139,7 +157,7 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
                 "golden": {
                     "path": golden_rel,
                     "shape": list(out_t.shape),
-                    "dtype": "float32",
+                    "dtype": out_dtype,
                     "output_index": out_index,
                 },
                 "atol": atol,
