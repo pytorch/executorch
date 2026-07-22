@@ -95,6 +95,72 @@ class SigmoidModule(torch.nn.Module):
         return torch.sigmoid(x)
 
 
+class SwiGluModule(torch.nn.Module):
+    def __init__(
+        self,
+        reverse_inner: bool = False,
+        reverse_outer: bool = False,
+        extra_gate_consumer: bool = False,
+        extra_sigmoid_consumer: bool = False,
+        extra_silu_consumer: bool = False,
+        expose_intermediates: bool = False,
+        graph_output: str = "",
+        separate_inputs: bool = False,
+        interleaved_projection: bool = False,
+        width: int = 8192,
+    ) -> None:
+        super().__init__()
+        from torchao.quantization.granularity import PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+
+        def make_q4(seed: int):
+            torch.manual_seed(seed)
+            linear = torch.nn.Linear(64, width, bias=False).eval()
+            quantize_(
+                linear,
+                IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            )
+            return linear
+
+        self.gate_proj = make_q4(0)
+        self.up_proj = make_q4(1)
+        self.interleaved_proj = make_q4(2) if interleaved_projection else None
+        self.reverse_inner = reverse_inner
+        self.reverse_outer = reverse_outer
+        self.extra_gate_consumer = extra_gate_consumer
+        self.extra_sigmoid_consumer = extra_sigmoid_consumer
+        self.extra_silu_consumer = extra_silu_consumer
+        self.expose_intermediates = expose_intermediates
+        self.graph_output = graph_output
+        self.separate_inputs = separate_inputs
+        self.interleaved_projection = interleaved_projection
+
+    def forward(self, x: torch.Tensor, up_input: torch.Tensor | None = None):
+        gate = self.gate_proj(x)
+        up = self.up_proj(up_input if self.separate_inputs else x)
+        sigmoid = torch.sigmoid(gate)
+        silu = sigmoid * gate if self.reverse_inner else gate * sigmoid
+        interleaved = self.interleaved_proj(x) if self.interleaved_projection else None
+        output = up * silu if self.reverse_outer else silu * up
+        if self.extra_gate_consumer:
+            return output + gate
+        if self.extra_sigmoid_consumer:
+            return output + sigmoid
+        if self.extra_silu_consumer:
+            return output + silu
+        if self.expose_intermediates:
+            return output, gate, sigmoid, silu
+        if self.graph_output == "gate":
+            return output, gate
+        if self.graph_output == "sigmoid":
+            return output, sigmoid
+        if self.graph_output == "silu":
+            return output, silu
+        if interleaved is not None:
+            return output + interleaved
+        return output
+
+
 class SelectModule(torch.nn.Module):
     """x.select(0, -1) — negative index resolved live + dynamic output dispatch."""
 
@@ -238,7 +304,12 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     )
     _write_goldens(sig, "dyn_sigmoid", out_dir, [MAXS, 32, 1])
 
-    # 2i) select_copy(0, -1) over a DYNAMIC seq-len S (negative live index).
+    # 2i) Dynamic SwiGLU graph patterns. The Llama-width fixture forces a 2D
+    # fused dispatch at M=512; compact variants isolate commutative matching and
+    # graph/intermediate ownership guards around same-input q4 projections.
+    _export_dynamic_swiglu(out_dir)
+
+    # 2j) select_copy(0, -1) over a DYNAMIC seq-len S (negative live index).
     _export_dynamic_select(out_dir)
 
     # 3) Static rms_norm (no dynamic dim) — regression: must stay byte-identical.
@@ -260,6 +331,115 @@ LIN_ALT_GROUP = 24
 LIN_SHMEM_N = 2048
 LIN_GROUP = 32
 LIN_MAXM = 128
+
+
+SWIGLU_MAXM = 512
+SWIGLU_WIDTH = 8192
+SWIGLU_SMALL_WIDTH = 64
+SWIGLU_K = 64
+
+
+def _swiglu_inputs(model: SwiGluModule, m: int):
+    x = _ramp((m, SWIGLU_K))
+    if model.separate_inputs:
+        return x, torch.flip(x, dims=[-1]).contiguous()
+    return (x,)
+
+
+def _write_swiglu_goldens(
+    model: SwiGluModule,
+    prefix: str,
+    out_dir: str,
+    m_values,
+) -> None:
+    for m in m_values:
+        inputs = _swiglu_inputs(model, m)
+        with torch.no_grad():
+            golden = model(*inputs)
+        base = os.path.join(out_dir, f"{prefix}.S{m}.")
+        inputs[0].detach().numpy().astype("<f4").tofile(base + "input.bin")
+        if model.separate_inputs:
+            inputs[1].detach().numpy().astype("<f4").tofile(base + "up_input.bin")
+        if isinstance(golden, tuple):
+            for index, output in enumerate(golden):
+                output.detach().numpy().astype("<f4").tofile(
+                    base + f"golden{index}.bin"
+                )
+        else:
+            golden.detach().numpy().astype("<f4").tofile(base + "golden.bin")
+        print(f"  golden {prefix} M={m}")
+
+
+def _export_swiglu_case(
+    out_dir: str,
+    prefix: str,
+    model: SwiGluModule,
+    m_values,
+) -> None:
+    inputs = _swiglu_inputs(model, SWIGLU_MAXM)
+    m_dim = torch.export.Dim("m", min=1, max=SWIGLU_MAXM)
+    dynamic_shapes = tuple({0: m_dim} for _ in inputs)
+    ep = torch.export.export(
+        model.eval(),
+        inputs,
+        dynamic_shapes=dynamic_shapes,
+    )
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    print(f"Exported {prefix}.pte")
+    _write_swiglu_goldens(model, prefix, out_dir, m_values)
+
+
+def _export_dynamic_swiglu(out_dir: str) -> None:
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu",
+        SwiGluModule(width=SWIGLU_WIDTH),
+        [SWIGLU_MAXM, 128, 1],
+    )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_inner_reversed",
+        SwiGluModule(reverse_inner=True, width=SWIGLU_SMALL_WIDTH),
+        [128],
+    )
+    for prefix, kwargs in (
+        ("dyn_swiglu_extra_sigmoid_consumer", {"extra_sigmoid_consumer": True}),
+        ("dyn_swiglu_extra_silu_consumer", {"extra_silu_consumer": True}),
+        ("dyn_swiglu_gate_graph_output", {"graph_output": "gate"}),
+        ("dyn_swiglu_sigmoid_graph_output", {"graph_output": "sigmoid"}),
+        ("dyn_swiglu_silu_graph_output", {"graph_output": "silu"}),
+        ("dyn_swiglu_different_inputs", {"separate_inputs": True}),
+        (
+            "dyn_swiglu_interleaved_q4",
+            {"interleaved_projection": True},
+        ),
+    ):
+        _export_swiglu_case(
+            out_dir,
+            prefix,
+            SwiGluModule(width=SWIGLU_SMALL_WIDTH, **kwargs),
+            [128],
+        )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_outer_reversed",
+        SwiGluModule(reverse_outer=True, width=SWIGLU_SMALL_WIDTH),
+        [128],
+    )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_extra_gate_consumer",
+        SwiGluModule(extra_gate_consumer=True, width=SWIGLU_SMALL_WIDTH),
+        [128],
+    )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_graph_outputs",
+        SwiGluModule(expose_intermediates=True, width=SWIGLU_SMALL_WIDTH),
+        [128],
+    )
 
 
 def _export_dynamic_linear(
