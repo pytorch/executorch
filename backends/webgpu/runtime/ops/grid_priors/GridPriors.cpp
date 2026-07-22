@@ -1,0 +1,189 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/grid_priors/grid_priors_wgsl.h>
+
+#include <webgpu/webgpu.h>
+
+#include <cstdint>
+#include <stdexcept>
+#include <vector>
+
+namespace executorch::backends::webgpu {
+
+namespace {
+
+// Uniform layout matching the WGSL Params struct; 16-byte aligned.
+struct GridPriorsParams {
+  uint32_t numel;
+  uint32_t width;
+  float stride;
+  float offset;
+};
+static_assert(sizeof(GridPriorsParams) == 16, "GridPriorsParams must be 16 B");
+
+// grid_priors: anchor grid-shifts [H*W,2] from H/W (Vulkan GridPriors.cpp).
+void grid_priors_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // args: [in, stride(int), offset(float), out]; only in's H/W are used.
+  const int in_id = args.at(0);
+  const int out_id = args.at(args.size() - 1);
+
+  if (graph.get_value_type(in_id) != WebGPUGraph::ValueType::Tensor ||
+      graph.get_value_type(out_id) != WebGPUGraph::ValueType::Tensor) {
+    throw std::runtime_error("grid_priors: in/out is not a tensor");
+  }
+
+  WGPUDevice device = graph.device();
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+  if (out_tensor.buffer == nullptr) {
+    throw std::runtime_error("grid_priors: null output buffer");
+  }
+  if (in_tensor.dims.size() < 2) {
+    throw std::runtime_error("grid_priors: input must be at least 2D");
+  }
+
+  const int64_t stride = graph.get_int(args.at(1));
+  const double offset = graph.get_double(args.at(2));
+  const uint64_t height =
+      static_cast<uint64_t>(in_tensor.dims.at(in_tensor.dims.size() - 2));
+  const uint64_t width =
+      static_cast<uint64_t>(in_tensor.dims.at(in_tensor.dims.size() - 1));
+  const uint64_t numel = height * width * 2u;
+  if (width == 0u || numel == 0u || numel > UINT32_MAX) {
+    throw std::runtime_error("grid_priors: bad H/W (zero or numel > u32)");
+  }
+  // Output is fp32 [H*W, 2].
+  if (out_tensor.is_int || out_tensor.nbytes != numel * sizeof(float)) {
+    throw std::runtime_error("grid_priors: output must be fp32 [H*W, 2]");
+  }
+
+  GridPriorsParams params = {};
+  params.numel = static_cast<uint32_t>(numel);
+  params.width = static_cast<uint32_t>(width);
+  params.stride = static_cast<float>(stride);
+  params.offset = static_cast<float>(offset);
+
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kGridPriorsWorkgroupSizeX);
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, static_cast<uint32_t>(numel), wg_size, "grid_priors");
+
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
+
+  WGPUBuffer uniform_buffer =
+      utils::make_uniform(device, &params, sizeof(GridPriorsParams));
+  graph.add_uniform_buffer_bytes(sizeof(GridPriorsParams));
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kGridPriorsWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  // Bind group: output (rw storage) + params (uniform); input data is unread.
+  WGPUBindGroupLayoutEntry entries[2] = {};
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].buffer.type = WGPUBufferBindingType_Storage;
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_Uniform;
+
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 2;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_size_constant;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+
+  WGPUBindGroupEntry bg[2] = {};
+  bg[0].binding = 0;
+  bg[0].buffer = out_tensor.buffer;
+  bg[0].size = out_tensor.nbytes;
+  bg[1].binding = 1;
+  bg[1].buffer = uniform_buffer;
+  bg[1].size = sizeof(GridPriorsParams);
+
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 2;
+  bg_desc.entries = bg;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+
+  const size_t dispatch_idx = graph.add_dispatch(
+      {pipeline,
+       bind_group,
+       workgroup_count.x,
+       "grid_priors",
+       workgroup_count.y});
+
+  // Dynamic shapes: recompute numel/width + dispatch + out dims [H*W, 2].
+  WGPUBuffer params_buf = uniform_buffer;
+  const float stride_f = static_cast<float>(stride);
+  const float offset_f = static_cast<float>(offset);
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, stride_f, offset_f, wg_size, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        if (d.size() < 2) {
+          throw std::runtime_error("grid_priors(resize): input < 2D");
+        }
+        const uint64_t h = static_cast<uint64_t>(d.at(d.size() - 2));
+        const uint64_t w = static_cast<uint64_t>(d.at(d.size() - 1));
+        const uint64_t n = h * w * 2u;
+        if (w == 0u || n == 0u || n > UINT32_MAX) {
+          throw std::runtime_error("grid_priors(resize): bad H/W");
+        }
+        GridPriorsParams p = {};
+        p.numel = static_cast<uint32_t>(n);
+        p.width = static_cast<uint32_t>(w);
+        p.stride = stride_f;
+        p.offset = offset_f;
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+            g.device(), static_cast<uint32_t>(n), wg_size, "grid_priors");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+        g.set_cur_dims(
+            out_id, {static_cast<int64_t>(h * w), static_cast<int64_t>(2)});
+      });
+
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
+  graph.own_uniform_buffer(uniform_buffer);
+}
+
+} // namespace
+
+WEBGPU_REGISTER_OPERATORS {
+  WEBGPU_REGISTER_OP(et_vk.grid_priors.default, grid_priors_impl);
+}
+
+} // namespace executorch::backends::webgpu
