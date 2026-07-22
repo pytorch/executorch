@@ -7,14 +7,13 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-// Fused SwiGLU activation: output = (g * sigmoid(g)) * up, folding the separate
-// sigmoid(gate) -> mul(gate,sig)=silu -> mul(silu,up) triple into one dispatch.
-// sigmoid + silu are computed in registers (never written to memory), so gate + up
-// are read once and one output is written. The sigmoid form (1/(1+exp(-x))) and the
-// multiply order match the original ops -> bit-exact.
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let idx = gid.x;
+override wg_size: u32 = 64u;
+
+@compute @workgroup_size(wg_size, 1, 1)
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (idx >= params.num_elements) {
         return;
     }
