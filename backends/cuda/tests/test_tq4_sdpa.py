@@ -438,16 +438,16 @@ class TestTQ4Sdpa(unittest.TestCase):
                     self.assertEqual(out.dtype, torch.bfloat16)
 
     # ------------------------------------------------------------------
-    # 128k code path: kv_len clamp (decode) + mask_is_causal (prefill)
+    # 128k code path: kv_len clamp (decode) + is_causal (prefill)
     #
     # Every test above calls tq4_sdpa WITHOUT kv_len and WITHOUT
-    # mask_is_causal, so they only exercise the kv_len=None fallback
+    # is_causal, so they only exercise the kv_len=None fallback
     # (full-Lk loop) at short KV. The cases below drive the actual
     # long-context paths at two representative GQA shapes (head_dim=512
     # GQA 8:4, and head_dim=256 GQA 16:2):
     #   * the on-device kv_len scalar that bounds the KV loop to the
     #     filled context (decode), and
-    #   * the mask_is_causal per-tile causal block-skip (prefill).
+    #   * the is_causal per-tile causal block-skip (prefill).
     #
     # "GARBAGE TAIL": in production the KV cache is a fixed buffer
     # pre-allocated to max_seq_len (e.g. 131072). At any step only the
@@ -548,10 +548,9 @@ class TestTQ4Sdpa(unittest.TestCase):
             centroids,
             rotation,
             attn_mask=attn_mask,
-            is_causal=False,
+            is_causal=causal,
             scale=None,
             kv_len=kv_len_t,
-            mask_is_causal=causal,
         )
 
         # Reference: the same decompress-then-fp32-SDPA path the other tests
@@ -637,7 +636,6 @@ class TestTQ4Sdpa(unittest.TestCase):
             is_causal=False,
             scale=None,
             kv_len=kv_len_t,
-            mask_is_causal=False,
         )
 
         # Fused kernel path: without kv_len (forces fused kernel)
@@ -659,7 +657,6 @@ class TestTQ4Sdpa(unittest.TestCase):
             is_causal=False,
             scale=None,
             kv_len=None,
-            mask_is_causal=False,
         )
 
         # Both outputs must match (split-K computes same result as fused)
@@ -724,7 +721,6 @@ class TestTQ4Sdpa(unittest.TestCase):
                 is_causal=False,
                 scale=None,
                 kv_len=kv_len_t,
-                mask_is_causal=False,
             )
 
         out_contig = _run(q)
@@ -797,7 +793,7 @@ class TestTQ4Sdpa(unittest.TestCase):
                 )
 
     def test_mask_is_causal_prefill_hd512_gqa_8_4(self):
-        """Chunked prefill (Lq>1) with mask_is_causal at a head_dim=512,
+        """Chunked prefill (Lq>1) with is_causal + kv_len at a head_dim=512,
         GQA 8:4 shape. The Lq queries are the last Lq of a kv_len-long
         context; the per-tile causal block-skip plus bottom-right mask must
         match the fp32 causal reference over the first kv_len positions. A
@@ -815,7 +811,7 @@ class TestTQ4Sdpa(unittest.TestCase):
                 )
 
     def test_mask_is_causal_prefill_hd256_gqa_16_2(self):
-        """Chunked prefill (Lq>1) with mask_is_causal at a head_dim=256,
+        """Chunked prefill (Lq>1) with is_causal + kv_len at a head_dim=256,
         GQA 16:2 shape."""
         for Lq, kv_len, buf in ((256, 4096, 8192), (2048, 8192, 16384)):
             with self.subTest(Lq=Lq, kv_len=kv_len):
@@ -833,7 +829,7 @@ class TestTQ4Sdpa(unittest.TestCase):
         """Regression: the kv_len=None fallback (HAS_KV_LEN False, full-Lk
         loop) still matches the fp32 reference. This guards the original
         behavior the kv_len feature must preserve for callers that pass
-        neither kv_len nor mask_is_causal."""
+        neither kv_len nor is_causal."""
         self._run_long_kv_test(
             H_q=16,
             H_kv=2,
