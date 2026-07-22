@@ -259,18 +259,15 @@ def refresh_node_meta(node: torch.fx.Node) -> None:
     if node.op != "call_function" or "val" not in node.meta:
         return
 
-    try:
-        args = map_arg(
-            node.args,
-            lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
-        )
-        kwargs = map_arg(
-            node.kwargs,
-            lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
-        )
-        node.meta["val"] = cast(Any, node.target)(*args, **kwargs)
-    except Exception:
-        return
+    args = map_arg(
+        node.args,
+        lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
+    )
+    kwargs = map_arg(
+        node.kwargs,
+        lambda arg: arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg,
+    )
+    node.meta["val"] = cast(Any, node.target)(*args, **kwargs)
 
 
 def insert_scalar(
