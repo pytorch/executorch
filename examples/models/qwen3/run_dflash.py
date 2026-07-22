@@ -182,12 +182,16 @@ def main():
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
         new_tokens = draft_ids[:accepted] + [target_ids[accepted]]
-        accepted_total += accepted
-        emitted_total += len(new_tokens)
 
         # Stop generation once an EOS token becomes part of the accepted sequence.
+        # Truncate before updating the running stats so a round that hits EOS
+        # doesn't over-count tokens/acceptances that never actually get emitted.
         if eos_id in new_tokens:
             new_tokens = new_tokens[: new_tokens.index(eos_id) + 1]
+            accepted = min(accepted, len(new_tokens) - 1)
+
+        accepted_total += accepted
+        emitted_total += len(new_tokens)
 
         generated.extend(new_tokens)
 

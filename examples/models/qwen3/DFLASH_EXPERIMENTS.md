@@ -34,6 +34,9 @@ every single time.
 
 | Chip | Category | Baseline tok/s | DFlash tok/s | Speedup |
 |--------|------|-------|-------|-------|
+| M2 Air | Math | 25.65 | 19.44 | 0.76x |
+| M2 Air | Code | 28.19 | 23.81 | 0.84x |
+| M2 Air | Chat | 26.11 | 14.77 | 0.57x |
 | M2 Pro | Math | 48.30 | 42.63 | 0.88x |
 | M2 Pro | Code | 51.65 | 42.84 | 0.83x |
 | M2 Pro | Chat | 51.29 | 18.22 | 0.36x |

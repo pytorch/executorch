@@ -57,6 +57,9 @@ def main():
     parser.add_argument("--draft-model", default="z-lab/Qwen3-4B-DFlash-b16")
     parser.add_argument("--output", default="qwen3_4b_dflash_draft.pte")
     parser.add_argument("--block-size", type=int, default=16)
+    # --ctx-len only seeds the example shape used for tracing (ctx_len is a
+    # dynamic dim below via `Dim("ctx_len", ...)`); it is not a runtime cap.
+    # --max-ctx-len is the actual bound on context length at inference time.
     parser.add_argument("--ctx-len", type=int, default=8)
     parser.add_argument("--max-ctx-len", type=int, default=4096)
     args = parser.parse_args()
