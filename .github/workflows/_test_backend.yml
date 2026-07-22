@@ -11,6 +11,11 @@ on:
         description: 'JSON array of flows to test'
         required: true
         type: string
+      matrix-exclude:
+        description: 'JSON array of {flow, suite} combos to exclude from the matrix'
+        required: false
+        type: string
+        default: '[]'
       ref:
         description: 'Git ref to checkout'
         required: false
@@ -50,6 +55,7 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.matrix-exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
@@ -126,6 +132,7 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.matrix-exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
