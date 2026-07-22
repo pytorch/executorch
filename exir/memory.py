@@ -48,3 +48,12 @@ def view(base: torch.Tensor, size: List[int]) -> torch.Tensor:
     It is used to elide view_copy nodes.
     """
     return base.view(size)
+
+
+def select(base: torch.Tensor, dim: int, index: int) -> torch.Tensor:
+    """
+    This function mimics torch.ops.aten.select.int.
+
+    It is used to elide select_copy nodes when the result is contiguous.
+    """
+    return base.select(dim, index)

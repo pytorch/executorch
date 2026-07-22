@@ -212,6 +212,7 @@ _SYM_BOOL_OPS = {
 
 _KNOWN_FUNCTIONS = {
     exir.memory.view,
+    exir.memory.select,
 }
 
 
