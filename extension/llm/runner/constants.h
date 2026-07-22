@@ -19,6 +19,10 @@ inline constexpr auto kVocabSize = "get_vocab_size";
 inline constexpr auto kUseKVCache = "use_kv_cache";
 inline constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
 
+// LLM multimethod phase metadata (e.g. YOCO prefill/decode)
+inline constexpr auto kLlmMethodsPrefill = "llm_methods_prefill";
+inline constexpr auto kLlmMethodsDecode = "llm_methods_decode";
+
 // Multimodal method name conventions
 inline constexpr auto kVisionEncoderMethod = "vision_encoder";
 inline constexpr auto kAudioEncoderMethod = "audio_encoder";
