@@ -539,6 +539,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     state.av_grid = utils::compute_2d_workgroup_count(
         gr.device(), static_cast<uint32_t>(av_tiles), av_wg, "AV(resize)");
     state.use_fd = fd_eligible && state.s == 1;
+    // make_sdpa_fd_decode_state requires D % 4 == 0; the op-level guard above
+    // ("head_dim (D) must be a multiple of 4") rejects any other D before this
+    // lambda runs, so eager construction here can never throw on it.
     if (fd_eligible) {
       state.fd = make_sdpa_fd_decode_state(
           gr.device(), Hq, Hkv, D, state.context_len, g, scale);
