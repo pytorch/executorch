@@ -2,7 +2,8 @@
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
 struct Params {
-  num_elements: u32,
+  num_rows: u32,
+  reduce_size: u32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
@@ -12,9 +13,14 @@ override wg_size: u32 = 256u;
 fn main(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
-    if (idx >= params.num_elements) {
+    let row = gid.x + gid.y * (num_workgroups.x * wg_size);
+    if (row >= params.num_rows) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    let base = row * params.reduce_size;
+    var acc = input[base];
+    for (var j = 1u; j < params.reduce_size; j = j + 1u) {
+        acc = min(acc, input[base + j]);
+    }
+    output[row] = acc;
 }
