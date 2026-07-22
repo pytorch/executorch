@@ -191,7 +191,7 @@ static StreamingAttentionK16Params make_streaming_attention_k16_params(
   return p;
 }
 
-bool streaming_attention_k16_device_supported(WGPUDevice device) {
+static bool streaming_attention_k16_device_supported(WGPUDevice device) {
   WGPULimits limits = {};
   const WebGPUContext* context = get_default_webgpu_context();
   return context != nullptr && context->shader_f16_supported &&
@@ -202,6 +202,7 @@ bool streaming_attention_k16_device_supported(WGPUDevice device) {
       limits.maxComputeWorkgroupStorageSize >= 14720u;
 }
 
+constexpr uint32_t kLlamaK16QueryTile = 32u;
 constexpr uint32_t kQwen3K16QueryTile = 16u;
 constexpr uint32_t kQwen3Q32K16QueryTile = 32u;
 constexpr uint32_t kQwen3Q16K16StorageBytes = 512u * 4u * sizeof(float) +
@@ -266,7 +267,7 @@ bool qwen3_q32_k16_device_supported(WGPUDevice device) {
       limits.maxStorageBuffersPerShaderStage >= 4u;
 }
 
-utils::WgCount streaming_attention_k16_grid(
+static utils::WgCount streaming_attention_k16_grid(
     WGPUDevice device,
     int64_t S,
     int64_t Hkv,
@@ -594,27 +595,33 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool qwen3_k16_geometry = Hq == 16 && Hkv == 8 && g == 2 && D == 128 &&
       std::fabs(scale - qwen3_expected_scale) <= 1e-6f && out.dims == q.dims;
   // Q16 is the default route for exact Qwen3 geometry; Q32 is an explicit
-  // autotuning candidate selected only via the sdpa_query_tile RuntimeSpec.
-  const bool qwen3_q32_requested =
-      graph.sdpa_query_tile() == static_cast<int>(kQwen3Q32K16QueryTile) &&
-      qwen3_k16_geometry;
-  const uint32_t qwen3_query_tile =
-      qwen3_q32_requested ? kQwen3Q32K16QueryTile : kQwen3K16QueryTile;
-  const bool qwen3_device_supported =
-      qwen3_k16_geometry &&
-      (qwen3_q32_requested ? qwen3_q32_k16_device_supported(device)
-                           : qwen3_q16_k16_device_supported(device)) &&
+  // autotuning candidate requested via the sdpa_query_tile RuntimeSpec. Support
+  // is evaluated per-tile so an unsupported Q32 request falls back to the Q16
+  // streaming route instead of dropping to the materialized path.
+  const uint32_t device_max_workgroups = utils::queried_max_workgroups(device);
+  const bool qwen3_q16_supported =
+      qwen3_k16_geometry && graph.kv_f16() &&
+      qwen3_q16_k16_device_supported(device) &&
       streaming_attention_k16_workgroup_count_fits(
-          S, Hkv, g, qwen3_query_tile, utils::queried_max_workgroups(device));
-  const bool qwen3_k16_selected =
-      qwen3_k16_geometry && graph.kv_f16() && qwen3_device_supported;
-  const bool qwen3_q32_selected = qwen3_k16_selected && qwen3_q32_requested;
+          S, Hkv, g, kQwen3K16QueryTile, device_max_workgroups);
+  const bool qwen3_q32_requested = qwen3_k16_geometry &&
+      graph.sdpa_query_tile() == static_cast<int>(kQwen3Q32K16QueryTile);
+  const bool qwen3_q32_supported =
+      qwen3_q32_requested && graph.kv_f16() &&
+      qwen3_q32_k16_device_supported(device) &&
+      streaming_attention_k16_workgroup_count_fits(
+          S, Hkv, g, kQwen3Q32K16QueryTile, device_max_workgroups);
+  const bool qwen3_q32_selected = qwen3_q32_supported;
+  const bool qwen3_k16_selected = qwen3_q32_selected || qwen3_q16_supported;
+  const uint32_t qwen3_query_tile =
+      qwen3_q32_selected ? kQwen3Q32K16QueryTile : kQwen3K16QueryTile;
   const bool llama_k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
       g == 4 && D == 64 && scale == 0.125f && out.dims == q.dims &&
       streaming_attention_k16_device_supported(device);
   const bool k16_eligible =
       k16_buffers_distinct && (llama_k16_eligible || qwen3_k16_selected);
-  const uint32_t k16_query_tile = qwen3_k16_selected ? qwen3_query_tile : 32u;
+  const uint32_t k16_query_tile =
+      qwen3_k16_selected ? qwen3_query_tile : kLlamaK16QueryTile;
   const char* k16_shader = qwen3_q32_selected
       ? kStreamingAttentionQwen3Q32K16CausalBoundWGSL
       : qwen3_k16_selected ? kStreamingAttentionQwen3K16CausalBoundWGSL
@@ -742,6 +749,9 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           gr.device(), static_cast<uint32_t>(av_tiles), av_wg, "AV(resize)");
     }
     state.use_fd = fd_eligible && state.s == 1;
+    // make_sdpa_fd_decode_state requires D % 4 == 0; the op-level guard above
+    // ("head_dim (D) must be a multiple of 4") rejects any other D before this
+    // lambda runs, so eager construction here can never throw on it.
     if (fd_eligible) {
       state.fd = make_sdpa_fd_decode_state(
           gr.device(), Hq, Hkv, D, state.context_len, g, scale);

@@ -43,6 +43,7 @@ struct InputData {
   const void* data = nullptr;
   size_t nbytes = 0;
   bool host_is_int64 = false;
+  bool host_is_fp32 = false;
 };
 
 struct WebGPUDispatch {

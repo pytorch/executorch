@@ -148,8 +148,13 @@ Error WebGPUBackend::execute(
       const auto& tensor = args[i]->toTensor();
       const bool host_is_int64 =
           tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
       inputs.push_back(
-          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+          {tensor.const_data_ptr(),
+           tensor.nbytes(),
+           host_is_int64,
+           host_is_fp32});
       const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
@@ -178,23 +183,25 @@ Error WebGPUBackend::execute(
     }
     graph_options =
         resolve_webgpu_graph_execution_options(delegate_outputs, options);
+
+    // Execute the compute graph. Kept inside this try so a plan-validation
+    // throw from plan_webgpu_execution (or a GPU error) surfaces as
+    // Error::Internal instead of escaping across the delegate C API boundary.
+    graph->execute(graph_options);
+
+    // Copy outputs from GPU staging buffers to EValue tensor data pointers
+    std::vector<std::pair<void*, size_t>> outputs;
+    outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t arg_idx = num_inputs + i;
+      auto& tensor = args[arg_idx]->toTensor();
+      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+    }
+    graph->copy_outputs(outputs, graph_options);
   } catch (const std::exception& e) {
-    ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
+    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;
   }
-
-  // Execute the compute graph
-  graph->execute(graph_options);
-
-  // Copy outputs from GPU staging buffers to EValue tensor data pointers
-  std::vector<std::pair<void*, size_t>> outputs;
-  outputs.reserve(num_outputs);
-  for (size_t i = 0; i < num_outputs; i++) {
-    const size_t arg_idx = num_inputs + i;
-    auto& tensor = args[arg_idx]->toTensor();
-    outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
-  }
-  graph->copy_outputs(outputs, graph_options);
 
   return Error::Ok;
 }

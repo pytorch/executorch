@@ -2093,8 +2093,10 @@ TEST(WebGPUNative, Qwen3SdpaRoutes) {
   test_sdpa_replay(*replay, g_sdpa_dir);
   // Q32 is a non-default autotuning candidate selected via the sdpa_query_tile
   // RuntimeSpec (=32); it is not route-asserted in default CI because its
-  // workgroup storage can exceed a device's maxComputeWorkgroupStorageSize
-  // (then production correctly falls back to materialized).
+  // workgroup storage can exceed a device's maxComputeWorkgroupStorageSize.
+  // When Q32 is unsupported the route falls back to the Q16 K16 streaming path
+  // (still the K16CausalBound bit), dropping to materialized only if Q16 is
+  // also unsupported.
 }
 
 TEST(WebGPUNative, SdpaSweep) {
