@@ -61,6 +61,9 @@ from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
 from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
     Q8taPixelShuffleModule,
 )
+from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
+    make_qcs4w_linear_module,
+)
 from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
     make_q8ta_linear_module,
 )
@@ -881,6 +884,30 @@ def _q8ta_pixel_shuffle_suite() -> WebGPUTestSuite:
             case("nonzero_zp", 4, 2, 2, input_zp=10, output_zp=-20),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("linear_qcs4w")
+def _linear_qcs4w_suite() -> WebGPUTestSuite:
+    # VulkanQuantizer weight-only 4-bit nn.Linear -> delegated et_vk.linear_qcs4w.
+    # Golden = converted eager (fp32 per-channel fake-quant). K even (2 nibbles/
+    # byte), N*ceil(K/2) % 4 == 0 (u32-packed weight). M==1 = decode/gemv shape.
+    def case(name, m, k, n, **kw):
+        return Case(
+            name=name, construct={"k": k, "n": n, "m": m, **kw}, inputs=((m, k),)
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: make_qcs4w_linear_module(**kw),
+        cases=[
+            case("basic", 4, 32, 16),
+            case("gemv", 1, 32, 16),  # M==1
+            case("k64", 2, 64, 8),
+            case("n32", 3, 32, 32),
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
