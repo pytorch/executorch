@@ -110,6 +110,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FoldScalarMulIntoConvPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveClampsPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConsecutiveSlicesPass,
@@ -505,6 +506,12 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 FoldAndAnnotateQParamsPass(exported_program),
+                # Both hardtanh and relu are normalized to clamp by
+                # ConvertToClampPass; after q/dq folding above, adjacent clamps
+                # (e.g. from HardTanh+ReLU) are directly connected and can be
+                # fused into a single clamp. Runs before QuantizeClampArgumentsPass
+                # so the min/max args are still float scalars.
+                FuseConsecutiveClampsPass(),
                 FuseDuplicateUsersPass(),
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
@@ -661,14 +668,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),
-                # No-op removal can expose duplicate users and outputs, so run
-                # FuseDuplicateUsersPass and EnsureUniqueOutputNodesPass afterward.
+                EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
                 InsertRescalePass(),
-                # Late TOSA transformations can introduce duplicate users after
-                # the first FuseDuplicateUsersPass invocation.
-                FuseDuplicateUsersPass(),
-                EnsureUniqueOutputNodesPass(),
             ]
         )
 

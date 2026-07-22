@@ -18,7 +18,7 @@ Tensor& bitwise_right_shift_Tensor_out(
     const Tensor& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "bitwise_right_shift.Tensor_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "bitwise_right_shift.Tensor_out");
   return internal::bitwise_tensor_out<internal::bit_rshift, op_name>(
       ctx, a, b, out);
 }
@@ -29,8 +29,7 @@ Tensor& bitwise_right_shift_Tensor_Scalar_out(
     const Scalar& b,
     Tensor& out) {
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] =
-      "bitwise_right_shift.Tensor_Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "bitwise_right_shift.Tensor_Scalar_out");
   return internal::bitwise_scalar_out<internal::bit_rshift, op_name>(
       ctx, a, b, out);
 }
