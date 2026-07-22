@@ -35,6 +35,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
+from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_pow import PowModule
 from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
@@ -271,6 +272,34 @@ def _flip_suite() -> WebGPUTestSuite:
                 name="multi_4d",
                 construct={"dims": [1, 3]},
                 inputs=((XS, S, S1, S2),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("repeat")
+def _repeat_suite() -> WebGPUTestSuite:
+    # Tile along dims; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda repeats: RepeatModule(repeats),
+        cases=[
+            Case(name="tile_1d", construct={"repeats": [2]}, inputs=((XS,),)),
+            Case(name="tile_2d", construct={"repeats": [2, 2]}, inputs=((XS, S),)),
+            Case(
+                name="prepend_3d",
+                construct={"repeats": [1, 3, 2]},
+                inputs=((XS, S),),
+            ),
+            Case(
+                name="prepend_ext",
+                construct={"repeats": [2, 3, 1]},
+                inputs=((XS, S),),
+            ),
+            Case(
+                name="tile_3d",
+                construct={"repeats": [2, 1, 2]},
+                inputs=((XS, S, S1),),
             ),
         ],
         golden_dtype="float32",
