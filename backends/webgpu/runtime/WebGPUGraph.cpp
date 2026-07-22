@@ -2075,16 +2075,24 @@ void WebGPUGraph::copy_outputs(
     const auto& tensor = tensors_[output_ids_[i]];
     const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
         outputs[i].nbytes == tensor.cur_nbytes * 2;
-    // Require an explicit fp32 host dtype for the widen (mirrors the
-    // copy_inputs narrow guard): a same-2:1-ratio non-fp32 host must not be
-    // silently reinterpreted as fp32, and must not fall through to a memcpy
-    // that would over-read the smaller fp16 staging buffer.
-    if (widen_fp16 && !outputs[i].host_is_fp32) {
+    return {widen_fp16, widen_fp16 ? tensor.cur_nbytes : outputs[i].nbytes};
+  };
+
+  // Validate dtypes up front, before any wgpuBufferMapAsync is issued: require
+  // an explicit fp32 host dtype for the fp16->fp32 widen (mirrors the
+  // copy_inputs narrow guard) so a same-2:1-ratio non-fp32 host is not silently
+  // reinterpreted as fp32. Throwing here — rather than mid map-request loop —
+  // keeps in-flight async maps (whose callbacks point at cb_data) from being
+  // left dangling when the exception unwinds this frame.
+  for (size_t i = 0; i < count; i++) {
+    if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
+      continue;
+    }
+    if (output_map_size(i).first && !outputs[i].host_is_fp32) {
       throw std::runtime_error(
           "WebGPU: fp16 device output requires an fp32 host tensor");
     }
-    return {widen_fp16, widen_fp16 ? tensor.cur_nbytes : outputs[i].nbytes};
-  };
+  }
 
   for (size_t i = 0; i < count; i++) {
     if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
