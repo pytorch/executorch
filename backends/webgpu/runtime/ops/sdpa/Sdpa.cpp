@@ -587,24 +587,27 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           k16_buffers_distinct && k16_buffers[i] != k16_buffers[j];
     }
   }
+  // 1/sqrt(128) is not exactly representable in fp32 (unlike Llama's 0.125), so
+  // match the standard scale with a tolerance to avoid a silent fallback when a
+  // producer computes it via a slightly different path.
+  const float qwen3_expected_scale = 1.0f / std::sqrt(128.0f);
   const bool qwen3_k16_geometry = Hq == 16 && Hkv == 8 && g == 2 && D == 128 &&
-      scale == 1.0f / std::sqrt(128.0f) && out.dims == q.dims;
+      std::fabs(scale - qwen3_expected_scale) <= 1e-6f && out.dims == q.dims;
   // Q16 is the default route for exact Qwen3 geometry; Q32 is an explicit
   // autotuning candidate selected only via the sdpa_query_tile RuntimeSpec.
-  const bool qwen3_query_tile_requested = qwen3_k16_geometry;
   const bool qwen3_q32_requested =
       graph.sdpa_query_tile() == static_cast<int>(kQwen3Q32K16QueryTile) &&
-      qwen3_query_tile_requested;
+      qwen3_k16_geometry;
   const uint32_t qwen3_query_tile =
       qwen3_q32_requested ? kQwen3Q32K16QueryTile : kQwen3K16QueryTile;
   const bool qwen3_device_supported =
-      qwen3_query_tile_requested &&
+      qwen3_k16_geometry &&
       (qwen3_q32_requested ? qwen3_q32_k16_device_supported(device)
                            : qwen3_q16_k16_device_supported(device)) &&
       streaming_attention_k16_workgroup_count_fits(
           S, Hkv, g, qwen3_query_tile, utils::queried_max_workgroups(device));
   const bool qwen3_k16_selected =
-      qwen3_query_tile_requested && graph.kv_f16() && qwen3_device_supported;
+      qwen3_k16_geometry && graph.kv_f16() && qwen3_device_supported;
   const bool qwen3_q32_selected = qwen3_k16_selected && qwen3_q32_requested;
   const bool llama_k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 &&
       g == 4 && D == 64 && scale == 0.125f && out.dims == q.dims &&

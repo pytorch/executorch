@@ -2049,6 +2049,15 @@ void WebGPUGraph::copy_outputs(
   std::vector<MapCallbackData> cb_data(count);
   std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
+  // Single source of truth for the fp16-widen predicate + host map size, shared
+  // by the map-request and map-result loops so the two cannot drift apart.
+  auto output_map_size = [&](size_t i) -> std::pair<bool, size_t> {
+    const auto& tensor = tensors_[output_ids_[i]];
+    const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
+        outputs[i].second == tensor.cur_nbytes * 2;
+    return {widen_fp16, widen_fp16 ? tensor.cur_nbytes : outputs[i].second};
+  };
+
   for (size_t i = 0; i < count; i++) {
     if (!plan.copy_outputs[i] || outputs[i].second == 0) {
       cb_data[i].status = WGPUMapAsyncStatus_Success;
@@ -2058,11 +2067,7 @@ void WebGPUGraph::copy_outputs(
     cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
     cb_info.userdata1 = &cb_data[i];
-    const auto& tensor = tensors_[output_ids_[i]];
-    const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
-        outputs[i].second == tensor.cur_nbytes * 2;
-    const size_t map_nbytes =
-        widen_fp16 ? tensor.cur_nbytes : outputs[i].second;
+    const size_t map_nbytes = output_map_size(i).second;
     map_futures[i] = wgpuBufferMapAsync(
         output_staging_buffers_[i], WGPUMapMode_Read, 0, map_nbytes, cb_info);
   }
@@ -2079,11 +2084,7 @@ void WebGPUGraph::copy_outputs(
       continue;
     }
     if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
-      const auto& tensor = tensors_[output_ids_[i]];
-      const bool widen_fp16 = !tensor.is_int && tensor.elem_size == 2 &&
-          outputs[i].second == tensor.cur_nbytes * 2;
-      const size_t map_nbytes =
-          widen_fp16 ? tensor.cur_nbytes : outputs[i].second;
+      const auto [widen_fp16, map_nbytes] = output_map_size(i);
       const void* mapped = wgpuBufferGetConstMappedRange(
           output_staging_buffers_[i], 0, map_nbytes);
       if (widen_fp16) {

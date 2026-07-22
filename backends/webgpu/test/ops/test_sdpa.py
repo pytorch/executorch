@@ -248,11 +248,11 @@ def _export_pte(cfg: SdpaConfig, q, k, v, kc, vc):
 class TestSdpa(unittest.TestCase):
     def test_qwen3_fixture_contract(self) -> None:
         configs = {cfg.name: cfg for cfg in CONFIGS}
-        expected = {
+        expected_geometries = {
             "qwen3_prefill": (16, 8, 128, 128, 256, 0),
             "qwen3_odd_boundary": (16, 8, 128, 17, 64, 31),
         }
-        for name, geometry in expected.items():
+        for name, geometry in expected_geometries.items():
             with self.subTest(config=name):
                 self.assertIn(name, configs)
                 cfg = configs[name]
