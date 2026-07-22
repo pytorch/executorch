@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -83,7 +84,7 @@ void populate_queue_info(
 }
 
 VkDevice create_logical_device(
-    const PhysicalDevice& physical_device,
+    PhysicalDevice& physical_device,
     const uint32_t num_queues_to_create,
     std::vector<Adapter::Queue>& queues,
     std::vector<uint32_t>& queue_usage) {
@@ -217,15 +218,46 @@ VkDevice create_logical_device(
 #endif /* VK_NV_cooperative_matrix2 */
 
 #ifdef VK_EXT_subgroup_size_control
-  // Only enable the feature struct if the extension was actually requested
-  // and the feature flag is set on the physical device. The extension itself
-  // is filtered into enabled_device_extensions by
-  // find_requested_device_extensions.
+  // The subgroup size control feature struct may only be chained into
+  // VkDeviceCreateInfo.pNext if the feature is actually going to be enabled on
+  // the logical device. It can be enabled via two routes:
+  //   1. The VK_EXT_subgroup_size_control extension is enabled, or
+  //   2. It is available as core (promoted to core in Vulkan 1.3), which
+  //      requires both the instance and the physical device to be at 1.3+.
+  // On Vulkan 1.3-core drivers the extension is frequently not advertised as a
+  // separate string, so checking enabled_device_extensions alone is not
+  // sufficient. Chaining the struct without either route being available is
+  // invalid usage and crashes device/pipeline creation with
+  // VK_ERROR_INITIALIZATION_FAILED.
+  bool subgroup_size_control_extension_enabled = false;
+  for (const auto& ext : enabled_device_extensions) {
+    if (strcmp(ext, VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME) == 0) {
+      subgroup_size_control_extension_enabled = true;
+      break;
+    }
+  }
+
+  bool subgroup_size_control_core_available = false;
+#if defined(VK_VERSION_1_3)
+  const bool device_supports_1_3 = physical_device.api_version_major > 1 ||
+      (physical_device.api_version_major == 1 &&
+       physical_device.api_version_minor >= 3);
+  const bool instance_supports_1_3 =
+      select_instance_api_version() >= VK_API_VERSION_1_3;
+  subgroup_size_control_core_available =
+      device_supports_1_3 && instance_supports_1_3;
+#endif /* VK_VERSION_1_3 */
+
   VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features{
       physical_device.subgroup_size_control_features};
-  if (physical_device.supports_subgroup_size_control) {
+  if (physical_device.supports_subgroup_size_control &&
+      (subgroup_size_control_extension_enabled ||
+       subgroup_size_control_core_available)) {
     subgroup_size_control_features.pNext = extension_list_top;
     extension_list_top = &subgroup_size_control_features;
+  } else {
+    physical_device.supports_subgroup_size_control = false;
+    physical_device.supports_compute_full_subgroups = false;
   }
 #endif /* VK_EXT_subgroup_size_control */
 
