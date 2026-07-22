@@ -216,6 +216,9 @@ struct Q4gswExecutionState {
 constexpr size_t kQ4gswBicolRoute = 0;
 constexpr size_t kQ4gswBk64Route = 1;
 constexpr size_t kQ4gswPrefillRoute = 2;
+// 2-route (bicol + prefill) layout, used when the BK64 route is not recorded:
+// the prefill dispatch sits at index 1, not kQ4gswPrefillRoute (the 3-route 2).
+constexpr size_t kQ4gswPrefillRoute2Way = 1;
 
 Q4gswExecutionState make_q4gsw_execution_state(
     WGPUDevice device,
@@ -281,7 +284,7 @@ Q4gswExecutionState make_q4gsw_execution_state(
       ? (use_gemv ? kQ4gswBicolRoute
                   : (record_bk64_route
                          ? (use_bk64 ? kQ4gswBk64Route : kQ4gswPrefillRoute)
-                         : 1u))
+                         : kQ4gswPrefillRoute2Way))
       : 0u;
   state.active_grid = {workgroup_count, 1u};
   return state;
