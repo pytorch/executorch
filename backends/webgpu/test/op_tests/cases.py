@@ -36,6 +36,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 )
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
+from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_pow import PowModule
 from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
@@ -299,6 +300,43 @@ def _repeat_suite() -> WebGPUTestSuite:
             Case(
                 name="tile_3d",
                 construct={"repeats": [2, 1, 2]},
+                inputs=((XS, S, S1),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("index_select")
+def _index_select_suite() -> WebGPUTestSuite:
+    # Gather rows along dim via a baked int index; float32 oracle. Only the float
+    # input is a runtime tensor (the index is a graph constant).
+    return WebGPUTestSuite(
+        module_factory=lambda dim, index: IndexSelectModule(dim, index),
+        cases=[
+            Case(
+                name="dim0_1d",
+                construct={"dim": 0, "index": [0, 2, 4, 1]},
+                inputs=((S,),),
+            ),
+            Case(
+                name="dim0_2d",
+                construct={"dim": 0, "index": [3, 0, 1]},
+                inputs=((XS + 1, S1),),
+            ),
+            Case(
+                name="dim1_2d",
+                construct={"dim": 1, "index": [5, 2, 0, 2]},
+                inputs=((XS + 1, S1),),
+            ),
+            Case(
+                name="dim1_3d",
+                construct={"dim": 1, "index": [4, 0, 2]},
+                inputs=((XS, S, S1),),
+            ),
+            Case(
+                name="dim2_3d",
+                construct={"dim": 2, "index": [6, 1, 4]},
                 inputs=((XS, S, S1),),
             ),
         ],
