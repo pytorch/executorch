@@ -7,8 +7,8 @@
  */
 
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/sigmoid/sigmoid_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
+#include <executorch/backends/webgpu/runtime/ops/binary/BinaryOp.h>
+#include <executorch/backends/webgpu/runtime/ops/minimum/binary_minimum_wgsl.h>
 
 #include <vector>
 
@@ -16,21 +16,22 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  // aten.sigmoid.default args: [in, out]
-  add_unary_op(
+// aten.minimum -> min(in1, in2), with NumPy broadcasting (mirrors mul + Vulkan).
+void minimum_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_binary_broadcast_op(
       graph,
       args.at(0),
       args.at(1),
-      kSigmoidWGSL,
-      kSigmoidWorkgroupSizeX,
-      "sigmoid");
+      args.at(2),
+      kBinaryMinimumWGSL,
+      kBinaryMinimumWorkgroupSizeX,
+      "minimum");
 }
 
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
-  WEBGPU_REGISTER_OP(aten.sigmoid.default, sigmoid_impl);
+  WEBGPU_REGISTER_OP(aten.minimum.default, minimum_impl);
 }
 
 } // namespace executorch::backends::webgpu
