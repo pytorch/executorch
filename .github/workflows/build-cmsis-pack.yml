@@ -22,7 +22,6 @@ on:
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
-      - backends/arm/cmsis_pack/scripts/**
       - backends/arm/runtime/**
       - backends/cortex_m/**
       - kernels/portable/**
@@ -33,7 +32,6 @@ on:
     paths:
       - .github/workflows/build-cmsis-pack.yml
       - backends/arm/cmsis_pack/**
-      - backends/arm/cmsis_pack/scripts/**
   workflow_dispatch:
     inputs:
       version_override:
