@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class MaxPool2d(torch.nn.Module):
@@ -43,7 +44,7 @@ class TestMaxPool2d(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -53,6 +54,23 @@ class TestMaxPool2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=inputs)
+        )
+
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_max_pool2d_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.2)
         )
 
     def test_fp32_max_pool2d(self):
@@ -70,3 +88,27 @@ class TestMaxPool2d(unittest.TestCase):
     def test_fp32_max_pool2d_with_dilation(self):
         inputs = (torch.randn(1, 16, 24, 24),)
         self._test(MaxPool2d(dilation=2), inputs)
+
+    def test_fp32_max_pool2d_with_stride(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test(MaxPool2d(stride=1), inputs)
+
+    def test_a8w8_max_pool2d(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(MaxPool2d(), inputs)
+
+    def test_a8w8_max_pool2d_with_padding(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(MaxPool2d(padding=1), inputs)
+
+    def test_a8w8_max_pool2d_with_kernel_size(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(MaxPool2d(kernel_size=4), inputs)
+
+    def test_a8w8_max_pool2d_with_dilation(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(MaxPool2d(dilation=2), inputs)
+
+    def test_a8w8_max_pool2d_with_stride(self):
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test_a8w8(MaxPool2d(stride=1), inputs)

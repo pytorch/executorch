@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class UpsampleBilinear2d(torch.nn.Module):
@@ -35,7 +36,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
         tester = SamsungTester(
             module,
             inputs,
-            [gen_samsung_backend_compile_spec("E9955")],
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
         )
         (
             tester.export()
@@ -49,6 +50,29 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=inputs)
         )
 
+    def _test_a8w8(self, module: torch.nn.Module, inputs):
+        tester = SamsungTester(
+            module,
+            inputs,
+            [gen_samsung_backend_compile_spec(TestConfig.chipset)],
+        )
+        (
+            tester.quantize()
+            .export()
+            .check_count({"torch.ops.aten.upsample_bilinear2d.vec": 1})
+            .to_edge_transform_and_lower()
+            .check_not(
+                ["executorch_exir_dialects_edge__ops_aten_upsample_bilinear2d_vec"]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs, atol=0.7, rtol=0.1)
+        )
+
     def test_fp32_upsample_bilinear2d(self):
         inputs = (torch.randn(1, 16, 16, 16),)
         self._test(UpsampleBilinear2d(), inputs)
+
+    def test_a8w8_upsample_bilinear2d(self):
+        inputs = (torch.randn(1, 16, 16, 16),)
+        self._test_a8w8(UpsampleBilinear2d(), inputs)

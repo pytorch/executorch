@@ -156,9 +156,18 @@ class InsertQDQPass(ExportPass):
             elif is_graph_output(node):
                 self._add_dq_after(graph_module, node)
 
+    def _add_q_for_cast(self, graph_module: GraphModule):
+        for node in list(graph_module.graph.nodes):
+            if not node.target == exir_ops.edge.aten._to_copy.default:
+                continue
+            if "quantize_attrs" not in node.meta:
+                continue
+            self._add_q_after(graph_module, node)
+
     def call(self, graph_module: GraphModule):
         self._add_qdq(graph_module)
         self._add_qdq_for_requantize(graph_module)
+        self._add_q_for_cast(graph_module)
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

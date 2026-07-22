@@ -14,6 +14,7 @@ from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
 from executorch.backends.samsung.test.tester import SamsungTester
+from executorch.backends.samsung.test.utils.utils import TestConfig
 
 
 class ConstantPadND(torch.nn.Module):
@@ -28,7 +29,7 @@ class ConstantPadND(torch.nn.Module):
 class TestConstantPadND(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
-            module, inputs, [gen_samsung_backend_compile_spec("E9955")]
+            module, inputs, [gen_samsung_backend_compile_spec(TestConfig.chipset)]
         )
         (
             tester.export()
