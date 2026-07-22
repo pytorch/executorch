@@ -109,6 +109,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FoldScalarMulIntoConvPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveClampsPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConsecutiveSlicesPass,
@@ -218,8 +219,9 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_pass = cast(Any, self.graph_pass)
+        has_exported_program_attr = hasattr(graph_pass, "exported_program")
         pass_exported_program = getattr(graph_pass, "exported_program", None)
-        if pass_exported_program is not None:
+        if has_exported_program_attr:
             # ExportedProgramPassManager works on a shallow copy; Arm graph
             # passes that store an ExportedProgram must update that copy.
             graph_pass.exported_program = exported_program
@@ -227,7 +229,7 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
         try:
             result = self.graph_pass(exported_program.graph_module)
         finally:
-            if pass_exported_program is not None:
+            if has_exported_program_attr:
                 graph_pass.exported_program = pass_exported_program
 
         if result is None:
@@ -504,6 +506,12 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 FoldAndAnnotateQParamsPass(exported_program),
+                # Both hardtanh and relu are normalized to clamp by
+                # ConvertToClampPass; after q/dq folding above, adjacent clamps
+                # (e.g. from HardTanh+ReLU) are directly connected and can be
+                # fused into a single clamp. Runs before QuantizeClampArgumentsPass
+                # so the min/max args are still float scalars.
+                FuseConsecutiveClampsPass(),
                 FuseDuplicateUsersPass(),
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
