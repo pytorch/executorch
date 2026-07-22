@@ -37,6 +37,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
     GridSampler2dModule,
 )
@@ -310,6 +311,39 @@ def _repeat_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("conv1d_dw")
+def _conv1d_dw_suite() -> WebGPUTestSuite:
+    # Depthwise 1D conv (aten.convolution, depthwise config); fp64 oracle.
+    def mk(C, kernel, stride, padding, dilation, bias):
+        return Conv1dDWModule(C, kernel, stride, padding, dilation, bias)
+
+    def case(name, C, L, kernel, stride, padding, dilation, bias):
+        return Case(
+            name=name,
+            construct={
+                "C": C,
+                "kernel": kernel,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=((1, C, L),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=mk,
+        cases=[
+            case("k3s1p1", 4, 8, 3, 1, 1, 1, True),
+            case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
+            case("dil2", 3, 10, 3, 1, 2, 2, True),
+            case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
