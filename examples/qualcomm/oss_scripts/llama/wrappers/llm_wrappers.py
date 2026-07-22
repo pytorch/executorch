@@ -241,9 +241,6 @@ class TextDecoder(Component):
                     # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
                     # See https://github.com/huggingface/transformers/pull/29402
                     state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
-            for k, v in state_dict.items():
-                if "tok_embeddings.weight" == k:
-                    state_dict[k] = v.float() * self.model_args.embedding_scale_factor
         else:
             state_dict = torch.load(
                 self.control_args.checkpoint,
@@ -469,7 +466,9 @@ class TextDecoder(Component):
             (self.meta["get_ar_len"], self.meta["get_head_dim"] // 2),
         }
 
-        freq_op = {exir_ops.edge.aten.select.int, exir_ops.edge.aten.select_copy.int}
+        freq_op = {
+            exir_ops.edge.aten.select.int,
+        }
         quant_io_type = None
 
         if node.op == "placeholder":
