@@ -60,6 +60,9 @@ from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
 from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_pw import (
     make_q8ta_conv2d_pw_module,
 )
+from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_dw import (
+    make_q8ta_conv2d_dw_module,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -875,6 +878,32 @@ def _q8ta_conv2d_pw_suite() -> WebGPUTestSuite:
             case("ic8", 8, 4, 4, 4),
             case("no_bias", 4, 8, 6, 8, bias=False),
             case("batch2", 4, 8, 6, 8, n=2),
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("q8ta_conv2d_dw")
+def _q8ta_conv2d_dw_suite() -> WebGPUTestSuite:
+    # Golden = XNNPACK-static-PT2E converted eager (fp32); depthwise, C%4==0,
+    # W_out%4==0 for output packing.
+    def case(name, c, k, h, w, n=1, **kw):
+        return Case(
+            name=name,
+            construct={"c": c, "k": k, "h": h, "w": w, "n": n, **kw},
+            inputs=((n, c, h, w),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: make_q8ta_conv2d_dw_module(**kw),
+        cases=[
+            case("k3", 8, 3, 8, 8),
+            case("no_bias", 8, 3, 8, 8, bias=False),
+            case("stride2", 8, 3, 8, 8, stride=2),
+            case("dil2", 8, 3, 8, 8, dilation=2, padding=2),
+            case("batch2", 8, 3, 8, 8, n=2),
         ],
         golden_dtype="float32",
         atol=1e-3,
