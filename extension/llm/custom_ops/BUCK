@@ -100,6 +100,9 @@ fbcode_target(_kind = runtime.python_test,
     preload_deps = [
         ":custom_ops_aot_lib_mkl_noomp",
         ":custom_ops_aot_py",
+        # The Python source transform calls
+        # `torch.ops.torchao._pack_8bit_act_4bit_weight` to pack each
+        # expert's INT4 weights, so preload the torchao AOT library too.
         "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
     ],
     deps = [
@@ -108,5 +111,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/examples/models/llama:llama_transformer",
         "//executorch/examples/models/llama:transformer_modules",
         "//executorch/examples/models/llama:source_transformation",
+        "//executorch/examples/models/llama:export_library",
+        "//executorch/extension/llm/export/config:llm_config",
     ],
 )

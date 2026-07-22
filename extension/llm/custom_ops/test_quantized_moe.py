@@ -585,3 +585,110 @@ class TestSharedExpert(unittest.TestCase):
         wrapper.m = moe
         replace_moe_with_quantized_op(wrapper, group_size=32, weight_nbit=4)
         self.assertIsNone(wrapper.m.shared_expert)
+
+
+class TestExportPipelineWiring(unittest.TestCase):
+    """The export pipeline correctly includes the MoE transform."""
+
+    def test_get_source_transforms_includes_moe_when_enabled(self) -> None:
+        from functools import partial
+
+        from executorch.examples.models.llama.export_llama_lib import (
+            _get_source_transforms,
+        )
+
+        transforms = _get_source_transforms(
+            dtype_override=torch.float32, use_moe_quantized_op=True
+        )
+        moe_transforms = [
+            t
+            for t in transforms
+            if isinstance(t, partial)
+            and t.func.__name__ == "replace_moe_with_quantized_op"
+        ]
+        self.assertEqual(len(moe_transforms), 1)
+        self.assertEqual(moe_transforms[0].keywords["group_size"], 32)
+        self.assertEqual(moe_transforms[0].keywords["weight_nbit"], 4)
+
+    def test_get_source_transforms_excludes_moe_when_disabled(self) -> None:
+        from functools import partial
+
+        from executorch.examples.models.llama.export_llama_lib import (
+            _get_source_transforms,
+        )
+
+        transforms = _get_source_transforms(
+            dtype_override=torch.float32, use_moe_quantized_op=False
+        )
+        moe_transforms = [
+            t
+            for t in transforms
+            if isinstance(t, partial)
+            and hasattr(t.func, "__name__")
+            and t.func.__name__ == "replace_moe_with_quantized_op"
+        ]
+        self.assertEqual(len(moe_transforms), 0)
+
+    def test_get_source_transforms_passes_custom_group_size(self) -> None:
+        from functools import partial
+
+        from executorch.examples.models.llama.export_llama_lib import (
+            _get_source_transforms,
+        )
+
+        transforms = _get_source_transforms(
+            dtype_override=torch.float32,
+            use_moe_quantized_op=True,
+            group_size=64,
+        )
+        moe_transforms = [
+            t
+            for t in transforms
+            if isinstance(t, partial)
+            and t.func.__name__ == "replace_moe_with_quantized_op"
+        ]
+        self.assertEqual(len(moe_transforms), 1)
+        self.assertEqual(moe_transforms[0].keywords["group_size"], 64)
+
+    def test_sentinel_op_is_registered(self) -> None:
+        self.assertTrue(hasattr(torch.ops.llama, "_quantized_moe_ffn_active"))
+        self.assertTrue(torch.ops.llama._quantized_moe_ffn_active())
+
+
+class TestLlmConfigMoeFlag(unittest.TestCase):
+    """llm_config wires the --use_moe_quantized_op flag correctly."""
+
+    def test_from_args_sets_flag(self) -> None:
+        import argparse
+
+        from executorch.extension.llm.export.config.llm_config import LlmConfig
+
+        args = argparse.Namespace(use_moe_quantized_op=True)
+        config = LlmConfig.from_args(args)
+        self.assertTrue(config.model.use_moe_quantized_op)
+
+    def test_default_is_false(self) -> None:
+        from executorch.extension.llm.export.config.llm_config import ModelConfig
+
+        self.assertFalse(ModelConfig().use_moe_quantized_op)
+
+    def test_from_args_missing_field_defaults_false(self) -> None:
+        import argparse
+
+        from executorch.extension.llm.export.config.llm_config import LlmConfig
+
+        args = argparse.Namespace()
+        config = LlmConfig.from_args(args)
+        self.assertFalse(config.model.use_moe_quantized_op)
+
+    def test_argparser_flag_true(self) -> None:
+        from executorch.examples.models.llama.export_llama_lib import build_args_parser
+
+        args = build_args_parser().parse_args(["--use_moe_quantized_op"])
+        self.assertTrue(args.use_moe_quantized_op)
+
+    def test_argparser_flag_default_false(self) -> None:
+        from executorch.examples.models.llama.export_llama_lib import build_args_parser
+
+        args = build_args_parser().parse_args([])
+        self.assertFalse(args.use_moe_quantized_op)
