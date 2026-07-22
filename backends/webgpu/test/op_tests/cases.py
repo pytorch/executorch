@@ -34,6 +34,9 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
+from executorch.backends.webgpu.test.ops.test_pow import PowModule
+from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -70,6 +73,17 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_unary_activations import (
+    _lin as _unary_lin,
+    CLAMP_CONFIGS,
+    ClampModule,
+    HARDTANH_CONFIGS,
+    HardtanhModule,
+    POW_SCALAR_CONFIGS,
+    PowScalarModule,
+    UNARY_G1,
+    UnaryModule,
+)
 from executorch.backends.webgpu.test.ops.test_unsqueeze import (
     CONFIGS as _UNSQUEEZE_CONFIGS,
     UnsqueezeModule,
@@ -173,6 +187,73 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
     )
+
+
+@register_op_test("minimum")
+def _minimum_suite() -> WebGPUTestSuite:
+    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    return WebGPUTestSuite(
+        module_factory=lambda: MinimumModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2), (M1, M2))),
+            Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+        ],
+    )
+
+
+@register_op_test("pow")
+def _pow_suite() -> WebGPUTestSuite:
+    # Positive base avoids pow(neg, frac)=NaN; exponent spans negative+positive.
+    return WebGPUTestSuite(
+        module_factory=lambda: PowModule(),
+        cases=[
+            Case(
+                name="2d",
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+            Case(
+                name="3d",
+                inputs=(
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+        ],
+    )
+
+
+def _reduce_suite(module_cls) -> WebGPUTestSuite:
+    # Last-dim reduction; both keepdim variants over a 2d and a 3d shape.
+    return WebGPUTestSuite(
+        module_factory=lambda keepdim: module_cls(keepdim),
+        cases=[
+            Case(name="keepdim_2d", construct={"keepdim": True}, inputs=((M1, M2),)),
+            Case(name="nodim_2d", construct={"keepdim": False}, inputs=((M1, M2),)),
+            Case(
+                name="keepdim_3d",
+                construct={"keepdim": True},
+                inputs=((S, S1, S2),),
+            ),
+            Case(
+                name="nodim_3d",
+                construct={"keepdim": False},
+                inputs=((S, S1, S2),),
+            ),
+        ],
+    )
+
+
+@register_op_test("amax")
+def _amax_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AmaxModule)
+
+
+@register_op_test("amin")
+def _amin_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AminModule)
 
 
 @register_op_test("view_copy")
@@ -285,4 +366,69 @@ def _cat_suite() -> WebGPUTestSuite:
             for n, (shapes, dim) in _CAT_CONFIGS.items()
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
+    )
+
+
+def _unary_g1_factory(torch_fn, gen):
+    # A per-op no-param-activation suite (mat + rank3), reused across UNARY_G1.
+    def _suite() -> WebGPUTestSuite:
+        return WebGPUTestSuite(
+            module_factory=lambda: UnaryModule(torch_fn),
+            cases=[
+                Case(name="mat", inputs=(InputSpec(shape=(M1, M2), gen=gen),)),
+                Case(name="rank3", inputs=(InputSpec(shape=(S1, M1, M2), gen=gen),)),
+            ],
+        )
+
+    return _suite
+
+
+for _g1_op, (_g1_fn, _g1_gen) in UNARY_G1.items():
+    register_op_test(_g1_op)(_unary_g1_factory(_g1_fn, _g1_gen))
+
+
+@register_op_test("clamp")
+def _clamp_suite() -> WebGPUTestSuite:
+    # min_none exercises the None -> -inf substitution in clamp_impl.
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: ClampModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in CLAMP_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("hardtanh")
+def _hardtanh_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=lambda lo, hi: HardtanhModule(lo, hi),
+        cases=[
+            Case(
+                name=n,
+                construct={"lo": lo, "hi": hi},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
+            )
+            for n, (lo, hi) in HARDTANH_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("pow_scalar")
+def _pow_scalar_suite() -> WebGPUTestSuite:
+    # Positive base: WGSL pow(neg base)=NaN for any exponent; exponent baked.
+    return WebGPUTestSuite(
+        module_factory=lambda exponent: PowScalarModule(exponent),
+        cases=[
+            Case(
+                name=n,
+                construct={"exponent": e},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 4.0)),),
+            )
+            for n, e in POW_SCALAR_CONFIGS.items()
+        ],
     )
