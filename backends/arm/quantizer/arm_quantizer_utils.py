@@ -38,6 +38,8 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
+NodeTarget = Callable[..., Any] | str
+
 if TYPE_CHECKING:
     from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
@@ -255,6 +257,13 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.conv_transpose2d.input,
     }
 
+    # These operands are parameters or mutable state, not activation inputs.
+    # Observing mutable state would redirect in-place updates to the observer
+    # output instead of the registered buffer.
+    UNOBSERVED_INPUT_INDICES: dict[NodeTarget, tuple[int, ...]] = {
+        torch.ops.aten.batch_norm.default: (1, 2, 3, 4),
+    }
+
     def __init__(
         self,
         quantization_config: QuantizationConfig | None,
@@ -319,6 +328,22 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
         return True
 
+    def is_unobserved_input(self, node: Node, input_node: Node) -> bool:
+        """Return whether an input must remain directly connected to state.
+
+        Args:
+            node: Consumer node whose positional inputs are inspected.
+            input_node: Input node being considered for quantization annotation.
+
+        Returns:
+            True when the input occupies an unobserved position for the target.
+
+        """
+        return any(
+            index < len(node.args) and input_node is node.args[index]
+            for index in self.UNOBSERVED_INPUT_INDICES.get(node.target, ())
+        )
+
     def annotate_match(
         self,
         match: list[Node],
@@ -326,6 +351,12 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
     ) -> None:
         """Annotates a matched pattern according to the given quantization
         config.
+
+        Args:
+            match: Nodes in the accepted pattern to annotate.
+            config: Quantization configuration for the pattern, or None to mark
+                its nodes as unquantized.
+
         """
 
         for node in match:
@@ -334,6 +365,8 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
             for input_node in node.all_input_nodes:
                 if not has_float_output(input_node):
+                    continue
+                if self.is_unobserved_input(node, input_node):
                     continue
                 if self.is_weight(input_node):
                     input_qspec_map[input_node] = (
@@ -476,6 +509,13 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.higher_order.while_loop,
         torch.ops.higher_order.cond,
     ]
+    _UINT8_IO_BRIDGE_OPS: set[Callable[..., object]] = {
+        torch.ops.aten.cat.default,
+        torch.ops.aten.concatenate.default,
+        torch.ops.aten.stack.default,
+        torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.slice.Tensor,
+    }
 
     def __init__(self, targets: Optional[list[Callable[..., object]]] = None) -> None:
         super().__init__()
@@ -565,11 +605,40 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         """
         return node.op in ("placeholder", "output") and self._is_annotated(node)
 
-    def _get_shared_clique(self, root_node: Node) -> tuple[set[Node], list[Any], bool]:
+    def _qspec_contains_uint8(self, qspec: Any) -> bool:
+        if isinstance(qspec, list):
+            return any(self._qspec_contains_uint8(element) for element in qspec)
+        return getattr(qspec, "dtype", None) == torch.uint8
+
+    def _is_uint8_quantized_io_boundary(self, node: Node) -> bool:
+        if node.op not in ("placeholder", "output") or not self._is_annotated(node):
+            return False
+
+        annotation = node.meta.get(Q_ANNOTATION_KEY)
+        if annotation is None:
+            return False
+
+        if self._qspec_contains_uint8(annotation.output_qspec):
+            return True
+
+        return any(
+            self._qspec_contains_uint8(qspec)
+            for qspec in annotation.input_qspec_map.values()
+        )
+
+    def _model_has_uint8_io(self, model: torch.fx.GraphModule) -> bool:
+        return any(
+            self._is_uint8_quantized_io_boundary(node) for node in model.graph.nodes
+        )
+
+    def _get_shared_clique(
+        self, root_node: Node
+    ) -> tuple[set[Node], list[Any], bool, bool]:
         shared_nodes = set()
         bfs_queue = [root_node]
         adjacent_qspecs: list[Any] = []
         touches_quantized_io = False
+        touches_uint8_quantized_io = False
 
         while bfs_queue:
             node = bfs_queue.pop(0)
@@ -579,13 +648,24 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
                 self._maybe_enqueue_shared_node(input_node, shared_nodes, bfs_queue)
                 self._append_output_qspec(input_node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(input_node)
+                touches_uint8_quantized_io |= self._is_uint8_quantized_io_boundary(
+                    input_node
+                )
 
             for output_node in node.users.keys():
                 self._maybe_enqueue_shared_node(output_node, shared_nodes, bfs_queue)
                 self._append_input_qspec(output_node, node, adjacent_qspecs)
                 touches_quantized_io |= self._is_quantized_io_boundary(output_node)
+                touches_uint8_quantized_io |= self._is_uint8_quantized_io_boundary(
+                    output_node
+                )
 
-        return shared_nodes, adjacent_qspecs, touches_quantized_io
+        return (
+            shared_nodes,
+            adjacent_qspecs,
+            touches_quantized_io,
+            touches_uint8_quantized_io,
+        )
 
     def _should_skip_while_shared_qspec(self, node: Node) -> bool:
         return node.target == torch.ops.higher_order.while_loop and bool(
@@ -640,9 +720,12 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
             )
             return
 
-        shared_nodes, adjacent_qspecs, touches_quantized_io = self._get_shared_clique(
-            root_node
-        )
+        (
+            shared_nodes,
+            adjacent_qspecs,
+            touches_quantized_io,
+            touches_uint8_quantized_io,
+        ) = self._get_shared_clique(root_node)
 
         # If there is no neighbor qspec to propagate but the cluster sits on the
         # quantized I/O boundary (e.g. a state-passthrough cat whose only neighbors
@@ -661,6 +744,15 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
 
         node_order = {node: index for index, node in enumerate(root_node.graph.nodes)}
         ordered_nodes = sorted(shared_nodes, key=lambda node: node_order.get(node, 0))
+
+        if touches_uint8_quantized_io and any(
+            node.target in self._UINT8_IO_BRIDGE_OPS for node in shared_nodes
+        ):
+            self.report_reject(
+                ordered_nodes,
+                "Shared-qspec bridge cluster touches uint8 model IO.",
+            )
+            return
 
         if self._annotate_while_with_additional_inputs(root_node, adjacent_qspecs):
             return

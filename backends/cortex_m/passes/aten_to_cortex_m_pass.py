@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+import operator
 from typing import cast, Optional
 
 import executorch.backends.cortex_m.ops.operators  # noqa
@@ -65,11 +66,17 @@ class AtenToCortexMPass(AtenToDialectPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
+        # RemoveGetItemPass converts max_pool2d_with_indices to max_pool2d. Models
+        # such as GoogleNet and SqueezeNet use configurations unsupported by the
+        # Cortex-M kernel, so restore the portable with-indices fallback for them.
+        max_pool_modified = _restore_max_pool2d_with_indices_fallback(
+            result.graph_module
+        )
 
         for node in result.graph_module.graph.nodes:
             self._initialize_alloc_node_size(node)
 
-        return result
+        return PassResult(result.graph_module, result.modified or max_pool_modified)
 
     def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
         """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
@@ -105,6 +112,76 @@ def _create_uninitialized_alloc_node(
                 mode.from_tensor(torch.empty(0)),
                 None,
             )
+
+
+def _first_meta_value(value):
+    if isinstance(value, (tuple, list)):
+        return value[0]
+    return value
+
+
+def _indices_meta_value(output_value):
+    return output_value.new_empty(output_value.shape, dtype=torch.int64)
+
+
+def _indices_tensor_meta(output_tensor_meta):
+    if output_tensor_meta is None:
+        return None
+    return output_tensor_meta._replace(
+        dtype=torch.int64, is_quantized=False, qparams={}
+    )
+
+
+def _restore_max_pool2d_with_indices_fallback(
+    graph_module: torch.fx.GraphModule,
+) -> bool:
+    modified = False
+    for node in list(graph_module.graph.nodes):
+        if (
+            node.op != "call_function"
+            or node.target != exir_ops.edge.aten.max_pool2d.default
+        ):
+            continue
+
+        output_value = _first_meta_value(node.meta.get("val"))
+        output_tensor_meta = _first_meta_value(node.meta.get("tensor_meta"))
+
+        with graph_module.graph.inserting_before(node):
+            max_pool_with_indices = graph_module.graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.max_pool2d_with_indices.default,
+                args=node.args,
+                kwargs=node.kwargs,
+            )
+            getitem = graph_module.graph.create_node(
+                "call_function",
+                operator.getitem,
+                args=(max_pool_with_indices, 0),
+                kwargs={},
+            )
+
+        max_pool_with_indices.meta = dict(node.meta)
+        max_pool_with_indices.meta["val"] = (
+            output_value,
+            _indices_meta_value(output_value),
+        )
+        max_pool_with_indices.meta["tensor_meta"] = (
+            output_tensor_meta,
+            _indices_tensor_meta(output_tensor_meta),
+        )
+        getitem.meta = dict(node.meta)
+        getitem.meta["val"] = output_value
+        getitem.meta["tensor_meta"] = output_tensor_meta
+
+        node.replace_all_uses_with(getitem)
+        graph_module.graph.erase_node(node)
+        modified = True
+
+    if modified:
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+
+    return modified
 
 
 _SOFTMAX_INPUT_INTEGER_BITS = 5

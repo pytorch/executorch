@@ -474,8 +474,12 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
         8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
         16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
     },
-    # grid_sampler image input/output use SNORM-compatible qparams. The grid
-    # coordinate tensor is intentionally left unquantized.
+    # grid_sampler image input/output use SNORM-compatible qparams. Input 1
+    # follows the standard activation qspec, but the supported VGF lowering
+    # modes are still only:
+    # - float image / float grid / float output
+    # - int8 image / int8 grid / int8 output
+    # Mixed int8-image / float-grid shader lowering is not supported.
     torch.ops.aten.grid_sampler.default: {
         8: _QParams(1.0 / 127.0, 0, -127, 127),
     },
@@ -824,13 +828,21 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target == torch.ops.aten.grid_sampler.default:
         image_node = ensure_type(Node, node.args[0])
+        grid_node = ensure_type(Node, node.args[1])
         grid_sampler_image_qspec = quantization_config.get_input_act_qspec(
             node, image_node
+        )
+        grid_sampler_grid_qspec = quantization_config.get_input_act_qspec(
+            node, grid_node
         )
         grid_sampler_output_qspec = quantization_config.get_output_act_qspec(node)
         if grid_sampler_image_qspec is None or grid_sampler_output_qspec is None:
             return None
         quant_properties.quant_inputs = [_QuantProperty(0, grid_sampler_image_qspec)]
+        if grid_sampler_grid_qspec is not None:
+            quant_properties.quant_inputs.append(
+                _QuantProperty(1, grid_sampler_grid_qspec)
+            )
         quant_properties.quant_output = _QuantProperty(0, grid_sampler_output_qspec)
     elif node.target in (torch.ops.aten.where.self,):
         true_node = ensure_type(Node, node.args[1])

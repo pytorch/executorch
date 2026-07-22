@@ -99,6 +99,7 @@ from executorch.backends.arm._passes import (
     DecomposeTOSAUnsupportedClampPass,
     DecomposeTrilPass,
     DecomposeUnfoldToGatherPass,
+    DecomposeUnsupportedBilinearResizePass,
     DecomposeVarPass,
     DecomposeWhereScalarOtherPass,
     DecorateFp32toInt32CastingPass,
@@ -106,7 +107,9 @@ from executorch.backends.arm._passes import (
     EnsureUniqueOutputNodesPass,
     ExirToTosaPass,
     FoldAndAnnotateQParamsPass,
+    FoldScalarMulIntoConvPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveClampsPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConsecutiveSlicesPass,
@@ -215,8 +218,9 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_pass = cast(Any, self.graph_pass)
+        has_exported_program_attr = hasattr(graph_pass, "exported_program")
         pass_exported_program = getattr(graph_pass, "exported_program", None)
-        if pass_exported_program is not None:
+        if has_exported_program_attr:
             # ExportedProgramPassManager works on a shallow copy; Arm graph
             # passes that store an ExportedProgram must update that copy.
             graph_pass.exported_program = exported_program
@@ -224,7 +228,7 @@ class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
         try:
             result = self.graph_pass(exported_program.graph_module)
         finally:
-            if pass_exported_program is not None:
+            if has_exported_program_attr:
                 graph_pass.exported_program = pass_exported_program
 
         if result is None:
@@ -501,6 +505,12 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 FoldAndAnnotateQParamsPass(exported_program),
+                # Both hardtanh and relu are normalized to clamp by
+                # ConvertToClampPass; after q/dq folding above, adjacent clamps
+                # (e.g. from HardTanh+ReLU) are directly connected and can be
+                # fused into a single clamp. Runs before QuantizeClampArgumentsPass
+                # so the min/max args are still float scalars.
+                FuseConsecutiveClampsPass(),
                 FuseDuplicateUsersPass(),
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
@@ -599,6 +609,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
                 SizeAdjustInputPass(),
+                DecomposeUnsupportedBilinearResizePass(self.tosa_spec),
                 RewriteAdaptiveAvgPool2dPass(),
                 RewriteAvgPool2dPass(),
                 ComputeConstantOpsAOTPass(exported_program),
@@ -621,6 +632,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 RewriteUpsamplePass(),
                 RewriteMaxPool2dPass(),
                 DecomposeAdaptiveMaxPool2dPass(),
+                FoldScalarMulIntoConvPass(exported_program),
                 RewriteConvPass(exported_program),
                 RewriteMXFPConv2dPass(exported_program),
                 RewriteMXFPLinearPass(exported_program),
@@ -629,6 +641,9 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseViewCopyTransformPass(),
                 PropagateViewCopyPermuteDownPass(self.compile_spec, exported_program),
                 PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
+                # Propagation can leave a binary op with mismatched operand ranks,
+                # which TOSA rejects; re-match ranks before lowering.
+                MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
@@ -692,6 +707,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     ConvertInt64ConstOpsToInt32Pass(tfa_pass=True),
                     ConvertInt64OutputOpsToInt32Pass(tfa_pass=True),
                     InsertInt32CastsAfterInt64PlaceholdersPass(tfa_pass=True),
+                    FoldScalarMulIntoConvPass(tfa_pass=True),
                     DecomposeEmbeddingPass(tfa_pass=True),
                     DecomposeScaledDotProductAttentionPass(tfa_pass=True),
                     DecomposeLogitPass(tfa_pass=True),
