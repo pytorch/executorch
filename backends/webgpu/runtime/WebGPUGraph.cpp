@@ -465,6 +465,11 @@ void add_qkv_bk64_resize_hook(WebGPUGraph& graph, const QkvBk64Fusion& fusion) {
         ? ((m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile)
         : 0u;
     fused.workgroup_count_y = use_fused ? 1u : 0u;
+    // Only the fused path zeros the separate q/k/v dispatches. When !use_fused
+    // they are left as-is: each separate projection's own resize hook is
+    // registered on this same input_id and runs before this (last-registered)
+    // hook, re-setting its live-M workgroup count every resize. So a prior
+    // fused invocation's zeros are always overwritten before this hook runs.
     if (use_fused) {
       for (size_t member = 0; member < separate_begin.size(); member++) {
         for (size_t i = separate_begin[member]; i < separate_end[member]; i++) {
@@ -1480,7 +1485,9 @@ void WebGPUGraph::build(
       swiglu_anchors[fusion.mul2_op] = fusion_idx;
       swiglu_skipped_ops.insert(fusion.sigmoid_op);
       swiglu_skipped_ops.insert(fusion.mul1_op);
-      swiglu_skipped_ops.insert(fusion.mul2_op);
+      // mul2_op is the fusion anchor: its Phase-3 branch emits the fused
+      // dispatch and continues before the skipped-ops check, so it needs no
+      // swiglu_skipped_ops entry.
       for (unsigned op : pattern_ops) {
         claimed_ops.insert(op);
       }
@@ -1727,6 +1734,12 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
 }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+// Profiling/attestation only; never compiled into a production build. Written
+// during WebGPUGraph::execute without synchronization: the attestation
+// harnesses that read them run one graph on one thread, so no atomics or
+// locking are needed. To support concurrent profiled execution, make these
+// per-instance behind a whole-record mutex (per-field atomics would not cover
+// the conflict check's read-modify-write across both globals).
 uint32_t g_last_route_mask = 0;
 uint32_t g_last_route_conflict_count = 0;
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -1742,6 +1755,7 @@ constexpr uint32_t kRouteT1Bk64Qkv = 1u << 5;
 constexpr uint32_t kRouteT2PairedGateUp = 1u << 6;
 constexpr uint32_t kRouteFusedSwiGlu = 1u << 7;
 constexpr uint32_t kRouteGenericFallback = 1u << 8;
+// bit 1u << 9 is intentionally reserved (a retired route) and left unused.
 constexpr uint32_t kRouteFlashDecoding = 1u << 10;
 constexpr uint32_t kRouteK16CausalBound = 1u << 11;
 constexpr uint32_t kRouteBicolSubgroup = 1u << 12;

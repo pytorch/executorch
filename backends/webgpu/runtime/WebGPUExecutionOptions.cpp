@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace executorch::backends::webgpu {
@@ -52,21 +53,25 @@ WebGPUExecutionPlan plan_webgpu_execution(
     if (output.output_ordinal >= output_count ||
         output.dispatch_begin >= output.dispatch_end ||
         output.dispatch_end > dispatch_count) {
-      throw std::runtime_error("WebGPU: invalid suppressible output range");
+      throw std::runtime_error(
+          "WebGPU: invalid suppressible output range (output_id " +
+          std::to_string(output.output_id) + ")");
     }
     if (suppressed_outputs[output.output_ordinal]) {
-      throw std::runtime_error("WebGPU: duplicate suppressible output");
+      throw std::runtime_error(
+          "WebGPU: duplicate suppressible output (output_id " +
+          std::to_string(output.output_id) + ")");
     }
     suppressed_outputs[output.output_ordinal] = true;
     if (output.output_ordinal != options.suppress_output_ordinal) {
       continue;
     }
     copy_outputs[output.output_ordinal] = false;
+    // Only the one ordinal matching suppress_output_ordinal reaches here (the
+    // duplicate check above rejects a repeat), so its dispatch range is
+    // disjoint by construction — mark it suppressed without a redundant overlap
+    // check.
     for (size_t i = output.dispatch_begin; i < output.dispatch_end; i++) {
-      if (suppressed_dispatches[i]) {
-        throw std::runtime_error(
-            "WebGPU: overlapping suppressible dispatch ranges");
-      }
       suppressed_dispatches[i] = true;
     }
   }

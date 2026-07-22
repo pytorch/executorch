@@ -183,6 +183,8 @@ void run_linear(
       << prefix << " M=" << m_rows << " max_abs=" << max_abs
       << " max_rel=" << max_rel << " tolerances=" << atol << "/" << rtol;
   if (nrmse_limit > 0.0f) {
+    ASSERT_GT(golden_sq_sum, 0.0)
+        << prefix << " M=" << m_rows << " zero golden norm (NRMSE undefined)";
     const double nrmse = std::sqrt(error_sq_sum / golden_sq_sum);
     EXPECT_LT(nrmse, nrmse_limit)
         << prefix << " M=" << m_rows << " full-output NRMSE";
@@ -203,6 +205,8 @@ void run_linear(
       tail_error_sq_sum += error * error;
       tail_golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
     }
+    ASSERT_GT(tail_golden_sq_sum, 0.0)
+        << prefix << " M=" << m_rows << " zero final-row golden norm";
     const double tail_nrmse = std::sqrt(tail_error_sq_sum / tail_golden_sq_sum);
     EXPECT_LT(tail_nrmse, tail_nrmse_limit)
         << prefix << " M=" << m_rows << " final-row NRMSE";
@@ -273,8 +277,10 @@ void expect_bk64_tensor(
     }
   }
   EXPECT_TRUE(within_tolerance) << label << " hybrid tolerance";
+  ASSERT_GT(golden_sq_sum, 0.0) << label << " zero golden norm";
   EXPECT_LT(std::sqrt(error_sq_sum / golden_sq_sum), kBk64Nrmse)
       << label << " full-output NRMSE";
+  ASSERT_GT(tail_golden_sq_sum, 0.0) << label << " zero final-row golden norm";
   EXPECT_LT(std::sqrt(tail_error_sq_sum / tail_golden_sq_sum), kBk64TailNrmse)
       << label << " final-row NRMSE";
 
@@ -415,8 +421,7 @@ void run_sdpa_case(
     int hkv,
     int d,
     int cmax,
-    float max_error_limit = 2e-3f,
-    bool check_causal_boundaries = false) {
+    float max_error_limit = 2e-3f) {
   const std::string b = g_dir + "/" + prefix + ".S" + std::to_string(s) + ".";
   auto q = read_bin(b + "q.bin");
   auto k = read_bin(b + "k.bin");
@@ -456,20 +461,6 @@ void run_sdpa_case(
   const float e = max_err(got, golden);
   EXPECT_LT(e, max_error_limit)
       << prefix << " S=" << s << " full-output max_err=" << e;
-  if (check_causal_boundaries) {
-    const size_t token_width = static_cast<size_t>(hq) * d;
-    for (int token : {0, std::min(15, s - 1), std::min(16, s - 1), s - 1}) {
-      const size_t begin = static_cast<size_t>(token) * token_width;
-      const size_t end = begin + token_width;
-      float token_error = 0.0f;
-      for (size_t i = begin; i < end; ++i) {
-        token_error = std::fmax(token_error, std::fabs(got[i] - golden[i]));
-      }
-      EXPECT_LT(token_error, max_error_limit)
-          << prefix << " S=" << s << " causal token=" << token
-          << " max_err=" << token_error;
-    }
-  }
 }
 
 void run_sdpa(Module& m, int s) {
@@ -1135,13 +1126,14 @@ TEST(DynamicShape, QuantizedLinearBk64QkvProfileSoleWriter) {
   struct NegativeRoute {
     const char* fixture;
     int q_width;
+    int k_width;
     bool separate_v_input;
   };
   for (const auto& negative : std::vector<NegativeRoute>{
-           {"dyn_qkv_bk64_group32", kBk64N, false},
-           {"dyn_qkv_bk64_bias", kBk64N, false},
-           {"dyn_qkv_bk64_wrong_width", kBk64N, false},
-           {"dyn_qkv_bk64_different_input", kBk64N, true}}) {
+           {"dyn_qkv_bk64_group32", kBk64N, kBk64KvN, false},
+           {"dyn_qkv_bk64_bias", kBk64N, kBk64KvN, false},
+           {"dyn_qkv_bk64_wrong_width", kBk64N, kBk64N, false},
+           {"dyn_qkv_bk64_different_input", kBk64N, kBk64KvN, true}}) {
     Module module(g_dir + "/" + negative.fixture + ".pte");
     ASSERT_EQ(module.load_forward(), Error::Ok) << negative.fixture;
     run_bk64_qkv(
@@ -1149,9 +1141,7 @@ TEST(DynamicShape, QuantizedLinearBk64QkvProfileSoleWriter) {
         128,
         negative.fixture,
         negative.q_width,
-        std::string(negative.fixture).find("wrong_width") != std::string::npos
-            ? kBk64N
-            : kBk64KvN,
+        negative.k_width,
         kBk64KvN,
         negative.separate_v_input);
     const auto names = q4_profiles();
