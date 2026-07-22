@@ -730,7 +730,7 @@ class LlamaModel(nn.Module):
             self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
 
-        hidden_states = self.tok_embeddings(tokens)
+        hidden_states = self.embedding_scale_factor * self.tok_embeddings(tokens)
 
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
@@ -865,11 +865,7 @@ class LlamaModelWithoutEmbedding(LlamaModel):
             self.freqs_sin[input_pos][0] if self.use_kv_cache else self.freqs_sin
         )
 
-        hidden_states = (
-            self.embedding_scale_factor * hidden_states
-            if self.embedding_scale_factor != 1.0
-            else hidden_states
-        )
+        hidden_states = self.embedding_scale_factor * hidden_states
 
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
@@ -1028,8 +1024,7 @@ class MultiScopeAwareLlamaModel(LlamaModel):
             else self.local_freqs_sin
         )
 
-        hidden_states = self.tok_embeddings(tokens)
-
+        hidden_states = self.embedding_scale_factor * self.tok_embeddings(tokens)
         for ind, decoder_layer in enumerate(self.layers):
             k_caches = None
             v_caches = None
