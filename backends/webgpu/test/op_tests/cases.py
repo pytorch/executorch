@@ -34,6 +34,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -181,6 +182,18 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
             for n, (shape, fn) in configs.items()
         ],
         golden_dtype="float32",  # gather/copy: fp64 bit-identical, skip dual-oracle
+    )
+
+
+@register_op_test("minimum")
+def _minimum_suite() -> WebGPUTestSuite:
+    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    return WebGPUTestSuite(
+        module_factory=lambda: MinimumModule(),
+        cases=[
+            Case(name="2d", inputs=((M1, M2), (M1, M2))),
+            Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+        ],
     )
 
 
