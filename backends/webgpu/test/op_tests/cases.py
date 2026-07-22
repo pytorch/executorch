@@ -49,6 +49,7 @@ from executorch.backends.webgpu.test.ops.test_quant import (
     DequantizeConstModule,
     QuantizeModule,
 )
+from executorch.backends.webgpu.test.ops.test_q8ta_add import Q8taAddModule
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -756,6 +757,29 @@ def _quantize_suite() -> WebGPUTestSuite:
                 construct={"scale": 0.05, "zero_point": 0},
                 inputs=(InputSpec(shape=(16,), gen=_ties),),
             ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+# span the int8 sign-extend + requant-clamp edges (-128/127); numel % 4 == 0.
+_Q8_A = [-128, 127, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7]
+_Q8_B = [-128, 127, 0, 1, -1, 50, -50, 100, -100, 3, -3, 42, -42, 9, -9, 63]
+
+
+@register_op_test("q8ta_add")
+def _q8ta_add_suite() -> WebGPUTestSuite:
+    # int8 add (baked int8 consts), byte-exact vs CPU eager. `alpha` case pins the
+    # a + alpha*b term (the Vulkan glsl buffer path drops alpha).
+    def case(name, **kw):
+        return Case(name=name, construct={"a_vals": _Q8_A, "b_vals": _Q8_B, **kw})
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: Q8taAddModule(**kw),
+        cases=[
+            case("basic"),
+            case("alpha", alpha=2.0),
+            case("nonzero_zp", a_zp=5, b_zp=-4, out_zp=7),
         ],
         golden_dtype="float32",
     )
