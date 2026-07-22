@@ -37,6 +37,9 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
+    GridSampler2dModule,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -307,6 +310,25 @@ def _repeat_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("grid_sampler_2d")
+def _grid_sampler_2d_suite() -> WebGPUTestSuite:
+    # Bilinear grid sample (border, align_corners); real fp math -> fp64 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda: GridSampler2dModule(),
+        cases=[
+            Case(name="sq", construct={}, inputs=((1, 2, 4, 4), (1, 3, 3, 2))),
+            Case(
+                name="wide_in",
+                construct={},
+                inputs=((1, 1, 3, 5), (1, 4, 4, 2)),
+            ),
+            Case(name="batch", construct={}, inputs=((2, 3, 4, 4), (2, 2, 6, 2))),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
