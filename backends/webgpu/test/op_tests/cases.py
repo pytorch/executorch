@@ -51,6 +51,9 @@ from executorch.backends.webgpu.test.ops.test_quant import (
 )
 from executorch.backends.webgpu.test.ops.test_q8ta_add import Q8taAddModule
 from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
+from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
+    Q8taPixelShuffleModule,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -799,6 +802,28 @@ def _q8ta_relu_suite() -> WebGPUTestSuite:
             case("basic"),
             case("diff_qparams", output_scale=0.08, output_zp=5),
             case("nonzero_zp", input_zp=10, output_zp=-20),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("q8ta_pixel_shuffle")
+def _q8ta_pixel_shuffle_suite() -> WebGPUTestSuite:
+    # int8 pixel_shuffle (baked int8 const), byte-exact vs CPU eager. Same-qparams
+    # is a pure gather; diff_qparams exercises the dequant->requant rescale.
+    def case(name, n_ch, h, w, **kw):
+        n = n_ch * h * w  # [1, n_ch, h, w], n_ch = C*r*r
+        vals = [((i % 251) - 125) for i in range(n)]  # spread across int8 range
+        return Case(name=name, construct={"x_vals": vals, "shape": (1, n_ch, h, w), **kw})
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: Q8taPixelShuffleModule(**kw),
+        cases=[
+            case("basic", 4, 2, 2),  # r=2, C=1 -> [1,1,4,4]
+            case("c2", 8, 2, 2),  # r=2, C=2 -> [1,2,4,4]
+            case("r3", 9, 2, 2, upscale_factor=3),  # r=3, C=1 -> [1,1,6,6]
+            case("diff_qparams", 4, 3, 3, output_scale=0.08, output_zp=5),
+            case("nonzero_zp", 4, 2, 2, input_zp=10, output_zp=-20),
         ],
         golden_dtype="float32",
     )
