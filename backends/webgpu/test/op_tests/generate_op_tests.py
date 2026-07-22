@@ -75,8 +75,10 @@ def _write_fp32(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<f4").tofile(path)
 
 
-def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
-    """Export one case, write its .pte + input/golden .bin, return its manifest entry."""
+def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[dict]:
+    """Export one case; write its .pte + input/golden .bin(s). Returns one manifest
+    entry per output tensor (multi-output ops emit N; single-output ops emit one,
+    byte-identical to the pre-multi-output form)."""
     module, inputs, prog = export_case(suite, case)
     if not _has_vulkan_delegate(prog):
         msg = (
@@ -87,11 +89,9 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
             raise RuntimeError(msg)
         print(f"WARNING: {msg}")
     golden_dtype = getattr(suite, "golden_dtype", "float64")
-    out_index = 0
     with torch.no_grad():
         # fp32 eager is the dual-oracle reference; compute it BEFORE any .double().
         eager = module(*inputs)
-        eager_t = eager[out_index] if isinstance(eager, (tuple, list)) else eager
         if case.golden_fn is not None:
             golden = case.golden_fn(module, inputs)
         elif golden_dtype == "float64":
@@ -100,16 +100,10 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
             golden = double_module(*[x.double() for x in inputs])
         else:
             golden = eager  # gather/copy: fp64 is bit-identical, skip it
-    golden_t = golden[out_index] if isinstance(golden, (tuple, list)) else golden
-    out_t = golden_t.to(torch.float32)
+    eager_outs = list(eager) if isinstance(eager, (tuple, list)) else [eager]
+    golden_outs = list(golden) if isinstance(golden, (tuple, list)) else [golden]
     atol = case.atol if case.atol is not None else suite.atol
     rtol = case.rtol if case.rtol is not None else suite.rtol
-    # Dual-oracle gate: the fp64 golden must match the fp32 eager within tol — proves
-    # the oracle isn't itself buggy. Skipped for float32 suites.
-    if golden_dtype == "float64" and case.golden_fn is None:
-        torch.testing.assert_close(
-            eager_t.to(torch.float32), out_t, atol=atol, rtol=rtol
-        )
 
     case_id = f"{op}__{case.name or 'case'}"
     pte_rel = f"{case_id}.pte"
@@ -122,25 +116,39 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> dict:
         _write_fp32(t, os.path.join(out_dir, rel))
         input_entries.append({"path": rel, "shape": list(t.shape), "dtype": "float32"})
 
-    golden_rel = f"{case_id}.golden.bin"
-    _write_fp32(out_t, os.path.join(out_dir, golden_rel))
-
-    return {
-        "op": op,
-        "case": case.name or "case",
-        "pte": pte_rel,
-        "inputs": input_entries,
-        "golden": {
-            "path": golden_rel,
-            "shape": list(out_t.shape),
-            "dtype": "float32",
-            "output_index": out_index,
-        },
-        "atol": atol,
-        "rtol": rtol,
-        "required": case.required,
-        "heavy": case.heavy,
-    }
+    entries: list[dict] = []
+    n_out = len(golden_outs)
+    for out_index in range(n_out):
+        out_t = golden_outs[out_index].to(torch.float32)
+        # Dual-oracle gate: the fp64 golden must match the fp32 eager within tol —
+        # proves the oracle isn't itself buggy. Skipped for float32 suites.
+        if golden_dtype == "float64" and case.golden_fn is None:
+            torch.testing.assert_close(
+                eager_outs[out_index].to(torch.float32), out_t, atol=atol, rtol=rtol
+            )
+        # Single-output ops keep the original name/golden; multi-output ops suffix.
+        suffix = f"_out{out_index}" if n_out > 1 else ""
+        golden_rel = f"{case_id}{suffix}.golden.bin"
+        _write_fp32(out_t, os.path.join(out_dir, golden_rel))
+        entries.append(
+            {
+                "op": op,
+                "case": f"{case.name or 'case'}{suffix}",
+                "pte": pte_rel,
+                "inputs": input_entries,
+                "golden": {
+                    "path": golden_rel,
+                    "shape": list(out_t.shape),
+                    "dtype": "float32",
+                    "output_index": out_index,
+                },
+                "atol": atol,
+                "rtol": rtol,
+                "required": case.required,
+                "heavy": case.heavy,
+            }
+        )
+    return entries
 
 
 def generate(
@@ -167,7 +175,7 @@ def generate(
             if case.heavy and not heavy_enabled:
                 # Export-gated: omitted from the default manifest (set WEBGPU_TEST_HEAVY).
                 continue
-            entries.append(generate_case(op, suite, case, out_dir))
+            entries.extend(generate_case(op, suite, case, out_dir))
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(entries, f, indent=2)
     return entries

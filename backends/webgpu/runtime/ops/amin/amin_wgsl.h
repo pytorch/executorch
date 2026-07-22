@@ -12,14 +12,15 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 557a9ca337edf26863fc29db2cf2db4e783131ca89254c052eb4600764ef7a35
-inline constexpr const char* kSigmoidWGSL = R"(
+// @generated from amin.wgsl - DO NOT EDIT.
+// wgsl-sha256: 974a28fd80f089c8a52bf54d73f3bd03c195b2f9d7904bb4c31e6545813e0459
+inline constexpr const char* kAminWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
 struct Params {
-  num_elements: u32,
+  num_rows: u32,
+  reduce_size: u32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
@@ -29,16 +30,21 @@ override wg_size: u32 = 256u;
 fn main(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
-    if (idx >= params.num_elements) {
+    let row = gid.x + gid.y * (num_workgroups.x * wg_size);
+    if (row >= params.num_rows) {
         return;
     }
-    output[idx] = 1.0 / (1.0 + exp(-input[idx]));
+    let base = row * params.reduce_size;
+    var acc = input[base];
+    for (var j = 1u; j < params.reduce_size; j = j + 1u) {
+        acc = min(acc, input[base + j]);
+    }
+    output[row] = acc;
 }
 )";
 
-inline constexpr uint32_t kSigmoidWorkgroupSizeX = 256;
-inline constexpr uint32_t kSigmoidWorkgroupSizeY = 1;
-inline constexpr uint32_t kSigmoidWorkgroupSizeZ = 1;
+inline constexpr uint32_t kAminWorkgroupSizeX = 256;
+inline constexpr uint32_t kAminWorkgroupSizeY = 1;
+inline constexpr uint32_t kAminWorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
