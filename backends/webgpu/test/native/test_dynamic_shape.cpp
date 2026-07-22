@@ -137,7 +137,11 @@ void run_linear(
     int m_rows,
     const char* prefix,
     int n,
-    int k = kLinK) {
+    int k = kLinK,
+    float atol = 5e-3f,
+    float rtol = 0.0f,
+    float nrmse_limit = -1.0f,
+    float tail_nrmse_limit = -1.0f) {
   const std::string base = g_dir + "/" + prefix + ".S" + std::to_string(m_rows);
   auto input = read_bin(base + ".input.bin");
   auto golden = read_bin(base + ".golden.bin");
@@ -152,9 +156,56 @@ void run_linear(
       << prefix << " M=" << m_rows << " output numel mismatch";
   std::vector<float> got(
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
-  const float e = max_err(got, golden);
-  // 4-bit quant: looser tol (the kernel mirrors the dequant-matmul reference).
-  EXPECT_LT(e, 5e-3f) << prefix << " M=" << m_rows << " max_err=" << e;
+  ASSERT_EQ(got.size(), golden.size());
+  float max_abs = 0.0f;
+  float max_rel = 0.0f;
+  double error_sq_sum = 0.0;
+  double golden_sq_sum = 0.0;
+  bool within_tolerance = true;
+  for (size_t i = 0; i < got.size(); ++i) {
+    ASSERT_TRUE(std::isfinite(got[i]))
+        << prefix << " M=" << m_rows << " i=" << i;
+    ASSERT_TRUE(std::isfinite(golden[i]))
+        << prefix << " M=" << m_rows << " golden i=" << i;
+    const float abs_err = std::fabs(got[i] - golden[i]);
+    const float rel_err = abs_err / std::fmax(std::fabs(golden[i]), 1e-6f);
+    max_abs = std::fmax(max_abs, abs_err);
+    max_rel = std::fmax(max_rel, rel_err);
+    if (abs_err > atol && rel_err > rtol) {
+      within_tolerance = false;
+    }
+    error_sq_sum += static_cast<double>(abs_err) * abs_err;
+    golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
+  }
+  EXPECT_TRUE(within_tolerance)
+      << prefix << " M=" << m_rows << " max_abs=" << max_abs
+      << " max_rel=" << max_rel << " tolerances=" << atol << "/" << rtol;
+  if (nrmse_limit > 0.0f) {
+    const double nrmse = std::sqrt(error_sq_sum / golden_sq_sum);
+    EXPECT_LT(nrmse, nrmse_limit)
+        << prefix << " M=" << m_rows << " full-output NRMSE";
+    std::printf(
+        "%s M=%d max_abs=%g max_rel=%g nrmse=%g\n",
+        prefix,
+        m_rows,
+        max_abs,
+        max_rel,
+        nrmse);
+  }
+  if (tail_nrmse_limit > 0.0f) {
+    double tail_error_sq_sum = 0.0;
+    double tail_golden_sq_sum = 0.0;
+    const size_t tail_begin = static_cast<size_t>(m_rows - 1) * n;
+    for (size_t i = tail_begin; i < got.size(); ++i) {
+      const double error = static_cast<double>(got[i]) - golden[i];
+      tail_error_sq_sum += error * error;
+      tail_golden_sq_sum += static_cast<double>(golden[i]) * golden[i];
+    }
+    const double tail_nrmse = std::sqrt(tail_error_sq_sum / tail_golden_sq_sum);
+    EXPECT_LT(tail_nrmse, tail_nrmse_limit)
+        << prefix << " M=" << m_rows << " final-row NRMSE";
+    std::printf("%s M=%d final_row_nrmse=%g\n", prefix, m_rows, tail_nrmse);
+  }
 }
 
 void check_linear(int m_rows) {
@@ -173,6 +224,33 @@ void check_linear_tiled(int m_rows) {
   Module m(g_dir + "/dyn_linear_tiled.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear_tiled.pte";
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
+}
+
+constexpr int kBk64K = 2048;
+constexpr int kBk64N = 2048;
+constexpr int kBk64KvN = 512;
+constexpr int kBk64GateN = 8192;
+constexpr int kBk64DownK = 8192;
+constexpr float kBk64Atol = 5e-2f;
+constexpr float kBk64Rtol = 3e-2f;
+constexpr float kBk64Nrmse = 7.5e-3f;
+constexpr float kBk64TailNrmse = 1e-2f;
+constexpr float kBk64DownAtol = 5e-2f;
+constexpr float kBk64DownRtol = 8e-2f;
+constexpr float kBk64DownNrmse = 1.5e-2f;
+constexpr float kBk64DownTailNrmse = 2e-2f;
+
+void run_bk64_linear(
+    Module& module,
+    int m_rows,
+    const char* prefix,
+    int k = kBk64K,
+    int n = kBk64N,
+    float atol = kBk64Atol,
+    float rtol = kBk64Rtol,
+    float nrmse = kBk64Nrmse,
+    float tail_nrmse = kBk64TailNrmse) {
+  run_linear(module, m_rows, prefix, n, k, atol, rtol, nrmse, tail_nrmse);
 }
 
 constexpr int kSwiGluWidth = 8192;
@@ -600,7 +678,145 @@ TEST(DynamicShape, QuantizedLinearTiledReusedGraph) {
   }
 }
 
+TEST(DynamicShape, QuantizedLinearBk64ReusedGraphAndFallbacks) {
+  Module candidate(g_dir + "/dyn_linear_bk64.pte");
+  ASSERT_EQ(candidate.load_forward(), Error::Ok) << "load dyn_linear_bk64.pte";
+  for (int m_rows : {512, 511, 508, 128, 127, 1, 508, 512}) {
+    run_bk64_linear(candidate, m_rows, "dyn_linear_bk64");
+  }
+
+  Module gate(g_dir + "/dyn_linear_bk64_gate.pte");
+  ASSERT_EQ(gate.load_forward(), Error::Ok);
+  for (int m_rows : {512, 508, 128}) {
+    run_bk64_linear(gate, m_rows, "dyn_linear_bk64_gate", kBk64K, kBk64GateN);
+  }
+
+  Module down(g_dir + "/dyn_linear_bk64_down.pte");
+  ASSERT_EQ(down.load_forward(), Error::Ok);
+  for (int m_rows : {512, 508, 128}) {
+    run_bk64_linear(
+        down,
+        m_rows,
+        "dyn_linear_bk64_down",
+        kBk64DownK,
+        kBk64N,
+        kBk64DownAtol,
+        kBk64DownRtol,
+        kBk64DownNrmse,
+        kBk64DownTailNrmse);
+  }
+
+  Module group32(g_dir + "/dyn_linear_bk64_group32.pte");
+  ASSERT_EQ(group32.load_forward(), Error::Ok);
+  run_bk64_linear(group32, 128, "dyn_linear_bk64_group32");
+
+  Module bias(g_dir + "/dyn_linear_bk64_bias.pte");
+  ASSERT_EQ(bias.load_forward(), Error::Ok);
+  run_bk64_linear(bias, 128, "dyn_linear_bk64_bias");
+
+  Module kv_shape(g_dir + "/dyn_linear_bk64_kv_shape.pte");
+  ASSERT_EQ(kv_shape.load_forward(), Error::Ok);
+  run_bk64_linear(kv_shape, 128, "dyn_linear_bk64_kv_shape", kBk64K, kBk64KvN);
+}
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+void expect_single_q4_profile(
+    const char* expected_name,
+    uint32_t expected_x,
+    const char* fixture,
+    int m_rows) {
+  const auto* context = get_default_webgpu_context();
+  ASSERT_NE(context, nullptr);
+  ASSERT_NE(context->querypool, nullptr);
+  const auto& profile = context->querypool->results();
+  const auto is_q4 = [](const auto& duration) {
+    return duration.kernel_name.rfind("linear_q4gsw", 0) == 0;
+  };
+  ASSERT_EQ(std::count_if(profile.begin(), profile.end(), is_q4), 1)
+      << fixture << " M=" << m_rows;
+  const auto active = std::find_if(profile.begin(), profile.end(), is_q4);
+  ASSERT_NE(active, profile.end());
+  EXPECT_EQ(active->kernel_name, expected_name) << fixture << " M=" << m_rows;
+  EXPECT_EQ(active->global_wg[0], expected_x) << fixture << " M=" << m_rows;
+  EXPECT_EQ(active->global_wg[1], 1u) << fixture << " M=" << m_rows;
+}
+
+TEST(DynamicShape, QuantizedLinearBk64ProfileSoleWriter) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "BK64 timestamp or shader-f16 capability unavailable";
+  }
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(context->device, &limits) != WGPUStatus_Success ||
+      limits.maxComputeInvocationsPerWorkgroup < 256u ||
+      limits.maxComputeWorkgroupStorageSize < 16384u ||
+      limits.maxComputeWorkgroupsPerDimension < 1024u) {
+    GTEST_SKIP() << "BK64 workgroup limits unavailable";
+  }
+
+  Module candidate(g_dir + "/dyn_linear_bk64.pte");
+  ASSERT_EQ(candidate.load_forward(), Error::Ok);
+  for (int m_rows : {512, 511, 508, 128, 127, 1, 508, 512}) {
+    run_bk64_linear(candidate, m_rows, "dyn_linear_bk64");
+    const char* expected = m_rows == 1 ? "linear_q4gsw_coop4_bicol"
+        : (m_rows == 128 || m_rows == 508 || m_rows == 512)
+        ? "linear_q4gsw_bk64"
+        : "linear_q4gsw_steel";
+    const uint32_t expected_x = m_rows == 1 ? 1024u
+        : (m_rows == 128 || m_rows == 127)  ? 64u
+                                            : 256u;
+    expect_single_q4_profile(expected, expected_x, "dyn_linear_bk64", m_rows);
+  }
+
+  Module gate(g_dir + "/dyn_linear_bk64_gate.pte");
+  ASSERT_EQ(gate.load_forward(), Error::Ok);
+  for (int m_rows : {512, 508, 128}) {
+    run_bk64_linear(gate, m_rows, "dyn_linear_bk64_gate", kBk64K, kBk64GateN);
+    expect_single_q4_profile(
+        "linear_q4gsw_bk64",
+        m_rows == 128 ? 256u : 1024u,
+        "dyn_linear_bk64_gate",
+        m_rows);
+  }
+
+  Module down(g_dir + "/dyn_linear_bk64_down.pte");
+  ASSERT_EQ(down.load_forward(), Error::Ok);
+  for (int m_rows : {512, 508, 128}) {
+    run_bk64_linear(
+        down,
+        m_rows,
+        "dyn_linear_bk64_down",
+        kBk64DownK,
+        kBk64N,
+        kBk64DownAtol,
+        kBk64DownRtol,
+        kBk64DownNrmse,
+        kBk64DownTailNrmse);
+    expect_single_q4_profile(
+        "linear_q4gsw_bk64",
+        m_rows == 128 ? 64u : 256u,
+        "dyn_linear_bk64_down",
+        m_rows);
+  }
+
+  struct NegativeRoute {
+    const char* fixture;
+    int n;
+    uint32_t expected_x;
+  };
+  for (const auto& negative : std::vector<NegativeRoute>{
+           {"dyn_linear_bk64_group32", kBk64N, 64u},
+           {"dyn_linear_bk64_bias", kBk64N, 64u},
+           {"dyn_linear_bk64_kv_shape", kBk64KvN, 16u}}) {
+    Module module(g_dir + "/" + negative.fixture + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << negative.fixture;
+    run_bk64_linear(module, 128, negative.fixture, kBk64K, negative.n);
+    expect_single_q4_profile(
+        "linear_q4gsw_steel", negative.expected_x, negative.fixture, 128);
+  }
+}
+
 TEST(DynamicShape, CombinedLiveRoutesProfile) {
   const auto* context = get_default_webgpu_context();
   if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||

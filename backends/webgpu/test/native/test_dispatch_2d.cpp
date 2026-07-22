@@ -16,6 +16,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 using executorch::backends::webgpu::WebGPUDispatch;
 using executorch::backends::webgpu::WebGPUGraph;
@@ -213,6 +215,48 @@ TEST(DispatchRoute, RecordsAlternatesOnlyForDynamicEligibleGraphs) {
   EXPECT_FALSE(should_record_sdpa_dual_route(true, false));
   EXPECT_FALSE(should_record_sdpa_dual_route(false, true));
   EXPECT_TRUE(should_record_sdpa_dual_route(true, true));
+}
+
+TEST(DispatchRoute, Bk64RequiresExactLlamaShapeAndCapabilities) {
+  using executorch::backends::webgpu::utils::is_q4gsw_bk64_eligible;
+
+  constexpr uint32_t kRequiredInvocations = 256u;
+  constexpr uint32_t kRequiredStorageBytes = 16384u;
+  for (const auto& shape : std::vector<std::pair<uint32_t, uint32_t>>{
+           {2048u, 8192u}, {8192u, 2048u}, {2048u, 2048u}}) {
+    EXPECT_TRUE(is_q4gsw_bk64_eligible(
+        shape.first,
+        shape.second,
+        64u,
+        false,
+        true,
+        kRequiredInvocations,
+        kRequiredStorageBytes));
+  }
+
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 512u, 64u, false, true, 256u, kRequiredStorageBytes));
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 2048u, 32u, false, true, 256u, kRequiredStorageBytes));
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 2048u, 64u, true, true, 256u, kRequiredStorageBytes));
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 2048u, 64u, false, false, 256u, kRequiredStorageBytes));
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 2048u, 64u, false, true, 255u, kRequiredStorageBytes));
+  EXPECT_FALSE(is_q4gsw_bk64_eligible(
+      2048u, 2048u, 64u, false, true, 256u, kRequiredStorageBytes - 1u));
+}
+
+TEST(DispatchRoute, Bk64SelectsOnlyAcceptedExactLiveRows) {
+  using executorch::backends::webgpu::utils::is_q4gsw_bk64_live_m;
+
+  EXPECT_TRUE(is_q4gsw_bk64_live_m(128u));
+  EXPECT_TRUE(is_q4gsw_bk64_live_m(508u));
+  EXPECT_TRUE(is_q4gsw_bk64_live_m(512u));
+  for (uint32_t m : {1u, 127u, 129u, 507u, 509u, 511u, 513u}) {
+    EXPECT_FALSE(is_q4gsw_bk64_live_m(m)) << "M=" << m;
+  }
 }
 
 } // namespace

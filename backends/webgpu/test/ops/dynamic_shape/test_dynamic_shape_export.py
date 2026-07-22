@@ -280,6 +280,7 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     )
     _export_static_linear(out_dir, 1, "static_linear_m1")
     _export_static_linear(out_dir, 32, "static_linear_m32")
+    _export_dynamic_bk64_linear_cases(out_dir)
 
     # 2e) Fused SDPA with a DYNAMIC seq-len S (prefill, input_pos=0).
     _export_dynamic_sdpa(out_dir)
@@ -331,6 +332,16 @@ LIN_ALT_GROUP = 24
 LIN_SHMEM_N = 2048
 LIN_GROUP = 32
 LIN_MAXM = 128
+
+BK64_K = 2048
+BK64_N = 2048
+BK64_KV_N = 512
+BK64_GATE_N = 8192
+BK64_DOWN_K = 8192
+BK64_GROUP = 64
+BK64_MAXM = 512
+BK64_LIVE_M = (BK64_MAXM, 511, 508, 128, 127, 1)
+BK64_OPTIMIZED_M = (BK64_MAXM, 508, 128)
 
 
 SWIGLU_MAXM = 512
@@ -470,6 +481,129 @@ def _export_dynamic_linear(
         )
         g.tofile(os.path.join(out_dir, f"{prefix}.S{m}.golden.bin"))
         print(f"  golden {prefix} M={m}")
+
+
+def _make_bk64_model(
+    *,
+    k: int = BK64_K,
+    n: int = BK64_N,
+    group: int = BK64_GROUP,
+    bias: bool = False,
+) -> torch.nn.Module:
+    from torchao.quantization.granularity import PerGroup
+    from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+
+    torch.manual_seed(11)
+    model = torch.nn.Linear(k, n, bias=bias).eval()
+    if model.bias is not None:
+        with torch.no_grad():
+            model.bias.copy_(torch.linspace(-0.25, 0.25, n))
+    quantize_(
+        model,
+        IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(group)),
+    )
+    return model
+
+
+def _bk64_golden(model: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
+    golden = x.double() @ model.weight.dequantize().double().t()
+    if model.bias is not None:
+        golden = golden + model.bias.double()
+    return golden.to(torch.float32)
+
+
+def _bk64_input(m: int, k: int) -> torch.Tensor:
+    flat = torch.arange(m * k, dtype=torch.int64)
+    hashed = (flat * 37 + torch.div(flat, 16, rounding_mode="floor") * 53) % 257
+    return ((hashed.to(torch.float32) - 128.0) / 128.0).reshape(m, k)
+
+
+class Bk64ShapeAwareLinear(torch.nn.Module):
+    def __init__(self, projection: torch.nn.Module, output_width: int) -> None:
+        super().__init__()
+        self.projection = projection
+        self.output_width = output_width
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.projection(x).reshape(1, x.shape[0], self.output_width)
+
+
+def _export_bk64_program(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    n: int,
+    prefix: str,
+):
+    export_model = Bk64ShapeAwareLinear(model, n).eval()
+    m_dim = torch.export.Dim("m", min=1, max=BK64_MAXM)
+    ep = torch.export.export(export_model, (x,), dynamic_shapes=({0: m_dim},))
+    if not any(node.target == torch.ops.aten.sym_size.int for node in ep.graph.nodes):
+        raise RuntimeError(f"{prefix}: dynamic q4 fixture lost aten.sym_size.int")
+    return ep
+
+
+def _export_dynamic_bk64_linear_case(
+    out_dir: str,
+    prefix: str,
+    *,
+    k: int = BK64_K,
+    n: int = BK64_N,
+    group: int = BK64_GROUP,
+    bias: bool = False,
+    live_m=BK64_LIVE_M,
+) -> None:
+    model = _make_bk64_model(k=k, n=n, group=group, bias=bias)
+    x = _bk64_input(BK64_MAXM, k)
+    ep = _export_bk64_program(model, x, n, prefix)
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    print(f"Exported {prefix}.pte")
+    for m in live_m:
+        xm = _bk64_input(m, k)
+        golden = _bk64_golden(model, xm)
+        xm.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{m}.input.bin")
+        )
+        golden.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{m}.golden.bin")
+        )
+        print(f"  golden {prefix} M={m}")
+
+
+def _export_dynamic_bk64_linear_cases(out_dir: str) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    _export_dynamic_bk64_linear_case(out_dir, "dyn_linear_bk64")
+    _export_dynamic_bk64_linear_case(
+        out_dir,
+        "dyn_linear_bk64_gate",
+        n=BK64_GATE_N,
+        live_m=BK64_OPTIMIZED_M,
+    )
+    _export_dynamic_bk64_linear_case(
+        out_dir,
+        "dyn_linear_bk64_down",
+        k=BK64_DOWN_K,
+        live_m=BK64_OPTIMIZED_M,
+    )
+    _export_dynamic_bk64_linear_case(
+        out_dir,
+        "dyn_linear_bk64_group32",
+        group=32,
+        live_m=[128],
+    )
+    _export_dynamic_bk64_linear_case(
+        out_dir,
+        "dyn_linear_bk64_bias",
+        bias=True,
+        live_m=[128],
+    )
+    _export_dynamic_bk64_linear_case(
+        out_dir,
+        "dyn_linear_bk64_kv_shape",
+        n=BK64_KV_N,
+        live_m=[128],
+    )
 
 
 def _export_static_linear(out_dir: str, m: int, prefix: str) -> None:
@@ -798,6 +932,33 @@ class TestDynamicShapeExport(unittest.TestCase):
             export_dynamic_shape_cases(d)
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.pte")))
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.S1.golden.bin")))
+            expected = [
+                "dyn_linear_bk64.pte",
+                "dyn_linear_bk64.S512.input.bin",
+                "dyn_linear_bk64.S512.golden.bin",
+                "dyn_linear_bk64.S511.input.bin",
+                "dyn_linear_bk64.S511.golden.bin",
+                "dyn_linear_bk64.S508.golden.bin",
+                "dyn_linear_bk64.S128.golden.bin",
+                "dyn_linear_bk64.S127.golden.bin",
+                "dyn_linear_bk64.S1.golden.bin",
+                "dyn_linear_bk64_gate.pte",
+                "dyn_linear_bk64_gate.S512.input.bin",
+                "dyn_linear_bk64_gate.S512.golden.bin",
+                "dyn_linear_bk64_gate.S508.golden.bin",
+                "dyn_linear_bk64_gate.S128.golden.bin",
+                "dyn_linear_bk64_down.pte",
+                "dyn_linear_bk64_down.S512.input.bin",
+                "dyn_linear_bk64_down.S512.golden.bin",
+                "dyn_linear_bk64_down.S508.golden.bin",
+                "dyn_linear_bk64_down.S128.golden.bin",
+                "dyn_linear_bk64_group32.pte",
+                "dyn_linear_bk64_bias.pte",
+                "dyn_linear_bk64_kv_shape.pte",
+            ]
+            for name in expected:
+                with self.subTest(artifact=name):
+                    self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
 
 
 if __name__ == "__main__":

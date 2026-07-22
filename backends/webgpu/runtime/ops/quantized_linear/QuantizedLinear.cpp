@@ -17,6 +17,7 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -60,6 +61,7 @@ constexpr uint32_t kQ4gswShmemNMinDim = 2048u;
 // steel GEMM: 64x64 tile, 256 threads (16x16), fixed wg (no override).
 constexpr uint32_t kQ4gswSteelTile = 64u;
 constexpr uint32_t kQ4gswSteelBK = 16u;
+constexpr uint32_t kQ4gswSteelBK64 = 64u;
 constexpr uint32_t kQ4gswSteelInvocations = 256u;
 
 // One workgroup per (tile_m x tile_n) tile, no grid-stride: throw when the tile
@@ -90,6 +92,27 @@ bool steel_supported(WGPUDevice device) {
       limits.maxComputeInvocationsPerWorkgroup >= kQ4gswSteelInvocations;
 }
 
+bool steel_bk64_eligible(
+    WGPUDevice device,
+    uint32_t K,
+    uint32_t N,
+    uint32_t group_size,
+    bool has_bias) {
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(device, &limits) != WGPUStatus_Success) {
+    return false;
+  }
+  const WebGPUContext* context = get_default_webgpu_context();
+  return utils::is_q4gsw_bk64_eligible(
+      K,
+      N,
+      group_size,
+      has_bias,
+      context != nullptr && context->shader_f16_supported,
+      limits.maxComputeInvocationsPerWorkgroup,
+      limits.maxComputeWorkgroupStorageSize);
+}
+
 // Not grid-strided: 0 (fall back) when K%BK != 0 or over the 1D dispatch limit.
 uint32_t
 steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
@@ -103,6 +126,17 @@ steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
   return (total == 0u || total > max_count) ? 0u : static_cast<uint32_t>(total);
 }
 
+uint32_t steel_bk64_workgroup_count(
+    WGPUDevice device,
+    uint32_t m,
+    uint32_t n,
+    uint32_t K) {
+  if (K % kQ4gswSteelBK64 != 0u) {
+    return 0u;
+  }
+  return steel_workgroup_count(device, m, n, K);
+}
+
 // Workgroup count for a linear_q4gsw dispatch (bicol GEMV / shmem GEMM / tiled
 // GEMM), with the range/limit guards shared by the build-time path and the
 // resize hook. use_gemv/use_shmem_gemm are the build-time routing decision (the
@@ -110,10 +144,12 @@ steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
 uint32_t compute_q4gsw_workgroup_count(
     WGPUDevice device,
     bool use_gemv,
+    bool use_bk64,
     bool use_steel,
     bool use_shmem_gemm,
     uint32_t m,
     uint32_t n,
+    uint32_t K,
     uint32_t wg_size,
     const char* op_name) {
   if (use_gemv) {
@@ -131,6 +167,14 @@ uint32_t compute_q4gsw_workgroup_count(
           std::string("WebGPU ") + op_name + ": zero GEMV dispatch");
     }
     return wgc;
+  }
+  if (use_bk64) {
+    const uint32_t count = steel_bk64_workgroup_count(device, m, n, K);
+    if (count == 0u) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name + ": invalid BK64 dispatch");
+    }
+    return count;
   }
   if (use_steel) {
     // steel: one workgroup per 64x64 tile. Over-limit THROWS here -- unlike the
@@ -170,7 +214,8 @@ struct Q4gswExecutionState {
 };
 
 constexpr size_t kQ4gswBicolRoute = 0;
-constexpr size_t kQ4gswPrefillRoute = 1;
+constexpr size_t kQ4gswBk64Route = 1;
+constexpr size_t kQ4gswPrefillRoute = 2;
 
 Q4gswExecutionState make_q4gsw_execution_state(
     WGPUDevice device,
@@ -185,6 +230,8 @@ Q4gswExecutionState make_q4gsw_execution_state(
     uint32_t wg_size,
     bool use_single_gemv,
     bool use_dual_route,
+    bool record_bk64_route,
+    bool bk64_eligible,
     bool prefill_use_steel,
     bool prefill_use_shmem_gemm) {
   if (input_dims.empty()) {
@@ -205,13 +252,18 @@ Q4gswExecutionState make_q4gsw_execution_state(
   }
   const uint32_t m = static_cast<uint32_t>(live_m);
   const bool use_gemv = use_single_gemv || (use_dual_route && m == 1u);
+  const bool use_bk64 = !use_gemv && bk64_eligible &&
+      utils::is_q4gsw_bk64_live_m(m) &&
+      steel_bk64_workgroup_count(device, m, N, K) > 0u;
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
       device,
       use_gemv,
-      !use_gemv && prefill_use_steel,
-      !use_gemv && prefill_use_shmem_gemm,
+      use_bk64,
+      !use_gemv && !use_bk64 && prefill_use_steel,
+      !use_gemv && !use_bk64 && prefill_use_shmem_gemm,
       m,
       N,
+      K,
       wg_size,
       "linear_q4gsw(resize)");
 
@@ -225,8 +277,12 @@ Q4gswExecutionState make_q4gsw_execution_state(
   state.params.has_bias = has_bias;
   state.output_dims = input_dims;
   state.output_dims.back() = static_cast<int64_t>(N);
-  state.active_route =
-      use_dual_route ? (use_gemv ? kQ4gswBicolRoute : kQ4gswPrefillRoute) : 0u;
+  state.active_route = use_dual_route
+      ? (use_gemv ? kQ4gswBicolRoute
+                  : (record_bk64_route
+                         ? (use_bk64 ? kQ4gswBk64Route : kQ4gswPrefillRoute)
+                         : 1u))
+      : 0u;
   state.active_grid = {workgroup_count, 1u};
   return state;
 }
@@ -309,62 +365,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU linear_q4gsw: scales dims too small for K/N");
   }
 
-  // M==1 -> bicol GEMV; M>1 -> steel GEMM (preferred) else shmem else tiled.
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
-  const bool bicol_eligible = K % 8u == 0u && gs % 8u == 0u;
-  const bool use_gemv = M == 1u && bicol_eligible;
-  const bool use_dual_route = utils::should_record_q4gsw_dual_route(
-      M, bicol_eligible, graph.has_dynamic_shapes());
-  // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
-  const uint32_t gemv_wg_size = (use_gemv || use_dual_route)
-      ? utils::clamp_workgroup_size_pow2(
-            device, kQ4gswLinearCoop4BicolWorkgroupSizeX)
-      : 0u;
-  // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
-  const bool use_steel = !use_gemv && steel_supported(device) &&
-      steel_workgroup_count(device, M, N, K) > 0u;
-  // shmem GEMM is now a FALLBACK, not dead: steel shadows it whenever eligible,
-  // so shmem only wins when steel is ineligible (K % 16 != 0, or a
-  // <256-invocation device such as SwiftShader) and the shape still hits the
-  // large K/N thresholds; otherwise the register-tiled path handles it.
-  const bool use_shmem_gemm = !use_gemv && !use_steel &&
-      (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
-  const char* prefill_shader_src = use_steel ? kQ4gswLinearGemmSteelWGSL
-      : use_shmem_gemm                       ? kQ4gswLinearGemmShmemWGSL
-                                             : kQ4gswLinearWGSL;
-  const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
-      : use_steel                   ? kQ4gswLinearGemmSteelWGSL
-      : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
-                                    : kQ4gswLinearWGSL;
-  // f16-multiply steel: only when the device negotiated shader-f16; else the
-  // f32 steel kernel runs (fail-closed). Same bindings and tile.
-  if (use_steel) {
-    const WebGPUContext* ctx = get_default_webgpu_context();
-    if (ctx != nullptr && ctx->shader_f16_supported) {
-      // Packed-word dequant: bit-exact to the steel `half` kernel but loads
-      // each u32 weight word once + hoists the per-column scale (half re-reads
-      // them ~8x/~16x). Needs group_size % BK == 0 so the hoisted scale is
-      // constant across the BK tile; else the per-nibble `half` kernel.
-      prefill_shader_src = (gs % kQ4gswSteelBK == 0u)
-          ? kQ4gswLinearGemmSteelHalfPwdqWGSL
-          : kQ4gswLinearGemmSteelHalfWGSL;
-      shader_src = prefill_shader_src;
-    }
-  }
-  // f16-accumulate: pwdq staging with an f16 register accumulator.
-  // Lossy (f16 accumulate over K) -> opt-in via the enable_f16_accumulate_gemm
-  // runtime spec (default off), gated on the negotiated shader-f16 feature and
-  // group_size % BK == 0 (same hoisted-scale requirement as pwdq). Overrides
-  // the f32-accumulate steel kernels.
-  if (use_steel && graph.f16_accumulate_gemm() && (gs % kQ4gswSteelBK == 0u)) {
-    const WebGPUContext* ctx = get_default_webgpu_context();
-    if (ctx != nullptr && ctx->shader_f16_supported) {
-      prefill_shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
-      shader_src = prefill_shader_src;
-    }
-  }
-
   // Optional bias: real buffer if present, else a dummy for the fixed layout.
   uint32_t has_bias = 0;
   WGPUBuffer bias_buffer = nullptr;
@@ -383,6 +383,74 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     bias_buffer = graph.create_scratch_buffer(4);
   }
 
+  // M==1 -> bicol GEMV; M>1 -> BK64 for exact Llama projections/M values,
+  // otherwise steel GEMM (preferred), shmem, or tiled.
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
+  const bool bicol_eligible = K % 8u == 0u && gs % 8u == 0u;
+  const bool use_gemv = M == 1u && bicol_eligible;
+  const bool use_dual_route = utils::should_record_q4gsw_dual_route(
+      M, bicol_eligible, graph.has_dynamic_shapes());
+  const bool bk64_eligible =
+      steel_bk64_eligible(device, K, N, gs, has_bias != 0u);
+  const bool record_bk64_route = use_dual_route && bk64_eligible && M >= 128u;
+  const bool use_bk64 = !use_gemv && bk64_eligible &&
+      utils::is_q4gsw_bk64_live_m(M) &&
+      steel_bk64_workgroup_count(device, M, N, K) > 0u;
+  // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
+  const uint32_t gemv_wg_size = (use_gemv || use_dual_route)
+      ? utils::clamp_workgroup_size_pow2(
+            device, kQ4gswLinearCoop4BicolWorkgroupSizeX)
+      : 0u;
+  // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
+  const bool use_steel = !use_gemv && steel_supported(device) &&
+      steel_workgroup_count(device, M, N, K) > 0u;
+  // shmem GEMM is now a FALLBACK, not dead: steel shadows it whenever eligible,
+  // so shmem only wins when steel is ineligible (K % 16 != 0, or a
+  // <256-invocation device such as SwiftShader) and the shape still hits the
+  // large K/N thresholds; otherwise the register-tiled path handles it.
+  const bool use_shmem_gemm = !use_gemv && !use_steel &&
+      (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
+  const char* prefill_shader_src = use_steel ? kQ4gswLinearGemmSteelWGSL
+      : use_shmem_gemm                       ? kQ4gswLinearGemmShmemWGSL
+                                             : kQ4gswLinearWGSL;
+  const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
+      : use_bk64                    ? kQ4gswSteelBk64WGSL
+      : use_steel                   ? kQ4gswLinearGemmSteelWGSL
+      : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
+                                    : kQ4gswLinearWGSL;
+  // f16-multiply steel: only when the device negotiated shader-f16; else the
+  // f32 steel kernel runs (fail-closed). Same bindings and tile.
+  if (use_steel) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      // Packed-word dequant: bit-exact to the steel `half` kernel but loads
+      // each u32 weight word once + hoists the per-column scale (half re-reads
+      // them ~8x/~16x). Needs group_size % BK == 0 so the hoisted scale is
+      // constant across the BK tile; else the per-nibble `half` kernel.
+      prefill_shader_src = (gs % kQ4gswSteelBK == 0u)
+          ? kQ4gswLinearGemmSteelHalfPwdqWGSL
+          : kQ4gswLinearGemmSteelHalfWGSL;
+      if (!use_bk64) {
+        shader_src = prefill_shader_src;
+      }
+    }
+  }
+  // f16-accumulate: pwdq staging with an f16 register accumulator.
+  // Lossy (f16 accumulate over K) -> opt-in via the enable_f16_accumulate_gemm
+  // runtime spec (default off), gated on the negotiated shader-f16 feature and
+  // group_size % BK == 0 (same hoisted-scale requirement as pwdq). Overrides
+  // the f32-accumulate steel kernels.
+  if (use_steel && graph.f16_accumulate_gemm() && (gs % kQ4gswSteelBK == 0u)) {
+    const WebGPUContext* ctx = get_default_webgpu_context();
+    if (ctx != nullptr && ctx->shader_f16_supported) {
+      prefill_shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
+      if (!use_bk64) {
+        shader_src = prefill_shader_src;
+      }
+    }
+  }
+
   const Q4gswExecutionState initial_state = make_q4gsw_execution_state(
       device,
       in.dims,
@@ -396,6 +464,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       wg_size,
       use_gemv,
       use_dual_route,
+      record_bk64_route,
+      bk64_eligible,
       use_steel,
       use_shmem_gemm);
 
@@ -496,6 +566,9 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (use_dual_route) {
     // Each recorded dispatch owns one bind-group reference.
     wgpuBindGroupAddRef(bind_group);
+    if (record_bk64_route) {
+      wgpuBindGroupAddRef(bind_group);
+    }
     WGPUComputePipeline bicol_pipeline =
         make_pipeline(kQ4gswLinearCoop4BicolWGSL, false, gemv_wg_size);
     const size_t bicol_idx = graph.add_dispatch(
@@ -503,6 +576,16 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
          bind_group,
          initial_state.active_grid.x,
          "linear_q4gsw_coop4_bicol"});
+    size_t bk64_idx = 0;
+    if (record_bk64_route) {
+      WGPUComputePipeline bk64_pipeline =
+          make_pipeline(kQ4gswSteelBk64WGSL, true, 0u);
+      bk64_idx = graph.add_dispatch(
+          {bk64_pipeline,
+           bind_group,
+           initial_state.active_grid.x,
+           "linear_q4gsw_bk64"});
+    }
     WGPUComputePipeline prefill_pipeline =
         make_pipeline(prefill_shader_src, fixed_prefill_wg, wg_size);
     const size_t prefill_idx = graph.add_dispatch(
@@ -510,19 +593,27 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
          bind_group,
          initial_state.active_grid.x,
          prefill_label});
-    route_group = graph.register_dispatch_route_group(
-        {{bicol_idx, bicol_idx + 1}, {prefill_idx, prefill_idx + 1}});
+    if (record_bk64_route) {
+      route_group = graph.register_dispatch_route_group(
+          {{bicol_idx, bicol_idx + 1},
+           {bk64_idx, bk64_idx + 1},
+           {prefill_idx, prefill_idx + 1}});
+    } else {
+      route_group = graph.register_dispatch_route_group(
+          {{bicol_idx, bicol_idx + 1}, {prefill_idx, prefill_idx + 1}});
+    }
     graph.select_dispatch_route(
         route_group, initial_state.active_route, {initial_state.active_grid});
   } else {
-    const bool fixed_wg = use_gemv ? false : fixed_prefill_wg;
+    const bool fixed_wg = use_gemv ? false : (use_bk64 || fixed_prefill_wg);
     WGPUComputePipeline pipeline =
         make_pipeline(shader_src, fixed_wg, use_gemv ? gemv_wg_size : wg_size);
     dispatch_idx = graph.add_dispatch(
         {pipeline,
          bind_group,
          initial_state.active_grid.x,
-         use_gemv ? "linear_q4gsw_coop4_bicol" : prefill_label});
+         use_gemv ? "linear_q4gsw_coop4_bicol"
+                  : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label)});
   }
 
   // Dynamic shapes: recompute one shared Params block and select exactly one
@@ -541,6 +632,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        wg_size,
        use_gemv,
        use_dual_route,
+       record_bk64_route,
+       bk64_eligible,
        use_steel,
        use_shmem_gemm,
        dispatch_idx,
@@ -560,6 +653,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             wg_size,
             use_gemv,
             use_dual_route,
+            record_bk64_route,
+            bk64_eligible,
             use_steel,
             use_shmem_gemm);
         wgpuQueueWriteBuffer(
