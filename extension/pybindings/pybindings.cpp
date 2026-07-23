@@ -112,6 +112,22 @@ namespace pybindings {
 
 namespace {
 
+void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
+  if (tensor.numel() == 0) {
+    return nullptr;
+  }
+
+  auto* storage_data = static_cast<char*>(tensor.unsafeGetTensorImpl()
+                                              ->unsafe_storage()
+                                              .unsafeGetStorageImpl()
+                                              ->_mutable_data_ptr_no_checks()
+                                              .mutable_get());
+  ET_CHECK_MSG(
+      storage_data != nullptr,
+      "Tensor has a non-zero number of elements, but its data is not allocated");
+  return storage_data + tensor.storage_offset() * tensor.itemsize();
+}
+
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
   FILE* f = fopen(path.c_str(), "w+");
   if (!f) {
@@ -1117,12 +1133,14 @@ struct PyMethod final {
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
-        TensorPtr tensor =
-            for_blob(at_tensor.data_ptr(), std::move(sizes), type)
-                .strides(std::move(strides))
-                .dim_order(std::move(dim_order))
-                .dynamism(aten::TensorShapeDynamism::STATIC)
-                .make_tensor_ptr();
+        TensorPtr tensor = for_blob(
+                               mutable_tensor_data_ptr_no_cow(at_tensor),
+                               std::move(sizes),
+                               type)
+                               .strides(std::move(strides))
+                               .dim_order(std::move(dim_order))
+                               .dynamism(aten::TensorShapeDynamism::STATIC)
+                               .make_tensor_ptr();
         input_tensors.push_back(tensor);
         EValue evalue(input_tensors.back());
 #endif

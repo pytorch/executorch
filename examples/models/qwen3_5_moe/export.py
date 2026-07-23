@@ -178,6 +178,7 @@ def load_and_quantize(args):  # noqa: C901
         if args.prequantized:
             return load_prequantized_model_mlx(
                 args.prequantized,
+                args.max_seq_len,
                 use_splitk_decode=use_splitk,
             )
         _prepare_and_quantize_mlx(model, config, args)
@@ -300,59 +301,36 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
     return model, config
 
 
-def load_prequantized_model_mlx(prequantized_dir, use_splitk_decode=True):
+def load_prequantized_model_mlx(
+    prequantized_dir, max_seq_len=4096, use_splitk_decode=True
+):
     """Load an MLX-format prequantized safetensors bundle into a model.
 
-    The bundle (from quantize_and_save.py --backend mlx) stores experts already
-    packed into stacked gather buffers and dense/lm_head weights as
-    ``ExportableInt4Tensor`` (embedding as ``IntxUnpackedToInt8Tensor``). Loading:
+    The bundle (from quantize_and_save.py --backend mlx) stores per-expert and
+    dense weights as torchao ``Int4Tensor`` (embedding as
+    ``IntxUnpackedToInt8Tensor``) in the modern torchao safetensors format.
+    Loading:
 
       1. Build the model on meta and re-apply mlx_source_transformations so the
          module tree, swapped forwards, and MLX KV cache match the bundle.
-      2. Convert each SwitchLinear to its packed buffer layout (experts are
-         already stacked/packed in the bundle) and assign the rest via
-         load_state_dict.
+      2. ``load_checkpoint`` streams the bundle in, converting each ``Int4Tensor``
+         to ``ExportableInt4Tensor`` via the default EXPORTABLE_PACKERS and
+         passing the int8 embedding through unchanged.
+      3. ``pack_all_switch_linears`` stacks the per-expert weights into the
+         mlx::gather_qmm buffers.
 
-    max_seq_len is derived from a saved KV cache buffer so the rebuilt cache
-    geometry and export dynamic-shape bounds always match the bundle.
+    The KV cache is a runtime buffer and is not stored in the bundle;
+    mlx_source_transformations recreates it (zero-initialized) with geometry
+    derived from ``max_seq_len``.
     """
     from executorch.backends.mlx.llm.switch import pack_all_switch_linears
     from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
         mlx_source_transformations,
     )
-    from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
-        load_quantized_state_dict,
-    )
+    from executorch.extension.llm.export.load import load_checkpoint
 
     config_path = os.path.join(prequantized_dir, "config.json")
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
-
-    print(f"Loading prequantized MLX weights from {safetensors_path}...")
-    state_dict = load_quantized_state_dict(safetensors_path)
-
-    # Int4Tensor -> ExportableInt4Tensor so dense linears export via
-    # dequantize_int4_tensor and experts pack via pack_all_switch_linears.
-    # Coarse/per-axis int8 (e.g. the embedding at group_size=hidden) keeps its
-    # group_size; the MLX pattern handlers regroup scale/zero_point to an
-    # MLX-legal size at export time (regroup_affine_scales).
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
-    from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
-
-    for key, val in list(state_dict.items()):
-        if isinstance(val, Int4Tensor):
-            state_dict[key] = ExportableInt4Tensor.from_int4_tensor(val)
-
-    # Derive max_seq_len from a saved KV cache buffer ([1, H, max_seq_len, D]).
-    max_seq_len = None
-    for key, val in state_dict.items():
-        if key.endswith(".kv_cache.k_cache"):
-            max_seq_len = val.shape[2]
-            break
-    if max_seq_len is None:
-        raise RuntimeError(
-            "Prequantized MLX bundle has no KV cache buffer; cannot infer "
-            "max_seq_len (is this a CUDA bundle? use --backend cuda)."
-        )
 
     config = Qwen35MoEConfig.from_hf_config(config_path)
     config.max_seq_len = max_seq_len
@@ -371,30 +349,12 @@ def load_prequantized_model_mlx(prequantized_dir, use_splitk_decode=True):
             fuse_gate_up=False,
         )
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False, assign=True)
-    del state_dict
-
-    runtime_prefixes = (".mask", ".inv_freq", ".cache_positions")
-    expected_missing = {k for k in missing if any(p in k for p in runtime_prefixes)}
-    weight_missing = set(missing) - expected_missing
-    if weight_missing:
-        raise RuntimeError(
-            f"Prequantized MLX checkpoint is missing {len(weight_missing)} weight "
-            f"keys (model/checkpoint version mismatch?): {sorted(weight_missing)[:10]}"
-        )
-    if unexpected:
-        raise RuntimeError(
-            f"Prequantized MLX checkpoint has {len(unexpected)} unexpected keys "
-            f"(model/checkpoint version mismatch?): {sorted(unexpected)[:10]}"
-        )
+    print(f"Loading prequantized MLX weights from {safetensors_path}...")
+    load_checkpoint(safetensors_path, model)
 
     # Stack per-expert ExportableInt4Tensors into mlx::gather_qmm buffers.
     pack_all_switch_linears(model)
 
-    # assign=True wraps assigned tensors as Parameter(requires_grad=True), which
-    # breaks unwrap_tensor_subclass_parameters on int-dtype quantized inners.
-    for p in model.parameters():
-        p.requires_grad_(False)
     model.eval()
 
     print(
@@ -1178,6 +1138,8 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
+    # Avoid a PyTorch 2.13 Triton codegen bug in Qwen's fused cast/reduction
+    # compile-time autotune path while keeping the CUDA backend defaults unchanged.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1186,6 +1148,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
@@ -1194,6 +1159,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
