@@ -19,6 +19,7 @@ import unittest
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
 MAXS = 128  # upper bound for the dynamic seq-len dim (within the 1D dispatch cap)
 HIDDEN = 64
@@ -108,17 +109,29 @@ def _ramp(shape) -> torch.Tensor:
     return torch.linspace(-1.0, 1.0, n, dtype=torch.float32).reshape(shape)
 
 
+def _lower_fully_delegated(ep, label: str):
+    edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+    graph = edge.exported_program().graph_module.graph
+    delegates = get_delegates(graph)
+    portable = get_non_lowered_nodes(graph)
+    if len(delegates) != 1:
+        raise RuntimeError(f"{label}: expected one delegate, got {len(delegates)}")
+    if portable:
+        raise RuntimeError(f"{label}: non-lowered nodes: {portable}")
+    et = edge.to_executorch()
+    delegate_ids = [
+        delegate.id
+        for plan in et.executorch_program.execution_plan
+        for delegate in plan.delegates
+    ]
+    if delegate_ids != ["VulkanBackend"]:
+        raise RuntimeError(f"{label}: serialized delegates: {delegate_ids}")
+    return et
+
+
 def _export(model, example_inputs, dynamic_shapes, path: str) -> None:
     ep = torch.export.export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    found = any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    )
-    assert found, f"Expected VulkanBackend delegate in {path}"
+    et = _lower_fully_delegated(ep, path)
     with open(path, "wb") as f:
         f.write(et.buffer)
     print(f"Exported {path}")
@@ -186,10 +199,28 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     # 2d) 4-bit quantized linear with a DYNAMIC rows (M) dim — prefill GEMM
     # (register-tiled N=128) + a shmem-GEMM-routed variant (N=2048).
     _export_dynamic_linear(out_dir)
-    _export_dynamic_linear(out_dir, n=LIN_SHMEM_N, prefix="dyn_linear_shmem")
+    _export_dynamic_linear(
+        out_dir,
+        n=LIN_SHMEM_N,
+        prefix="dyn_linear_shmem",
+        k=LIN_ALT_K,
+        group=LIN_ALT_GROUP,
+    )
+    _export_dynamic_linear(
+        out_dir,
+        prefix="dyn_linear_tiled",
+        k=LIN_ALT_K,
+        group=LIN_ALT_GROUP,
+    )
+    _export_static_linear(out_dir, 1, "static_linear_m1")
+    _export_static_linear(out_dir, 32, "static_linear_m32")
 
     # 2e) Fused SDPA with a DYNAMIC seq-len S (prefill, input_pos=0).
     _export_dynamic_sdpa(out_dir)
+    _export_combined_routes(out_dir)
+    _export_dynamic_sdpa_wide(out_dir)
+    _export_static_sdpa(out_dir, 1, "static_sdpa_s1")
+    _export_static_sdpa(out_dir, 16, "static_sdpa_s16")
 
     # 2f) 4-bit embedding with a DYNAMIC token count (int64 indices).
     _export_dynamic_embedding(out_dir)
@@ -224,42 +255,62 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
 # Quantized linear: K x N weight, dynamic rows M; input [M, K], output [M, N].
 LIN_K = 64
 LIN_N = 128
-LIN_SHMEM_N = 2048  # N>=2048 routes linear_q4gsw to the shmem-GEMM path
+LIN_ALT_K = 72  # K%16 != 0 disables Steel while K%8 keeps bicol eligible.
+LIN_ALT_GROUP = 24
+LIN_SHMEM_N = 2048
 LIN_GROUP = 32
 LIN_MAXM = 128
 
 
 def _export_dynamic_linear(
-    out_dir: str, n: int = LIN_N, prefix: str = "dyn_linear"
+    out_dir: str,
+    n: int = LIN_N,
+    prefix: str = "dyn_linear",
+    k: int = LIN_K,
+    group: int = LIN_GROUP,
 ) -> None:
-    from executorch.backends.webgpu.test.ops.quantized_linear.test_quantized_linear import (
+    from executorch.backends.webgpu.test.ops.test_quantized_linear import (
         _fp64_golden,
         _make_quantized_model,
     )
 
-    model = _make_quantized_model(LIN_K, n, LIN_GROUP)
-    x = _ramp((LIN_MAXM, LIN_K))
+    model = _make_quantized_model(k, n, group)
+    x = _ramp((LIN_MAXM, k))
     m_dim = torch.export.Dim("m", min=1, max=LIN_MAXM)
     ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    assert any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    ), "linear_q4gsw not delegated"
+    et = _lower_fully_delegated(ep, prefix)
     with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
         f.write(et.buffer)
     print(f"Exported {prefix}.pte")
     for m in [LIN_MAXM, 32, 1]:
-        xm = _ramp((m, LIN_K))
+        xm = _ramp((m, k))
         g = _fp64_golden(model, xm).astype("<f4")  # [m, N]
         xm.detach().numpy().astype("<f4").tofile(
             os.path.join(out_dir, f"{prefix}.S{m}.input.bin")
         )
         g.tofile(os.path.join(out_dir, f"{prefix}.S{m}.golden.bin"))
         print(f"  golden {prefix} M={m}")
+
+
+def _export_static_linear(out_dir: str, m: int, prefix: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_quantized_linear import (
+        _fp64_golden,
+        _make_quantized_model,
+    )
+
+    model = _make_quantized_model(LIN_K, LIN_N, LIN_GROUP)
+    x = _ramp((m, LIN_K))
+    ep = torch.export.export(model, (x,))
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    x.detach().numpy().astype("<f4").tofile(
+        os.path.join(out_dir, f"{prefix}.S{m}.input.bin")
+    )
+    _fp64_golden(model, x).astype("<f4").tofile(
+        os.path.join(out_dir, f"{prefix}.S{m}.golden.bin")
+    )
+    print(f"Exported {prefix}.pte")
 
 
 # Dynamic SDPA: GQA prefill (input_pos=0), q/k/v seq-len dynamic.
@@ -271,7 +322,7 @@ SD_MAXS = 64
 
 
 def _export_dynamic_sdpa(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.sdpa.test_sdpa import (
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
         _det_inputs,
         _golden,
         SdpaConfig,
@@ -286,14 +337,7 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
     s_dim = torch.export.Dim("s", min=1, max=SD_MAXS)
     ds = ({1: s_dim}, {1: s_dim}, {1: s_dim}, None, None)
     ep = torch.export.export(model, (q, k, v, kc, vc), dynamic_shapes=ds)
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    assert any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    ), "sdpa not delegated"
+    et = _lower_fully_delegated(ep, "sdpa_dyn")
     with open(os.path.join(out_dir, "sdpa_dyn.pte"), "wb") as f:
         f.write(et.buffer)
     print("Exported sdpa_dyn.pte")
@@ -315,6 +359,148 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
         print(f"  golden sdpa_dyn S={s} (golden shape {tuple(g.shape)})")
 
 
+def _export_combined_routes(out_dir: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_quantized_linear import (
+        _make_quantized_model,
+    )
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
+        _det_inputs,
+        _golden,
+        SdpaConfig,
+    )
+    from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    class CombinedRoutes(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = _make_quantized_model(LIN_K, SD_HQ * SD_D, LIN_GROUP)
+
+        def forward(self, x, q, k, v, k_cache, v_cache):
+            projected = self.linear(x).reshape(1, x.shape[0], SD_HQ, SD_D)
+            return torch.ops.llama.sdpa_with_kv_cache(
+                q + projected,
+                k,
+                v,
+                k_cache,
+                v_cache,
+                0,
+                q.shape[1],
+                None,
+                0.0,
+                True,
+                None,
+            )
+
+    model = CombinedRoutes().eval()
+    cfg = SdpaConfig("combined", SD_HQ, SD_HKV, SD_D, SD_MAXS, SD_CMAX, 0)
+    q, k, v, kc, vc = _det_inputs(cfg)
+    x = _ramp((SD_MAXS, LIN_K))
+    s_dim = torch.export.Dim("s", min=1, max=SD_MAXS)
+    ep = torch.export.export(
+        model,
+        (x, q, k, v, kc, vc),
+        dynamic_shapes=(
+            {0: s_dim},
+            {1: s_dim},
+            {1: s_dim},
+            {1: s_dim},
+            None,
+            None,
+        ),
+    )
+    et = _lower_fully_delegated(ep, "combined_routes")
+    with open(os.path.join(out_dir, "combined_routes.pte"), "wb") as f:
+        f.write(et.buffer)
+    print("Exported combined_routes.pte")
+
+    for s in [SD_MAXS, 16, 1]:
+        live_cfg = SdpaConfig("combined", SD_HQ, SD_HKV, SD_D, s, SD_CMAX, 0)
+        q, k, v, kc, vc = _det_inputs(live_cfg)
+        x = _ramp((s, LIN_K))
+        with torch.no_grad():
+            projected = model.linear(x).reshape(1, s, SD_HQ, SD_D)
+            golden = _golden(live_cfg, q + projected, k, v, kc, vc)
+        base = os.path.join(out_dir, f"combined_routes.S{s}.")
+        for name, tensor in (
+            ("x", x),
+            ("q", q),
+            ("k", k),
+            ("v", v),
+            ("kc", kc),
+            ("vc", vc),
+            ("golden", golden),
+        ):
+            tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+        print(f"  golden combined_routes S={s}")
+
+
+def _export_dynamic_sdpa_wide(out_dir: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
+        _det_inputs,
+        _golden,
+        SdpaConfig,
+        SdpaModule,
+    )
+
+    hq, hkv, d, cmax, max_s = 8, 2, 132, 16, 16
+
+    def cfg(s):
+        return SdpaConfig("wide", hq, hkv, d, s, cmax, 0)
+
+    model = SdpaModule(0)
+    q, k, v, kc, vc = _det_inputs(cfg(max_s))
+    s_dim = torch.export.Dim("s", min=1, max=max_s)
+    ep = torch.export.export(
+        model,
+        (q, k, v, kc, vc),
+        dynamic_shapes=({1: s_dim}, {1: s_dim}, {1: s_dim}, None, None),
+    )
+    et = _lower_fully_delegated(ep, "sdpa_wide")
+    with open(os.path.join(out_dir, "sdpa_wide.pte"), "wb") as f:
+        f.write(et.buffer)
+    for s in [max_s, 1]:
+        live = cfg(s)
+        q, k, v, kc, vc = _det_inputs(live)
+        golden = _golden(live, q, k, v, kc, vc)
+        for name, tensor in (
+            ("q", q),
+            ("k", k),
+            ("v", v),
+            ("kc", kc),
+            ("vc", vc),
+            ("golden", golden),
+        ):
+            tensor.detach().numpy().astype("<f4").tofile(
+                os.path.join(out_dir, f"sdpa_wide.S{s}.{name}.bin")
+            )
+    print("Exported sdpa_wide.pte")
+
+
+def _export_static_sdpa(out_dir: str, s: int, prefix: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
+        _det_inputs,
+        _golden,
+        SdpaConfig,
+        SdpaModule,
+    )
+
+    cfg = SdpaConfig(prefix, SD_HQ, SD_HKV, SD_D, s, SD_CMAX, 0)
+    inputs = _det_inputs(cfg)
+    ep = torch.export.export(SdpaModule(0), inputs)
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    golden = _golden(cfg, *inputs)
+    for name, tensor in zip(("q", "k", "v", "kc", "vc"), inputs):
+        tensor.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{s}.{name}.bin")
+        )
+    golden.detach().numpy().astype("<f4").tofile(
+        os.path.join(out_dir, f"{prefix}.S{s}.golden.bin")
+    )
+    print(f"Exported {prefix}.pte")
+
+
 # Dynamic embedding: int64 token ids (dynamic count) -> [N, EMBED] fp32.
 EMB_VOCAB = 64
 EMB_DIM = 64
@@ -323,7 +509,7 @@ EMB_MAXN = 16
 
 
 def _export_dynamic_embedding(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import (
+    from executorch.backends.webgpu.test.ops.test_embedding_q4gsw import (
         _make_quantized_model,
         _quant_params,
         Shape,
@@ -334,14 +520,7 @@ def _export_dynamic_embedding(out_dir: str) -> None:
     idx_max = torch.arange(EMB_MAXN, dtype=torch.long)
     n_dim = torch.export.Dim("n", min=1, max=EMB_MAXN)
     ep = torch.export.export(qm, (idx_max,), dynamic_shapes=({0: n_dim},))
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    assert any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    ), "embedding_q4gsw not delegated"
+    et = _lower_fully_delegated(ep, "emb_dyn")
     with open(os.path.join(out_dir, "emb_dyn.pte"), "wb") as f:
         f.write(et.buffer)
     print("Exported emb_dyn.pte")
@@ -368,11 +547,7 @@ ROPE_MAXS = 16
 
 
 def _export_dynamic_rope(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.rope.test_rope import (
-        _golden,
-        _inputs,
-        Shape,
-    )
+    from executorch.backends.webgpu.test.ops.test_rope import _golden, _inputs, Shape
     from executorch.examples.models.llama.rope import RotaryEmbedding
 
     xq, xk, fc, fs = _inputs(Shape("dyn", 1, ROPE_MAXS, ROPE_NH, ROPE_NKV, ROPE_HD))
@@ -381,14 +556,7 @@ def _export_dynamic_rope(out_dir: str) -> None:
     ep = torch.export.export(
         RotaryEmbedding().eval(), (xq, xk, fc, fs), dynamic_shapes=ds
     )
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    assert any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    ), "apply_rotary_emb not delegated"
+    et = _lower_fully_delegated(ep, "rope_dyn")
     with open(os.path.join(out_dir, "rope_dyn.pte"), "wb") as f:
         f.write(et.buffer)
     print("Exported rope_dyn.pte")
@@ -421,14 +589,7 @@ def _export_dynamic_select(out_dir: str) -> None:
         (_ramp((SEL_LEAD, 1, MAXS, HIDDEN)),),
         dynamic_shapes=({2: s_dim},),
     )
-    et = to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
-    assert any(
-        d.id == "VulkanBackend"
-        for plan in et.executorch_program.execution_plan
-        for d in plan.delegates
-    ), "select_copy not delegated"
+    et = _lower_fully_delegated(ep, "dyn_select")
     with open(os.path.join(out_dir, "dyn_select.pte"), "wb") as f:
         f.write(et.buffer)
     print("Exported dyn_select.pte")
