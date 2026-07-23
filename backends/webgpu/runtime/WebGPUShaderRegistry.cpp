@@ -54,6 +54,7 @@
 #include <executorch/backends/webgpu/runtime/ops/reduce/reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_hf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
@@ -80,7 +81,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 62> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 63> kShaderRegistry = {{
     {
         "adamw_step",
         kAdamwStepWGSL,
@@ -395,6 +396,13 @@ constexpr std::array<WebGPUShaderInfo, 62> kShaderRegistry = {{
         kRotaryEmbeddingWorkgroupSizeX,
         kRotaryEmbeddingWorkgroupSizeY,
         kRotaryEmbeddingWorkgroupSizeZ,
+    },
+    {
+        "rotary_embedding_hf",
+        kRotaryEmbeddingHfWGSL,
+        kRotaryEmbeddingHfWorkgroupSizeX,
+        kRotaryEmbeddingHfWorkgroupSizeY,
+        kRotaryEmbeddingHfWorkgroupSizeZ,
     },
     {
         "sdpa_compute_attn_weights",
