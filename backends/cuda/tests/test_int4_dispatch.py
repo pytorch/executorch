@@ -34,12 +34,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
-from executorch.examples.models.gemma4_31b.quant.pack_cuda import pack_linear_for_cuda
-from executorch.examples.models.gemma4_31b.quant.quantize import (
+from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda
+from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+from executorch.extension.llm.export.quant.quantize import (
     dequantize_weight,
     quantize_weight,
 )
-from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
+from executorch.extension.llm.export.quant.recipe import QuantConfig
 
 
 def _require_cuda(tc: unittest.TestCase) -> None:
@@ -48,22 +49,26 @@ def _require_cuda(tc: unittest.TestCase) -> None:
 
 
 def _make_int4_linear(N, K, group_size=128, symmetric=False, bias=False):
-    """Build an nn.Linear with Int4Tensor weight and return (module, bf16_ref_weight).
+    """Build an nn.Linear with ExportableInt4Tensor weight + bf16 ref weight.
 
-    The bf16 reference is the original unquantized weight, so tests can
-    measure quantization error against the true value.
+    Mirrors production: weights are converted to ExportableInt4Tensor (the
+    canonical portable int4 form) before packing for CUDA. The bf16 reference
+    is the original unquantized weight, so tests can measure quantization
+    error against the true value.
     """
     w_bf16 = torch.randn(N, K, dtype=torch.bfloat16)
     config = QuantConfig(
         bits=4, group_size=group_size, symmetric=symmetric, method="min_max"
     )
-    int4_w = quantize_weight(w_bf16, config)
+    exportable_w = ExportableInt4Tensor.from_int4_tensor(
+        quantize_weight(w_bf16, config)
+    )
 
     # device="cuda" so the random init draws from the CUDA RNG to match the
     # same random weight as regular int4 dispatch and fit the same numerical
     # error tolerance.
     module = nn.Linear(K, N, bias=bias, dtype=torch.bfloat16, device="cuda")
-    pack_linear_for_cuda(module, {"weight": int4_w})
+    pack_linear_for_cuda(module, {"weight": exportable_w})
     module.cuda()
     return module, w_bf16.cuda()
 
@@ -184,9 +189,11 @@ class TestDeviceMovement(unittest.TestCase):
     def test_to_cuda(self):
         w_bf16 = torch.randn(256, 512, dtype=torch.bfloat16)
         config = QuantConfig(bits=4, group_size=128, symmetric=False, method="min_max")
-        int4_w = quantize_weight(w_bf16, config)
+        exportable_w = ExportableInt4Tensor.from_int4_tensor(
+            quantize_weight(w_bf16, config)
+        )
         module = nn.Linear(512, 256, bias=False)
-        pack_linear_for_cuda(module, {"weight": int4_w})
+        pack_linear_for_cuda(module, {"weight": exportable_w})
         module = module.to("cuda")
         x = torch.randn(1, 512, dtype=torch.bfloat16, device="cuda")
         self._check(module(x), F.linear(x, w_bf16.cuda()))
@@ -226,6 +233,12 @@ def _make_int4_tensor(N, K, group_size=128, symmetric=False):
         bits=4, group_size=group_size, symmetric=symmetric, method="min_max"
     )
     return quantize_weight(w, config), w
+
+
+def _make_exportable_int4_tensor(N, K, group_size=128, symmetric=False):
+    """Build an ``ExportableInt4Tensor`` (canonical portable int4) + bf16 ref."""
+    t, w = _make_int4_tensor(N, K, group_size=group_size, symmetric=symmetric)
+    return ExportableInt4Tensor.from_int4_tensor(t), w
 
 
 @contextlib.contextmanager
@@ -278,8 +291,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_coalesced_tensor_routes_to_int4_plain_mm(self):
         """CudaCoalescedInt4Tensor with M<=4 routes to the decode custom op."""
-        t, _ = _make_int4_tensor(16, 256, group_size=32)
-        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
         x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
@@ -288,8 +301,8 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_coalesced_tensor_prefill_uses_dequant(self):
         """M>4 uses inline dequant (no custom op) and is numerically correct."""
-        t, _ = _make_int4_tensor(16, 256, group_size=32)
-        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
         x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
@@ -312,10 +325,10 @@ class TestDispatchRouting(unittest.TestCase):
                 F.linear(x, t)
         self.assertEqual(calls, [])
 
-    def test_from_int4_tensor_transpose_correct(self):
-        """from_int4_tensor owns the (n_groups, N) -> (N, n_groups) transpose."""
-        t, _ = _make_int4_tensor(24, 256, group_size=64)
-        c = CudaCoalescedInt4Tensor.from_int4_tensor(t)
+    def test_from_exportable_int4_tensor_transpose_correct(self):
+        """from_exportable_int4_tensor owns the (n_groups, N) -> (N, n_groups) transpose."""
+        t, _ = _make_exportable_int4_tensor(24, 256, group_size=64)
+        c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
         n_groups = 256 // 64
         self.assertEqual(tuple(t.scale.shape), (n_groups, 24))  # torchao layout
         self.assertEqual(tuple(c.scale.shape), (24, n_groups))  # coalesced layout

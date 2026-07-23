@@ -286,6 +286,8 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+
+
 from executorch.backends.webgpu.test.ops.test_gelu import (
     _det_input as _gelu_det_input,
     GeluModule,
@@ -311,7 +313,9 @@ def _gelu_suite() -> WebGPUTestSuite:
                 construct={"approximate": "none"},
                 inputs=((S1, M1, M2),),
             ),
-            Case(name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)),
+            Case(
+                name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)
+            ),
             Case(
                 name="erf_range",
                 construct={"approximate": "none"},
@@ -321,6 +325,8 @@ def _gelu_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_layer_norm import (
     _ramp as _ln_ramp,
     make_layer_norm,
@@ -334,7 +340,11 @@ def _layer_norm_suite() -> WebGPUTestSuite:
     return WebGPUTestSuite(
         module_factory=make_layer_norm,
         cases=[
-            Case(name="affine_mat", construct={"normalized_shape": 128}, inputs=((4, 128),)),
+            Case(
+                name="affine_mat",
+                construct={"normalized_shape": 128},
+                inputs=((4, 128),),
+            ),
             Case(
                 name="affine_rank3",
                 construct={"normalized_shape": 768},
@@ -346,7 +356,9 @@ def _layer_norm_suite() -> WebGPUTestSuite:
                 inputs=((4, 128),),
             ),
             Case(
-                name="width_lt_wg", construct={"normalized_shape": 32}, inputs=((8, 32),)
+                name="width_lt_wg",
+                construct={"normalized_shape": 32},
+                inputs=((8, 32),),
             ),
             Case(
                 name="width_gt_wg",
@@ -362,6 +374,8 @@ def _layer_norm_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_linear_fp32 import (
     _ramp as _lin_ramp,
     make_linear,
@@ -409,10 +423,9 @@ def _linear_fp32_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_conv2d import (
-    _chw_ramp,
-    make_conv,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_conv2d import _chw_ramp, make_conv
 
 
 @register_op_test("conv2d")
@@ -469,9 +482,9 @@ def _conv2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_et_vk_sdpa import (
-    SdpaModule,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_et_vk_sdpa import SdpaModule
 
 
 def _sdpa_randn(shape):
@@ -513,9 +526,9 @@ def _et_vk_sdpa_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_embedding import (
-    EmbeddingModule,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_embedding import EmbeddingModule
 
 
 def _emb_idx_small(_shape):
@@ -549,6 +562,8 @@ def _embedding_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_addmm import (
     _randn as _addmm_randn,
     AddmmModule,
@@ -560,9 +575,30 @@ def _addmm_suite() -> WebGPUTestSuite:
     return WebGPUTestSuite(
         module_factory=lambda n: AddmmModule(n),
         cases=[
-            Case(name="small", construct={"n": 32}, inputs=(InputSpec(shape=(4, 16), gen=_addmm_randn), InputSpec(shape=(16, 32), gen=_addmm_randn))),
-            Case(name="bart", construct={"n": 768}, inputs=(InputSpec(shape=(16, 768), gen=_addmm_randn), InputSpec(shape=(768, 768), gen=_addmm_randn))),
-            Case(name="odd_k", construct={"n": 32}, inputs=(InputSpec(shape=(4, 15), gen=_addmm_randn), InputSpec(shape=(15, 32), gen=_addmm_randn))),
+            Case(
+                name="small",
+                construct={"n": 32},
+                inputs=(
+                    InputSpec(shape=(4, 16), gen=_addmm_randn),
+                    InputSpec(shape=(16, 32), gen=_addmm_randn),
+                ),
+            ),
+            Case(
+                name="bart",
+                construct={"n": 768},
+                inputs=(
+                    InputSpec(shape=(16, 768), gen=_addmm_randn),
+                    InputSpec(shape=(768, 768), gen=_addmm_randn),
+                ),
+            ),
+            Case(
+                name="odd_k",
+                construct={"n": 32},
+                inputs=(
+                    InputSpec(shape=(4, 15), gen=_addmm_randn),
+                    InputSpec(shape=(15, 32), gen=_addmm_randn),
+                ),
+            ),
         ],
         golden_dtype="float32",
         atol=1e-4,

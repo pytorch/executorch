@@ -76,6 +76,20 @@ class TestDequantizeInt4Op(unittest.TestCase):
         ref = torch.nn.functional.embedding(idx, t.dequantize(torch.bfloat16))
         self.assertTrue(torch.equal(out, ref))
 
+    def test_to_preserves_quantization(self):
+        it, _, _, _ = _make_int4_tensor(N=8, K=64, gs=32)
+        t = ExportableInt4Tensor.from_int4_tensor(it)
+        cast = t.to(torch.float16)
+        # .to() sets the output dtype without dequantizing: same subclass, the
+        # packed int4 qdata is untouched, scale/output dtype follow the cast.
+        self.assertIsInstance(cast, ExportableInt4Tensor)
+        self.assertEqual(cast.dtype, torch.float16)
+        self.assertTrue(torch.equal(cast.qdata, t.qdata))
+        self.assertEqual(cast.scale.dtype, torch.float16)
+        self.assertEqual(cast.dequantize().dtype, torch.float16)
+        with self.assertRaises(AssertionError):
+            t.to(torch.int8)
+
 
 class TestExportableInt4TensorExport(unittest.TestCase):
     """Exporting a module whose weight is an ``ExportableInt4Tensor`` should lower
