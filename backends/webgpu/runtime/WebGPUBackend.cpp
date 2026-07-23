@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDelegateHeader.h>
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
@@ -121,9 +122,11 @@ Error WebGPUBackend::execute(
     DelegateHandle* handle,
     Span<EValue*> args) const {
   WebGPUGraph* graph = static_cast<WebGPUGraph*>(handle);
+  const WebGPUExecutionOptions options = current_webgpu_execution_options();
 
   const size_t num_inputs = graph->input_ids().size();
   const size_t num_outputs = graph->output_ids().size();
+  WebGPUGraphExecutionOptions graph_options;
 
   // Copy inputs from EValue tensors to GPU buffers
   std::vector<InputData> inputs;
@@ -159,23 +162,34 @@ Error WebGPUBackend::execute(
         return Error::Internal;
       }
     }
+    std::vector<const void*> delegate_outputs;
+    delegate_outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      delegate_outputs.push_back(
+          args[num_inputs + i]->toTensor().mutable_data_ptr());
+    }
+    graph_options =
+        resolve_webgpu_graph_execution_options(delegate_outputs, options);
+
+    const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
+    graph->execute(plan);
+
+    // Copy outputs from GPU staging buffers to EValue tensor data pointers
+    std::vector<std::pair<void*, size_t>> outputs;
+    outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t arg_idx = num_inputs + i;
+      auto& tensor = args[arg_idx]->toTensor();
+      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+    }
+    graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
-    ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
+    ET_LOG(
+        Error,
+        "WebGPU input preparation / execute / output copy failed: %s",
+        e.what());
     return Error::Internal;
   }
-
-  // Execute the compute graph
-  graph->execute();
-
-  // Copy outputs from GPU staging buffers to EValue tensor data pointers
-  std::vector<std::pair<void*, size_t>> outputs;
-  outputs.reserve(num_outputs);
-  for (size_t i = 0; i < num_outputs; i++) {
-    const size_t arg_idx = num_inputs + i;
-    auto& tensor = args[arg_idx]->toTensor();
-    outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
-  }
-  graph->copy_outputs(outputs);
 
   return Error::Ok;
 }

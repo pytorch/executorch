@@ -26,9 +26,13 @@ if(NOT TARGET vulkan_schema)
 endif()
 
 set(WEBGPU_SRCS
-    runtime/WebGPUBackend.cpp runtime/WebGPUGraph.cpp
-    runtime/WebGPUDelegateHeader.cpp runtime/WebGPUDevice.cpp
-    runtime/WebGPUQueryPool.cpp runtime/ops/OperatorRegistry.cpp
+    runtime/WebGPUBackend.cpp
+    runtime/WebGPUExecutionOptions.cpp
+    runtime/WebGPUGraph.cpp
+    runtime/WebGPUDelegateHeader.cpp
+    runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp
+    runtime/ops/OperatorRegistry.cpp
 )
 
 # Op handlers: glob so adding an op needs no CMakeLists edit. CONFIGURE_DEPENDS
@@ -199,5 +203,22 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     target_link_libraries(
       webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
     )
+    add_executable(
+      webgpu_execution_options_test test/native/test_execution_options.cpp
+                                    runtime/WebGPUExecutionOptions.cpp
+    )
+    target_include_directories(
+      webgpu_execution_options_test
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    )
+    target_link_libraries(
+      webgpu_execution_options_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    target_compile_options(webgpu_execution_options_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_execution_options_test PROPERTY CXX_STANDARD 17)
+    add_webgpu_native_test(
+      webgpu_output_suppression_test test/native/test_output_suppression.cpp
+    )
+    target_link_libraries(webgpu_output_suppression_test PRIVATE GTest::gtest)
   endif()
 endif()
