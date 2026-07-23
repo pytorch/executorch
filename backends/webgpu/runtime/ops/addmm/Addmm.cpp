@@ -59,7 +59,7 @@ void addmm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU addmm: null buffer binding");
   }
   if (mat1.dims.size() != 2 || mat2.dims.size() != 2 || out.dims.size() != 2) {
-    throw std::runtime_error("WebGPU addmm: expected 2D self-mm/mat1/mat2/out");
+    throw std::runtime_error("WebGPU addmm: expected 2D mat1/mat2/out");
   }
 
   const uint32_t M = static_cast<uint32_t>(out.dims[0]);
@@ -72,13 +72,18 @@ void addmm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint32_t>(mat2.dims[1]) != N) {
     throw std::runtime_error("WebGPU addmm: mat2 shape != [K, N]");
   }
-  const uint64_t out_numel = utils::check_fp32(out, "addmm", "output");
+  utils::check_fp32(out, "addmm", "output");
 
-  const uint64_t self_numel = utils::numel(self_t.dims);
-  const bool self_2d = self_numel == out_numel;
-  if (!self_2d && self_numel != N) {
-    throw std::runtime_error(
-        "WebGPU addmm: self must broadcast from [N] or [M,N]");
+  // self is either a [N] bias (broadcast over rows) or a full [M, N]; validate
+  // the actual dims, not just the element count (a coincidental-numel tensor
+  // with the wrong rank/shape would otherwise be silently accepted).
+  const bool self_2d = self_t.dims.size() == 2 &&
+      static_cast<uint32_t>(self_t.dims[0]) == M &&
+      static_cast<uint32_t>(self_t.dims[1]) == N;
+  const bool self_1d =
+      self_t.dims.size() == 1 && static_cast<uint32_t>(self_t.dims[0]) == N;
+  if (!self_2d && !self_1d) {
+    throw std::runtime_error("WebGPU addmm: self must be [N] or [M, N]");
   }
 
   const float beta = utils::scalar_or(graph, args.at(3), 1.0f);
