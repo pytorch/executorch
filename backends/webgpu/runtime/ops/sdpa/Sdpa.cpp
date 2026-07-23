@@ -8,17 +8,10 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_k16_causal_bound_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
-#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -34,6 +27,16 @@ namespace {
 // Register-tile dims; MUST match TM/TN in the reg WGSL kernels.
 constexpr int64_t kSdpaTileM = 4;
 constexpr int64_t kSdpaTileN = 4;
+
+constexpr const char* kUpdateCacheShader = "update_cache";
+constexpr const char* kUpdateCacheHalfShader = "update_cache_half";
+constexpr const char* kAttnWeightsShader = "sdpa_compute_attn_weights";
+constexpr const char* kAttnWeightsHalfShader = "sdpa_compute_attn_weights_half";
+constexpr const char* kSoftmaxShader = "sdpa_softmax";
+constexpr const char* kComputeOutShader = "sdpa_compute_out";
+constexpr const char* kComputeOutHalfShader = "sdpa_compute_out_half";
+constexpr const char* kStreamingK16Shader =
+    "streaming_attention_k16_causal_bound";
 
 // Uniform param structs (all 16-byte aligned, matching the WGSL Params).
 struct UpdateCacheParams {
@@ -218,148 +221,52 @@ static utils::WgCount streaming_attention_k16_grid(
   return {static_cast<uint32_t>(workgroups), 1u};
 }
 
-// A buffer + its byte size, for binding.
-struct BufferBinding {
-  WGPUBuffer buffer;
-  uint64_t size;
-};
-
-// Build one dispatch (pipeline + bind group) and record it on the graph.
-void build_dispatch(
+size_t add_sdpa_compute_dispatch(
     WebGPUGraph& graph,
-    const char* wgsl_source,
-    const BufferBinding* storage_bindings,
-    uint32_t n_storage, // includes the rw output at index 0
+    const char* shader_name,
+    std::vector<WebGPUBufferBinding> bindings,
     WGPUBuffer uniform_buffer,
     uint64_t uniform_size,
-    uint32_t workgroup_count_x,
-    uint32_t workgroup_count_y,
+    utils::WgCount grid,
     uint32_t wg_size,
-    bool retain_uniform = false,
     const char* kernel_name = "") {
-  WGPUDevice device = graph.device();
-
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group layout: storage entries then the uniform.
-  constexpr uint32_t kMaxEntries = 8;
-  if (n_storage + 1 > kMaxEntries) {
-    throw std::runtime_error("WebGPU sdpa: n_storage exceeds kMaxEntries");
-  }
-  WGPUBindGroupLayoutEntry bgl_entries[kMaxEntries] = {};
-  const uint32_t uniform_binding = n_storage;
-  for (uint32_t i = 0; i < n_storage; i++) {
-    bgl_entries[i].binding = i;
-    bgl_entries[i].visibility = WGPUShaderStage_Compute;
-    bgl_entries[i].buffer.type = (i == 0)
-        ? WGPUBufferBindingType_Storage
-        : WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  bgl_entries[uniform_binding].binding = uniform_binding;
-  bgl_entries[uniform_binding].visibility = WGPUShaderStage_Compute;
-  bgl_entries[uniform_binding].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = n_storage + 1;
-  bgl_desc.entries = bgl_entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  // All callers pass an override wg_size; a 0 would keep the shader default.
-  WGPUConstantEntry wg_size_constant = {};
-  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  bindings.push_back({uniform_buffer, 0u, uniform_size});
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = shader_name;
+  descriptor.kernel_name = kernel_name;
+  descriptor.bindings = std::move(bindings);
   if (wg_size != 0) {
-    pipeline_desc.compute.constantCount = 1;
-    pipeline_desc.compute.constants = &wg_size_constant;
+    descriptor.constants = {{"wg_size", static_cast<double>(wg_size)}};
   }
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[kMaxEntries] = {};
-  for (uint32_t i = 0; i < n_storage; i++) {
-    bg_entries[i].binding = i;
-    bg_entries[i].buffer = storage_bindings[i].buffer;
-    bg_entries[i].size = storage_bindings[i].size;
-  }
-  bg_entries[uniform_binding].binding = uniform_binding;
-  bg_entries[uniform_binding].buffer = uniform_buffer;
-  bg_entries[uniform_binding].size = uniform_size;
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = n_storage + 1;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  graph.add_dispatch(
-      {pipeline,
-       bind_group,
-       workgroup_count_x,
-       kernel_name,
-       workgroup_count_y});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  if (retain_uniform) {
-    // Graph owns it so a resize hook can rewrite it; freed in the dtor.
-    graph.own_uniform_buffer(uniform_buffer);
-  } else {
-    // Drop our ref; the bind group keeps the uniform alive.
-    wgpuBufferRelease(uniform_buffer);
-  }
+  descriptor.grid = {grid.x, grid.y};
+  return graph.add_compute_dispatch(descriptor);
 }
 
 // Dispatch one update_cache (K or V); returns the retained uniform buffer.
 static WGPUBuffer record_update_cache_dispatch(
     WebGPUGraph& graph,
-    WGPUDevice device,
     const WebGPUTensor& cache,
     const WebGPUTensor& src,
     uint64_t kv_numel,
     uint32_t kv_dst_offset,
     uint64_t cache_numel,
     uint32_t uc_wg,
-    bool retain_uniform,
     const char* label) {
   const uint32_t wgc = utils::compute_1d_workgroup_count(
-      device, static_cast<uint32_t>(kv_numel), uc_wg, label);
-  UpdateCacheParams uc =
+      graph.device(), static_cast<uint32_t>(kv_numel), uc_wg, label);
+  const UpdateCacheParams uc =
       make_update_cache_params(kv_numel, kv_dst_offset, cache_numel);
-  WGPUBuffer ubuf = graph.make_uniform_buffer(&uc, sizeof(uc));
-  BufferBinding bindings[2] = {
-      {cache.buffer, cache.nbytes}, {src.buffer, src.nbytes}};
-  const char* uc_src = kUpdateCacheWGSL;
-  if (graph.kv_f16()) {
-    uc_src = kUpdateCacheHalfWGSL;
-  }
-  build_dispatch(
+  WGPUBuffer ubuf = graph.create_params_buffer(uc);
+  const std::vector<WebGPUBufferBinding> bindings = {
+      {cache.buffer, 0u, cache.nbytes}, {src.buffer, 0u, src.nbytes}};
+  add_sdpa_compute_dispatch(
       graph,
-      uc_src,
+      graph.kv_f16() ? kUpdateCacheHalfShader : kUpdateCacheShader,
       bindings,
-      2,
       ubuf,
       sizeof(uc),
-      wgc,
-      1,
+      {wgc, 1u},
       uc_wg,
-      retain_uniform,
       "update_cache");
   return ubuf;
 }
@@ -519,14 +426,14 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool k16_eligible = graph.kv_f16() && Hq == 32 && Hkv == 8 && g == 4 &&
       D == 64 && scale == 0.125f && out.dims == q.dims &&
       k16_buffers_distinct && streaming_attention_k16_device_supported(device);
-  const uint32_t uc_wg =
-      utils::clamp_workgroup_size(device, kUpdateCacheWorkgroupSizeX);
+  const uint32_t uc_wg = utils::clamp_workgroup_size(
+      device, get_webgpu_shader_info(kUpdateCacheShader).workgroup_size_x);
   const uint32_t qk_wg = utils::clamp_workgroup_size(
-      device, kSdpaComputeAttnWeightsWorkgroupSizeX);
-  const uint32_t av_wg =
-      utils::clamp_workgroup_size(device, kSdpaComputeOutWorkgroupSizeX);
-  const uint32_t sm_wg =
-      utils::clamp_workgroup_size_pow2(device, kSdpaSoftmaxWorkgroupSizeX);
+      device, get_webgpu_shader_info(kAttnWeightsShader).workgroup_size_x);
+  const uint32_t av_wg = utils::clamp_workgroup_size(
+      device, get_webgpu_shader_info(kComputeOutShader).workgroup_size_x);
+  const uint32_t sm_wg = utils::clamp_workgroup_size_pow2(
+      device, get_webgpu_shader_info(kSoftmaxShader).workgroup_size_x);
   const bool fd_eligible = D <= kSdpaFdMaxHeadDim;
   const int64_t pos_const = input_pos;
 
@@ -656,25 +563,21 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   WGPUBuffer uc_k_buf = record_update_cache_dispatch(
       graph,
-      device,
       k_cache,
       k,
       initial_state.update_cache.numel,
       initial_state.update_cache.dst_offset,
       initial_state.update_cache.cache_numel,
       uc_wg,
-      true,
       "update_cache(K)");
   WGPUBuffer uc_v_buf = record_update_cache_dispatch(
       graph,
-      device,
       v_cache,
       v,
       initial_state.update_cache.numel,
       initial_state.update_cache.dst_offset,
       initial_state.update_cache.cache_numel,
       uc_wg,
-      true,
       "update_cache(V)");
   const size_t uc_k_idx = graph.num_dispatches() - 2;
   const size_t uc_v_idx = graph.num_dispatches() - 1;
@@ -703,65 +606,49 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         &graph, attn_weights_softmax);
 
     materialized_range.begin = graph.num_dispatches();
-    qk_buf = graph.make_uniform_buffer(
-        &initial_state.attn_weights, sizeof(AttnWeightsParams));
-    BufferBinding qk_bindings[3] = {
-        {attn_weights, aw_bytes},
-        {q.buffer, q.nbytes},
-        {k_cache.buffer, k_cache.nbytes}};
-    const char* qk_src = graph.kv_f16() ? kSdpaComputeAttnWeightsHalfWGSL
-                                        : kSdpaComputeAttnWeightsWGSL;
-    build_dispatch(
+    qk_buf = graph.create_params_buffer(initial_state.attn_weights);
+    const std::vector<WebGPUBufferBinding> qk_bindings = {
+        {attn_weights, 0u, aw_bytes},
+        {q.buffer, 0u, q.nbytes},
+        {k_cache.buffer, 0u, k_cache.nbytes}};
+    add_sdpa_compute_dispatch(
         graph,
-        qk_src,
+        graph.kv_f16() ? kAttnWeightsHalfShader : kAttnWeightsShader,
         qk_bindings,
-        3,
         qk_buf,
         sizeof(AttnWeightsParams),
-        initial_state.qk_grid.x,
-        initial_state.qk_grid.y,
+        initial_state.qk_grid,
         qk_wg,
-        true,
         "sdpa_compute_attn_weights");
     qk_idx = graph.num_dispatches() - 1;
 
-    softmax_buf = graph.make_uniform_buffer(
-        &initial_state.softmax, sizeof(SoftmaxParams));
-    BufferBinding softmax_bindings[2] = {
-        {attn_weights_softmax, aw_bytes}, {attn_weights, aw_bytes}};
-    build_dispatch(
+    softmax_buf = graph.create_params_buffer(initial_state.softmax);
+    const std::vector<WebGPUBufferBinding> softmax_bindings = {
+        {attn_weights_softmax, 0u, aw_bytes}, {attn_weights, 0u, aw_bytes}};
+    add_sdpa_compute_dispatch(
         graph,
-        kSdpaSoftmaxWGSL,
+        kSoftmaxShader,
         softmax_bindings,
-        2,
         softmax_buf,
         sizeof(SoftmaxParams),
-        initial_state.softmax_grid.x,
-        initial_state.softmax_grid.y,
+        initial_state.softmax_grid,
         sm_wg,
-        true,
         "sdpa_softmax");
     softmax_idx = graph.num_dispatches() - 1;
 
-    av_buf = graph.make_uniform_buffer(
-        &initial_state.compute_out, sizeof(ComputeOutParams));
-    BufferBinding av_bindings[3] = {
-        {out.buffer, out.nbytes},
-        {attn_weights_softmax, aw_bytes},
-        {v_cache.buffer, v_cache.nbytes}};
-    const char* av_src =
-        graph.kv_f16() ? kSdpaComputeOutHalfWGSL : kSdpaComputeOutWGSL;
-    build_dispatch(
+    av_buf = graph.create_params_buffer(initial_state.compute_out);
+    const std::vector<WebGPUBufferBinding> av_bindings = {
+        {out.buffer, 0u, out.nbytes},
+        {attn_weights_softmax, 0u, aw_bytes},
+        {v_cache.buffer, 0u, v_cache.nbytes}};
+    add_sdpa_compute_dispatch(
         graph,
-        av_src,
+        graph.kv_f16() ? kComputeOutHalfShader : kComputeOutShader,
         av_bindings,
-        3,
         av_buf,
         sizeof(ComputeOutParams),
-        initial_state.av_grid.x,
-        initial_state.av_grid.y,
+        initial_state.av_grid,
         av_wg,
-        true,
         "sdpa_compute_out");
     av_idx = graph.num_dispatches() - 1;
     materialized_range.end = graph.num_dispatches();
@@ -772,27 +659,23 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   utils::DispatchRange k16_range = {};
   if (record_k16) {
     k16_range.begin = graph.num_dispatches();
-    k16_buf = graph.make_uniform_buffer(
-        &initial_state.streaming_k16, sizeof(StreamingAttentionK16Params));
-    BufferBinding k16_bindings[4] = {
-        {out.buffer, out.nbytes},
-        {q.buffer, q.nbytes},
-        {k_cache.buffer, k_cache.nbytes},
-        {v_cache.buffer, v_cache.nbytes}};
+    k16_buf = graph.create_params_buffer(initial_state.streaming_k16);
+    const std::vector<WebGPUBufferBinding> k16_bindings = {
+        {out.buffer, 0u, out.nbytes},
+        {q.buffer, 0u, q.nbytes},
+        {k_cache.buffer, 0u, k_cache.nbytes},
+        {v_cache.buffer, 0u, v_cache.nbytes}};
     const utils::WgCount initial_grid = initial_state.use_fd
         ? utils::WgCount{0u, 0u}
         : initial_state.streaming_k16_grid;
-    build_dispatch(
+    add_sdpa_compute_dispatch(
         graph,
-        kStreamingAttentionK16CausalBoundWGSL,
+        kStreamingK16Shader,
         k16_bindings,
-        4,
         k16_buf,
         sizeof(StreamingAttentionK16Params),
-        initial_grid.x,
-        initial_grid.y,
+        initial_grid,
         0,
-        true,
         "sdpa_streaming_attention_k16_causal_bound");
     k16_idx = graph.num_dispatches() - 1;
     k16_range.end = graph.num_dispatches();
