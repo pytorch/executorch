@@ -7,19 +7,21 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 
 namespace executorch::backends::webgpu {
 
 namespace {
+
+constexpr const char* kRotaryShader = "rotary_embedding";
+constexpr const char* kRotaryHfShader = "rotary_embedding_hf";
 
 // Uniform layout matching the WGSL Params struct (16-byte aligned, 32 bytes).
 struct RotaryParams {
@@ -41,71 +43,31 @@ struct RopeDispatch {
   size_t dispatch_index;
 };
 
-// Rotate one (x->out) with the shared shader; freqs shared between xq and xk.
+template <typename Params>
 RopeDispatch add_rope_dispatch(
     WebGPUGraph& graph,
-    WGPUDevice device,
-    WGPUComputePipeline pipeline,
-    WGPUBindGroupLayout bgl,
+    const char* shader_name,
+    const char* kernel_name,
     const WebGPUTensor& x,
     const WebGPUTensor& out,
     const WebGPUTensor& freqs_cos,
     const WebGPUTensor& freqs_sin,
-    uint32_t n_heads,
-    uint32_t seq,
-    uint32_t head_dim,
-    uint32_t workgroup_count) {
-  const uint32_t half_dim = head_dim / 2u;
-  // out.dims == in.dims (asserted in impl), so this matches the caller's wgc.
-  const uint32_t num_pairs =
-      static_cast<uint32_t>(utils::numel_of(out.dims) / 2u);
-
-  RotaryParams params = {};
-  params.n_heads = n_heads;
-  params.seq = seq;
-  params.head_dim = head_dim;
-  params.half_dim = half_dim;
-  params.num_pairs = num_pairs;
-
-  WGPUBufferDescriptor uniform_desc = {};
-  uniform_desc.size = sizeof(RotaryParams);
-  uniform_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  uniform_desc.mappedAtCreation = true;
-  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device, &uniform_desc);
-  void* mapped =
-      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(RotaryParams));
-  std::memcpy(mapped, &params, sizeof(RotaryParams));
-  wgpuBufferUnmap(uniform_buffer);
-  graph.add_uniform_buffer_bytes(sizeof(RotaryParams));
-
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = x.buffer;
-  bg_entries[1].size = x.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = freqs_cos.buffer;
-  bg_entries[2].size = freqs_cos.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = freqs_sin.buffer;
-  bg_entries[3].size = freqs_sin.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = uniform_buffer;
-  bg_entries[4].size = sizeof(RotaryParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  const size_t dispatch_index = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "apply_rotary_emb"});
-
-  // Graph owns it so a resize hook can rewrite it; freed in the dtor.
-  graph.own_uniform_buffer(uniform_buffer);
+    const Params& params,
+    uint32_t workgroup_count,
+    uint32_t wg_size) {
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = shader_name;
+  descriptor.kernel_name = kernel_name;
+  descriptor.bindings = {
+      {out.buffer, 0u, out.nbytes},
+      {x.buffer, 0u, x.nbytes},
+      {freqs_cos.buffer, 0u, freqs_cos.nbytes},
+      {freqs_sin.buffer, 0u, freqs_sin.nbytes},
+      {uniform_buffer, 0u, sizeof(Params)}};
+  descriptor.constants = {{"wg_size", static_cast<double>(wg_size)}};
+  descriptor.grid = {workgroup_count, 1u};
+  const size_t dispatch_index = graph.add_compute_dispatch(descriptor);
   return {uniform_buffer, dispatch_index};
 }
 
@@ -177,8 +139,6 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "WebGPU apply_rotary_emb: expected an output ValueList of size 2");
   }
 
-  WGPUDevice device = graph.device();
-
   const auto& xq = graph.get_tensor(xq_id);
   const auto& xk = graph.get_tensor(xk_id);
   const auto& freqs_cos = graph.get_tensor(freqs_cos_id);
@@ -236,99 +196,56 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "freqs shape != [seq, head_dim/2]");
   }
 
-  if (xq_numel / 2u > UINT32_MAX || xk_numel / 2u > UINT32_MAX) {
+  if (xq_numel > UINT32_MAX || xk_numel > UINT32_MAX) {
     throw std::runtime_error(
-        "WebGPU apply_rotary_emb: pair count exceeds uint32 dispatch range");
+        "WebGPU apply_rotary_emb: element index exceeds uint32 range");
   }
 
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kRotaryEmbeddingWorkgroupSizeX);
+  const uint32_t wg_size = utils::clamp_workgroup_size(
+      graph.device(), get_webgpu_shader_info(kRotaryShader).workgroup_size_x);
   // Validate both dispatches before any GPU-object alloc (no leak on throw).
   const uint32_t xq_wgc = utils::compute_1d_workgroup_count(
-      device,
+      graph.device(),
       static_cast<uint32_t>(xq_numel / 2u),
       wg_size,
       "apply_rotary_emb");
   const uint32_t xk_wgc = utils::compute_1d_workgroup_count(
-      device,
+      graph.device(),
       static_cast<uint32_t>(xk_numel / 2u),
       wg_size,
       "apply_rotary_emb");
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kRotaryEmbeddingWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group: out (rw) + in/freqs_cos/freqs_sin (ro) + uniform.
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 3; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUConstantEntry wg_size_constant = {};
-  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  // One pipeline per dispatch; a shared handle would double-free.
-  WGPUComputePipeline pipeline_q =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-  WGPUComputePipeline pipeline_k =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  RopeDispatch q_disp = add_rope_dispatch(
+  RotaryParams q_params = {};
+  q_params.n_heads = n_heads_q;
+  q_params.seq = seq;
+  q_params.head_dim = head_dim;
+  q_params.half_dim = half_dim;
+  q_params.num_pairs = static_cast<uint32_t>(xq_numel / 2u);
+  RotaryParams k_params = q_params;
+  k_params.n_heads = n_heads_k;
+  k_params.num_pairs = static_cast<uint32_t>(xk_numel / 2u);
+  const RopeDispatch q_disp = add_rope_dispatch(
       graph,
-      device,
-      pipeline_q,
-      bgl,
+      kRotaryShader,
+      "apply_rotary_emb",
       xq,
       xq_out,
       freqs_cos,
       freqs_sin,
-      n_heads_q,
-      seq,
-      head_dim,
-      xq_wgc);
-  RopeDispatch k_disp = add_rope_dispatch(
+      q_params,
+      xq_wgc,
+      wg_size);
+  const RopeDispatch k_disp = add_rope_dispatch(
       graph,
-      device,
-      pipeline_k,
-      bgl,
+      kRotaryShader,
+      "apply_rotary_emb",
       xk,
       xk_out,
       freqs_cos,
       freqs_sin,
-      n_heads_k,
-      seq,
-      head_dim,
-      xk_wgc);
+      k_params,
+      xk_wgc,
+      wg_size);
   WGPUBuffer q_ubuf = q_disp.uniform;
   WGPUBuffer k_ubuf = k_disp.uniform;
   const size_t q_idx = q_disp.dispatch_index;
@@ -371,17 +288,316 @@ void apply_rotary_emb_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   };
   graph.add_tensor_resize_hook(xq_id, rope_hook);
   graph.add_tensor_resize_hook(xk_id, rope_hook);
+}
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  // pipeline_q/pipeline_k owned by their dispatches; graph dtor frees.
+// Mirrors Vulkan's full-dimension HuggingFace rotate-half RoPE.
+struct RotaryHfParams {
+  uint32_t n_heads;
+  uint32_t seq;
+  uint32_t head_dim;
+  uint32_t half_dim;
+  uint32_t num_pairs;
+  uint32_t rotary_dim;
+  uint32_t start_pos;
+  uint32_t _pad0;
+};
+static_assert(sizeof(RotaryHfParams) == 32, "RotaryHfParams must be 32 bytes");
+
+struct RotaryHfGeometry {
+  uint32_t head_dim;
+  uint32_t seq;
+  uint32_t n_heads_q;
+  uint32_t n_heads_k;
+  uint32_t max_seq;
+  uint32_t rotary_dim;
+  uint32_t half_dim;
+  uint64_t xq_numel;
+  uint64_t xk_numel;
+};
+
+RotaryHfGeometry validate_rope_hf_inputs(
+    const WebGPUTensor& x,
+    const WebGPUTensor& xk,
+    const WebGPUTensor& freqs_cos,
+    const WebGPUTensor& freqs_sin,
+    const WebGPUTensor& x_out,
+    const WebGPUTensor& xk_out) {
+  if (x.dims.size() < 3 || xk.dims.size() < 3 || freqs_cos.dims.size() < 2) {
+    throw std::runtime_error("WebGPU apply_rotary_emb_hf: malformed dims");
+  }
+  RotaryHfGeometry geometry = {};
+  geometry.head_dim = static_cast<uint32_t>(x.dims.back());
+  geometry.seq = static_cast<uint32_t>(x.dims[x.dims.size() - 3]);
+  geometry.n_heads_q = static_cast<uint32_t>(x.dims[x.dims.size() - 2]);
+  geometry.n_heads_k = static_cast<uint32_t>(xk.dims[xk.dims.size() - 2]);
+  geometry.max_seq =
+      static_cast<uint32_t>(freqs_cos.dims[freqs_cos.dims.size() - 2]);
+  geometry.rotary_dim = static_cast<uint32_t>(freqs_cos.dims.back());
+  if (geometry.head_dim == 0 || geometry.head_dim % 2 != 0) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: head_dim must be a nonzero multiple of 2");
+  }
+  if (static_cast<uint32_t>(xk.dims.back()) != geometry.head_dim ||
+      static_cast<uint32_t>(xk.dims[xk.dims.size() - 3]) != geometry.seq) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: xq/xk head_dim and seq must match");
+  }
+  if (geometry.rotary_dim != geometry.head_dim) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: partial rotary (rotary_dim != head_dim) "
+        "not supported");
+  }
+  if (freqs_cos.dims != freqs_sin.dims) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: freqs_cos and freqs_sin shapes differ");
+  }
+  if (geometry.max_seq < geometry.seq) {
+    throw std::runtime_error("WebGPU apply_rotary_emb_hf: freqs max_seq < seq");
+  }
+  if (x.buffer == nullptr || xk.buffer == nullptr ||
+      freqs_cos.buffer == nullptr || freqs_sin.buffer == nullptr ||
+      x_out.buffer == nullptr || xk_out.buffer == nullptr) {
+    throw std::runtime_error("WebGPU apply_rotary_emb_hf: null buffer binding");
+  }
+
+  geometry.half_dim = geometry.rotary_dim / 2u;
+  geometry.xq_numel = utils::numel_of(x.dims);
+  geometry.xk_numel = utils::numel_of(xk.dims);
+  const uint64_t freqs_numel = utils::numel_of(freqs_cos.dims);
+  if (freqs_numel !=
+          static_cast<uint64_t>(geometry.max_seq) * geometry.rotary_dim ||
+      x.nbytes != geometry.xq_numel * sizeof(float) ||
+      xk.nbytes != geometry.xk_numel * sizeof(float) ||
+      freqs_cos.nbytes != freqs_numel * sizeof(float) ||
+      freqs_sin.nbytes != freqs_numel * sizeof(float) ||
+      x_out.nbytes != geometry.xq_numel * sizeof(float) ||
+      xk_out.nbytes != geometry.xk_numel * sizeof(float)) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: dtype/byte-size mismatch (all fp32) or "
+        "freqs shape != [max_seq, rotary_dim]");
+  }
+  if (geometry.xq_numel > UINT32_MAX || geometry.xk_numel > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: element index exceeds uint32 range");
+  }
+  return geometry;
+}
+
+struct RotaryHfResizeContext {
+  int xq_id;
+  int xk_id;
+  int xq_out_id;
+  int xk_out_id;
+  int start_pos_id;
+  bool dynamic_pos;
+  uint32_t baked_start_pos;
+  uint32_t n_heads_q;
+  uint32_t n_heads_k;
+  uint32_t head_dim;
+  uint32_t half_dim;
+  uint32_t rotary_dim;
+  uint32_t max_seq;
+  uint32_t wg_size;
+  size_t q_idx;
+  size_t k_idx;
+  WGPUBuffer q_ubuf;
+  WGPUBuffer k_ubuf;
+};
+
+void resize_rope_hf(WebGPUGraph& graph, const RotaryHfResizeContext& context) {
+  const auto& q_dims = graph.cur_dims(context.xq_id);
+  const auto& k_dims = graph.cur_dims(context.xk_id);
+  if (q_dims.size() < 3 || k_dims.size() < 3) {
+    throw std::runtime_error(
+        "apply_rotary_emb_hf(resize): q/k rank must be >= 3");
+  }
+  const uint32_t seq = static_cast<uint32_t>(q_dims[q_dims.size() - 3]);
+  if (static_cast<uint32_t>(k_dims[k_dims.size() - 3]) != seq) {
+    throw std::runtime_error(
+        "apply_rotary_emb_hf(resize): q and k seq lengths differ");
+  }
+  if (static_cast<uint32_t>(q_dims.back()) != context.head_dim ||
+      static_cast<uint32_t>(k_dims.back()) != context.head_dim ||
+      static_cast<uint32_t>(q_dims[q_dims.size() - 2]) != context.n_heads_q ||
+      static_cast<uint32_t>(k_dims[k_dims.size() - 2]) != context.n_heads_k) {
+    throw std::runtime_error(
+        "apply_rotary_emb_hf(resize): q/k head geometry changed");
+  }
+  const uint64_t q_numel = utils::numel_of(q_dims);
+  const uint64_t k_numel = utils::numel_of(k_dims);
+  uint32_t start_pos = context.baked_start_pos;
+  if (context.dynamic_pos) {
+    const int64_t pos = graph.read_symint(context.start_pos_id);
+    if (pos < 0) {
+      throw std::runtime_error(
+          "apply_rotary_emb_hf(resize): start_pos must be non-negative");
+    }
+    start_pos = static_cast<uint32_t>(pos);
+  }
+  if (static_cast<uint64_t>(start_pos) + seq > context.max_seq) {
+    throw std::runtime_error(
+        "apply_rotary_emb_hf(resize): start_pos + seq exceeds freqs max_seq");
+  }
+  RotaryHfParams q_params = {};
+  q_params.n_heads = context.n_heads_q;
+  q_params.seq = seq;
+  q_params.head_dim = context.head_dim;
+  q_params.half_dim = context.half_dim;
+  q_params.num_pairs = static_cast<uint32_t>(q_numel / 2u);
+  q_params.rotary_dim = context.rotary_dim;
+  q_params.start_pos = start_pos;
+  RotaryHfParams k_params = q_params;
+  k_params.n_heads = context.n_heads_k;
+  k_params.num_pairs = static_cast<uint32_t>(k_numel / 2u);
+  wgpuQueueWriteBuffer(
+      graph.queue(), context.q_ubuf, 0, &q_params, sizeof(q_params));
+  wgpuQueueWriteBuffer(
+      graph.queue(), context.k_ubuf, 0, &k_params, sizeof(k_params));
+  graph.dispatch_at(context.q_idx).workgroup_count_x =
+      utils::compute_1d_workgroup_count(
+          graph.device(),
+          static_cast<uint32_t>(q_numel / 2u),
+          context.wg_size,
+          "rope_hf_q(resize)");
+  graph.dispatch_at(context.k_idx).workgroup_count_x =
+      utils::compute_1d_workgroup_count(
+          graph.device(),
+          static_cast<uint32_t>(k_numel / 2u),
+          context.wg_size,
+          "rope_hf_k(resize)");
+  graph.set_cur_dims(context.xq_out_id, q_dims);
+  graph.set_cur_dims(context.xk_out_id, k_dims);
+}
+
+void apply_rotary_emb_hf_impl(
+    WebGPUGraph& graph,
+    const std::vector<int>& args) {
+  const int xq_id = args.at(0);
+  const int xk_id = args.at(1);
+  const int freqs_cos_id = args.at(2);
+  const int freqs_sin_id = args.at(3);
+  const int start_pos_id = args.at(4);
+
+  const std::vector<int>& out_list = graph.get_value_list(args.at(5));
+  if (out_list.size() != 2) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: expected an output ValueList of size 2");
+  }
+
+  const auto& xq = graph.get_tensor(xq_id);
+  const auto& xk = graph.get_tensor(xk_id);
+  const auto& freqs_cos = graph.get_tensor(freqs_cos_id);
+  const auto& freqs_sin = graph.get_tensor(freqs_sin_id);
+  const auto& xq_out = graph.get_tensor(out_list[0]);
+  const auto& xk_out = graph.get_tensor(out_list[1]);
+
+  const RotaryHfGeometry geometry =
+      validate_rope_hf_inputs(xq, xk, freqs_cos, freqs_sin, xq_out, xk_out);
+
+  // Decode uses a SymInt position; static graphs use an Int.
+  int64_t start_pos = 0;
+  const auto start_pos_type = graph.get_value_type(start_pos_id);
+  const bool dynamic_pos = start_pos_type == WebGPUGraph::ValueType::SymInt;
+  if (dynamic_pos) {
+    start_pos = graph.read_symint(start_pos_id);
+  } else if (start_pos_type == WebGPUGraph::ValueType::Int) {
+    start_pos = graph.get_int(start_pos_id);
+  } else {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: start_pos must be Int or SymInt");
+  }
+  if (start_pos < 0) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: start_pos must be non-negative");
+  }
+  if (static_cast<uint64_t>(start_pos) + geometry.seq > geometry.max_seq) {
+    throw std::runtime_error(
+        "WebGPU apply_rotary_emb_hf: start_pos + seq exceeds freqs max_seq");
+  }
+
+  const uint32_t wg_size = utils::clamp_workgroup_size(
+      graph.device(), get_webgpu_shader_info(kRotaryHfShader).workgroup_size_x);
+  const uint32_t xq_wgc = utils::compute_1d_workgroup_count(
+      graph.device(),
+      static_cast<uint32_t>(geometry.xq_numel / 2u),
+      wg_size,
+      "apply_rotary_emb_hf");
+  const uint32_t xk_wgc = utils::compute_1d_workgroup_count(
+      graph.device(),
+      static_cast<uint32_t>(geometry.xk_numel / 2u),
+      wg_size,
+      "apply_rotary_emb_hf");
+
+  RotaryHfParams q_params = {};
+  q_params.n_heads = geometry.n_heads_q;
+  q_params.seq = geometry.seq;
+  q_params.head_dim = geometry.head_dim;
+  q_params.half_dim = geometry.half_dim;
+  q_params.num_pairs = static_cast<uint32_t>(geometry.xq_numel / 2u);
+  q_params.rotary_dim = geometry.rotary_dim;
+  q_params.start_pos = static_cast<uint32_t>(start_pos);
+  RotaryHfParams k_params = q_params;
+  k_params.n_heads = geometry.n_heads_k;
+  k_params.num_pairs = static_cast<uint32_t>(geometry.xk_numel / 2u);
+
+  const RopeDispatch q_dispatch = add_rope_dispatch(
+      graph,
+      kRotaryHfShader,
+      "apply_rotary_emb_hf",
+      xq,
+      xq_out,
+      freqs_cos,
+      freqs_sin,
+      q_params,
+      xq_wgc,
+      wg_size);
+  const RopeDispatch k_dispatch = add_rope_dispatch(
+      graph,
+      kRotaryHfShader,
+      "apply_rotary_emb_hf",
+      xk,
+      xk_out,
+      freqs_cos,
+      freqs_sin,
+      k_params,
+      xk_wgc,
+      wg_size);
+
+  const RotaryHfResizeContext resize_context = {
+      xq_id,
+      xk_id,
+      out_list[0],
+      out_list[1],
+      start_pos_id,
+      dynamic_pos,
+      static_cast<uint32_t>(start_pos),
+      geometry.n_heads_q,
+      geometry.n_heads_k,
+      geometry.head_dim,
+      geometry.half_dim,
+      geometry.rotary_dim,
+      geometry.max_seq,
+      wg_size,
+      q_dispatch.dispatch_index,
+      k_dispatch.dispatch_index,
+      q_dispatch.uniform,
+      k_dispatch.uniform};
+  auto rope_hf_hook = [resize_context](WebGPUGraph& g) {
+    resize_rope_hf(g, resize_context);
+  };
+  graph.add_tensor_resize_hook(xq_id, rope_hf_hook);
+  graph.add_tensor_resize_hook(xk_id, rope_hf_hook);
+  if (dynamic_pos) {
+    graph.add_resize_hook(start_pos_id, rope_hf_hook);
+  }
 }
 
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(et_vk.apply_rotary_emb.default, apply_rotary_emb_impl);
+  WEBGPU_REGISTER_OP(
+      et_vk.apply_rotary_emb_hf.default, apply_rotary_emb_hf_impl);
 }
 
 } // namespace executorch::backends::webgpu
