@@ -171,10 +171,8 @@ Error WebGPUBackend::execute(
     graph_options =
         resolve_webgpu_graph_execution_options(delegate_outputs, options);
 
-    // Execute the compute graph. Kept inside this try so a plan-validation
-    // throw from plan_webgpu_execution (or a GPU error) surfaces as
-    // Error::Internal instead of escaping across the delegate C API boundary.
-    graph->execute(graph_options);
+    const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
+    graph->execute(plan);
 
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
     std::vector<std::pair<void*, size_t>> outputs;
@@ -184,9 +182,12 @@ Error WebGPUBackend::execute(
       auto& tensor = args[arg_idx]->toTensor();
       outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
     }
-    graph->copy_outputs(outputs, graph_options);
+    graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
-    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
+    ET_LOG(
+        Error,
+        "WebGPU input preparation / execute / output copy failed: %s",
+        e.what());
     return Error::Internal;
   }
 
