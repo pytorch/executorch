@@ -47,8 +47,8 @@ TEST(WebGPUUtils, DispatchGridPastCeilingIsNearSquareNotMaxedOut) {
 TEST(WebGPUUtils, DispatchGridExactSquareCase) {
   // total=65536 factors exactly as 256*256 — the near-square grid should
   // find this with zero waste.
-  utils::DispatchGrid g = utils::compute_dispatch_grid_from_limits(
-      65536u, 1u, 65535u, "test");
+  utils::DispatchGrid g =
+      utils::compute_dispatch_grid_from_limits(65536u, 1u, 65535u, "test");
   EXPECT_EQ(g.count_x, 256u);
   EXPECT_EQ(g.count_y, 256u);
   EXPECT_EQ(static_cast<uint64_t>(g.count_x) * g.count_y, 65536u);
