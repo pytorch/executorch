@@ -474,11 +474,12 @@ _fixed_input_qspec_ops: dict[Any, dict[int, _QParams]] = {
         8: _QParams((0.999 - (-0.999)) / (1 << 8), 0),
         16: _QParams((0.99999 - (-0.99999)) / (1 << 16), 0),
     },
-    # grid_sampler image input/output use SNORM-compatible qparams. The broader
-    # quantized graph currently quantizes the grid-producing path as well, so
-    # input 1 follows the standard activation qspec and lowering materializes a
-    # dequant boundary before the shader. This is a functional stopgap; we may
-    # want to preserve float grid coordinates or use a higher-precision path.
+    # grid_sampler image input/output use SNORM-compatible qparams. Input 1
+    # follows the standard activation qspec, but the supported VGF lowering
+    # modes are still only:
+    # - float image / float grid / float output
+    # - int8 image / int8 grid / int8 output
+    # Mixed int8-image / float-grid shader lowering is not supported.
     torch.ops.aten.grid_sampler.default: {
         8: _QParams(1.0 / 127.0, 0, -127, 127),
     },

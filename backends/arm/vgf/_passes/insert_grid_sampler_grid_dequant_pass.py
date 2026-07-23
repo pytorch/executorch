@@ -3,11 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node, set_node_arg
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
+    get_output_qparams,
 )
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -31,14 +34,63 @@ def _get_per_tensor_dequant_args(grid: torch.fx.Node, grid_qparams: QuantArgs) -
     )
 
 
+def _can_keep_quantized_grid(grid_qparams: QuantArgs) -> bool:
+    return not grid_qparams.per_channel and grid_qparams.dtype == torch.int8
+
+
+def _uses_grid_sampler_int8_snorm_qparams(qparams: QuantArgs) -> bool:
+    return (
+        not qparams.per_channel
+        and math.isclose(
+            qparams.get_scale_per_tensor(), 1.0 / 127.0, rel_tol=1e-6, abs_tol=1e-9
+        )
+        and qparams.get_zp_per_tensor() == 0
+        and qparams.qmin == -127
+        and qparams.qmax == 127
+        and qparams.dtype == torch.int8
+    )
+
+
+def _supports_quantized_grid_sampler_path(node: torch.fx.Node) -> bool:
+    try:
+        input_qparams = get_input_qparams(node)
+        output_qparams = get_output_qparams(node)
+    except ValueError:
+        return False
+
+    image_qparams = input_qparams.get(0)
+    if image_qparams is None or not output_qparams:
+        return False
+    if not _uses_grid_sampler_int8_snorm_qparams(image_qparams):
+        return False
+    if not _uses_grid_sampler_int8_snorm_qparams(next(iter(output_qparams.values()))):
+        return False
+
+    input_tensor = node.args[0]
+    interpolation_mode = node.args[2]
+    if not isinstance(input_tensor, torch.fx.Node):
+        return False
+    if not isinstance(interpolation_mode, int):
+        return False
+    input_val = input_tensor.meta.get("val")
+    if not isinstance(input_val, torch.Tensor) or len(input_val.shape) != 4:
+        return False
+    if int(input_val.shape[0]) != 1 or interpolation_mode not in (0, 1):
+        return False
+    return int(input_val.shape[1]) in (3, 4)
+
+
 class InsertGridSamplerGridDequantPass(ArmPass):
     """Insert an explicit float boundary for quantized grid_sample grid inputs.
 
     This runs before quant-node decomposition so the standard Arm quant passes
-    can legalize the inserted dequant op, and later VGF custom-op rewriting sees
-    the expected float grid contract. Per-channel grid qparams are rejected
-    because the follow-up decompose pass only legalizes per-tensor
-    quantized_decomposed ops.
+    can legalize the inserted dequant op. For supported per-tensor int8 grids we
+    preserve the quantized grid through to the VGF custom-op rewrite so the
+    shader can dequantize coordinates internally. Unsupported per-tensor qparams
+    are still dequantized to float here, but that does not create a mixed
+    int8-image / float-grid shader mode; the supported shader modes remain
+    float/float and int8/int8. Per-channel grid qparams are rejected because the
+    follow-up decompose pass only legalizes per-tensor quantized_decomposed ops.
 
     """
 
@@ -64,6 +116,10 @@ class InsertGridSamplerGridDequantPass(ArmPass):
                 raise RuntimeError(
                     "Quantized grid_sampler grid input is missing input qparams"
                 )
+            if _can_keep_quantized_grid(
+                grid_qparams
+            ) and _supports_quantized_grid_sampler_path(node):
+                continue
             if grid_qparams.per_channel:
                 raise RuntimeError(
                     "grid_sampler grid dequant only supports per-tensor qparams"
