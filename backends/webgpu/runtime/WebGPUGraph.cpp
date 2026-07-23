@@ -1730,15 +1730,23 @@ bool should_timestamp_query() {
 }
 } // namespace
 
-void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
-  const size_t n = dispatches_.size();
-  const size_t chunk = execute_config_.chunk_size;
-  const WebGPUExecutionPlan plan = plan_webgpu_execution(
-      n,
+WebGPUExecutionPlan WebGPUGraph::make_execution_plan(
+    const WebGPUGraphExecutionOptions& options) const {
+  return plan_webgpu_execution(
+      dispatches_.size(),
       output_copies_.size(),
       execute_config_,
       suppressible_outputs_,
       options);
+}
+
+size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
+  const size_t n = dispatches_.size();
+  const size_t chunk = execute_config_.chunk_size;
+
+  if (plan.dispatch_chunks.empty()) {
+    return 0;
+  }
 
   if (chunk == 0 || n <= chunk) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -1763,45 +1771,47 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
     // One pass per dispatch: enforces storage RAW ordering across deps.
-    for (size_t i : plan.dispatch_chunks.front()) {
-      const auto& dispatch = dispatches_[i];
-      if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
-        wgpuCommandEncoderCopyBufferToBuffer(
-            encoder,
-            dispatch.copy_src,
-            0,
-            dispatch.copy_dst,
-            0,
-            dispatch.copy_nbytes);
-        continue;
-      }
-      WGPUComputePassDescriptor pass_desc = {};
+    for (const auto& dispatch_chunk : plan.dispatch_chunks) {
+      for (size_t i : dispatch_chunk) {
+        const auto& dispatch = dispatches_[i];
+        if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
+          wgpuCommandEncoderCopyBufferToBuffer(
+              encoder,
+              dispatch.copy_src,
+              0,
+              dispatch.copy_dst,
+              0,
+              dispatch.copy_nbytes);
+          continue;
+        }
+        WGPUComputePassDescriptor pass_desc = {};
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-      // tw must outlive BeginComputePass (the descriptor points at it).
-      WGPUPassTimestampWrites tw = {};
-      if (qp) {
-        tw = qp->writes_for(static_cast<uint32_t>(i));
-        pass_desc.timestampWrites = &tw;
-      }
+        // tw must outlive BeginComputePass (the descriptor points at it).
+        WGPUPassTimestampWrites tw = {};
+        if (qp) {
+          tw = qp->writes_for(static_cast<uint32_t>(i));
+          pass_desc.timestampWrites = &tw;
+        }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-      WGPUComputePassEncoder pass =
-          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-      wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
-      wgpuComputePassEncoderSetBindGroup(
-          pass, 0, dispatch.bind_group, 0, nullptr);
-      wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
-      wgpuComputePassEncoderEnd(pass);
-      wgpuComputePassEncoderRelease(pass);
+        WGPUComputePassEncoder pass =
+            wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
+        wgpuComputePassEncoderSetBindGroup(
+            pass, 0, dispatch.bind_group, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(
+            pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-      if (qp) {
-        qp->record(
-            static_cast<uint32_t>(i),
-            dispatch.kernel_name,
-            {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
-            {1, 1, 1});
-      }
+        if (qp) {
+          qp->record(
+              static_cast<uint32_t>(i),
+              dispatch.kernel_name,
+              {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
+              {1, 1, 1});
+        }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+      }
     }
 
     for (size_t i = 0; i < output_copies_.size(); i++) {
@@ -1832,7 +1842,7 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
       qp->print_results();
     }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-    return;
+    return 1;
   }
 
   // GPU timestamp queries assume one submit; chunked execute is multi-submit.
@@ -1892,6 +1902,7 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
   }
+  return plan.dispatch_chunks.size();
 }
 
 namespace {
@@ -1913,14 +1924,8 @@ void buffer_map_callback(
 
 void WebGPUGraph::copy_outputs(
     std::vector<std::pair<void*, size_t>>& outputs,
-    const WebGPUGraphExecutionOptions& options) {
+    const WebGPUExecutionPlan& plan) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
-  const WebGPUExecutionPlan plan = plan_webgpu_execution(
-      dispatches_.size(),
-      output_copies_.size(),
-      execute_config_,
-      suppressible_outputs_,
-      options);
 
   std::vector<MapCallbackData> cb_data(count);
   std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
