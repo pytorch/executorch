@@ -116,8 +116,10 @@ class DFlashRMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         dtype = x.dtype
-        x = x.float()
-        x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        # Upcast to float32 for the norm (numerical stability), matching the
+        # previous manual pow/mean/rsqrt implementation's order of operations
+        # exactly: normalize in fp32, downcast, THEN multiply by weight.
+        x = torch.nn.functional.rms_norm(x.float(), (x.shape[-1],), eps=self.eps)
         return self.weight * x.to(dtype)
 
 
