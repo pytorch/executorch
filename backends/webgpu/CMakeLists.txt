@@ -26,34 +26,17 @@ if(NOT TARGET vulkan_schema)
 endif()
 
 set(WEBGPU_SRCS
-    runtime/WebGPUBackend.cpp
-    runtime/WebGPUGraph.cpp
-    runtime/WebGPUDelegateHeader.cpp
-    runtime/WebGPUDevice.cpp
-    runtime/WebGPUQueryPool.cpp
-    runtime/ops/OperatorRegistry.cpp
-    runtime/ops/add/BinaryOp.cpp
-    runtime/ops/rms_norm/RmsNorm.cpp
-    runtime/ops/update_cache/UpdateCache.cpp
-    runtime/ops/sdpa/Sdpa.cpp
-    runtime/ops/select_as_symint/SelectAsSymint.cpp
-    runtime/ops/quantized_linear/QuantizedLinear.cpp
-    runtime/ops/mul/BinaryOp.cpp
-    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
-    runtime/ops/rope/RotaryEmbedding.cpp
-    runtime/ops/prepack/Prepack.cpp
-    runtime/ops/view_copy/ViewCopy.cpp
-    runtime/ops/select/Select.cpp
-    runtime/ops/sigmoid/UnaryOp.cpp
-    runtime/ops/squeeze/Squeeze.cpp
-    runtime/ops/unsqueeze/Unsqueeze.cpp
-    runtime/ops/slice/Slice.cpp
-    runtime/ops/permute/Permute.cpp
-    runtime/ops/cat/Cat.cpp
-    runtime/ops/index/Index.cpp
-    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
-    runtime/ops/gelu/Gelu.cpp
+    runtime/WebGPUBackend.cpp runtime/WebGPUGraph.cpp
+    runtime/WebGPUDelegateHeader.cpp runtime/WebGPUDevice.cpp
+    runtime/WebGPUQueryPool.cpp runtime/ops/OperatorRegistry.cpp
 )
+
+# Op handlers: glob so adding an op needs no CMakeLists edit. CONFIGURE_DEPENDS
+# re-globs at build time when op sources are added or removed.
+file(GLOB WEBGPU_OP_SRCS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ops/*/*.cpp"
+)
+list(APPEND WEBGPU_SRCS ${WEBGPU_OP_SRCS})
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
