@@ -54,6 +54,9 @@ struct PhysicalDevice final {
 
 #ifdef VK_KHR_cooperative_matrix
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features;
+  // True when VK_COMPONENT_TYPE_SINT8_KHR appears in the enumerated coopmat
+  // property list — required for coopmat<int8> shaders (e.g. dq8ca_q4gsw).
+  bool supports_int8_coopmat;
 #endif /* VK_KHR_cooperative_matrix */
 
 #ifdef VK_NV_cooperative_matrix2

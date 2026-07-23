@@ -10,7 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
-#include <executorch/backends/webgpu/runtime/ops/sub/binary_sub_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -23,7 +23,6 @@ namespace executorch::backends::webgpu {
 namespace {
 
 void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  // aten.sub.Tensor args: [in1, in2, alpha, out]
   const int in1_id = args.at(0);
   const int in2_id = args.at(1);
   const int alpha_id = args.at(2);
@@ -31,8 +30,6 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   WGPUDevice device = graph.device();
 
-  // Get alpha value (defaults to 1.0 if not a scalar); passed as an override
-  // constant since it is fixed for the op's lifetime (unchanged by resize).
   float alpha = 1.0f;
   if (graph.get_value_type(alpha_id) == WebGPUGraph::ValueType::Int) {
     alpha = static_cast<float>(graph.get_int(alpha_id));
@@ -44,7 +41,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& in2_tensor = graph.get_tensor(in2_id);
   const auto& out_tensor = graph.get_tensor(out_id);
 
-  // Rank guard (NCHW backend is <= 4 dims).
+  // Rank guard (NCHW backend is <= 4 dims; 1D dispatch only).
   if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
       in1_tensor.dims.size() > kTensorMetaMaxNdim ||
       in2_tensor.dims.size() > kTensorMetaMaxNdim) {
@@ -53,9 +50,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const uint32_t out_ndim = static_cast<uint32_t>(out_tensor.dims.size());
 
-  // 3 per-tensor meta uniforms (mirror Vulkan); inputs broadcast-aligned. A
-  // flat modulo tiling cannot express a middle/spatial broadcast ([1,C,1,1]
-  // across H,W), so sub carries full sizes/strides like add.
+  // 3 per-tensor meta uniforms (mirror Vulkan); inputs broadcast-aligned.
   TensorMeta out_meta;
   TensorMeta in1_meta;
   TensorMeta in2_meta;
@@ -81,7 +76,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUConstantEntry constants[2] = {};
   constants[0].key = {"wg_size", WGPU_STRLEN};
   constants[0].value = static_cast<double>(wg_size);
-  constants[1].key = {"alpha_", WGPU_STRLEN};
+  constants[1].key = {"alpha", WGPU_STRLEN};
   constants[1].value = static_cast<double>(alpha);
 
   WGPUBuffer out_meta_buf =
@@ -92,39 +87,96 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &in2_meta, sizeof(TensorMeta));
   graph.add_uniform_buffer_bytes(3 * sizeof(TensorMeta));
 
-  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
-      device,
-      kBinarySubWGSL,
-      {
-          {0,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           in1_tensor.buffer,
-           in1_tensor.nbytes},
-          {1,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           in2_tensor.buffer,
-           in2_tensor.nbytes},
-          {2,
-           WGPUBufferBindingType_Storage,
-           out_tensor.buffer,
-           out_tensor.nbytes},
-          {3, WGPUBufferBindingType_Uniform, out_meta_buf, sizeof(TensorMeta)},
-          {4, WGPUBufferBindingType_Uniform, in1_meta_buf, sizeof(TensorMeta)},
-          {5, WGPUBufferBindingType_Uniform, in2_meta_buf, sizeof(TensorMeta)},
-      },
-      constants,
-      2);
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kBinarySubWGSL, WGPU_STRLEN};
+
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  WGPUBindGroupLayoutEntry entries[6] = {};
+
+  entries[0].binding = 0;
+  entries[0].visibility = WGPUShaderStage_Compute;
+  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+  entries[1].binding = 1;
+  entries[1].visibility = WGPUShaderStage_Compute;
+  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+
+  entries[2].binding = 2;
+  entries[2].visibility = WGPUShaderStage_Compute;
+  entries[2].buffer.type = WGPUBufferBindingType_Storage;
+
+  entries[3].binding = 3;
+  entries[3].visibility = WGPUShaderStage_Compute;
+  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+
+  entries[4].binding = 4;
+  entries[4].visibility = WGPUShaderStage_Compute;
+  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
+
+  entries[5].binding = 5;
+  entries[5].visibility = WGPUShaderStage_Compute;
+  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
+
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 6;
+  bgl_desc.entries = entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pipeline_layout =
+      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = pipeline_layout;
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 2;
+  pipeline_desc.compute.constants = constants;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+
+  WGPUBindGroupEntry bg_entries[6] = {};
+
+  bg_entries[0].binding = 0;
+  bg_entries[0].buffer = in1_tensor.buffer;
+  bg_entries[0].size = in1_tensor.nbytes;
+
+  bg_entries[1].binding = 1;
+  bg_entries[1].buffer = in2_tensor.buffer;
+  bg_entries[1].size = in2_tensor.nbytes;
+
+  bg_entries[2].binding = 2;
+  bg_entries[2].buffer = out_tensor.buffer;
+  bg_entries[2].size = out_tensor.nbytes;
+
+  bg_entries[3].binding = 3;
+  bg_entries[3].buffer = out_meta_buf;
+  bg_entries[3].size = sizeof(TensorMeta);
+
+  bg_entries[4].binding = 4;
+  bg_entries[4].buffer = in1_meta_buf;
+  bg_entries[4].size = sizeof(TensorMeta);
+
+  bg_entries[5].binding = 5;
+  bg_entries[5].buffer = in2_meta_buf;
+  bg_entries[5].size = sizeof(TensorMeta);
+
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 6;
+  bg_desc.entries = bg_entries;
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {bundle.pipeline,
-       bundle.bind_group,
-       workgroup_count.x,
-       "sub",
-       workgroup_count.y});
+      {pipeline, bind_group, workgroup_count.x, "sub", workgroup_count.y});
 
-  // Dynamic shapes: rebuild all 3 broadcast TensorMeta UBOs + dispatch (alpha
-  // is an override constant, so it is baked into the pipeline and never
-  // rewritten).
+  // Dynamic shapes: rebuild all 3 broadcast TensorMeta UBOs + dispatch.
   WGPUBuffer o_buf = out_meta_buf, a_buf = in1_meta_buf, b_buf = in2_meta_buf;
   auto sub_resize =
       [in1_id, in2_id, out_id, wg_size, dispatch_idx, o_buf, a_buf, b_buf](
@@ -136,13 +188,9 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         for (size_t i = 0; i < r; i++) {
           const int64_t av = (i + a.size() < r) ? 1 : a[i - (r - a.size())];
           const int64_t bv = (i + b.size() < r) ? 1 : b[i - (r - b.size())];
-          // This 2-input hook fires when EITHER operand resizes, so
-          // mid-propagation the other may still hold its stale build-max dim.
-          // Defer instead of failing loud; a later firing (when the lagging
-          // operand resizes) re-runs this with settled dims. A valid graph is
-          // always broadcast-compatible at convergence.
           if (av != bv && av != 1 && bv != 1) {
-            return;
+            throw std::runtime_error(
+                "sub(resize): operands are not broadcast-compatible");
           }
           out_d[i] = av > bv ? av : bv;
         }
@@ -167,6 +215,9 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   graph.add_tensor_resize_hook(in1_id, sub_resize);
   graph.add_tensor_resize_hook(in2_id, sub_resize);
 
+  wgpuShaderModuleRelease(shader);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns them so a resize hook can rewrite them; freed in the dtor.
   graph.own_uniform_buffer(out_meta_buf);
   graph.own_uniform_buffer(in1_meta_buf);
