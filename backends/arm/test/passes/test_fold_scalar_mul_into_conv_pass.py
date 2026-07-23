@@ -6,11 +6,11 @@
 from collections import Counter
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm._passes.arm_pass_manager import (
     _ExportedProgramGraphPassAdapter,
 )
+from executorch.backends.arm._passes.arm_pass_utils import mark_carried_quant_state
 from executorch.backends.arm._passes.fold_scalar_mul_into_conv_pass import (
     FoldScalarMulIntoConvPass,
 )
@@ -218,13 +218,49 @@ class StatefulConvMul(torch.nn.Module):
         return y
 
 
-# FoldScalarMulIntoConv is not yet carried-state-aware at this point in the stack,
-# so the test below FAILS here (the fold happens and removes the mul). It is marked
-# xfail.
-@pytest.mark.xfail(
-    reason="FoldScalarMulIntoConv carried-state guard is added in the following diff",
-    strict=True,
-)
+def test_does_not_fold_when_output_marked_carried_state() -> None:
+    """A model-supplied carried-state marker must prevent the fold.
+
+    ConvMulScalar folds by default; marking the (conv * scalar) output as
+    carried quantized state -- the mechanism for functional recurrent state,
+    which has no structural signal before quantization -- must make the pass
+    skip it.
+
+    """
+    module = ConvMulScalar().eval()
+    inputs = (torch.randn(2, 3, 8, 8),)
+    edge_program = to_edge(
+        torch.export.export(module, inputs, strict=True),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    edge_exported_program = edge_program.exported_program()
+
+    marked = False
+    for node in edge_exported_program.graph_module.graph.nodes:
+        if node.op == "call_function" and node.target in (
+            exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.mul.Scalar,
+        ):
+            mark_carried_quant_state(node)
+            marked = True
+    assert marked, "test setup: expected a mul node to mark"
+
+    transformed = edge_program.transform(
+        [
+            _ExportedProgramGraphPassAdapter(
+                FoldScalarMulIntoConvPass(edge_exported_program)
+            )
+        ]
+    ).exported_program()
+    counts = _op_counts(transformed)
+
+    assert counts[exir_ops.edge.aten.convolution.default] == 1
+    mul_count = (
+        counts[exir_ops.edge.aten.mul.Tensor] + counts[exir_ops.edge.aten.mul.Scalar]
+    )
+    assert mul_count == 1  # fold skipped because the output is marked carried state
+
+
 def test_does_not_fold_when_output_feeds_stateful_buffer() -> None:
     """The scale must survive when the conv output crosses a carried-state
     boundary.

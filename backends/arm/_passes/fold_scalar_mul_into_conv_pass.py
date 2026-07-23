@@ -10,6 +10,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
+    is_carried_quant_state,
 )
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -17,7 +18,7 @@ from executorch.backends.transforms.utils import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.export.graph_signature import InputKind
+from torch.export.graph_signature import InputKind, OutputKind
 from torch.fx import GraphModule, Node
 from torch.fx.node import Argument
 
@@ -32,6 +33,23 @@ class FoldScalarMulIntoConvPass(ArmPass):
     a Python scalar, a scalar tensor constant, or a tensor constant
     broadcastable over the convolution output with only the channel dimension
     non-unit.
+
+    The rewrite is exact in floating point, but it moves the scaling *inside*
+    the convolution and therefore changes the convolution output's quantization
+    (its activation range, and hence its requantization). That is harmless for a
+    plain feed-forward output, but if the (scaled) convolution output feeds a
+    *carried/stateful quantization boundary* -- a value whose quantization is
+    shared across invocations (recurrent state) -- the shifted requantization
+    drifts the carried state and the error compounds over the sequence. To stay
+    safe, the fold is skipped when the convolution output transitively reaches
+    such a boundary, identified as either:
+
+    * a value written into a mutable buffer / input (``BUFFER_MUTATION`` /
+      ``USER_INPUT_MUTATION`` in the graph signature), which is structurally
+      visible; or
+    * a value the model marked with ``mark_carried_quant_state`` -- needed for
+      *functional* carried state (state passed in and returned as plain I/O),
+      which has no structural signal before quantization runs.
 
     """
 
@@ -64,12 +82,26 @@ class FoldScalarMulIntoConvPass(ArmPass):
         graph = graph_module.graph
         modified = False
         constant_placeholders_to_delete: set[Node] = set()
+        # Carried/stateful quant boundaries: values written to a mutable buffer /
+        # input (structurally visible), plus any value the model explicitly marked
+        # as carried quantized state (functional recurrent state, which has no
+        # structural signal before quantization).
+        state_boundary_names = self._state_mutation_value_names()
+        state_boundary_names |= {
+            node.name for node in graph.nodes if is_carried_quant_state(node)
+        }
 
         for node in list(graph.nodes):
             if not self.allowed_to_transform(node.meta):
                 continue
             match = self._match_mul_after_conv(node)
             if match is None:
+                continue
+
+            # Do not fold when the (scaled) conv output feeds a carried/stateful
+            # quant boundary: moving the scale into the weights shifts the conv
+            # output requantization, which drifts persisted quantized state.
+            if self._feeds_state_boundary(node, state_boundary_names):
                 continue
 
             conv_node, scale, scale_node = match
@@ -94,6 +126,47 @@ class FoldScalarMulIntoConvPass(ArmPass):
             graph_module.recompile()
 
         return PassResult(graph_module, modified)
+
+    def _state_mutation_value_names(self) -> Set[str]:
+        """Names of graph output values that write a carried/stateful boundary.
+
+        These are the values bound to ``BUFFER_MUTATION`` / ``USER_INPUT_MUTATION``
+        outputs in the exported program's graph signature -- i.e. mutable buffers
+        or inputs whose value persists across invocations (recurrent state). When
+        the graph signature is unavailable (``exported_program is None``) no state
+        boundary can be identified and the set is empty.
+
+        """
+        if self.exported_program is None:
+            return set()
+        names: Set[str] = set()
+        for spec in self.exported_program.graph_signature.output_specs:
+            if spec.kind in (
+                OutputKind.BUFFER_MUTATION,
+                OutputKind.USER_INPUT_MUTATION,
+            ):
+                name = getattr(spec.arg, "name", None)
+                if name is not None:
+                    names.add(name)
+        return names
+
+    def _feeds_state_boundary(self, node: Node, state_names: Set[str]) -> bool:
+        """True if ``node``'s output transitively reaches a state-mutation
+        value.
+        """
+        if not state_names:
+            return False
+        seen: Set[Node] = set()
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            if current.name in state_names:
+                return True
+            stack.extend(current.users)
+        return False
 
     def _match_mul_after_conv(self, node: Node) -> Optional[ConvScaleMatch]:
         if node.op != "call_function":
