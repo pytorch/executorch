@@ -18,14 +18,15 @@ it is plain non-causal attention `softmax(q @ kᵀ * scale + attn_mask) @ v`.
 fulfilling). On-device GPU numerics run via the op-test framework on a GPU rig.
 """
 
+import math
 import unittest
 from dataclasses import dataclass
 from typing import Optional
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa: F401  registers et_vk.sdpa
+
 import torch
 import torch.nn.functional as F
-
-import executorch.backends.vulkan.custom_ops_lib  # noqa: F401  registers et_vk.sdpa
 from executorch.backends.vulkan import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
@@ -69,9 +70,11 @@ def _mask(cfg: SdpaConfig) -> Optional[torch.Tensor]:
         m = torch.triu(
             torch.full((cfg.s_q, cfg.s_kv), NEG_INF, dtype=torch.float32), diagonal=1
         )
-        return m.reshape(1, 1, cfg.s_q, cfg.s_kv).expand(
-            cfg.b, cfg.h, cfg.s_q, cfg.s_kv
-        ).contiguous()
+        return (
+            m.reshape(1, 1, cfg.s_q, cfg.s_kv)
+            .expand(cfg.b, cfg.h, cfg.s_q, cfg.s_kv)
+            .contiguous()
+        )
     if not cfg.masked:
         return None
     g = torch.Generator().manual_seed(1)
@@ -84,10 +87,9 @@ class SdpaModule(torch.nn.Module):
 
     def __init__(self, mask: Optional[torch.Tensor] = None):
         super().__init__()
-        if mask is not None:
-            self.register_buffer("mask", mask)
-        else:
-            self.mask = None
+        # Always register as a buffer (even when None) so named_buffers() stays
+        # consistent across the masked and unmasked configs.
+        self.register_buffer("mask", mask)
 
     def forward(self, q, k, v):
         return torch.ops.et_vk.sdpa.default(q, k, v, self.mask, None)
@@ -121,6 +123,9 @@ class TestEtVkSdpa(unittest.TestCase):
             with self.subTest(config=cfg.name):
                 q, k, v = _qkv(cfg)
                 mask = _mask(cfg)
-                got = torch.ops.et_vk.sdpa.default(q, k, v, mask, None)
-                ref = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+                scale = 1.0 / math.sqrt(cfg.d)
+                got = torch.ops.et_vk.sdpa.default(q, k, v, mask, scale)
+                ref = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask, scale=scale
+                )
                 torch.testing.assert_close(got, ref, atol=1e-4, rtol=1e-3)
