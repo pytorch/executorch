@@ -117,6 +117,13 @@ target_compile_options(
 target_compile_definitions(
   aoti_common_shims_slim PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
 )
+# Private executorch_ prefix on the slim aoti_torch_* shims so they never
+# collide with libtorch's in a coalesced process (see backends/aoti/export.h).
+# Must match aot_inductor.shim_symbol_prefix set in
+# backends/cuda/cuda_backend.py.
+target_compile_definitions(
+  aoti_common_shims_slim PUBLIC AOTI_SHIM_SYMBOL_PREFIX=executorch_
+)
 
 target_link_libraries(aoti_common_shims_slim PUBLIC slimtensor ${CMAKE_DL_LIBS})
 
@@ -138,6 +145,9 @@ if(MSVC)
   target_compile_definitions(
     aoti_common_shims_slim_obj
     PUBLIC $<$<PLATFORM_ID:Windows>:EXPORT_AOTI_FUNCTIONS>
+  )
+  target_compile_definitions(
+    aoti_common_shims_slim_obj PUBLIC AOTI_SHIM_SYMBOL_PREFIX=executorch_
   )
   target_link_libraries(
     aoti_common_shims_slim_obj PUBLIC slimtensor ${CMAKE_DL_LIBS}

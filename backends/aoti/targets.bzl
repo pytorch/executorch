@@ -1,5 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load(":shim_symbol_prefix.bzl", "AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS")
 
 def define_common_targets():
     if not is_fbcode():
@@ -105,6 +106,18 @@ def define_common_targets():
             "export.h",
             "utils.h",
         ],
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+        # These extern "C" aoti_torch_* shims are only referenced by the CUDA
+        # delegate's dlopen'd AOTInductor blob, which is invisible to the static
+        # linker; without link_whole, --gc-sections drops the whole TU and the
+        # blob fails to resolve them at load.
+        link_whole = True,
+        # Export aoti_torch_* under the executorch_ prefix (see export.h) so the
+        # blob binds to these SlimTensor shims, not libtorch's, in a coalesced
+        # process. In BOTH lists: preprocessor_flags renames this target's own
+        # definitions (common_shims_slim.cpp); exported_ renames header includers.
+        preprocessor_flags = AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS,
+        exported_preprocessor_flags = AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS,
         visibility = ["@EXECUTORCH_CLIENTS"],
         exported_deps = [
             "//executorch/runtime/core:core",

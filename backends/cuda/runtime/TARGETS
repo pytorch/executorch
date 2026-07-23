@@ -1,6 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
 load("@fbcode_macros//build_defs/lib:re_test_utils.bzl", "re_test_utils")
+load("//executorch/backends/aoti:shim_symbol_prefix.bzl", "AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS")
 load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 
 oncall("executorch")
@@ -37,7 +38,6 @@ runtime.cxx_library(
         "shims/memory.cpp",
         "shims/rand.cu",
         "shims/sort.cu",
-        "shims/tensor_attribute.cpp",
     ],
     headers = [
         "shims/cuda_guard.h",
@@ -46,7 +46,6 @@ runtime.cxx_library(
         "shims/memory.h",
         "shims/rand.h",
         "shims/sort.h",
-        "shims/tensor_attribute.h",
         "utils.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -54,7 +53,13 @@ runtime.cxx_library(
     supports_python_dlopen = True,
     # Constructor needed for backend registration.
     compiler_flags = ["-Wno-global-constructors"],
-    preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+    # AOTI_SHIM_PREFIX flags in BOTH lists: preprocessor_flags renames THIS
+    # target's own shim definitions (memory.cpp etc.); exported_preprocessor_flags
+    # renames references in downstream header includers so both agree.
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1"] + AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS,
+    # Export aoti_torch_* under the executorch_ prefix (see aoti/export.h) so a
+    # coalesced blob binds to these SlimTensor shims, not libtorch's.
+    exported_preprocessor_flags = AOTI_SHIM_PREFIX_PREPROCESSOR_FLAGS,
     visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/aoti:aoti_common_slim",
@@ -135,6 +140,49 @@ runtime.cxx_library(
         "//executorch/extension/tensor:tensor",
         "//executorch/runtime/backend:interface",
         "//executorch/runtime/core/exec_aten/util:tensor_util",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+# ATen-mode variant of the CUDA delegate. -DUSE_ATEN_LIB routes the backend
+# registration + interface types to the runtime::aten BackendRegistry (the one an
+# _aten Module/Method reads at .pte load); without it an ATen host reports
+# "CudaBackend is not registered". The slim/AOTI tensor layer stays portable
+# (SlimTensor + mode-flexible executorch::aten:: host-tensor spelling), so this
+# builds from the same sources. Mirrors XNNPACK / TensorRTBackend. Used by a
+# coalesced TensorRT (ATen) + CUDA .pte runner.
+runtime.cxx_library(
+    name = "cuda_backend_aten",
+    srcs = [
+        "cuda_backend.cpp",
+        "cuda_mutable_state.cpp",
+    ],
+    headers = [
+        "cuda_delegate_handle.h",
+        "cuda_mutable_state.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    # Constructor needed for backend registration.
+    compiler_flags = ["-Wno-global-constructors"],
+    preprocessor_flags = ["-DCUDA_AVAILABLE=1", "-DUSE_ATEN_LIB"],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":cuda_platform",
+        ":runtime_shims",
+        ":cuda_allocator",
+        "//executorch/backends/aoti:aoti_common_slim",
+        "//executorch/backends/aoti/slim/core:slimtensor",
+        "//executorch/backends/aoti/slim/factory:empty",
+        "//executorch/backends/aoti/slim/factory:from_blob",
+        "//executorch/backends/aoti/slim/factory:from_etensor",
+        "//executorch/extension/cuda:caller_stream",
+        "//executorch/extension/tensor:tensor_aten",
+        "//executorch/runtime/backend:interface_aten",
+        "//executorch/runtime/core/exec_aten/util:tensor_util_aten",
     ],
     external_deps = [
         ("cuda", None, "cuda-lazy"),

@@ -195,6 +195,30 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
+AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor) {
+  // AOTInductor's PinnedStagingPool asks for page-locked host memory to overlap
+  // H2D copies; SlimTensor has no pinned (cudaHostAlloc) allocator yet, so this
+  // returns ordinary (pageable) host memory. Functionally correct -- the pool
+  // works and, on any error, falls back to a synchronous copy -- but without
+  // the async-overlap perf win.
+  // TODO: back this with cudaHostAlloc for true pinned semantics.
+  return aoti_torch_empty_strided(
+      ndim,
+      sizes_ptr,
+      strides_ptr,
+      dtype,
+      device_type,
+      device_index,
+      ret_new_tensor);
+}
+
 AOTITorchError aoti_torch_delete_tensor_object(SlimTensor* tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       tensor != nullptr,

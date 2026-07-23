@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <string>
 
@@ -19,7 +20,11 @@ namespace aoti {
 
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::etensor::Tensor;
+// Mode-flexible host-tensor spelling: `etensor::Tensor` in portable mode (the
+// slim ETensor the AOTI blob passes around), `at::Tensor` under USE_ATEN_LIB.
+// Used here only as an opaque handle type; the CUDA delegate reinterpret_casts
+// its SlimTensor* through it, and Metal passes its own portable handle.
+using executorch::aten::Tensor;
 
 extern "C" {
 

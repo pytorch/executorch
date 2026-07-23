@@ -54,21 +54,23 @@ namespace executorch::backends::cuda {
 using namespace std;
 using namespace aoti;
 
+using executorch::aten::ScalarType;
+using executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::Backend;
+using executorch::ET_RUNTIME_NAMESPACE::BackendExecutionContext;
+using executorch::ET_RUNTIME_NAMESPACE::BackendInitContext;
+using executorch::ET_RUNTIME_NAMESPACE::BackendOptionContext;
+using executorch::ET_RUNTIME_NAMESPACE::CompileSpec;
+using executorch::ET_RUNTIME_NAMESPACE::DelegateHandle;
+using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
 using executorch::runtime::ArrayRef;
-using executorch::runtime::BackendExecutionContext;
-using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendOption;
-using executorch::runtime::BackendOptionContext;
-using executorch::runtime::CompileSpec;
-using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::kMaxOptionValueLength;
-using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-using executorch::runtime::etensor::Tensor;
 
 // SlimTensor type aliases
 using cuda::CudaGraphPhase;
@@ -86,7 +88,7 @@ constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
 
 class ET_EXPERIMENTAL CudaBackend final
-    : public ::executorch::runtime::BackendInterface {
+    : public ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface {
  private:
   // Trim leading/trailing whitespace from a view of the string.
   static std::string_view trim(std::string_view s) {
@@ -517,7 +519,7 @@ class ET_EXPERIMENTAL CudaBackend final
       auto* tensor = &(args[i]->toTensor());
       auto device_type = tensor->unsafeGetTensorImpl()->device_type();
       ET_CHECK_OR_RETURN_ERROR(
-          device_type == executorch::runtime::etensor::DeviceType::CUDA,
+          device_type == executorch::aten::DeviceType::CUDA,
           InvalidArgument,
           "Tensor %zu expected device_type=CUDA (1), got %d. "
           "Device info may not be properly propagated from CudaPartitioner.",
@@ -1242,9 +1244,14 @@ class ET_EXPERIMENTAL CudaBackend final
 namespace executorch::backends {
 namespace {
 auto cls = cuda::CudaBackend();
-executorch::runtime::Backend backend{"CudaBackend", &cls};
+// Register into ET_RUNTIME_NAMESPACE so the delegate resolves in whichever
+// BackendRegistry the host runtime reads: `runtime` in portable builds,
+// `runtime::aten` under -DUSE_ATEN_LIB (the _aten Module/Method look up the
+// latter). Hardcoding `runtime::` would leave an ATen host with "CudaBackend is
+// not registered". Mirrors XNNPACK / TensorRTBackend.
+executorch::ET_RUNTIME_NAMESPACE::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
-    register_backend(backend);
+    executorch::ET_RUNTIME_NAMESPACE::register_backend(backend);
 
 // Auto-register the CudaAllocator so that DeviceMemoryBuffer::create(CUDA)
 // works whenever the CUDA backend library is linked.

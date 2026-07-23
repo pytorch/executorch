@@ -126,6 +126,15 @@ add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
 
 # Define CUDA_AVAILABLE to use SlimTensor on GPU in common_shims_slim.h
 target_compile_definitions(aoti_cuda_shims PRIVATE CUDA_AVAILABLE=1)
+# Private executorch_ prefix on the slim aoti_torch_* shims so they never
+# collide with libtorch's in a coalesced process (see backends/aoti/export.h).
+# Must match aot_inductor.shim_symbol_prefix set in
+# backends/cuda/cuda_backend.py. PUBLIC so direct consumers that include the
+# shim headers (e.g. the shim gtests) compile the declarations under the same
+# prefix and link the DLL's prefixed exports.
+target_compile_definitions(
+  aoti_cuda_shims PUBLIC AOTI_SHIM_SYMBOL_PREFIX=executorch_
+)
 
 # Define export macros for shared library. Use WIN32 (not just MSVC) so MinGW
 # cross-compiles also emit dllexport symbols for AOTI shims.
