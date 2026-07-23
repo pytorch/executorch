@@ -46,14 +46,13 @@ Bits-per-weight: 4.0 (qdata) + 8/32 (scale codes) + 16/256 (fp16 scale step) +
 The coalesced [N, n_groups] layout is exactly what the W4A8 dp4a matvec kernel
 (``executorch_cuda::int4_plain_mm`` / ``int4_plain_mm.cuh``) reads row-for-row
 with qdata, so the exported decode graph carries no per-step transpose. The
-transpose (and the uint8 re-encoding) is owned by :meth:`from_int4_tensor` so it
-is baked into the serialized weight constant once at pack time.
+is owned by :meth:`from_exportable_int4_tensor` so
+it is baked into the serialized weight constant once at pack time.
 """
 
 from typing import List, Optional, Tuple
 
 import torch
-from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 from torchao.utils import TorchAOBaseTensor
 
 __all__ = [
@@ -113,10 +112,10 @@ def _unpack_nibble_qdata(qdata: torch.Tensor, N: int, K: int) -> torch.Tensor:
 class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
     """INT4 weight, uint8 scale + per-256 fp16 step, uint8 zero + per-256 fp16 step.
 
-    ExecuTorch-internal; see the module docstring. Mirrors torchao
+        ExecuTorch-internal; see the module docstring. Mirrors torchao
     ``Int4Tensor``'s data/attribute layout (so the common tensor utilities and
-    serialization work) but owns the [n_groups, N] -> [N, n_groups] transpose and
-    the uint8 re-encoding via :meth:`from_int4_tensor`.
+        serialization work) but owns the [n_groups, N] -> [N, n_groups] transpose and
+        the uint8 re-encoding via :meth:`from_exportable_int4_tensor`.
     """
 
     tensor_data_names = [
@@ -181,20 +180,25 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
         return s
 
     @classmethod
-    def from_int4_tensor(cls, t: Int4Tensor) -> "CudaCoalescedInt4Tensor":
-        """Build a coalesced tensor from a torchao ``Int4Tensor``.
+    def from_exportable_int4_tensor(
+        cls, t: "ExportableInt4Tensor"  # noqa: F821
+    ) -> "CudaCoalescedInt4Tensor":
+        """Build a coalesced tensor from an ``ExportableInt4Tensor``.
 
-        Owns the transpose AND the uint8 re-encoding: torchao stores
-        scale/zero_point as (n_groups, N) bf16. The CUDA decode kernel reads the
-        (N, n_groups) uint8 scale/zero *codes* plus per-256-super-block
-        (N, K/256) fp16 ``scale_step`` / ``zero_point_step`` (scale = scale_code *
-        scale_step[:, g//8], zero = zero_code * zero_point_step[:, g//8]). The
-        transpose + encode here is baked into the serialized weight constant so
-        the exported decode graph has no per-step transpose/clone.
+        Owns the [n_groups, N] -> [N, n_groups] transpose and the uint8
+        re-encoding, baked into the serialized weight constant at pack time.
+        torchao stores scale/zero_point as (n_groups, N) bf16; the CUDA decode
+        kernel reads (N, n_groups) uint8 scale/zero *codes* plus per-256-super-
+        block (N, K/256) fp16 ``scale_step`` / ``zero_point_step`` (scale =
+        scale_code * scale_step[:, g//8], zero = zero_code * zero_point_step[:,
+        g//8]), so the exported decode graph has no per-step transpose/clone. An
+        ``ExportableInt4Tensor`` (e.g. a decoded GGUF Q4_K) stores ``group_size``
+        as a scalar rather than a ``block_size`` list and carries no activation
+        quantization, so ``block_size`` is reconstructed as ``[1, group_size]``.
         """
-        scale_codes, scale_step = _encode_uint8_per_super(t.scale, t.block_size[-1])
+        scale_codes, scale_step = _encode_uint8_per_super(t.scale, t.group_size)
         zero_codes, zero_point_step = _encode_uint8_per_super(
-            t.zero_point, t.block_size[-1]
+            t.zero_point, t.group_size
         )
         return cls(
             t.qdata,
@@ -202,10 +206,8 @@ class CudaCoalescedInt4Tensor(TorchAOBaseTensor):
             scale_step,
             zero_codes,
             zero_point_step,
-            t.block_size,
+            [1, t.group_size],
             t.shape,
-            t.act_pre_scale,
-            t.activation_dtype,
         )
 
     def dequantize(self, output_dtype: Optional[torch.dtype] = None) -> torch.Tensor:

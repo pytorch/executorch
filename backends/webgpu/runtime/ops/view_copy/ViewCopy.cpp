@@ -111,8 +111,9 @@ WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.view_copy.default, view_copy_impl);
   WEBGPU_REGISTER_OP(aten.clone.default, clone_impl);
   WEBGPU_REGISTER_OP(aten.alias_copy.default, clone_impl);
-  WEBGPU_REGISTER_OP(
-      dim_order_ops._clone_dim_order.default, clone_dim_order_impl);
+  // dim_order_ops._clone_dim_order.default is owned by DimOrder.cpp
+  // (numel-preserving flat copy); do NOT re-register it here (first-wins
+  // OperatorRegistry would nondeterministically shadow that impl).
   WEBGPU_REGISTER_OP(
       dim_order_ops._to_dim_order_copy.default, clone_dim_order_impl);
 }

@@ -1714,13 +1714,17 @@ static bool test_slice_double_start_case(double start_d, int out_len) {
   }
   std::vector<InputData> inputs(1);
   inputs[0] = {in.data(), in.size() * sizeof(float), false};
-  graph.copy_inputs(inputs);
-  graph.execute();
-
   std::vector<float> out(out_len, -1.0f);
   std::vector<std::pair<void*, size_t>> outputs(1);
   outputs[0] = {out.data(), out.size() * sizeof(float)};
-  graph.copy_outputs(outputs);
+  try {
+    graph.copy_inputs(inputs);
+    graph.execute();
+    graph.copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    printf("FAIL: slice execute threw: %s\n", e.what());
+    return false;
+  }
 
   const int start = static_cast<int>(start_d);
   float max_abs_err = 0.0f;
@@ -1800,7 +1804,9 @@ static bool test_slice_double_start_rejects(double bad_start) {
     printf("PASS: rejected as expected: %s\n", e.what());
     return true;
   }
-  printf("FAIL: expected a throw for start=%g, graph.build() succeeded\n", bad_start);
+  printf(
+      "FAIL: expected a throw for start=%g, graph.build() succeeded\n",
+      bad_start);
   return false;
 }
 
