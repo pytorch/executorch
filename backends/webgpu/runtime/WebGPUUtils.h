@@ -190,7 +190,6 @@ make_uniform(WGPUDevice device, const void* data, size_t size) {
 // loop over any excess work (vs compute_1d_workgroup_count, which throws).
 inline uint32_t clamp_workgroup_count(WGPUDevice device, uint32_t desired) {
   return std::min(desired, queried_max_workgroups(device));
-  return std::min(desired, queried_max_workgroups(device));
 }
 
 // Zero-filled storage buffer; used as a dummy binding for an optional tensor
@@ -379,51 +378,80 @@ inline ComputePipelineBundle make_compute_pipeline(
     const WGPUConstantEntry* constants = nullptr,
     size_t constant_count = 0,
     const char* entry_point = "main") {
+  // Build into the bundle incrementally so an allocation failure below is
+  // leak-free: ~ComputePipelineBundle releases shader/bind_group_layout/
+  // pipeline_layout, and pipeline/bind_group are handled explicitly.
+  ComputePipelineBundle bundle;
+
   WGPUShaderSourceWGSL wgsl_desc = {};
   wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
   wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
   WGPUShaderModuleDescriptor shader_desc = {};
   shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+  bundle.shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+  if (bundle.shader == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: shader module creation failed");
+  }
 
+  std::vector<WGPUBindGroupLayoutEntry> layout_entries(bindings.size());
   std::vector<WGPUBindGroupEntry> bind_entries(bindings.size());
   for (size_t i = 0; i < bindings.size(); i++) {
+    layout_entries[i] = {};
+    layout_entries[i].binding = bindings[i].binding;
+    layout_entries[i].visibility = WGPUShaderStage_Compute;
+    layout_entries[i].buffer.type = bindings[i].type;
+
     bind_entries[i] = {};
     bind_entries[i].binding = bindings[i].binding;
     bind_entries[i].buffer = bindings[i].buffer;
     bind_entries[i].size = bindings[i].size;
   }
 
-  // layout = nullptr => WebGPU auto-derives the bind-group layout from the
-  // shader's statically-used @group/@binding declarations, replacing the
-  // hand-built bind-group layout + pipeline layout. Precondition: every
-  // declared binding must be statically referenced by the shader (optional
-  // bindings backed by a dummy buffer are, under a runtime guard) -- auto
-  // layout omits an unreferenced binding, whose bind-group entry would then
-  // mismatch. BindingSpec.type is unused under auto layout (kept so call sites
-  // need no change).
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = layout_entries.size();
+  bgl_desc.entries = layout_entries.data();
+  bundle.bind_group_layout = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+  if (bundle.bind_group_layout == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: bind group layout creation failed");
+  }
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bundle.bind_group_layout;
+  bundle.pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  if (bundle.pipeline_layout == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: pipeline layout creation failed");
+  }
+
   WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = nullptr;
-  pipeline_desc.compute.module = shader;
+  pipeline_desc.layout = bundle.pipeline_layout;
+  pipeline_desc.compute.module = bundle.shader;
   pipeline_desc.compute.entryPoint = {entry_point, WGPU_STRLEN};
   pipeline_desc.compute.constantCount = constant_count;
   pipeline_desc.compute.constants = constants;
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  // Owned reference (must be released) -> handed to the bundle dtor.
-  WGPUBindGroupLayout bgl = wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+  if (pipeline == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: compute pipeline creation failed");
+  }
 
   WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
+  bg_desc.layout = bundle.bind_group_layout;
   bg_desc.entryCount = bind_entries.size();
   bg_desc.entries = bind_entries.data();
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  if (bind_group == nullptr) {
+    // pipeline is not yet owned by the bundle (whose dtor intentionally does
+    // not release pipeline/bind_group); release it before unwinding.
+    wgpuComputePipelineRelease(pipeline);
+    throw std::runtime_error(
+        "make_compute_pipeline: bind group creation failed");
+  }
 
-  ComputePipelineBundle bundle;
-  bundle.shader = shader;
-  bundle.bind_group_layout = bgl;
-  bundle.pipeline_layout = nullptr; // none created under auto layout
   bundle.pipeline = pipeline;
   bundle.bind_group = bind_group;
   return bundle;
