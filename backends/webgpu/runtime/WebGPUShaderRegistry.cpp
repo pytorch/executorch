@@ -60,6 +60,7 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_softmax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_k16_causal_bound_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
@@ -79,7 +80,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 61> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 62> kShaderRegistry = {{
     {
         "adamw_step",
         kAdamwStepWGSL,
@@ -485,6 +486,13 @@ constexpr std::array<WebGPUShaderInfo, 61> kShaderRegistry = {{
         kSoftmaxWorkgroupSizeX,
         kSoftmaxWorkgroupSizeY,
         kSoftmaxWorkgroupSizeZ,
+    },
+    {
+        "streaming_attention_k16_causal_bound",
+        kStreamingAttentionK16CausalBoundWGSL,
+        kStreamingAttentionK16CausalBoundWorkgroupSizeX,
+        kStreamingAttentionK16CausalBoundWorkgroupSizeY,
+        kStreamingAttentionK16CausalBoundWorkgroupSizeZ,
     },
     {
         "update_cache",
