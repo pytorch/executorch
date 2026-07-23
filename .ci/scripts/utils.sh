@@ -107,7 +107,7 @@ install_pytorch_and_domains() {
   local torch_release=$(cat version.txt)
   # Download key must match the upload key below (basename of dist/*.whl,
   # which always carries setup.py's resolved +gitHASH). Branch-ref pins
-  # like `release/2.12` would otherwise produce `+gitrelease` here and
+  # like `release/2.13` would otherwise produce `+gitrelease` here and
   # never hit the cache.
   local torch_short_hash=$(git rev-parse --short=7 HEAD)
   local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
@@ -178,7 +178,7 @@ install_pytorch_and_domains() {
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
+  TORCHVISION_VERSION=release/0.28
   export TORCHVISION_VERSION
 
   install_domains
