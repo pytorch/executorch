@@ -161,7 +161,7 @@ def _exportable_nvfp4_transform(module: nn.Module, config: ExportableNVFP4Config
             f"NVFP4 requires weight dims divisible by 16, got {weight.shape}"
         )
 
-    per_tensor_scale = 1.0
+    per_tensor_scale = None
     if config.use_per_tensor_scale:
         tensor_amax = torch.max(torch.abs(weight))
         per_tensor_scale = per_tensor_amax_to_scale(tensor_amax)
@@ -173,7 +173,11 @@ def _exportable_nvfp4_transform(module: nn.Module, config: ExportableNVFP4Config
     qdata_u32 = qdata_packed.view(torch.uint32)
     scales_u8 = scales_fp8.view(torch.uint8)
 
-    pts = torch.tensor(per_tensor_scale, dtype=torch.float32)
+    pts = torch.as_tensor(
+        1.0 if per_tensor_scale is None else per_tensor_scale,
+        dtype=torch.float32,
+        device=weight.device,
+    )
     quantized_weight = ExportableNVFP4Tensor(
         qdata_u32,
         scales_u8,
