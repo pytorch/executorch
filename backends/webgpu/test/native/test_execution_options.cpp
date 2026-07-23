@@ -54,7 +54,7 @@ TEST(WebGPUExecutionOptionsTest, ExceptionRestoresPriorValue) {
       current_webgpu_execution_options().discardable_output_data, nullptr);
 }
 
-TEST(WebGPUExecutionOptionsTest, ErrorReturnRestoresPriorValue) {
+TEST(WebGPUExecutionOptionsTest, BooleanReturnRestoresPriorValue) {
   int output = 0;
   const bool result =
       with_webgpu_execution_options({&output, true}, []() { return false; });
@@ -121,6 +121,23 @@ TEST(WebGPUExecutionPlanTest, RejectsInvalidSuppressibleRange) {
       plan_webgpu_execution(
           6, 1, ExecuteConfig{}, suppressible, WebGPUGraphExecutionOptions{0}),
       std::runtime_error);
+}
+
+TEST(WebGPUExecutionPlanTest, AllSuppressedHasNoSyntheticDispatchChunk) {
+  const std::vector<SuppressibleOutput> suppressible = {{9, 0, 0, 2}};
+  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+      2, 1, ExecuteConfig{}, suppressible, WebGPUGraphExecutionOptions{0});
+
+  EXPECT_TRUE(plan.dispatch_chunks.empty());
+  EXPECT_EQ(plan.copy_outputs, (std::vector<bool>{false}));
+}
+
+TEST(WebGPUExecutionPlanTest, CopyOnlyPlanRetainsOneSubmissionChunk) {
+  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+      0, 1, ExecuteConfig{}, {}, WebGPUGraphExecutionOptions{});
+
+  EXPECT_EQ(plan.dispatch_chunks, (std::vector<std::vector<size_t>>{{}}));
+  EXPECT_EQ(plan.copy_outputs, (std::vector<bool>{true}));
 }
 
 TEST(WebGPUExecutionPlanTest, FiltersDisabledDispatchesAcrossChunks) {

@@ -8,21 +8,13 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -63,6 +55,17 @@ constexpr uint32_t kQ4gswSteelTile = 64u;
 constexpr uint32_t kQ4gswSteelBK = 16u;
 constexpr uint32_t kQ4gswSteelBK64 = 64u;
 constexpr uint32_t kQ4gswSteelInvocations = 256u;
+
+constexpr const char* kQ4gswLinearShader = "q4gsw_linear";
+constexpr const char* kQ4gswBicolShader = "q4gsw_linear_coop4_bicol";
+constexpr const char* kQ4gswShmemShader = "q4gsw_linear_gemm_shmem";
+constexpr const char* kQ4gswSteelShader = "q4gsw_linear_gemm_steel";
+constexpr const char* kQ4gswSteelHalfShader = "q4gsw_linear_gemm_steel_half";
+constexpr const char* kQ4gswSteelHalfPwdqShader =
+    "q4gsw_linear_gemm_steel_half_pwdq";
+constexpr const char* kQ4gswSteelHalfPwdqF16accShader =
+    "q4gsw_linear_gemm_steel_half_pwdq_f16acc";
+constexpr const char* kQ4gswSteelBk64Shader = "q4gsw_steel_bk64";
 
 // One workgroup per (tile_m x tile_n) tile, no grid-stride: throw when the tile
 // count would exceed the 1D dispatch limit. Shared by the steel + shmem GEMM
@@ -290,6 +293,82 @@ Q4gswExecutionState make_q4gsw_execution_state(
   return state;
 }
 
+struct Q4gswResizeContext {
+  int in_id;
+  int out_id;
+  uint32_t max_m;
+  uint32_t K;
+  uint32_t N;
+  uint32_t K_packed;
+  uint32_t group_size;
+  uint32_t padded_N;
+  uint32_t has_bias;
+  uint32_t wg_size;
+  bool use_single_gemv;
+  bool use_dual_route;
+  bool record_bk64_route;
+  bool bk64_eligible;
+  bool prefill_use_steel;
+  bool prefill_use_shmem_gemm;
+  size_t dispatch_idx;
+  size_t route_group;
+  WGPUBuffer params_buffer;
+};
+
+void resize_q4gsw(WebGPUGraph& graph, const Q4gswResizeContext& context) {
+  const Q4gswExecutionState state = make_q4gsw_execution_state(
+      graph.device(),
+      graph.cur_dims(context.in_id),
+      context.max_m,
+      context.K,
+      context.N,
+      context.K_packed,
+      context.group_size,
+      context.padded_N,
+      context.has_bias,
+      context.wg_size,
+      context.use_single_gemv,
+      context.use_dual_route,
+      context.record_bk64_route,
+      context.bk64_eligible,
+      context.prefill_use_steel,
+      context.prefill_use_shmem_gemm);
+  wgpuQueueWriteBuffer(
+      graph.queue(),
+      context.params_buffer,
+      0,
+      &state.params,
+      sizeof(state.params));
+  if (context.use_dual_route) {
+    graph.select_dispatch_route(
+        context.route_group, state.active_route, {state.active_grid});
+  } else {
+    auto& dispatch = graph.dispatch_at(context.dispatch_idx);
+    dispatch.workgroup_count_x = state.active_grid.x;
+    dispatch.workgroup_count_y = state.active_grid.y;
+  }
+  graph.set_cur_dims(context.out_id, state.output_dims);
+}
+
+size_t add_q4gsw_compute_dispatch(
+    WebGPUGraph& graph,
+    const char* shader_name,
+    const std::vector<WebGPUBufferBinding>& bindings,
+    utils::WgCount grid,
+    const char* kernel_name,
+    bool fixed_workgroup_size,
+    uint32_t workgroup_size) {
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = shader_name;
+  descriptor.kernel_name = kernel_name;
+  descriptor.bindings = bindings;
+  if (!fixed_workgroup_size) {
+    descriptor.constants = {{"wg_size", static_cast<double>(workgroup_size)}};
+  }
+  descriptor.grid = {grid.x, grid.y};
+  return graph.add_compute_dispatch(descriptor);
+}
+
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in_id = args.at(0);
@@ -388,8 +467,8 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // M==1 -> bicol GEMV; M>1 -> BK64 for exact Llama projections/M values,
   // otherwise steel GEMM (preferred), shmem, or tiled.
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
+  const uint32_t wg_size = utils::clamp_workgroup_size(
+      device, get_webgpu_shader_info(kQ4gswLinearShader).workgroup_size_x);
   const bool bicol_eligible = K % 8u == 0u && gs % 8u == 0u;
   const bool use_gemv = M == 1u && bicol_eligible;
   const bool use_dual_route = utils::should_record_q4gsw_dual_route(
@@ -403,7 +482,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
   const uint32_t gemv_wg_size = (use_gemv || use_dual_route)
       ? utils::clamp_workgroup_size_pow2(
-            device, kQ4gswLinearCoop4BicolWorkgroupSizeX)
+            device, get_webgpu_shader_info(kQ4gswBicolShader).workgroup_size_x)
       : 0u;
   // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
   const bool use_steel = !use_gemv && steel_supported(device) &&
@@ -414,14 +493,14 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // large K/N thresholds; otherwise the register-tiled path handles it.
   const bool use_shmem_gemm = !use_gemv && !use_steel &&
       (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
-  const char* prefill_shader_src = use_steel ? kQ4gswLinearGemmSteelWGSL
-      : use_shmem_gemm                       ? kQ4gswLinearGemmShmemWGSL
-                                             : kQ4gswLinearWGSL;
-  const char* shader_src = use_gemv ? kQ4gswLinearCoop4BicolWGSL
-      : use_bk64                    ? kQ4gswSteelBk64WGSL
-      : use_steel                   ? kQ4gswLinearGemmSteelWGSL
-      : use_shmem_gemm              ? kQ4gswLinearGemmShmemWGSL
-                                    : kQ4gswLinearWGSL;
+  const char* prefill_shader_name = use_steel ? kQ4gswSteelShader
+      : use_shmem_gemm                        ? kQ4gswShmemShader
+                                              : kQ4gswLinearShader;
+  const char* shader_name = use_gemv ? kQ4gswBicolShader
+      : use_bk64                     ? kQ4gswSteelBk64Shader
+      : use_steel                    ? kQ4gswSteelShader
+      : use_shmem_gemm               ? kQ4gswShmemShader
+                                     : kQ4gswLinearShader;
   // f16-multiply steel: only when the device negotiated shader-f16; else the
   // f32 steel kernel runs (fail-closed). Same bindings and tile.
   if (use_steel) {
@@ -431,11 +510,11 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       // each u32 weight word once + hoists the per-column scale (half re-reads
       // them ~8x/~16x). Needs group_size % BK == 0 so the hoisted scale is
       // constant across the BK tile; else the per-nibble `half` kernel.
-      prefill_shader_src = (gs % kQ4gswSteelBK == 0u)
-          ? kQ4gswLinearGemmSteelHalfPwdqWGSL
-          : kQ4gswLinearGemmSteelHalfWGSL;
+      prefill_shader_name = (gs % kQ4gswSteelBK == 0u)
+          ? kQ4gswSteelHalfPwdqShader
+          : kQ4gswSteelHalfShader;
       if (!use_bk64) {
-        shader_src = prefill_shader_src;
+        shader_name = prefill_shader_name;
       }
     }
   }
@@ -447,9 +526,9 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (use_steel && graph.f16_accumulate_gemm() && (gs % kQ4gswSteelBK == 0u)) {
     const WebGPUContext* ctx = get_default_webgpu_context();
     if (ctx != nullptr && ctx->shader_f16_supported) {
-      prefill_shader_src = kQ4gswLinearGemmSteelHalfPwdqF16accWGSL;
+      prefill_shader_name = kQ4gswSteelHalfPwdqF16accShader;
       if (!use_bk64) {
-        shader_src = prefill_shader_src;
+        shader_name = prefill_shader_name;
       }
     }
   }
@@ -472,93 +551,14 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       use_steel,
       use_shmem_gemm);
 
-  WGPUBufferDescriptor uniform_desc = {};
-  uniform_desc.size = sizeof(Q4gswParams);
-  uniform_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  uniform_desc.mappedAtCreation = true;
-  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device, &uniform_desc);
-  void* mapped =
-      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(Q4gswParams));
-  std::memcpy(mapped, &initial_state.params, sizeof(Q4gswParams));
-  wgpuBufferUnmap(uniform_buffer);
-  graph.add_uniform_buffer_bytes(sizeof(Q4gswParams));
-
-  // Bind group layout: out (rw) + in/weight/scales/bias (ro storage) + uniform.
-  WGPUBindGroupLayoutEntry entries[6] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 4; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[5].binding = 5;
-  entries[5].visibility = WGPUShaderStage_Compute;
-  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 6;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUBindGroupEntry bg_entries[6] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in.buffer;
-  bg_entries[1].size = in.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight.buffer;
-  bg_entries[2].size = weight.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = scales.buffer;
-  bg_entries[3].size = scales.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = bias_buffer;
-  bg_entries[4].size = bias_size;
-  bg_entries[5].binding = 5;
-  bg_entries[5].buffer = uniform_buffer;
-  bg_entries[5].size = sizeof(Q4gswParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 6;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  auto make_pipeline = [&](const char* source,
-                           bool fixed_wg,
-                           uint32_t override_wg_size) {
-    WGPUShaderSourceWGSL wgsl_desc = {};
-    wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-    wgsl_desc.code = {source, WGPU_STRLEN};
-    WGPUShaderModuleDescriptor shader_desc = {};
-    shader_desc.nextInChain = &wgsl_desc.chain;
-    WGPUShaderModule shader =
-        wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-    WGPUConstantEntry wg_size_constant = {};
-    wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-    wg_size_constant.value = static_cast<double>(override_wg_size);
-    WGPUComputePipelineDescriptor pipeline_desc = {};
-    pipeline_desc.layout = pipeline_layout;
-    pipeline_desc.compute.module = shader;
-    pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-    pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
-    pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
-    WGPUComputePipeline pipeline =
-        wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-    wgpuShaderModuleRelease(shader);
-    return pipeline;
-  };
+  WGPUBuffer params_buffer = graph.create_params_buffer(initial_state.params);
+  const std::vector<WebGPUBufferBinding> bindings = {
+      {out.buffer, 0u, out.nbytes},
+      {in.buffer, 0u, in.nbytes},
+      {weight.buffer, 0u, weight.nbytes},
+      {scales.buffer, 0u, scales.nbytes},
+      {bias_buffer, 0u, bias_size},
+      {params_buffer, 0u, sizeof(Q4gswParams)}};
 
   const bool fixed_prefill_wg = use_steel || use_shmem_gemm;
   const char* prefill_label = use_steel ? "linear_q4gsw_steel"
@@ -567,35 +567,33 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   size_t dispatch_idx = 0;
   size_t route_group = 0;
   if (use_dual_route) {
-    // Each recorded dispatch owns one bind-group reference.
-    wgpuBindGroupAddRef(bind_group);
-    if (record_bk64_route) {
-      wgpuBindGroupAddRef(bind_group);
-    }
-    WGPUComputePipeline bicol_pipeline =
-        make_pipeline(kQ4gswLinearCoop4BicolWGSL, false, gemv_wg_size);
-    const size_t bicol_idx = graph.add_dispatch(
-        {bicol_pipeline,
-         bind_group,
-         initial_state.active_grid.x,
-         "linear_q4gsw_coop4_bicol"});
+    const size_t bicol_idx = add_q4gsw_compute_dispatch(
+        graph,
+        kQ4gswBicolShader,
+        bindings,
+        initial_state.active_grid,
+        "linear_q4gsw_coop4_bicol",
+        false,
+        gemv_wg_size);
     size_t bk64_idx = 0;
     if (record_bk64_route) {
-      WGPUComputePipeline bk64_pipeline =
-          make_pipeline(kQ4gswSteelBk64WGSL, true, 0u);
-      bk64_idx = graph.add_dispatch(
-          {bk64_pipeline,
-           bind_group,
-           initial_state.active_grid.x,
-           "linear_q4gsw_bk64"});
+      bk64_idx = add_q4gsw_compute_dispatch(
+          graph,
+          kQ4gswSteelBk64Shader,
+          bindings,
+          initial_state.active_grid,
+          "linear_q4gsw_bk64",
+          true,
+          0u);
     }
-    WGPUComputePipeline prefill_pipeline =
-        make_pipeline(prefill_shader_src, fixed_prefill_wg, wg_size);
-    const size_t prefill_idx = graph.add_dispatch(
-        {prefill_pipeline,
-         bind_group,
-         initial_state.active_grid.x,
-         prefill_label});
+    const size_t prefill_idx = add_q4gsw_compute_dispatch(
+        graph,
+        prefill_shader_name,
+        bindings,
+        initial_state.active_grid,
+        prefill_label,
+        fixed_prefill_wg,
+        wg_size);
     if (record_bk64_route) {
       route_group = graph.register_dispatch_route_group(
           {{bicol_idx, bicol_idx + 1},
@@ -609,74 +607,42 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         route_group, initial_state.active_route, {initial_state.active_grid});
   } else {
     const bool fixed_wg = use_gemv ? false : (use_bk64 || fixed_prefill_wg);
-    WGPUComputePipeline pipeline =
-        make_pipeline(shader_src, fixed_wg, use_gemv ? gemv_wg_size : wg_size);
-    dispatch_idx = graph.add_dispatch(
-        {pipeline,
-         bind_group,
-         initial_state.active_grid.x,
-         use_gemv ? "linear_q4gsw_coop4_bicol"
-                  : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label)});
+    dispatch_idx = add_q4gsw_compute_dispatch(
+        graph,
+        shader_name,
+        bindings,
+        initial_state.active_grid,
+        use_gemv ? "linear_q4gsw_coop4_bicol"
+                 : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label),
+        fixed_wg,
+        use_gemv ? gemv_wg_size : wg_size);
   }
 
   // Dynamic shapes: recompute one shared Params block and select exactly one
   // writer. The prefill pipeline remains the route chosen from max M.
-  graph.add_tensor_resize_hook(
+  const Q4gswResizeContext resize_context = {
       in_id,
-      [in_id,
-       out_id,
-       M,
-       K,
-       N,
-       K_packed,
-       gs,
-       padded_N,
-       has_bias,
-       wg_size,
-       use_gemv,
-       use_dual_route,
-       record_bk64_route,
-       bk64_eligible,
-       use_steel,
-       use_shmem_gemm,
-       dispatch_idx,
-       route_group,
-       uniform_buffer](WebGPUGraph& g) {
-        const auto& d = g.cur_dims(in_id);
-        const Q4gswExecutionState state = make_q4gsw_execution_state(
-            g.device(),
-            d,
-            M,
-            K,
-            N,
-            K_packed,
-            gs,
-            padded_N,
-            has_bias,
-            wg_size,
-            use_gemv,
-            use_dual_route,
-            record_bk64_route,
-            bk64_eligible,
-            use_steel,
-            use_shmem_gemm);
-        wgpuQueueWriteBuffer(
-            g.queue(), uniform_buffer, 0, &state.params, sizeof(state.params));
-        if (use_dual_route) {
-          g.select_dispatch_route(
-              route_group, state.active_route, {state.active_grid});
-        } else {
-          auto& dispatch = g.dispatch_at(dispatch_idx);
-          dispatch.workgroup_count_x = state.active_grid.x;
-          dispatch.workgroup_count_y = state.active_grid.y;
-        }
-        g.set_cur_dims(out_id, state.output_dims);
-      });
-
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
-  graph.own_uniform_buffer(uniform_buffer);
+      out_id,
+      M,
+      K,
+      N,
+      K_packed,
+      gs,
+      padded_N,
+      has_bias,
+      wg_size,
+      use_gemv,
+      use_dual_route,
+      record_bk64_route,
+      bk64_eligible,
+      use_steel,
+      use_shmem_gemm,
+      dispatch_idx,
+      route_group,
+      params_buffer};
+  graph.add_tensor_resize_hook(in_id, [resize_context](WebGPUGraph& g) {
+    resize_q4gsw(g, resize_context);
+  });
 }
 
 } // namespace
