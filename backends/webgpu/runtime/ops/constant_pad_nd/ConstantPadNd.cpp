@@ -84,6 +84,12 @@ void constant_pad_nd_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // Validate output dims == in + left + right per dim (loud-fail on a wrong
   // pad-list interpretation), before any buffer alloc -> no leak-on-throw.
   for (size_t d = 0; d < nd; d++) {
+    // The kernel's pad params are u32; a negative pad (cropping) would wrap
+    // into a huge offset, so reject it loudly rather than gather out of bounds.
+    if (left[d] < 0 || right[d] < 0) {
+      throw std::runtime_error(
+          "WebGPU constant_pad_nd: negative pad (cropping) not supported");
+    }
     const int64_t expect = in.dims[d] + left[d] + right[d];
     if (expect < 0 || static_cast<int64_t>(out.dims[d]) != expect) {
       throw std::runtime_error("WebGPU constant_pad_nd: output shape mismatch");
@@ -92,6 +98,7 @@ void constant_pad_nd_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const uint64_t out_numel =
       utils::check_fp32(out, "constant_pad_nd", "output");
+  utils::check_fp32(in, "constant_pad_nd", "input");
 
   // Adaptive 1D->2D dispatch: wg=clamp(device,256) + 2D-spill past the 65535
   // ceiling. stride_x lets the shader decode idx = gid.y*stride_x + gid.x.
