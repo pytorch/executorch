@@ -40,6 +40,27 @@ from torch.export.graph_signature import InputKind
 _Dim = int | torch.SymInt
 
 
+# Meta key marking a value as *carried quantized state*: a tensor whose
+# quantization is shared across invocations (e.g. recurrent state fed back frame
+# to frame). Such a value's quantization must stay stable, so requantization-
+# perturbing rewrites (e.g. FoldScalarMulIntoConvPass) must not fold into a
+# convolution whose output reaches it. The marker is model-supplied because
+# functional carried state has no structural signal before quantization runs.
+CARRIED_QUANT_STATE_META_KEY = "carried_quant_state"
+
+
+def mark_carried_quant_state(node: torch.fx.Node) -> None:
+    """Mark ``node``'s output as carried quantized state (see the meta key
+    doc).
+    """
+    node.meta[CARRIED_QUANT_STATE_META_KEY] = True
+
+
+def is_carried_quant_state(node: torch.fx.Node) -> bool:
+    """True if ``node`` was marked as carried quantized state."""
+    return bool(node.meta.get(CARRIED_QUANT_STATE_META_KEY, False))
+
+
 def is_submodule_node(node: torch.fx.Node):
     if node.op not in ("get_attr", "placeholder"):
         return False
