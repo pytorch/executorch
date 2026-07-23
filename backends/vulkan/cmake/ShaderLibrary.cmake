@@ -25,8 +25,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 # find_program already searches the PATH environment variable and appends the
-# platform executable suffix (.exe on Windows). Add the Vulkan SDK bin dir as a
-# hint so glslc is found on Windows even when only VULKAN_SDK is set.
+# platform executable suffix (.exe on Windows). Prefer the Vulkan SDK bin dir so
+# an explicitly configured SDK takes precedence, including on Windows where the
+# installer may not add it to PATH.
 find_program(GLSLC_PATH glslc HINTS $ENV{VULKAN_SDK}/bin $ENV{VULKAN_SDK}/Bin)
 
 if(NOT GLSLC_PATH AND EXECUTORCH_BUILD_VULKAN)
