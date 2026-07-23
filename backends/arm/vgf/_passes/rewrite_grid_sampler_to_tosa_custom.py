@@ -23,8 +23,11 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
     encode_payload,
     grid_sampler_2d_operator_name,
 )
+from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.export.graph_signature import InputKind
 from torch.fx.passes.shape_prop import _extract_tensor_metadata
 
 
@@ -32,7 +35,7 @@ def _grid_sampler_2d_custom_fake_impl(
     inputs, operator_name, domain_name, implementation_attrs
 ) -> list[torch.Tensor]:
     _ = (operator_name, domain_name, implementation_attrs)
-    input_tensor, grid = inputs
+    input_tensor, grid, *_ = inputs
     return [
         torch.empty(
             (
@@ -146,11 +149,24 @@ def _uses_grid_sampler_int8_snorm_metadata(node: torch.fx.Node) -> bool:
     ) and _uses_grid_sampler_int8_snorm_qparams(next(iter(output_qparams.values())))
 
 
+def _supports_quantized_grid_custom(qparams: QuantArgs) -> bool:
+    return not qparams.per_channel and qparams.dtype == torch.int8
+
+
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
     """Rewrite ``aten.grid_sampler_2d`` nodes to ``tosa.CUSTOM``."""
 
     targeted_ops = (exir_ops.edge.aten.grid_sampler_2d.default,)
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def __init__(
+        self,
+        exported_program: ExportedProgram | None = None,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
 
     @staticmethod
     def _encode_payload(
@@ -160,6 +176,8 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
         input_tensor: torch.fx.Node,
         output_tensor: torch.fx.Node,
         output_dtype: torch.dtype | None = None,
+        grid_dtype: torch.dtype | None = None,
+        extra_tensor_input_vkformats: list[str] | None = None,
     ) -> list[int]:
         input_val = input_tensor.meta.get("val")
         if input_val is None:
@@ -175,8 +193,68 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             output_shape=tuple(output_val.shape),
             input_dtype=input_val.dtype,
             output_dtype=output_dtype,
+            grid_dtype=grid_dtype,
+            extra_tensor_input_vkformats=extra_tensor_input_vkformats,
         )
         return encode_payload(payload)
+
+    def _get_first_user_input_placeholder(self, graph: torch.fx.Graph) -> torch.fx.Node:
+        if self.exported_program is None:
+            raise RuntimeError(
+                "RewriteGridSamplerToTosaCustomPass requires ExportedProgram context "
+                "to create constant placeholders"
+            )
+        user_input_names = {
+            spec.arg.name
+            for spec in self.exported_program.graph_signature.input_specs
+            if spec.kind == InputKind.USER_INPUT
+        }
+        for graph_node in graph.nodes:
+            if graph_node.op != "placeholder":
+                continue
+            if (
+                graph_node.name in user_input_names
+                or graph_node.target in user_input_names
+            ):
+                return graph_node
+        raise RuntimeError("Failed to find a user input placeholder in the graph")
+
+    def _create_grid_qparam_placeholders(
+        self,
+        graph: torch.fx.Graph,
+        node: torch.fx.Node,
+        grid_qparams: QuantArgs,
+    ) -> tuple[torch.fx.Node, torch.fx.Node]:
+        if self.exported_program is None:
+            raise RuntimeError(
+                "RewriteGridSamplerToTosaCustomPass requires ExportedProgram context "
+                "to create qparam placeholders"
+            )
+
+        first_user_input = self._get_first_user_input_placeholder(graph)
+        base_name = node.name.replace(".", "_")
+        scale_name = f"{base_name}_grid_scale"
+        zp_name = f"{base_name}_grid_zero_point"
+
+        with graph.inserting_before(first_user_input):
+            scale_node = create_constant_placeholder(
+                self.exported_program,
+                graph,
+                scale_name,
+                InputKind.CONSTANT_TENSOR,
+                torch.tensor(
+                    [grid_qparams.get_scale_per_tensor()], dtype=torch.float32
+                ),
+            )
+            zp_node = create_constant_placeholder(
+                self.exported_program,
+                graph,
+                zp_name,
+                InputKind.CONSTANT_TENSOR,
+                torch.tensor([grid_qparams.get_zp_per_tensor()], dtype=torch.int32),
+            )
+
+        return scale_node, zp_node
 
     @staticmethod
     def _pad_c3_input_to_c4(
@@ -240,15 +318,32 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
             )
             use_quantized_image_payload = _uses_grid_sampler_int8_snorm_metadata(node)
             output_dtype = torch.int8 if use_quantized_image_payload else None
+            grid_qparams = None
+            grid_qparam_constants: tuple[torch.fx.Node, torch.fx.Node] | None = None
+            quantized_grid = not grid.meta["val"].dtype.is_floating_point
             pad_c3_for_sampler = _can_pad_c3_for_sampler(
                 input_tensor,
                 interpolation_mode,
                 align_corners,
             )
-            if not grid.meta["val"].dtype.is_floating_point:
+            if quantized_grid:
+                grid_qparams = get_input_qparams(node).get(1)
+                if grid_qparams is None:
+                    raise RuntimeError(
+                        "Quantized grid_sampler rewrite is missing grid input qparams"
+                    )
+                if not _supports_quantized_grid_custom(grid_qparams):
+                    raise RuntimeError(
+                        "grid_sampler rewrite only supports per-tensor int8 grids; "
+                        "unsupported qparams should have been dequantized earlier"
+                    )
+                grid_qparam_constants = self._create_grid_qparam_placeholders(
+                    graph_module.graph, node, grid_qparams
+                )
+            if use_quantized_image_payload and grid_qparam_constants is None:
                 raise RuntimeError(
-                    "grid_sampler rewrite expected float grid input; "
-                    "InsertGridSamplerGridDequantPass should run before this pass"
+                    "grid_sampler int8 sampler rewrite requires a quantized int8 "
+                    "grid with explicit scale/zero-point shader inputs"
                 )
 
             operator_name = grid_sampler_2d_operator_name(
@@ -270,6 +365,14 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     input_tensor=custom_input,
                     output_tensor=node,
                     output_dtype=output_dtype,
+                    grid_dtype=(
+                        grid.meta["val"].dtype if grid_qparams is not None else None
+                    ),
+                    extra_tensor_input_vkformats=(
+                        ["VK_FORMAT_R32_SFLOAT", "VK_FORMAT_R32_SINT"]
+                        if grid_qparam_constants is not None
+                        else None
+                    ),
                 )
                 nhwc_input = create_node(
                     graph_module.graph,
@@ -284,11 +387,13 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     ),
                 )
                 custom_grid = grid
-
+                custom_inputs = [nhwc_input, custom_grid]
+                if grid_qparam_constants is not None:
+                    custom_inputs.extend(grid_qparam_constants)
                 custom_node = create_node(
                     graph_module.graph,
                     op_target=exir_ops.backend.tosa.CUSTOM.default,
-                    args=([nhwc_input, custom_grid],),
+                    args=(custom_inputs,),
                     kwargs={
                         "operator_name": operator_name,
                         "domain_name": CUSTOM_SHADER_DOMAIN_NAME,
@@ -297,6 +402,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     from_node=node,
                     inherit_qparams=True,
                 )
+                if grid_qparams is not None and "input_qparams" in custom_node.meta:
+                    custom_node.meta["input_qparams"] = {
+                        idx: qargs
+                        for idx, qargs in custom_node.meta["input_qparams"].items()
+                        if idx != 1
+                    }
             with graph_module.graph.inserting_after(custom_node):
                 getitem_node = graph_module.graph.create_node(
                     "call_function",
@@ -305,7 +416,7 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                     kwargs={},
                 )
                 custom_output = _grid_sampler_2d_custom_fake_impl(
-                    [nhwc_input.meta["val"], custom_grid.meta["val"]],
+                    [input_node.meta["val"] for input_node in custom_inputs],
                     operator_name,
                     CUSTOM_SHADER_DOMAIN_NAME,
                     implementation_attrs,
