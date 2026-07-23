@@ -9,6 +9,8 @@
 
 # This file contains all the helper utility functions.
 
+from __future__ import annotations
+
 from itertools import zip_longest
 from math import frexp, isclose, trunc
 from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, Union
@@ -226,8 +228,7 @@ def quantize_tensor_multiplier(
 
     # This is identical to C++11 std::round(). The general python round rounds
     # down, and C++ rounds away from zero.
-    # pyre-fixme[2]: Parameter must be annotated.
-    def round_away_zero(f) -> int:
+    def round_away_zero(f: float) -> int:
         r = -0.5 if (f < 0) else 0.5
         return trunc(f + r)
 
