@@ -8,6 +8,7 @@
 
 from typing import Optional, Tuple, Union
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 
@@ -89,6 +90,12 @@ class Div(torch.nn.Module):
             return torch.div(input=input_, other=other_, rounding_mode=rounding_mode)
 
 
+# We need to get this op directly to have coverage
+class DivScalar(torch.nn.Module):
+    def forward(self, input_: torch.Tensor):
+        return torch.ops.aten.div.Scalar(input_, 2.0)
+
+
 @common.parametrize("test_data", test_data_suite)
 def test_div_tensor_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](Div(), test_data(), aten_op, exir_op)
@@ -146,6 +153,57 @@ def test_div_tensor_vgf_quant(test_data: Tuple):
         test_data(),
         aten_op=[],
         exir_op=[],
+        quantize=True,
+    )
+    pipeline.run()
+
+
+aten_op_scalar = "torch.ops.aten.div.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_div_Scalar"
+
+test_data_suite_scalar = {
+    "op_div_scalar_rank1_rand": lambda: (torch.rand(5) + 1.0,),
+    "op_div_scalar_rank4_rand": lambda: (torch.rand(5, 10, 25, 20) + 1.0,),
+}
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@common.SkipIfNoModelConverter
+def test_div_scalar_vgf_no_quant(test_data: input_t1):
+    """Test Tensor / Scalar division (VGF FP)."""
+    pipeline = VgfPipeline[input_t1](
+        DivScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@pytest.mark.xfail(
+    reason=(
+        "Quantized div.Scalar is rewritten to div.Tensor after the initial "
+        "quantizer support match, so it misses DecomposeDivPass and remains "
+        "outside the VGF delegate. MLETORCH-2366"
+    ),
+    strict=True,
+)
+@common.SkipIfNoModelConverter
+def test_div_scalar_vgf_quant(test_data: input_t1):
+    """Test Tensor / Scalar division (VGF INT).
+
+    The quantized scalar path is rewritten before the ATen and should not be
+    checked as div.Scalar. We keep expected op lists empty, matching the
+    existing quantized div.Tensor test.
+
+    """
+    pipeline = VgfPipeline[input_t1](
+        DivScalar(),
+        test_data(),
+        [],
+        [],
         quantize=True,
     )
     pipeline.run()
