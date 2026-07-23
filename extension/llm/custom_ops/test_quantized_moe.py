@@ -176,6 +176,7 @@ def _moe_forward_with_qdq_weights(
     return torch.einsum("tkd,tk->td", expert_outs, weights)
 
 
+@_REQUIRES_TORCHAO_KERNEL_LIBRARY
 class TestQuantizedMoeFfnOp(unittest.TestCase):
     """Numerical correctness vs a Python q-dq reference."""
 
