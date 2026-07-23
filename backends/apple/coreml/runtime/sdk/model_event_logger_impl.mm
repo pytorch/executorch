@@ -162,7 +162,14 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
                     dim_order.data(),
                     strides.data());
                 auto tensor = Tensor(&tensor_impl);
-                tracer_->log_intermediate_output_delegate(debug_symbol.UTF8String, -1, tensor);
+                auto log_result = tracer_->log_intermediate_output_delegate(
+                    debug_symbol.UTF8String, -1, tensor);
+                if (!log_result.ok()) {
+                  ET_LOG(
+                      Error,
+                      "Failed to log CoreML delegate output: %s",
+                      to_string(log_result.error()));
+                }
             }];
         }
     }];
