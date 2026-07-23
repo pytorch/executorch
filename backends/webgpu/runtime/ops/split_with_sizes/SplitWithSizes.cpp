@@ -52,6 +52,22 @@ void split_with_sizes_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("split_with_sizes: outputs != sizes count");
   }
 
+  // Validate the split contract up front (before any dispatch): each size is
+  // non-negative and they sum to the split dim's extent -- a negative or
+  // oversize value would otherwise wrap when cast to u32 into an out-of-bounds
+  // gather offset.
+  int64_t sizes_sum = 0;
+  for (int64_t s : sizes) {
+    if (s < 0) {
+      throw std::runtime_error("split_with_sizes: negative split size");
+    }
+    sizes_sum += s;
+  }
+  if (sizes_sum != in_tensor.dims[dim]) {
+    throw std::runtime_error(
+        "split_with_sizes: sizes must sum to the split dim extent");
+  }
+
   TensorMeta in_meta;
   fill_tensor_meta(in_tensor, &in_meta);
   if (in_tensor.nbytes != static_cast<size_t>(in_meta.numel) * sizeof(float)) {

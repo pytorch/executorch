@@ -77,6 +77,23 @@ void batch_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool has_bias =
       graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor;
 
+  // Per-channel params are indexed [0, C); guard their byte sizes so an
+  // undersized buffer can't drive an out-of-bounds shader read. mean/var are
+  // required; weight/bias only when present.
+  const uint64_t c_bytes = uint64_t(C) * sizeof(float);
+  if (mean.nbytes != c_bytes || var.nbytes != c_bytes) {
+    throw std::runtime_error(
+        "WebGPU batch_norm: mean/var must be fp32 of length C");
+  }
+  if (has_weight && graph.get_tensor(weight_id).nbytes != c_bytes) {
+    throw std::runtime_error(
+        "WebGPU batch_norm: weight must be fp32 of length C");
+  }
+  if (has_bias && graph.get_tensor(bias_id).nbytes != c_bytes) {
+    throw std::runtime_error(
+        "WebGPU batch_norm: bias must be fp32 of length C");
+  }
+
   utils::DispatchGrid grid = utils::compute_dispatch_grid(
       device,
       static_cast<uint32_t>(out_numel),
