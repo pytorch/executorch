@@ -286,6 +286,8 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+
+
 from executorch.backends.webgpu.test.ops.test_gelu import (
     _det_input as _gelu_det_input,
     GeluModule,
@@ -311,7 +313,9 @@ def _gelu_suite() -> WebGPUTestSuite:
                 construct={"approximate": "none"},
                 inputs=((S1, M1, M2),),
             ),
-            Case(name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)),
+            Case(
+                name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)
+            ),
             Case(
                 name="erf_range",
                 construct={"approximate": "none"},
