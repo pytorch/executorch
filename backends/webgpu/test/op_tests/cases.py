@@ -286,6 +286,8 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+
+
 from executorch.backends.webgpu.test.ops.test_gelu import (
     _det_input as _gelu_det_input,
     GeluModule,
@@ -311,7 +313,9 @@ def _gelu_suite() -> WebGPUTestSuite:
                 construct={"approximate": "none"},
                 inputs=((S1, M1, M2),),
             ),
-            Case(name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)),
+            Case(
+                name="tanh_mat", construct={"approximate": "tanh"}, inputs=((M1, M2),)
+            ),
             Case(
                 name="erf_range",
                 construct={"approximate": "none"},
@@ -321,6 +325,8 @@ def _gelu_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_layer_norm import (
     _ramp as _ln_ramp,
     make_layer_norm,
@@ -334,7 +340,11 @@ def _layer_norm_suite() -> WebGPUTestSuite:
     return WebGPUTestSuite(
         module_factory=make_layer_norm,
         cases=[
-            Case(name="affine_mat", construct={"normalized_shape": 128}, inputs=((4, 128),)),
+            Case(
+                name="affine_mat",
+                construct={"normalized_shape": 128},
+                inputs=((4, 128),),
+            ),
             Case(
                 name="affine_rank3",
                 construct={"normalized_shape": 768},
@@ -346,7 +356,9 @@ def _layer_norm_suite() -> WebGPUTestSuite:
                 inputs=((4, 128),),
             ),
             Case(
-                name="width_lt_wg", construct={"normalized_shape": 32}, inputs=((8, 32),)
+                name="width_lt_wg",
+                construct={"normalized_shape": 32},
+                inputs=((8, 32),),
             ),
             Case(
                 name="width_gt_wg",
@@ -362,6 +374,8 @@ def _layer_norm_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_linear_fp32 import (
     _ramp as _lin_ramp,
     make_linear,
@@ -409,16 +423,19 @@ def _linear_fp32_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_conv2d import (
-    _chw_ramp,
-    make_conv,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_conv2d import _chw_ramp, make_conv
 
 
 @register_op_test("conv2d")
 def _conv2d_suite() -> WebGPUTestSuite:
     # DaViT patch-embed / downsample convs + conv_transpose2d (same registration,
-    # folded by the `transposed` arg). NCHW fp32.
+    # folded by the `transposed` arg). NCHW fp32. Routing coverage (all vs the
+    # same fp64 golden): patch_embed/conv3x3_pad1/strided/gemm_batched are
+    # groups==1 → im2col tiled GEMM (gemm_batched pins the B>1 output write);
+    # grouped_vec4 (groups=2, icpg=4) → direct vec4 kernel; depthwise (groups=8,
+    # icpg=1) → direct scalar; transpose2x → conv_transpose2d.
     return WebGPUTestSuite(
         module_factory=make_conv,
         cases=[
@@ -455,6 +472,22 @@ def _conv2d_suite() -> WebGPUTestSuite:
                 inputs=(InputSpec(shape=(1, 8, 8, 8), gen=_chw_ramp),),
             ),
             Case(
+                name="grouped_vec4",
+                construct={
+                    "in_ch": 8,
+                    "out_ch": 8,
+                    "kernel": 3,
+                    "padding": 1,
+                    "groups": 2,
+                },
+                inputs=(InputSpec(shape=(1, 8, 8, 8), gen=_chw_ramp),),
+            ),
+            Case(
+                name="gemm_batched",
+                construct={"in_ch": 8, "out_ch": 16, "kernel": 3, "padding": 1},
+                inputs=(InputSpec(shape=(2, 8, 16, 16), gen=_chw_ramp),),
+            ),
+            Case(
                 name="transpose2x",
                 construct={
                     "in_ch": 4,
@@ -469,9 +502,9 @@ def _conv2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_et_vk_sdpa import (
-    SdpaModule,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_et_vk_sdpa import SdpaModule
 
 
 def _sdpa_randn(shape):
@@ -488,7 +521,10 @@ def _sdpa_mask(b, h, sq, skv):
 def _et_vk_sdpa_suite() -> WebGPUTestSuite:
     # Non-causal fused attention (Florence-2 vision + BART, via the et_vk source
     # transform). Covers self-attn, an asymmetric S_q != S_kv (cross-attn) case,
-    # an additive mask (BART), and D=128 (Voxtral/DaViT) through the vec4 kernels.
+    # an additive mask (BART), and D=128 (Voxtral/DaViT). The QK dispatch is
+    # occupancy-routed: chattn_davit (num_rows = B*H*S_q = 256 < the 4096 floor)
+    # exercises the per-entry QK kernel; selfattn_siglip (num_rows = 6912) is the
+    # per-row guard. Both branches must match the same fp32 golden.
     def qkv(b, h, sq, skv, d):
         return (
             InputSpec(shape=(b, h, sq, d), gen=_sdpa_randn),
@@ -508,14 +544,15 @@ def _et_vk_sdpa_suite() -> WebGPUTestSuite:
                 inputs=qkv(1, 4, 8, 8, 16),
             ),
             Case(name="d128_voxtral", inputs=qkv(1, 4, 6, 6, 128)),
+            Case(name="chattn_davit", inputs=qkv(1, 8, 32, 256, 64)),
         ],
         golden_dtype="float32",
         atol=1e-4,
         rtol=1e-3,
     )
-from executorch.backends.webgpu.test.ops.test_embedding import (
-    EmbeddingModule,
-)
+
+
+from executorch.backends.webgpu.test.ops.test_embedding import EmbeddingModule
 
 
 def _emb_idx_small(_shape):
@@ -549,6 +586,8 @@ def _embedding_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_addmm import (
     _randn as _addmm_randn,
     AddmmModule,
@@ -560,14 +599,37 @@ def _addmm_suite() -> WebGPUTestSuite:
     return WebGPUTestSuite(
         module_factory=lambda n: AddmmModule(n),
         cases=[
-            Case(name="small", construct={"n": 32}, inputs=(InputSpec(shape=(4, 16), gen=_addmm_randn), InputSpec(shape=(16, 32), gen=_addmm_randn))),
-            Case(name="bart", construct={"n": 768}, inputs=(InputSpec(shape=(16, 768), gen=_addmm_randn), InputSpec(shape=(768, 768), gen=_addmm_randn))),
-            Case(name="odd_k", construct={"n": 32}, inputs=(InputSpec(shape=(4, 15), gen=_addmm_randn), InputSpec(shape=(15, 32), gen=_addmm_randn))),
+            Case(
+                name="small",
+                construct={"n": 32},
+                inputs=(
+                    InputSpec(shape=(4, 16), gen=_addmm_randn),
+                    InputSpec(shape=(16, 32), gen=_addmm_randn),
+                ),
+            ),
+            Case(
+                name="bart",
+                construct={"n": 768},
+                inputs=(
+                    InputSpec(shape=(16, 768), gen=_addmm_randn),
+                    InputSpec(shape=(768, 768), gen=_addmm_randn),
+                ),
+            ),
+            Case(
+                name="odd_k",
+                construct={"n": 32},
+                inputs=(
+                    InputSpec(shape=(4, 15), gen=_addmm_randn),
+                    InputSpec(shape=(15, 32), gen=_addmm_randn),
+                ),
+            ),
         ],
         golden_dtype="float32",
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_constant_pad_nd import (
     _randn as _pad_randn,
     PadModule,
@@ -579,13 +641,23 @@ def _constant_pad_nd_suite() -> WebGPUTestSuite:
     return WebGPUTestSuite(
         module_factory=lambda pad: PadModule(pad),
         cases=[
-            Case(name="last2", construct={"pad": [1, 2]}, inputs=(InputSpec(shape=(3, 8), gen=_pad_randn),)),
-            Case(name="rank3", construct={"pad": [1, 1, 2, 0]}, inputs=(InputSpec(shape=(2, 4, 8), gen=_pad_randn),)),
+            Case(
+                name="last2",
+                construct={"pad": [1, 2]},
+                inputs=(InputSpec(shape=(3, 8), gen=_pad_randn),),
+            ),
+            Case(
+                name="rank3",
+                construct={"pad": [1, 1, 2, 0]},
+                inputs=(InputSpec(shape=(2, 4, 8), gen=_pad_randn),),
+            ),
         ],
         golden_dtype="float32",
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_upsample_nearest2d import (
     _det_input as _upsample_det_input,
     UpsampleNearest2dModule,
@@ -629,6 +701,163 @@ def _upsample_nearest2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
+from executorch.backends.webgpu.test.ops.test_leaky_relu import LeakyReluModule
+
+
+@register_op_test("leaky_relu")
+def _leaky_relu_suite() -> WebGPUTestSuite:
+    # Real-ESRGAN SRVGGNetCompact body activation. The det input spans negatives,
+    # exercising the negative_slope branch; a 4D and a 2D case.
+    return WebGPUTestSuite(
+        module_factory=lambda negative_slope: LeakyReluModule(negative_slope),
+        cases=[
+            Case(
+                name="default_slope",
+                construct={"negative_slope": 0.01},
+                inputs=(InputSpec(shape=(1, 16, 8, 8), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="slope_0_2",
+                construct={"negative_slope": 0.2},
+                inputs=(InputSpec(shape=(3, 32), gen=_upsample_det_input),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_upsample_bilinear2d import (
+    UpsampleBilinear2dModule,
+)
+
+
+@register_op_test("upsample_bilinear2d")
+def _upsample_bilinear2d_suite() -> WebGPUTestSuite:
+    # DPT/Depth-Anything bilinear resize head. Both align_corners branches +
+    # a non-integer ratio (5->8) that discriminates the two source-index
+    # formulas (see upsample_bilinear2d.wgsl).
+    return WebGPUTestSuite(
+        module_factory=lambda scale_factor, align_corners: UpsampleBilinear2dModule(
+            scale_factor, align_corners
+        ),
+        cases=[
+            Case(
+                name="af_false_2x",
+                construct={"scale_factor": 2.0, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 8, 36, 36), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_false_non_2x",
+                construct={"scale_factor": 1.6, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 2, 5, 5), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_false_tiny",
+                construct={"scale_factor": 2.0, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 4, 5, 7), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_true_2x",
+                construct={"scale_factor": 2.0, "align_corners": True},
+                inputs=(InputSpec(shape=(1, 4, 7, 7), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_true_non_2x",
+                construct={"scale_factor": 1.6, "align_corners": True},
+                inputs=(InputSpec(shape=(1, 2, 5, 5), gen=_upsample_det_input),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_batch_norm import (
+    _det_input as _bn_det_input,
+    BatchNorm2dModule,
+)
+
+
+@register_op_test("batch_norm")
+def _batch_norm_suite() -> WebGPUTestSuite:
+    # MODNet decoder / CNN-backbone inference batch norm (eval -> the no-training
+    # variant). Covers affine + non-affine (optional weight/bias) and an odd H*W.
+    # Only the `out` ValueList entry is compared (out_index 0).
+    return WebGPUTestSuite(
+        module_factory=lambda num_features, affine: BatchNorm2dModule(
+            num_features, affine
+        ).eval(),
+        cases=[
+            Case(
+                name="affine_c8",
+                construct={"num_features": 8, "affine": True},
+                inputs=(InputSpec(shape=(1, 8, 12, 12), gen=_bn_det_input),),
+            ),
+            Case(
+                name="no_affine_c8",
+                construct={"num_features": 8, "affine": False},
+                inputs=(InputSpec(shape=(1, 8, 12, 12), gen=_bn_det_input),),
+            ),
+            Case(
+                name="c16_odd",
+                construct={"num_features": 16, "affine": True},
+                inputs=(InputSpec(shape=(1, 16, 5, 7), gen=_bn_det_input),),
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_split_with_sizes_copy import (
+    _det_input as _split_det_input,
+    SplitWithSizesModule,
+)
+
+
+@register_op_test("split_with_sizes_copy")
+def _split_with_sizes_copy_suite() -> WebGPUTestSuite:
+    # YOLO Detect-head split of concatenated predictions. Multi-output: the
+    # framework compares chunk 0 (out_index 0) while each case runs all N
+    # per-chunk dispatches. Covers a 3-way channel split, a dim-0 split, and
+    # a last-dim split. copy is bit-exact -> float32 golden.
+    return WebGPUTestSuite(
+        module_factory=lambda sizes, dim, out_order=None: SplitWithSizesModule(
+            sizes, dim, out_order
+        ),
+        cases=[
+            Case(
+                name="three_dim1",
+                construct={"sizes": [2, 3, 3], "dim": 1},
+                inputs=(InputSpec(shape=(1, 8, 4, 4), gen=_split_det_input),),
+            ),
+            Case(
+                name="two_dim0",
+                construct={"sizes": [3, 2], "dim": 0},
+                inputs=(InputSpec(shape=(5, 4), gen=_split_det_input),),
+            ),
+            Case(
+                name="dim_last",
+                construct={"sizes": [4, 4], "dim": -1},
+                inputs=(InputSpec(shape=(2, 8), gen=_split_det_input),),
+            ),
+            # Reorder so chunk 1 (running offset > 0) is output 0 -> verifies the
+            # per-chunk start accumulation (out_index 0 is all the framework checks).
+            Case(
+                name="offset_chunk1_first",
+                construct={"sizes": [2, 3, 3], "dim": 1, "out_order": [1, 0, 2]},
+                inputs=(InputSpec(shape=(1, 8, 4, 4), gen=_split_det_input),),
+            ),
+        ],
+        golden_dtype="float32",
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
 from executorch.backends.webgpu.test.ops.test_max_pool2d import (
     _det_input as _maxpool_det_input,
     MaxPool2dModule,
@@ -669,6 +898,8 @@ def _max_pool2d_suite() -> WebGPUTestSuite:
         atol=1e-4,
         rtol=1e-3,
     )
+
+
 from executorch.backends.webgpu.test.ops.test_relu import (
     _det_input as _relu_det_input,
     ReluModule,
@@ -694,4 +925,24 @@ def _relu_suite() -> WebGPUTestSuite:
         ],
         atol=1e-4,
         rtol=1e-3,
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_sub import (
+    CONFIGS as _SUB_CONFIGS,
+    SubModule,
+)
+
+
+@register_op_test("sub")
+def _sub_suite() -> WebGPUTestSuite:
+    # Full numeric coverage incl. the spatial broadcast + alpha (binary_sub.wgsl
+    # over a TensorMeta UBO); fp64 golden. Mirrors _mul_suite. alpha is a
+    # construct kwarg baked into the .pte, never a serialized input.
+    return WebGPUTestSuite(
+        module_factory=lambda alpha=1.0: SubModule(alpha),
+        cases=[
+            Case(name=name, construct={"alpha": alpha}, inputs=(sa, sb))
+            for name, (sa, sb, alpha) in _SUB_CONFIGS.items()
+        ],
     )
