@@ -59,36 +59,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "fuse_conv_with_clamp",
-        srcs = ["fuse_conv_with_clamp.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/backends/vulkan:custom_ops_lib",
-            "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
-        name = "view_copy_to_squeeze_unsqueeze",
-        srcs = ["view_copy_to_squeeze_unsqueeze.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "collapse_view_copy",
         srcs = ["collapse_view_copy.py"],
         visibility = [
@@ -714,5 +684,35 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             ":enforce_contiguous_dim_order",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_channels_last_input_clones",
+        srcs = ["replace_channels_last_input_clones.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/_ops:ops",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_channels_last_input_clones",
+        srcs = [
+            "test/test_replace_channels_last_input_clones.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":channels_last_ops",
+            ":enforce_contiguous_dim_order",
+            ":replace_channels_last_input_clones",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
