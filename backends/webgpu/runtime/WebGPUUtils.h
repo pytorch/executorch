@@ -78,8 +78,9 @@ constexpr bool should_record_q4gsw_dual_route(
 
 constexpr bool should_record_sdpa_dual_route(
     bool fd_eligible,
-    bool has_dynamic_sequence) {
-  return fd_eligible && has_dynamic_sequence;
+    bool has_dynamic_sequence,
+    bool has_dynamic_position) {
+  return fd_eligible && (has_dynamic_sequence || has_dynamic_position);
 }
 
 constexpr bool is_q4gsw_bk64_eligible(
