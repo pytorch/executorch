@@ -63,6 +63,12 @@ class DecomposeVarPass(ArmOpTargetedPass):
     )
     check_allowed_to_transform = True
 
+    targeted_ops = {
+        exir_ops.edge.aten.var.correction,
+        torch.ops.aten.var.correction,
+        torch.ops.aten.var.dim,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)

@@ -51,6 +51,8 @@ class DecomposeAtanPass(ArmOpTargetedPass):
     }
     target_ops = (edge_atan,)
 
+    targeted_ops = {edge_atan}
+
     def _rational_approximation(self, z, ops, meta):
         """Creates a (2,1) Padé approximation for atan(x) on [-1, 1]."""
 

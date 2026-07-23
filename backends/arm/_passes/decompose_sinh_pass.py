@@ -41,6 +41,8 @@ class DecomposeSinhPass(ArmOpTargetedPass):
     }
     target_ops = (edge_sinh,)
 
+    targeted_ops = {edge_sinh}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)

@@ -6,11 +6,9 @@
 from typing import Set, Tuple, Type
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     QuantizeClampArgumentsPass,
 )
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -33,6 +31,8 @@ class ConvertToClampPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {QuantizeClampArgumentsPass}
     target_ops = edge_operators
     check_allowed_to_transform = True
+
+    targeted_ops = edge_operators
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):

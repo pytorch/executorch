@@ -90,6 +90,8 @@ class DecomposeGeluPass(ArmOpTargetedPass):
     }
     target_ops = torch_gelu + edge_gelu
 
+    targeted_ops = {*torch_gelu, *edge_gelu}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)

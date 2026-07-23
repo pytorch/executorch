@@ -7,7 +7,6 @@ from math import ceil, floor
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.decompose_avg_pool2d_pass import (
     DecomposeAvgPool2dPass,
@@ -54,6 +53,8 @@ class DecomposeAdaptiveAvgPool2dPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {DecomposeAvgPool2dPass}
     target_ops = edge_ops + aten_ops
     check_allowed_to_transform = True
+
+    targeted_ops = {*edge_ops, *aten_ops}
 
     @staticmethod
     def _is_static_dim(dim) -> bool:

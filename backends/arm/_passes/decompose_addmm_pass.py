@@ -6,7 +6,6 @@
 from typing import Set, Type
 
 import torch
-
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
@@ -50,6 +49,8 @@ class DecomposeAddmmPass(ArmOpTargetedPass):
         MatchArgDtypePass,
     }
     target_ops = (edge_addmm, aten_addmm)
+
+    targeted_ops = {edge_addmm, aten_addmm}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):

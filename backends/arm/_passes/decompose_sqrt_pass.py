@@ -31,6 +31,8 @@ class DecomposeSqrtPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = {InsertTableOpsPass}
     target_ops = edge_sqrt_ops + aten_sqrt_ops
 
+    targeted_ops = {*edge_sqrt_ops, *aten_sqrt_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         """Decomposes `sqrt(x)` into `pow(x, 0.5)` for backend support."""
 

@@ -38,6 +38,8 @@ class DecomposeAcoshPass(ArmOpTargetedPass):
     }
     target_ops = (edge_acosh_op,)
 
+    targeted_ops = {edge_acosh_op}
+
     def call_operator(self, op, args, kwargs, meta, updated=False):
 
         if op not in self.target_ops:

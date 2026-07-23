@@ -59,6 +59,8 @@ class DecomposeNotEqualPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = edge_ne_ops + aten_ne_ops
 
+    targeted_ops = {*edge_ne_ops, *aten_ne_ops}
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)

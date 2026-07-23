@@ -28,6 +28,11 @@ class ConvertSqueezesToViewPass(ArmOpTargetedPass):
         exir_ops.edge.aten.unsqueeze_copy.default,
     )
 
+    targeted_ops = {
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)

@@ -22,6 +22,8 @@ class DecomposeIntPowPass(ArmOpTargetedPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
     target_ops = (exir_ops.edge.aten.pow.Tensor_Scalar,)
 
+    targeted_ops = {exir_ops.edge.aten.pow.Tensor_Scalar}
+
     @staticmethod
     def _get_decomposable_integer_exponent(exp) -> Optional[int]:
         if isinstance(exp, int):

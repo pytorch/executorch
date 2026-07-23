@@ -49,6 +49,11 @@ class DecomposeSumPass(ArmOpTargetedPass):
         torch.ops.aten.sum.dim_IntList,
     )
 
+    targeted_ops = {
+        exir_ops.edge.aten.sum.dim_IntList,
+        torch.ops.aten.sum.dim_IntList,
+    }
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)

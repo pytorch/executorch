@@ -9,10 +9,8 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmOpTargetedPass
-
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule
@@ -47,6 +45,7 @@ class Conv1dUnsqueezePass(ArmOpTargetedPass):
             isinstance(child, GraphModule) and self.should_run_pass(child)
             for child in graph_module.children()
         )
+    targeted_ops = {exir_ops.edge.aten.convolution.default}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops:

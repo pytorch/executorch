@@ -223,6 +223,7 @@ class DecomposeDivTensorModePass(ArmOpTargetedPass):
                 return super().call_operator(
                     opset["where"], (is_neg, ceilq, floorq), {}, meta, updated=True
                 )
+    targeted_ops = {*edge_div_mode_ops, *aten_div_mode_ops}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in self.target_ops or not self.allowed_to_transform(meta):
