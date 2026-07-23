@@ -330,10 +330,16 @@ class ET_EXPERIMENTAL CudaBackend final
         so_blob_key.c_str(),
         static_cast<uint32_t>(aoti_dso_buffer.error()));
 
-    // Generate dynamic temporary file path
+    // Generate a unique temporary file path. Two identical CUDA partitions can
+    // share the same so_blob_key, so a per-delegate counter is needed to keep
+    // their paths distinct; otherwise loading the second delegate would
+    // overwrite the first delegate's library while it is still in use.
+    static std::atomic<uint64_t> so_file_counter{0};
     filesystem::path temp_dir = filesystem::temp_directory_path();
-    filesystem::path so_path =
-        temp_dir / (so_blob_key + to_string(get_process_id()) + ".so");
+    filesystem::path so_path = temp_dir /
+        (so_blob_key + to_string(get_process_id()) + "_" +
+         to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
+         ".so");
 
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);
