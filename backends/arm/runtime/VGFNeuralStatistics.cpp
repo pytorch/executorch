@@ -489,6 +489,8 @@ std::string serialize_vgf_neural_statistics_collection(
   return out.str();
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 std::string make_vgf_neural_statistics_unavailable_metadata(
     const std::string& reason) {
   VgfNeuralStatisticsCollection collection;
@@ -498,6 +500,8 @@ std::string make_vgf_neural_statistics_unavailable_metadata(
   return serialize_vgf_neural_statistics_collection(collection);
 }
 
+// Used by VGFSetup.cpp and tests through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 std::string collect_vgf_neural_statistics_metadata(
     VkDevice device,
     const std::vector<VgfNeuralStatisticsSegmentContext>& segments) {
@@ -510,11 +514,15 @@ std::string collect_vgf_neural_statistics_metadata(
       collect_vgf_neural_statistics(device, segments));
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 void set_vgf_neural_statistics_collector_for_test(
     VgfNeuralStatisticsCollectorForTest collector) {
   test_collector_storage() = std::move(collector);
 }
 
+// Used by vgf_neural_statistics_test.cpp through VGFNeuralStatistics.h.
+// cppcheck-suppress unusedFunction
 void reset_vgf_neural_statistics_collector_for_test() {
   test_collector_storage() = nullptr;
 }
