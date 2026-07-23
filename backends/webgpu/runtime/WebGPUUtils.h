@@ -82,6 +82,28 @@ constexpr bool should_record_sdpa_dual_route(
   return fd_eligible && has_dynamic_sequence;
 }
 
+constexpr bool is_q4gsw_bk64_eligible(
+    uint32_t k,
+    uint32_t n,
+    uint32_t group_size,
+    bool has_bias,
+    bool shader_f16_supported,
+    uint32_t max_invocations,
+    uint32_t max_workgroup_storage_bytes) {
+  constexpr uint32_t kRequiredInvocations = 256u;
+  constexpr uint32_t kRequiredStorageBytes = 2u * 64u * 64u * sizeof(uint16_t);
+  const bool ordinary_llama_projection = (k == 2048u && n == 8192u) ||
+      (k == 8192u && n == 2048u) || (k == 2048u && n == 2048u);
+  return ordinary_llama_projection && k % 64u == 0u && group_size == 64u &&
+      !has_bias && shader_f16_supported &&
+      max_invocations >= kRequiredInvocations &&
+      max_workgroup_storage_bytes >= kRequiredStorageBytes;
+}
+
+constexpr bool is_q4gsw_bk64_live_m(uint32_t m) {
+  return m == 128u || m == 508u || m == 512u;
+}
+
 class DispatchRouteRegistry {
  public:
   template <typename IsCompute>
