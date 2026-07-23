@@ -50,6 +50,7 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_requant_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/reduce/reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
@@ -78,7 +79,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 60> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 61> kShaderRegistry = {{
     {
         "adamw_step",
         kAdamwStepWGSL,
@@ -358,6 +359,13 @@ constexpr std::array<WebGPUShaderInfo, 60> kShaderRegistry = {{
         kQ4gswRequantWorkgroupSizeX,
         kQ4gswRequantWorkgroupSizeY,
         kQ4gswRequantWorkgroupSizeZ,
+    },
+    {
+        "q4gsw_steel_bk64",
+        kQ4gswSteelBk64WGSL,
+        kQ4gswSteelBk64WorkgroupSizeX,
+        kQ4gswSteelBk64WorkgroupSizeY,
+        kQ4gswSteelBk64WorkgroupSizeZ,
     },
     {
         "reduce",
