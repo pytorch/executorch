@@ -14,6 +14,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -30,13 +31,30 @@ struct SliceParams {
   uint32_t _pad;
 };
 
-// Read scalar arg: Int->value (INT64_MAX->default), Null->default, else throw.
+// Read scalar arg: Int->value (INT64_MAX->default), Double->truncated int if
+// integral (the edge dialect may serialize an integer index as a float, e.g.
+// a 0 start; a fractional Double throws, it is not a valid index),
+// Null->default, else throw.
 int64_t
 read_scalar(WebGPUGraph& graph, int id, int64_t dflt, const char* what) {
   switch (graph.get_value_type(id)) {
     case WebGPUGraph::ValueType::Int: {
       const int64_t v = graph.get_int(id);
       return v == INT64_MAX ? dflt : v;
+    }
+    case WebGPUGraph::ValueType::Double: {
+      const double d = graph.get_double(id);
+      // Casting a NaN or out-of-int64-range double is undefined behavior;
+      // reject before the cast, not after.
+      if (std::isnan(d) || d < -9223372036854775808.0 ||
+          d >= 9223372036854775808.0) {
+        throw std::runtime_error(std::string("slice: non-integral ") + what);
+      }
+      const int64_t v = static_cast<int64_t>(d);
+      if (static_cast<double>(v) != d) {
+        throw std::runtime_error(std::string("slice: non-integral ") + what);
+      }
+      return v;
     }
     case WebGPUGraph::ValueType::Null:
       return dflt;
@@ -46,7 +64,8 @@ read_scalar(WebGPUGraph& graph, int id, int64_t dflt, const char* what) {
   }
 }
 
-// Read a slice index (start/end) that MAY be a dynamic SymInt; else Int/Null.
+// Read a slice index (start/end) that MAY be a dynamic SymInt; else Int/Double
+// (truncated int if integral, mirrors read_scalar)/Null.
 int64_t read_index(WebGPUGraph& graph, int id, int64_t dflt) {
   switch (graph.get_value_type(id)) {
     case WebGPUGraph::ValueType::SymInt:
@@ -54,6 +73,20 @@ int64_t read_index(WebGPUGraph& graph, int id, int64_t dflt) {
     case WebGPUGraph::ValueType::Int: {
       const int64_t v = graph.get_int(id);
       return v == INT64_MAX ? dflt : v;
+    }
+    case WebGPUGraph::ValueType::Double: {
+      const double d = graph.get_double(id);
+      // Casting a NaN or out-of-int64-range double is undefined behavior;
+      // reject before the cast, not after.
+      if (std::isnan(d) || d < -9223372036854775808.0 ||
+          d >= 9223372036854775808.0) {
+        throw std::runtime_error("slice: non-integral start/end index");
+      }
+      const int64_t v = static_cast<int64_t>(d);
+      if (static_cast<double>(v) != d) {
+        throw std::runtime_error("slice: non-integral start/end index");
+      }
+      return v;
     }
     case WebGPUGraph::ValueType::Null:
       return dflt;
