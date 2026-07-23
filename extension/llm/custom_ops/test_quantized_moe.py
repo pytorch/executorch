@@ -39,7 +39,16 @@ from torchao.quantization.quant_api import (
     Int8DynamicActivationIntxWeightConfig,
     quantize_,
 )
+from torchao.quantization.quantize_.workflows.intx.intx_opaque_tensor import (
+    _is_kernel_library_loaded,
+)
 from torchao.utils import unwrap_tensor_subclass
+
+
+_REQUIRES_TORCHAO_KERNEL_LIBRARY = unittest.skipUnless(
+    _is_kernel_library_loaded(),
+    "TorchAO kernel library is not loaded",
+)
 
 
 def _qdq_int4_reference(w: torch.Tensor, group_size: int) -> torch.Tensor:
@@ -85,6 +94,35 @@ def _build_moe_eager(
         moe.expert_bias = torch.randn(num_experts)
     moe.eval()
     return moe
+
+
+def _make_valid_meta_inputs() -> dict:
+    num_experts = 4
+    dim = 32
+    hidden_dim = 32
+    return {
+        "x": torch.empty((4, dim), dtype=torch.float32, device="meta"),
+        "gate_weight": torch.empty(
+            (num_experts, dim), dtype=torch.float32, device="meta"
+        ),
+        "expert_bias": torch.empty(
+            (num_experts,), dtype=torch.float32, device="meta"
+        ),
+        "packed_w13": torch.empty(
+            (num_experts, 1), dtype=torch.uint8, device="meta"
+        ),
+        "packed_w2": torch.empty(
+            (num_experts, 1), dtype=torch.uint8, device="meta"
+        ),
+        "num_activated_experts": 2,
+        "num_experts": num_experts,
+        "hidden_dim": hidden_dim,
+        "dim": dim,
+        "group_size": 32,
+        "weight_nbit": 4,
+        "score_func": "sigmoid",
+        "route_scale": 2.5,
+    }
 
 
 def _moe_forward_with_qdq_weights(
@@ -225,6 +263,7 @@ class TestQuantizedMoeFfnOp(unittest.TestCase):
         )
 
 
+@_REQUIRES_TORCHAO_KERNEL_LIBRARY
 class TestSourceTransform(unittest.TestCase):
     """Tests for `replace_moe_with_quantized_op`."""
 
@@ -448,74 +487,50 @@ class TestInt4PackRoundtrip(unittest.TestCase):
 class TestMetaKernelValidation(unittest.TestCase):
     """Meta kernel input validation rejects bad inputs."""
 
-    def _make_valid_inputs(self) -> dict:
-        moe = _build_moe_eager(
-            dim=32, hidden_dim=32, num_experts=4, num_activated_experts=2
-        )
-        wrapper = torch.nn.Module()
-        wrapper.m = moe
-        replace_moe_with_quantized_op(wrapper, group_size=32, weight_nbit=4)
-        r = wrapper.m
-        return {
-            "x": torch.empty((4, r.dim), dtype=torch.float32, device="meta"),
-            "gate_weight": r.gate_weight.to("meta"),
-            "expert_bias": r.expert_bias.to("meta"),
-            "packed_w13": r.packed_w13.to("meta"),
-            "packed_w2": r.packed_w2.to("meta"),
-            "num_activated_experts": r.num_activated_experts,
-            "num_experts": r.num_experts,
-            "hidden_dim": r.hidden_dim,
-            "dim": r.dim,
-            "group_size": r.group_size,
-            "weight_nbit": r.weight_nbit,
-            "score_func": r.score_func,
-            "route_scale": r.route_scale,
-        }
-
     def test_rejects_3d_input(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["x"] = torch.empty((1, 4, 32), dtype=torch.float32, device="meta")
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_bad_score_func(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["score_func"] = "gelu"
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_bad_weight_nbit(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["weight_nbit"] = 3
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_num_activated_experts_zero(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["num_activated_experts"] = 0
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_non_uint8_packed_w13(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["packed_w13"] = kw["packed_w13"].to(torch.float32)
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_non_uint8_packed_w2(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["packed_w2"] = kw["packed_w2"].to(torch.float32)
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_non_fp32_gate_weight(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["gate_weight"] = kw["gate_weight"].to(torch.float16)
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_non_fp32_expert_bias(self) -> None:
-        kw = self._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["expert_bias"] = kw["expert_bias"].to(torch.float16)
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
@@ -533,13 +548,13 @@ class TestGroupSizeValidation(unittest.TestCase):
     """Validate group_size and divisibility checks."""
 
     def test_rejects_group_size_zero(self) -> None:
-        kw = TestMetaKernelValidation()._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["group_size"] = 0
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
 
     def test_rejects_dim_not_divisible_by_group_size(self) -> None:
-        kw = TestMetaKernelValidation()._make_valid_inputs()
+        kw = _make_valid_meta_inputs()
         kw["group_size"] = 7
         with self.assertRaises(AssertionError):
             torch.ops.llama.quantized_moe_ffn(**kw)
@@ -563,6 +578,7 @@ class TestGroupSizeValidation(unittest.TestCase):
             replace_moe_with_quantized_op(wrapper, group_size=0, weight_nbit=4)
 
 
+@_REQUIRES_TORCHAO_KERNEL_LIBRARY
 class TestSharedExpert(unittest.TestCase):
     """Shared expert is preserved through the source transform."""
 
