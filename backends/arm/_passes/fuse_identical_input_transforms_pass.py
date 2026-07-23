@@ -10,7 +10,7 @@ from typing import Any, Callable, cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
-from executorch.backends.arm._passes.arm_pass_utils import refresh_node_meta
+from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
 from executorch.backends.arm._passes.dim_maps import (
     _dim_equals,
     PermuteMap,
@@ -239,7 +239,7 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
                 kwargs=dict(transform.kwargs),
             )
         new_node.meta = self._new_transform_meta(node, transform)
-        refresh_node_meta(new_node)
+        refresh_permute_view_meta(new_node)
 
         for user in list(node.users):
             if user is not new_node:

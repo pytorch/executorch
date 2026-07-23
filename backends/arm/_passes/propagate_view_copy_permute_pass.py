@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import refresh_node_meta
 from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import get_context_spec
@@ -107,7 +106,9 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 if node.target in self._TARGETS:
                     if len(node.users) == 0:
                         continue
-                    iteration_modified |= self._propagate(node)
+                    if self._propagate(node):
+                        iteration_modified = True
+                        break
 
             if iteration_modified:
                 graph_module = self._retrace(graph_module)
@@ -182,7 +183,6 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 continue
 
             if self.is_swappable(next_node):
-                refresh_node_meta(next_node)
                 swapped_args = self._maybe_swap_args(node, next_node)
                 if swapped_args is None:
                     break
@@ -207,8 +207,6 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
-        if node.target == self._PERMUTE_TARGET:
-            refresh_node_meta(node)
         return True
 
     def fuse_vertical(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -791,7 +789,6 @@ class PropagateViewCopyPermuteDownPass(PropagateViewCopyPermutePass):
             ) or self._can_split_through_elementwise(node, frontier, next_node):
                 arg_update = None
             elif self.is_swappable(next_node):
-                refresh_node_meta(next_node)
                 arg_update = self._maybe_swap_args(node, next_node)
                 if arg_update is None:
                     return None

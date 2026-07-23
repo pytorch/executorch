@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Any, cast, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass_utils import refresh_node_meta
+from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -134,7 +134,7 @@ class MoveDataMovementOpsToSmallerDtypePass(ArmPass):
         rescale.meta["val"] = producer_val.new_empty(
             producer_val.shape, dtype=old_rescale_val.dtype
         )
-        refresh_node_meta(data_movement)
+        refresh_permute_view_meta(data_movement)
 
     def _split_after_rescale(
         self, data_movement: torch.fx.Node, rescale: torch.fx.Node
@@ -150,7 +150,7 @@ class MoveDataMovementOpsToSmallerDtypePass(ArmPass):
                 kwargs=dict(data_movement.kwargs),
             )
         branch_movement.meta = dict(data_movement.meta)
-        refresh_node_meta(branch_movement)
+        refresh_permute_view_meta(branch_movement)
         for user in rescale_users:
             user.replace_input_with(rescale, branch_movement)
 
