@@ -20,7 +20,13 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
+input_t_scalar = Tuple[torch.Tensor]
+
 aten_op = "torch.ops.aten.mul.Tensor"
+exir_op = "executorch_exir_dialects_edge__ops_aten_mul_Tensor"
+aten_op_scalar = "torch.ops.aten.mul.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_mul_Scalar"
+
 
 test_data_suite = {
     # (test_name, input, other,) See torch.mul() for info
@@ -117,6 +123,11 @@ test_data_suite_int32 = {
     ),
 }
 
+test_data_suite_scalar = {
+    "op_mul_scalar_rank1_rand": lambda: (torch.rand(5) * 3.7,),
+    "op_mul_scalar_rank4_randn": lambda: (torch.randn(1, 10, 25, 20),),
+}
+
 
 class Mul(torch.nn.Module):
 
@@ -126,6 +137,11 @@ class Mul(torch.nn.Module):
         other_: torch.Tensor,
     ):
         return input_ * other_
+
+
+class MulScalar(torch.nn.Module):
+    def forward(self, input_: torch.Tensor):
+        return torch.ops.aten.mul.Scalar(input_, 2.0)
 
 
 @common.parametrize(
@@ -363,5 +379,38 @@ def test_mul_tensor_16a8w_u85_INT(test_data: input_t1):
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
         a16w8_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@common.SkipIfNoModelConverter
+def test_mul_scalar_vgf_no_quant(test_data: input_t_scalar):
+    """Test Tensor * Scalar multiplication (VGF FP)."""
+    pipeline = VgfPipeline[input_t_scalar](
+        MulScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@common.SkipIfNoModelConverter
+def test_mul_scalar_vgf_quant(test_data: input_t_scalar):
+    """Test Tensor * Scalar multiplication (VGF INT).
+
+    The quantized scalar path is lowered through the Tensor overload, so use
+    mul.Tensor expectations rather than mul.Scalar.
+
+    """
+    pipeline = VgfPipeline[input_t_scalar](
+        MulScalar(),
+        test_data(),
+        aten_op,
+        exir_op,
+        quantize=True,
     )
     pipeline.run()
