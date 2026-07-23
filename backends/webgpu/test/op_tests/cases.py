@@ -729,6 +729,52 @@ def _leaky_relu_suite() -> WebGPUTestSuite:
     )
 
 
+from executorch.backends.webgpu.test.ops.test_upsample_bilinear2d import (
+    UpsampleBilinear2dModule,
+)
+
+
+@register_op_test("upsample_bilinear2d")
+def _upsample_bilinear2d_suite() -> WebGPUTestSuite:
+    # DPT/Depth-Anything bilinear resize head. Both align_corners branches +
+    # a non-integer ratio (5->8) that discriminates the two source-index
+    # formulas (see upsample_bilinear2d.wgsl).
+    return WebGPUTestSuite(
+        module_factory=lambda scale_factor, align_corners: UpsampleBilinear2dModule(
+            scale_factor, align_corners
+        ),
+        cases=[
+            Case(
+                name="af_false_2x",
+                construct={"scale_factor": 2.0, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 8, 36, 36), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_false_non_2x",
+                construct={"scale_factor": 1.6, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 2, 5, 5), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_false_tiny",
+                construct={"scale_factor": 2.0, "align_corners": False},
+                inputs=(InputSpec(shape=(1, 4, 5, 7), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_true_2x",
+                construct={"scale_factor": 2.0, "align_corners": True},
+                inputs=(InputSpec(shape=(1, 4, 7, 7), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="af_true_non_2x",
+                construct={"scale_factor": 1.6, "align_corners": True},
+                inputs=(InputSpec(shape=(1, 2, 5, 5), gen=_upsample_det_input),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
 from executorch.backends.webgpu.test.ops.test_max_pool2d import (
     _det_input as _maxpool_det_input,
     MaxPool2dModule,
