@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -989,6 +990,7 @@ struct SdpaConfig {
   float denom; // ramp divisor (mirrors Python); small -> large logits
   bool required = false; // CI (SDPA dir set): absent .pte = FAIL, not skip
   bool expect_reject = false; // load MUST fail (e.g. D%4 guard), no golden
+  bool kv_f16 = false;
 };
 
 const SdpaConfig kSdpaConfigs[] = {
@@ -1031,6 +1033,28 @@ const SdpaConfig kSdpaConfigs[] = {
      0,
      16.0f,
      /*required=*/true},
+    {"qwen3_prefill",
+     16,
+     8,
+     128,
+     128,
+     256,
+     0,
+     16.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_odd_boundary",
+     16,
+     8,
+     128,
+     17,
+     64,
+     31,
+     16.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
 };
 
 // Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
@@ -1053,9 +1077,8 @@ float sdpa_ramp_t(
   return static_cast<float>(((i + 31 * t) % mod) - off) / denom;
 }
 
-// Multi-step replay sequences. Mirror the Python REPLAY_SEQS / Vulkan param
-// sets (sdpa_test.cpp:856/867/875). Each seq_lens entry is one step replayed on
-// a host-threaded KV cache (big=prefill, mid=multi-token, 1=decode).
+// Multi-step replay sequences. The first three mirror Vulkan param sets; Qwen3
+// extends the same Python REPLAY_SEQS contract.
 struct SdpaSequence {
   const char* name;
   int hq;
@@ -1063,18 +1086,70 @@ struct SdpaSequence {
   int d;
   int cmax;
   std::vector<int> seq_lens;
+  bool kv_f16 = false;
 };
 
 const SdpaSequence kSdpaSequences[] = {
     {"small", 8, 4, 4, 16, {3, 1, 1, 5, 1, 1, 2}},
     {"small_d", 6, 2, 8, 16, {3, 1, 1, 5, 1, 1}},
     {"llama3", 24, 8, 128, 256, {111, 1, 1, 1, 57, 1, 1}},
+    {"qwen3_fd", 16, 8, 128, 64, {17, 1}, /*kv_f16=*/true},
 };
+
+Error load_sdpa_forward(Module& module, bool kv_f16, int sdpa_query_tile = 0) {
+  if (!kv_f16 && sdpa_query_tile == 0) {
+    return module.load_forward();
+  }
+  BackendOptions<2> options;
+  Error error = Error::Ok;
+  if (kv_f16) {
+    error = options.set_option("enable_f16_kv_cache", true);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  if (sdpa_query_tile != 0) {
+    error = options.set_option("sdpa_query_tile", sdpa_query_tile);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  LoadBackendOptionsMap option_map;
+  error = option_map.set_options("VulkanBackend", options.view());
+  if (error != Error::Ok) {
+    return error;
+  }
+  return module.load_forward(nullptr, nullptr, &option_map);
+}
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+constexpr uint32_t kTestRouteMaterializedAttention = 1u << 2;
+constexpr uint32_t kTestRouteFlashDecoding = 1u << 10;
+constexpr uint32_t kTestRouteK16CausalBound = 1u << 11;
+constexpr uint32_t kTestRouteQwen3Q16K16 = 1u << 13;
+constexpr uint32_t kTestRouteQwen3Q32K16 = 1u << 14;
+
+bool qwen3_q32_supported_on_test_device() {
+  constexpr uint32_t kQ32StorageBytes = 1024u * 4u * sizeof(float) +
+      512u * 4u * sizeof(uint16_t) + 256u * 2u * sizeof(float) +
+      3u * 32u * sizeof(float);
+  const WebGPUContext* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 32u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 256u &&
+      limits.maxComputeWorkgroupStorageSize >= kQ32StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
+}
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 void test_sdpa_config(
     const SdpaConfig& cfg,
     const std::string& model_path,
-    const std::string& golden_path) {
+    const std::string& golden_path,
+    int sdpa_query_tile = 0) {
   // Inputs reconstruct test_sdpa.py::_det_inputs bit-for-bit (/16 exact fp32).
   printf(
       "\n--- Test: sdpa_with_kv_cache (%s: Hq=%d,Hkv=%d,D=%d,S=%d,Cmax=%d,pos=%d) ---\n",
@@ -1087,7 +1162,7 @@ void test_sdpa_config(
       cfg.input_pos);
 
   Module module(model_path);
-  auto err = module.load_forward();
+  auto err = load_sdpa_forward(module, cfg.kv_f16, sdpa_query_tile);
   if (cfg.expect_reject) {
     // D not a multiple of 4 must be rejected at load by the head_dim guard.
     ASSERT_NE(err, Error::Ok)
@@ -1132,6 +1207,36 @@ void test_sdpa_config(
       {EValue(qt), EValue(kt), EValue(vt), EValue(kct), EValue(vct)});
   ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
                            << ")";
+  if (cfg.kv_f16) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+    // Exact Qwen3 geometry + fp16 KV selects the K16 streaming (causal-bound)
+    // route by default. The sdpa_query_tile RuntimeSpec only swaps the Q16/Q32
+    // kernel variant; both map to the K16CausalBound bit. A non-Qwen3 fp16-KV
+    // shape falls back to the materialized path (or flash-decoding at S==1).
+    const bool qwen3_geometry = cfg.hq == 16 && cfg.hkv == 8 && cfg.d == 128;
+    const uint32_t expected_route = qwen3_geometry && cfg.s > 1
+        ? kTestRouteK16CausalBound
+        : (cfg.s == 1 ? kTestRouteFlashDecoding
+                      : kTestRouteMaterializedAttention);
+    EXPECT_EQ(
+        g_last_route_mask &
+            (kTestRouteMaterializedAttention | kTestRouteFlashDecoding |
+             kTestRouteK16CausalBound),
+        expected_route);
+    EXPECT_EQ(g_last_route_conflict_count, 0u);
+    const uint32_t qwen3_tile_routes =
+        g_last_route_mask & (kTestRouteQwen3Q16K16 | kTestRouteQwen3Q32K16);
+    if (qwen3_geometry && cfg.s > 1) {
+      const uint32_t expected_tile_route =
+          sdpa_query_tile == 32 && qwen3_q32_supported_on_test_device()
+          ? kTestRouteQwen3Q32K16
+          : kTestRouteQwen3Q16K16;
+      EXPECT_EQ(qwen3_tile_routes, expected_tile_route);
+    } else {
+      EXPECT_EQ(qwen3_tile_routes, 0u);
+    }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+  }
 
   const auto& outputs = result.get();
   // Select the attention output [1,S,Hq,D] by shape; the op returns
@@ -1199,7 +1304,7 @@ void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         std::to_string(t) + "_S" + std::to_string(s) + "_pos" +
         std::to_string(input_pos);
     Module module(base + ".pte");
-    ASSERT_EQ(module.load_forward(), Error::Ok)
+    ASSERT_EQ(load_sdpa_forward(module, seq.kv_f16), Error::Ok)
         << "could not load " << base << ".pte";
 
     const int qn = s * seq.hq * seq.d;
@@ -1225,6 +1330,24 @@ void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
         {EValue(qt), EValue(kt), EValue(vt), EValue(kct), EValue(vct)});
     ASSERT_TRUE(result.ok())
         << "forward " << base << ".pte (error " << (int)result.error() << ")";
+    if (seq.kv_f16) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+      // S==1 decode -> flash-decoding; a multi-token exact-Qwen3-geometry
+      // prefill -> the K16 streaming (causal-bound) route by default (no env);
+      // any other multi-token fp16-KV shape -> materialized.
+      const bool qwen3_geometry = seq.hq == 16 && seq.hkv == 8 && seq.d == 128;
+      const uint32_t expected_route = s == 1 ? kTestRouteFlashDecoding
+          : qwen3_geometry                   ? kTestRouteK16CausalBound
+                                             : kTestRouteMaterializedAttention;
+      EXPECT_EQ(
+          g_last_route_mask &
+              (kTestRouteMaterializedAttention | kTestRouteFlashDecoding |
+               kTestRouteK16CausalBound),
+          expected_route)
+          << seq.name << " step" << t;
+      EXPECT_EQ(g_last_route_conflict_count, 0u) << seq.name << " step" << t;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+    }
     const auto& outs = result.get();
 
     // The op returns [k_cache, v_cache, attn_output]: attn has a unique numel;
@@ -1939,6 +2062,89 @@ TEST(WebGPUNative, PrepackTied) {
 }
 
 // SDPA sweep: configs self-discover sdpa_<name>.pte; required=FAIL else skip.
+TEST(WebGPUNative, Qwen3SdpaFixtureContract) {
+  const auto find_config = [](const char* name) {
+    return std::find_if(
+        std::begin(kSdpaConfigs),
+        std::end(kSdpaConfigs),
+        [name](const SdpaConfig& cfg) {
+          return std::strcmp(cfg.name, name) == 0;
+        });
+  };
+  const auto prefill = find_config("qwen3_prefill");
+  const auto boundary = find_config("qwen3_odd_boundary");
+  ASSERT_NE(prefill, std::end(kSdpaConfigs));
+  ASSERT_NE(boundary, std::end(kSdpaConfigs));
+  EXPECT_EQ(
+      std::vector<int>(
+          {prefill->hq,
+           prefill->hkv,
+           prefill->d,
+           prefill->s,
+           prefill->cmax,
+           prefill->input_pos}),
+      std::vector<int>({16, 8, 128, 128, 256, 0}));
+  EXPECT_EQ(
+      std::vector<int>(
+          {boundary->hq,
+           boundary->hkv,
+           boundary->d,
+           boundary->s,
+           boundary->cmax,
+           boundary->input_pos}),
+      std::vector<int>({16, 8, 128, 17, 64, 31}));
+  EXPECT_TRUE(prefill->kv_f16 && boundary->kv_f16);
+
+  const auto replay = std::find_if(
+      std::begin(kSdpaSequences),
+      std::end(kSdpaSequences),
+      [](const SdpaSequence& seq) {
+        return std::strcmp(seq.name, "qwen3_fd") == 0;
+      });
+  ASSERT_NE(replay, std::end(kSdpaSequences));
+  EXPECT_EQ(
+      std::vector<int>({replay->hq, replay->hkv, replay->d, replay->cmax}),
+      std::vector<int>({16, 8, 128, 64}));
+  EXPECT_EQ(replay->seq_lens, std::vector<int>({17, 1}));
+  EXPECT_TRUE(replay->kv_f16);
+}
+
+TEST(WebGPUNative, Qwen3SdpaRoutes) {
+  ASSERT_FALSE(g_sdpa_dir.empty()) << "WEBGPU_TEST_SDPA_DIR not set";
+  // Default route: exact-Qwen3-geometry fp16-KV configs select the Q16 K16
+  // streaming (causal-bound) route by geometry (no runtime config needed) --
+  // the per-config assertions live in test_sdpa_config / test_sdpa_replay.
+  for (const auto& cfg : kSdpaConfigs) {
+    if (std::strncmp(cfg.name, "qwen3_", 6) != 0) {
+      continue;
+    }
+    const std::string base = g_sdpa_dir + "sdpa_" + cfg.name;
+    test_sdpa_config(cfg, base + ".pte", base + ".golden.bin");
+  }
+  const auto replay = std::find_if(
+      std::begin(kSdpaSequences),
+      std::end(kSdpaSequences),
+      [](const SdpaSequence& seq) {
+        return std::strcmp(seq.name, "qwen3_fd") == 0;
+      });
+  ASSERT_NE(replay, std::end(kSdpaSequences));
+  test_sdpa_replay(*replay, g_sdpa_dir);
+
+  const auto q32_prefill = std::find_if(
+      std::begin(kSdpaConfigs),
+      std::end(kSdpaConfigs),
+      [](const SdpaConfig& cfg) {
+        return std::strcmp(cfg.name, "qwen3_prefill") == 0;
+      });
+  ASSERT_NE(q32_prefill, std::end(kSdpaConfigs));
+  const std::string q32_base = g_sdpa_dir + "sdpa_" + q32_prefill->name;
+  test_sdpa_config(
+      *q32_prefill,
+      q32_base + ".pte",
+      q32_base + ".golden.bin",
+      /*sdpa_query_tile=*/32);
+}
+
 TEST(WebGPUNative, SdpaSweep) {
   const std::string& dir = g_sdpa_dir;
   bool ran = false;

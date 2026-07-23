@@ -98,6 +98,13 @@ Result<DelegateHandle*> WebGPUBackend::init(
       enable_f16_accumulate_gemm = spec.get();
     }
   }
+  int sdpa_query_tile = 0;
+  {
+    Result<int> spec = context.get_runtime_spec<int>("sdpa_query_tile");
+    if (spec.ok()) {
+      sdpa_query_tile = spec.get();
+    }
+  }
 
   try {
     graph->build(
@@ -105,7 +112,8 @@ Result<DelegateHandle*> WebGPUBackend::init(
         constant_data,
         context.get_named_data_map(),
         enable_f16_kv_cache,
-        enable_f16_accumulate_gemm);
+        enable_f16_accumulate_gemm,
+        sdpa_query_tile);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -140,8 +148,13 @@ Error WebGPUBackend::execute(
       const auto& tensor = args[i]->toTensor();
       const bool host_is_int64 =
           tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
       inputs.push_back(
-          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+          {tensor.const_data_ptr(),
+           tensor.nbytes(),
+           host_is_int64,
+           host_is_fp32});
       const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
@@ -175,12 +188,15 @@ Error WebGPUBackend::execute(
     graph->execute(plan);
 
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
-    std::vector<std::pair<void*, size_t>> outputs;
+    std::vector<OutputData> outputs;
     outputs.reserve(num_outputs);
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t arg_idx = num_inputs + i;
       auto& tensor = args[arg_idx]->toTensor();
-      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
+      outputs.push_back(
+          {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
     }
     graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
