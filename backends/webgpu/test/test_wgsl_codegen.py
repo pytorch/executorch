@@ -156,6 +156,22 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(g.embedded_sha256(h), want)
         self.assertEqual(g.wgsl_sha256(wgsl), want)
 
+    def test_render_header_long_name_is_clang_format_stable(self) -> None:
+        stem = "streaming_attention_qwen3_q32_k16_causal_bound"
+        wgsl = "@compute @workgroup_size(32, 8, 1)\nfn main(){}\n"
+        h = g.render_header(Path(f"runtime/ops/sdpa/{stem}.wgsl"), wgsl)
+
+        self.assertIn(
+            f"// @generated from {stem}.wgsl\n// DO NOT EDIT.",
+            h,
+        )
+        self.assertIn(
+            "inline constexpr uint32_t\n"
+            "    kStreamingAttentionQwen3Q32K16CausalBoundWorkgroupSizeX = 32;",
+            h,
+        )
+        self.assertEqual(g.embedded_sha256(h), g.wgsl_sha256(wgsl))
+
     def test_embedded_sha256_missing_returns_empty(self) -> None:
         self.assertEqual(g.embedded_sha256("no sha line here\n"), "")
 
