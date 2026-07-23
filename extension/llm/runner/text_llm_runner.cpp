@@ -108,6 +108,8 @@ Error TextLLMRunner::generate(
   // return a response token.
 
   stats_->inference_start_ms = time_in_ms();
+  stats_->model_execution_start_ms = 0;
+  stats_->model_execution_end_ms = 0;
 
   // Get max_seq_len for single prefill chunk limit
   int64_t max_seq_len = metadata_.at(kMaxSeqLen);
