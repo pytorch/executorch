@@ -14,6 +14,10 @@ conda activate et
 # Install test dependencies
 pip install -r .ci/docker/requirements-ci.txt
 
+# PyTorch 2.13 headers use designated initializers in c10, which require C++20
+# with MSVC.
+$env:CMAKE_ARGS = "$env:CMAKE_ARGS -DCMAKE_CXX_STANDARD=20"
+
 # The Windows CI image ships CUDA toolkits on PATH, so install_executorch
 # (setup.py) auto-enables EXECUTORCH_BUILD_CUDA whenever the detected nvcc
 # version is in SUPPORTED_CUDA_VERSIONS. CPU-only jobs install CPU torch, so a
