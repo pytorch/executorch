@@ -17,6 +17,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -72,11 +73,6 @@ struct ConstantSource {
   size_t nbytes = 0;
 };
 
-struct ExecuteConfig {
-  size_t chunk_size = 0;
-  size_t initial_chunk_size = 0;
-};
-
 struct WebGPUMemoryStats {
   size_t tensor_buffer_bytes = 0;
   size_t shared_buffer_bytes = 0;
@@ -111,12 +107,18 @@ class WebGPUGraph {
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
 
-  // Execute all recorded dispatches.
-  void execute();
+  WebGPUExecutionPlan make_execution_plan(
+      const WebGPUGraphExecutionOptions& options) const;
+
+  // Execute the dispatches selected by a plan created for this graph. Returns
+  // the number of GPU queue submissions performed.
+  size_t execute(const WebGPUExecutionPlan& plan);
 
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
-  void copy_outputs(std::vector<std::pair<void*, size_t>>& outputs);
+  void copy_outputs(
+      std::vector<std::pair<void*, size_t>>& outputs,
+      const WebGPUExecutionPlan& plan);
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
@@ -432,6 +434,8 @@ class WebGPUGraph {
 
   // Pre-computed output copy descriptors for execute().
   std::vector<OutputCopy> output_copies_;
+
+  std::vector<SuppressibleOutput> suppressible_outputs_;
 
   std::vector<WebGPUDispatch> dispatches_;
 
