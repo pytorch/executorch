@@ -12,11 +12,10 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from q4gsw_steel_bk64.wgsl - DO NOT EDIT.
-// wgsl-sha256: f7425201059aa7d7d7671f405bba65d446627474d89db87a12fac4a406f6f2b2
+// @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
+// wgsl-sha256: dc25d61a4fe98a3fcfe9c006e7488ad84e2e873e6f66f26ac6cf41fd400da148
 inline constexpr const char* kQ4gswSteelBk64WGSL = R"(
 enable f16;
-
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_input: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
@@ -35,15 +34,29 @@ struct Params {
 }
 @group(0) @binding(5) var<uniform> params: Params;
 
-// BK64 prefill variant: group_size=64 keeps one scale valid for all eight packed words.
+// "steel" prefill GEMM (M>1): 64x64 tile, 256 threads; K%16==0 host-guarded.
+// The "steel" name + register-tiled dequant-to-shared GEMM structure are
+// inspired by MLX's steel GEMM kernels (github.com/ml-explore/mlx,
+// mlx/backend/metal/kernels/steel). One template, four variants:
+//   DTYPE=float           f32 storage/multiply, per-nibble weight staging.
+//   DTYPE=half            f16 storage/multiply, per-nibble weight staging.
+//   PWDQ (half only)      packed-word dequant: load each u32 weight word ONCE,
+//     unpack all 16 nibbles of a column + hoist the per-column scale to one read
+//     (the per-nibble path re-reads each word ~8x). Requires K%BK==0 (steel
+//     route guarantees it) and group_size%BK==0 (hoisted scale across the tile).
+//   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
+//     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
+//     accumulate -- BIT-EXACT to the per-nibble half kernel.
+//   BK=64 (PWDQ + ACC=half only) stages a full quantization group at once.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 64u;
-var<workgroup> As: array<f16, 4096>;
-var<workgroup> Bs: array<f16, 4096>;
+var<workgroup> As: array<f16, 4096>;   // BM*BK
+var<workgroup> Bs: array<f16, 4096>;   // BK*BN
+// 16x16 = 256 threads, bound to the 64x64 tile + 4x4 reg tile (not a knob).
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
   let nbN = (params.N + BN - 1u) / BN;
-  let bx = wid.x % nbN;
+  let bx = wid.x % nbN;      // decode 2D tile id from 1D dispatch
   let by = wid.x / nbN;
   let row0 = by * BM;
   let col0 = bx * BN;
@@ -52,15 +65,18 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
   for (var m: u32 = 0u; m < 4u; m = m + 1u) {
     for (var n: u32 = 0u; n < 4u; n = n + 1u) { acc[m][n] = 0.0h; }
   }
-  let ar = tid / 4u;
-  let ac = (tid % 4u) * 4u;
+  // A staging coords: 256 threads load 64x16 = 1024 f32 -> 4 rows each (4 contiguous K).
+  let ar = tid / 4u;          // 0..63 (row in tile)
+  let ac = (tid % 4u) * 4u;   // 0,4,8,12 (K offset, 4 contiguous)
 
   var k0: u32 = 0u;
   loop {
     if (k0 >= params.K) { break; }
+    // stage activations (edge-masked on M; K is a multiple of BK for our shapes)
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
+      // vec4<f32> coalesced load; base is 4-aligned on the steel route (K%16==0, ac/k0 multiples of 4).
       let av0 = t_input[(base + 0u) >> 2u];
       let av1 = t_input[(base + 16u) >> 2u];
       let av2 = t_input[(base + 32u) >> 2u];
@@ -80,22 +96,23 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         }
       }
     }
+    // Packed-word dequant: threads [0,BN) each stage one full BK-column of Bs.
     if (tid < BN) {
-      let c = tid;
-      let n = col0 + c;
+      let c = tid;                 // Bs column within this tile
+      let n = col0 + c;            // global output column
       if (n < params.N) {
+        // Scale is constant across the BK tile (group_size % BK == 0 for all real
+        // group sizes; K%BK==0 on the steel route), so hoist it to one read.
         let scale_row = (k0 / params.group_size) * params.padded_N;
         let scale = f16(t_scales[scale_row + n]);
+        // Column n's BK-nibble K-slice starts at this packed word.
+        // K_packed multiple of 8 => base_word stays inside column n's own region.
         let base_word = n * (params.K_packed >> 2u) + (k0 >> 3u);
-        let w0 = t_weight[base_word + 0u];
-        let w1 = t_weight[base_word + 1u];
-        let w2 = t_weight[base_word + 2u];
-        let w3 = t_weight[base_word + 3u];
-        let w4 = t_weight[base_word + 4u];
-        let w5 = t_weight[base_word + 5u];
-        let w6 = t_weight[base_word + 6u];
-        let w7 = t_weight[base_word + 7u];
-        let words = array<u32, 8>(w0, w1, w2, w3, w4, w5, w6, w7);
+        let words = array<u32, 8>(
+            t_weight[base_word + 0u], t_weight[base_word + 1u],
+            t_weight[base_word + 2u], t_weight[base_word + 3u],
+            t_weight[base_word + 4u], t_weight[base_word + 5u],
+            t_weight[base_word + 6u], t_weight[base_word + 7u]);
         for (var br: u32 = 0u; br < BK; br = br + 1u) {
           let word = words[br >> 3u];
           let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
