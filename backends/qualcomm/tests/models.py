@@ -1532,7 +1532,7 @@ class IsNan(torch.nn.Module):
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        hidden_dim = 8192
+        hidden_dim = 16384
         self.linear1_1 = torch.nn.Linear(512, hidden_dim)
         self.linear1_2 = torch.nn.Linear(512, hidden_dim)
         self.linear1_3 = torch.nn.Linear(512, hidden_dim)
