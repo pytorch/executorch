@@ -27,11 +27,12 @@ endif()
 
 set(WEBGPU_SRCS
     runtime/WebGPUBackend.cpp
+    runtime/WebGPUExecutionOptions.cpp
     runtime/WebGPUGraph.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
-    runtime/WebGPUExecutionOptions.cpp
     runtime/WebGPUQueryPool.cpp
+    runtime/WebGPUShaderRegistry.cpp
     runtime/ops/OperatorRegistry.cpp
 )
 
@@ -208,7 +209,6 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     target_link_libraries(
       webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
     )
-
     add_executable(
       webgpu_execution_options_test test/native/test_execution_options.cpp
                                     runtime/WebGPUExecutionOptions.cpp
@@ -226,5 +226,10 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
       webgpu_output_suppression_test test/native/test_output_suppression.cpp
     )
     target_link_libraries(webgpu_output_suppression_test PRIVATE GTest::gtest)
+
+    add_webgpu_native_test(
+      webgpu_compute_dispatch_test test/native/test_compute_dispatch.cpp
+    )
+    target_link_libraries(webgpu_compute_dispatch_test PRIVATE GTest::gtest)
   endif()
 endif()
