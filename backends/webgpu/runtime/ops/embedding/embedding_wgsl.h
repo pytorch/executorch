@@ -13,39 +13,36 @@
 namespace executorch::backends::webgpu {
 
 // @generated from embedding.wgsl - DO NOT EDIT.
-// wgsl-sha256: 7ccb183b182070ea17138a4c06ec0e3419893e8312a6769bd945acd7223f9e9c
+// wgsl-sha256: e7c94da588a9dd40c0e1be7d3c6ef33310c71390c57f6f330ae23a18866d0ea7
 inline constexpr const char* kEmbeddingWGSL = R"(
-@group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
-@group(0) @binding(1) var<storage, read> t_indices: array<i32>;
-@group(0) @binding(2) var<storage, read> t_weight: array<f32>;
+@group(0) @binding(0) var<storage, read> weight: array<f32>;
+@group(0) @binding(1) var<storage, read> indices: array<i32>;
+@group(0) @binding(2) var<storage, read_write> output: array<f32>;
 
 struct Params {
-  embed_dim: u32,
   num_elements: u32,
-  _pad0: u32,
-  _pad1: u32,
+  dim: u32,
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-override wg_size: u32 = 64u;
+override wg_size: u32 = 256;
 
-// fp32 embedding row-gather: out[row, col] = weight[indices[row], col].
-// One thread per output element. int32 indices (the backend's index convention,
-// see index.wgsl / embedding_q4gsw).
-@compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let idx = gid.x;
-  if (idx >= params.num_elements) {
-    return;
-  }
-  let row = idx / params.embed_dim;
-  let col = idx % params.embed_dim;
-  let token = u32(t_indices[row]);
-  t_out[idx] = t_weight[token * params.embed_dim + col];
+@compute @workgroup_size(wg_size)
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
+    if (idx >= params.num_elements) {
+        return;
+    }
+    let row = idx / params.dim;
+    let col = idx % params.dim;
+    let row_id = u32(indices[row]);
+    output[idx] = weight[row_id * params.dim + col];
 }
 )";
 
-inline constexpr uint32_t kEmbeddingWorkgroupSizeX = 64;
+inline constexpr uint32_t kEmbeddingWorkgroupSizeX = 256;
 inline constexpr uint32_t kEmbeddingWorkgroupSizeY = 1;
 inline constexpr uint32_t kEmbeddingWorkgroupSizeZ = 1;
 

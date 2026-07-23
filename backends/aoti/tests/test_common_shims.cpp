@@ -241,6 +241,21 @@ TEST_F(CommonShimsTest, ScalarTensor) {
   error = aoti_torch_get_sizes(tensor_0d, &sizes_ptr2);
   EXPECT_EQ(error, Error::Ok);
   EXPECT_EQ(sizes_ptr, sizes_ptr2);
+
+  int64_t numel = -1;
+  error = aoti_torch_get_numel(tensor_0d, &numel);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(numel, 1);
+}
+
+TEST_F(CommonShimsTest, GetNumel) {
+  auto tensor = create_tracked_tensor({2, 3, 4});
+
+  int64_t numel = -1;
+  AOTITorchError error = aoti_torch_get_numel(tensor, &numel);
+
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(numel, 24);
 }
 
 // Test large tensor dimensions
@@ -266,6 +281,11 @@ TEST_F(CommonShimsTest, LargeTensorDimensions) {
   EXPECT_EQ(strides_ptr[1], 120000);
   EXPECT_EQ(strides_ptr[2], 400);
   EXPECT_EQ(strides_ptr[3], 1);
+
+  int64_t numel = -1;
+  error = aoti_torch_get_numel(tensor, &numel);
+  EXPECT_EQ(error, Error::Ok);
+  EXPECT_EQ(numel, 2400000000);
 }
 
 // Test that cleanup_tensor_metadata clears the cache
