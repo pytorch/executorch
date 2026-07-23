@@ -16,16 +16,11 @@ namespace torch {
 namespace executor {
 namespace native {
 
-// AOT (libtorch) shim. The ExecuTorch runtime kernel is registered in
-// op_moe.cpp via EXECUTORCH_LIBRARY; here we expose the same op to the
-// torch.library system so it is discoverable from torch.export traces.
-
 Tensor& quantized_moe_ffn_out_no_context(
     const Tensor& x,
     const Tensor& gate_weight,
     const Tensor& expert_bias,
-    const Tensor& packed_w1,
-    const Tensor& packed_w3,
+    const Tensor& packed_w13,
     const Tensor& packed_w2,
     const int64_t num_activated_experts,
     const int64_t num_experts,
@@ -42,8 +37,7 @@ Tensor& quantized_moe_ffn_out_no_context(
       x,
       gate_weight,
       expert_bias,
-      packed_w1,
-      packed_w3,
+      packed_w13,
       packed_w2,
       num_activated_experts,
       num_experts,
@@ -60,8 +54,7 @@ at::Tensor quantized_moe_ffn_aten(
     const at::Tensor& x,
     const at::Tensor& gate_weight,
     const at::Tensor& expert_bias,
-    const at::Tensor& packed_w1,
-    const at::Tensor& packed_w3,
+    const at::Tensor& packed_w13,
     const at::Tensor& packed_w2,
     const int64_t num_activated_experts,
     const int64_t num_experts,
@@ -72,12 +65,11 @@ at::Tensor quantized_moe_ffn_aten(
     c10::string_view score_func,
     const double route_scale) {
   auto output = at::empty({x.size(0), dim}, x.options().dtype(at::kFloat));
-  WRAP_TO_ATEN(quantized_moe_ffn_out_no_context, 14)
+  WRAP_TO_ATEN(quantized_moe_ffn_out_no_context, 13)
   (x,
    gate_weight,
    expert_bias,
-   packed_w1,
-   packed_w3,
+   packed_w13,
    packed_w2,
    num_activated_experts,
    num_experts,
@@ -98,13 +90,13 @@ at::Tensor quantized_moe_ffn_aten(
 TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "quantized_moe_ffn(Tensor x, Tensor gate_weight, Tensor expert_bias, "
-      "Tensor packed_w1, Tensor packed_w3, Tensor packed_w2, "
+      "Tensor packed_w13, Tensor packed_w2, "
       "int num_activated_experts, int num_experts, int hidden_dim, int dim, "
       "int group_size, int weight_nbit, str score_func, float route_scale) "
       "-> Tensor");
   m.def(
       "quantized_moe_ffn.out(Tensor x, Tensor gate_weight, Tensor expert_bias, "
-      "Tensor packed_w1, Tensor packed_w3, Tensor packed_w2, "
+      "Tensor packed_w13, Tensor packed_w2, "
       "int num_activated_experts, int num_experts, int hidden_dim, int dim, "
       "int group_size, int weight_nbit, str score_func, float route_scale, "
       "*, Tensor(a!) out) -> Tensor(a!)");
@@ -116,6 +108,6 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "quantized_moe_ffn.out",
       WRAP_TO_ATEN(
-          torch::executor::native::quantized_moe_ffn_out_no_context, 14));
+          torch::executor::native::quantized_moe_ffn_out_no_context, 13));
   m.impl("_quantized_moe_ffn_active", []() { return true; });
 }
