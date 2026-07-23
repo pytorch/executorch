@@ -175,6 +175,73 @@ void check_linear_tiled(int m_rows) {
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
 }
 
+constexpr int kSwiGluWidth = 8192;
+constexpr int kSwiGluSmallWidth = 64;
+constexpr int kSwiGluK = 64;
+
+void run_swiglu(
+    Module& module,
+    int m_rows,
+    const char* prefix,
+    int width,
+    bool separate_inputs = false) {
+  const std::string base =
+      g_dir + "/" + prefix + ".S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  auto golden = read_bin(base + "golden.bin");
+  ASSERT_FALSE(input.empty() || golden.empty())
+      << "missing " << prefix << ".S" << m_rows;
+  auto input_tensor = make_tensor_ptr({m_rows, kSwiGluK}, std::move(input));
+  std::vector<EValue> inputs{EValue(input_tensor)};
+  decltype(input_tensor) up_input_tensor;
+  if (separate_inputs) {
+    auto up_input = read_bin(base + "up_input.bin");
+    ASSERT_FALSE(up_input.empty());
+    up_input_tensor = make_tensor_ptr({m_rows, kSwiGluK}, std::move(up_input));
+    inputs.emplace_back(up_input_tensor);
+  }
+  auto result = module.forward(inputs);
+  ASSERT_TRUE(
+      result.ok() && result.get().size() == 1 && result.get()[0].isTensor())
+      << prefix << " M=" << m_rows << " forward failed";
+  const auto& output = result.get()[0].toTensor();
+  const size_t numel = static_cast<size_t>(m_rows) * width;
+  ASSERT_EQ(static_cast<size_t>(output.numel()), numel);
+  std::vector<float> got(
+      output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+  EXPECT_LT(max_err(got, golden), 1e-2f) << prefix << " M=" << m_rows;
+}
+
+void run_swiglu_outputs(
+    Module& module,
+    int m_rows,
+    const char* prefix,
+    size_t output_count) {
+  const std::string base =
+      g_dir + "/" + prefix + ".S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  ASSERT_FALSE(input.empty());
+  auto input_tensor = make_tensor_ptr({m_rows, kSwiGluK}, std::move(input));
+  auto result = module.forward({EValue(input_tensor)});
+  ASSERT_TRUE(result.ok());
+  ASSERT_EQ(result.get().size(), output_count);
+  const size_t numel = static_cast<size_t>(m_rows) * kSwiGluSmallWidth;
+  for (size_t index = 0; index < result.get().size(); ++index) {
+    ASSERT_TRUE(result.get()[index].isTensor());
+    const auto& output = result.get()[index].toTensor();
+    ASSERT_EQ(static_cast<size_t>(output.numel()), numel);
+    std::vector<float> got(
+        output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+    const auto golden =
+        read_bin(base + "golden" + std::to_string(index) + ".bin");
+    EXPECT_LT(max_err(got, golden), 1e-2f) << "output " << index;
+  }
+}
+
+void run_swiglu_graph_outputs(Module& module, int m_rows) {
+  run_swiglu_outputs(module, m_rows, "dyn_swiglu_graph_outputs", 4);
+}
+
 // Dynamic SDPA (GQA prefill, input_pos=0): q[1,s,hq,d] k/v[1,s,hkv,d]
 // caches[1,cmax,hkv,d]; attn output [1,s,hq,d] selected by shape (3 outputs).
 constexpr int kSdHq = 8, kSdHkv = 2, kSdD = 16, kSdCmax = 64;
@@ -732,6 +799,196 @@ TEST(DynamicShape, SigmoidReusedGraph) {
     check_s(m, "dyn_sigmoid", s);
   }
 }
+
+TEST(DynamicShape, SwiGluReusedGraph) {
+  Module module(g_dir + "/dyn_swiglu.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load dyn_swiglu.pte";
+  for (int m_rows : {512, 128, 1, 512}) {
+    run_swiglu(module, m_rows, "dyn_swiglu", kSwiGluWidth);
+  }
+}
+
+TEST(DynamicShape, SwiGluCommutativeAndOwnership) {
+  for (const char* prefix :
+       {"dyn_swiglu_inner_reversed", "dyn_swiglu_outer_reversed"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "load " << prefix;
+    run_swiglu(module, 128, prefix, kSwiGluSmallWidth);
+  }
+
+  Module negative(g_dir + "/dyn_swiglu_extra_gate_consumer.pte");
+  ASSERT_EQ(negative.load_forward(), Error::Ok)
+      << "load dyn_swiglu_extra_gate_consumer";
+  run_swiglu(
+      negative, 128, "dyn_swiglu_extra_gate_consumer", kSwiGluSmallWidth);
+
+  Module graph_outputs(g_dir + "/dyn_swiglu_graph_outputs.pte");
+  ASSERT_EQ(graph_outputs.load_forward(), Error::Ok)
+      << "load dyn_swiglu_graph_outputs";
+  run_swiglu_graph_outputs(graph_outputs, 128);
+
+  for (const char* prefix :
+       {"dyn_swiglu_extra_sigmoid_consumer",
+        "dyn_swiglu_extra_silu_consumer"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "load " << prefix;
+    run_swiglu(module, 128, prefix, kSwiGluSmallWidth);
+  }
+
+  for (const char* prefix :
+       {"dyn_swiglu_gate_graph_output",
+        "dyn_swiglu_sigmoid_graph_output",
+        "dyn_swiglu_silu_graph_output"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "load " << prefix;
+    run_swiglu_outputs(module, 128, prefix, 2);
+  }
+
+  Module different_inputs(g_dir + "/dyn_swiglu_different_inputs.pte");
+  ASSERT_EQ(different_inputs.load_forward(), Error::Ok);
+  run_swiglu(
+      different_inputs,
+      128,
+      "dyn_swiglu_different_inputs",
+      kSwiGluSmallWidth,
+      true);
+
+  Module interleaved(g_dir + "/dyn_swiglu_interleaved_q4.pte");
+  ASSERT_EQ(interleaved.load_forward(), Error::Ok);
+  run_swiglu(interleaved, 128, "dyn_swiglu_interleaved_q4", kSwiGluSmallWidth);
+}
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+void expect_swiglu_profile(
+    Module& module,
+    int m_rows,
+    const char* prefix,
+    int width,
+    bool expect_2d) {
+  run_swiglu(module, m_rows, prefix, width);
+  const auto* context = get_default_webgpu_context();
+  ASSERT_NE(context, nullptr);
+  ASSERT_NE(context->querypool, nullptr);
+  const auto& profile = context->querypool->results();
+  ASSERT_EQ(profile.size(), 3)
+      << "two q4 projections plus one fused SwiGLU dispatch expected";
+  EXPECT_EQ(
+      std::count_if(
+          profile.begin(),
+          profile.end(),
+          [](const auto& duration) {
+            return duration.kernel_name == "silu_mul_fused";
+          }),
+      1);
+  EXPECT_EQ(
+      std::count_if(
+          profile.begin(),
+          profile.end(),
+          [](const auto& duration) {
+            return duration.kernel_name == "mul" ||
+                duration.kernel_name == "sigmoid";
+          }),
+      0);
+  const auto fused =
+      std::find_if(profile.begin(), profile.end(), [](const auto& duration) {
+        return duration.kernel_name == "silu_mul_fused";
+      });
+  ASSERT_NE(fused, profile.end());
+  EXPECT_EQ(fused->global_wg[1] > 1, expect_2d);
+}
+
+TEST(DynamicShape, SwiGluFusionProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported) {
+    GTEST_SKIP() << "timestamp queries unavailable";
+  }
+
+  for (const char* prefix :
+       {"dyn_swiglu_inner_reversed", "dyn_swiglu_outer_reversed"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << prefix;
+    expect_swiglu_profile(module, 128, prefix, kSwiGluSmallWidth, false);
+  }
+
+  Module canonical(g_dir + "/dyn_swiglu.pte");
+  ASSERT_EQ(canonical.load_forward(), Error::Ok);
+  for (int m_rows : {1, 128, 512}) {
+    expect_swiglu_profile(
+        canonical, m_rows, "dyn_swiglu", kSwiGluWidth, m_rows == 512);
+  }
+
+  Module negative(g_dir + "/dyn_swiglu_extra_gate_consumer.pte");
+  ASSERT_EQ(negative.load_forward(), Error::Ok);
+  run_swiglu(
+      negative, 128, "dyn_swiglu_extra_gate_consumer", kSwiGluSmallWidth);
+  const auto names = current_profile_names();
+  EXPECT_FALSE(contains_name(names, "silu_mul_fused"));
+  EXPECT_EQ(std::count(names.begin(), names.end(), "mul"), 2);
+
+  Module graph_outputs(g_dir + "/dyn_swiglu_graph_outputs.pte");
+  ASSERT_EQ(graph_outputs.load_forward(), Error::Ok);
+  run_swiglu_graph_outputs(graph_outputs, 128);
+  const auto graph_output_names = current_profile_names();
+  EXPECT_FALSE(contains_name(graph_output_names, "silu_mul_fused"));
+  EXPECT_EQ(
+      std::count(graph_output_names.begin(), graph_output_names.end(), "mul"),
+      2);
+
+  for (const char* prefix :
+       {"dyn_swiglu_extra_sigmoid_consumer",
+        "dyn_swiglu_extra_silu_consumer"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << prefix;
+    run_swiglu(module, 128, prefix, kSwiGluSmallWidth);
+    const auto consumer_names = current_profile_names();
+    EXPECT_FALSE(contains_name(consumer_names, "silu_mul_fused")) << prefix;
+    EXPECT_EQ(
+        std::count(consumer_names.begin(), consumer_names.end(), "mul"), 2)
+        << prefix;
+  }
+
+  for (const char* prefix :
+       {"dyn_swiglu_gate_graph_output",
+        "dyn_swiglu_sigmoid_graph_output",
+        "dyn_swiglu_silu_graph_output"}) {
+    Module module(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(module.load_forward(), Error::Ok) << prefix;
+    run_swiglu_outputs(module, 128, prefix, 2);
+    const auto output_names = current_profile_names();
+    EXPECT_FALSE(contains_name(output_names, "silu_mul_fused")) << prefix;
+    EXPECT_EQ(std::count(output_names.begin(), output_names.end(), "mul"), 2)
+        << prefix;
+  }
+
+  Module different_inputs(g_dir + "/dyn_swiglu_different_inputs.pte");
+  ASSERT_EQ(different_inputs.load_forward(), Error::Ok);
+  run_swiglu(
+      different_inputs,
+      128,
+      "dyn_swiglu_different_inputs",
+      kSwiGluSmallWidth,
+      true);
+  const auto different_input_names = current_profile_names();
+  EXPECT_FALSE(contains_name(different_input_names, "silu_mul_fused"));
+  EXPECT_EQ(
+      std::count(
+          different_input_names.begin(), different_input_names.end(), "mul"),
+      2);
+
+  Module interleaved(g_dir + "/dyn_swiglu_interleaved_q4.pte");
+  ASSERT_EQ(interleaved.load_forward(), Error::Ok);
+  run_swiglu(interleaved, 128, "dyn_swiglu_interleaved_q4", kSwiGluSmallWidth);
+  const auto interleaved_names = current_profile_names();
+  EXPECT_EQ(interleaved_names.size(), 5);
+  EXPECT_EQ(
+      std::count(
+          interleaved_names.begin(), interleaved_names.end(), "silu_mul_fused"),
+      1);
+  EXPECT_EQ(
+      std::count(interleaved_names.begin(), interleaved_names.end(), "mul"), 0);
+}
+#endif
 
 // N: dynamic select_copy(0,-1) at several S.
 TEST(DynamicShape, Select) {
