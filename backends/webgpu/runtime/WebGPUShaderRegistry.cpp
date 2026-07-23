@@ -42,13 +42,13 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/linear_dW_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_backward_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_qkv_fused_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_shmem_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_f16acc_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_qkv_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_requant_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/reduce/reduce_wgsl.h>
@@ -312,13 +312,6 @@ constexpr std::array<WebGPUShaderInfo, 61> kShaderRegistry = {{
         kQ4gswLinearCoop4BicolWorkgroupSizeZ,
     },
     {
-        "q4gsw_linear_gemm_qkv_fused",
-        kQ4gswLinearGemmQkvFusedWGSL,
-        kQ4gswLinearGemmQkvFusedWorkgroupSizeX,
-        kQ4gswLinearGemmQkvFusedWorkgroupSizeY,
-        kQ4gswLinearGemmQkvFusedWorkgroupSizeZ,
-    },
-    {
         "q4gsw_linear_gemm_shmem",
         kQ4gswLinearGemmShmemWGSL,
         kQ4gswLinearGemmShmemWorkgroupSizeX,
@@ -352,6 +345,13 @@ constexpr std::array<WebGPUShaderInfo, 61> kShaderRegistry = {{
         kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeX,
         kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeY,
         kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeZ,
+    },
+    {
+        "q4gsw_qkv_bk64",
+        kQ4gswQkvBk64WGSL,
+        kQ4gswQkvBk64WorkgroupSizeX,
+        kQ4gswQkvBk64WorkgroupSizeY,
+        kQ4gswQkvBk64WorkgroupSizeZ,
     },
     {
         "q4gsw_requant",
