@@ -28,6 +28,7 @@ from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     scatter,
     shape_ops,
     table,
+    ternary_elementwise,
     transpose_conv2d,
     unary_elementwise,
 )
