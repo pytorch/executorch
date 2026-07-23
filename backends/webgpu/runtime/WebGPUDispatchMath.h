@@ -33,7 +33,11 @@ inline uint64_t numel(const std::vector<int64_t>& dims) {
     if (d < 0) {
       throw std::runtime_error("numel: negative dimension");
     }
-    n *= static_cast<uint64_t>(d);
+    uint64_t ud = static_cast<uint64_t>(d);
+    if (ud != 0 && n > UINT64_MAX / ud) {
+      throw std::runtime_error("numel: element count overflow");
+    }
+    n *= ud;
   }
   return n;
 }
