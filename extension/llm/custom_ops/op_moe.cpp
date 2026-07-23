@@ -34,16 +34,6 @@ namespace {
 
 using executorch::aten::string_view;
 
-// SwiGLU epilogue: out = silu(h1) * h3 (in place over h1).
-// silu(x) = x * sigmoid(x) = x / (1 + exp(-x)).
-inline void swiglu_inplace(float* h1, const float* h3, int64_t n) {
-  for (int64_t i = 0; i < n; ++i) {
-    const float v = h1[i];
-    const float s = v / (1.0f + std::exp(-v));
-    h1[i] = s * h3[i];
-  }
-}
-
 // Stable softmax over a row of length E (in place).
 inline void softmax_row(float* row, int64_t e) {
   float maxv = row[0];
@@ -291,8 +281,7 @@ Tensor& quantized_moe_ffn_out(
     const Tensor& x,
     const Tensor& gate_weight,
     const Tensor& expert_bias,
-    const Tensor& packed_w1,
-    const Tensor& packed_w3,
+    const Tensor& packed_w13,
     const Tensor& packed_w2,
     int64_t num_activated_experts,
     int64_t num_experts,
@@ -333,23 +322,15 @@ Tensor& quantized_moe_ffn_out(
   }
 
   ET_CHECK_MSG(
-      packed_w1.dim() == 2 && packed_w1.size(0) == num_experts,
-      "packed_w1 must be [E, packed_bytes]");
-  ET_CHECK_MSG(
-      packed_w3.dim() == 2 && packed_w3.size(0) == num_experts,
-      "packed_w3 must be [E, packed_bytes]");
+      packed_w13.dim() == 2 && packed_w13.size(0) == num_experts,
+      "packed_w13 must be [E, packed_bytes]");
   ET_CHECK_MSG(
       packed_w2.dim() == 2 && packed_w2.size(0) == num_experts,
       "packed_w2 must be [E, packed_bytes]");
   ET_CHECK_MSG(
-      packed_w1.scalar_type() == ScalarType::Byte, "packed_w1 must be uint8");
-  ET_CHECK_MSG(
-      packed_w3.scalar_type() == ScalarType::Byte, "packed_w3 must be uint8");
+      packed_w13.scalar_type() == ScalarType::Byte, "packed_w13 must be uint8");
   ET_CHECK_MSG(
       packed_w2.scalar_type() == ScalarType::Byte, "packed_w2 must be uint8");
-  ET_CHECK_MSG(
-      packed_w1.size(1) == packed_w3.size(1),
-      "packed_w1 and packed_w3 per-expert blob sizes must match");
 
   ET_CHECK_MSG(
       num_activated_experts > 0 && num_activated_experts <= num_experts,
@@ -383,8 +364,7 @@ Tensor& quantized_moe_ffn_out(
   const int64_t F = hidden_dim;
   const int64_t E = num_experts;
   const int64_t K = num_activated_experts;
-  const int64_t pw1_bytes = packed_w1.size(1);
-  const int64_t pw3_bytes = packed_w3.size(1);
+  const int64_t pw13_bytes = packed_w13.size(1);
   const int64_t pw2_bytes = packed_w2.size(1);
 
   // Resize the output to [T, D].
@@ -406,8 +386,7 @@ Tensor& quantized_moe_ffn_out(
   const float* gate_w_ptr = gate_weight.const_data_ptr<float>();
   const float* expert_bias_ptr =
       use_expert_bias ? expert_bias.const_data_ptr<float>() : nullptr;
-  const uint8_t* pw1_ptr = packed_w1.const_data_ptr<uint8_t>();
-  const uint8_t* pw3_ptr = packed_w3.const_data_ptr<uint8_t>();
+  const uint8_t* pw13_ptr = packed_w13.const_data_ptr<uint8_t>();
   const uint8_t* pw2_ptr = packed_w2.const_data_ptr<uint8_t>();
   float* out_ptr = out.mutable_data_ptr<float>();
 
@@ -540,8 +519,10 @@ Tensor& quantized_moe_ffn_out(
       max_m_e = m_e;
     }
   }
-  std::vector<float> h1_buf(static_cast<size_t>(max_m_e * F), 0.0f);
-  std::vector<float> h3_buf(static_cast<size_t>(max_m_e * F), 0.0f);
+  // h13_buf holds the fused [m_e, 2F] output of the w1+w3 GEMM.
+  // mid_buf holds the [m_e, F] SwiGLU result compacted for the w2 GEMM.
+  std::vector<float> h13_buf(static_cast<size_t>(max_m_e * 2 * F), 0.0f);
+  std::vector<float> mid_buf(static_cast<size_t>(max_m_e * F), 0.0f);
   std::vector<float> out_e_buf(static_cast<size_t>(max_m_e * D), 0.0f);
 
   for (int64_t e = 0; e < E; ++e) {
@@ -550,40 +531,37 @@ Tensor& quantized_moe_ffn_out(
       continue;
     }
     const float* x_e = x_perm.data() + expert_offsets[e] * D;
-    const uint8_t* w1_e = pw1_ptr + e * pw1_bytes;
-    const uint8_t* w3_e = pw3_ptr + e * pw3_bytes;
+    const uint8_t* w13_e = pw13_ptr + e * pw13_bytes;
     const uint8_t* w2_e = pw2_ptr + e * pw2_bytes;
 
-    // Up-projection (D -> F): H1 = x_e @ w1[e]^T
+    // Fused up+gate projection (D -> 2F): H13 = x_e @ w13[e]^T
+    // First F columns are h1 (up), last F are h3 (gate).
     expert_linear_dispatch(
         weight_nbit,
-        w1_e,
-        pw1_bytes,
+        w13_e,
+        pw13_bytes,
         x_e,
         m_e,
-        F,
+        2 * F,
         D,
         group_size,
-        h1_buf.data());
-    // Gate-projection (D -> F): H3 = x_e @ w3[e]^T
-    expert_linear_dispatch(
-        weight_nbit,
-        w3_e,
-        pw3_bytes,
-        x_e,
-        m_e,
-        F,
-        D,
-        group_size,
-        h3_buf.data());
-    // SwiGLU epilogue (in place over h1_buf).
-    swiglu_inplace(h1_buf.data(), h3_buf.data(), m_e * F);
+        h13_buf.data());
+    // SwiGLU + compact: read [m_e, 2F] interleaved, write [m_e, F]
+    for (int64_t i = 0; i < m_e; ++i) {
+      const float* src = h13_buf.data() + i * 2 * F;
+      float* dst = mid_buf.data() + i * F;
+      for (int64_t j = 0; j < F; ++j) {
+        const float v = src[j];
+        const float s = v / (1.0f + std::exp(-v));
+        dst[j] = s * src[F + j];
+      }
+    }
     // Down-projection (F -> D): OUT_e = MID @ w2[e]^T
     expert_linear_dispatch(
         weight_nbit,
         w2_e,
         pw2_bytes,
-        h1_buf.data(),
+        mid_buf.data(),
         m_e,
         D,
         F,
