@@ -186,7 +186,7 @@ message(
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
+    # ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch  # targets MLX v0.32.0's qmm_splitk, which doesn't exist in the pinned v0.31.1 -- fixes an nvfp4-specific bug unrelated to this project's int4/int8 quantization path
 )
 ExternalProject_Add(
   mlx_external

@@ -222,7 +222,7 @@ def _export_with_custom_components(
         )
     elif dflash_layers is not None:
         # Qwen3-specific for now.
-        from executorch.examples.models.qwen3.mlx_source_transformations import (
+        from executorch.backends.mlx.examples.llm.dflash_hidden_export import (
             TorchExportableModuleWithStaticCacheAndHidden,
         )
 

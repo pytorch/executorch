@@ -4,17 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Extracting Qwen3 hidden-state for DFlash.
+"""Generic hidden-state-tapping export wrapper for DFlash.
 
-Same idea as examples/models/gemma4_31b/mlx_source_transformations.py --
-extract layers and return them concatenated alongside logits. In Qwen3, the 
-layer ids from z-lab Qwen3 DFlash draft config is [1, 9, 17, 25, 33]
+Originally lived under examples/models/qwen3/, but the wrapper itself has
+no Qwen3-specific logic -- it subclasses transformers'
+TorchExportableModuleWithStaticCache and adds output_hidden_states to its
+forward, which works for any standard HF causal LM exported via the
+generic export_llm_hf.py path. Moved here (per review) so any model using
+that path can reuse it, rather than importing across from a
+model-specific folder.
 
-Gemma 4 does this by patching its own hand-written forward(). Qwen3 goes
-through the generic HF export path instead (export_llm_hf.py), which wraps
-the model in transformers' TorchExportableModuleWithStaticCache before
-torch.export. So we subclass that wrapper and add output_hidden_states
-to its forward rather than patching Qwen3 itself.
+Gemma 4 (examples/models/gemma4_31b/) currently does hidden-state tapping
+differently -- by patching its own hand-written forward() rather than
+going through export_llm_hf.py's generic HF export path -- so it has its
+own separate mlx_source_transformations.py and isn't using this class.
+Not migrated as part of this change; that's a separate piece of work
+outside this PR's scope.
 
 Base class signature/behavior confirmed via:
     inspect.getsource(transformers.integrations.executorch.TorchExportableModuleWithStaticCache)
