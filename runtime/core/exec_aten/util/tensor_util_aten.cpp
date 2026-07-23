@@ -135,9 +135,9 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
       t_src.mutable_data_ptr() != nullptr,
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
-  // Assign the dataptr as the input tensor dataptr
-  storage->set_data_ptr(
-      at::DataPtr(t_src.mutable_data_ptr(), at::DeviceType::CPU));
+  // Preserve the source device; hardcoding CPU would mis-tag a device input's
+  // storage as host and the backend would later reject it.
+  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), t_src.device()));
   storage->set_nbytes(t_src.nbytes());
 
   return Error::Ok;

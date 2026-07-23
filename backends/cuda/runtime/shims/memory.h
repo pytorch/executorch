@@ -95,6 +95,15 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided(
     int32_t device_index,
     SlimTensor** ret_new_tensor);
 
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_empty_strided_pinned(
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    SlimTensor** ret_new_tensor);
+
 /**
  * Deletes a tensor object and frees associated resources.
  *

@@ -469,29 +469,45 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
-        try:
-            import torch
+        # Give the generated blob a private aoti_torch_* ABI so it binds to
+        # ExecuTorch's SlimTensor shims, never libtorch's at::Tensor shims, in a
+        # coalesced process (e.g. a TensorRT[ATen] + CUDA .pte). Must match the
+        # -DAOTI_SHIM_SYMBOL_PREFIX the ExecuTorch shim libs are built with
+        # (backends/aoti/shim_symbol_prefix.bzl). The shim libs export only the
+        # prefixed names, so this PyTorch capability is required, not optional; a
+        # missing key means the installed torch predates it.
+        if not hasattr(
+            torch._inductor.config.aot_inductor, "shim_symbol_prefix"
+        ):
+            raise RuntimeError(
+                "The installed PyTorch does not support "
+                "aot_inductor.shim_symbol_prefix, which the ExecuTorch CUDA "
+                "backend requires to match its prefixed aoti_torch_* shims. "
+                "Update PyTorch to a version that provides it."
+            )
+        options["aot_inductor.shim_symbol_prefix"] = "executorch_"
 
+        try:
             options["aot_inductor.custom_ops_to_c_shims"] = {
                 torch.ops.executorch_cuda.int4_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int4_plain_mm("
+                    "AOTITorchError executorch_aoti_torch_cuda_int4_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int5_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int5_plain_mm("
+                    "AOTITorchError executorch_aoti_torch_cuda_int5_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int6_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int6_plain_mm("
+                    "AOTITorchError executorch_aoti_torch_cuda_int6_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],
                 torch.ops.executorch_cuda.int8_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int8_plain_mm("
+                    "AOTITorchError executorch_aoti_torch_cuda_int8_plain_mm("
                     "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
                     "AtenTensorHandle, int64_t, AtenTensorHandle*)"
                 ],

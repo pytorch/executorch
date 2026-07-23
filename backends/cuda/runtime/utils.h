@@ -25,7 +25,7 @@ namespace executorch::backends::cuda {
 namespace {
 inline executorch::runtime::Error _check_tensor_metadata(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor) {
+    executorch::aten::Tensor* etensor) {
   ET_CHECK_OR_RETURN_ERROR(
       slim_tensor != nullptr,
       InvalidArgument,
@@ -50,8 +50,7 @@ inline executorch::runtime::Error _check_tensor_metadata(
   // Check dtype matches
   executorch::backends::aoti::slim::c10::ScalarType slim_dtype =
       slim_tensor->dtype();
-  executorch::runtime::etensor::ScalarType etensor_dtype =
-      etensor->scalar_type();
+  executorch::aten::ScalarType etensor_dtype = etensor->scalar_type();
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<int>(slim_dtype) == static_cast<int>(etensor_dtype),
       InvalidArgument,
@@ -67,23 +66,18 @@ inline executorch::runtime::Error _check_tensor_metadata(
       slim_tensor->dim(),
       etensor->dim());
 
-  // Convert sizes from int64_t to SizesType (int32_t) for resize
   const size_t ndim = slim_tensor->dim();
-  std::vector<executorch::runtime::etensor::TensorImpl::SizesType> new_sizes(
-      ndim);
+  std::vector<executorch::aten::SizesType> new_sizes(ndim);
   auto slim_sizes = slim_tensor->sizes();
   for (size_t i = 0; i < ndim; ++i) {
-    new_sizes[i] =
-        static_cast<executorch::runtime::etensor::TensorImpl::SizesType>(
-            slim_sizes[i]);
+    new_sizes[i] = static_cast<executorch::aten::SizesType>(slim_sizes[i]);
   }
 
   // Resize ETensor to match SlimTensor sizes
   executorch::runtime::Error resize_err =
       executorch::ET_RUNTIME_NAMESPACE::resize_tensor(
           *etensor,
-          executorch::runtime::ArrayRef<
-              executorch::runtime::etensor::TensorImpl::SizesType>(
+          executorch::aten::ArrayRef<executorch::aten::SizesType>(
               new_sizes.data(), new_sizes.size()));
   ET_CHECK_OK_OR_RETURN_ERROR(resize_err, "failed to resize ETensor");
 
@@ -92,7 +86,7 @@ inline executorch::runtime::Error _check_tensor_metadata(
 // Check if src and dst strides match (same layout, no rearrangement needed).
 inline bool _strides_match(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    const executorch::runtime::etensor::Tensor* etensor) {
+    const executorch::aten::Tensor* etensor) {
   const size_t ndim = slim_tensor->dim();
   auto slim_strides = slim_tensor->strides();
   auto et_strides = etensor->strides();
@@ -152,7 +146,7 @@ inline void _strided_copy(
 // path). When stream is null, GPU copies are synchronous.
 inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor,
+    executorch::aten::Tensor* etensor,
     const executorch::backends::aoti::slim::c10::Device& dst_device,
     cudaStream_t stream) {
   ET_CHECK_OK_OR_RETURN_ERROR(_check_tensor_metadata(slim_tensor, etensor));
@@ -272,7 +266,7 @@ inline executorch::runtime::Error _copy_slimtensor_to_etensor_impl(
  */
 inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor,
+    executorch::aten::Tensor* etensor,
     cudaStream_t stream) {
   return _copy_slimtensor_to_etensor_impl(
       slim_tensor,
@@ -303,7 +297,7 @@ inline executorch::runtime::Error copy_slimtensor_to_etensor_async(
  */
 inline executorch::runtime::Error copy_slimtensor_to_device_etensor_async(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor,
+    executorch::aten::Tensor* etensor,
     cudaStream_t stream) {
   return _copy_slimtensor_to_etensor_impl(
       slim_tensor, etensor, slim_tensor->device(), stream);
@@ -321,39 +315,12 @@ inline executorch::runtime::Error copy_slimtensor_to_device_etensor_async(
  */
 inline executorch::runtime::Error copy_slimtensor_to_etensor(
     const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor) {
+    executorch::aten::Tensor* etensor) {
   return _copy_slimtensor_to_etensor_impl(
       slim_tensor,
       etensor,
       executorch::backends::aoti::slim::CPU_DEVICE,
       nullptr);
-}
-
-/**
- * Wraps a SlimTensor's data into an existing ETensor (zero-copy).
- *
- * This function resizes the ETensor to match the SlimTensor's shape and
- * sets its data pointer to point directly to the SlimTensor's data buffer.
- * No data is copied - the ETensor becomes a view of the SlimTensor's data.
- *
- * IMPORTANT: The caller must ensure the SlimTensor remains alive as long
- * as the ETensor is in use, since the ETensor will reference the SlimTensor's
- * data directly.
- *
- * @param slim_tensor Pointer to the source SlimTensor (must not be null).
- * @param etensor Pointer to the destination ETensor (must not be null).
- * @return Error::Ok on success, or an appropriate error code on failure.
- */
-inline executorch::runtime::Error wrap_slimtensor_to_etensor(
-    const executorch::backends::aoti::slim::SlimTensor* slim_tensor,
-    executorch::runtime::etensor::Tensor* etensor) {
-  ET_CHECK_OK_OR_RETURN_ERROR(_check_tensor_metadata(slim_tensor, etensor));
-
-  // Set data pointer to point directly to SlimTensor's data (zero-copy)
-  etensor->unsafeGetTensorImpl()->set_data(
-      const_cast<void*>(slim_tensor->data_ptr()));
-
-  return executorch::runtime::Error::Ok;
 }
 
 /**
@@ -394,7 +361,7 @@ inline void delete_slimtensor_vector(
 inline executorch::backends::aoti::slim::SlimTensor*
 make_slimtensor_from_blob_with_etensor_metadata(
     void* data_ptr,
-    const executorch::runtime::etensor::Tensor* etensor,
+    const executorch::aten::Tensor* etensor,
     const executorch::backends::aoti::slim::c10::Device& device =
         executorch::backends::aoti::slim::DEFAULT_CUDA_DEVICE) {
   auto sizes = etensor->sizes();
