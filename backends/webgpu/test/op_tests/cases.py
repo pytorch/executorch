@@ -703,6 +703,32 @@ def _upsample_nearest2d_suite() -> WebGPUTestSuite:
     )
 
 
+from executorch.backends.webgpu.test.ops.test_leaky_relu import LeakyReluModule
+
+
+@register_op_test("leaky_relu")
+def _leaky_relu_suite() -> WebGPUTestSuite:
+    # Real-ESRGAN SRVGGNetCompact body activation. The det input spans negatives,
+    # exercising the negative_slope branch; a 4D and a 2D case.
+    return WebGPUTestSuite(
+        module_factory=lambda negative_slope: LeakyReluModule(negative_slope),
+        cases=[
+            Case(
+                name="default_slope",
+                construct={"negative_slope": 0.01},
+                inputs=(InputSpec(shape=(1, 16, 8, 8), gen=_upsample_det_input),),
+            ),
+            Case(
+                name="slope_0_2",
+                construct={"negative_slope": 0.2},
+                inputs=(InputSpec(shape=(3, 32), gen=_upsample_det_input),),
+            ),
+        ],
+        atol=1e-4,
+        rtol=1e-3,
+    )
+
+
 from executorch.backends.webgpu.test.ops.test_max_pool2d import (
     _det_input as _maxpool_det_input,
     MaxPool2dModule,
