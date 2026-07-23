@@ -5,7 +5,6 @@
 - Conformer
 - Deep AutoEncoder
 - Deit Tiny
-- DeepSeek-R1-Distill-Qwen-1.5B
 - DeepLab v3 (DL3)
 - DS CNN
 - Inception v3 (IC3)
