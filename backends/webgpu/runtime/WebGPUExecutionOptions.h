@@ -19,6 +19,8 @@ constexpr size_t kNoOutputOrdinal = static_cast<size_t>(-1);
 struct WebGPUExecutionOptions {
   // The certificate must bind the exact PTE and method and prove one delegate,
   // no portable nodes, and a unique leaf method output at this data pointer.
+  // The caller must keep this pointer valid and unchanged for the complete
+  // synchronous backend invocation in which these options are scoped.
   const void* discardable_output_data = nullptr;
   bool exact_method_certificate_verified = false;
 };

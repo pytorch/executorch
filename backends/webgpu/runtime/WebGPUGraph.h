@@ -107,14 +107,18 @@ class WebGPUGraph {
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
 
-  // Execute all recorded dispatches.
-  void execute(const WebGPUGraphExecutionOptions& options);
+  WebGPUExecutionPlan make_execution_plan(
+      const WebGPUGraphExecutionOptions& options) const;
+
+  // Execute the dispatches selected by a plan created for this graph. Returns
+  // the number of GPU queue submissions performed.
+  size_t execute(const WebGPUExecutionPlan& plan);
 
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
   void copy_outputs(
       std::vector<std::pair<void*, size_t>>& outputs,
-      const WebGPUGraphExecutionOptions& options);
+      const WebGPUExecutionPlan& plan);
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
