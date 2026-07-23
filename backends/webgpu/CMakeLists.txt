@@ -32,6 +32,7 @@ set(WEBGPU_SRCS
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
     runtime/WebGPUQueryPool.cpp
+    runtime/WebGPUShaderRegistry.cpp
     runtime/ops/OperatorRegistry.cpp
 )
 
@@ -220,5 +221,10 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
       webgpu_output_suppression_test test/native/test_output_suppression.cpp
     )
     target_link_libraries(webgpu_output_suppression_test PRIVATE GTest::gtest)
+
+    add_webgpu_native_test(
+      webgpu_compute_dispatch_test test/native/test_compute_dispatch.cpp
+    )
+    target_link_libraries(webgpu_compute_dispatch_test PRIVATE GTest::gtest)
   endif()
 endif()

@@ -13,11 +13,13 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -57,6 +59,37 @@ struct WebGPUDispatch {
   WGPUBuffer copy_dst = nullptr;
   size_t copy_nbytes = 0;
 };
+
+struct WebGPUBufferBinding {
+  WGPUBuffer buffer = nullptr;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+struct WebGPUSpecializationConstant {
+  std::string name;
+  double value = 0.0;
+};
+
+struct WebGPUDispatchGrid {
+  uint32_t x = 1;
+  uint32_t y = 1;
+};
+
+struct WebGPUComputeDispatchDescriptor {
+  std::string shader_name;
+  std::string entry_point = "main";
+  std::string kernel_name;
+  std::vector<WebGPUBufferBinding> bindings;
+  std::vector<WebGPUSpecializationConstant> constants;
+  WebGPUDispatchGrid grid;
+};
+
+std::string make_compute_pipeline_key(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
+void validate_compute_dispatch_descriptor(
+    const WebGPUComputeDispatchDescriptor& descriptor);
 
 struct OutputCopy {
   WGPUBuffer src_buffer = nullptr;
@@ -193,6 +226,14 @@ class WebGPUGraph {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
 
+  bool tensor_has_dynamic_dims(int tensor_id) const {
+    return dynamic_tensor_ids_.count(tensor_id) != 0;
+  }
+
+  bool has_dynamic_shapes() const {
+    return !dynamic_tensor_ids_.empty();
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
@@ -227,6 +268,25 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  size_t register_dispatch_route_group(
+      const std::vector<utils::DispatchRange>& ranges) {
+    return dispatch_routes_.register_group(
+        dispatches_.size(), ranges, [&](size_t i) {
+          return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
+        });
+  }
+
+  void select_dispatch_route(
+      size_t group,
+      size_t active_route,
+      const std::vector<utils::WgCount>& active_grids) {
+    dispatch_routes_.select(
+        group, active_route, active_grids, [&](size_t i, utils::WgCount grid) {
+          dispatches_[i].workgroup_count_x = grid.x;
+          dispatches_[i].workgroup_count_y = grid.y;
+        });
   }
 
   WGPUDevice device() const {
@@ -268,6 +328,24 @@ class WebGPUGraph {
     owned_uniform_buffers_.push_back(buffer);
   }
 
+  template <typename Block>
+  WGPUBuffer create_params_buffer(const Block& data) {
+    static_assert(
+        std::is_trivially_copyable<Block>::value,
+        "WebGPU parameter blocks must be trivially copyable");
+    static_assert(
+        sizeof(Block) % 4u == 0u,
+        "WebGPU parameter blocks must have a 4-byte-aligned size");
+    WGPUBuffer buffer = make_uniform_buffer(&data, sizeof(Block));
+    try {
+      own_uniform_buffer(buffer);
+    } catch (...) {
+      wgpuBufferRelease(buffer);
+      throw;
+    }
+    return buffer;
+  }
+
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
@@ -303,6 +381,9 @@ class WebGPUGraph {
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
+
+  size_t add_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor);
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
@@ -387,6 +468,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -438,6 +520,7 @@ class WebGPUGraph {
   std::vector<SuppressibleOutput> suppressible_outputs_;
 
   std::vector<WebGPUDispatch> dispatches_;
+  utils::DispatchRouteRegistry dispatch_routes_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
