@@ -105,18 +105,10 @@ def _make_valid_meta_inputs() -> dict:
         "gate_weight": torch.empty(
             (num_experts, dim), dtype=torch.float32, device="meta"
         ),
-        "expert_bias": torch.empty(
-            (num_experts,), dtype=torch.float32, device="meta"
-        ),
-        "packed_w1": torch.empty(
-            (num_experts, 1), dtype=torch.uint8, device="meta"
-        ),
-        "packed_w3": torch.empty(
-            (num_experts, 1), dtype=torch.uint8, device="meta"
-        ),
-        "packed_w2": torch.empty(
-            (num_experts, 1), dtype=torch.uint8, device="meta"
-        ),
+        "expert_bias": torch.empty((num_experts,), dtype=torch.float32, device="meta"),
+        "packed_w1": torch.empty((num_experts, 1), dtype=torch.uint8, device="meta"),
+        "packed_w3": torch.empty((num_experts, 1), dtype=torch.uint8, device="meta"),
+        "packed_w2": torch.empty((num_experts, 1), dtype=torch.uint8, device="meta"),
         "num_activated_experts": 2,
         "num_experts": num_experts,
         "hidden_dim": hidden_dim,
@@ -179,6 +171,7 @@ def _moe_forward_with_qdq_weights(
     return torch.einsum("tkd,tk->td", expert_outs, weights)
 
 
+@_REQUIRES_TORCHAO_KERNEL_LIBRARY
 class TestQuantizedMoeFfnOp(unittest.TestCase):
     """Numerical correctness vs a Python q-dq reference."""
 
