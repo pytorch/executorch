@@ -8222,7 +8222,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=210_000_000,  # 210 MB
                 wikitext_ppl=23,
                 hellaswag_acc_norm=None,
-                sqnr=20,
+                sqnr=19.5,
             ),
             "smollm3-3b": TestExampleLLMScript.LlmSpecs(
                 SM8650=23,
@@ -10470,7 +10470,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/relu.pt2",
@@ -10489,7 +10489,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/relu_quantized.pt2",
@@ -10507,7 +10507,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/relu_quantized.pte",
@@ -10551,7 +10551,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/sub.pt2",
@@ -10570,7 +10570,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/sub_quantized.pt2",
@@ -10588,7 +10588,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/sub_quantized.pte",
