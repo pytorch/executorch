@@ -167,7 +167,6 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(SliceParams));
   graph.add_uniform_buffer_bytes(2 * sizeof(TensorMeta) + sizeof(SliceParams));
 
-  // Bind group: in, out (rw), out_meta, in_meta, params (3 uniforms).
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
       kSliceWGSL,

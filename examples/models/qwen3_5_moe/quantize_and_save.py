@@ -293,6 +293,30 @@ def _materialize_meta_buffers(module):
             )
 
 
+def _stream_quantized(module, recipe, prefix, accum, dtype=torch.bfloat16):
+    """Append (prefixed) quantized params + persistent buffers to ``accum``.
+
+    The lazy dual of ``quantize_model``: parameters stream through
+    ``quantize_stream`` (recipe applied per weight), while persistent buffers
+    pass through unchanged (never cast — some, e.g. a position table, are int).
+    The KV cache is a runtime buffer recreated (zeroed) at load, so it is
+    skipped rather than serialized.
+    """
+    from executorch.extension.llm.export.quant import quantize_stream
+
+    persistent = set(module.state_dict().keys())
+    params = ((n, p.data) for n, p in module.named_parameters())
+    seen = set()
+    for name, val in quantize_stream(params, recipe, dtype):
+        seen.add(name)
+        if ".kv_cache." in name:
+            continue
+        accum.append((prefix + name, val))
+    for name, buf in module.named_buffers():
+        if name in persistent and name not in seen and ".kv_cache." not in name:
+            accum.append((prefix + name, buf.data))
+
+
 def _mlx_quant_recipe(config, group_size):
     """gemma4-style recipe for Qwen 3.5 MoE (applied to source-transformed model).
 
@@ -301,7 +325,7 @@ def _mlx_quant_recipe(config, group_size):
     left unquantized. Matched with re.fullmatch. Uses min/max (single-pass) —
     HQQ's iterative scale search is far too slow across per-expert linears.
     """
-    from executorch.examples.models.gemma4_31b.quant import (
+    from executorch.extension.llm.export.quant import (
         QuantConfig,
         QuantRecipe,
         QuantRule,
@@ -325,13 +349,11 @@ def _mlx_quant_recipe(config, group_size):
 def stream_quantize_and_save_mlx(model_dir, config, args, safetensors_path):
     """Quantize + save an MLX bundle one decoder layer at a time (low memory).
 
-    Uses gemma4's ``quantize_model`` to produce ``Int4Tensor`` /
+    Uses the shared ``quantize_stream`` to produce ``Int4Tensor`` /
     ``IntxUnpackedToInt8Tensor`` subclasses. Packing is deferred to load
     (``pack_all_switch_linears``). Peak memory is ~one bf16 decoder layer.
     """
     import torch.nn as nn
-
-    from executorch.examples.models.gemma4_31b.quant import quantize_model
     from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
         mlx_source_transformations,
     )
@@ -372,8 +394,7 @@ def stream_quantize_and_save_mlx(model_dir, config, args, safetensors_path):
             sort_experts=True,
             fuse_gate_up=False,
         )
-        for name, val in quantize_model(block, recipe).items():
-            accum.append((prefix + name, val))
+        _stream_quantized(block, recipe, prefix, accum)
         del block
         print(
             f"  Streamed layer {i + 1}/{config.num_hidden_layers}", end="\r", flush=True
@@ -409,8 +430,7 @@ def stream_quantize_and_save_mlx(model_dir, config, args, safetensors_path):
     # Matches _swap_rms_norm: precompute (1 + weight) used by F.rms_norm.
     top.norm._rms_weight = nn.Parameter(1.0 + top.norm.weight.data)
 
-    for name, val in quantize_model(top, recipe).items():
-        accum.append((name, val))
+    _stream_quantized(top, recipe, "", accum)
 
     print("Writing quantized weights...")
     return save_quantized_tensors(accum, safetensors_path)
