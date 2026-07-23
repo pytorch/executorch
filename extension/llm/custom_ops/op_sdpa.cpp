@@ -773,8 +773,20 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
   const auto* initial_state_data = initial_state.const_data_ptr<float>();
   auto* state_data = final_state_out.mutable_data_ptr<float>();
   auto* output_data = out.mutable_data_ptr<float>();
-  std::vector<float> v_pred(v_head_dim);
-  std::vector<float> delta(v_head_dim);
+
+  const int64_t scratch_numel = 2 * v_head_dim;
+  std::unique_ptr<float[]> fallback_scratch;
+  float* scratch_data = nullptr;
+  Result<void*> scratch = ctx.allocate_temp(
+      scratch_numel * sizeof(float), /*alignment=*/alignof(float));
+  if (scratch.ok()) {
+    scratch_data = reinterpret_cast<float*>(scratch.get());
+  } else {
+    fallback_scratch = std::make_unique<float[]>(scratch_numel);
+    scratch_data = fallback_scratch.get();
+  }
+  float* v_pred = scratch_data;
+  float* delta = scratch_data + v_head_dim;
 
   for (int64_t batch = 0; batch < batch_size; ++batch) {
     for (int64_t head = 0; head < num_heads; ++head) {
@@ -809,47 +821,44 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
         const float beta_t = beta_head[token];
         auto* output_t = output_head + token * value_seq_stride;
 
-        // 1. Per-key-channel decay: scale each state row by decay_t[k].
+        // The recurrence needs only two passes over the K x V state S:
+        //   pass 1 (read-only): v_pred = (Diag(decay) S)^T k
+        //   pass 2 (read+write): S = Diag(decay) S + k (x) delta;  o = S^T q
+        // Decay is folded into both passes (never materialized separately), and
+        // the rank-1 write and output readout share pass 2, so S is streamed
+        // twice per token instead of four times. Multiply groupings match the
+        // naive form, so results are identical up to floating-point contraction
+        // (e.g. compiler FMA).
+
+        // Pass 1: predicted value off the decayed state (S left untouched).
+        std::fill(v_pred, v_pred + v_head_dim, 0.0f);
         for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
           const float decay_value = decay_t[k_idx];
-          auto* state_row = state_head + k_idx * v_head_dim;
-          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            state_row[v_idx] *= decay_value;
-          }
-        }
-
-        // 2. v_pred = S^T k: the memory's predicted value for this key, read
-        // off the decayed state.
-        std::fill(v_pred.begin(), v_pred.end(), 0.0f);
-        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
           const float key_value = k_t[k_idx];
           const auto* state_row = state_head + k_idx * v_head_dim;
           for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            v_pred[v_idx] += state_row[v_idx] * key_value;
+            v_pred[v_idx] += (state_row[v_idx] * decay_value) * key_value;
           }
         }
 
-        // 3. delta = beta * (v - v_pred).
+        // delta = beta * (v - v_pred).
         for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
           delta[v_idx] = (v_t[v_idx] - v_pred[v_idx]) * beta_t;
         }
 
-        // 4. Rank-1 write: S += k (x) delta.
-        for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
-          const float key_value = k_t[k_idx];
-          auto* state_row = state_head + k_idx * v_head_dim;
-          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            state_row[v_idx] += key_value * delta[v_idx];
-          }
-        }
-
-        // 5. Output readout: o_t = S^T q.
+        // Pass 2: apply decay + rank-1 write in place, and read back the
+        // updated row for the output projection in the same sweep.
         std::fill(output_t, output_t + v_head_dim, 0.0f);
         for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+          const float decay_value = decay_t[k_idx];
+          const float key_value = k_t[k_idx];
           const float query_value = q_t[k_idx];
-          const auto* state_row = state_head + k_idx * v_head_dim;
+          auto* state_row = state_head + k_idx * v_head_dim;
           for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            output_t[v_idx] += state_row[v_idx] * query_value;
+            const float updated =
+                state_row[v_idx] * decay_value + key_value * delta[v_idx];
+            state_row[v_idx] = updated;
+            output_t[v_idx] += updated * query_value;
           }
         }
       }
