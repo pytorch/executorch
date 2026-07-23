@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -68,6 +69,37 @@ struct WebGPUDispatch {
   size_t copy_nbytes = 0;
 };
 
+struct WebGPUBufferBinding {
+  WGPUBuffer buffer = nullptr;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+struct WebGPUSpecializationConstant {
+  std::string name;
+  double value = 0.0;
+};
+
+struct WebGPUDispatchGrid {
+  uint32_t x = 1;
+  uint32_t y = 1;
+};
+
+struct WebGPUComputeDispatchDescriptor {
+  std::string shader_name;
+  std::string entry_point = "main";
+  std::string kernel_name;
+  std::vector<WebGPUBufferBinding> bindings;
+  std::vector<WebGPUSpecializationConstant> constants;
+  WebGPUDispatchGrid grid;
+};
+
+std::string make_compute_pipeline_key(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
+void validate_compute_dispatch_descriptor(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
 struct OutputCopy {
   WGPUBuffer src_buffer = nullptr;
   WGPUBuffer staging_buffer = nullptr;
@@ -118,14 +150,18 @@ class WebGPUGraph {
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
 
-  // Execute all recorded dispatches.
-  void execute(const WebGPUGraphExecutionOptions& options);
+  WebGPUExecutionPlan make_execution_plan(
+      const WebGPUGraphExecutionOptions& options) const;
+
+  // Execute the dispatches selected by a plan created for this graph. Returns
+  // the number of GPU queue submissions performed.
+  size_t execute(const WebGPUExecutionPlan& plan);
 
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
   void copy_outputs(
       std::vector<OutputData>& outputs,
-      const WebGPUGraphExecutionOptions& options);
+      const WebGPUExecutionPlan& plan);
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
@@ -302,6 +338,24 @@ class WebGPUGraph {
     owned_uniform_buffers_.push_back(buffer);
   }
 
+  template <typename Block>
+  WGPUBuffer create_params_buffer(const Block& data) {
+    static_assert(
+        std::is_trivially_copyable<Block>::value,
+        "WebGPU parameter blocks must be trivially copyable");
+    static_assert(
+        sizeof(Block) % 4u == 0u,
+        "WebGPU parameter blocks must have a 4-byte-aligned size");
+    WGPUBuffer buffer = make_uniform_buffer(&data, sizeof(Block));
+    try {
+      own_uniform_buffer(buffer);
+    } catch (...) {
+      wgpuBufferRelease(buffer);
+      throw;
+    }
+    return buffer;
+  }
+
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
@@ -337,6 +391,9 @@ class WebGPUGraph {
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
+
+  size_t add_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor);
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,

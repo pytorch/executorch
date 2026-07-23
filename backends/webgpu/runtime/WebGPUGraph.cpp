@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
@@ -15,11 +16,9 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
-#include <executorch/backends/webgpu/runtime/ops/mul/silu_mul_fused_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_qkv_bk64_wgsl.h>
-
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -31,6 +30,132 @@ namespace executorch::backends::webgpu {
 // header
 
 namespace {
+
+class ScopedBindGroupLayout final {
+ public:
+  explicit ScopedBindGroupLayout(WGPUBindGroupLayout handle)
+      : handle_(handle) {}
+  ~ScopedBindGroupLayout() {
+    if (handle_ != nullptr) {
+      wgpuBindGroupLayoutRelease(handle_);
+    }
+  }
+  ScopedBindGroupLayout(const ScopedBindGroupLayout&) = delete;
+  ScopedBindGroupLayout& operator=(const ScopedBindGroupLayout&) = delete;
+
+  WGPUBindGroupLayout get() const {
+    return handle_;
+  }
+
+ private:
+  WGPUBindGroupLayout handle_;
+};
+
+class ScopedBindGroup final {
+ public:
+  explicit ScopedBindGroup(WGPUBindGroup handle) : handle_(handle) {}
+  ~ScopedBindGroup() {
+    if (handle_ != nullptr) {
+      wgpuBindGroupRelease(handle_);
+    }
+  }
+  ScopedBindGroup(const ScopedBindGroup&) = delete;
+  ScopedBindGroup& operator=(const ScopedBindGroup&) = delete;
+
+  WGPUBindGroup get() const {
+    return handle_;
+  }
+
+  WGPUBindGroup release() {
+    WGPUBindGroup handle = handle_;
+    handle_ = nullptr;
+    return handle;
+  }
+
+ private:
+  WGPUBindGroup handle_;
+};
+
+class ScopedComputePipeline final {
+ public:
+  explicit ScopedComputePipeline(WGPUComputePipeline handle)
+      : handle_(handle) {}
+  ~ScopedComputePipeline() {
+    if (handle_ != nullptr) {
+      wgpuComputePipelineRelease(handle_);
+    }
+  }
+  ScopedComputePipeline(const ScopedComputePipeline&) = delete;
+  ScopedComputePipeline& operator=(const ScopedComputePipeline&) = delete;
+
+  WGPUComputePipeline release() {
+    WGPUComputePipeline handle = handle_;
+    handle_ = nullptr;
+    return handle;
+  }
+
+ private:
+  WGPUComputePipeline handle_;
+};
+
+class ScopedComputePipelineRef final {
+ public:
+  explicit ScopedComputePipelineRef(WGPUComputePipeline handle)
+      : handle_(handle) {
+    wgpuComputePipelineAddRef(handle_);
+  }
+  ~ScopedComputePipelineRef() {
+    if (handle_ != nullptr) {
+      wgpuComputePipelineRelease(handle_);
+    }
+  }
+  ScopedComputePipelineRef(const ScopedComputePipelineRef&) = delete;
+  ScopedComputePipelineRef& operator=(const ScopedComputePipelineRef&) = delete;
+
+  WGPUComputePipeline release() {
+    WGPUComputePipeline handle = handle_;
+    handle_ = nullptr;
+    return handle;
+  }
+
+ private:
+  WGPUComputePipeline handle_;
+};
+
+void append_key_component(std::string& key, const std::string& value) {
+  const uint64_t size = value.size();
+  key.append(reinterpret_cast<const char*>(&size), sizeof(size));
+  key.append(value);
+}
+
+std::vector<WebGPUSpecializationConstant> canonical_constants(
+    const WebGPUComputeDispatchDescriptor& descriptor) {
+  std::vector<WebGPUSpecializationConstant> constants = descriptor.constants;
+  std::sort(
+      constants.begin(),
+      constants.end(),
+      [](const auto& left, const auto& right) {
+        return left.name < right.name;
+      });
+  for (size_t i = 0; i < constants.size(); ++i) {
+    if (constants[i].name.empty()) {
+      throw std::runtime_error(
+          "WebGPU compute dispatch: empty specialization constant name");
+    }
+    if (!std::isfinite(constants[i].value)) {
+      throw std::runtime_error(
+          "WebGPU compute dispatch: non-finite specialization constant");
+    }
+    if (i > 0 && constants[i - 1].name == constants[i].name) {
+      throw std::runtime_error(
+          "WebGPU compute dispatch: duplicate specialization constant");
+    }
+    if (constants[i].value == 0.0) {
+      constants[i].value = 0.0;
+    }
+  }
+  return constants;
+}
 
 // Op name the AOT exporter emits for a prepacked constant (must match the
 // serialized schema); compared in the prepack pre-scan below.
@@ -126,6 +251,37 @@ uint32_t checked_silu_mul_numel(const std::vector<int64_t>& dims) {
   return static_cast<uint32_t>(numel);
 }
 
+void resize_silu_mul_fused(
+    WebGPUGraph& graph,
+    int gate_id,
+    int up_id,
+    int out_id,
+    uint32_t wg_size,
+    size_t dispatch_idx,
+    WGPUBuffer params_buffer) {
+  const auto& gate_dims = graph.cur_dims(gate_id);
+  const auto& up_dims = graph.cur_dims(up_id);
+  if (gate_dims != up_dims) {
+    throw std::runtime_error("silu_mul_fused(resize): gate/up shape mismatch");
+  }
+  const uint32_t live_numel = checked_silu_mul_numel(gate_dims);
+  const size_t live_nbytes = static_cast<size_t>(live_numel) * sizeof(float);
+  if (graph.get_tensor(gate_id).cur_nbytes != live_nbytes ||
+      graph.get_tensor(up_id).cur_nbytes != live_nbytes) {
+    throw std::runtime_error(
+        "silu_mul_fused(resize): gate/up byte-size mismatch");
+  }
+  graph.set_cur_dims(out_id, gate_dims);
+  const SiluMulParams params = {live_numel, {0u, 0u, 0u}};
+  wgpuQueueWriteBuffer(
+      graph.queue(), params_buffer, 0, &params, sizeof(params));
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      graph.device(), live_numel, wg_size, "silu_mul_fused(resize)");
+  auto& dispatch = graph.dispatch_at(dispatch_idx);
+  dispatch.workgroup_count_x = workgroup_count.x;
+  dispatch.workgroup_count_y = workgroup_count.y;
+}
+
 void add_silu_mul_fused_dispatch(
     WebGPUGraph& graph,
     int common_input_id,
@@ -136,121 +292,32 @@ void add_silu_mul_fused_dispatch(
   const auto& up = graph.get_tensor(up_id);
   const auto& out = graph.get_tensor(out_id);
   const uint32_t num_elements = checked_silu_mul_numel(gate.dims);
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(graph.device(), kSiluMulFusedWorkgroupSizeX);
+  const uint32_t wg_size = utils::clamp_workgroup_size(
+      graph.device(),
+      get_webgpu_shader_info("silu_mul_fused").workgroup_size_x);
   const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       graph.device(), num_elements, wg_size, "silu_mul_fused");
 
-  SiluMulParams params = {num_elements, {0u, 0u, 0u}};
-  WGPUBuffer uniform_buffer =
-      graph.make_uniform_buffer(&params, sizeof(params));
-
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kSiluMulFusedWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader =
-      wgpuDeviceCreateShaderModule(graph.device(), &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[4] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Storage;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl =
-      wgpuDeviceCreateBindGroupLayout(graph.device(), &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(graph.device(), &pl_desc);
-
-  WGPUConstantEntry wg_size_constant = {};
-  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(graph.device(), &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[4] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = gate.buffer;
-  bg_entries[0].size = gate.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = up.buffer;
-  bg_entries[1].size = up.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = out.buffer;
-  bg_entries[2].size = out.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(SiluMulParams);
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group =
-      wgpuDeviceCreateBindGroup(graph.device(), &bg_desc);
-
-  const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline,
-       bind_group,
-       workgroup_count.x,
-       "silu_mul_fused",
-       workgroup_count.y});
+  const SiluMulParams params = {num_elements, {0u, 0u, 0u}};
+  WGPUBuffer params_buffer = graph.create_params_buffer(params);
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = "silu_mul_fused";
+  descriptor.bindings = {
+      {gate.buffer, 0u, gate.nbytes},
+      {up.buffer, 0u, up.nbytes},
+      {out.buffer, 0u, out.nbytes},
+      {params_buffer, 0u, sizeof(SiluMulParams)}};
+  descriptor.constants = {{"wg_size", static_cast<double>(wg_size)}};
+  descriptor.grid = {workgroup_count.x, workgroup_count.y};
+  const size_t dispatch_idx = graph.add_compute_dispatch(descriptor);
 
   graph.add_tensor_resize_hook(
       common_input_id,
-      [gate_id, up_id, out_id, wg_size, dispatch_idx, uniform_buffer](
+      [gate_id, up_id, out_id, wg_size, dispatch_idx, params_buffer](
           WebGPUGraph& g) {
-        const auto& gate_dims = g.cur_dims(gate_id);
-        const auto& up_dims = g.cur_dims(up_id);
-        if (gate_dims != up_dims) {
-          throw std::runtime_error(
-              "silu_mul_fused(resize): gate/up shape mismatch");
-        }
-        const uint32_t live_numel = checked_silu_mul_numel(gate_dims);
-        const size_t live_nbytes =
-            static_cast<size_t>(live_numel) * sizeof(float);
-        if (g.get_tensor(gate_id).cur_nbytes != live_nbytes ||
-            g.get_tensor(up_id).cur_nbytes != live_nbytes) {
-          throw std::runtime_error(
-              "silu_mul_fused(resize): gate/up byte-size mismatch");
-        }
-        g.set_cur_dims(out_id, gate_dims);
-        SiluMulParams live_params = {live_numel, {0u, 0u, 0u}};
-        wgpuQueueWriteBuffer(
-            g.queue(), uniform_buffer, 0, &live_params, sizeof(live_params));
-        const utils::WgCount live_workgroup_count =
-            utils::compute_2d_workgroup_count(
-                g.device(), live_numel, wg_size, "silu_mul_fused(resize)");
-        auto& dispatch = g.dispatch_at(dispatch_idx);
-        dispatch.workgroup_count_x = live_workgroup_count.x;
-        dispatch.workgroup_count_y = live_workgroup_count.y;
+        resize_silu_mul_fused(
+            g, gate_id, up_id, out_id, wg_size, dispatch_idx, params_buffer);
       });
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 void add_qkv_bk64_dispatch(WebGPUGraph& graph, QkvBk64Fusion& fusion) {
@@ -325,7 +392,7 @@ void add_qkv_bk64_dispatch(WebGPUGraph& graph, QkvBk64Fusion& fusion) {
   wgpuCommandBufferRelease(command);
   wgpuCommandEncoderRelease(encoder);
 
-  QkvBk64Params params = {
+  const QkvBk64Params params = {
       fusion.max_m,
       kQkvFusedWidth,
       kQkvK,
@@ -334,155 +401,111 @@ void add_qkv_bk64_dispatch(WebGPUGraph& graph, QkvBk64Fusion& fusion) {
       kQkvFusedWidth,
       0u,
       0u};
-  WGPUBuffer params_buffer = graph.make_uniform_buffer(&params, sizeof(params));
+  WGPUBuffer params_buffer = graph.create_params_buffer(params);
   WGPUBuffer bias_dummy = graph.create_scratch_buffer(4);
-
-  WGPUBindGroupLayoutEntry layout_entries[8] = {};
-  for (uint32_t i = 0; i < 3; i++) {
-    layout_entries[i].binding = i;
-    layout_entries[i].visibility = WGPUShaderStage_Compute;
-    layout_entries[i].buffer.type = WGPUBufferBindingType_Storage;
-  }
-  for (uint32_t i = 3; i < 7; i++) {
-    layout_entries[i].binding = i;
-    layout_entries[i].visibility = WGPUShaderStage_Compute;
-    layout_entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  layout_entries[7].binding = 7;
-  layout_entries[7].visibility = WGPUShaderStage_Compute;
-  layout_entries[7].buffer.type = WGPUBufferBindingType_Uniform;
-  WGPUBindGroupLayout layout =
-      graph.get_or_create_bgl("q4gsw_qkv_bk64_8bind", layout_entries, 8);
-
-  WGPUPipelineLayoutDescriptor pipeline_layout_desc = {};
-  pipeline_layout_desc.bindGroupLayoutCount = 1;
-  pipeline_layout_desc.bindGroupLayouts = &layout;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(graph.device(), &pipeline_layout_desc);
-  WGPUShaderModule shader =
-      graph.get_or_create_shader("linear_q4gsw_bk64_qkv", kQ4gswQkvBk64WGSL);
-  WGPUComputePipeline pipeline = graph.get_or_create_pipeline(
-      "linear_q4gsw_bk64_qkv", shader, pipeline_layout);
-  wgpuComputePipelineAddRef(pipeline);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-
-  WGPUBindGroupEntry bind_entries[8] = {};
-  const WebGPUTensor* outputs[3] = {&output_q, &output_k, &output_v};
-  for (uint32_t i = 0; i < 3; i++) {
-    bind_entries[i].binding = i;
-    bind_entries[i].buffer = outputs[i]->buffer;
-    bind_entries[i].size = outputs[i]->nbytes;
-  }
-  bind_entries[3].binding = 3;
-  bind_entries[3].buffer = input.buffer;
-  bind_entries[3].size = input.nbytes;
-  bind_entries[4].binding = 4;
-  bind_entries[4].buffer = fused_weight;
-  bind_entries[4].size =
-      static_cast<uint64_t>(kQkvFusedWidth) * weight_row_bytes;
-  bind_entries[5].binding = 5;
-  bind_entries[5].buffer = fused_scales;
-  bind_entries[5].size =
-      static_cast<uint64_t>(kQkvNumGroups) * kQkvFusedWidth * sizeof(float);
-  bind_entries[6].binding = 6;
-  bind_entries[6].buffer = bias_dummy;
-  bind_entries[6].size = 4;
-  bind_entries[7].binding = 7;
-  bind_entries[7].buffer = params_buffer;
-  bind_entries[7].size = sizeof(params);
-  WGPUBindGroupDescriptor bind_group_desc = {};
-  bind_group_desc.layout = layout;
-  bind_group_desc.entryCount = 8;
-  bind_group_desc.entries = bind_entries;
-  WGPUBindGroup bind_group =
-      wgpuDeviceCreateBindGroup(graph.device(), &bind_group_desc);
 
   const bool initially_active = is_qkv_bk64_live_m(fusion.max_m);
   const uint32_t workgroups =
       ((fusion.max_m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile);
-  fusion.fused_dispatch = graph.add_dispatch(
-      {pipeline,
-       bind_group,
-       initially_active ? workgroups : 0u,
-       "linear_q4gsw_bk64_qkv",
-       initially_active ? 1u : 0u});
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = "q4gsw_qkv_bk64";
+  descriptor.kernel_name = "linear_q4gsw_bk64_qkv";
+  descriptor.bindings = {
+      {output_q.buffer, 0u, output_q.nbytes},
+      {output_k.buffer, 0u, output_k.nbytes},
+      {output_v.buffer, 0u, output_v.nbytes},
+      {input.buffer, 0u, input.nbytes},
+      {fused_weight,
+       0u,
+       static_cast<uint64_t>(kQkvFusedWidth) * weight_row_bytes},
+      {fused_scales,
+       0u,
+       static_cast<uint64_t>(kQkvNumGroups) * kQkvFusedWidth * sizeof(float)},
+      {bias_dummy, 0u, 4u},
+      {params_buffer, 0u, sizeof(QkvBk64Params)}};
+  descriptor.grid = {
+      initially_active ? workgroups : 0u, initially_active ? 1u : 0u};
+  fusion.fused_dispatch = graph.add_compute_dispatch(descriptor);
   fusion.params_buffer = params_buffer;
-  graph.own_uniform_buffer(params_buffer);
+}
+
+struct QkvBk64ResizeContext {
+  int input_id;
+  std::array<int, 3> output_ids;
+  std::array<size_t, 3> separate_begin;
+  std::array<size_t, 3> separate_end;
+  size_t fused_dispatch;
+  uint32_t max_m;
+  WGPUBuffer params_buffer;
+};
+
+void resize_qkv_bk64(WebGPUGraph& graph, const QkvBk64ResizeContext& context) {
+  const auto& input_dims = graph.cur_dims(context.input_id);
+  const uint64_t input_numel = utils::numel_of(input_dims);
+  if (input_dims.empty() || input_numel % kQkvK != 0u) {
+    throw std::runtime_error(
+        "linear_q4gsw_bk64_qkv(resize): malformed input shape");
+  }
+  const uint64_t live_m = input_numel / kQkvK;
+  if (live_m == 0u || live_m > context.max_m) {
+    throw std::runtime_error(
+        "linear_q4gsw_bk64_qkv(resize): live M out of range");
+  }
+  const uint32_t m = static_cast<uint32_t>(live_m);
+  const uint32_t widths[3] = {kQkvQWidth, kQkvKvWidth, kQkvKvWidth};
+  for (size_t i = 0; i < context.output_ids.size(); i++) {
+    std::vector<int64_t> output_dims = input_dims;
+    output_dims.back() = widths[i];
+    graph.set_cur_dims(context.output_ids[i], output_dims);
+  }
+
+  const QkvBk64Params params = {
+      m,
+      kQkvFusedWidth,
+      kQkvK,
+      kQkvKPacked,
+      kQkvGroupSize,
+      kQkvFusedWidth,
+      0u,
+      0u};
+  wgpuQueueWriteBuffer(
+      graph.queue(), context.params_buffer, 0, &params, sizeof(params));
+
+  const bool use_fused = is_qkv_bk64_live_m(m);
+  auto& fused = graph.dispatch_at(context.fused_dispatch);
+  fused.workgroup_count_x = use_fused
+      ? ((m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile)
+      : 0u;
+  fused.workgroup_count_y = use_fused ? 1u : 0u;
+  // The separate projection hooks run first and restore their live grids.
+  if (use_fused) {
+    for (size_t member = 0; member < context.separate_begin.size(); member++) {
+      for (size_t i = context.separate_begin[member];
+           i < context.separate_end[member];
+           i++) {
+        auto& dispatch = graph.dispatch_at(i);
+        dispatch.workgroup_count_x = 0u;
+        dispatch.workgroup_count_y = 0u;
+      }
+    }
+  }
 }
 
 void add_qkv_bk64_resize_hook(WebGPUGraph& graph, const QkvBk64Fusion& fusion) {
-  const int input_id = fusion.input_id;
-  const std::array<int, 3> output_ids = {
-      fusion.output_ids[0], fusion.output_ids[1], fusion.output_ids[2]};
-  const std::array<size_t, 3> separate_begin = {
-      fusion.separate_begin[0],
-      fusion.separate_begin[1],
-      fusion.separate_begin[2]};
-  const std::array<size_t, 3> separate_end = {
-      fusion.separate_end[0], fusion.separate_end[1], fusion.separate_end[2]};
-  const size_t fused_dispatch = fusion.fused_dispatch;
-  const uint32_t max_m = fusion.max_m;
-  WGPUBuffer params_buffer = fusion.params_buffer;
-  auto resize = [input_id,
-                 output_ids,
-                 separate_begin,
-                 separate_end,
-                 fused_dispatch,
-                 max_m,
-                 params_buffer](WebGPUGraph& g) {
-    const auto& input_dims = g.cur_dims(input_id);
-    const uint64_t input_numel = utils::numel_of(input_dims);
-    if (input_dims.empty() || input_numel % kQkvK != 0u) {
-      throw std::runtime_error(
-          "linear_q4gsw_bk64_qkv(resize): malformed input shape");
-    }
-    const uint64_t live_m = input_numel / kQkvK;
-    if (live_m == 0u || live_m > max_m) {
-      throw std::runtime_error(
-          "linear_q4gsw_bk64_qkv(resize): live M out of range");
-    }
-    const uint32_t m = static_cast<uint32_t>(live_m);
-    const uint32_t widths[3] = {kQkvQWidth, kQkvKvWidth, kQkvKvWidth};
-    for (size_t i = 0; i < output_ids.size(); i++) {
-      std::vector<int64_t> output_dims = input_dims;
-      output_dims.back() = widths[i];
-      g.set_cur_dims(output_ids[i], output_dims);
-    }
-
-    QkvBk64Params params = {
-        m,
-        kQkvFusedWidth,
-        kQkvK,
-        kQkvKPacked,
-        kQkvGroupSize,
-        kQkvFusedWidth,
-        0u,
-        0u};
-    wgpuQueueWriteBuffer(g.queue(), params_buffer, 0, &params, sizeof(params));
-
-    const bool use_fused = is_qkv_bk64_live_m(m);
-    auto& fused = g.dispatch_at(fused_dispatch);
-    fused.workgroup_count_x = use_fused
-        ? ((m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile)
-        : 0u;
-    fused.workgroup_count_y = use_fused ? 1u : 0u;
-    // Only the fused path zeros the separate q/k/v dispatches. When !use_fused
-    // they are left as-is: each separate projection's own resize hook is
-    // registered on this same input_id and runs before this (last-registered)
-    // hook, re-setting its live-M workgroup count every resize. So a prior
-    // fused invocation's zeros are always overwritten before this hook runs.
-    if (use_fused) {
-      for (size_t member = 0; member < separate_begin.size(); member++) {
-        for (size_t i = separate_begin[member]; i < separate_end[member]; i++) {
-          auto& dispatch = g.dispatch_at(i);
-          dispatch.workgroup_count_x = 0u;
-          dispatch.workgroup_count_y = 0u;
-        }
-      }
-    }
-  };
-  resize(graph);
-  graph.add_tensor_resize_hook(input_id, std::move(resize));
+  const QkvBk64ResizeContext context = {
+      fusion.input_id,
+      {fusion.output_ids[0], fusion.output_ids[1], fusion.output_ids[2]},
+      {fusion.separate_begin[0],
+       fusion.separate_begin[1],
+       fusion.separate_begin[2]},
+      {fusion.separate_end[0], fusion.separate_end[1], fusion.separate_end[2]},
+      fusion.fused_dispatch,
+      fusion.max_m,
+      fusion.params_buffer};
+  resize_qkv_bk64(graph, context);
+  graph.add_tensor_resize_hook(fusion.input_id, [context](WebGPUGraph& g) {
+    resize_qkv_bk64(g, context);
+  });
 }
 
 size_t vk_datatype_size(vkgraph::VkDataType dtype) {
@@ -530,6 +553,52 @@ int normalize_dim(int dim, int rank, const char* op) {
 }
 
 } // namespace
+
+std::string make_compute_pipeline_key(
+    const WebGPUComputeDispatchDescriptor& descriptor) {
+  if (descriptor.shader_name.empty()) {
+    throw std::runtime_error("WebGPU compute dispatch: empty shader name");
+  }
+  if (descriptor.entry_point.empty()) {
+    throw std::runtime_error("WebGPU compute dispatch: empty entry point");
+  }
+
+  std::string key;
+  append_key_component(key, descriptor.shader_name);
+  append_key_component(key, descriptor.entry_point);
+  for (const auto& constant : canonical_constants(descriptor)) {
+    append_key_component(key, constant.name);
+    uint64_t value_bits = 0;
+    static_assert(sizeof(value_bits) == sizeof(constant.value));
+    std::memcpy(&value_bits, &constant.value, sizeof(value_bits));
+    key.append(reinterpret_cast<const char*>(&value_bits), sizeof(value_bits));
+  }
+  return key;
+}
+
+void validate_compute_dispatch_descriptor(
+    const WebGPUComputeDispatchDescriptor& descriptor) {
+  (void)make_compute_pipeline_key(descriptor);
+  if (descriptor.bindings.empty()) {
+    throw std::runtime_error("WebGPU compute dispatch: no buffer bindings");
+  }
+  for (const auto& binding : descriptor.bindings) {
+    if (binding.buffer == nullptr) {
+      throw std::runtime_error("WebGPU compute dispatch: null buffer binding");
+    }
+    if (binding.size == 0) {
+      throw std::runtime_error("WebGPU compute dispatch: zero-size binding");
+    }
+    if (binding.offset > UINT64_MAX - binding.size) {
+      throw std::runtime_error(
+          "WebGPU compute dispatch: binding range overflow");
+    }
+    if (binding.offset + binding.size > wgpuBufferGetSize(binding.buffer)) {
+      throw std::runtime_error(
+          "WebGPU compute dispatch: binding range exceeds buffer");
+    }
+  }
+}
 
 WebGPUGraph::WebGPUGraph() = default;
 
@@ -588,16 +657,101 @@ void WebGPUGraph::release_scratch(WGPUBuffer buffer) {
 }
 
 WGPUBuffer WebGPUGraph::make_uniform_buffer(const void* data, size_t size) {
+  if (data == nullptr || size == 0u) {
+    throw std::runtime_error("WebGPU: invalid uniform buffer data");
+  }
   WGPUBufferDescriptor desc = {};
   desc.size = size;
   desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
   desc.mappedAtCreation = true;
   WGPUBuffer buffer = wgpuDeviceCreateBuffer(device_, &desc);
+  if (buffer == nullptr) {
+    throw std::runtime_error("WebGPU: failed to create uniform buffer");
+  }
   void* mapped = wgpuBufferGetMappedRange(buffer, 0, size);
+  if (mapped == nullptr) {
+    wgpuBufferRelease(buffer);
+    throw std::runtime_error("WebGPU: failed to map uniform buffer");
+  }
   std::memcpy(mapped, data, size);
   wgpuBufferUnmap(buffer);
   uniform_buffer_bytes_ += size;
   return buffer;
+}
+
+size_t WebGPUGraph::add_compute_dispatch(
+    const WebGPUComputeDispatchDescriptor& descriptor) {
+  validate_compute_dispatch_descriptor(descriptor);
+  const WebGPUShaderInfo& shader_info =
+      get_webgpu_shader_info(descriptor.shader_name);
+  WGPUShaderModule shader =
+      get_or_create_shader(descriptor.shader_name, shader_info.source);
+
+  const std::string pipeline_key = make_compute_pipeline_key(descriptor);
+  WGPUComputePipeline pipeline = nullptr;
+  auto pipeline_it = pipeline_cache_.find(pipeline_key);
+  if (pipeline_it != pipeline_cache_.end()) {
+    pipeline = pipeline_it->second;
+  } else {
+    const auto constants = canonical_constants(descriptor);
+    std::vector<WGPUConstantEntry> entries(constants.size());
+    for (size_t i = 0; i < constants.size(); ++i) {
+      entries[i].key = {constants[i].name.data(), constants[i].name.size()};
+      entries[i].value = constants[i].value;
+    }
+
+    WGPUComputePipelineDescriptor pipeline_desc = {};
+    pipeline_desc.layout = nullptr;
+    pipeline_desc.compute.module = shader;
+    pipeline_desc.compute.entryPoint = {
+        descriptor.entry_point.data(), descriptor.entry_point.size()};
+    pipeline_desc.compute.constantCount = entries.size();
+    pipeline_desc.compute.constants = entries.data();
+    ScopedComputePipeline created_pipeline(
+        wgpuDeviceCreateComputePipeline(device_, &pipeline_desc));
+    pipeline = created_pipeline.release();
+    if (pipeline == nullptr) {
+      throw std::runtime_error("WebGPU: failed to create compute pipeline");
+    }
+    ScopedComputePipeline pipeline_owner(pipeline);
+    pipeline_cache_.emplace(pipeline_key, pipeline);
+    pipeline_owner.release();
+  }
+
+  ScopedBindGroupLayout layout(
+      wgpuComputePipelineGetBindGroupLayout(pipeline, 0));
+  if (layout.get() == nullptr) {
+    throw std::runtime_error("WebGPU: failed to get bind-group layout");
+  }
+
+  std::vector<WGPUBindGroupEntry> entries(descriptor.bindings.size());
+  for (size_t i = 0; i < descriptor.bindings.size(); ++i) {
+    entries[i].binding = i;
+    entries[i].buffer = descriptor.bindings[i].buffer;
+    entries[i].offset = descriptor.bindings[i].offset;
+    entries[i].size = descriptor.bindings[i].size;
+  }
+  WGPUBindGroupDescriptor bind_group_desc = {};
+  bind_group_desc.layout = layout.get();
+  bind_group_desc.entryCount = entries.size();
+  bind_group_desc.entries = entries.data();
+  ScopedBindGroup bind_group(
+      wgpuDeviceCreateBindGroup(device_, &bind_group_desc));
+  if (bind_group.get() == nullptr) {
+    throw std::runtime_error("WebGPU: failed to create bind group");
+  }
+
+  ScopedComputePipelineRef dispatch_pipeline(pipeline);
+  const size_t dispatch_index = add_dispatch(
+      {pipeline,
+       bind_group.get(),
+       descriptor.grid.x,
+       descriptor.kernel_name.empty() ? descriptor.shader_name
+                                      : descriptor.kernel_name,
+       descriptor.grid.y});
+  bind_group.release();
+  dispatch_pipeline.release();
+  return dispatch_index;
 }
 
 void WebGPUGraph::update_symints_from_inputs(
@@ -1649,8 +1803,16 @@ WGPUShaderModule WebGPUGraph::get_or_create_shader(
   WGPUShaderModuleDescriptor shader_desc = {};
   shader_desc.nextInChain = &wgsl_desc.chain;
   WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device_, &shader_desc);
+  if (shader == nullptr) {
+    throw std::runtime_error("WebGPU: failed to create shader module");
+  }
 
-  shader_cache_[key] = shader;
+  try {
+    shader_cache_.emplace(key, shader);
+  } catch (...) {
+    wgpuShaderModuleRelease(shader);
+    throw;
+  }
   return shader;
 }
 
@@ -1781,6 +1943,8 @@ constexpr uint32_t kRouteGenericFallback = 1u << 8;
 constexpr uint32_t kRouteFlashDecoding = 1u << 10;
 constexpr uint32_t kRouteK16CausalBound = 1u << 11;
 constexpr uint32_t kRouteBicolSubgroup = 1u << 12;
+constexpr uint32_t kRouteQwen3Q16K16 = 1u << 13;
+constexpr uint32_t kRouteQwen3Q32K16 = 1u << 14;
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 // Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
@@ -1797,11 +1961,13 @@ bool should_timestamp_query() {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void WebGPUGraph::record_active_route(const std::string& kernel_name) {
   uint32_t bits = 0;
-  if (kernel_name.rfind("sdpa_streaming_attention_", 0) == 0 &&
+  if (kernel_name == "sdpa_streaming_attention_qwen3_q32_k16_causal_bound") {
+    bits = kRoutePrefill | kRouteK16CausalBound | kRouteQwen3Q32K16;
+  } else if (kernel_name == "sdpa_streaming_attention_qwen3_k16_causal_bound") {
+    bits = kRoutePrefill | kRouteK16CausalBound | kRouteQwen3Q16K16;
+  } else if (
+      kernel_name.rfind("sdpa_streaming_attention_", 0) == 0 &&
       kernel_name.find("k16_causal_bound") != std::string::npos) {
-    // llama + qwen3 (Q16/Q32) streaming causal-bound kernels; the
-    // sdpa_streaming_attention_ prefix guards against an unrelated future
-    // kernel whose label merely contains the k16_causal_bound substring.
     bits = kRoutePrefill | kRouteK16CausalBound;
   } else if (kernel_name == "sdpa_streaming_attention_k16") {
     bits = kRoutePrefill | kRouteK16;
@@ -1839,13 +2005,9 @@ void WebGPUGraph::record_active_route(const std::string& kernel_name) {
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
-void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
-  g_last_route_mask = 0;
-  g_last_route_conflict_count = 0;
-#endif // WGPU_BACKEND_ENABLE_PROFILING
+WebGPUExecutionPlan WebGPUGraph::make_execution_plan(
+    const WebGPUGraphExecutionOptions& options) const {
   const size_t n = dispatches_.size();
-  const size_t chunk = execute_config_.chunk_size;
   std::vector<bool> enabled_dispatches(n, true);
   for (size_t i = 0; i < n; i++) {
     if (dispatches_[i].kind != WebGPUDispatch::Kind::Compute) {
@@ -1858,13 +2020,26 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
     }
     enabled_dispatches[i] = !zero_x;
   }
-  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+  return plan_webgpu_execution(
       n,
       output_copies_.size(),
       execute_config_,
       suppressible_outputs_,
       options,
       enabled_dispatches);
+}
+
+size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  g_last_route_mask = 0;
+  g_last_route_conflict_count = 0;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+  const size_t n = dispatches_.size();
+  const size_t chunk = execute_config_.chunk_size;
+
+  if (plan.dispatch_chunks.empty()) {
+    return 0;
+  }
 
   if (chunk == 0 || n <= chunk) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -1900,49 +2075,51 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
     uint32_t query_index = 0;
 #endif
-    for (size_t i : plan.dispatch_chunks.front()) {
-      const auto& dispatch = dispatches_[i];
-      if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
-        wgpuCommandEncoderCopyBufferToBuffer(
-            encoder,
-            dispatch.copy_src,
-            0,
-            dispatch.copy_dst,
-            0,
-            dispatch.copy_nbytes);
-        continue;
-      }
+    for (const auto& dispatch_chunk : plan.dispatch_chunks) {
+      for (size_t i : dispatch_chunk) {
+        const auto& dispatch = dispatches_[i];
+        if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
+          wgpuCommandEncoderCopyBufferToBuffer(
+              encoder,
+              dispatch.copy_src,
+              0,
+              dispatch.copy_dst,
+              0,
+              dispatch.copy_nbytes);
+          continue;
+        }
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-      record_active_route(dispatch.kernel_name);
+        record_active_route(dispatch.kernel_name);
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-      WGPUComputePassDescriptor pass_desc = {};
+        WGPUComputePassDescriptor pass_desc = {};
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-      // tw must outlive BeginComputePass (the descriptor points at it).
-      WGPUPassTimestampWrites tw = {};
-      if (qp) {
-        tw = qp->writes_for(query_index);
-        pass_desc.timestampWrites = &tw;
-      }
+        // tw must outlive BeginComputePass (the descriptor points at it).
+        WGPUPassTimestampWrites tw = {};
+        if (qp) {
+          tw = qp->writes_for(query_index);
+          pass_desc.timestampWrites = &tw;
+        }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-      WGPUComputePassEncoder pass =
-          wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-      wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
-      wgpuComputePassEncoderSetBindGroup(
-          pass, 0, dispatch.bind_group, 0, nullptr);
-      wgpuComputePassEncoderDispatchWorkgroups(
-          pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
-      wgpuComputePassEncoderEnd(pass);
-      wgpuComputePassEncoderRelease(pass);
+        WGPUComputePassEncoder pass =
+            wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
+        wgpuComputePassEncoderSetBindGroup(
+            pass, 0, dispatch.bind_group, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(
+            pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
-      if (qp) {
-        qp->record(
-            query_index,
-            dispatch.kernel_name,
-            {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
-            {1, 1, 1});
-        query_index++;
-      }
+        if (qp) {
+          qp->record(
+              query_index,
+              dispatch.kernel_name,
+              {dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1},
+              {1, 1, 1});
+          query_index++;
+        }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+      }
     }
 
     for (size_t i = 0; i < output_copies_.size(); i++) {
@@ -1973,7 +2150,7 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
       qp->print_results();
     }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-    return;
+    return 1;
   }
 
   // GPU timestamp queries assume one submit; chunked execute is multi-submit.
@@ -2036,6 +2213,7 @@ void WebGPUGraph::execute(const WebGPUGraphExecutionOptions& options) {
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
   }
+  return plan.dispatch_chunks.size();
 }
 
 namespace {
@@ -2057,14 +2235,8 @@ void buffer_map_callback(
 
 void WebGPUGraph::copy_outputs(
     std::vector<OutputData>& outputs,
-    const WebGPUGraphExecutionOptions& options) {
+    const WebGPUExecutionPlan& plan) {
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
-  const WebGPUExecutionPlan plan = plan_webgpu_execution(
-      dispatches_.size(),
-      output_copies_.size(),
-      execute_config_,
-      suppressible_outputs_,
-      options);
 
   std::vector<MapCallbackData> cb_data(count);
   std::vector<WGPUFuture> map_futures(count, WGPUFuture{});

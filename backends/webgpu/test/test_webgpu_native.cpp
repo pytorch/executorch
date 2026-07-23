@@ -1096,14 +1096,23 @@ const SdpaSequence kSdpaSequences[] = {
     {"qwen3_fd", 16, 8, 128, 64, {17, 1}, /*kv_f16=*/true},
 };
 
-Error load_sdpa_forward(Module& module, bool kv_f16) {
-  if (!kv_f16) {
+Error load_sdpa_forward(Module& module, bool kv_f16, int sdpa_query_tile = 0) {
+  if (!kv_f16 && sdpa_query_tile == 0) {
     return module.load_forward();
   }
-  BackendOptions<1> options;
-  auto error = options.set_option("enable_f16_kv_cache", true);
-  if (error != Error::Ok) {
-    return error;
+  BackendOptions<2> options;
+  Error error = Error::Ok;
+  if (kv_f16) {
+    error = options.set_option("enable_f16_kv_cache", true);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  if (sdpa_query_tile != 0) {
+    error = options.set_option("sdpa_query_tile", sdpa_query_tile);
+    if (error != Error::Ok) {
+      return error;
+    }
   }
   LoadBackendOptionsMap option_map;
   error = option_map.set_options("VulkanBackend", options.view());
@@ -1117,12 +1126,30 @@ Error load_sdpa_forward(Module& module, bool kv_f16) {
 constexpr uint32_t kTestRouteMaterializedAttention = 1u << 2;
 constexpr uint32_t kTestRouteFlashDecoding = 1u << 10;
 constexpr uint32_t kTestRouteK16CausalBound = 1u << 11;
+constexpr uint32_t kTestRouteQwen3Q16K16 = 1u << 13;
+constexpr uint32_t kTestRouteQwen3Q32K16 = 1u << 14;
+
+bool qwen3_q32_supported_on_test_device() {
+  constexpr uint32_t kQ32StorageBytes = 1024u * 4u * sizeof(float) +
+      512u * 4u * sizeof(uint16_t) + 256u * 2u * sizeof(float) +
+      3u * 32u * sizeof(float);
+  const WebGPUContext* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 32u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 256u &&
+      limits.maxComputeWorkgroupStorageSize >= kQ32StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
+}
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 void test_sdpa_config(
     const SdpaConfig& cfg,
     const std::string& model_path,
-    const std::string& golden_path) {
+    const std::string& golden_path,
+    int sdpa_query_tile = 0) {
   // Inputs reconstruct test_sdpa.py::_det_inputs bit-for-bit (/16 exact fp32).
   printf(
       "\n--- Test: sdpa_with_kv_cache (%s: Hq=%d,Hkv=%d,D=%d,S=%d,Cmax=%d,pos=%d) ---\n",
@@ -1135,7 +1162,7 @@ void test_sdpa_config(
       cfg.input_pos);
 
   Module module(model_path);
-  auto err = load_sdpa_forward(module, cfg.kv_f16);
+  auto err = load_sdpa_forward(module, cfg.kv_f16, sdpa_query_tile);
   if (cfg.expect_reject) {
     // D not a multiple of 4 must be rejected at load by the head_dim guard.
     ASSERT_NE(err, Error::Ok)
@@ -1197,6 +1224,17 @@ void test_sdpa_config(
              kTestRouteK16CausalBound),
         expected_route);
     EXPECT_EQ(g_last_route_conflict_count, 0u);
+    const uint32_t qwen3_tile_routes =
+        g_last_route_mask & (kTestRouteQwen3Q16K16 | kTestRouteQwen3Q32K16);
+    if (qwen3_geometry && cfg.s > 1) {
+      const uint32_t expected_tile_route =
+          sdpa_query_tile == 32 && qwen3_q32_supported_on_test_device()
+          ? kTestRouteQwen3Q32K16
+          : kTestRouteQwen3Q16K16;
+      EXPECT_EQ(qwen3_tile_routes, expected_tile_route);
+    } else {
+      EXPECT_EQ(qwen3_tile_routes, 0u);
+    }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
   }
 
@@ -2091,12 +2129,20 @@ TEST(WebGPUNative, Qwen3SdpaRoutes) {
       });
   ASSERT_NE(replay, std::end(kSdpaSequences));
   test_sdpa_replay(*replay, g_sdpa_dir);
-  // Q32 is a non-default autotuning candidate selected via the sdpa_query_tile
-  // RuntimeSpec (=32); it is not route-asserted in default CI because its
-  // workgroup storage can exceed a device's maxComputeWorkgroupStorageSize.
-  // When Q32 is unsupported the route falls back to the Q16 K16 streaming path
-  // (still the K16CausalBound bit), dropping to materialized only if Q16 is
-  // also unsupported.
+
+  const auto q32_prefill = std::find_if(
+      std::begin(kSdpaConfigs),
+      std::end(kSdpaConfigs),
+      [](const SdpaConfig& cfg) {
+        return std::strcmp(cfg.name, "qwen3_prefill") == 0;
+      });
+  ASSERT_NE(q32_prefill, std::end(kSdpaConfigs));
+  const std::string q32_base = g_sdpa_dir + "sdpa_" + q32_prefill->name;
+  test_sdpa_config(
+      *q32_prefill,
+      q32_base + ".pte",
+      q32_base + ".golden.bin",
+      /*sdpa_query_tile=*/32);
 }
 
 TEST(WebGPUNative, SdpaSweep) {
