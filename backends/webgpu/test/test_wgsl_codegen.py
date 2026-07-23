@@ -72,6 +72,29 @@ def _function_source(text: str, name: str) -> str:
 
 
 class WgslCodegenTest(unittest.TestCase):
+    def test_registry_entries_match_concrete_headers(self) -> None:
+        entries = g.registry_entries()
+        names = [entry.name for entry in entries]
+        expected = sorted(
+            header.name[: -len("_wgsl.h")]
+            for wgsl in g.discover()
+            for header, _ in g.headers_for_shader(wgsl)
+        )
+        self.assertEqual(names, expected)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_registry_render_is_deterministic(self) -> None:
+        entries = g.registry_entries()
+        self.assertEqual(
+            g.render_registry(entries),
+            g.render_registry(list(reversed(entries))),
+        )
+
+    def test_registry_rejects_duplicate_names(self) -> None:
+        entry = g.registry_entries()[0]
+        with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
+            g.render_registry([entry, entry])
+
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
