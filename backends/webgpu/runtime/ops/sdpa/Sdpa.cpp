@@ -584,8 +584,8 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool dynamic_sequence = graph.tensor_has_dynamic_dims(q_id) ||
       graph.tensor_has_dynamic_dims(k_id) ||
       graph.tensor_has_dynamic_dims(v_id);
-  const bool dual_route =
-      utils::should_record_sdpa_dual_route(fd_eligible, dynamic_sequence);
+  const bool dual_route = utils::should_record_sdpa_dual_route(
+      fd_eligible, dynamic_sequence, dynamic_pos);
   const bool record_k16 = k16_eligible && (dual_route || !initial_state.use_fd);
   const bool record_materialized =
       !k16_eligible && (dual_route || !initial_state.use_fd);
