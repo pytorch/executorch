@@ -1020,6 +1020,33 @@ class NonstaticDivLinearModel(torch.nn.Module):
         return x / divisor
 
 
+class AddScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x + self.scalar
+
+
+class MulScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x * self.scalar
+
+
+class SubScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x - self.scalar
+
+
 class BatchMatMulModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
