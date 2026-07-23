@@ -775,6 +775,43 @@ def _upsample_bilinear2d_suite() -> WebGPUTestSuite:
     )
 
 
+from executorch.backends.webgpu.test.ops.test_batch_norm import (
+    _det_input as _bn_det_input,
+    BatchNorm2dModule,
+)
+
+
+@register_op_test("batch_norm")
+def _batch_norm_suite() -> WebGPUTestSuite:
+    # MODNet decoder / CNN-backbone inference batch norm (eval -> the no-training
+    # variant). Covers affine + non-affine (optional weight/bias) and an odd H*W.
+    # Only the `out` ValueList entry is compared (out_index 0).
+    return WebGPUTestSuite(
+        module_factory=lambda num_features, affine: BatchNorm2dModule(
+            num_features, affine
+        ).eval(),
+        cases=[
+            Case(
+                name="affine_c8",
+                construct={"num_features": 8, "affine": True},
+                inputs=(InputSpec(shape=(1, 8, 12, 12), gen=_bn_det_input),),
+            ),
+            Case(
+                name="no_affine_c8",
+                construct={"num_features": 8, "affine": False},
+                inputs=(InputSpec(shape=(1, 8, 12, 12), gen=_bn_det_input),),
+            ),
+            Case(
+                name="c16_odd",
+                construct={"num_features": 16, "affine": True},
+                inputs=(InputSpec(shape=(1, 16, 5, 7), gen=_bn_det_input),),
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
 from executorch.backends.webgpu.test.ops.test_max_pool2d import (
     _det_input as _maxpool_det_input,
     MaxPool2dModule,
