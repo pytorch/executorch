@@ -5,7 +5,7 @@
 
 import json
 from importlib.resources import files
-from typing import Any
+from typing import Any, Sequence
 
 CUSTOM_SHADER_DOMAIN_NAME = "com.arm.VulkanCustomShader"
 GRID_SAMPLER_2D_OPERATOR_NAME = "torch.nn.functional.grid_sample"
@@ -33,6 +33,7 @@ GRID_SAMPLER_2D_SAMPLER_INT8_ALIGN_CORNERS_SHADER_BINARY = (
 )
 GRID_SAMPLER_2D_SAMPLER_VK_FORMAT = "VK_FORMAT_R32G32B32A32_SFLOAT"
 GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT = "VK_FORMAT_R8G8B8A8_SNORM"
+GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT = "VK_FORMAT_R8_SINT"
 
 _INTERPOLATION_MODE_NAMES = {
     0: "bilinear",
@@ -100,6 +101,8 @@ def build_grid_sampler_2d_payload(
     output_shape: tuple[int, ...] | None = None,
     input_dtype: Any | None = None,
     output_dtype: Any | None = None,
+    grid_dtype: Any | None = None,
+    extra_tensor_input_vkformats: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Build Vulkan custom shader metadata for a 2D grid sampler variant.
 
@@ -115,6 +118,10 @@ def build_grid_sampler_2d_payload(
             Vulkan formats when supported.
         output_dtype (Any | None): Output tensor dtype. Defaults to
             input_dtype when omitted.
+        grid_dtype (Any | None): Grid tensor dtype, used to select the
+            quantized-grid sampler path when supported.
+        extra_tensor_input_vkformats (Sequence[str] | None): Vulkan formats
+            for any additional tensor inputs appended after the grid input.
 
     Returns:
         dict[str, Any]: Custom shader metadata payload.
@@ -144,6 +151,22 @@ def build_grid_sampler_2d_payload(
         and sampler_vk_format is not None
         and int(interpolation_mode) in (0, 1)
     )
+    use_quantized_grid = str(grid_dtype) == "torch.int8"
+    if use_quantized_grid and not (
+        use_sampler
+        and str(input_dtype) == "torch.int8"
+        and str(output_dtype) == "torch.int8"
+    ):
+        raise ValueError(
+            "Quantized grid-sample payload is only supported for the int8 sampler path"
+        )
+    if sampler_vk_format == GRID_SAMPLER_2D_SAMPLER_INT8_VK_FORMAT and (
+        not use_quantized_grid or len(extra_tensor_input_vkformats or ()) != 2
+    ):
+        raise ValueError(
+            "Int8 sampler grid-sample payload requires an int8 grid and "
+            "explicit scale/zero-point tensor inputs"
+        )
     shader_file = (
         _sampler_shader_file(sampler_vk_format, align_corners=align_corners)
         if use_sampler
@@ -164,7 +187,11 @@ def build_grid_sampler_2d_payload(
         "input_0_binding": 0,
         "input_0_descriptorset": 0,
         "input_1_type": "Tensor",
-        "input_1_vkformat": GRID_SAMPLER_2D_VK_FORMAT,
+        "input_1_vkformat": (
+            GRID_SAMPLER_2D_QUANTIZED_GRID_VK_FORMAT
+            if use_quantized_grid
+            else GRID_SAMPLER_2D_VK_FORMAT
+        ),
         "input_1_binding": 1,
         "input_1_descriptorset": 0,
         "output_0_binding": 2,
@@ -198,6 +225,18 @@ def build_grid_sampler_2d_payload(
                 "output_0_type": "Tensor",
                 "output_0_vkformat": GRID_SAMPLER_2D_VK_FORMAT,
                 "output_0_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
+            }
+        )
+    extra_tensor_input_vkformats = extra_tensor_input_vkformats or ()
+    for extra_idx, vk_format in enumerate(extra_tensor_input_vkformats):
+        input_idx = 2 + extra_idx
+        payload.update(
+            {
+                f"input_{input_idx}_type": "Tensor",
+                f"input_{input_idx}_vkformat": vk_format,
+                f"input_{input_idx}_binding": 3 + extra_idx,
+                f"input_{input_idx}_descriptorset": 0,
+                f"input_{input_idx}_vkdescriptortype": "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
             }
         )
     return payload
