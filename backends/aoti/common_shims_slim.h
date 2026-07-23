@@ -48,6 +48,9 @@ aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype);
 AOTI_SHIM_EXPORT AOTITorchError
 aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 
+AOTI_SHIM_EXPORT AOTITorchError
+aoti_torch_get_numel(Tensor* tensor, int64_t* ret_numel);
+
 AOTI_SHIM_EXPORT int32_t aoti_torch_layout_strided();
 
 // ============================================================

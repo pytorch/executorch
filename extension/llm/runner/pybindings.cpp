@@ -325,6 +325,9 @@ PYBIND11_MODULE(_llm_runner, m) {
       .def_readonly("inference_end_ms", &Stats::inference_end_ms)
       .def_readonly(
           "aggregate_sampling_time_ms", &Stats::aggregate_sampling_time_ms)
+      .def_readonly(
+          "aggregate_model_execution_time_ms",
+          &Stats::aggregate_model_execution_time_ms)
       .def_readonly("num_prompt_tokens", &Stats::num_prompt_tokens)
       .def_readonly("num_generated_tokens", &Stats::num_generated_tokens)
       .def("on_sampling_begin", &Stats::on_sampling_begin)
