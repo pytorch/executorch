@@ -27,6 +27,8 @@
 #include <executorch/backends/webgpu/runtime/WebGPUQueryPool.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/backend/backend_options_map.h>
+#include <executorch/runtime/backend/options.h>
 
 #include <gtest/gtest.h>
 
@@ -418,7 +420,8 @@ void run_sdpa_case(
     int hq,
     int hkv,
     int d,
-    int cmax) {
+    int cmax,
+    float max_error_limit = 2e-3f) {
   const std::string b = g_dir + "/" + prefix + ".S" + std::to_string(s) + ".";
   auto q = read_bin(b + "q.bin");
   auto k = read_bin(b + "k.bin");
@@ -456,7 +459,8 @@ void run_sdpa_case(
                            << s << "," << hq << "," << d << "]";
   std::vector<float> got(attn, attn + numel);
   const float e = max_err(got, golden);
-  EXPECT_LT(e, 2e-3f) << "sdpa_dyn S=" << s << " max_err=" << e;
+  EXPECT_LT(e, max_error_limit)
+      << prefix << " S=" << s << " full-output max_err=" << e;
 }
 
 void run_sdpa(Module& m, int s) {
@@ -468,6 +472,121 @@ void check_sdpa(int s) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "sdpa_dyn S=" << s << " load";
   run_sdpa(m, s);
 }
+
+constexpr int kK16Hq = 32;
+constexpr int kK16Hkv = 8;
+constexpr int kK16D = 64;
+
+bool k16_device_supported() {
+  const auto* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeInvocationsPerWorkgroup >= 128u &&
+      limits.maxComputeWorkgroupSizeX >= 32u &&
+      limits.maxComputeWorkgroupSizeY >= 4u &&
+      limits.maxComputeWorkgroupStorageSize >= 14720u;
+}
+
+void load_sdpa_module(Module& module, bool f16_kv) {
+  if (!f16_kv) {
+    ASSERT_EQ(module.load_forward(), Error::Ok);
+    return;
+  }
+  executorch::runtime::BackendOptions<1> options;
+  ASSERT_EQ(options.set_option("enable_f16_kv_cache", true), Error::Ok);
+  executorch::runtime::LoadBackendOptionsMap option_map;
+  ASSERT_EQ(option_map.set_options("VulkanBackend", options.view()), Error::Ok);
+  ASSERT_EQ(module.load_forward(nullptr, nullptr, &option_map), Error::Ok);
+}
+
+void run_k16_sdpa(
+    Module& module,
+    int s,
+    const char* prefix,
+    int hq = kK16Hq,
+    int hkv = kK16Hkv,
+    int d = kK16D,
+    bool prime = false) {
+  const std::string base = g_dir + "/" + prefix +
+      (prime ? ".prime." : ".S" + std::to_string(s) + ".");
+  auto q = read_bin(base + "q.bin");
+  auto k = read_bin(base + "k.bin");
+  auto v = read_bin(base + "v.bin");
+  auto control = read_bin(base + "control.bin");
+  auto golden = read_bin(base + "golden.bin");
+  ASSERT_FALSE(
+      q.empty() || k.empty() || v.empty() || control.empty() || golden.empty());
+  auto tq = make_tensor_ptr({1, s, hq, d}, std::move(q));
+  auto tk = make_tensor_ptr({1, s, hkv, d}, std::move(k));
+  auto tv = make_tensor_ptr({1, s, hkv, d}, std::move(v));
+  const int control_size = static_cast<int>(control.size());
+  auto tcontrol = make_tensor_ptr({1, control_size}, std::move(control));
+  auto result =
+      module.forward({EValue(tq), EValue(tk), EValue(tv), EValue(tcontrol)});
+  ASSERT_TRUE(
+      result.ok() && result.get().size() == 1 && result.get()[0].isTensor())
+      << prefix << " S=" << s << " forward failed";
+  const auto& output = result.get()[0].toTensor();
+  const size_t token_width = static_cast<size_t>(hq) * d;
+  const size_t numel = static_cast<size_t>(s) * token_width;
+  ASSERT_EQ(static_cast<size_t>(output.numel()), numel);
+  std::vector<float> got(
+      output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+  ASSERT_EQ(got.size(), golden.size());
+  constexpr float kMaxError = 3e-3f;
+  EXPECT_LT(max_err(got, golden), kMaxError)
+      << prefix << " S=" << s << " full output";
+  for (int token : {0, std::min(15, s - 1), std::min(16, s - 1), s - 1}) {
+    float token_error = 0.0f;
+    const size_t begin = static_cast<size_t>(token) * token_width;
+    for (size_t i = begin; i < begin + token_width; ++i) {
+      token_error = std::fmax(token_error, std::fabs(got[i] - golden[i]));
+    }
+    EXPECT_LT(token_error, kMaxError)
+        << prefix << " S=" << s << " causal token=" << token;
+  }
+}
+
+void prime_k16_sdpa(
+    Module& module,
+    const char* prefix,
+    int hq = kK16Hq,
+    int hkv = kK16Hkv,
+    int d = kK16D) {
+  run_k16_sdpa(module, 12, prefix, hq, hkv, d, true);
+}
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+void expect_sdpa_route(
+    const std::vector<std::string>& names,
+    int s,
+    bool expect_k16) {
+  const bool expect_fd = s == 1;
+  const bool expect_materialized = !expect_fd && !expect_k16;
+  EXPECT_EQ(std::count(names.begin(), names.end(), "update_cache"), 2);
+  EXPECT_EQ(
+      std::count(
+          names.begin(),
+          names.end(),
+          "sdpa_streaming_attention_k16_causal_bound"),
+      expect_k16);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "fd_split"), expect_fd);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "fd_reduce"), expect_fd);
+  EXPECT_EQ(
+      std::count(names.begin(), names.end(), "sdpa_compute_attn_weights"),
+      expect_materialized);
+  EXPECT_EQ(
+      std::count(names.begin(), names.end(), "sdpa_softmax"),
+      expect_materialized);
+  EXPECT_EQ(
+      std::count(names.begin(), names.end(), "sdpa_compute_out"),
+      expect_materialized);
+  EXPECT_EQ(
+      names.size(),
+      static_cast<size_t>(2 + (expect_k16 ? 1 : (expect_fd ? 2 : 3))));
+}
+#endif
 
 void run_combined_routes(Module& m, int s) {
   const std::string b = g_dir + "/combined_routes.S" + std::to_string(s) + ".";
@@ -1035,8 +1154,8 @@ TEST(DynamicShape, QuantizedLinearBk64QkvProfileSoleWriter) {
 TEST(DynamicShape, CombinedLiveRoutesProfile) {
   const auto* context = get_default_webgpu_context();
   if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
-      !context->timestamp_supported) {
-    GTEST_SKIP() << "timestamp queries unavailable";
+      !context->timestamp_supported || !k16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or K16 device limits unavailable";
   }
   Module m(g_dir + "/combined_routes.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load combined_routes.pte";
@@ -1152,6 +1271,18 @@ TEST(DynamicShape, SdpaWideMaterializedOnly) {
   }
 }
 
+TEST(DynamicShape, K16CausalNumericsReusedGraph) {
+  if (!k16_device_supported()) {
+    GTEST_SKIP() << "K16 device limits unavailable";
+  }
+  Module module(g_dir + "/sdpa_k16_llama.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(module, "sdpa_k16_llama");
+  for (int s : {512, 1, 508, 128, 127, 16, 1, 512}) {
+    run_k16_sdpa(module, s, "sdpa_k16_llama");
+  }
+}
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 TEST(DynamicShape, SdpaLiveRoutesProfile) {
   const auto* context = get_default_webgpu_context();
@@ -1174,6 +1305,67 @@ TEST(DynamicShape, SdpaLiveRoutesProfile) {
     EXPECT_EQ(std::count(names.begin(), names.end(), "sdpa_softmax"), s != 1);
     EXPECT_EQ(
         std::count(names.begin(), names.end(), "sdpa_compute_out"), s != 1);
+  }
+}
+
+TEST(DynamicShape, K16CausalLiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !k16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or K16 device limits unavailable";
+  }
+  Module module(g_dir + "/sdpa_k16_llama.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(module, "sdpa_k16_llama");
+  expect_sdpa_route(current_profile_names(), 12, true);
+  for (int s : {512, 128, 1, 508, 127, 1, 512}) {
+    run_k16_sdpa(module, s, "sdpa_k16_llama");
+    expect_sdpa_route(current_profile_names(), s, s > 1);
+  }
+}
+
+TEST(DynamicShape, K16F32KvFallsBackToExistingRoutes) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !k16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or K16 device limits unavailable";
+  }
+  Module module(g_dir + "/sdpa_k16_llama.pte");
+  load_sdpa_module(module, false);
+  prime_k16_sdpa(module, "sdpa_k16_llama");
+  expect_sdpa_route(current_profile_names(), 12, false);
+  for (int s : {128, 1, 128}) {
+    run_k16_sdpa(module, s, "sdpa_k16_llama");
+    expect_sdpa_route(current_profile_names(), s, false);
+  }
+}
+
+TEST(DynamicShape, K16MetadataFallsBackToExistingRoutes) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !k16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or K16 device limits unavailable";
+  }
+  struct NegativeCase {
+    const char* prefix;
+    int hq;
+    int hkv;
+    int d;
+  };
+  for (const auto& negative : std::vector<NegativeCase>{
+           {"sdpa_k16_wrong_geometry", 14, 2, 64},
+           {"sdpa_k16_wrong_d", 32, 8, 128},
+           {"sdpa_k16_wrong_scale", 32, 8, 64}}) {
+    Module module(g_dir + "/" + negative.prefix + ".pte");
+    load_sdpa_module(module, true);
+    prime_k16_sdpa(
+        module, negative.prefix, negative.hq, negative.hkv, negative.d);
+    expect_sdpa_route(current_profile_names(), 12, false);
+    for (int s : {128, 1, 128}) {
+      run_k16_sdpa(
+          module, s, negative.prefix, negative.hq, negative.hkv, negative.d);
+      expect_sdpa_route(current_profile_names(), s, false);
+    }
   }
 }
 #endif
