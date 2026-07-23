@@ -47,7 +47,7 @@ void leaky_relu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("leaky_relu: fp32-only / size mismatch");
   }
   const uint32_t num_elements =
-      static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+      utils::checked_u32(out_tensor.nbytes / sizeof(float), "leaky_relu");
 
   utils::DispatchGrid grid = utils::compute_dispatch_grid(
       device, num_elements, kLeakyReluWorkgroupSizeX, "leaky_relu");
