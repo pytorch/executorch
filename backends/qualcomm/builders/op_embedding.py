@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import os
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -242,6 +243,10 @@ class Embedding(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
-        if is_qnn_sdk_version_less_than("2.48"):
+        # The optimized pattern requires QNN 2.48+. Resolving the SDK version
+        # relies on QNN_SDK_ROOT; when it is unavailable (e.g. AOT-only
+        # environments) fall back to the legacy lowering, which is valid on all
+        # QNN versions.
+        if not os.environ.get("QNN_SDK_ROOT") or is_qnn_sdk_version_less_than("2.48"):
             return self.define_node_legacy(node, nodes_to_wrappers)
         return self.define_node_optimize(node, nodes_to_wrappers)
