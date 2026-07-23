@@ -45,9 +45,9 @@ struct bit_rshift {
 template <typename T>
 using bitwise_fn = T (*)(const T, const T);
 
-template <typename T, const char* op_name>
+template <typename T, ET_OPERATOR_NAME_TYPE op_name>
 constexpr bitwise_fn<T> get_bitwise_fn() {
-  std::string_view op = op_name;
+  std::string_view op = static_cast<const char*>(op_name);
   if (op == "bitwise_and.Tensor_out" || op == "bitwise_and.Scalar_out") {
     return bitwise_and;
   }
@@ -60,7 +60,7 @@ constexpr bitwise_fn<T> get_bitwise_fn() {
   return nullptr;
 };
 
-template <typename T, const char* op_name>
+template <typename T, ET_OPERATOR_NAME_TYPE op_name>
 struct BitwiseFnForOp {
   static constexpr auto get_value() {
     return get_bitwise_fn<T, op_name>();
@@ -68,7 +68,7 @@ struct BitwiseFnForOp {
   static_assert(get_value() != nullptr, "unknown op_name!");
 };
 
-template <template <typename> class BitOp, const char* op_name>
+template <template <typename> class BitOp, ET_OPERATOR_NAME_TYPE op_name>
 Tensor& bitwise_tensor_out(
     RuntimeContext& ctx,
     const Tensor& a,
@@ -114,7 +114,7 @@ Tensor& bitwise_tensor_out(
   return out;
 }
 
-template <template <typename> class BitOp, const char* op_name>
+template <template <typename> class BitOp, ET_OPERATOR_NAME_TYPE op_name>
 Tensor& bitwise_scalar_out(
     RuntimeContext& ctx,
     const Tensor& a,
