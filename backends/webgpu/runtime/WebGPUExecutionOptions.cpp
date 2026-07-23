@@ -47,7 +47,7 @@ WebGPUExecutionPlan plan_webgpu_execution(
   }
   std::vector<bool> suppressed_dispatches(dispatch_count, false);
   std::vector<bool> copy_outputs(output_count, true);
-  std::vector<bool> suppressed_outputs(output_count, false);
+  std::vector<bool> seen_output_ordinals(output_count, false);
 
   for (const auto& output : suppressible_outputs) {
     if (output.output_ordinal >= output_count ||
@@ -57,12 +57,12 @@ WebGPUExecutionPlan plan_webgpu_execution(
           "WebGPU: invalid suppressible output range (output_id " +
           std::to_string(output.output_id) + ")");
     }
-    if (suppressed_outputs[output.output_ordinal]) {
+    if (seen_output_ordinals[output.output_ordinal]) {
       throw std::runtime_error(
           "WebGPU: duplicate suppressible output (output_id " +
           std::to_string(output.output_id) + ")");
     }
-    suppressed_outputs[output.output_ordinal] = true;
+    seen_output_ordinals[output.output_ordinal] = true;
     if (output.output_ordinal != options.suppress_output_ordinal) {
       continue;
     }
@@ -107,7 +107,11 @@ WebGPUExecutionPlan plan_webgpu_execution(
       current_chunk = config.chunk_size;
     }
   }
-  if (plan.dispatch_chunks.empty()) {
+  if (plan.dispatch_chunks.empty() &&
+      std::any_of(
+          plan.copy_outputs.begin(), plan.copy_outputs.end(), [](bool copy) {
+            return copy;
+          })) {
     plan.dispatch_chunks.emplace_back();
   }
   return plan;
