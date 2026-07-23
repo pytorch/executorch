@@ -110,6 +110,15 @@ void conv_transpose2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (sH == 0 || sW == 0) {
     throw std::runtime_error("WebGPU conv_transpose2d: zero stride");
   }
+  // Guard a u32 underflow in (IH-1)/(IW-1) below, and a zero dilation/kernel
+  // that would mis-size the output geometry.
+  if (IH == 0 || IW == 0) {
+    throw std::runtime_error("WebGPU conv_transpose2d: zero input spatial dim");
+  }
+  if (dH == 0 || dW == 0 || KH == 0 || KW == 0) {
+    throw std::runtime_error(
+        "WebGPU conv_transpose2d: zero dilation or kernel dim");
+  }
   if (opH >= sH || opW >= sW) {
     throw std::runtime_error(
         "WebGPU conv_transpose2d: output_padding >= stride");
@@ -280,6 +289,9 @@ void conv2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   if (sH == 0 || sW == 0) {
     throw std::runtime_error("WebGPU conv2d: zero stride");
+  }
+  if (dH == 0 || dW == 0 || KH == 0 || KW == 0) {
+    throw std::runtime_error("WebGPU conv2d: zero dilation or kernel dim");
   }
 
   // Compute in signed 64-bit: the numerator goes negative for invalid geometry
