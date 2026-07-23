@@ -1013,14 +1013,22 @@ void channelwise_gated_delta_rule_chunked(
             const auto* __restrict__ beta_c = beta_head + base;
             auto* __restrict__ o_c = o_head + base * v_head_dim;
 
-            // 1. gc = cumsum_r(log decay)  (per channel; resets each chunk)
-            for (const auto k_idx : c10::irange(k_head_dim)) {
-              float acc = 0.0f;
-              for (const auto r : c10::irange(cur)) {
-                acc += std::log(d_c[r * k_head_dim + k_idx]);
-                sc.gc[r * k_head_dim + k_idx] = acc;
-                sc.eg[r * k_head_dim + k_idx] = std::exp(acc);
-                sc.eg_inv[r * k_head_dim + k_idx] = std::exp(-acc);
+            // 1. gc = cumsum_r(log decay) (per channel; resets each chunk).
+            // Reordered so the inner loop runs contiguously over k; the running
+            // cumsum is read back from the previous gc row.
+            for (const auto r : c10::irange(cur)) {
+              const float* __restrict__ d_row = d_c + r * k_head_dim;
+              const float* __restrict__ gc_prev =
+                  r == 0 ? nullptr : sc.gc + (r - 1) * k_head_dim;
+              float* __restrict__ gc_row = sc.gc + r * k_head_dim;
+              float* __restrict__ eg_row = sc.eg + r * k_head_dim;
+              float* __restrict__ eg_inv_row = sc.eg_inv + r * k_head_dim;
+              for (const auto k_idx : c10::irange(k_head_dim)) {
+                const float prev = gc_prev == nullptr ? 0.0f : gc_prev[k_idx];
+                const float acc = prev + std::log(d_row[k_idx]);
+                gc_row[k_idx] = acc;
+                eg_row[k_idx] = std::exp(acc);
+                eg_inv_row[k_idx] = std::exp(-acc);
               }
             }
 
@@ -1073,47 +1081,64 @@ void channelwise_gated_delta_rule_chunked(
             }
 
             // 4. WY packing: w = A @ (exp(gc) * k), u = A @ v  (A lower-tri: j
-            // <= r)
+            // <= r). Reordered so the inner loop runs contiguously over k / v.
             for (const auto r : c10::irange(cur)) {
+              float* __restrict__ w_row = sc.w + r * k_head_dim;
+              float* __restrict__ u_row = sc.u + r * v_head_dim;
               for (const auto k_idx : c10::irange(k_head_dim)) {
-                float acc = 0.0f;
-                for (const auto j : c10::irange(r + 1)) {
-                  acc += sc.A[r * CHUNK_SIZE + j] *
-                      sc.eg[j * k_head_dim + k_idx] *
-                      k_c[j * k_head_dim + k_idx];
-                }
-                sc.w[r * k_head_dim + k_idx] = acc;
+                w_row[k_idx] = 0.0f;
               }
               for (const auto v_idx : c10::irange(v_head_dim)) {
-                float acc = 0.0f;
-                for (const auto j : c10::irange(r + 1)) {
-                  acc += sc.A[r * CHUNK_SIZE + j] * v_c[j * v_head_dim + v_idx];
+                u_row[v_idx] = 0.0f;
+              }
+              for (const auto j : c10::irange(r + 1)) {
+                const float arj = sc.A[r * CHUNK_SIZE + j];
+                const float* __restrict__ eg_row = sc.eg + j * k_head_dim;
+                const float* __restrict__ k_row = k_c + j * k_head_dim;
+                for (const auto k_idx : c10::irange(k_head_dim)) {
+                  w_row[k_idx] += arj * eg_row[k_idx] * k_row[k_idx];
                 }
-                sc.u[r * v_head_dim + v_idx] = acc;
+                const float* __restrict__ v_row = v_c + j * v_head_dim;
+                for (const auto v_idx : c10::irange(v_head_dim)) {
+                  u_row[v_idx] += arj * v_row[v_idx];
+                }
               }
             }
 
-            // 5. pv = u - w @ S_old ; o = (q ⊙ exp gc) @ S_old + Aqk @ pv
+            // 5. pv = u - w @ S_old ; o = (q ⊙ exp gc) @ S_old. Reordered so
+            // the inner loop runs contiguously over v; pv/o_c accumulate the
+            // k-sum, then pv is finalized as u - (w@S) with a single
+            // subtraction (bit-identical to the k-then-subtract form).
             for (const auto r : c10::irange(cur)) {
+              float* __restrict__ pv_row = sc.pv + r * v_head_dim;
+              float* __restrict__ o_row = o_c + r * v_head_dim;
               for (const auto v_idx : c10::irange(v_head_dim)) {
-                float wS = 0.0f, qS = 0.0f;
-                for (const auto k_idx : c10::irange(k_head_dim)) {
-                  const float s = S[k_idx * v_head_dim + v_idx];
-                  wS += sc.w[r * k_head_dim + k_idx] * s;
-                  qS += q_c[r * k_head_dim + k_idx] *
-                      sc.eg[r * k_head_dim + k_idx] * s;
+                pv_row[v_idx] = 0.0f;
+                o_row[v_idx] = 0.0f;
+              }
+              for (const auto k_idx : c10::irange(k_head_dim)) {
+                const float wrk = sc.w[r * k_head_dim + k_idx];
+                const float qrk =
+                    q_c[r * k_head_dim + k_idx] * sc.eg[r * k_head_dim + k_idx];
+                const float* __restrict__ s_row = S + k_idx * v_head_dim;
+                for (const auto v_idx : c10::irange(v_head_dim)) {
+                  pv_row[v_idx] += wrk * s_row[v_idx];
+                  o_row[v_idx] += qrk * s_row[v_idx];
                 }
-                sc.pv[r * v_head_dim + v_idx] =
-                    sc.u[r * v_head_dim + v_idx] - wS;
-                o_c[r * v_head_dim + v_idx] = qS;
+              }
+              const float* __restrict__ u_row = sc.u + r * v_head_dim;
+              for (const auto v_idx : c10::irange(v_head_dim)) {
+                pv_row[v_idx] = u_row[v_idx] - pv_row[v_idx];
               }
             }
+            // 5b. o += Aqk @ pv  (AXPY over the contiguous v).
             for (const auto r : c10::irange(cur)) {
+              float* __restrict__ o_row = o_c + r * v_head_dim;
               for (const auto j : c10::irange(r + 1)) {
                 const float a = sc.Aqk[r * CHUNK_SIZE + j];
+                const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
                 for (const auto v_idx : c10::irange(v_head_dim)) {
-                  o_c[r * v_head_dim + v_idx] +=
-                      a * sc.pv[j * v_head_dim + v_idx];
+                  o_row[v_idx] += a * pv_row[v_idx];
                 }
               }
             }
@@ -1129,13 +1154,16 @@ void channelwise_gated_delta_rule_chunked(
               for (const auto r : c10::irange(cur)) {
                 sc.de[r] = std::exp(gc_last - sc.gc[r * k_head_dim + k_idx]);
               }
+              float* __restrict__ S_row = S + k_idx * v_head_dim;
               for (const auto v_idx : c10::irange(v_head_dim)) {
-                float acc = S[k_idx * v_head_dim + v_idx] * eg_last;
-                for (const auto r : c10::irange(cur)) {
-                  acc += k_c[r * k_head_dim + k_idx] * sc.de[r] *
-                      sc.pv[r * v_head_dim + v_idx];
+                S_row[v_idx] *= eg_last;
+              }
+              for (const auto r : c10::irange(cur)) {
+                const float c = k_c[r * k_head_dim + k_idx] * sc.de[r];
+                const float* __restrict__ pv_row = sc.pv + r * v_head_dim;
+                for (const auto v_idx : c10::irange(v_head_dim)) {
+                  S_row[v_idx] += c * pv_row[v_idx];
                 }
-                S[k_idx * v_head_dim + v_idx] = acc;
               }
             }
           } // chunk
