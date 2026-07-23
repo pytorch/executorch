@@ -168,6 +168,7 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.zeros_like.default,),
         (torch.ops.aten._softmax.default,),
         (torch.ops.aten.softmax.int,),
+        (torch.ops.aten.div.Scalar,),
         (torch.ops.aten.div.Tensor,),
         (torch.ops.aten.div_.Tensor,),
         (torch.ops.aten.div.Tensor_mode,),
