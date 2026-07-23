@@ -186,7 +186,7 @@ message(
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
+    # ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch  # Disabled: targets qmm_splitk, introduced in MLX v0.32.0 (this repo is pinned to an earlier commit); not applicable, see patch file header
 )
 ExternalProject_Add(
   mlx_external

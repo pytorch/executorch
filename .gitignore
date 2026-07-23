@@ -89,3 +89,5 @@ extension/pybindings/mlx.metallib
 
 # Scratch/WIP work not ready for review -- never committed
 /wip/
+gemma-4-31B-it-DFlash/
+gemma-4-31B-it-HQQ-INT4/
