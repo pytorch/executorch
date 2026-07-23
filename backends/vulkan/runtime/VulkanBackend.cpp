@@ -10,6 +10,7 @@
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 
+#include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -614,8 +615,7 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
   ~VulkanBackend() override = default;
 
   bool is_available() const override {
-    // TODO(ssjia): replace with an actual Vulkan runtime availability check
-    return true;
+    return vkapi::set_and_get_external_adapter() != nullptr || api::available();
   }
 
   ET_NODISCARD Error compileModel(
