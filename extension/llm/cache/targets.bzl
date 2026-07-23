@@ -11,5 +11,6 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "//caffe2:torch",
+            "//executorch/exir:_warnings",
         ],
     )
