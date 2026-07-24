@@ -27,18 +27,21 @@ struct LinearParams {
   uint32_t M;
   uint32_t N;
   uint32_t K;
-  uint32_t pad_;
+  uint32_t has_bias;
 };
 static_assert(sizeof(LinearParams) == 16, "LinearParams must be 16 bytes");
 
 constexpr uint32_t kTile = 32u;
 
-// aten.linear (no bias); shared-memory tiled GEMM.
+// aten.linear (+ optional bias); shared-memory tiled GEMM.
 void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  // out is the last arg; bias (if present) is unused on this path.
+  // args: [input, weight, bias?, out]; out is last. bias (arg 2) is a tensor
+  // when present, Null/absent otherwise; add_bias[col] is fused in the shader.
   const int in_id = args.at(0);
   const int w_id = args.at(1);
   const int out_id = args.at(args.size() - 1);
+  const bool has_bias = args.size() >= 4 &&
+      graph.get_value_type(args.at(2)) == WebGPUGraph::ValueType::Tensor;
 
   WGPUDevice device = graph.device();
   const auto& in = graph.get_tensor(in_id);
@@ -72,10 +75,26 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU linear: tile grid exceeds dispatch limit");
   }
 
+  if (has_bias) {
+    const auto& b = graph.get_tensor(args.at(2));
+    if (b.nbytes != static_cast<uint64_t>(N) * sizeof(float)) {
+      throw std::runtime_error("WebGPU linear: bias must be [N] fp32");
+    }
+  }
+
   LinearParams params = {};
   params.M = M;
   params.N = N;
   params.K = K;
+  params.has_bias = has_bias ? 1u : 0u;
+
+  // Bias binding (binding 4); a 4-byte dummy satisfies it when None
+  // (WGSL-gated).
+  utils::OptionalBinding bias = utils::make_optional_binding(
+      device,
+      has_bias,
+      has_bias ? graph.get_tensor(args.at(2)).buffer : nullptr,
+      has_bias ? graph.get_tensor(args.at(2)).nbytes : 0);
 
   WGPUBufferDescriptor uniform_desc = {};
   uniform_desc.size = sizeof(LinearParams);
@@ -97,7 +116,7 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   shader_desc.nextInChain = &wgsl_desc.chain;
   WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
 
-  WGPUBindGroupLayoutEntry entries[4] = {};
+  WGPUBindGroupLayoutEntry entries[5] = {};
   entries[0].binding = 0;
   entries[0].visibility = WGPUShaderStage_Compute;
   entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
@@ -110,9 +129,12 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   entries[3].binding = 3;
   entries[3].visibility = WGPUShaderStage_Compute;
   entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+  entries[4].binding = 4;
+  entries[4].visibility = WGPUShaderStage_Compute;
+  entries[4].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
 
   WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
+  bgl_desc.entryCount = 5;
   bgl_desc.entries = entries;
   WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
 
@@ -130,7 +152,7 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUComputePipeline pipeline =
       wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
 
-  WGPUBindGroupEntry bg_entries[4] = {};
+  WGPUBindGroupEntry bg_entries[5] = {};
   bg_entries[0].binding = 0;
   bg_entries[0].buffer = in.buffer;
   bg_entries[0].size = in.nbytes;
@@ -143,12 +165,18 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   bg_entries[3].binding = 3;
   bg_entries[3].buffer = uniform_buffer;
   bg_entries[3].size = sizeof(LinearParams);
+  bg_entries[4].binding = 4;
+  bg_entries[4].buffer = bias.buffer;
+  bg_entries[4].size = bias.nbytes;
 
   WGPUBindGroupDescriptor bg_desc = {};
   bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
+  bg_desc.entryCount = 5;
   bg_desc.entries = bg_entries;
   WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  if (bias.owned_dummy != nullptr) {
+    wgpuBufferRelease(bias.owned_dummy);
+  }
 
   WebGPUDispatch dispatch;
   dispatch.pipeline = pipeline;
