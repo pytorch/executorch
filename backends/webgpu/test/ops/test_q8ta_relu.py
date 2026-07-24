@@ -13,9 +13,9 @@ clamped to 0 by the relu, pinning the `max(x, 0)` term.
 
 import unittest
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
+
+import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
