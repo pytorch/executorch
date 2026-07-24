@@ -43,7 +43,7 @@ def define_common_targets():
             # function-pointer variables live in the same linkage unit.
             # Linking from a separate static library causes the linker to
             # drop the symbols when building a shared library.
-            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
+            "fbsource//third-party/volk:volk_src",
         ],
         exported_headers = [
             "VGFNeuralStatistics.h",
@@ -57,15 +57,13 @@ def define_common_targets():
             "-Wno-header-hygiene",
             "-Wno-unused-variable",
             "-Wno-missing-field-initializers",
-            "-DUSE_VULKAN_WRAPPER",
-            "-DUSE_VULKAN_VOLK",
         ],
         visibility = ["PUBLIC"],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
-            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
-            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            "fbsource//third-party/khronos:vulkan-headers",
+            "fbsource//third-party/volk:volk-header",
         ],
     )
