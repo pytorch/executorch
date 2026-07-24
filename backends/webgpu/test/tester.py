@@ -30,6 +30,11 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.aten.slice_copy.Tensor,
     exir_ops.edge.aten.permute_copy.default,
     exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.amax.default,
+    exir_ops.edge.aten.amin.default,
+    exir_ops.edge.aten.argmax.default,
+    exir_ops.edge.aten.argmin.default,
+    exir_ops.edge.aten.native_group_norm.default,
 ]
 
 
