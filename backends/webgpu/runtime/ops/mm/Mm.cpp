@@ -89,69 +89,20 @@ void mm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // vec4 path when K and N are multiples of 4 (wider 16B loads); else scalar.
   const bool use_vec4 = (K % 4u == 0u) && (N % 4u == 0u);
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {use_vec4 ? kMmVec4WGSL : kMmTiledWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[4] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Storage;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   // Tiled kernel has a fixed @workgroup_size(8, 8, 1) — no override constant.
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[4] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = a.buffer;
-  bg_entries[0].size = a.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = b.buffer;
-  bg_entries[1].size = b.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = out.buffer;
-  bg_entries[2].size = out.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(MmParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      use_vec4 ? kMmVec4WGSL : kMmTiledWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, a.buffer, a.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, b.buffer, b.nbytes},
+          {2, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {3, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(MmParams)},
+      });
 
   WebGPUDispatch dispatch;
-  dispatch.pipeline = pipeline;
-  dispatch.bind_group = bind_group;
+  dispatch.pipeline = bundle.pipeline;
+  dispatch.bind_group = bundle.bind_group;
   dispatch.workgroup_count_x = dispatch_x;
   dispatch.workgroup_count_y = dispatch_y;
   dispatch.kernel_name = "mm";
@@ -187,9 +138,6 @@ void mm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             out_id, {static_cast<int64_t>(m), static_cast<int64_t>(N)});
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
