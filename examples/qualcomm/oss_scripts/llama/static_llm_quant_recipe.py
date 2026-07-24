@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit
@@ -13,7 +13,7 @@ from executorch.backends.qualcomm.quantizer.quant_recipe import (
     QuantRecipe,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from torchao.quantization.pt2e import MinMaxObserver
+from torchao.quantization.pt2e import MinMaxObserver, MovingAverageMinMaxObserver
 
 
 class StaticLLMQuantRecipe:
@@ -44,6 +44,12 @@ class StaticLLMQuantRecipe:
     def get_logits_output_bit_width(self) -> int:
         # We use 16bit logits for all quant config
         return 32 if self.default_quant_dtype is None else 16
+
+
+class StaticLLMQATRecipe(StaticLLMQuantRecipe):
+    """Base class for QAT recipes. Adds frozen param patterns."""
+
+    frozen_param_patterns: List[str] = []
 
 
 class LlamaStories260KQuantRecipe(StaticLLMQuantRecipe):
@@ -664,6 +670,51 @@ class Smollm2QuantRecipe(StaticLLMQuantRecipe):
             act_observer=MinMaxObserver,
             granularity=QuantGranularity.PER_CHANNEL,
         )
+
+
+class Smollm2QATQuantRecipe(StaticLLMQATRecipe):
+    default_quant_dtype = QuantDtype.use_16a8w
+    frozen_param_patterns: List[str] = [
+        r"tok_embedding",  # Freeze token embeddings to prevent drift in the token space.
+        r"output\.conv",  # Freeze lm head to prevent drift in the token space.
+    ]
+
+    def __init__(self, verbose: bool = False):
+        super().__init__()
+
+        self.recipe = (
+            QuantRecipe(
+                self.default_quant_dtype,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+                verbose=verbose,
+            )
+            .add_node_target(
+                {
+                    torch.ops.aten.conv2d.default,
+                },
+                QuantDtype.use_16a4w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+            .add_regex(
+                {r"tok_embeddings"},
+                QuantDtype.use_16a8w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_TENSOR,
+            )
+            .add_regex(
+                {r"output\.conv"},
+                QuantDtype.use_16a8w,
+                True,
+                act_observer=MovingAverageMinMaxObserver,
+                granularity=QuantGranularity.PER_CHANNEL,
+            )
+        )
+        self.recipe.custom_quant_annotations.append(annotate_kv_8bit)
 
 
 class Smollm3QuantRecipe(StaticLLMQuantRecipe):
