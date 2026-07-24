@@ -1824,6 +1824,190 @@ static bool test_slice_double_start() {
   return ok;
 }
 
+// Regression for serialized integer select arguments that alias an earlier
+// floating-point scalar in the Vulkan scalar cache. A production graph has
+// select calls whose dim and index both reference Double 0.0.
+static void finish_select_scalar_graph(
+    ::flatbuffers::FlatBufferBuilder& fbb,
+    double dim,
+    double index,
+    uint32_t out_len,
+    bool symint_dim = false) {
+  namespace vk = vkgraph;
+  std::vector<uint32_t> in_dims = {2u, 3u};
+  std::vector<uint32_t> out_dims = {out_len};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  if (symint_dim) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::SymInt,
+        vk::CreateSymInt(fbb, /*value=*/0).Union()));
+  } else {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::Double,
+        vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
+  }
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/index).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.select_copy.int", &args));
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {3};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+}
+
+static bool test_select_double_scalar_case(
+    double dim,
+    double index,
+    const std::vector<float>& expected) {
+  printf(
+      "\n--- Test: select Double scalars (dim=%g, index=%g) ---\n", dim, index);
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(
+      fbb, dim, index, static_cast<uint32_t>(expected.size()));
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: graph build threw: %s\n", e.what());
+    return false;
+  }
+
+  std::vector<float> in = {0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f};
+  std::vector<InputData> inputs = {
+      {in.data(), in.size() * sizeof(float), false}};
+  std::vector<float> out(expected.size(), -1.0f);
+  std::vector<std::pair<void*, size_t>> outputs = {
+      {out.data(), out.size() * sizeof(float)}};
+  try {
+    graph.copy_inputs(inputs);
+    graph.execute();
+    graph.copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    printf("FAIL: select execute threw: %s\n", e.what());
+    return false;
+  }
+
+  if (out != expected) {
+    printf("FAIL: select Double-scalar gather mismatch\n");
+    return false;
+  }
+  printf("PASS: select Double scalars\n");
+  return true;
+}
+
+static bool test_select_scalar_build_error(
+    double dim,
+    double index,
+    const char* expected_error,
+    bool symint_dim = false) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(fbb, dim, index, /*out_len=*/3u, symint_dim);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    const std::string error = e.what();
+    if (error.find(expected_error) != std::string::npos) {
+      printf("PASS: rejected with expected error: %s\n", e.what());
+      return true;
+    }
+    printf(
+        "FAIL: rejection error %s did not contain %s\n",
+        e.what(),
+        expected_error);
+    return false;
+  }
+  printf("FAIL: expected graph build to reject select scalars\n");
+  return false;
+}
+
+static bool test_select_double_scalars() {
+  constexpr double kInt64Limit = 0x1p63;
+  const double below_int64_min =
+      std::nextafter(-kInt64Limit, -std::numeric_limits<double>::infinity());
+
+  bool ok = true;
+  // Production artifact representation: both schema-int arguments alias 0.0.
+  ok = test_select_double_scalar_case(
+           /*dim=*/0.0, /*index=*/0.0, {0.5f, 1.5f, 2.5f}) &&
+      ok;
+  // Negative Double indices retain normal select index normalization.
+  ok = test_select_double_scalar_case(
+           /*dim=*/1.0, /*index=*/-1.0, {2.5f, 5.5f}) &&
+      ok;
+
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.5,
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.0,
+           /*index=*/0.5,
+           "select: non-integral index") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           std::numeric_limits<double>::quiet_NaN(),
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           std::numeric_limits<double>::infinity(),
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           kInt64Limit, /*index=*/0.0, "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           below_int64_min, /*index=*/0.0, "select: non-integral dim") &&
+      ok;
+  // -2^63 is representable: conversion succeeds, then the normal dim check
+  // rejects it as out of range for this rank-2 input.
+  ok = test_select_scalar_build_error(
+           -kInt64Limit, /*index=*/0.0, "select: dim out of range") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.0,
+           /*index=*/0.0,
+           "select: dynamic/unsupported dim",
+           /*symint_dim=*/true) &&
+      ok;
+  return ok;
+}
+
 // apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
 struct RopeConfig {
   const char* name;
@@ -2007,6 +2191,11 @@ TEST(WebGPUNative, Prepack) {
 TEST(WebGPUNative, SliceDoubleStart) {
   EXPECT_TRUE(test_slice_double_start())
       << "slice Double-start gather/reject checks failed";
+}
+
+TEST(WebGPUNative, SelectDoubleScalars) {
+  EXPECT_TRUE(test_select_double_scalars())
+      << "select Double-scalar compatibility checks failed";
 }
 
 TEST(WebGPUNative, Prepack2) {

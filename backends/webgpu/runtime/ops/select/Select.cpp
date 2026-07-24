@@ -14,6 +14,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -29,12 +30,27 @@ struct SelectParams {
   uint32_t _pad[2];
 };
 
-// dim/index are required Ints (SymInt throws); no Null default unlike slice.
+// dim/index are static integer scalars (SymInt throws); Vulkan serialization
+// can reuse an earlier Double value for an equal integer scalar.
 int64_t read_scalar(WebGPUGraph& graph, int id, const char* what) {
-  if (graph.get_value_type(id) == WebGPUGraph::ValueType::Int) {
-    return graph.get_int(id);
+  switch (graph.get_value_type(id)) {
+    case WebGPUGraph::ValueType::Int:
+      return graph.get_int(id);
+    case WebGPUGraph::ValueType::Double: {
+      const double d = graph.get_double(id);
+      constexpr double kInt64Limit = 0x1p63;
+      // Check every invalid case before casting: floating-to-integer conversion
+      // is undefined for out-of-range values, and fractional values must not be
+      // silently rounded or truncated. std::trunc(NaN) != NaN rejects NaN.
+      if (d < -kInt64Limit || d >= kInt64Limit || std::trunc(d) != d) {
+        throw std::runtime_error(std::string("select: non-integral ") + what);
+      }
+      return static_cast<int64_t>(d);
+    }
+    default:
+      throw std::runtime_error(
+          std::string("select: dynamic/unsupported ") + what);
   }
-  throw std::runtime_error(std::string("select: dynamic/unsupported ") + what);
 }
 
 // Build a TensorMeta from live dims, write it to buf, return numel.
