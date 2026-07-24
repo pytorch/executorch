@@ -9,6 +9,7 @@ import logging
 
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
+    PerformanceMode,
 )
 from executorch.backends.samsung.utils.export_utils import (
     to_edge_transform_and_lower_to_enn,
@@ -54,6 +55,15 @@ if __name__ == "__main__":
         help=f"Model name. Valid ones: {SUPPORT_MODEL_NAMES}",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
+    parser.add_argument(
+        "--perf_mode",
+        default=PerformanceMode.DEFAULT.name,
+        choices=[m.name for m in PerformanceMode],
+        help=(
+            "Performance mode. HIGH_PERFORMANCE is experimental and must be "
+            "verified on the exynos device farm before deploying on a phone."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -74,7 +84,12 @@ if __name__ == "__main__":
     model = model.eval()
     outputs = model(*example_inputs)
 
-    compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
+    compile_specs = [
+        gen_samsung_backend_compile_spec(
+            args.chipset,
+            PerformanceMode[args.perf_mode],
+        )
+    ]
     edge = to_edge_transform_and_lower_to_enn(
         model, example_inputs, compile_specs=compile_specs
     )
