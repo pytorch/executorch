@@ -15,9 +15,9 @@ directly. `GridPriorsTest` is the export-delegation smoke test.
 
 import unittest
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
