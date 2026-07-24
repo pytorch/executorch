@@ -45,7 +45,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
       in1_tensor.dims.size() > kTensorMetaMaxNdim ||
       in2_tensor.dims.size() > kTensorMetaMaxNdim) {
-    throw std::runtime_error("sub: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("sub: tensor rank exceeds 8 (MAX_NDIM)");
   }
 
   const uint32_t out_ndim = static_cast<uint32_t>(out_tensor.dims.size());
