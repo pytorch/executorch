@@ -108,6 +108,23 @@ class OpCase : public ::testing::Test {
       EXPECT_EQ(mism, -1) << "int8 mismatch at index " << mism
                           << ": out=" << (mism >= 0 ? int(out_p[mism]) : 0)
                           << " golden=" << (mism >= 0 ? int(golden[mism]) : 0);
+    } else if (e_.golden.dtype == "int64") {
+      // int64-index ops (argmax/argmin) compare exact: indices are discrete.
+      auto golden = load_int64_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      const int64_t* out_p = out_tensor.const_data_ptr<int64_t>();
+      int mism = -1;
+      for (size_t i = 0; i < gn; i++) {
+        if (out_p[i] != golden[i]) {
+          mism = static_cast<int>(i);
+          break;
+        }
+      }
+      EXPECT_EQ(mism, -1) << "int64 mismatch at index " << mism << ": out="
+                          << (mism >= 0 ? (long long)out_p[mism] : 0)
+                          << " golden="
+                          << (mism >= 0 ? (long long)golden[mism] : 0);
     } else {
       auto golden = load_fp32_bin(e_.golden.path, gn);
       ASSERT_FALSE(golden.empty())
