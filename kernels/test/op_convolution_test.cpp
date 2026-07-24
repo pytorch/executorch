@@ -785,3 +785,45 @@ TEST_F(OpConvCorrectnessTest, BFloat16TypeSmokeTest) {
       out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
+
+// Regression test for #20804: a transposed convolution weight with
+// out_channels == 1 arrives with a non-default dim order (e.g. [1, 0, 2, 3],
+// since the weight is laid out as (in_channels, out_channels / groups, kH,
+// kW)). The kernel indexes the weight through its strides, so it must run and
+// produce the same result as a default-order weight.
+TEST_F(OpConvCorrectnessTest, TransposedWeightNonDefaultDimOrder) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.make({1, 2, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8});
+
+  // Weight (in_channels=2, out_channels=1, kH=2, kW=2)
+  // in dim order [1, 0, 2, 3].
+  Tensor weight = tf.make_with_dimorder(
+      {2, 1, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}, /*dim_order=*/{1, 0, 2, 3});
+
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({1, 1, 3, 3});
+  Tensor expected =
+      tf.make({1, 1, 3, 3}, {26, 64, 40, 76, 184, 112, 58, 136, 80});
+
+  int64_t stride[2] = {1, 1};
+  int64_t padding[2] = {0, 0};
+  int64_t dilation[2] = {1, 1};
+  bool transposed = true;
+  int64_t output_padding[2] = {0, 0};
+  int64_t groups = 1;
+
+  op_convolution_out(
+      input,
+      weight,
+      std::optional<Tensor>(bias),
+      executorch::aten::ArrayRef<int64_t>{stride, 2},
+      executorch::aten::ArrayRef<int64_t>{padding, 2},
+      executorch::aten::ArrayRef<int64_t>{dilation, 2},
+      transposed,
+      executorch::aten::ArrayRef<int64_t>{output_padding, 2},
+      groups,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
