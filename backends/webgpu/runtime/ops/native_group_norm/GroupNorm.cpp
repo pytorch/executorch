@@ -37,8 +37,8 @@ static_assert(
     sizeof(GroupNormParams) == 32,
     "GroupNormParams must match the WGSL Params struct (32 bytes)");
 
-// The reduce shader's cooperative reduction uses var<workgroup> f32[256] arrays;
-// the workgroup size (used for both passes) must not exceed that width.
+// The reduce shader's cooperative reduction uses var<workgroup> f32[256]
+// arrays; the workgroup size (used for both passes) must not exceed that width.
 static_assert(
     kGroupNormWorkgroupSizeX <= 256,
     "group_norm workgroup size exceeds the 256-wide shared reduction arrays");
@@ -62,57 +62,20 @@ size_t add_gn_dispatch(
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {wgsl_code, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  std::vector<WGPUBindGroupLayoutEntry> entries(binds.size());
+  std::vector<utils::BindingSpec> specs(binds.size());
   for (size_t i = 0; i < binds.size(); i++) {
-    entries[i].binding = static_cast<uint32_t>(i);
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = binds[i].type;
+    specs[i] = {
+        static_cast<uint32_t>(i),
+        binds[i].type,
+        binds[i].buffer,
+        binds[i].size};
   }
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = entries.size();
-  bgl_desc.entries = entries.data();
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
 
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device, wgsl_code, specs, &wg_size_constant, 1);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  std::vector<WGPUBindGroupEntry> bg_entries(binds.size());
-  for (size_t i = 0; i < binds.size(); i++) {
-    bg_entries[i].binding = static_cast<uint32_t>(i);
-    bg_entries[i].buffer = binds[i].buffer;
-    bg_entries[i].size = binds[i].size;
-  }
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = bg_entries.size();
-  bg_desc.entries = bg_entries.data();
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  const size_t idx =
-      graph.add_dispatch({pipeline, bind_group, wgc.x, label, wgc.y});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
+  const size_t idx = graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, wgc.x, label, wgc.y});
   return idx;
 }
 
@@ -212,8 +175,8 @@ void native_group_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const WGPUBufferBindingType uni = WGPUBufferBindingType_Uniform;
 
   // Pass 1: reduce -> mean/rstd (one workgroup per (n, group), cooperative).
-  utils::WgCount reduce_wgc = utils::compute_2d_workgroup_count(
-      device, mean_numel, 1, "gn_reduce");
+  utils::WgCount reduce_wgc =
+      utils::compute_2d_workgroup_count(device, mean_numel, 1, "gn_reduce");
   const size_t reduce_idx = add_gn_dispatch(
       graph,
       device,
