@@ -36,6 +36,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 )
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
+from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
@@ -305,6 +306,50 @@ def _repeat_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("avg_pool2d")
+def _avg_pool2d_suite() -> WebGPUTestSuite:
+    # Windowed spatial average; real fp math -> float64 oracle at 1e-3.
+    def mk(kernel, stride, padding, count_include_pad, ceil_mode, divisor):
+        return AvgPool2dModule(
+            kernel, stride, padding, count_include_pad, ceil_mode, divisor
+        )
+
+    def case(name, k, s, p, cip, ceil_mode, divisor, shape):
+        return Case(
+            name=name,
+            construct={
+                "kernel": k,
+                "stride": s,
+                "padding": p,
+                "count_include_pad": cip,
+                "ceil_mode": ceil_mode,
+                "divisor": divisor,
+            },
+            inputs=(shape,),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=mk,
+        cases=[
+            case("basic", [2, 2], [2, 2], [0, 0], True, False, None, (1, 2, 4, 4)),
+            case("pad_cip", [3, 3], [2, 2], [1, 1], True, False, None, (1, 2, 5, 5)),
+            case(
+                "pad_nocip", [3, 3], [2, 2], [1, 1], False, False, None, (1, 2, 5, 5)
+            ),
+            case("asym", [3, 2], [2, 3], [1, 1], True, False, None, (2, 3, 5, 7)),
+            case("divisor", [2, 2], [2, 2], [0, 0], True, False, 3, (1, 1, 4, 4)),
+            # ceil_mode: last window overhangs -> exercises the overhang divisor
+            # branch (beh/bew > 0) + the ceil output-size (3x3 vs floor 2x2).
+            case("ceil_cip", [2, 2], [2, 2], [0, 0], True, True, None, (1, 1, 5, 5)),
+            case(
+                "ceil_nocip", [3, 3], [2, 2], [0, 0], False, True, None, (1, 2, 5, 5)
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
