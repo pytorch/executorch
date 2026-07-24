@@ -41,9 +41,7 @@ constexpr int64_t kTileN = 4; // MUST match TN
 //  bias, out]. Dynamic per-row int8 activation quant x 4-bit-group symmetric
 // weight. weight_sums (arg 4) is a perf shortcut; this v1 recomputes the sum
 // inline so it is intentionally unused. Static-shape only (no resize hook yet).
-void linear_dq8ca_q4gsw_impl(
-    WebGPUGraph& graph,
-    const std::vector<int>& args) {
+void linear_dq8ca_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in_id = args.at(0);
   const int input_scale_id = args.at(1);
   const int input_zp_id = args.at(2);
@@ -121,7 +119,8 @@ void linear_dq8ca_q4gsw_impl(
         "linear_dq8ca_q4gsw: input scale fp32[M] / zp int8[M] required");
   }
   // int8 zp is bound word-aligned over a max(nbytes,4) buffer; M in {5,6,7,...}
-  // would bind past the buffer. Mirrors the choose_qparams_affine producer guard.
+  // would bind past the buffer. Mirrors the choose_qparams_affine producer
+  // guard.
   if (M > 4u && M % 4u != 0u) {
     throw std::runtime_error(
         "linear_dq8ca_q4gsw: num_rows must be <=4 or a multiple of 4");
@@ -154,15 +153,18 @@ void linear_dq8ca_q4gsw_impl(
   params.padded_N = padded_N;
   params.has_bias = has_bias;
 
-  const int64_t total_tiles = utils::div_up<int64_t>(M, kTileM) *
-      utils::div_up<int64_t>(N, kTileN);
+  const int64_t total_tiles =
+      utils::div_up<int64_t>(M, kTileM) * utils::div_up<int64_t>(N, kTileN);
   if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
     throw std::runtime_error("linear_dq8ca_q4gsw: tile count exceeds u32");
   }
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kLinearDq8caQ4gswWorkgroupSizeX);
   const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      device, static_cast<uint32_t>(total_tiles), wg_size, "linear_dq8ca_q4gsw");
+      device,
+      static_cast<uint32_t>(total_tiles),
+      wg_size,
+      "linear_dq8ca_q4gsw");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -172,101 +174,51 @@ void linear_dq8ca_q4gsw_impl(
       utils::make_uniform(device, &params, sizeof(Dq8caParams));
   graph.add_uniform_buffer_bytes(sizeof(Dq8caParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kLinearDq8caQ4gswWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // 0 out(rw), 1 in, 2 input_scale, 3 input_zp, 4 weight, 5 scales, 6 bias (ro),
-  // 7 uniform.
-  WGPUBindGroupLayoutEntry entries[8] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 6; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[7].binding = 7;
-  entries[7].visibility = WGPUShaderStage_Compute;
-  entries[7].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 8;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg[8] = {};
-  bg[0].binding = 0;
-  bg[0].buffer = out.buffer;
-  bg[0].size = out.nbytes;
-  bg[1].binding = 1;
-  bg[1].buffer = in.buffer;
-  bg[1].size = in.nbytes;
-  bg[2].binding = 2;
-  bg[2].buffer = input_scale.buffer;
-  bg[2].size = input_scale.nbytes;
-  bg[3].binding = 3;
-  bg[3].buffer = input_zp.buffer;
-  // int8 zp bound as array<u32>; round to a multiple of 4 (buffer is >=4 bytes).
-  bg[3].size = ((input_zp.nbytes + 3u) / 4u) * 4u;
-  bg[4].binding = 4;
-  bg[4].buffer = weight.buffer;
-  bg[4].size = weight.nbytes;
-  bg[5].binding = 5;
-  bg[5].buffer = scales.buffer;
-  bg[5].size = scales.nbytes;
-  bg[6].binding = 6;
-  bg[6].buffer = bias_buffer;
-  bg[6].size = bias_size;
-  bg[7].binding = 7;
-  bg[7].buffer = params_buf;
-  bg[7].size = sizeof(Dq8caParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 8;
-  bg_desc.entries = bg;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  // 0 out(rw), 1 in, 2 input_scale, 3 input_zp, 4 weight, 5 scales, 6 bias
+  // (ro), 7 uniform.
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kLinearDq8caQ4gswWGSL,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           input_scale.buffer,
+           input_scale.nbytes},
+          // int8 zp bound as array<u32>; round to a multiple of 4 (buffer is
+          // >=4 bytes).
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           input_zp.buffer,
+           ((input_zp.nbytes + 3u) / 4u) * 4u},
+          {4,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {5,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           scales.buffer,
+           scales.nbytes},
+          {6, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
+          {7, WGPUBufferBindingType_Uniform, params_buf, sizeof(Dq8caParams)},
+      },
+      &wg_size_constant,
+      1);
 
   graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "linear_dq8ca_q4gsw",
        workgroup_count.y});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(params_buf);
 }
 
 } // namespace
 
 WEBGPU_REGISTER_OPERATORS {
-  WEBGPU_REGISTER_OP(
-      et_vk.linear_dq8ca_q4gsw.default,
-      linear_dq8ca_q4gsw_impl);
+  WEBGPU_REGISTER_OP(et_vk.linear_dq8ca_q4gsw.default, linear_dq8ca_q4gsw_impl);
 }
 
 } // namespace executorch::backends::webgpu
-
