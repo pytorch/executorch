@@ -23,6 +23,23 @@ enum class TransposeType {
   ConjTranspose,
 };
 
+// Forces gemm() in its scope to run single-threaded when this library is built
+// against OpenMP-threaded MKL (-DET_CPUBLAS_MKL_OMP), so a gemm called from
+// inside a threadpool parallel region doesn't nest a second OpenMP team. No-op
+// for any other BLAS backend.
+class SingleThreadedGemmGuard {
+ public:
+  SingleThreadedGemmGuard();
+  ~SingleThreadedGemmGuard();
+  SingleThreadedGemmGuard(const SingleThreadedGemmGuard&) = delete;
+  SingleThreadedGemmGuard& operator=(const SingleThreadedGemmGuard&) = delete;
+  SingleThreadedGemmGuard(SingleThreadedGemmGuard&&) = delete;
+  SingleThreadedGemmGuard& operator=(SingleThreadedGemmGuard&&) = delete;
+
+ private:
+  [[maybe_unused]] int prev_num_threads_;
+};
+
 // clang-format off
 void normalize_last_dims(
     TransposeType transa, TransposeType transb,
