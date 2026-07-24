@@ -17,10 +17,10 @@ Bias is out of the op's args (a `nn.Linear` bias would lower to a separate
 
 import unittest
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
+
 import torch
 import torch.nn as nn
-
-import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
