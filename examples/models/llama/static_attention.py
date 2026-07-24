@@ -430,12 +430,22 @@ class StaticAttentionIOManager:
             raise RuntimeError("KV cache is full.")
 
         for mask in self._masks.values():
-            mask.set_input_mask(
-                torch.triu(
-                    torch.full((1, self.input_len, self.input_len), self.mask_val),
-                    diagonal=1,
-                )
+            input_mask = torch.triu(
+                torch.full((1, self.input_len, self.input_len), self.mask_val),
+                diagonal=1,
             )
+            # Local (sliding-window) layers use a per-layer cache_len smaller than
+            # the prompt. When the whole prompt is prefilled in a single chunk, the
+            # cache-eviction window is never exercised, so also mask keys older than
+            # the window here to reproduce the local attention instead of full causal.
+            # No-op for global layers (cache_len >= input_len) and for chunked
+            # prefill (input_len <= cache_len).
+            if 0 < mask.cache_len < self.input_len:
+                input_mask = input_mask + torch.tril(
+                    torch.full((1, self.input_len, self.input_len), self.mask_val),
+                    diagonal=-mask.cache_len,
+                )
+            mask.set_input_mask(input_mask)
 
         if isinstance(tokens, list):
             tokens = torch.tensor([tokens], dtype=torch.int32)
