@@ -19,6 +19,10 @@
 
 namespace executorch::backends::webgpu {
 
+static_assert(
+    kAmaxWorkgroupSizeX <= 256,
+    "amax.wgsl partials[] is sized 256; wg_size must not exceed it");
+
 namespace {
 
 // Uniform layout matching the WGSL Params struct; 16-byte aligned.
@@ -47,6 +51,9 @@ void amax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const std::vector<int64_t>& dims = graph.get_int_list(args.at(1));
   const int64_t ndim = static_cast<int64_t>(in_tensor.dims.size());
+  if (ndim <= 0) {
+    throw std::runtime_error("amax: input must have at least one dim");
+  }
   if (dims.size() != 1 || (dims[0] != -1 && dims[0] != ndim - 1)) {
     throw std::runtime_error("amax: only last-dim reduction is supported");
   }
@@ -61,8 +68,9 @@ void amax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, kAmaxWorkgroupSizeX);
+  // One workgroup per row (cooperative reduction); grid = num_rows workgroups.
   utils::WgCount workgroup_count =
-      utils::compute_2d_workgroup_count(device, num_rows, wg_size, "amax");
+      utils::compute_2d_workgroup_count(device, num_rows, 1, "amax");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -155,6 +163,9 @@ void amax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           throw std::runtime_error("amax(resize): zero reduce dim");
         }
         const uint64_t total = utils::numel_of(d);
+        if (total % rsize != 0u) {
+          throw std::runtime_error("amax(resize): numel not divisible by dim");
+        }
         const uint32_t rows = static_cast<uint32_t>(total / rsize);
         std::vector<int64_t> od = d;
         if (keepdim) {
@@ -168,7 +179,7 @@ void amax_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         p.reduce_size = rsize;
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
-            g.device(), rows, wg_size, "amax");
+            g.device(), rows, 1, "amax");
         g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       });
