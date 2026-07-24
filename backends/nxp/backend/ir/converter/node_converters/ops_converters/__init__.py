@@ -89,6 +89,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import (
     ReLUConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.rsqrt_converter import (
+    RsqrtConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
@@ -150,6 +153,7 @@ __all__ = [
     "QDQPerTensorDequantizeConverter",
     "QDQQuantizeConverter",
     "ReLUConverter",
+    "RsqrtConverter",
     "SigmoidConverter",
     "SliceTensorConverter",
     "SoftmaxConverter",
