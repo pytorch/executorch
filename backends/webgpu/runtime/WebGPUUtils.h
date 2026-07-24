@@ -457,6 +457,63 @@ inline ComputePipelineBundle make_compute_pipeline(
   return bundle;
 }
 
+// Builds another pipeline + bind group from resources owned by an earlier
+// bundle. The binding indices and types must match the shared bind-group
+// layout. This preserves shared-shader/layout multi-pipeline construction
+// without transferring ownership of those resources to the returned bundle.
+inline ComputePipelineBundle make_compute_pipeline(
+    WGPUDevice device,
+    const ComputePipelineBundle& shared_resources,
+    const std::vector<BindingSpec>& bindings,
+    const WGPUConstantEntry* constants = nullptr,
+    size_t constant_count = 0,
+    const char* entry_point = "main") {
+  if (shared_resources.shader == nullptr ||
+      shared_resources.bind_group_layout == nullptr ||
+      shared_resources.pipeline_layout == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: shared resources are not available");
+  }
+
+  ComputePipelineBundle bundle;
+
+  std::vector<WGPUBindGroupEntry> bind_entries(bindings.size());
+  for (size_t i = 0; i < bindings.size(); i++) {
+    bind_entries[i] = {};
+    bind_entries[i].binding = bindings[i].binding;
+    bind_entries[i].buffer = bindings[i].buffer;
+    bind_entries[i].size = bindings[i].size;
+  }
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = shared_resources.pipeline_layout;
+  pipeline_desc.compute.module = shared_resources.shader;
+  pipeline_desc.compute.entryPoint = {entry_point, WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = constant_count;
+  pipeline_desc.compute.constants = constants;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  if (pipeline == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: compute pipeline creation failed");
+  }
+
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = shared_resources.bind_group_layout;
+  bg_desc.entryCount = bind_entries.size();
+  bg_desc.entries = bind_entries.data();
+  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  if (bind_group == nullptr) {
+    wgpuComputePipelineRelease(pipeline);
+    throw std::runtime_error(
+        "make_compute_pipeline: bind group creation failed");
+  }
+
+  bundle.pipeline = pipeline;
+  bundle.bind_group = bind_group;
+  return bundle;
+}
+
 // The {wg_size, stride_x} override-constant pair every 2D-spill dispatch
 // builds from its DispatchGrid; was hand-rolled identically at 7 call sites.
 inline std::array<WGPUConstantEntry, 2> make_grid_constants(
