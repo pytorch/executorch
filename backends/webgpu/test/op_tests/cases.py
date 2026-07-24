@@ -1217,7 +1217,10 @@ def _et_vk_sdpa_suite() -> WebGPUTestSuite:
     )
 
 
-from executorch.backends.webgpu.test.ops.test_embedding import EmbeddingModule
+from executorch.backends.webgpu.test.ops.test_embedding import (
+    _det_weight as _emb_det_weight,
+    EmbeddingModule,
+)
 
 
 def _emb_idx_small(_shape):
@@ -1234,7 +1237,7 @@ def _embedding_suite() -> WebGPUTestSuite:
     # framework's int-input path.
     return WebGPUTestSuite(
         module_factory=lambda num_embeddings, embed_dim: EmbeddingModule(
-            num_embeddings, embed_dim
+            _emb_det_weight(num_embeddings, embed_dim)
         ),
         cases=[
             Case(
@@ -1605,10 +1608,9 @@ def _sub_suite() -> WebGPUTestSuite:
     # over a TensorMeta UBO); fp64 golden. Mirrors _mul_suite. alpha is a
     # construct kwarg baked into the .pte, never a serialized input.
     return WebGPUTestSuite(
-        module_factory=lambda alpha=1.0: SubModule(alpha),
+        module_factory=lambda: SubModule(),
         cases=[
-            Case(name=name, construct={"alpha": alpha}, inputs=(sa, sb))
-            for name, (sa, sb, alpha) in _SUB_CONFIGS.items()
+            Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _SUB_CONFIGS.items()
         ],
     )
 
@@ -1664,7 +1666,9 @@ def _hardtanh_suite() -> WebGPUTestSuite:
 
 @register_op_test("pow_scalar")
 def _pow_scalar_suite() -> WebGPUTestSuite:
-    # Positive base: WGSL pow(neg base)=NaN for any exponent; exponent baked.
+    # Positive-base configs (exponent baked). Plus a negative-base integer-exponent
+    # case: pow(x, 2) == x*x. WGSL pow(neg) is undefined, so the shader special-cases
+    # it (fixes F.normalize's q^2 in Swin-V2 cosine attention).
     return WebGPUTestSuite(
         module_factory=lambda exponent: PowScalarModule(exponent),
         cases=[
@@ -1674,6 +1678,13 @@ def _pow_scalar_suite() -> WebGPUTestSuite:
                 inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 4.0)),),
             )
             for n, e in POW_SCALAR_CONFIGS.items()
+        ]
+        + [
+            Case(
+                name="neg_base_sq",
+                construct={"exponent": 2.0},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-3.0, 3.0)),),
+            )
         ],
     )
 
