@@ -567,6 +567,23 @@ class MLXProgramBuilder:
             if n.op in ("placeholder", "output"):
                 dtype_error = _check_dtype(n)
                 if dtype_error is not None:
+                    # A placeholder consumed entirely by pattern handlers (which
+                    # repack it into new constants -- e.g. an MX fp8/e8m0 weight
+                    # reinterpreted to uint32/uint8) is never emitted as an MLX
+                    # tensor, so its own (unserializable) dtype is irrelevant. Its
+                    # users are the pattern's head/body nodes, which at this point
+                    # have a handler assigned (by _apply_patterns) but are not yet
+                    # marked handled, so check for a claimed handler too.
+                    if (
+                        n.op == "placeholder"
+                        and n.users
+                        and all(
+                            self._is_handled(u) or self.node_info[u].handler is not None
+                            for u in n.users
+                        )
+                    ):
+                        self._mark_supported(n)
+                        continue
                     self._mark_unsupported(n, f"{n.op} {dtype_error}")
                     continue
                 self._mark_supported(n)
