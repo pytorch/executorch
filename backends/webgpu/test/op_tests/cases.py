@@ -34,6 +34,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
@@ -258,6 +259,39 @@ def _pow_suite() -> WebGPUTestSuite:
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
                 ),
+            ),
+        ],
+    )
+
+
+def _floor_div_golden(module, inputs):
+    # Vulkan-faithful oracle: floor(a/b) in fp32 (Vulkan glsl OPERATOR floor(X/Y)),
+    # NOT torch's fmod-corrected div_floor which can differ by 1 at fp boundaries.
+    return torch.floor(inputs[0] / inputs[1])
+
+
+@register_op_test("floor_divide")
+def _floor_divide_suite() -> WebGPUTestSuite:
+    # aten.div.Tensor_mode; divisor bounded away from zero. golden_fn = the
+    # Vulkan floor(a/b) formula (same formula as the fp32 kernel).
+    return WebGPUTestSuite(
+        module_factory=lambda: FloorDivideModule(),
+        cases=[
+            Case(
+                name="2d",
+                inputs=(
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(-8.0, 8.0)),
+                    InputSpec(shape=(M1, M2), gen=_unary_lin(0.5, 4.0)),
+                ),
+                golden_fn=_floor_div_golden,
+            ),
+            Case(
+                name="3d",
+                inputs=(
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(-8.0, 8.0)),
+                    InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.5, 4.0)),
+                ),
+                golden_fn=_floor_div_golden,
             ),
         ],
     )
