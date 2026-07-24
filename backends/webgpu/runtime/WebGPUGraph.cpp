@@ -508,6 +508,7 @@ void WebGPUGraph::build(
         }
         tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
+        tensor.is_int8 = vk_tensor->datatype() == vkgraph::VkDataType::INT8;
         tensor.nbytes = numel * tensor.elem_size;
         // Live dims start == max (serialized upper bound); resize_input shrinks
         // them per call. Static graphs keep cur == max forever.
