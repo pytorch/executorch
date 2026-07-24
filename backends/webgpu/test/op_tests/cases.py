@@ -78,6 +78,8 @@ from executorch.backends.webgpu.test.ops.test_unary_activations import (
     ClampModule,
     HARDTANH_CONFIGS,
     HardtanhModule,
+    POW_SCALAR_CONFIGS,
+    PowScalarModule,
     UNARY_G1,
     UnaryModule,
 )
@@ -1040,5 +1042,21 @@ def _hardtanh_suite() -> WebGPUTestSuite:
                 inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(-6.0, 6.0)),),
             )
             for n, (lo, hi) in HARDTANH_CONFIGS.items()
+        ],
+    )
+
+
+@register_op_test("pow_scalar")
+def _pow_scalar_suite() -> WebGPUTestSuite:
+    # Positive base: WGSL pow(neg base)=NaN for any exponent; exponent baked.
+    return WebGPUTestSuite(
+        module_factory=lambda exponent: PowScalarModule(exponent),
+        cases=[
+            Case(
+                name=n,
+                construct={"exponent": e},
+                inputs=(InputSpec(shape=(M1, M2), gen=_unary_lin(0.1, 4.0)),),
+            )
+            for n, e in POW_SCALAR_CONFIGS.items()
         ],
     )
