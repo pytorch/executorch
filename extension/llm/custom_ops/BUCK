@@ -13,6 +13,7 @@ non_fbcode_target(_kind = define_common_targets,)
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
@@ -45,6 +46,26 @@ fbcode_target(_kind = runtime.python_test,
     ],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
+    name = "test_gated_delta",
+    srcs = [
+        "test_gated_delta.py",
+    ],
+    # Builds the runtime, kernels and custom_ops with -DET_EVENT_TRACER_ENABLED so
+    # the .pte-execution test can assert the op's per-op native_call_ ETDump event.
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
+    preload_deps = [
+        ":custom_ops_aot_lib",
+        ":custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
         "//executorch/exir:lib",
         "//executorch/runtime:runtime",
     ],
