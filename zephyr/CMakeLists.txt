@@ -60,6 +60,9 @@ if(CONFIG_EXECUTORCH)
   if(CONFIG_ETHOS_U)
     set(EXECUTORCH_BUILD_ARM_BAREMETAL ON)
   endif()
+  if(CONFIG_NRF_AXON)
+    set(EXECUTORCH_BUILD_NORDIC_AXON ON)
+  endif()
 
   set(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
   set(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
@@ -133,6 +136,7 @@ if(CONFIG_EXECUTORCH)
       cortex_m_ops_lib
       cortex_m_kernels
       cmsis-nn
+      executorch_delegate_axon
   )
 
   # Apply corrected flags to each target
@@ -170,5 +174,11 @@ if(CONFIG_EXECUTORCH)
     libexecutorch PUBLIC ${EXECUTORCH_DIR}/runtime
                          ${EXECUTORCH_DIR}/third-party/flatcc/include
   )
+
+  # Link AXON delegate if built
+  if(TARGET executorch_delegate_axon)
+    target_link_libraries(libexecutorch PUBLIC executorch_delegate_axon)
+    message(STATUS "Linking with Nordic AXON delegate")
+  endif()
 
 endif()
