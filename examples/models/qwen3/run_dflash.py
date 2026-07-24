@@ -119,9 +119,8 @@ def main():
     # Run the target model over the prompt once to initialize generation.
     # This produces the first next-token prediction and the hidden states that condition the draft model during speculative decoding.
     input_pos = torch.arange(prompt_len, dtype=torch.long)
-    logits, new_hidden_chunk = target.execute([prompt_ids, input_pos])
-    new_hidden_chunk = new_hidden_chunk.float()
-    draft_cached_len = 0
+    logits, hidden = target.execute([prompt_ids, input_pos])
+    hidden = hidden.float()
     pos = prompt_len
     last_token = int(logits[0, -1].argmax())
 
@@ -147,9 +146,9 @@ def main():
             ],
             dim=1,
         )
-        draft_ctx_start_pos = torch.tensor([draft_cached_len], dtype=torch.long)
+        draft_pos = torch.arange(hidden.shape[1] + bs, dtype=torch.long).unsqueeze(0)
         _t0 = time.time()
-        (draft_logits,) = draft.execute([draft_input, new_hidden_chunk, draft_ctx_start_pos])
+        (draft_logits,) = draft.execute([draft_input, hidden, draft_pos])
         _draft_exec_time = time.time() - _t0
         draft_ids = draft_logits[0].argmax(-1).tolist()  # block_size - 1 tokens
 
@@ -175,11 +174,11 @@ def main():
         if args.verbose and rounds <= 10:
             print(
                 f"  timing: draft_exec={_draft_exec_time*1000:.1f}ms "
-                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={draft_cached_len}"
+                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={hidden.shape[1]}"
             )
         if args.verbose and rounds <= 5:
             print(
-                f"round {rounds}: pos={pos} hidden_ctx={draft_cached_len} "
+                f"round {rounds}: pos={pos} hidden_ctx={hidden.shape[1]} "
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
         new_tokens = draft_ids[:accepted] + [target_ids[accepted]]
@@ -199,11 +198,9 @@ def main():
         # 4. Advance the accepted sequence. Rejected draft tokens are discarded, and the next round starts from the updated position.
         pos += len(new_tokens)
         last_token = new_tokens[-1]
-        # This round's accepted-token hidden states become the delta chunk fed
-        # to the draft next round. The draft model caches everything older
-        # internally (DFlashAttention.ctx_cache), so we only pass what's new.
-        new_hidden_chunk = new_hidden[:, : len(new_tokens), :].float()
-        draft_cached_len += new_hidden_chunk.shape[1]
+        # Append the hidden states for the newly accepted tokens to the running target context.
+        # The draft model conditions on the hidden states of the entire sequence, so this context grows as generation progresses rather than being replaced each round.
+        hidden = torch.cat([hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1)
 
         if eos_id in new_tokens:
             break

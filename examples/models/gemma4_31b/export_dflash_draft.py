@@ -80,11 +80,11 @@ def _load_dequantized_tensor(
 
 
 def load_draft_model_from_prequantized_target(
-    draft_id: str, target_prequantized_dir: str, max_ctx_len: int = 4096
+    draft_id: str, target_prequantized_dir: str
 ) -> DFlashDraftModel:
     path = Path(snapshot_download(draft_id, allow_patterns=["*.safetensors", "*.json"]))
     config = load_dflash_config(path)
-    model = DFlashDraftModel(config, max_ctx_len=max_ctx_len)
+    model = DFlashDraftModel(config)
 
     draft_weights = {}
     for f in path.glob("*.safetensors"):
@@ -129,7 +129,7 @@ def main():
     args = parser.parse_args()
 
     model = load_draft_model_from_prequantized_target(
-        args.draft_model, args.target_prequantized, max_ctx_len=args.max_ctx_len
+        args.draft_model, args.target_prequantized
     )
     model.eval()
 
@@ -147,29 +147,24 @@ def main():
         tie_word_embeddings=False,
     )
 
-    block_size, new_ctx_len = args.block_size, args.ctx_len
+    block_size, ctx_len = args.block_size, args.ctx_len
     hidden_size = model.fc.in_features
     tokens = torch.randint(0, 1000, (1, block_size), dtype=torch.long)
-    # Example trace input: a single "new chunk" of hidden states, NOT the
-    # full accumulated context -- the model now caches everything older
-    # internally (see dflash_draft_model.py's DFlashAttention.ctx_cache).
-    new_target_hidden = torch.randn(1, new_ctx_len, hidden_size)
-    ctx_start_pos = torch.tensor([0], dtype=torch.long)
+    target_hidden = torch.randn(1, ctx_len, hidden_size)
+    position_ids = torch.arange(ctx_len + block_size).unsqueeze(0)
 
-    new_len_dim = Dim("new_ctx_len", min=1, max=args.max_ctx_len)
+    ctx_dim = Dim("ctx_len", min=1, max=args.max_ctx_len)
     dynamic_shapes = {
         "tokens": None,
-        "new_target_hidden": {1: new_len_dim},
-        "ctx_start_pos": None,
+        "target_hidden": {1: ctx_dim},
+        "position_ids": {1: ctx_dim + block_size},
     }
 
     import torch.fx.experimental._config as fx_config
 
     with fx_config.patch(backed_size_oblivious=True):
         exported = torch.export.export(
-            model,
-            (tokens, new_target_hidden, ctx_start_pos),
-            dynamic_shapes=dynamic_shapes,
+            model, (tokens, target_hidden, position_ids), dynamic_shapes=dynamic_shapes
         )
 
     from executorch.backends.mlx.partitioner import MLXPartitioner

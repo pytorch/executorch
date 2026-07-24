@@ -135,22 +135,9 @@ class DFlashMLP(nn.Module):
 
 
 class DFlashAttention(nn.Module):
-    """Proposal tokens generate the queries; context K/V are cached across rounds.
+    """Proposal tokens generate the queries. These represent the positions whose contents we are trying to predict."""
 
-    Caches k_ctx (post k_proj + k_norm + RoPE) and v_ctx (post v_proj -- v is
-    never normed or roped in this model) per layer via the same KVCache /
-    kv_cache_update mechanism the target models use.
-
-    RoPE is applied to new context positions BEFORE caching: valid because
-    RoPE is a fixed, position-only elementwise rotation that never mixes
-    across positions, so pre-roping a chunk and later concatenating it with
-    other pre-roped chunks is identical to roping the full concatenated
-    tensor at once (which is what the original code did). k_norm is
-    likewise safe to cache post-norm, since DFlashRMSNorm normalizes each
-    position independently over the head_dim axis only.
-    """
-
-    def __init__(self, config: DFlashConfig, layer_idx: int, max_ctx_len: int = 8192):
+    def __init__(self, config: DFlashConfig, layer_idx: int):
         super().__init__()
         h, hd = config.hidden_size, config.head_dim
         self.n_heads = config.num_attention_heads
@@ -168,71 +155,34 @@ class DFlashAttention(nn.Module):
         self.q_norm = DFlashRMSNorm(hd, config.rms_norm_eps)
         self.k_norm = DFlashRMSNorm(hd, config.rms_norm_eps)
 
-        from executorch.backends.mlx.llm.cache import KVCache as MLXKVCache
-
-        self.ctx_cache = MLXKVCache(
-            max_batch_size=1,
-            max_context_length=max_ctx_len,
-            n_heads=self.n_kv,
-            head_dim=hd,
-            enable_dynamic_shape=True,
-        )
-
-    def forward(self, x, h_ctx_new, ctx_start_pos, cos_ctx_new, sin_ctx_new, cos_prop, sin_prop):
-        """
-        x: proposal token hidden states [B, L, H] (L = block_size)
-        h_ctx_new: NEW context hidden chunk this round only (post fc+hidden_norm),
-            [B, new_len, H] -- NOT the full accumulated history.
-        ctx_start_pos: absolute position (int/SymInt) where h_ctx_new begins,
-            i.e. total accepted context length BEFORE this round.
-        cos_ctx_new/sin_ctx_new: RoPE tables for the new context chunk's
-            positions, shape [B, 1, new_len, head_dim].
-        cos_prop/sin_prop: RoPE tables for the proposal block's positions,
-            shape [B, 1, L, head_dim].
-        """
+    def forward(self, x, x_ctx, cos, sin):
+        """Keys and values come from both the projected target context and the proposal block itself. This lets the draft attend to what the target model already understands while also allowing predictions within the proposal block to interact with one another."""
         B, L, _ = x.shape
-        new_len = h_ctx_new.shape[1]
-
-        k_ctx_new = self.k_proj(h_ctx_new).view(B, new_len, self.n_kv, self.head_dim)
-        k_ctx_new = self.k_norm(k_ctx_new).transpose(1, 2)  # [B, n_kv, new_len, D]
-        v_ctx_new = (
-            self.v_proj(h_ctx_new)
-            .view(B, new_len, self.n_kv, self.head_dim)
-            .transpose(1, 2)
-        )
-
-        k_ctx_new = (k_ctx_new * cos_ctx_new) + (rotate_half(k_ctx_new) * sin_ctx_new)
-
-        k_ctx_full, v_ctx_full = self.ctx_cache.update(ctx_start_pos, k_ctx_new, v_ctx_new)
-        ctx_total_len = ctx_start_pos + new_len
-        k_ctx_full = k_ctx_full[:, :, :ctx_total_len, :]
-        v_ctx_full = v_ctx_full[:, :, :ctx_total_len, :]
-
+        S = x_ctx.shape[1]
         q = self.q_norm(
             self.q_proj(x).view(B, L, self.n_heads, self.head_dim)
         ).transpose(1, 2)
-        k_prop = self.k_proj(x).view(B, L, self.n_kv, self.head_dim)
-        k_prop = self.k_norm(k_prop).transpose(1, 2)
-        v_prop = self.v_proj(x).view(B, L, self.n_kv, self.head_dim).transpose(1, 2)
-
-        q = (q * cos_prop) + (rotate_half(q) * sin_prop)
-        k_prop = (k_prop * cos_prop) + (rotate_half(k_prop) * sin_prop)
-
-        k = torch.cat([k_ctx_full, k_prop], dim=2)
-        v = torch.cat([v_ctx_full, v_prop], dim=2)
-
+        k = torch.cat([self.k_proj(x_ctx), self.k_proj(x)], dim=1).view(
+            B, S + L, self.n_kv, self.head_dim
+        )
+        v = torch.cat([self.v_proj(x_ctx), self.v_proj(x)], dim=1).view(
+            B, S + L, self.n_kv, self.head_dim
+        )
+        k = self.k_norm(k).transpose(1, 2)
+        v = v.transpose(1, 2)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin)
         if self.n_rep > 1:
             k = repeat_kv(k, self.n_rep)
             v = repeat_kv(v, self.n_rep)
-
-        S = k.shape[2] - L
         mask = self._sliding_mask(L, S, q.device, q.dtype) if self.is_sliding else None
+        # Each proposal position attends over the combined context to build a richer representation before predicting its token.
         out = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, attn_mask=mask, is_causal=False, scale=self.scaling
         )
         return self.o_proj(out.transpose(1, 2).reshape(B, L, -1))
 
     def _sliding_mask(self, L, S, device, dtype):
+        """Restrict attention to the configured sliding window for models that use sliding-window attention, like Gemma."""
         total = S + L
         q_pos = torch.arange(S, total, device=device)[:, None]
         k_pos = torch.arange(total, device=device)[None, :]
@@ -241,87 +191,53 @@ class DFlashAttention(nn.Module):
 
 
 class DFlashDecoderLayer(nn.Module):
-    def __init__(self, config: DFlashConfig, layer_idx: int, max_ctx_len: int = 8192):
+    def __init__(self, config: DFlashConfig, layer_idx: int):
         super().__init__()
-        self.self_attn = DFlashAttention(config, layer_idx, max_ctx_len=max_ctx_len)
+        self.self_attn = DFlashAttention(config, layer_idx)
         self.mlp = DFlashMLP(config.hidden_size, config.intermediate_size)
         self.input_layernorm = DFlashRMSNorm(config.hidden_size, config.rms_norm_eps)
         self.post_attention_layernorm = DFlashRMSNorm(
             config.hidden_size, config.rms_norm_eps
         )
 
-    def forward(self, x, h_ctx_new, ctx_start_pos, cos_ctx_new, sin_ctx_new, cos_prop, sin_prop):
-        x = x + self.self_attn(
-            self.input_layernorm(x),
-            h_ctx_new,
-            ctx_start_pos,
-            cos_ctx_new,
-            sin_ctx_new,
-            cos_prop,
-            sin_prop,
-        )
+    def forward(self, x, x_ctx, cos, sin):
+        # Standard transformer decoder block:
+        # RMSNorm --> Attention --> Residual
+        # RMSNorm --> MLP --> Residual
+        x = x + self.self_attn(self.input_layernorm(x), x_ctx, cos, sin)
         return x + self.mlp(self.post_attention_layernorm(x))
 
 
 class DFlashDraftModel(nn.Module):
-    def __init__(self, config: DFlashConfig, max_ctx_len: int = 8192):
+    def __init__(self, config: DFlashConfig):
         super().__init__()
         self.config = config
         concat_dim = len(config.target_layer_ids) * config.hidden_size
         self.fc = nn.Linear(concat_dim, config.hidden_size, bias=False)
         self.hidden_norm = DFlashRMSNorm(config.hidden_size, config.rms_norm_eps)
         self.layers = nn.ModuleList(
-            [
-                DFlashDecoderLayer(config, i, max_ctx_len=max_ctx_len)
-                for i in range(config.num_hidden_layers)
-            ]
+            [DFlashDecoderLayer(config, i) for i in range(config.num_hidden_layers)]
         )
         self.norm = DFlashRMSNorm(config.hidden_size, config.rms_norm_eps)
         self.rotary_emb = DFlashRotaryEmbedding(config)
+        # The draft owns its own embedding and LM head weights.
+        # During export these are copied from the target model, making the draft .pte self-contained.
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-    def forward(self, tokens, new_target_hidden, ctx_start_pos):
-        """
-        tokens: [B, block_size] proposal block (last_accepted + masks).
-        new_target_hidden: [B, new_ctx_len, concat_dim] -- ONLY the target
-            hidden states produced since the last round (i.e. for the tokens
-            just accepted), NOT the full accumulated history. The caller
-            (run_dflash.py) passes only this delta each round; the cache
-            inside each attention layer retains everything older.
-        ctx_start_pos: 1-element tensor -- total accepted context length
-            BEFORE this round, i.e. where new_target_hidden begins and where
-            it should be written into the cache. Passed as a tensor (not a
-            plain int) so it traces as a dynamic SymInt under torch.export;
-            extracted to a SymInt once here and reused across all layers,
-            per KVCache.update's documented multi-layer usage pattern.
-        """
-        ctx_start_pos = ctx_start_pos[0].item()
-        B, L = tokens.shape
-        new_ctx_len = new_target_hidden.shape[1]
-        ctx_total_len = ctx_start_pos + new_ctx_len
-
+    def forward(self, tokens, target_hidden, position_ids):
+        # Embed the proposal block (last accepted token + masked future positions).
         h = self.embed_tokens(tokens) * self.config.embed_scale
-        h_ctx_new = self.hidden_norm(self.fc(new_target_hidden))
-
-        ctx_pos_ids = (
-            torch.arange(new_ctx_len, device=tokens.device).unsqueeze(0) + ctx_start_pos
-        )
-        prop_pos_ids = (
-            torch.arange(L, device=tokens.device).unsqueeze(0) + ctx_total_len
-        )
-        cos_ctx_new, sin_ctx_new = self.rotary_emb(ctx_pos_ids)
-        cos_prop, sin_prop = self.rotary_emb(prop_pos_ids)
-        cos_ctx_new, sin_ctx_new = cos_ctx_new[:, None], sin_ctx_new[:, None]
-        cos_prop, sin_prop = cos_prop[:, None], sin_prop[:, None]
-
+        # Translate the concatenated target hidden states into the draft model's hidden space.
+        h_ctx = self.hidden_norm(self.fc(target_hidden))
+        # Positional information for both the proposal block and target context.
+        cos, sin = self.rotary_emb(position_ids)
         for layer in self.layers:
-            h = layer(
-                h, h_ctx_new, ctx_start_pos, cos_ctx_new, sin_ctx_new, cos_prop, sin_prop
-            )
-
+            h = layer(h, h_ctx, cos, sin)
         h = self.norm(h)
+        # Only return predictions for the future positions.
         logits = self.lm_head(h[:, 1:, :])
+        # logits_start=1: drop the known first token
         cap = self.config.final_logit_softcapping
         if cap is not None:
             logits = torch.tanh(logits / cap) * cap

@@ -100,9 +100,8 @@ def main():
     prompt_len = prompt_ids.shape[1]
 
     input_pos = torch.arange(prompt_len, dtype=torch.long)
-    logits, new_hidden_chunk = target.execute([prompt_ids, input_pos])
-    new_hidden_chunk = new_hidden_chunk.float()
-    draft_cached_len = 0
+    logits, hidden = target.execute([prompt_ids, input_pos])
+    hidden = hidden.float()
     pos = prompt_len
     last_token = int(logits[0, -1].argmax())
 
@@ -123,9 +122,9 @@ def main():
             ],
             dim=1,
         )
-        draft_ctx_start_pos = torch.tensor([draft_cached_len], dtype=torch.long)
+        draft_pos = torch.arange(hidden.shape[1] + bs, dtype=torch.long).unsqueeze(0)
         _t0 = time.time()
-        (draft_logits,) = draft.execute([draft_input, new_hidden_chunk, draft_ctx_start_pos])
+        (draft_logits,) = draft.execute([draft_input, hidden, draft_pos])
         _draft_exec_time = time.time() - _t0
         draft_ids = draft_logits[0].argmax(-1).tolist()
 
@@ -146,11 +145,11 @@ def main():
         if args.verbose and rounds <= 10:
             print(
                 f"  timing: draft_exec={_draft_exec_time*1000:.1f}ms "
-                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={draft_cached_len}"
+                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={hidden.shape[1]}"
             )
         if args.verbose and rounds <= 5:
             print(
-                f"round {rounds}: pos={pos} hidden_ctx={draft_cached_len} "
+                f"round {rounds}: pos={pos} hidden_ctx={hidden.shape[1]} "
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
         new_tokens = draft_ids[:accepted] + [target_ids[accepted]]
@@ -168,8 +167,7 @@ def main():
 
         pos += len(new_tokens)
         last_token = new_tokens[-1]
-        new_hidden_chunk = new_hidden[:, : len(new_tokens), :].float()
-        draft_cached_len += new_hidden_chunk.shape[1]
+        hidden = torch.cat([hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1)
 
         if last_token in EOS_TOKEN_IDS:
             break
