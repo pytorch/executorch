@@ -241,7 +241,7 @@ class NeuronExecuTorchDelegate {
     // Prepare input data
     for (int i = 0; i < data_input_count; i++) {
       auto tensor_in = args[i]->toTensor();
-      auto data_ptr = tensor_in.data_ptr();
+      auto data_ptr = tensor_in.mutable_data_ptr();
       auto data_size = tensor_in.nbytes();
       mPreparedInputs.push_back(InputOutputInfo{data_ptr, data_size});
     }
@@ -258,7 +258,7 @@ class NeuronExecuTorchDelegate {
     for (int o = data_input_count; o < data_input_count + data_output_count;
          o++) {
       auto tensor_out = args[o]->toTensor();
-      auto data_ptr = tensor_out.data_ptr();
+      auto data_ptr = tensor_out.mutable_data_ptr();
       auto data_size = tensor_out.nbytes();
       mPreparedOutputs.push_back(InputOutputInfo{data_ptr, data_size});
     }
