@@ -1,0 +1,31 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    runtime.python_binary(
+        name = "export_bundled_program",
+        main_function = ".export_bundled_program.main",
+        main_src = "export_bundled_program.py",
+        deps = [
+            "//caffe2:torch",
+            "//executorch/devtools:lib",
+            "//executorch/devtools/bundled_program:config",
+            "//executorch/devtools/bundled_program/serialize:lib",
+            "//executorch/examples/models:models",
+            "//executorch/extension/export_util:export_util",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "gen_sample_etrecord",
+        srcs = ["gen_sample_etrecord.py"],
+        main_function = "executorch.examples.devtools.scripts.gen_sample_etrecord.main",
+        deps = [
+            "//executorch/devtools:lib",
+            "//executorch/devtools/etrecord:etrecord",
+            "//executorch/examples/models:models",
+            "//executorch/exir:lib",
+        ],
+    )
