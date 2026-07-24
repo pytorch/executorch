@@ -19,6 +19,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 set(_test_srcs
     test_generation_config.cpp
+    test_jinja_chat_formatter.cpp
     test_text_llm_runner.cpp
     test_text_prefiller.cpp
     test_text_decoder_runner.cpp
@@ -26,6 +27,14 @@ set(_test_srcs
     test_util.cpp
     test_wav_loader.cpp
 )
+
+# test_jinja_chat_formatter.cpp exercises JinjaChatFormatter, which is only
+# compiled into extension_llm_runner when jinja2cpp is available (see
+# ../CMakeLists.txt). Drop the test source when jinja2cpp is not built so the
+# test binary does not fail to link with undefined JinjaChatFormatter symbols.
+if(NOT TARGET jinja2cpp)
+  list(FILTER _test_srcs EXCLUDE REGEX "test_jinja_chat_formatter\\.cpp$")
+endif()
 
 # Add LSan stub for Apple platforms
 if(APPLE)

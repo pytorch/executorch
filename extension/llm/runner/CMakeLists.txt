@@ -37,6 +37,15 @@ target_include_directories(
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
+# The Jinja chat formatter requires jinja2cpp. When jinja2cpp is not built (for
+# example a runner build that does not add the chat_template subdirectory), drop
+# the source so extension_llm_runner has no dependency on jinja2cpp at all.
+if(NOT TARGET jinja2cpp)
+  list(FILTER _extension_llm_runner__srcs EXCLUDE REGEX
+       "extension/llm/runner/jinja_chat_formatter\\.cpp$"
+  )
+endif()
+
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
 # include sampler
@@ -60,6 +69,20 @@ endif()
 list(APPEND runner_deps kernels_util_all_deps)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
+# jinja2cpp is a private, build-tree-only dependency of the Jinja chat
+# formatter. It is a FetchContent static library that is not installed, so it
+# must NOT leak into the installed ExecuTorchTargets export -- otherwise
+# downstream find_package(executorch) consumers fail to link with `-ljinja2cpp`.
+# BUILD_INTERFACE keeps the dependency local to this build tree.
+if(TARGET jinja2cpp)
+  target_link_libraries(
+    extension_llm_runner PRIVATE $<BUILD_INTERFACE:jinja2cpp>
+  )
+  target_include_directories(
+    extension_llm_runner
+    PRIVATE $<TARGET_PROPERTY:jinja2cpp,INTERFACE_INCLUDE_DIRECTORIES>
+  )
+endif()
 set_target_properties(
   extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
