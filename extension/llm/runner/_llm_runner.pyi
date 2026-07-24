@@ -83,10 +83,10 @@ class Stats:
     """End time of tokenizer encoding in milliseconds."""
 
     model_execution_start_ms: int
-    """Start time of model execution in milliseconds."""
+    """Start time of the most recent model execution window in milliseconds."""
 
     model_execution_end_ms: int
-    """End time of model execution in milliseconds."""
+    """End time of the most recent model execution window in milliseconds."""
 
     prompt_eval_end_ms: int
     """End time of prompt evaluation in milliseconds."""
@@ -99,6 +99,9 @@ class Stats:
 
     aggregate_sampling_time_ms: int
     """Total time spent in sampling across all tokens."""
+
+    aggregate_model_execution_time_ms: int
+    """Total time spent in model execution across all forward calls."""
 
     num_prompt_tokens: int
     """Number of tokens in the input prompt."""

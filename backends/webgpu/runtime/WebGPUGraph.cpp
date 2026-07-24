@@ -629,7 +629,10 @@ void WebGPUGraph::build(
       }
       case vkgraph::GraphTypes::String: {
         value_types_[i] = ValueType::String;
-        strings_[i] = val->value_as_String()->string_val()->str();
+        const auto* sv = val->value_as_String()->string_val();
+        if (sv) {
+          strings_[i] = sv->str();
+        }
         break;
       }
       case vkgraph::GraphTypes::SymInt: {
