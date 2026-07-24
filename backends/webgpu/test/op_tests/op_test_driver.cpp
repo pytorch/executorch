@@ -91,7 +91,23 @@ class OpCase : public ::testing::Test {
         out_tensor.sizes().begin(), out_tensor.sizes().end());
     EXPECT_EQ(out_shape, e_.golden.shape)
         << "output shape != golden shape (numel matched but dims differ)";
-    if (e_.golden.dtype == "int8") {
+    if (e_.golden.dtype == "bool") {
+      // bool-output ops (comparisons) compare byte-exact 0/1 (golden as int8).
+      auto golden = load_int8_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      const bool* out_p = out_tensor.const_data_ptr<bool>();
+      int mism = -1;
+      for (size_t i = 0; i < gn; i++) {
+        if (static_cast<int8_t>(out_p[i]) != golden[i]) {
+          mism = static_cast<int>(i);
+          break;
+        }
+      }
+      EXPECT_EQ(mism, -1) << "bool mismatch at index " << mism
+                          << ": out=" << (mism >= 0 ? int(out_p[mism]) : 0)
+                          << " golden=" << (mism >= 0 ? int(golden[mism]) : 0);
+    } else if (e_.golden.dtype == "int8") {
       // int8-output ops (quantize) compare byte-exact: a discrete grid, so any
       // deviation is a real bug, not tolerance.
       auto golden = load_int8_bin(e_.golden.path, gn);
