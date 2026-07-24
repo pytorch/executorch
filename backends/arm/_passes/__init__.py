@@ -74,6 +74,9 @@ from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # 
 from .decompose_linear_pass import DecomposeLinearPass  # noqa
 from .decompose_log1p_pass import DecomposeLog1pPass  # noqa
 from .decompose_logit_pass import DecomposeLogitPass  # noqa
+from .decompose_large_stride_maxpool2d_pass import (  # noqa
+    DecomposeLargeStrideMaxPool2dPass,
+)
 from .decompose_lstm_pass import DecomposeLstmPass  # noqa
 from .decompose_masked_fill_pass import DecomposeMaskedFillPass  # noqa
 from .decompose_matmul import DecomposeMatmulPass  # noqa
