@@ -81,6 +81,8 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.et_vk.q8ta_conv2d.default,
     exir_ops.edge.et_vk.q8ta_conv2d_dw.default,
     exir_ops.edge.et_vk.q8ta_conv2d_pw.default,
+    exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default,
+    exir_ops.edge.torchao.choose_qparams_affine.default,
 ]
 
 
