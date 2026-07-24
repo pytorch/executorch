@@ -85,59 +85,26 @@ void grid_priors_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(GridPriorsParams));
   graph.add_uniform_buffer_bytes(sizeof(GridPriorsParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kGridPriorsWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
   // Bind group: output (rw storage) + params (uniform); input data is unread.
-  WGPUBindGroupLayoutEntry entries[2] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 2;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg[2] = {};
-  bg[0].binding = 0;
-  bg[0].buffer = out_tensor.buffer;
-  bg[0].size = out_tensor.nbytes;
-  bg[1].binding = 1;
-  bg[1].buffer = uniform_buffer;
-  bg[1].size = sizeof(GridPriorsParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 2;
-  bg_desc.entries = bg;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kGridPriorsWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(GridPriorsParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "grid_priors",
        workgroup_count.y});
@@ -174,9 +141,6 @@ void grid_priors_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             out_id, {static_cast<int64_t>(h * w), static_cast<int64_t>(2)});
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
