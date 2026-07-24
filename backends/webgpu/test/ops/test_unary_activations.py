@@ -62,6 +62,24 @@ HARDTANH_CONFIGS = {
 }
 
 
+class PowScalarModule(torch.nn.Module):
+    """aten.pow.Tensor_Scalar with a baked exponent (exponent → the min slot)."""
+
+    def __init__(self, exponent) -> None:
+        super().__init__()
+        self.exponent = exponent
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.pow(x, self.exponent)
+
+
+# name -> exponent construct kwarg; the suite uses a positive base to avoid NaN.
+POW_SCALAR_CONFIGS = {
+    "square": 2.0,
+    "sqrt": 0.5,
+}
+
+
 def _lin(lo: float, hi: float):
     """Deterministic linspace input of the requested shape over [lo, hi]."""
 
