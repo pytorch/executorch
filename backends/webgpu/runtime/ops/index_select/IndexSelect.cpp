@@ -54,7 +54,7 @@ void index_select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const int64_t ndim = static_cast<int64_t>(self_tensor.dims.size());
   if (ndim > static_cast<int64_t>(kTensorMetaMaxNdim)) {
-    throw std::runtime_error("index_select: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("index_select: tensor rank exceeds 8 (MAX_NDIM)");
   }
 
   if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::Int) {
