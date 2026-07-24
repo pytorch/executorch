@@ -34,6 +34,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
@@ -254,6 +255,26 @@ def _amax_suite() -> WebGPUTestSuite:
 @register_op_test("amin")
 def _amin_suite() -> WebGPUTestSuite:
     return _reduce_suite(AminModule)
+
+
+@register_op_test("flip")
+def _flip_suite() -> WebGPUTestSuite:
+    # Reverse various dims; pure data movement -> float32 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda dims: FlipModule(dims),
+        cases=[
+            Case(name="last", construct={"dims": [-1]}, inputs=((M1, M2),)),
+            Case(name="dim0", construct={"dims": [0]}, inputs=((M1, M2),)),
+            Case(name="both_3d", construct={"dims": [0, 2]}, inputs=((S, S1, S2),)),
+            Case(name="mid_3d", construct={"dims": [1]}, inputs=((S, S1, S2),)),
+            Case(
+                name="multi_4d",
+                construct={"dims": [1, 3]},
+                inputs=((XS, S, S1, S2),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("view_copy")
