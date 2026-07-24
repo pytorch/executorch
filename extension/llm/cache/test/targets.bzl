@@ -8,16 +8,12 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # Neutral, tensor-free KV-cache core shared across backends (registry,
-    # bookkeeping, config). No backend or tensor dependency.
-    runtime.cxx_library(
-        name = "cache_core",
+    runtime.cxx_test(
+        name = "cache_test",
         srcs = [
-            "cache_registry.cpp",
+            "cache_test.cpp",
         ],
-        exported_headers = [
-            "cache.h",
-            "cache_registry.h",
+        deps = [
+            "//executorch/extension/llm/cache:cache_core",
         ],
-        visibility = ["PUBLIC"],
     )
