@@ -6,7 +6,7 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-override wg_size: u32 = 256u;
+override wg_size: u32 = 256;
 
 @compute @workgroup_size(wg_size)
 fn main(
