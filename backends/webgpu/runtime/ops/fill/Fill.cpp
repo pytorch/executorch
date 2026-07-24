@@ -67,57 +67,28 @@ void add_fill(
       utils::make_uniform(device, &params, sizeof(FillParams));
   graph.add_uniform_buffer_bytes(sizeof(FillParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kFillWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[2] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 2;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[2] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out_tensor.buffer;
-  bg_entries[0].size = out_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = uniform_buffer;
-  bg_entries[1].size = sizeof(FillParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 2;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kFillWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(FillParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "",
+       workgroup_count.y});
 
   // Dynamic shapes: recompute num_elements/dispatch from the live output dims.
   WGPUBuffer params_buf = uniform_buffer;
@@ -136,9 +107,6 @@ void add_fill(
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
