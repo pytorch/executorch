@@ -15,10 +15,10 @@ tensor `x` is a runtime input. Goldened vs the module's fp32 eager.
 
 import unittest
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
 import torch
 import torch.nn as nn
-
-import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
