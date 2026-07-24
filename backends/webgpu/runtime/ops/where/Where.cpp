@@ -45,7 +45,7 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       cond_tensor.dims.size() > kTensorMetaMaxNdim ||
       a_tensor.dims.size() > kTensorMetaMaxNdim ||
       b_tensor.dims.size() > kTensorMetaMaxNdim) {
-    throw std::runtime_error("where: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("where: tensor rank exceeds 8 (MAX_NDIM)");
   }
 
   const uint32_t out_ndim = static_cast<uint32_t>(out_tensor.dims.size());
