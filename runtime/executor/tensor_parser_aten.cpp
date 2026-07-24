@@ -53,6 +53,43 @@ Result<at::Tensor> parseTensor(
       InvalidProgram,
       "Invalid ScalarType %" PRId8,
       static_cast<int8_t>(type));
+
+  // Defaults to CPU when extra_tensor_info is absent (older PTE files). A
+  // device-delegate planned buffer must be tagged with its real device or the
+  // runtime treats device memory as host memory.
+  c10::DeviceType device_type = c10::DeviceType::CPU;
+  c10::DeviceIndex device_index = 0;
+  if (s_tensor->extra_tensor_info() != nullptr) {
+    // Untrusted byte from the PTE; validate before the cast so a bogus value
+    // cannot reach c10::Device as garbage.
+    const auto raw_device_type = s_tensor->extra_tensor_info()->device_type();
+    ET_CHECK_OR_RETURN_ERROR(
+        raw_device_type == executorch_flatbuffer::DeviceType::CPU ||
+            raw_device_type == executorch_flatbuffer::DeviceType::CUDA,
+        InvalidProgram,
+        "Invalid DeviceType %" PRId8,
+        static_cast<int8_t>(raw_device_type));
+    device_type = raw_device_type == executorch_flatbuffer::DeviceType::CUDA
+        ? c10::DeviceType::CUDA
+        : c10::DeviceType::CPU;
+    device_index = static_cast<c10::DeviceIndex>(
+        s_tensor->extra_tensor_info()->device_index());
+    // Reject a negative accelerator index from the untrusted PTE; -1
+    // (any/current device) is not a valid serialized placement and would later
+    // confuse device matching.
+    ET_CHECK_OR_RETURN_ERROR(
+        device_type == c10::DeviceType::CPU || device_index >= 0,
+        InvalidProgram,
+        "Invalid device_index %" PRId8,
+        static_cast<int8_t>(device_index));
+  }
+  // CPU stays unindexed: an explicit cpu:0 would mismatch the graph's default
+  // cpu tensors and trip ATen's same-device check. Only accelerators carry an
+  // index.
+  const c10::Device device = device_type == c10::DeviceType::CPU
+      ? c10::Device(device_type)
+      : c10::Device(device_type, device_index);
+  // Sized with null data to compute nbytes; real device is applied below.
   auto options = at::CPU(type).options();
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -103,8 +140,13 @@ Result<at::Tensor> parseTensor(
 
   if (s_tensor->shape_dynamism() ==
       executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    // Provide fully dynamic tensors with an allocator so they can be resized
-    // within aten kernels.
+    // Fully dynamic tensors get a CPU allocator so aten kernels can resize
+    // them. A device tensor cannot be honored here, so reject it rather than
+    // silently returning CPU storage that contradicts the serialized device.
+    ET_CHECK_OR_RETURN_ERROR(
+        device_type == c10::DeviceType::CPU,
+        NotSupported,
+        "DYNAMIC_UNBOUND tensors are only supported on CPU");
     auto impl = tensor.unsafeGetTensorImpl();
     at::StorageImpl* storage = impl->unsafe_storage().unsafeGetStorageImpl();
     storage->set_allocator(at::getCPUAllocator());
@@ -128,8 +170,17 @@ Result<at::Tensor> parseTensor(
           static_cast<uint32_t>(data_ptr.error()));
       return data_ptr.error();
     }
-    tensor.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-        at::DataPtr(data_ptr.get(), c10::DeviceType::CPU));
+    // Rebuild so storage DataPtr, TensorImpl device, and dispatch key agree.
+    // target_device makes from_blob skip getDeviceFromPtr, so the same path
+    // works for a real pointer and for a null runtime-bound one.
+    tensor = at::from_blob(
+        data_ptr.get(),
+        sizes,
+        strides,
+        /*storage_offset=*/0,
+        deleteNothing,
+        at::TensorOptions().dtype(type).device(device),
+        /*target_device=*/device);
   }
 
   return tensor;
