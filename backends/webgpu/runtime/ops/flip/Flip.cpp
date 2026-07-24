@@ -27,8 +27,8 @@ struct FlipParams {
   uint32_t flip[kTensorMetaMaxNdim];
 };
 static_assert(
-    sizeof(FlipParams) == 16,
-    "FlipParams must match the WGSL Params vec4<u32> (16 bytes)");
+    sizeof(FlipParams) == 32,
+    "FlipParams must match the WGSL Params array<vec4<u32>, 2> (32 bytes)");
 
 // flip: reverse coords along dims (Vulkan Flip.cpp, NCHW; any 4-byte dtype).
 void flip_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -50,7 +50,7 @@ void flip_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   const int ndim = static_cast<int>(in_tensor.dims.size());
   if (ndim > static_cast<int>(kTensorMetaMaxNdim)) {
-    throw std::runtime_error("flip: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("flip: tensor rank exceeds 8 (MAX_NDIM)");
   }
   // flip preserves shape: the output rank + dims must equal the input's, else
   // the kernel unravels out coords against a shape it wasn't reversed for.
