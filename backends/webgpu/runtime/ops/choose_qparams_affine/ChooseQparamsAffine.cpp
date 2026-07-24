@@ -86,9 +86,9 @@ void choose_qparams_affine_impl(
   if (scale_t.nbytes != num_rows * sizeof(float)) {
     throw std::runtime_error("choose_qparams_affine: scale must be fp32[rows]");
   }
-  // zp is int8[rows] (elem_size 1), packed 4-per-u32 in the shader. int8 buffers
-  // are allocated max(nbytes, 4); M<=4 pads to one word, M%4==0 is word-exact.
-  // Other M (5,6,7,...) would overflow the M-byte buffer -> reject.
+  // zp is int8[rows] (elem_size 1), packed 4-per-u32 in the shader. int8
+  // buffers are allocated max(nbytes, 4); M<=4 pads to one word, M%4==0 is
+  // word-exact. Other M (5,6,7,...) would overflow the M-byte buffer -> reject.
   if (!zp_t.is_int8 || zp_t.nbytes != num_rows) {
     throw std::runtime_error("choose_qparams_affine: zp must be int8[rows]");
   }
@@ -154,78 +154,33 @@ void choose_qparams_affine_impl(
       utils::make_uniform(device, &params, sizeof(ChooseQParamsParams));
   graph.add_uniform_buffer_bytes(sizeof(ChooseQParamsParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kChooseQparamsAffineWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[4] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Storage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Storage;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg[4] = {};
-  bg[0].binding = 0;
-  bg[0].buffer = in.buffer;
-  bg[0].size = in.nbytes;
-  bg[1].binding = 1;
-  bg[1].buffer = scale_t.buffer;
-  bg[1].size = scale_t.nbytes;
-  bg[2].binding = 2;
-  bg[2].buffer = zp_t.buffer;
-  // Bind word-aligned (buffer is >= max(nbytes,4); array<u32> needs a mult of 4).
-  bg[2].size = ((zp_t.nbytes + 3u) / 4u) * 4u;
-  bg[3].binding = 3;
-  bg[3].buffer = params_buf;
-  bg[3].size = sizeof(ChooseQParamsParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kChooseQparamsAffineWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {1, WGPUBufferBindingType_Storage, scale_t.buffer, scale_t.nbytes},
+          {2,
+           WGPUBufferBindingType_Storage,
+           zp_t.buffer,
+           // Bind word-aligned (buffer is >= max(nbytes,4); array<u32> needs a
+           // mult of 4).
+           ((zp_t.nbytes + 3u) / 4u) * 4u},
+          {3,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(ChooseQParamsParams)},
+      },
+      &wg_size_constant,
+      1);
 
   graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "choose_qparams_affine",
        workgroup_count.y});
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(params_buf);
 }
 
@@ -233,8 +188,7 @@ void choose_qparams_affine_impl(
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(
-      torchao.choose_qparams_affine.default,
-      choose_qparams_affine_impl);
+      torchao.choose_qparams_affine.default, choose_qparams_affine_impl);
 }
 
 } // namespace executorch::backends::webgpu
