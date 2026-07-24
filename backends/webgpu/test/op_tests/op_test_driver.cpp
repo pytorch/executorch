@@ -59,11 +59,17 @@ class OpCase : public ::testing::Test {
     std::vector<TensorPtr> tensors;
     for (const auto& in : e_.inputs) {
       const size_t n = numel(in.shape);
-      auto data = load_fp32_bin(in.path, n);
-      ASSERT_FALSE(data.empty()) << "missing/short input: " << in.path;
       std::vector<executorch::aten::SizesType> sizes(
           in.shape.begin(), in.shape.end());
-      tensors.push_back(make_tensor_ptr(std::move(sizes), std::move(data)));
+      if (in.dtype == "int32") {
+        auto data = load_int32_bin(in.path, n);
+        ASSERT_FALSE(data.empty()) << "missing/short input: " << in.path;
+        tensors.push_back(make_tensor_ptr(std::move(sizes), std::move(data)));
+      } else {
+        auto data = load_fp32_bin(in.path, n);
+        ASSERT_FALSE(data.empty()) << "missing/short input: " << in.path;
+        tensors.push_back(make_tensor_ptr(std::move(sizes), std::move(data)));
+      }
     }
     std::vector<EValue> inputs;
     for (auto& t : tensors) {
