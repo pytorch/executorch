@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/platform.h>
 #include <gtest/gtest.h>
 
+#include <thread>
 #include <type_traits>
 
 using namespace executorch::backends::cuda;
@@ -294,6 +295,30 @@ TEST(CallerStreamGuardTest, GuardSelectsThenRestores) {
     EXPECT_EQ(getCallerStream(), selected);
   }
   EXPECT_FALSE(getCallerStream().has_value());
+}
+
+TEST(CallerStreamGuardTest, ExplicitNullStreamIsStillSelected) {
+  CallerStreamGuard guard(nullptr);
+  ASSERT_TRUE(getCallerStream().has_value());
+  EXPECT_EQ(*getCallerStream(), nullptr);
+}
+
+TEST(CallerStreamGuardTest, SelectionIsThreadLocal) {
+  const cudaStream_t selected = fake_stream(0);
+  CallerStreamGuard guard(selected);
+
+  bool child_started_without_stream = false;
+  bool child_selected_own_stream = false;
+  std::thread child([&]() {
+    child_started_without_stream = !getCallerStream().has_value();
+    CallerStreamGuard child_guard(fake_stream(1));
+    child_selected_own_stream = getCallerStream() == fake_stream(1);
+  });
+  child.join();
+
+  EXPECT_TRUE(child_started_without_stream);
+  EXPECT_TRUE(child_selected_own_stream);
+  EXPECT_EQ(getCallerStream(), selected);
 }
 
 TEST(CallerStreamGuardTest, NestedGuardsRestoreOuter) {
