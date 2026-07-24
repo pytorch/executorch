@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from binary_pow.wgsl - DO NOT EDIT.
-// wgsl-sha256: ffc116e845c861fb2a43f0c3ca86f150f8e1e95f9d3dde73a3886cd2a1ebff93
+// wgsl-sha256: a88c161bd3f43d21a72ebd8ca6f8611b6b9b854e3572a8e6b820602091bc464c
 inline constexpr const char* kBinaryPowWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
 @group(0) @binding(1) var<storage, read> input2: array<f32>;
@@ -22,8 +22,8 @@ inline constexpr const char* kBinaryPowWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(3) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(4) var<uniform> in1_meta: TensorMeta;
@@ -44,8 +44,8 @@ fn main(
     // Fast path: every input dim matches the output dim -> elementwise.
     var same = true;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        if (in1_meta.sizes[d] != out_meta.sizes[d] ||
-            in2_meta.sizes[d] != out_meta.sizes[d]) {
+        if (in1_meta.sizes[d >> 2u][d & 3u] != out_meta.sizes[d >> 2u][d & 3u] ||
+            in2_meta.sizes[d >> 2u][d & 3u] != out_meta.sizes[d >> 2u][d & 3u]) {
             same = false;
         }
     }
@@ -59,10 +59,10 @@ fn main(
     var l1: u32 = 0u;
     var l2: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        l1 = l1 + min(coord, in1_meta.sizes[d] - 1u) * in1_meta.strides[d];
-        l2 = l2 + min(coord, in2_meta.sizes[d] - 1u) * in2_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        l1 = l1 + min(coord, in1_meta.sizes[d >> 2u][d & 3u] - 1u) * in1_meta.strides[d >> 2u][d & 3u];
+        l2 = l2 + min(coord, in2_meta.sizes[d >> 2u][d & 3u] - 1u) * in2_meta.strides[d >> 2u][d & 3u];
     }
     output[idx] = pow(input1[l1], input2[l2]);
 }
