@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sigmoid.wgsl - DO NOT EDIT.
-// wgsl-sha256: 557a9ca337edf26863fc29db2cf2db4e783131ca89254c052eb4600764ef7a35
+// wgsl-sha256: 79a1554e9d957e10c0f4379b5e0240191743952198e9ed9c0342402bacd356de
 inline constexpr const char* kSigmoidWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -23,7 +23,7 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-override wg_size: u32 = 256u;
+override wg_size: u32 = 256;
 
 @compute @workgroup_size(wg_size)
 fn main(
