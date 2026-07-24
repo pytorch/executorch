@@ -38,6 +38,7 @@ from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
+from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
 from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
     GridSampler2dModule,
 )
@@ -311,6 +312,33 @@ def _repeat_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("conv1d_pw")
+def _conv1d_pw_suite() -> WebGPUTestSuite:
+    # Pointwise 1D conv (aten.convolution, K=1 matmul); fp64 oracle.
+    def mk(in_channels, out_channels, bias):
+        return Conv1dPwModule(in_channels, out_channels, bias)
+
+    def case(name, N, ic, oc, L, bias):
+        return Case(
+            name=name,
+            construct={"in_channels": ic, "out_channels": oc, "bias": bias},
+            inputs=((N, ic, L),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=mk,
+        cases=[
+            case("ic4_oc6", 1, 4, 6, 5, True),
+            case("square", 1, 3, 3, 7, True),
+            case("oc2_nobias", 1, 5, 2, 4, False),
+            case("ic8_oc8", 1, 8, 8, 3, True),
+            case("batch2", 2, 3, 4, 5, True),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
