@@ -50,6 +50,7 @@ from executorch.backends.webgpu.test.ops.test_quant import (
     QuantizeModule,
 )
 from executorch.backends.webgpu.test.ops.test_q8ta_add import Q8taAddModule
+from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -1440,6 +1441,24 @@ def _q8ta_add_suite() -> WebGPUTestSuite:
             case("basic"),
             case("alpha", alpha=2.0),
             case("nonzero_zp", a_zp=5, b_zp=-4, out_zp=7),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("q8ta_relu")
+def _q8ta_relu_suite() -> WebGPUTestSuite:
+    # int8 relu (baked int8 const), byte-exact vs CPU eager. Inputs whose dequant
+    # is negative are relu-clamped to 0 (pins max(x,0)); edges -128/127 covered.
+    def case(name, **kw):
+        return Case(name=name, construct={"x_vals": _Q8_A, **kw})
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: Q8taReluModule(**kw),
+        cases=[
+            case("basic"),
+            case("diff_qparams", output_scale=0.08, output_zp=5),
+            case("nonzero_zp", input_zp=10, output_zp=-20),
         ],
         golden_dtype="float32",
     )
