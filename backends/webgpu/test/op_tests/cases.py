@@ -45,6 +45,10 @@ from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
 from executorch.backends.webgpu.test.ops.test_rope_interleaved import (
     RopeInterleavedModule,
 )
+from executorch.backends.webgpu.test.ops.test_quant import (
+    DequantizeConstModule,
+    QuantizeModule,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -1377,4 +1381,57 @@ def _pow_scalar_suite() -> WebGPUTestSuite:
             )
             for n, e in POW_SCALAR_CONFIGS.items()
         ],
+    )
+
+
+# int8 stress: values at the sign-extend edges (-128/127/0/-1), numel % 4 == 0.
+_DEQUANT_EDGE = [-128, -127, -1, 0, 1, 63, 126, 127, -64, -50, 50, 100, 7, -8, 42, -42]
+
+
+@register_op_test("quantize_per_tensor")
+def _quantize_suite() -> WebGPUTestSuite:
+    # Lone quantize (int8 output), byte-exact vs torch int8 -- a round-trip folds
+    # to identity (ET cancels dq(q(x))). golden_dtype float32: golden = int8 eager.
+    def case(name, shape, scale, zp):
+        return Case(
+            name=name,
+            construct={"scale": scale, "zero_point": zp},
+            inputs=(shape,),
+        )
+
+    # scale 0.05 -> inv_scale 20; x = k*0.025 lands on half-integer k*0.5 (ties),
+    # where WGSL round() and torch (both ties-to-even) must still agree byte-exact.
+    def _ties(shape):
+        assert torch.Size(shape).numel() == 16, "ties input requires numel == 16"
+        return (torch.arange(-8, 8, dtype=torch.float32) * 0.025).reshape(shape)
+
+    return WebGPUTestSuite(
+        module_factory=lambda scale, zero_point: QuantizeModule(scale, zero_point),
+        cases=[
+            case("basic", (4, 8), 0.05, 0),
+            case("zp_nonzero", (2, 2, 4), 0.1, 5),
+            case("small_scale", (16,), 0.02, -13),
+            Case(
+                name="ties",
+                construct={"scale": 0.05, "zero_point": 0},
+                inputs=(InputSpec(shape=(16,), gen=_ties),),
+            ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("dequantize_per_tensor")
+def _dequant_const_suite() -> WebGPUTestSuite:
+    # Independent GPU dequantize check: baked int8 const vs torch dequant (breaks
+    # the round-trip's compensating-bug blind spot). golden = CPU eager.
+    return WebGPUTestSuite(
+        module_factory=lambda scale, zero_point: DequantizeConstModule(
+            scale, zero_point, _DEQUANT_EDGE
+        ),
+        cases=[
+            Case(name="edges", construct={"scale": 0.05, "zero_point": 0}, inputs=()),
+            Case(name="zp", construct={"scale": 0.1, "zero_point": 7}, inputs=()),
+        ],
+        golden_dtype="float32",
     )
