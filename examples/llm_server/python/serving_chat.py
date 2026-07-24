@@ -67,6 +67,7 @@ class ServingChat:
         prompt_token_offset: int = 0,
         content_filter: Optional[Callable[[str], str]] = None,
         content_filter_specials: Optional[set[str]] = None,
+        reasoning_extractor: Optional[Callable[[str], tuple[Optional[str], str]]] = None,
     ):
         self._runtime = runtime
         self._template = template
@@ -74,6 +75,7 @@ class ServingChat:
         self._max_context = max_context
         self._prompt_token_offset = prompt_token_offset
         self._content_filter = content_filter
+        self._reasoning_extractor = reasoning_extractor
         # Detector CLASS; a fresh instance is created per request so streaming
         # state is never shared across concurrent requests.
         self._tool_detector_cls = tool_detector_cls
@@ -121,6 +123,17 @@ class ServingChat:
         if self._content_filter is not None:
             text = self._content_filter(text)
         return self._strip_specials(text)
+
+    def _split_reasoning(self, text: str) -> tuple[Optional[str], str]:
+        if self._reasoning_extractor is None:
+            return None, text
+        return self._reasoning_extractor(text)
+
+    @staticmethod
+    def _return_reasoning(req: ChatCompletionRequest) -> bool:
+        kwargs = req.chat_template_kwargs or {}
+        value = kwargs.get("return_reasoning", False)
+        return value if isinstance(value, bool) else False
 
     @staticmethod
     def _to_openai_tool_call(item: ToolCallItem) -> ToolCall:
@@ -172,17 +185,20 @@ class ServingChat:
                 break
         return text, stopped
 
-    def _extract_tools(self, req: ChatCompletionRequest, text: str):
-        """Returns (tool_calls | None, content_text). Falls back to plain text."""
+    def _extract_response(self, req: ChatCompletionRequest, text: str):
+        """Return tool calls, optional reasoning, and user-visible content."""
+        tool_calls = None
         if self._tools_active(req):
             parsed = self._tool_detector_cls().detect_and_parse(
                 text, self._tool_schemas(req)
             )
             if parsed.calls:
-                content = self._visible_content(parsed.normal_text) or None
-                return [self._to_openai_tool_call(c) for c in parsed.calls], content
+                tool_calls = [self._to_openai_tool_call(c) for c in parsed.calls]
             text = parsed.normal_text
-        return None, self._visible_content(text)
+        reasoning, text = self._split_reasoning(text)
+        if not self._return_reasoning(req):
+            reasoning = None
+        return tool_calls, reasoning, self._visible_content(text) or None
 
     @staticmethod
     def _log_generation_stats(
@@ -408,8 +424,10 @@ class ServingChat:
         # the tool schemas, the model can emit a <tool_call> that we'd surface as
         # plain text (parsing is disabled), instead of a normal answer.
         template_tools = None if req.tool_choice == "none" else req.tools
+        template_kwargs = dict(req.chat_template_kwargs or {})
+        template_kwargs.pop("return_reasoning", None)
         prompt = self._template.render(
-            req.messages, tools=template_tools, template_kwargs=req.chat_template_kwargs
+            req.messages, tools=template_tools, template_kwargs=template_kwargs
         )
         # Token-ID segments splice prior assistant turns' exact ids so warm resume
         # survives the template's lossy tool-call re-render; plain text when
@@ -420,7 +438,7 @@ class ServingChat:
             messages=req.messages,
             rendered_prompt=prompt,
             tools=template_tools,
-            template_kwargs=req.chat_template_kwargs,
+            template_kwargs=template_kwargs,
         )
         # Pre-flight context check against the tokens the worker will actually
         # assemble: for segments that is sum(len(ids)) + tokenized text, not the
@@ -450,7 +468,7 @@ class ServingChat:
         # reproduces the exact resident scaffold even if the mode changes between
         # requests.
         preamble = self._template.generation_preamble(
-            req.chat_template_kwargs, tools=template_tools
+            template_kwargs, tools=template_tools
         )
         # Admit the session up front (before the stream's first chunk) so a
         # capacity refusal is an HTTP status, not a mid-stream error event.
@@ -488,7 +506,9 @@ class ServingChat:
             raise GenerationError(str(e))
         # Bound the raw output at the first stop/special token BEFORE tool
         # parsing, so a call after the stop boundary is not parsed/emitted.
-        tool_calls, content = self._extract_tools(req, self._truncate_raw(text, req))
+        tool_calls, reasoning, content = self._extract_response(
+            req, self._truncate_raw(text, req)
+        )
         # Record after the response is finalized: the fingerprint is of exactly
         # what we return (content + tool_calls), so the next turn can confirm the
         # client echoed this turn before splicing its ids.
@@ -508,7 +528,11 @@ class ServingChat:
             model=self._model_id,
             choices=[
                 Choice(
-                    message=ResponseMessage(content=content, tool_calls=tool_calls),
+                    message=ResponseMessage(
+                        content=content,
+                        reasoning_content=reasoning,
+                        tool_calls=tool_calls,
+                    ),
                     finish_reason=finish,
                 )
             ],
@@ -571,6 +595,7 @@ class ServingChat:
         error: Optional[Exception] = None
         use_tools = self._tools_active(req)
         tool_calls = None
+        reasoning = None
         content = None
 
         stats = GenStats()
@@ -594,9 +619,21 @@ class ServingChat:
                     ),
                     stops,
                 )
-                tool_calls, content = self._extract_tools(
+                tool_calls, reasoning, content = self._extract_response(
                     req, self._truncate_raw(raw, req)
                 )
+            elif self._reasoning_extractor is not None:
+                raw, stop_hit[0] = await self._collect_until_stop(
+                    self._runtime.generate_stream(req.session_id, prompt, options, stats),
+                    stops,
+                )
+                tool_calls, reasoning, content = self._extract_response(
+                    req, self._apply_stop(raw, stops)
+                )
+                if reasoning:
+                    yield chunk(DeltaMessage(reasoning_content=reasoning))
+                if content:
+                    yield chunk(DeltaMessage(content=content))
             else:
                 streamed: list[str] = []
                 async for token in self._stream_plain_content(
@@ -629,6 +666,8 @@ class ServingChat:
         )
 
         if use_tools:
+            if reasoning:
+                yield chunk(DeltaMessage(reasoning_content=reasoning))
             if content:
                 yield chunk(DeltaMessage(content=content))
             for tc in tool_calls or []:
