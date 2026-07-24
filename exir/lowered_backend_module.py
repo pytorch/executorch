@@ -884,10 +884,11 @@ def create_submodule_from_nodes(
         # all uses with a getitem call to the 0th index of the result
         with gm.graph.inserting_after(submodule_node):
             proxy_out = torch.fx.Proxy(submodule_node)[0].node  # type: ignore[index]
-            submodule_node.replace_all_uses_with(proxy_out)
-            proxy_out.meta["val"] = submodule_node.meta["val"]
+            submodule_node.replace_all_uses_with(proxy_out, propagate_meta=True)
             # Reset the args since it was overwritten in the previous line
             proxy_out.args = (submodule_node, 0)
+            proxy_out.meta.pop("nn_module_stack", None)
+            proxy_out.meta.pop("source_fn_stack", None)
     else:
         # fuse_as_graphmodule will automatically propagate the metadata of the
         # partition's last node to the getitem nodes that appear after the
