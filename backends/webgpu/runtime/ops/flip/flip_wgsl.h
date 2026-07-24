@@ -1,0 +1,65 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from flip.wgsl - DO NOT EDIT.
+// wgsl-sha256: e85b3a7f753ec183e83f55f53cc764b5ffa748b4e229d81b978dabe58f576e80
+inline constexpr const char* kFlipWGSL = R"(
+@group(0) @binding(0) var<storage, read> input: array<f32>;
+@group(0) @binding(1) var<storage, read_write> output: array<f32>;
+
+struct TensorMeta {
+  ndim: u32,
+  numel: u32,
+  sizes: vec4<u32>,
+  strides: vec4<u32>,
+}
+@group(0) @binding(2) var<uniform> out_meta: TensorMeta;
+@group(0) @binding(3) var<uniform> in_meta: TensorMeta;
+
+struct Params {
+  flip: vec4<u32>,
+}
+@group(0) @binding(4) var<uniform> params: Params;
+
+override wg_size: u32 = 64u;
+
+@compute @workgroup_size(wg_size, 1, 1)
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-folded flat index (lifts the 65535 1D-dispatch cap for large numel).
+    let out_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
+    if (out_bufi >= out_meta.numel) {
+        return;
+    }
+
+    // Reverse the coord along each flagged dim (Vulkan flip, NCHW buffer).
+    var rem = out_bufi;
+    var in_bufi: u32 = 0u;
+    for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
+        let coord = rem / out_meta.strides[d];
+        rem = rem % out_meta.strides[d];
+        let flipped = in_meta.sizes[d] - 1u - coord;
+        let in_coord = select(coord, flipped, params.flip[d] == 1u);
+        in_bufi = in_bufi + in_coord * in_meta.strides[d];
+    }
+    output[out_bufi] = input[in_bufi];
+}
+)";
+
+inline constexpr uint32_t kFlipWorkgroupSizeX = 64;
+inline constexpr uint32_t kFlipWorkgroupSizeY = 1;
+inline constexpr uint32_t kFlipWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
