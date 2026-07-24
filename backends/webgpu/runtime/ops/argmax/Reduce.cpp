@@ -29,6 +29,12 @@ struct ArgReduceParams {
   uint32_t _pad;
 };
 
+// The cooperative reduction uses var<workgroup> part_val/part_idx arrays of
+// width 256; the workgroup size must not exceed that.
+static_assert(
+    kArgReduceWorkgroupSizeX <= 256,
+    "arg_reduce workgroup size exceeds the 256-wide shared partials");
+
 // Last-dim argmax/argmin -> int32 index; mirrors Vulkan arg_reduce_impl.
 void arg_reduce_impl(
     WebGPUGraph& graph,
@@ -54,6 +60,9 @@ void arg_reduce_impl(
   }
 
   const int64_t ndim = static_cast<int64_t>(in_tensor.dims.size());
+  if (ndim <= 0) {
+    throw std::runtime_error("arg_reduce: input must have at least one dim");
+  }
   const int64_t dim = graph.get_int(args.at(1));
   if (dim != -1 && dim != ndim - 1) {
     throw std::runtime_error(
@@ -71,8 +80,9 @@ void arg_reduce_impl(
 
   uint32_t wg_size =
       utils::clamp_workgroup_size(device, kArgReduceWorkgroupSizeX);
+  // One workgroup per row (cooperative reduction); grid = num_rows workgroups.
   utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      device, num_rows, wg_size, "arg_reduce");
+      device, num_rows, 1, "arg_reduce");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -184,7 +194,7 @@ void arg_reduce_impl(
         p.is_argmin = is_argmin;
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
         const utils::WgCount wgc = utils::compute_2d_workgroup_count(
-            g.device(), rows, wg_size, "arg_reduce");
+            g.device(), rows, 1, "arg_reduce");
         g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       });
