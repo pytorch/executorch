@@ -109,78 +109,27 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // vec4-over-K path when K%4==0 (scalar out, only K%4, not N%4 like mm).
   const bool use_vec4 = (K % 4u == 0u);
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {use_vec4 ? kLinearVec4WGSL : kLinearTiledWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Storage;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   // Tiled kernel has a fixed @workgroup_size(8, 8, 1) — no override constant.
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in.buffer;
-  bg_entries[0].size = in.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = w.buffer;
-  bg_entries[1].size = w.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = out.buffer;
-  bg_entries[2].size = out.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(LinearParams);
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = bias.buffer;
-  bg_entries[4].size = bias.nbytes;
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      use_vec4 ? kLinearVec4WGSL : kLinearTiledWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, w.buffer, w.nbytes},
+          {2, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {3,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(LinearParams)},
+          {4, WGPUBufferBindingType_ReadOnlyStorage, bias.buffer, bias.nbytes},
+      });
   if (bias.owned_dummy != nullptr) {
     wgpuBufferRelease(bias.owned_dummy);
   }
 
   WebGPUDispatch dispatch;
-  dispatch.pipeline = pipeline;
-  dispatch.bind_group = bind_group;
+  dispatch.pipeline = bundle.pipeline;
+  dispatch.bind_group = bundle.bind_group;
   dispatch.workgroup_count_x = dispatch_x;
   dispatch.workgroup_count_y = dispatch_y;
   dispatch.kernel_name = "linear";
@@ -215,9 +164,6 @@ void linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             out_id, {static_cast<int64_t>(m), static_cast<int64_t>(N)});
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
