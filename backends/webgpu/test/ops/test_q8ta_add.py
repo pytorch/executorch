@@ -14,9 +14,9 @@ the alpha term, which the Vulkan glsl buffer path drops.
 
 import unittest
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
+
+import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
