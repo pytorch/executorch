@@ -238,7 +238,8 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     to.dims = out_d;
     TensorMeta out_meta;
     fill_tensor_meta(to, &out_meta);
-    wgpuQueueWriteBuffer(g.queue(), out_meta_buf, 0, &out_meta, sizeof(out_meta));
+    wgpuQueueWriteBuffer(
+        g.queue(), out_meta_buf, 0, &out_meta, sizeof(out_meta));
 
     uint32_t off = 0;
     for (size_t k = 0; k < ids.size(); k++) {

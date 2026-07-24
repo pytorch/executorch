@@ -153,7 +153,9 @@ class CompareTest(unittest.TestCase):
                 a = compare_gen_a((4, 8))
                 b = compare_gen_b((4, 8))
                 ep = torch.export.export(CompareModule(op).eval(), (a, b))
-                edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+                edge = to_edge_transform_and_lower(
+                    ep, partitioner=[VulkanPartitioner()]
+                )
                 et = edge.to_executorch()
                 deleg = any(
                     d.id == "VulkanBackend"
