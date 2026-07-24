@@ -56,6 +56,47 @@ class CortexMAddMulCheck(PatternCheck):
         return is_per_tensor and is_int8
 
 
+class CortexMDivCheck(PatternCheck):
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        """
+        Reject any broadcasting. Division is not commutative, so the operand
+        swapping used to support channel broadcast in add/mul does not apply;
+        only identically shaped inputs are supported.
+        """
+        for node in pattern:
+            if len(node.all_input_nodes) == 2:
+                t1 = get_first_fake_tensor(node.all_input_nodes[0])
+                t2 = get_first_fake_tensor(node.all_input_nodes[1])
+                if t1.shape != t2.shape:
+                    return False
+
+        return True
+
+    @classmethod
+    def check_quantization_config(
+        cls, pattern: list[Node], quantization_config: QuantizationConfig
+    ) -> bool:
+        """
+        Checks that the quantization config uses per-tensor int8 or int16
+        quantization (the div kernel supports both).
+        """
+        input_qspec = quantization_config.get_input_act_qspec()
+        output_qspec = quantization_config.get_output_act_qspec()
+        is_per_tensor = PatternCheck.is_per_tensor(
+            input_qspec
+        ) and PatternCheck.is_per_tensor(output_qspec)
+        allowed_dtypes = (torch.int8, torch.int16)
+        is_valid_dtype = (
+            isinstance(input_qspec, QuantizationSpec)
+            and isinstance(output_qspec, QuantizationSpec)
+            and input_qspec.dtype in allowed_dtypes
+            and output_qspec.dtype in allowed_dtypes
+        )
+        return is_per_tensor and is_valid_dtype
+
+
 class CortexMConv2DCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):

@@ -265,6 +265,77 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED DIV OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "quantized_div("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_div.out("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_div")  # type: ignore[misc]
+def quantized_div_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    # Division is not commutative, so broadcasting (handled via operand swaps in
+    # quantized_mul) is not supported: require identical shapes.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    return torch.empty_like(self)
+
+
+@impl(lib, "quantized_div", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_div_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    # Mirror the CMSIS-NN kernel: the quotient of the zero-point-corrected int8
+    # or int16 operands is evaluated in float and rescaled by the effective
+    # scale, which the AoT pass folds into output_multiplier/output_shift.
+    # Reconstruct that float scale the same way the softmax kernel does.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    if self.dtype not in (torch.int8, torch.int16):
+        raise TypeError(
+            f"cortex_m.quantized_div: expected int8 or int16 inputs, got {self.dtype}"
+        )
+    self_fp = (self.to(torch.int32) - self_zero_point).to(torch.float32)
+    other_fp = (other.to(torch.int32) - other_zero_point).to(torch.float32)
+
+    effective_scale = math.ldexp(
+        float(output_multiplier) / float(1 << 31), output_shift
+    )
+    quotient = torch.where(other_fp != 0, self_fp / other_fp, torch.zeros_like(self_fp))
+    result = torch.round(quotient * effective_scale) + output_zero_point
+    dtype_info = torch.iinfo(self.dtype)
+    return torch.clamp(result, dtype_info.min, dtype_info.max).to(self.dtype)
+
+
+# ===================================================================
 # QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
 # ===================================================================
 # Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT

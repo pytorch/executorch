@@ -960,6 +960,36 @@ def _get_mul_replacement(
     return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_mul.default, args)
 
 
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.div.Tensor)
+def _get_div_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    del dialect_pass
+    if not _has_qparams(node):
+        return None
+
+    scale1 = node.meta["input_qparams"][0].scale
+    zero_point1 = node.meta["input_qparams"][0].zp
+    scale2 = node.meta["input_qparams"][1].scale
+    zero_point2 = node.meta["input_qparams"][1].zp
+    output_scale = node.meta["output_qparams"][0].scale
+    output_zero_point = node.meta["output_qparams"][0].zp
+
+    output_mult, output_shift = quantize_multiplier_aot(
+        scale1 / (scale2 * output_scale)
+    )
+    args = (
+        node.args[0],
+        zero_point1,
+        node.args[1],
+        zero_point2,
+        output_zero_point,
+        output_mult,
+        output_shift,
+    )
+    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_div.default, args)
+
+
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten._softmax.default)
 def _get_softmax_replacement(
     node: Node, dialect_pass: AtenToDialectPass
