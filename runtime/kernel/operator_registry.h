@@ -24,11 +24,11 @@
 #include <ostream>
 #endif
 
-#define ET_LOG_KERNEL_KEY(k)      \
-  ET_LOG(                         \
-      Info,                       \
-      "key: %s, is_fallback: %s", \
-      k.data(),                   \
+#define ET_LOG_KERNEL_KEY(k)          \
+  ET_LOG(                             \
+      Info,                           \
+      "key: %s, is_fallback: %s",     \
+      k.data() ? k.data() : "(null)", \
       k.is_fallback() ? "true" : "false");
 #define ET_LOG_TENSOR_META(meta_list)                                \
   for (const auto& meta : meta_list) {                               \

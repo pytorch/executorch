@@ -179,7 +179,7 @@ inline std::unique_ptr<WavHeader> load_wav_header(
       header->RIFF[1],
       header->RIFF[2],
       header->RIFF[3]);
-  ET_LOG(Info, "Chunk Size: %d", header->ChunkSize);
+  ET_LOG(Info, "Chunk Size: %u", header->ChunkSize);
   ET_LOG(
       Info,
       "WAVE Header: %c%c%c%c",
@@ -194,14 +194,14 @@ inline std::unique_ptr<WavHeader> load_wav_header(
       header->fmt[1],
       header->fmt[2],
       header->fmt[3]);
-  ET_LOG(Info, "Format Chunk Size: %d", header->Subchunk1Size);
+  ET_LOG(Info, "Format Chunk Size: %u", header->Subchunk1Size);
   ET_LOG(Info, "Audio Format: %d", header->AudioFormat);
   ET_LOG(Info, "Number of Channels: %d", header->NumOfChan);
-  ET_LOG(Info, "Sample Rate: %d", header->SamplesPerSec);
-  ET_LOG(Info, "Byte Rate: %d", header->bytesPerSec);
+  ET_LOG(Info, "Sample Rate: %u", header->SamplesPerSec);
+  ET_LOG(Info, "Byte Rate: %u", header->bytesPerSec);
   ET_LOG(Info, "Block Align: %d", header->blockAlign);
   ET_LOG(Info, "Bits per Sample: %d", header->bitsPerSample);
-  ET_LOG(Info, "Subchunk2Size: %d", header->Subchunk2Size);
+  ET_LOG(Info, "Subchunk2Size: %u", header->Subchunk2Size);
 
   return header;
 }

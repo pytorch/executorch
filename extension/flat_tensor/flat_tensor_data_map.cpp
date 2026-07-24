@@ -71,7 +71,7 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
       ET_CHECK_OR_RETURN_ERROR(
           segment_index >= 0 && segment_index < segments->size(),
           InvalidExternalData,
-          "Segment index %zu for key %.*s is out of bounds for segment size %d. Malformed PTD file.",
+          "Segment index %zu for key %.*s is out of bounds for segment size %u. Malformed PTD file.",
           segment_index,
           static_cast<int>(key.size()),
           key.data(),
