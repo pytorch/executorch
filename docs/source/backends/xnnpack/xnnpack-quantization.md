@@ -31,6 +31,7 @@ import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
 from executorch.exir import to_edge_transform_and_lower
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -52,8 +53,14 @@ quantized_model = convert_pt2e(prepared_model) # (5)
 et_program = to_edge_transform_and_lower( # (6)
     torch.export.export(quantized_model, sample_inputs),
     partitioner=[XnnpackPartitioner()],
+    transform_passes=get_transform_passes(),
 ).to_executorch()
 ```
+
+The `transform_passes` stage is optional in the generic lowering API. For
+XNNPACK, `get_transform_passes()` is recommended in general because it runs
+pre-partition graph transforms that expose supported patterns to the
+partitioner.
 
 See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
 
