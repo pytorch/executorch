@@ -5,6 +5,9 @@ on:
     branches:
       - 'gh/*/[0-9]+/base'
 
+permissions:
+  contents: read
+
 jobs:
   ghstack_merge_to_main:
     name: Try to create a PR with ghstack /orig branch
