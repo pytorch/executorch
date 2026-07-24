@@ -130,6 +130,61 @@ Tensor& grid_sampler_2d_out_no_context(
 
   return ret;
 }
+
+Tensor& bucketize_tensor_out(
+    KernelRuntimeContext& context,
+    const Tensor& self,
+    const Tensor& boundaries,
+    bool out_int32,
+    bool right,
+    Tensor& out);
+
+Tensor& bucketize_tensor_out_no_context(
+    const Tensor& self,
+    const Tensor& boundaries,
+    bool out_int32,
+    bool right,
+    Tensor& out) {
+  KernelRuntimeContext ctx;
+  auto& ret =
+      bucketize_tensor_out(ctx, self, boundaries, out_int32, right, out);
+
+  if (ctx.failure_state() != Error::Ok) {
+    throw std::runtime_error(
+        std::string("Kernel failed with error: ") +
+        std::to_string((int)ctx.failure_state()));
+  }
+
+  return ret;
+}
+
+Tensor& bucketize_scalar_out(
+    KernelRuntimeContext& context,
+    const Scalar& self,
+    const Tensor& boundaries,
+    bool out_int32,
+    bool right,
+    Tensor& out);
+
+Tensor& bucketize_scalar_out_no_context(
+    const Scalar& self,
+    const Tensor& boundaries,
+    bool out_int32,
+    bool right,
+    Tensor& out) {
+  KernelRuntimeContext ctx;
+  auto& ret =
+      bucketize_scalar_out(ctx, self, boundaries, out_int32, right, out);
+
+  if (ctx.failure_state() != Error::Ok) {
+    throw std::runtime_error(
+        std::string("Kernel failed with error: ") +
+        std::to_string((int)ctx.failure_state()));
+  }
+
+  return ret;
+}
+
 // NOLINTEND(facebook-hte-ConstantArgumentPassByValue,
 // facebook-hte-ParameterMightThrowOnCopy)
 
@@ -146,6 +201,13 @@ TORCH_LIBRARY(et_test, m) {
   m.def(
       "grid_sampler_2d.out(Tensor input, Tensor grid, int interpolation_mode, int padding_mode, bool align_corners, *, Tensor(a!) out) -> Tensor(a!)",
       WRAP_TO_ATEN(grid_sampler_2d_out_no_context, 5));
+
+  m.def(
+      "bucketize.Tensor_out(Tensor self, Tensor boundaries, *, bool out_int32=False, bool right=False, Tensor(a!) out) -> Tensor(a!)",
+      WRAP_TO_ATEN(bucketize_tensor_out_no_context, 4));
+  m.def(
+      "bucketize.Scalar_out(Scalar self, Tensor boundaries, *, bool out_int32=False, bool right=False, Tensor(a!) out) -> Tensor(a!)",
+      WRAP_TO_ATEN(bucketize_scalar_out_no_context, 4));
 }
 
 } // namespace native
