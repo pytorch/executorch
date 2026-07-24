@@ -60,11 +60,10 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
     return Error::NotFound;
   }
   for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
-    if (key.size() == named_data->Get(i)->key()->size() &&
-        std::strncmp(
-            named_data->Get(i)->key()->c_str(),
-            key.data(),
-            named_data->Get(i)->key()->size()) == 0) {
+    const flatbuffers::String* candidate_key = named_data->Get(i)->key();
+    if (candidate_key != nullptr && key.size() == candidate_key->size() &&
+        std::strncmp(candidate_key->c_str(), key.data(), candidate_key->size()) ==
+            0) {
       const auto* found = named_data->Get(i);
       // Validate the named_data.
       size_t segment_index = found->segment_index();
@@ -113,14 +112,18 @@ Result<uint64_t> get_segment_end_offset(const FlatTensorHeader& header) {
 
 Result<const TensorLayout> create_tensor_layout(
     const flat_tensor_flatbuffer::TensorLayout* tensor_layout) {
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor_layout != nullptr && tensor_layout->sizes() != nullptr &&
+          tensor_layout->dim_order() != nullptr,
+      InvalidExternalData,
+      "Malformed PTD file: tensor_layout, sizes, or dim_order is null.");
   ScalarType scalar_type =
       static_cast<ScalarType>(tensor_layout->scalar_type());
-  const int dim = tensor_layout->sizes()->size();
-  const auto serialized_sizes = tensor_layout->sizes()->data();
-  const auto serialized_dim_order = tensor_layout->dim_order()->data();
+  const auto* sizes = tensor_layout->sizes();
+  const auto* dim_order = tensor_layout->dim_order();
   return TensorLayout::create(
-      Span<const int32_t>(serialized_sizes, dim),
-      Span<const uint8_t>(serialized_dim_order, dim),
+      Span<const int32_t>(sizes->data(), sizes->size()),
+      Span<const uint8_t>(dim_order->data(), dim_order->size()),
       scalar_type);
 }
 
@@ -227,7 +230,14 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       "Index %u out of range of size %u",
       index,
       num_keys);
-  return flat_tensor_->named_data()->Get(index)->key()->c_str();
+  const flatbuffers::String* key =
+      flat_tensor_->named_data()->Get(index)->key();
+  ET_CHECK_OR_RETURN_ERROR(
+      key != nullptr,
+      InvalidExternalData,
+      "Malformed PTD file: key at index %u is null.",
+      index);
+  return key->c_str();
 }
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
@@ -288,6 +298,17 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       "FlatTensor data 0x%p must be aligned to %zu",
       flat_tensor_data->data(),
       kMinimumAlignment);
+
+  // Verify the flatbuffer structure before accessing any fields. Without this,
+  // a crafted .ptd with a valid header and identifier but corrupt internal
+  // offsets reaches memory-unsafe accessors and dereferences wild pointers.
+  flatbuffers::Verifier verifier(
+      reinterpret_cast<const uint8_t*>(flat_tensor_data->data()),
+      flat_tensor_data->size());
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_flatbuffer::VerifyFlatTensorBuffer(verifier),
+      InvalidExternalData,
+      "FlatTensor flatbuffer verification failed; malformed PTD file.");
 
   // Get pointer to root of flatbuffer table.
   const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
