@@ -50,6 +50,32 @@ class ConstantFoldingPass(ArmPass):
         setattr(graph_module, target, torch.nn.Parameter(attr, requires_grad=False))  # type: ignore[arg-type]
         return True
 
+    def _depends_on_trainable_param(
+        self, graph_module: torch.fx.GraphModule
+    ) -> set[torch.fx.Node]:
+        # Returns a set of the graph nodes with learnable
+        # parameters and any nodes depending on the learnable
+        # parameter. Needed for the case when doing
+        # QAT and we should not do constatnt folding
+        # for the learnable parameters and their dependends.
+        depends_on_trainable_param = set()
+
+        for node in graph_module.graph.nodes:
+            if node.op == "get_attr":
+                try:
+                    attr = getattr(graph_module, node.target, None)
+                except AttributeError:
+                    continue
+                if isinstance(attr, torch.nn.Parameter) and attr.requires_grad:
+                    depends_on_trainable_param.add(node)
+            # Add to the set any node depending on the node with learnable parameter
+            if any(
+                input_node in depends_on_trainable_param
+                for input_node in node.all_input_nodes
+            ):
+                depends_on_trainable_param.add(node)
+        return depends_on_trainable_param
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         before_graph = str(graph_module.graph)
 
@@ -59,7 +85,12 @@ class ConstantFoldingPass(ArmPass):
             torch.ops.pt2e_quant.dequantize_affine = None  # type: ignore[attr-defined]
             faked_dequantize_affine = True
 
-        constant_fold(graph_module)
+        nodes_to_preserve = self._depends_on_trainable_param(graph_module)
+
+        def can_fold(node: torch.fx.Node) -> bool:
+            return node not in nodes_to_preserve
+
+        constant_fold(graph_module, can_fold)
 
         # Remove attribute again if added to not affect global scope
         if faked_dequantize_affine:
