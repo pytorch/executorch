@@ -241,7 +241,20 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
+# ETDump profiling support (OSS build). The llama runner does not link etdump or
+# define ET_EVENT_TRACER_ENABLED by default. When the core libs are built with
+# EXECUTORCH_BUILD_DEVTOOLS=ON + EXECUTORCH_ENABLE_EVENT_TRACER=ON, find_package
+# imports the etdump target; linking it and defining the macro enables ETDump
+# collection and makes the Vulkan delegate emit per-dispatch GPU timestamps.
+if(TARGET etdump)
+  list(APPEND link_libraries etdump)
+endif()
+
 add_executable(llama_main ${_srcs})
+
+if(TARGET etdump)
+  target_compile_definitions(llama_main PRIVATE ET_EVENT_TRACER_ENABLED)
+endif()
 
 # Copy MLX metallib for runtime if MLX delegate is enabled
 if(TARGET mlxdelegate)
