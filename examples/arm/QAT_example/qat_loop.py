@@ -7,14 +7,14 @@
 """Measure Practical-RIFE PTQ and QAT accuracy on real frame triples.
 
 The script is intended as a small handover flow for comparing eager FP32,
-PTQ, and QAT PT2E models before generating customer VGF artifacts. The
-expected triple order is:
+PTQ, and QAT PT2E models before generating VGF artifacts. The expected
+triple order is:
 
 * first frame: model input 0
 * third frame: model input 1
 * middle frame: quality target
 
-By default the fixed input shape is 768x384, matching the OPPO request.
+By default the fixed input shape is 768x384.
 """
 
 from __future__ import annotations
