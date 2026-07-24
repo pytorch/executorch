@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 
@@ -29,13 +30,24 @@ def define_operator_test_target(op):
         ]
     )
 
-def define_common_targets():
-    """Defines targets that should be shared between fbcode and xplat.
-
-    The directory containing this targets.bzl file should also contain both
-    TARGETS and BUCK files that call this function.
-    """
+def define_common_targets(is_fbcode = False):
+    """Defines targets that should be shared between fbcode and xplat."""
     for op in OPERATORS:
         define_operator_test_target(op)
+
+    if is_fbcode:
+        python_unittest(
+            name = "test_replace_quant_nodes",
+            srcs = [
+                "test_helpers_passes_utils.py",
+                "test_replace_quant_nodes.py",
+            ],
+            deps = [
+                "//pytorch/ao:torchao",  # @manual
+                "//caffe2:torch",
+                "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
+                "//executorch/backends/cortex_m/ops:ops",
+            ],
+        )
 
     
