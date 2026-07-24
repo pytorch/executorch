@@ -44,20 +44,17 @@ if(NOT TARGET gtest)
   )
 endif()
 
-# Op-level gtests, one source per operator. Each calls its kernel directly and
-# checks with EXPECT_TENSOR_EQ, mirroring the BUCK tests.
+# Op-level gtests, one source per operator (each calls its kernel directly and
+# checks with EXPECT_TENSOR_EQ, mirroring the BUCK tests). Glob every
+# test_op_*.cpp so any op test added to this directory is picked up
+# automatically without editing this list. CONFIGURE_DEPENDS re-globs on
+# incremental builds.
+file(GLOB _cadence_hifi_op_test_srcs CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/test_op_*.cpp"
+)
 add_executable(
   cadence_hifi_op_tests
-  test_op_cat.cpp
-  test_op_dequantize_per_tensor_out.cpp
-  test_op_div.cpp
-  test_op_im2row_out.cpp
-  test_op_permute_copy.cpp
-  test_op_quantize_per_tensor.cpp
-  test_op_quantized_conv2d_out.cpp
-  test_op_quantized_matmul_out.cpp
-  test_op_quantized_relu_out.cpp
-  test_op_transpose_copy.cpp
+  ${_cadence_hifi_op_test_srcs}
   ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp
 )
 target_compile_definitions(cadence_hifi_op_tests PRIVATE GTEST_HAS_PTHREAD=0)
