@@ -35,7 +35,6 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
-from executorch.backends.webgpu.test.ops.test_pow import PowModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
     MulModule,
@@ -44,6 +43,8 @@ from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
     PermuteModule,
 )
+from executorch.backends.webgpu.test.ops.test_pow import PowModule
+from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
 from executorch.backends.webgpu.test.ops.test_rms_norm import (
     _CASES,
     _linspace_weight,
@@ -222,6 +223,37 @@ def _pow_suite() -> WebGPUTestSuite:
             ),
         ],
     )
+
+
+def _reduce_suite(module_cls) -> WebGPUTestSuite:
+    # Last-dim reduction; both keepdim variants over a 2d and a 3d shape.
+    return WebGPUTestSuite(
+        module_factory=lambda keepdim: module_cls(keepdim),
+        cases=[
+            Case(name="keepdim_2d", construct={"keepdim": True}, inputs=((M1, M2),)),
+            Case(name="nodim_2d", construct={"keepdim": False}, inputs=((M1, M2),)),
+            Case(
+                name="keepdim_3d",
+                construct={"keepdim": True},
+                inputs=((S, S1, S2),),
+            ),
+            Case(
+                name="nodim_3d",
+                construct={"keepdim": False},
+                inputs=((S, S1, S2),),
+            ),
+        ],
+    )
+
+
+@register_op_test("amax")
+def _amax_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AmaxModule)
+
+
+@register_op_test("amin")
+def _amin_suite() -> WebGPUTestSuite:
+    return _reduce_suite(AminModule)
 
 
 @register_op_test("view_copy")
