@@ -70,6 +70,10 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_unary_activations import (
+    UNARY_G1,
+    UnaryModule,
+)
 from executorch.backends.webgpu.test.ops.test_unsqueeze import (
     CONFIGS as _UNSQUEEZE_CONFIGS,
     UnsqueezeModule,
@@ -946,3 +950,21 @@ def _sub_suite() -> WebGPUTestSuite:
             for name, (sa, sb, alpha) in _SUB_CONFIGS.items()
         ],
     )
+
+
+def _unary_g1_factory(torch_fn, gen):
+    # A per-op no-param-activation suite (mat + rank3), reused across UNARY_G1.
+    def _suite() -> WebGPUTestSuite:
+        return WebGPUTestSuite(
+            module_factory=lambda: UnaryModule(torch_fn),
+            cases=[
+                Case(name="mat", inputs=(InputSpec(shape=(M1, M2), gen=gen),)),
+                Case(name="rank3", inputs=(InputSpec(shape=(S1, M1, M2), gen=gen),)),
+            ],
+        )
+
+    return _suite
+
+
+for _g1_op, (_g1_fn, _g1_gen) in UNARY_G1.items():
+    register_op_test(_g1_op)(_unary_g1_factory(_g1_fn, _g1_gen))
