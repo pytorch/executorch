@@ -76,65 +76,30 @@ void bitwise_not_op(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(BitwiseNotParams));
   graph.add_uniform_buffer_bytes(sizeof(BitwiseNotParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kBitwiseNotWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
   // out (rw storage) + a (ro storage) + params (uniform).
-  WGPUBindGroupLayoutEntry entries[3] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 3;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg[3] = {};
-  bg[0].binding = 0;
-  bg[0].buffer = out_tensor.buffer;
-  bg[0].size = out_tensor.nbytes;
-  bg[1].binding = 1;
-  bg[1].buffer = a_tensor.buffer;
-  bg[1].size = a_tensor.nbytes;
-  bg[2].binding = 2;
-  bg[2].buffer = uniform_buffer;
-  bg[2].size = sizeof(BitwiseNotParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 3;
-  bg_desc.entries = bg;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kBitwiseNotWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           a_tensor.buffer,
+           a_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(BitwiseNotParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "bitwise_not",
        workgroup_count.y});
@@ -160,9 +125,6 @@ void bitwise_not_op(WebGPUGraph& graph, const std::vector<int>& args) {
       };
   graph.add_tensor_resize_hook(a_id, resize);
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
