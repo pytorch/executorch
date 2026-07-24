@@ -103,7 +103,7 @@ class LlamaStories110MQuantRecipe(StaticLLMQuantRecipe):
                 granularity=QuantGranularity.PER_CHANNEL,
             )
             .add_regex(
-                {r"layers\..*\.attention\.wv.*"},
+                {r"layers\..*\.attention\..*wv.*"},
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
@@ -150,7 +150,7 @@ class Llama3_1BQuantRecipe(StaticLLMQuantRecipe):
             .add_regex(
                 {
                     r"output\.conv",
-                    r"layers\.[0-3]\.feed_forward\.w2_conv",
+                    r"layers\.[0-3]\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -189,7 +189,7 @@ class Llama3_3BQuantRecipe(StaticLLMQuantRecipe):
             .add_regex(
                 {
                     r"output\.conv",
-                    r"layers\.2[1-7]\.feed_forward\.w2_conv",
+                    r"layers\.2[1-7]\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -249,7 +249,7 @@ class Gemma_2BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                     r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
@@ -287,7 +287,7 @@ class Gemma2QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -324,7 +324,7 @@ class Gemma3QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -396,7 +396,7 @@ class Granite_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -433,9 +433,9 @@ class GraniteSpeech_3_3_2B_InstructQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wv.*",
-                    r"layers\..*\.feed_forward\.w3_conv",
-                    r"layers\..*\.feed_forward\.w2_conv",
+                    r"layers\..*\.attention\..*wv.*",
+                    r"layers\..*\.feed_forward\..*w3_conv",
+                    r"layers\..*\.feed_forward\..*w2_conv",
                     r"output\.conv",
                 },
                 QuantDtype.use_16a8w,
@@ -494,7 +494,7 @@ class Phi4MiniQuantRecipe(StaticLLMQuantRecipe):
                 extra_kwargs={"block_size": (1, 16, 1, 1)},
             )
             .add_regex(
-                {r"layers\..*\.attention\.wv.*"},
+                {r"layers\..*\.attention\..*wv.*"},
                 QuantDtype.use_8a4w,
                 False,
                 act_observer=MinMaxObserver,
@@ -596,7 +596,7 @@ class Qwen3_0_6BQuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.feed_forward\.w2_conv",
+                    r"layers\..*\.feed_forward\..*w2_conv",
                 },
                 QuantDtype.use_16a8w,
                 False,
@@ -693,9 +693,9 @@ class Smollm3QuantRecipe(StaticLLMQuantRecipe):
             )
             .add_regex(
                 {
-                    r"layers\..*\.attention\.wq.*",
-                    r"layers\..*\.attention\.wk.*",
-                    r"layers\..*\.attention\.wv.*",
+                    r"layers\..*\.attention\..*wq.*",
+                    r"layers\..*\.attention\..*wk.*",
+                    r"layers\..*\.attention\..*wv.*",
                 },
                 QuantDtype.use_16a8w,
                 False,
