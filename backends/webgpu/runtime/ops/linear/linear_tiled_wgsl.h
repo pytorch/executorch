@@ -13,19 +13,20 @@
 namespace executorch::backends::webgpu {
 
 // @generated from linear_tiled.wgsl - DO NOT EDIT.
-// wgsl-sha256: bb054c7ab0937a24089df4944001666c902c3c4b31e9555ec916bf357c2104f7
+// wgsl-sha256: 723ff884cd63485561079eaab4c93d604b938372ce79733402f17494b25a8e91
 inline constexpr const char* kLinearTiledWGSL = R"(
 struct Params {
   M: u32,
   N: u32,
   K: u32,
-  pad_: u32,
+  has_bias: u32,
 };
 
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+@group(0) @binding(4) var<storage, read> bias: array<f32>;
 
 const TILE: u32 = 32u;
 const RPT: u32 = 4u;
@@ -92,7 +93,11 @@ fn main(
       let r = tile_row0 + tile_row + ir;
       let c = tile_col0 + tile_col + ic;
       if (r < params.M && c < params.N) {
-        out[r * params.N + c] = acc[ir][ic];
+        var v = acc[ir][ic];
+        if (params.has_bias != 0u) {
+          v = v + bias[c];
+        }
+        out[r * params.N + c] = v;
       }
     }
   }
