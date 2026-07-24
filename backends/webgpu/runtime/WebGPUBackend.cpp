@@ -164,18 +164,22 @@ Error WebGPUBackend::execute(
     return Error::Internal;
   }
 
-  // Execute the compute graph
-  graph->execute();
-
-  // Copy outputs from GPU staging buffers to EValue tensor data pointers
-  std::vector<std::pair<void*, size_t>> outputs;
-  outputs.reserve(num_outputs);
-  for (size_t i = 0; i < num_outputs; i++) {
-    const size_t arg_idx = num_inputs + i;
-    auto& tensor = args[arg_idx]->toTensor();
-    outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+  // Execute + read back; fail loud as a runtime Error so a throw never crosses
+  // the backend boundary.
+  try {
+    graph->execute();
+    std::vector<std::pair<void*, size_t>> outputs;
+    outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t arg_idx = num_inputs + i;
+      auto& tensor = args[arg_idx]->toTensor();
+      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+    }
+    graph->copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
+    return Error::Internal;
   }
-  graph->copy_outputs(outputs);
 
   return Error::Ok;
 }
