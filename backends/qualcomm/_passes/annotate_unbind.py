@@ -18,16 +18,14 @@ class AnnotateUnbind(ExportPass):
     generated after quantization process.
     """
 
-    decomp_ops = [torch.ops.aten.unbind.int]
+    _SOURCE_OPS = [torch.unbind, torch.ops.aten.unbind.int, "unbind"]
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateUnbind, self).__init__()
         self.edge_program = edge_program
 
     def _annotate_unbind(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(
-            graph_module.graph, [torch.unbind, torch.ops.aten.unbind.int, "unbind"]
-        )
+        partitions = get_source_partitions(graph_module.graph, self._SOURCE_OPS)
         for src_partitions in partitions.values():
             for src_partition in src_partitions:
                 if src_partition.input_nodes[0].target in dq_ops:

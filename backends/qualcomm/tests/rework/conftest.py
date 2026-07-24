@@ -10,7 +10,6 @@ import logging
 import os
 import random
 import subprocess
-
 import tempfile
 import time
 import traceback
@@ -18,6 +17,7 @@ import xml.etree.ElementTree as et
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Tuple
 
@@ -60,6 +60,15 @@ def check_exception(msg):
         return msg in traceback.format_exc()
 
     return partial(_check, msg)
+
+
+# extend this to tests that are agnostic across SoCs.
+def default_property():
+    @dataclass
+    class Property:
+        soc_model: str = "SM8850"
+
+    return Property()
 
 
 class Metrics(ABC):

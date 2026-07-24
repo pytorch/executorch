@@ -129,10 +129,8 @@ class QnnPassManager(PassManager):
             (DecomposeAny, True),
             (DecomposeAtan2, True),
             (DecomposeColIm, True),
-            (DecomposeCDist, True),
             (DecomposeDiagonal, True),
             (DecomposeDivMode, True),
-            (DecomposeFill, True),
             (DecomposeHyperbolicVariants, True),
             (DecomposeLogVariants, True),
             (DecomposeMaxPool3d, True),
@@ -141,7 +139,6 @@ class QnnPassManager(PassManager):
             (DecomposeRemainder, True),
             (DecomposeTan, True),
             (DecomposeTrunc, True),
-            (DecomposeVar, True),
             (ExpandBroadcastTensorShape, True),
             (FixedLinearKeepDim, True),
             (FoldQDQ, True),
@@ -205,7 +202,6 @@ class QnnPassManager(PassManager):
         passes = [
             DecomposeBinaryAlpha,
             DecomposeCDist,
-            DecomposePad,
             DecomposeScaledDotProductAttention,
             DecomposeRoll,
             DecomposeSelectScatter,
@@ -288,19 +284,16 @@ class QnnPassManager(PassManager):
             DecomposeAny: [RemoveRedundancy],
             DecomposeAtan2: [RemoveRedundancy],
             DecomposeColIm: [FoldQDQ],
-            DecomposeCDist: [RemoveRedundancy],
             DecomposeDiagonal: [RemoveRedundancy],
             DecomposeDivMode: [RemoveRedundancy],
             DecomposeFill: [RemoveRedundancy],
             DecomposeHyperbolicVariants: [RemoveRedundancy],
-            DecomposeLinalgVectorNorm: [RemoveRedundancy],
             DecomposeLogVariants: [RemoveRedundancy],
             DecomposeMaxPool3d: [RemoveRedundancy],
             DecomposePad: [RemoveRedundancy],
             DecomposeRemainder: [RemoveRedundancy],
             DecomposeTan: [RemoveRedundancy],
             DecomposeTrunc: [RemoveRedundancy],
-            DecomposeVar: [RemoveRedundancy],
             ExpandBroadcastTensorShape: [FoldQDQ],
             FixedLinearKeepDim: [FoldQDQ],
             FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
@@ -474,8 +467,6 @@ class QnnPassManager(PassManager):
             insert_permute=True,
         )
         self._transform(exported_program.graph_module)
-        # Update inputs_to_buffers and buffers_to_mutate in graph signature for mutable buffer
-        # Since I/O will be inserted Q/DQ, it results in failed to mapping output node names and buffer
         exported_program._graph_signature = _get_updated_graph_signature(
             exported_program.graph_signature,
             exported_program.graph_module,
