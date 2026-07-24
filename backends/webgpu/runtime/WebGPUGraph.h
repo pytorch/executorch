@@ -152,6 +152,10 @@ class WebGPUGraph {
   bool get_bool(int id) const {
     return bools_[id];
   }
+  // String value (e.g. gelu's `approximate` kwarg).
+  const std::string& get_string(int id) const {
+    return strings_[id];
+  }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
   // set_symint writes the buffer + marks dirty only if the value changed.
@@ -238,6 +242,20 @@ class WebGPUGraph {
   size_t add_dispatch(WebGPUDispatch dispatch) {
     dispatches_.push_back(dispatch);
     return dispatches_.size() - 1;
+  }
+
+  // 2D sibling of add_dispatch (sets workgroup_count_y); returns the index.
+  size_t add_dispatch_2d(
+      WGPUComputePipeline pipeline,
+      WGPUBindGroup bind_group,
+      uint32_t count_x,
+      uint32_t count_y) {
+    WebGPUDispatch d;
+    d.pipeline = pipeline;
+    d.bind_group = bind_group;
+    d.workgroup_count_x = count_x;
+    d.workgroup_count_y = count_y;
+    return add_dispatch(d);
   }
 
   // In-graph buffer-to-buffer DMA (e.g. flat copy); returns the dispatch index.
@@ -376,6 +394,7 @@ class WebGPUGraph {
   std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::string> strings_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {
@@ -450,6 +469,43 @@ class WebGPUGraph {
   std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
+
+  // QKV-concat fusion: one detected attention q/k/v linear
+  // triple sharing an input activation (value ids + shapes), fused in build()
+  // into a single multi-output q4gsw GEMM that scatter-writes q/k/v. Only used
+  // during build(); inert (never populated) when no q/k/v triple matches.
+  struct QkvFusionGroup {
+    int input_id = -1;
+    int out_q = -1, out_k = -1, out_v = -1;
+    int weight_q = -1, weight_k = -1, weight_v = -1;
+    int scales_q = -1, scales_k = -1, scales_v = -1;
+    uint32_t Nq = 0, Nk = 0, Nv = 0; // 2048, 512, 512
+    uint32_t K = 0, K_packed = 0, group_size = 0, num_groups = 0;
+    uint32_t padded_N_q = 0, padded_N_k = 0, padded_N_v = 0;
+    unsigned op_idx[3] = {0, 0, 0}; // the 3 q/k/v linear op-chain indices
+    size_t sep_dispatch[3] = {
+        0,
+        0,
+        0}; // their dispatch indices (filled in build())
+    size_t fused_dispatch = 0; // the fused GEMM dispatch index
+    WGPUBuffer fused_params =
+        nullptr; // the fused params UBO (rewritten by the hook)
+  };
+  // Concat the 3 packed weights (row-stack) + scales (strided gather) into
+  // fused buffers, then record ONE fused-GEMM dispatch (bespoke 8-binding
+  // layout) that writes the 3 original q/k/v output buffers, plus a 3-output
+  // resize hook.
+  void add_qkv_fused_dispatch(QkvFusionGroup& g);
+  void add_qkv_fused_hook(const QkvFusionGroup& g);
+
+  // SwiGLU fusion: emit ONE fused elementwise dispatch
+  // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2
+  // muls. `out` is repointed to a private pooled buffer (aliasing guard);
+  // `gate` is likewise given a private pooled buffer at its producer op by the
+  // build() walk (the planner reuse-aliases up onto gate's slot, so up_proj
+  // would stomp gate before the fused reads it). Only used during build(); the
+  // detection maps are empty (inert) when no SwiGLU triple matches.
+  void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
 
 } // namespace executorch::backends::webgpu

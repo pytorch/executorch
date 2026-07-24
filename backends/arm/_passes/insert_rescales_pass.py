@@ -19,6 +19,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -109,6 +110,14 @@ class InsertRescalePass(ArmPass):
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
             graph_module.graph.erase_node(user)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().support_integer():
+            return False
+        return any(
+            graph_module.graph.find_nodes(op="call_function", target=target, sort=False)
+            for target in DQ_OPS
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False

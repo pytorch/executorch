@@ -89,6 +89,12 @@ class Div(torch.nn.Module):
             return torch.div(input=input_, other=other_, rounding_mode=rounding_mode)
 
 
+# We need to get this op directly to have coverage
+class DivScalar(torch.nn.Module):
+    def forward(self, input_: torch.Tensor):
+        return torch.ops.aten.div.Scalar(input_, 2.0)
+
+
 @common.parametrize("test_data", test_data_suite)
 def test_div_tensor_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](Div(), test_data(), aten_op, exir_op)
@@ -147,5 +153,54 @@ def test_div_tensor_vgf_quant(test_data: Tuple):
         aten_op=[],
         exir_op=[],
         quantize=True,
+    )
+    pipeline.run()
+
+
+aten_op_scalar = "torch.ops.aten.div.Scalar"
+exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_div_Scalar"
+
+test_data_suite_scalar = {
+    "op_div_scalar_rank1_rand": lambda: (torch.rand(5) + 1.0,),
+    "op_div_scalar_rank4_rand": lambda: (torch.rand(5, 10, 25, 20) + 1.0,),
+}
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@common.SkipIfNoModelConverter
+def test_div_scalar_vgf_no_quant(test_data: input_t1):
+    """Test Tensor / Scalar division (VGF FP)."""
+    pipeline = VgfPipeline[input_t1](
+        DivScalar(),
+        test_data(),
+        aten_op_scalar,
+        exir_op_scalar,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+aten_ops_quant = [
+    "torch.ops.aten.reciprocal.default",
+    "torch.ops.aten.mul.Tensor",
+]
+
+exir_ops_quant = [
+    "executorch_exir_dialects_edge__ops_aten_reciprocal_default",
+    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+]
+
+
+@common.parametrize("test_data", test_data_suite_scalar)
+@common.SkipIfNoModelConverter
+def test_div_scalar_vgf_quant(test_data: input_t1):
+    """Test Tensor / Scalar division (VGF INT)."""
+    pipeline = VgfPipeline[input_t1](
+        DivScalar(),
+        test_data(),
+        aten_op=aten_ops_quant,
+        exir_op=exir_ops_quant,
+        quantize=True,
+        use_to_edge_transform_and_lower=False,
     )
     pipeline.run()
