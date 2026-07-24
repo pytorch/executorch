@@ -71,6 +71,16 @@ WEBGPU_SUPPORTED_OPS = [
     exir_ops.edge.et_vk.conv_with_clamp.default,
     exir_ops.edge.aten.grid_sampler_2d.default,
     exir_ops.edge.et_vk.grid_priors.default,
+    exir_ops.edge.et_vk.linear_qcs4w.default,
+    exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+    exir_ops.edge.et_vk.q8ta_add.default,
+    exir_ops.edge.et_vk.q8ta_relu.default,
+    exir_ops.edge.et_vk.q8ta_pixel_shuffle.default,
+    exir_ops.edge.et_vk.q8ta_linear.default,
+    exir_ops.edge.et_vk.q8ta_linear_gemv.default,
+    exir_ops.edge.et_vk.q8ta_conv2d.default,
+    exir_ops.edge.et_vk.q8ta_conv2d_dw.default,
+    exir_ops.edge.et_vk.q8ta_conv2d_pw.default,
 ]
 
 
