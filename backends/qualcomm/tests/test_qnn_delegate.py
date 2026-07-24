@@ -2194,6 +2194,42 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_scatter_value(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterValue(dim=1, value=0.5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterValue(dim=0, value=1.0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_rsqrt(self):
         module = Rsqrt()  # noqa: F405
         sample_input = (torch.abs(torch.randn([3, 4])),)
@@ -5316,6 +5352,43 @@ class TestQNNQuantizedOperator(TestQNN):
                             dtype=torch.int64,
                         ),
                         torch.rand(3, 5),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_value(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterValue(dim=1, value=0.5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterValue(dim=0, value=1.0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
                     ),
                 ],
             },

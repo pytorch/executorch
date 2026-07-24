@@ -2304,6 +2304,16 @@ class ScatterSrc(torch.nn.Module):
         return torch.scatter(data, self.dim, index, src)
 
 
+class ScatterValue(torch.nn.Module):
+    def __init__(self, dim=1, value=0.5):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+
+    def forward(self, data, index):
+        return torch.scatter(data, self.dim, index, self.value)
+
+
 class SelectCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
