@@ -304,6 +304,7 @@ def _has_qparams(node: Node) -> bool:
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.sigmoid.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.tanh.default)
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.silu.default)
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.gelu.default)
 def _get_activation_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
@@ -819,7 +820,7 @@ def _get_avg_pool2d_replacement(
     count_include_pad = cast(bool, pool_args[5]) if len(pool_args) > 5 else True
     divisor_override = pool_args[6] if len(pool_args) > 6 else None
 
-    if ceil_mode or divisor_override is not None:
+    if divisor_override is not None:
         return None
 
     input_node = cast(Node, pool_args[0])
@@ -847,6 +848,7 @@ def _get_avg_pool2d_replacement(
         kernel_size,
         stride,
         avg_padding,
+        ceil_mode,
         int(input_zp),
         int(output_mult),
         int(output_shift),
