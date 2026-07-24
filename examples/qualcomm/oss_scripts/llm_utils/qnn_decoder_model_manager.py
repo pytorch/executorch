@@ -239,7 +239,7 @@ class QnnLLMEdgeManager:
                     atten_mask = _build_mask(n_past, past_len, context_len)
                     input_pos = torch.tensor([[n_past]], dtype=torch.int32)
                     logits, new_k, new_v = module(
-                        torch.full((1, 1), token_list[pos]),
+                        torch.full((1, 1), token_list[pos], dtype=torch.int32),
                         atten_mask,
                         input_pos,
                         past_k,

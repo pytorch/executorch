@@ -198,7 +198,7 @@ class QnnCausalLMExportableModule(torch.nn.Module):
             self._metadata.update({"use_sdpa_with_kv_cache": False})
 
     def get_example_inputs(self):
-        input_ids = torch.tensor([[1]] * self.ar_len, dtype=torch.long).view(1, -1)
+        input_ids = torch.tensor([[1]] * self.ar_len, dtype=torch.int32).view(1, -1)
         # Explicit additive causal mask, matching static_llama / KVManager:
         # 0.0 == attend, large-negative == masked. Shape [B, 1, ar_len, context_len].
         atten_mask = torch.zeros(1, 1, self.ar_len, self.max_seq_len)
