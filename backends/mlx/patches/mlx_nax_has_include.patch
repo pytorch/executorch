@@ -1,43 +1,49 @@
 Guard the NAX MetalPerformancePrimitives includes behind __has_include.
 
 MLX's NAX kernels (GEMM and attention) unconditionally include
-<MetalPerformancePrimitives/MetalPerformancePrimitives.h>, a framework that
-only ships in the macOS 26 / Xcode 26 SDK. On older SDKs the JIT preamble
-generator (make_compiled_preamble.sh) runs `metal -E` over these headers, which
-fatals on the missing include and fails the build. MLX already gates NAX on the
-non-JIT metallib path (kernels/CMakeLists.txt), but the JIT path
-(MLX_METAL_JIT=ON, which ExecuTorch uses) is ungated.
+<MetalPerformancePrimitives/MetalPerformancePrimitives.h>, a framework
+that only ships in the macOS 26 / Xcode 26 SDK. On older SDKs the JIT
+preamble generator (make_compiled_preamble.sh) runs `metal -E` over
+these headers, which fatals on the missing include and fails the build.
+MLX already gates NAX on the non-JIT metallib path (kernels/CMakeLists.txt),
+but the JIT path (MLX_METAL_JIT=ON, which ExecuTorch uses) is ungated.
 
-This wraps the includes in `#if __has_include(...)` so preprocessing succeeds on
-pre-26 SDKs (NAX kernels are never JIT-compiled at runtime there anyway, since
-device.cpp:is_nax_available() returns false), while macOS 26 still gets NAX.
+This wraps the includes in `#if __has_include(...)` so preprocessing
+succeeds on pre-26 SDKs (NAX kernels are never JIT-compiled at runtime
+there anyway, since device.cpp:is_nax_available() returns false), while
+macOS 26 still gets NAX.
 
 Upstream candidate; carried locally until an MLX release gates the JIT path.
 
+Regenerated against the currently-pinned MLX submodule commit: gemm/nax.h
+picked up an extra `#include ".../gemm/transforms.h"` line upstream since
+this patch was first written, shifting its context. attn/nax.h's context
+was unchanged.
+
 diff --git a/mlx/backend/metal/kernels/steel/gemm/nax.h b/mlx/backend/metal/kernels/steel/gemm/nax.h
+index 5839176..05f3320 100644
 --- a/mlx/backend/metal/kernels/steel/gemm/nax.h
 +++ b/mlx/backend/metal/kernels/steel/gemm/nax.h
-@@ -9,7 +9,9 @@
- #include "mlx/backend/metal/kernels/steel/defines.h"
+@@ -10,7 +10,9 @@
+ #include "mlx/backend/metal/kernels/steel/gemm/transforms.h"
  #include "mlx/backend/metal/kernels/steel/utils/integral_constant.h"
  
--#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
 +#if __has_include(<MetalPerformancePrimitives/MetalPerformancePrimitives.h>)
-+#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
+ #include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
 +#endif
  
  using namespace metal;
  
 diff --git a/mlx/backend/metal/kernels/steel/attn/nax.h b/mlx/backend/metal/kernels/steel/attn/nax.h
+index c8f3ea5..3e9542d 100644
 --- a/mlx/backend/metal/kernels/steel/attn/nax.h
 +++ b/mlx/backend/metal/kernels/steel/attn/nax.h
 @@ -9,7 +9,9 @@
  #include "mlx/backend/metal/kernels/steel/defines.h"
  #include "mlx/backend/metal/kernels/steel/utils/integral_constant.h"
  
--#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
 +#if __has_include(<MetalPerformancePrimitives/MetalPerformancePrimitives.h>)
-+#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
+ #include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>
 +#endif
  
  using namespace metal;

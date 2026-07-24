@@ -484,3 +484,8 @@ clean:
 	rm -rf cmake-out \
 	       extension/llm/tokenizers/build \
 	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
+
+# qwen3_dflash-mlx target removed: it depended on the C++ engine sources
+# (CMakeLists.txt, CMakePresets.json, qwen3_dflash_engine.*), which are
+# gitignored/not yet landed. Restore this target in the follow-up PR that
+# actually lands the C++ engine.
