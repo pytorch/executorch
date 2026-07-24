@@ -112,92 +112,42 @@ void index_select_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   graph.add_uniform_buffer_bytes(
       2 * sizeof(TensorMeta) + sizeof(IndexSelectParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kIndexSelectWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
   // in, out (rw), index (read i32), out_meta, in_meta, params (3 uniforms).
-  WGPUBindGroupLayoutEntry entries[6] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Storage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-  entries[5].binding = 5;
-  entries[5].visibility = WGPUShaderStage_Compute;
-  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 6;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[6] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = self_tensor.buffer;
-  bg_entries[0].size = self_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = out_tensor.buffer;
-  bg_entries[1].size = out_tensor.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = index_tensor.buffer;
-  bg_entries[2].size = index_tensor.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = out_meta_buf;
-  bg_entries[3].size = sizeof(TensorMeta);
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = in_meta_buf;
-  bg_entries[4].size = sizeof(TensorMeta);
-  bg_entries[5].binding = 5;
-  bg_entries[5].buffer = params_buf;
-  bg_entries[5].size = sizeof(IndexSelectParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 6;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kIndexSelectWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           self_tensor.buffer,
+           self_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           index_tensor.buffer,
+           index_tensor.nbytes},
+          {3, WGPUBufferBindingType_Uniform, out_meta_buf, sizeof(TensorMeta)},
+          {4, WGPUBufferBindingType_Uniform, in_meta_buf, sizeof(TensorMeta)},
+          {5,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(IndexSelectParams)},
+      },
+      &wg_size_constant,
+      1);
 
   // Static shapes only: index_select registers no resize hook, so the output
   // extent (out.dims[dim] == index numel) is fixed at build time.
   graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "index_select",
        workgroup_count.y});
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Drop our refs; the bind group keeps the uniforms alive until release.
   wgpuBufferRelease(out_meta_buf);
   wgpuBufferRelease(in_meta_buf);
