@@ -36,6 +36,7 @@ from executorch.backends.webgpu.test.ops.test_cat import (
 )
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
+from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
@@ -304,6 +305,36 @@ def _repeat_suite() -> WebGPUTestSuite:
             ),
         ],
         golden_dtype="float32",
+    )
+
+
+@register_op_test("native_group_norm")
+def _group_norm_suite() -> WebGPUTestSuite:
+    # 2-pass norm returning (out, mean, rstd); the multi-output golden verifies
+    # both the reduce (mean/rstd) and normalize (out) passes. float64 oracle.
+    return WebGPUTestSuite(
+        module_factory=lambda num_channels, num_groups: GroupNormModule(
+            num_channels, num_groups
+        ),
+        cases=[
+            Case(
+                name="c4_g2",
+                construct={"num_channels": 4, "num_groups": 2},
+                inputs=((2, 4, 3, 5),),
+            ),
+            Case(
+                name="c6_g3",
+                construct={"num_channels": 6, "num_groups": 3},
+                inputs=((1, 6, 2, 2),),
+            ),
+            Case(
+                name="c4_g1",
+                construct={"num_channels": 4, "num_groups": 1},
+                inputs=((1, 4, 3, 3),),
+            ),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
     )
 
 
