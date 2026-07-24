@@ -4,9 +4,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_opt
 def _program_preprocessor_flags():
     """Returns the preprocessor_flags to use when building Program.cpp"""
 
-    # The code for flatbuffer verification can add ~30k of .text to the binary.
-    # It's a valuable feature, but make it optional for space-constrained
-    # systems.
+    # The code for flatbuffer verification adds ~8kB of .text (~4kB stripped).
+    # It's enabled by default, but can be disabled for space-constrained
+    # systems. When disabled, requesting InternalConsistency verification
+    # will return Error::NotSupported.
     enable_verification = native.read_config(
         "executorch",
         "enable_program_verification",
