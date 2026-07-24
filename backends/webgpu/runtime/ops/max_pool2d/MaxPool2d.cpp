@@ -101,6 +101,14 @@ void max_pool2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU max_pool2d: zero stride");
   }
 
+  // ceil_mode (arg 5) rounds the output size up. The shader already skips
+  // out-of-bounds window positions, so only the host output size changes.
+  bool ceil_mode = false;
+  if (args.size() > 5 &&
+      graph.get_value_type(args.at(5)) == WebGPUGraph::ValueType::Bool) {
+    ceil_mode = graph.get_bool(args.at(5));
+  }
+
   const int64_t oh_num =
       int64_t(IH) + 2 * int64_t(pH) - int64_t(dH) * (int64_t(kH) - 1) - 1;
   const int64_t ow_num =
@@ -108,8 +116,19 @@ void max_pool2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (oh_num < 0 || ow_num < 0) {
     throw std::runtime_error("WebGPU max_pool2d: kernel larger than input");
   }
-  const uint32_t OH = static_cast<uint32_t>(oh_num / int64_t(sH)) + 1;
-  const uint32_t OW = static_cast<uint32_t>(ow_num / int64_t(sW)) + 1;
+  const int64_t addH = ceil_mode ? int64_t(sH) - 1 : 0;
+  const int64_t addW = ceil_mode ? int64_t(sW) - 1 : 0;
+  uint32_t OH = static_cast<uint32_t>((oh_num + addH) / int64_t(sH)) + 1;
+  uint32_t OW = static_cast<uint32_t>((ow_num + addW) / int64_t(sW)) + 1;
+  // ceil_mode: drop a trailing window that begins entirely in the padding.
+  if (ceil_mode) {
+    if ((int64_t(OH) - 1) * int64_t(sH) >= int64_t(IH) + int64_t(pH)) {
+      OH--;
+    }
+    if ((int64_t(OW) - 1) * int64_t(sW) >= int64_t(IW) + int64_t(pW)) {
+      OW--;
+    }
+  }
 
   // Validate against the serialized values output [N, C, OH, OW] (loud-fail if
   // the arg interpretation is wrong, e.g. ceil_mode or a different layout).
