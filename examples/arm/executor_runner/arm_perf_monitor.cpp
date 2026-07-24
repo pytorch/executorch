@@ -235,8 +235,10 @@ void StopMeasurements(int num_inferences) {
 }
 
 #else
+// cppcheck-suppress unusedFunction
 void StartMeasurements() {}
 
+// cppcheck-suppress unusedFunction
 void StopMeasurements(int num_inferences) {
   (void)num_inferences;
 }
