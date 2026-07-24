@@ -32,6 +32,7 @@ class MetalBackend(AotiBackend, BackendDetails):
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         return {
+            "aoti_torch_mps_addmm_out": None,
             "aoti_torch_mps_bmm_out": None,
             "aoti_torch_mps_convolution": None,
             "aoti_torch_mps_mm_out": None,

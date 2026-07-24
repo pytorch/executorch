@@ -189,6 +189,46 @@ MODULE_REGISTRY["mm_weight_param"] = {
 
 
 # -------------------------------------------------------------------------
+class Addmm(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bias = nn.Parameter(torch.randn(5))
+        self.weight = nn.Parameter(torch.randn(4, 5))
+
+    def forward(self, x: torch.Tensor):
+        return torch.addmm(self.bias, x, self.weight)
+
+
+MODULE_REGISTRY["addmm"] = {
+    "model_class": Addmm,
+    "input_shapes": [(1, 4)],
+    "description": (
+        "Raw addmm with batch=1, which AOTInductor lowers to the "
+        "aoti_torch_mps_addmm_out fallback kernel"
+    ),
+}
+
+
+# -------------------------------------------------------------------------
+# View / copy Modules
+# -------------------------------------------------------------------------
+
+
+class SplitCat(nn.Module):
+    def forward(self, x: torch.Tensor):
+        # torch.split lowers to aten.split_copy.Tensor in the edge dialect.
+        a, b, c = torch.split(x, 2, dim=1)
+        return torch.cat([a * 2.0, b + 1.0, c], dim=1)
+
+
+MODULE_REGISTRY["split_cat"] = {
+    "model_class": SplitCat,
+    "input_shapes": [(1, 6, 4)],
+    "description": "Channel split + concat, exercising split_copy -> split",
+}
+
+
+# -------------------------------------------------------------------------
 # Linear Modules
 # -------------------------------------------------------------------------
 
@@ -223,6 +263,18 @@ MODULE_REGISTRY["linear_bias"] = {
     "model_class": LinearWithBias,
     "input_shapes": [(127, 7)],
     "description": "Simple linear layer model with bias",
+}
+
+
+# -------------------------------------------------------------------------
+MODULE_REGISTRY["linear_bias_batch1"] = {
+    "model_class": LinearWithBias,
+    "input_shapes": [(1, 7)],
+    "description": (
+        "Linear with bias and batch=1. AOTInductor re-fuses mm+bias into "
+        "addmm here (the MobileNet classifier case), exercising "
+        "aoti_torch_mps_addmm_out"
+    ),
 }
 
 
