@@ -424,6 +424,15 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--lazy_kv_cache",
+        action="store_true",
+        default=False,
+        help="Mark KV cache buffers as DYNAMIC_UNBOUND so they are allocated "
+        "lazily at runtime instead of at load time. Reduces initial memory "
+        "usage when max_context_length is large.",
+    )
+
+    parser.add_argument(
         "--local_global_attention",
         type=parse_list_of_ints,
         default=None,
@@ -809,6 +818,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
             quantize_with_hqq=llm_config.quantization.use_hqq,
+            lazy_kv_cache=llm_config.export.lazy_kv_cache,
         )
     )
 
@@ -1443,6 +1453,12 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
     # which corrupts the causal mask computation.
     if llm_config.model.use_attention_sink:
         additional_passes.append(InitializedMutableBufferPass(["cache_positions"]))
+    if llm_config.export.lazy_kv_cache:
+        from executorch.exir.passes.mark_dynamic_unbound_pass import (
+            MarkDynamicUnboundPass,
+        )
+
+        additional_passes.append(MarkDynamicUnboundPass())
 
     # export_to_edge
     builder_manager = _prepare_for_llama_export(llm_config)
@@ -1712,6 +1728,7 @@ def _get_source_transforms(  # noqa
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,
+    lazy_kv_cache: bool = False,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1838,6 +1855,24 @@ def _get_source_transforms(  # noqa
 
     if quantize_kv_cache:
         assert use_kv_cache, "quantize_kv_cache requires use_kv_cache=True"
+        # TODO: --lazy_kv_cache + --quantize_kv_cache is not yet
+        # supported. QuantizedKVCache.from_float reads the source cache shape
+        # to determine max_context_length; with lazy=True the shape is
+        # [B, 0, H, D], so it creates a permanently-zero-sized quantized cache
+        # that silently produces wrong results. Proper support requires:
+        #   1. Plumbing `lazy` into QuantizedKVCache (moderate: ~100 LOC across
+        #      custom_kv_cache.py and quantized_sdpa.py).
+        #   2. Making QuantizedKVCache register its k/v buffers with seq_len=0
+        #      and matching name patterns so MarkDynamicUnboundPass picks them up.
+        #   3. Ensuring the quantized update_cache C++ op also calls
+        #      maybe_resize_cache (or equivalent) to grow before dequant+write.
+        # Estimated effort: a few days of work, mostly in the quantized SDPA
+        # kernel which packs/unpacks int4 cache values in a layout-specific way
+        # that complicates in-place growth.
+        assert not lazy_kv_cache, (
+            "--lazy_kv_cache and --quantize_kv_cache cannot be used together yet. "
+            "QuantizedKVCache does not support DYNAMIC_UNBOUND lazy allocation."
+        )
         transforms.append(replace_kv_cache_with_quantized_kv_cache)
         # Right now
         transforms.append(replace_sdpa_with_quantized_sdpa)

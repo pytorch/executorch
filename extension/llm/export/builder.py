@@ -528,6 +528,7 @@ class LLMEdgeManager:
             Callable[[torch.fx.Node], Optional[str]]
         ] = None,
         share_mutable_buffers: bool = False,
+        emit_mutable_buffer_names: bool = False,
     ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
@@ -538,6 +539,13 @@ class LLMEdgeManager:
             # expected `Iterable[Union[ConvertToLinearPass, QuantFusionPass]]` but
             # got `List[ExportPass]
             to_executorch_passes.extend(passes)
+            if not emit_mutable_buffer_names:
+                from executorch.exir.passes.mark_dynamic_unbound_pass import (
+                    MarkDynamicUnboundPass,
+                )
+
+                if any(isinstance(p, MarkDynamicUnboundPass) for p in passes):
+                    emit_mutable_buffer_names = True
 
         assert self.edge_manager, "Need to run export_to_edge() first"
 
@@ -564,6 +572,7 @@ class LLMEdgeManager:
                 ),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
                 external_constants=external_constants_tag,
+                emit_mutable_buffer_names=emit_mutable_buffer_names,
             )
         )
         logging.info(

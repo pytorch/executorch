@@ -13,6 +13,7 @@ import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.node import Node
@@ -130,3 +131,7 @@ class SpecPropPass(ExportPass):
                 in exported_program.graph_signature.inputs_to_lifted_tensor_constants
             ):
                 spec.const = True
+            if isinstance(spec, TensorSpec) and node.meta.get(
+                "et_dynamic_unbound", False
+            ):
+                spec.shape_dynamism = TensorShapeDynamism.DYNAMIC_UNBOUND

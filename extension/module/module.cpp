@@ -14,6 +14,9 @@
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/runtime/core/device_memory_buffer.h>
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+#include <executorch/runtime/executor/pal_dynamic_allocator.h>
+#endif
 #include <executorch/runtime/platform/runtime.h>
 
 namespace executorch {
@@ -288,8 +291,9 @@ runtime::Error Module::load_internal(const Program::Verification verification) {
       for (const auto& data_map : named_data_maps_) {
         raw_data_maps.push_back(data_map.get());
       }
-      auto res_merged = MergedDataMap::load(runtime::Span<const NamedDataMap*>(
-          raw_data_maps.data(), raw_data_maps.size()));
+      auto res_merged = MergedDataMap::load(
+          runtime::Span<const NamedDataMap*>(
+              raw_data_maps.data(), raw_data_maps.size()));
       if (!res_merged.ok()) {
         return res_merged.error();
       }
@@ -520,8 +524,19 @@ runtime::Error Module::load_method(
       }
     }
 
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+    method_holder.dynamic_allocator =
+        std::make_unique<runtime::PalDynamicAllocator>();
+#endif
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
-        memory_allocator_.get(), planned_memory, temp_allocator_.get());
+        memory_allocator_.get(),
+        planned_memory,
+        temp_allocator_.get()
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+            ,
+        method_holder.dynamic_allocator.get()
+#endif
+    );
     method_holder.kernel_registry = std::move(kernel_registry);
     auto res_method = program_->load_method(
         method_name.c_str(),
@@ -586,8 +601,9 @@ runtime::Error Module::set_inputs(
     const std::vector<runtime::EValue>& input_values) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
-  return method->set_inputs(executorch::aten::ArrayRef<runtime::EValue>(
-      input_values.data(), input_values.size()));
+  return method->set_inputs(
+      executorch::aten::ArrayRef<runtime::EValue>(
+          input_values.data(), input_values.size()));
 }
 
 runtime::Error Module::set_output(
