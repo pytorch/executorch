@@ -64,6 +64,9 @@ from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
 from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
     make_qcs4w_linear_module,
 )
+from executorch.backends.webgpu.test.ops.test_linear_q8ta_q8csw import (
+    make_linear_q8ta_q8csw_module,
+)
 from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
     make_q8ta_linear_module,
 )
@@ -1564,6 +1567,35 @@ def _linear_qcs4w_suite() -> WebGPUTestSuite:
             case("gemv", 1, 32, 16),  # M==1
             case("k64", 2, 64, 8),
             case("n32", 3, 32, 32),
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("linear_q8ta_q8csw")
+def _linear_q8ta_q8csw_suite() -> WebGPUTestSuite:
+    # XNNPACK-static nn.Linear with output_activation=None -> delegated
+    # quantize_per_tensor -> linear_q8ta_q8csw (fp32 out). Golden = converted
+    # eager (fp32 fake-quant). All cases use bias=True: a bias-less TERMINAL
+    # linear mis-fuses to an int8 output the schema (no output scale/zp) cannot
+    # compute -> the handler fail-louds on it; bias keeps the output fp32. N is a
+    # multiple of 4 (the AOT pads the quantized weight's N to a mult of 4).
+    def case(name, m, k, n, **kw):
+        return Case(
+            name=name,
+            construct={"k": k, "n": n, "m": m, "bias": True, **kw},
+            inputs=((m, k),),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: make_linear_q8ta_q8csw_module(**kw),
+        cases=[
+            case("basic", 4, 32, 16),
+            case("gemv", 1, 32, 16),  # M==1
+            case("k48", 2, 48, 8),  # different K, smaller N
+            case("n32", 3, 32, 32),  # larger N
         ],
         golden_dtype="float32",
         atol=1e-3,
