@@ -20,7 +20,6 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::native::dequantize_per_channel_out;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::dequantize_per_tensor_tensor_args_out;
@@ -49,7 +48,7 @@ void test_dtype() {
       quant_min,
       quant_max,
       DTYPE,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -87,7 +86,7 @@ void test_output_dtype() {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(OUT_DTYPE),
+      std::optional<ScalarType>(OUT_DTYPE),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -120,7 +119,7 @@ TEST(OpDequantizeOutTest, HalfOutput) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(ScalarType::Half),
+      std::optional<ScalarType>(ScalarType::Half),
       out);
 
   // The expected result should be (10 - 100000) * 0.5 = -49995
@@ -147,7 +146,7 @@ TEST(OpDequantizeOutTest, DoubleOutput) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(ScalarType::Double),
+      std::optional<ScalarType>(ScalarType::Double),
       out);
 
   // The expected result should be (10 - 100000) * 0.5 = -49995
@@ -176,7 +175,7 @@ TEST(OpDequantizeOutTest, NonWholeNumbers) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -205,7 +204,7 @@ TEST(OpDequantizeOutTest, TensorArgOverload) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -236,7 +235,7 @@ void test_per_channel_dtype() {
       quant_min,
       quant_max,
       DTYPE,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -257,7 +256,7 @@ void test_per_channel_dtype() {
       quant_min,
       quant_max,
       DTYPE,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -279,7 +278,7 @@ void test_per_channel_dtype() {
       quant_min,
       quant_max,
       DTYPE,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
   EXPECT_TENSOR_EQ(out, expected);
 
@@ -306,7 +305,7 @@ void test_per_channel_dtype() {
       quant_min,
       quant_max,
       DTYPE,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);

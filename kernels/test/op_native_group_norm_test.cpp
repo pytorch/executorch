@@ -17,15 +17,14 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpNativeGroupNormTest : public OperatorTest {
  protected:
   ::std::tuple<Tensor&, Tensor&, Tensor&> op_native_group_norm_out(
       const Tensor& input,
-      const optional<Tensor>& weight,
-      const optional<Tensor>& bias,
+      const std::optional<Tensor>& weight,
+      const std::optional<Tensor>& bias,
       int64_t N,
       int64_t C,
       int64_t HxW,
@@ -74,9 +73,9 @@ class OpNativeGroupNormTest : public OperatorTest {
     TensorFactory<DTYPE> tf;
     for (const auto& test_case : test_cases) {
       Tensor in = tf.make(test_case.sizes, test_case.input_data);
-      optional<Tensor> weight =
+      std::optional<Tensor> weight =
           tf.make({static_cast<int32_t>(test_case.C)}, test_case.weight_data);
-      optional<Tensor> bias =
+      std::optional<Tensor> bias =
           tf.make({static_cast<int32_t>(test_case.C)}, test_case.bias_data);
       Tensor out0 = tf.zeros(test_case.sizes);
       Tensor out1 = tf.zeros(

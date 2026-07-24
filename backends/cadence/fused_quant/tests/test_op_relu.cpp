@@ -17,12 +17,11 @@
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
-using std::optional;
 
 namespace {
 
-optional<Tensor> none_tensor() {
-  return optional<Tensor>();
+std::optional<Tensor> none_tensor() {
+  return std::optional<Tensor>();
 }
 
 } // namespace
@@ -52,13 +51,13 @@ TEST_F(FusedQuantReluTest, AllQuantizedPerTensor) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -92,8 +91,8 @@ TEST_F(FusedQuantReluTest, FloatInputQuantizedOutput) {
       ScalarType::Float,
       0,
       0,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -122,8 +121,8 @@ TEST_F(FusedQuantReluTest, QuantizedInputFloatOutput) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
@@ -164,13 +163,13 @@ TEST_F(FusedQuantReluTest, PerChannelInput) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -207,8 +206,8 @@ TEST_F(FusedQuantReluTest, PerChannelOutput) {
       ScalarType::Float,
       0,
       0,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -243,13 +242,13 @@ TEST_F(FusedQuantReluTest, NonZeroZeroPoint) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -281,13 +280,13 @@ TEST_F(FusedQuantReluTest, AllNegativeInputs) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -319,13 +318,13 @@ TEST_F(FusedQuantReluTest, AllPositiveInputs) {
   cadence::fused_quant::native::relu_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,

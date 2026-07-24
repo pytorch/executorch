@@ -32,7 +32,7 @@ bool check_cdist_args(
     const Tensor& x1,
     const Tensor& x2,
     double p,
-    optional<int64_t> compute_mode,
+    std::optional<int64_t> compute_mode,
     const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, x2));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, out));
