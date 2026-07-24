@@ -48,13 +48,13 @@ def _compute_post_pad(
 
     if pad == 0:
         return pad
-    if ceil_mode and divisor_override is None:
-        return pad
-
     pad_adjust = adjust_pooling_pad_if_needed(size, kernel, stride, pad, ceil_mode)
 
-    # Padding must always be above 0, the above adjustment may return -1
-    if pad_adjust > 0:
+    if ceil_mode and divisor_override is None and pad_adjust > pad:
+        return pad
+
+    # Padding must never be below 0; the above adjustment may return -1.
+    if pad_adjust >= 0:
         return pad_adjust
     return pad
 
