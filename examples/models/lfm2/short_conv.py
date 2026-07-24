@@ -74,7 +74,14 @@ class ShortConv(nn.Module):
         with torch.no_grad():
             self.conv_state.copy_(new_conv_state)
 
-        conv_out = self.conv(Bx)[..., : x.size(-1)]  # (batch_size, dim, seq_len)
+        # Manual depthwise conv: Triton has no template for nn.Conv1d with
+        # groups=dim and dynamic seq_len.  kernel_size is always 3.
+        w = self.conv.weight[:, 0, :]  # (dim, 3)
+        conv_out = (
+            Bx[..., :-2] * w[:, 0:1]
+            + Bx[..., 1:-1] * w[:, 1:2]
+            + Bx[..., 2:] * w[:, 2:3]
+        )  # (batch_size, dim, seq_len)
         y = C * conv_out  # (batch_size, dim, seq_len)
 
         y = y.transpose(-1, -2)  # (batch_size, seq_len, dim)
