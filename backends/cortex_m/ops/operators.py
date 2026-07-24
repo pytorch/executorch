@@ -1215,6 +1215,7 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
     "int shift, "
@@ -1227,6 +1228,7 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
     "int shift, "
@@ -1241,6 +1243,7 @@ def quantized_avg_pool2d_meta(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
@@ -1254,7 +1257,7 @@ def quantized_avg_pool2d_meta(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     return torch.empty(
@@ -1271,6 +1274,7 @@ def quantized_avg_pool2d_impl(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
@@ -1288,7 +1292,7 @@ def quantized_avg_pool2d_impl(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
