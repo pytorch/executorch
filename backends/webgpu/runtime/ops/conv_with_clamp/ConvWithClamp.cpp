@@ -40,13 +40,17 @@ struct ConvWithClampParams {
   uint32_t dil_w;
   uint32_t has_bias;
   uint32_t numel;
+  uint32_t groups;
+  uint32_t ic_per_group;
   uint32_t pad0;
+  uint32_t pad1;
+  uint32_t pad2;
   float output_min;
   float output_max;
 };
 static_assert(
-    sizeof(ConvWithClampParams) == 80,
-    "ConvWithClampParams must match the WGSL Params struct (80 bytes)");
+    sizeof(ConvWithClampParams) == 96,
+    "ConvWithClampParams must match the WGSL Params struct (96 bytes)");
 
 std::pair<int64_t, int64_t> pair_or_throw(
     const std::vector<int64_t>& v,
@@ -117,8 +121,8 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("conv_with_clamp: transposed unsupported");
   }
   const int64_t groups = graph.get_int(args.at(8));
-  if (groups != 1) {
-    throw std::runtime_error("conv_with_clamp: only groups==1 supported");
+  if (groups < 1) {
+    throw std::runtime_error("conv_with_clamp: groups must be >= 1");
   }
   const float kInf = std::numeric_limits<float>::infinity();
   const float output_min = scalar_or(graph, args.at(9), -kInf);
@@ -148,13 +152,16 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "conv_with_clamp: output dims inconsistent with conv2d formula");
   }
   const uint64_t numel = N * OC * H_out * W_out;
-  if (IC == 0 || numel == 0 || numel > UINT32_MAX ||
-      static_cast<uint64_t>(weight_tensor.dims.at(1)) != IC) {
-    throw std::runtime_error("conv_with_clamp: bad shape (IC/numel/weight)");
+  const uint64_t ug = static_cast<uint64_t>(groups);
+  // Grouped weight is [OC, IC/groups, Kh, Kw]; ic_per_group = weight.dims[1].
+  const uint64_t ic_per_group = static_cast<uint64_t>(weight_tensor.dims.at(1));
+  if (IC == 0 || numel == 0 || numel > UINT32_MAX || IC % ug != 0 ||
+      OC % ug != 0 || ic_per_group * ug != IC) {
+    throw std::runtime_error("conv_with_clamp: bad shape (IC/numel/groups)");
   }
   if (out_tensor.nbytes != numel * sizeof(float) ||
       in_tensor.nbytes != N * IC * H_in * W_in * sizeof(float) ||
-      weight_tensor.nbytes != OC * IC * Kh * Kw * sizeof(float)) {
+      weight_tensor.nbytes != OC * ic_per_group * Kh * Kw * sizeof(float)) {
     throw std::runtime_error("conv_with_clamp: fp32 byte-size mismatch");
   }
   if (has_bias) {
@@ -182,6 +189,8 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.dil_w = static_cast<uint32_t>(dil_w);
   params.has_bias = has_bias ? 1u : 0u;
   params.numel = static_cast<uint32_t>(numel);
+  params.groups = static_cast<uint32_t>(groups);
+  params.ic_per_group = static_cast<uint32_t>(ic_per_group);
   params.output_min = output_min;
   params.output_max = output_max;
 
@@ -198,88 +207,46 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(ConvWithClampParams));
   graph.add_uniform_buffer_bytes(sizeof(ConvWithClampParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kConvWithClampWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // out (rw) + in/weight/bias (ro storage) + params (uniform).
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 3; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
   // No-bias: bind weight as an unread placeholder (has_bias gates the read).
   WGPUBuffer bias_buf =
       has_bias ? graph.get_tensor(bias_id).buffer : weight_tensor.buffer;
   const uint64_t bias_size =
       has_bias ? graph.get_tensor(bias_id).nbytes : weight_tensor.nbytes;
 
-  WGPUBindGroupEntry bg[5] = {};
-  bg[0].binding = 0;
-  bg[0].buffer = out_tensor.buffer;
-  bg[0].size = out_tensor.nbytes;
-  bg[1].binding = 1;
-  bg[1].buffer = in_tensor.buffer;
-  bg[1].size = in_tensor.nbytes;
-  bg[2].binding = 2;
-  bg[2].buffer = weight_tensor.buffer;
-  bg[2].size = weight_tensor.nbytes;
-  bg[3].binding = 3;
-  bg[3].buffer = bias_buf;
-  bg[3].size = bias_size;
-  bg[4].binding = 4;
-  bg[4].buffer = params_buf;
-  bg[4].size = sizeof(ConvWithClampParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConvWithClampWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_size},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(ConvWithClampParams)},
+      },
+      &wg_size_constant,
+      1);
 
   graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "conv_with_clamp",
        workgroup_count.y});
 
   // conv2d is static-shape-only: no tensor resize hook is registered, so the
   // output spatial dims stay fixed at their build-time (serialized) values.
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(params_buf);
 }
 

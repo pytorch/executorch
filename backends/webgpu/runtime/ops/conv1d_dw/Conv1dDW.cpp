@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
 
@@ -125,75 +126,39 @@ void add_conv1d_pw_node(
       utils::make_uniform(device, &params, sizeof(Conv1dPwParams));
   graph.add_uniform_buffer_bytes(sizeof(Conv1dPwParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kConv1dPwWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  for (int i = 0; i < 4; i++) {
-    entries[i].binding = static_cast<uint32_t>(i);
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = (i == 1) ? WGPUBufferBindingType_Storage
-                                      : WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
   WGPUBuffer bias_buf =
       has_bias ? graph.get_tensor(bias_id).buffer : weight_tensor.buffer;
   uint64_t bias_sz =
       has_bias ? graph.get_tensor(bias_id).nbytes : weight_tensor.nbytes;
 
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in_tensor.buffer;
-  bg_entries[0].size = in_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = out_tensor.buffer;
-  bg_entries[1].size = out_tensor.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight_tensor.buffer;
-  bg_entries[2].size = weight_tensor.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = bias_buf;
-  bg_entries[3].size = bias_sz;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = params_buf;
-  bg_entries[4].size = sizeof(Conv1dPwParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConv1dPwWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_sz},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(Conv1dPwParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "conv1d_pw",
        workgroup_count.y});
@@ -234,9 +199,6 @@ void add_conv1d_pw_node(
         g.set_cur_dims(out_id, out_d);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(params_buf);
 }
@@ -356,76 +318,40 @@ void convolution_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(Conv1dDwParams));
   graph.add_uniform_buffer_bytes(sizeof(Conv1dDwParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kConv1dDwWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  for (int i = 0; i < 4; i++) {
-    entries[i].binding = static_cast<uint32_t>(i);
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = (i == 1) ? WGPUBufferBindingType_Storage
-                                      : WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
   // No-bias binds the weight buffer as an unread placeholder (has_bias gates).
   WGPUBuffer bias_buf =
       has_bias ? graph.get_tensor(bias_id).buffer : weight_tensor.buffer;
   uint64_t bias_sz =
       has_bias ? graph.get_tensor(bias_id).nbytes : weight_tensor.nbytes;
 
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in_tensor.buffer;
-  bg_entries[0].size = in_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = out_tensor.buffer;
-  bg_entries[1].size = out_tensor.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight_tensor.buffer;
-  bg_entries[2].size = weight_tensor.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = bias_buf;
-  bg_entries[3].size = bias_sz;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = params_buf;
-  bg_entries[4].size = sizeof(Conv1dDwParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kConv1dDwWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, bias_buf, bias_sz},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           params_buf,
+           sizeof(Conv1dDwParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline,
-       bind_group,
+      {bundle.pipeline,
+       bundle.bind_group,
        workgroup_count.x,
        "conv1d_dw",
        workgroup_count.y});
@@ -483,17 +409,16 @@ void convolution_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         g.set_cur_dims(out_id, out_d);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(params_buf);
 }
 
 } // namespace
 
-WEBGPU_REGISTER_OPERATORS {
-  WEBGPU_REGISTER_OP(aten.convolution.default, convolution_impl);
+// Single aten.convolution.default registration lives in Conv2d.cpp, which
+// dispatches on input rank; this is the 3D (conv1d) entry it calls.
+void conv1d_dispatch(WebGPUGraph& graph, const std::vector<int>& args) {
+  convolution_impl(graph, args);
 }
 
 } // namespace executorch::backends::webgpu
