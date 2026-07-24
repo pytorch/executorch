@@ -14,6 +14,8 @@ from typing import List
 import executorch.exir.tests.models as models
 import torch
 from executorch import exir
+from executorch.backends.example.example_partitioner import ExamplePartitioner
+from executorch.backends.example.example_quantizer import ExampleQuantizer
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.core import BundledProgram
@@ -29,6 +31,8 @@ from executorch.exir.program._program import to_edge, to_edge_transform_and_lowe
 
 from executorch.export import export as etexport, ExportRecipe, StageType
 from torch.export import export
+
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 # TODO : T154728484  Add test cases to cover multiple entry points
@@ -1815,6 +1819,75 @@ class TestETRecord(unittest.TestCase):
             # Verify other ETRecord components are preserved
             self.assertIsNotNone(parsed_etrecord._debug_handle_map)
             self.assertIsNotNone(parsed_etrecord._delegate_map)
+
+    def test_delegate_info_save_and_parse(self):
+        """Test that a backend's _delegate_info_meta is logged into the ETRecord and
+        can be decoded after parse.
+
+        Lowers a quantized Conv2d model to the Example backend (which attaches a
+        sha256 fingerprint of its processed_bytes via
+        PreprocessResult._delegate_info_meta), then saves + parses the ETRecord and
+        checks the delegate_info round-trips.
+        """
+
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv2d = torch.nn.Conv2d(16, 33, 3)
+
+            def forward(self, arg):
+                return self.conv2d(arg)
+
+        example_inputs = (torch.randn(20, 16, 50, 100),)
+        edge_compile_config = exir.EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        )
+
+        m = Conv2dModule().eval()
+        m = torch.export.export(m, example_inputs, strict=True).module()
+        m = prepare_pt2e(m, ExampleQuantizer())
+        m(*example_inputs)
+        m = convert_pt2e(m)
+
+        edge_manager = to_edge(
+            export(m, example_inputs, strict=True),
+            compile_config=edge_compile_config,
+            generate_etrecord=True,
+        )
+        lowered = edge_manager.to_backend(ExamplePartitioner())
+        et_manager = lowered.to_executorch()
+
+        etrecord = et_manager.get_etrecord()
+        # delegate_info is populated on the ExecuTorch-stage ETRecord.
+        self.assertIsNotNone(etrecord.delegate_info)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            etrecord_path = tmpdirname + "/etrecord_delegate_info.bin"
+            etrecord.save(etrecord_path)
+            parsed_etrecord = parse_etrecord(etrecord_path)
+
+        # delegate_info decodes back as plain JSON.
+        self.assertIsNotNone(parsed_etrecord.delegate_info)
+        self.assertEqual(
+            parsed_etrecord.delegate_info,
+            json.loads(json.dumps(etrecord.delegate_info)),
+        )
+
+        # There is exactly one lowered module, keyed by "<method>/<lowered_name>".
+        self.assertEqual(len(parsed_etrecord.delegate_info), 1)
+        key = next(iter(parsed_etrecord.delegate_info))
+        self.assertTrue(
+            key.startswith("forward/"),
+            f"unexpected delegate_info key: {key}",
+        )
+
+        # The logged value is the Example backend's sha256 fingerprint (non-static
+        # hex string of the processed blob).
+        value = parsed_etrecord.delegate_info[key]
+        self.assertIsInstance(value, str)
+        self.assertEqual(len(value), 64)
+        int(value, 16)  # valid hex, raises ValueError otherwise
 
     def test_edge_after_transform_graph_capture(self):
         """Test that to_edge_transform_and_lower with transform_passes captures the after-transform graph.
