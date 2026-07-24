@@ -143,7 +143,7 @@ When building as a submodule as part of a user CMake build, ExecuTorch CMake opt
 CMake configuration for standalone runtime build:
 ```bash
 cmake -B cmake-out --preset [preset] [options]
-cmake --build cmake-out -j10
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 #### Build Presets
@@ -265,8 +265,9 @@ cd executorch
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
 # building, and tends to speed up the build significantly. It's typical to use
-# "core count + 1" as the `-j` value.
-cmake --build cmake-out -j9
+# "core count + 1" as the `-j` value; the command below derives that
+# dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 ))
 ```
 
 > **_TIP:_** For faster rebuilds, consider installing ccache (see [Compiler Cache section](#compiler-cache-ccache) below). On first builds, ccache populates its cache. Subsequent builds with the same compiler flags can be significantly faster.
