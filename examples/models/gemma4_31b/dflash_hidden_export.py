@@ -28,7 +28,6 @@ from typing import List, Sequence, Tuple
 import torch
 
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
-from executorch.examples.models.gemma4_31b.sampler import sample
 
 
 class Gemma4_31BWithHidden(Gemma4_31B):
@@ -44,8 +43,22 @@ class Gemma4_31BWithHidden(Gemma4_31B):
         self,
         tokens: torch.LongTensor,
         input_pos: torch.LongTensor,
-        temperature: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Full-sequence logits + hidden states for DFlash block verification.
+
+        Unlike the base Gemma4_31B.forward (last-logits-only + on-device
+        sampling -- correct for single-token decode), DFlash verifies an
+        entire drafted block (T positions) in one forward pass, comparing
+        the target's argmax at each position against the draft's proposed
+        token there. Last-token-only logits would silently drop every
+        position but the final one, breaking block verification. Sampling
+        is left to the caller (run_dflash.py does greedy argmax /
+        first-mismatch there), so no temperature argument or sample() call.
+
+        Returns:
+            logits: (B, T, vocab_size) float, softcapped, all positions.
+            hidden: (B, T, len(dflash_layer_ids) * hidden_size).
+        """
         x = self.embed_tokens(tokens) * self.embed_normalizer
         sliding_mask, full_mask = self._build_masks(input_pos)
 
@@ -65,7 +78,7 @@ class Gemma4_31BWithHidden(Gemma4_31B):
         hidden = torch.cat([captured[i] for i in self.dflash_layer_ids], dim=-1)
 
         x = self.norm(x)
-        last = self.lm_head(x[:, -1, :]).float()
+        logits = self.lm_head(x).float()  # (B, T, vocab) -- NOT x[:, -1, :]
         cap = self.logit_softcap.float()
-        last = torch.tanh(last / cap) * cap
-        return sample(last, temperature), hidden
+        logits = torch.tanh(logits / cap) * cap
+        return logits, hidden

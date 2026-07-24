@@ -91,3 +91,4 @@ extension/pybindings/mlx.metallib
 /wip/
 gemma-4-31B-it-DFlash/
 gemma-4-31B-it-HQQ-INT4/
+gemma4_31b_dflash_exports_mlx/
