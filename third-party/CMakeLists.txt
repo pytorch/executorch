@@ -46,6 +46,15 @@ else()
   set(_flatbuffers_ep_additional_args)
 endif()
 
+# Allow reusing a prebuilt host flatc instead of building it from source. This is
+# required when cross-compiling with the Ninja generator on Windows: the WIN32
+# branch above only supports the Visual Studio generator (it passes the VS-only
+# CMAKE_GENERATOR_PLATFORM), and the flatbuffers_ep host sub-build otherwise
+# fails under Ninja. Pass -DFLATC_EXECUTABLE=<path to a host flatc(.exe)>.
+if(FLATC_EXECUTABLE)
+  add_executable(flatc IMPORTED GLOBAL)
+  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION "${FLATC_EXECUTABLE}")
+else()
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
@@ -86,6 +95,7 @@ else()
     flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc
   )
 endif()
+endif()
 
 # TODO: re-enable once flatbuffers is added as a subdirectory.
 # set(FLATBUFFERS_BUILD_FLATC OFF) set(FLATBUFFERS_INSTALL OFF)
@@ -104,6 +114,14 @@ else()
   set(_flatcc_extra_cmake_args)
 endif()
 
+# Allow reusing a prebuilt host flatcc (see the flatc note above). Needed for the
+# Ninja-on-Windows cross-compile, where the flatcc_ep host sub-build fails. Pass
+# -DFLATCC_EXECUTABLE=<path to a host flatcc(.exe)>. flatcc_cli is only consumed
+# by devtools/etdump, so this imported target is unused when devtools is off.
+if(FLATCC_EXECUTABLE)
+  add_executable(flatcc_cli IMPORTED GLOBAL)
+  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION "${FLATCC_EXECUTABLE}")
+else()
 # Similar to flatbuffers, we want to build flatcc for the host. See inline
 # comments in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
@@ -141,6 +159,7 @@ else()
   set_target_properties(
     flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc
   )
+endif()
 endif()
 
 set(FLATCC_RTONLY
