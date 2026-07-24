@@ -325,7 +325,7 @@ To build C++ tests manually with CMake, run the following from the repository ro
 
 ```bash
 cmake . -Bcmake-out -DCMAKE_INSTALL_PREFIX=cmake-out -DEXECUTORCH_BUILD_TESTS=ON
-cmake --build cmake-out -j9 --target install
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install
 ```
 
 You can then use `ctest` to list or run individual C++ tests directly:
