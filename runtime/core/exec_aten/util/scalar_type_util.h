@@ -373,7 +373,7 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
  * Returns true if the parameter is one of the values covered by
  * ET_FORALL_SCALAR_TYPES.
  */
-inline bool isValid(::executorch::aten::ScalarType type) {
+inline constexpr bool isValid(::executorch::aten::ScalarType type) {
   return static_cast<int8_t>(type) >= 0 &&
       type < ::executorch::aten::ScalarType::NumOptions &&
       type != ::executorch::aten::ScalarType::Undefined;
@@ -408,7 +408,7 @@ inline const char* toString(::executorch::aten::ScalarType t) {
  * @param[in] t The type to get the underlying C type size of.
  * @return The size of the associated C type in bytes.
  */
-inline size_t elementSize(::executorch::aten::ScalarType t) {
+inline constexpr size_t elementSize(::executorch::aten::ScalarType t) {
 #define CASE_ELEMENTSIZE_CASE(ctype, name)   \
   case ::executorch::aten::ScalarType::name: \
     return sizeof(ctype);
@@ -446,7 +446,7 @@ inline constexpr bool isFloatingType(::executorch::aten::ScalarType t) {
       t == ::executorch::aten::ScalarType::BFloat16);
 }
 
-inline bool isRealType(::executorch::aten::ScalarType t) {
+inline constexpr bool isRealType(::executorch::aten::ScalarType t) {
   return (
       t == ::executorch::aten::ScalarType::Byte ||
       t == ::executorch::aten::ScalarType::Char ||
@@ -457,7 +457,7 @@ inline bool isRealType(::executorch::aten::ScalarType t) {
       t == ::executorch::aten::ScalarType::Double);
 }
 
-inline bool isRealHType(::executorch::aten::ScalarType t) {
+inline constexpr bool isRealHType(::executorch::aten::ScalarType t) {
   return (
       t == ::executorch::aten::ScalarType::Byte ||
       t == ::executorch::aten::ScalarType::Char ||
@@ -469,15 +469,15 @@ inline bool isRealHType(::executorch::aten::ScalarType t) {
       t == ::executorch::aten::ScalarType::Half);
 }
 
-inline bool isRealHBType(::executorch::aten::ScalarType t) {
+inline constexpr bool isRealHBType(::executorch::aten::ScalarType t) {
   return (isRealHType(t) || t == ::executorch::aten::ScalarType::Bool);
 }
 
-inline bool isRealHBF16Type(::executorch::aten::ScalarType t) {
+inline constexpr bool isRealHBF16Type(::executorch::aten::ScalarType t) {
   return (isRealHType(t) || t == ::executorch::aten::ScalarType::BFloat16);
 }
 
-inline bool isRealHBBF16Type(::executorch::aten::ScalarType t) {
+inline constexpr bool isRealHBBF16Type(::executorch::aten::ScalarType t) {
   return (isRealHBType(t) || t == ::executorch::aten::ScalarType::BFloat16);
 }
 
@@ -547,7 +547,7 @@ struct is_barebones_unsigned_type
           bool,
           isBarebonesUnsignedType(CppTypeToScalarType<T>::value)> {};
 
-inline ::executorch::aten::ScalarType toQIntType(
+inline constexpr ::executorch::aten::ScalarType toQIntType(
     ::executorch::aten::ScalarType t) {
   switch (t) {
     case ::executorch::aten::ScalarType::Byte:
@@ -561,7 +561,7 @@ inline ::executorch::aten::ScalarType toQIntType(
   }
 }
 
-inline ::executorch::aten::ScalarType toUnderlying(
+inline constexpr ::executorch::aten::ScalarType toUnderlying(
     ::executorch::aten::ScalarType t) {
   switch (t) {
     case ::executorch::aten::ScalarType::QUInt8:
@@ -600,7 +600,7 @@ inline bool isSignedType(::executorch::aten::ScalarType t) {
 #undef CASE_SIGNED
 }
 
-inline bool isUnderlying(
+inline constexpr bool isUnderlying(
     ::executorch::aten::ScalarType type,
     ::executorch::aten::ScalarType qtype) {
   return type == ::executorch::runtime::toUnderlying(qtype);
