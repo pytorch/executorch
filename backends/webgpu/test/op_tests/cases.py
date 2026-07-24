@@ -42,6 +42,9 @@ from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
 from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
     GridSampler2dModule,
 )
+from executorch.backends.webgpu.test.ops.test_rope_interleaved import (
+    RopeInterleavedModule,
+)
 from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
 from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
@@ -369,6 +372,25 @@ def _conv1d_dw_suite() -> WebGPUTestSuite:
             case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
             case("dil2", 3, 10, 3, 1, 2, 2, True),
             case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("apply_rotary_emb_interleaved")
+def _rope_interleaved_suite() -> WebGPUTestSuite:
+    # Pair-interleaved rope (direct custom-op call); CPU eager golden.
+    def case(name, in_shape, freqs_shape):
+        return Case(name=name, construct={}, inputs=(in_shape, freqs_shape))
+
+    return WebGPUTestSuite(
+        module_factory=lambda: RopeInterleavedModule(),
+        cases=[
+            case("bnc", (1, 4, 8), (4, 8)),
+            case("batch", (2, 3, 8), (3, 8)),
+            case("c4", (1, 5, 4), (5, 4)),
+            case("c16", (1, 2, 16), (2, 16)),
         ],
         atol=1e-3,
         rtol=1e-3,
