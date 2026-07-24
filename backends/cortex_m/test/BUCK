@@ -4,8 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+define_common_targets(is_fbcode = is_fbcode())
