@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from group_norm_reduce.wgsl - DO NOT EDIT.
-// wgsl-sha256: 63e9e15a934f19ce0649323ae3820f1cd86deb9aeb0dbb4ba1de9ab4d7d74688
+// wgsl-sha256: 6765e6dc7eace87dffb1b42b08cbde9b49d60c96074025b708073104075da60a
 inline constexpr const char* kGroupNormReduceWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> mean: array<f32>;
@@ -33,12 +33,19 @@ struct Params {
 
 override wg_size: u32 = 64u;
 
+// Cooperative shared-memory reduction; mirrors Vulkan group_norm_reduce. Threads
+// co-operate per (n, group) to accumulate sum and sum-of-squares.
+// Fixed upper bound (>= any clamped wg_size); only [0, wg_size) is used.
+var<workgroup> psum: array<f32, 256>;
+var<workgroup> pss: array<f32, 256>;
+
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(
-    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    // One thread per (n, group) -> mean/rstd of shape [N, G].
-    let mg = gid.x + gid.y * (num_workgroups.x * wg_size);
+    // One workgroup per (n, group) -> mean/rstd of shape [N, G].
+    let mg = wid.x + wid.y * num_workgroups.x;
     if (mg >= params.mean_numel) {
         return;
     }
@@ -51,16 +58,30 @@ fn main(
 
     var s = 0.0;
     var ss = 0.0;
-    for (var i = 0u; i < params.group_size; i = i + 1u) {
+    var i = lid.x;
+    while (i < params.group_size) {
         let v = input[base + i];
         s = s + v;
         ss = ss + v * v;
+        i = i + wg_size;
     }
-    let count = f32(params.group_size);
-    let m = s / count;
-    let variance = ss / count - m * m;
-    mean[mg] = m;
-    rstd[mg] = inverseSqrt(variance + params.eps);
+    psum[lid.x] = s;
+    pss[lid.x] = ss;
+    workgroupBarrier();
+
+    if (lid.x == 0u) {
+        var ts = psum[0];
+        var tss = pss[0];
+        for (var t = 1u; t < wg_size; t = t + 1u) {
+            ts = ts + psum[t];
+            tss = tss + pss[t];
+        }
+        let count = f32(params.group_size);
+        let m = ts / count;
+        let variance = tss / count - m * m;
+        mean[mg] = m;
+        rstd[mg] = inverseSqrt(variance + params.eps);
+    }
 }
 )";
 
