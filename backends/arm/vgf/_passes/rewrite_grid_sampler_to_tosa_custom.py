@@ -153,6 +153,24 @@ def _supports_quantized_grid_custom(qparams: QuantArgs) -> bool:
     return not qparams.per_channel and qparams.dtype == torch.int8
 
 
+def _permute_to_nhwc(
+    graph: torch.fx.Graph,
+    tensor: torch.fx.Node,
+    from_node: torch.fx.Node,
+) -> torch.fx.Node:
+    nhwc_tensor = create_node(
+        graph,
+        op_target=exir_ops.edge.aten.permute_copy.default,
+        args=(tensor, list(NHWC_ORDER)),
+        from_node=from_node,
+    )
+    _set_fake_tensor_meta(
+        nhwc_tensor,
+        exir_ops.edge.aten.permute_copy.default(tensor.meta["val"], list(NHWC_ORDER)),
+    )
+    return nhwc_tensor
+
+
 class RewriteGridSamplerToTosaCustomPass(ArmPass):
     """Rewrite ``aten.grid_sampler_2d`` nodes to ``tosa.CUSTOM``."""
 
@@ -374,20 +392,12 @@ class RewriteGridSamplerToTosaCustomPass(ArmPass):
                         else None
                     ),
                 )
-                nhwc_input = create_node(
+                nhwc_input = _permute_to_nhwc(
                     graph_module.graph,
-                    op_target=exir_ops.edge.aten.permute_copy.default,
-                    args=(custom_input, list(NHWC_ORDER)),
-                    from_node=custom_input,
+                    custom_input,
+                    custom_input,
                 )
-                _set_fake_tensor_meta(
-                    nhwc_input,
-                    exir_ops.edge.aten.permute_copy.default(
-                        custom_input.meta["val"], list(NHWC_ORDER)
-                    ),
-                )
-                custom_grid = grid
-                custom_inputs = [nhwc_input, custom_grid]
+                custom_inputs = [nhwc_input, grid]
                 if grid_qparam_constants is not None:
                     custom_inputs.extend(grid_qparam_constants)
                 custom_node = create_node(
