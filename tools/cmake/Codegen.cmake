@@ -155,14 +155,6 @@ endfunction()
 #
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml [MANUAL_REGISTRATION] )
-function(_manual_registration_property_name lib_name output_var)
-  string(SHA256 _lib_name_hash "${lib_name}")
-  set(${output_var}
-      "_EXECUTORCH_MANUAL_REGISTRATION_${_lib_name_hash}"
-      PARENT_SCOPE
-  )
-endfunction()
-
 function(generate_bindings_for_kernels)
   set(options ADD_EXCEPTION_BOUNDARY MANUAL_REGISTRATION)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
@@ -184,11 +176,6 @@ function(generate_bindings_for_kernels)
         "Manual registration LIB_NAME must be a valid C++ identifier: ${GEN_LIB_NAME}"
     )
   endif()
-  _manual_registration_property_name("${GEN_LIB_NAME}" _registration_property)
-  set_property(
-    GLOBAL PROPERTY "${_registration_property}" "${GEN_MANUAL_REGISTRATION}"
-  )
-
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 
@@ -302,17 +289,15 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
+  set(options MANUAL_REGISTRATION)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
-  cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
-
-  _manual_registration_property_name("${GEN_LIB_NAME}" _registration_property)
-  get_property(_manual_registration GLOBAL PROPERTY "${_registration_property}")
+  cmake_parse_arguments(GEN "${options}" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
-  message(STATUS "  MANUAL_REGISTRATION: ${_manual_registration}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
@@ -322,7 +307,7 @@ function(gen_operators_lib)
 
   add_library(${GEN_LIB_NAME})
 
-  if(_manual_registration)
+  if(GEN_MANUAL_REGISTRATION)
     set(_srcs_list
         ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
         ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
@@ -418,7 +403,7 @@ function(gen_operators_lib)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
-  if(_manual_registration)
+  if(GEN_MANUAL_REGISTRATION)
     list(APPEND _generated_headers ${_out_dir}/RegisterKernels.h)
   endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)

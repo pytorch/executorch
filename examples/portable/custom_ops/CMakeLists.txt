@@ -148,6 +148,7 @@ if(TEST_NAMED_MANUAL_REGISTRATION)
     )
     gen_operators_lib(
       LIB_NAME "${lib_name}" KERNEL_LIBS ${lib_name}_kernels DEPS executorch
+      MANUAL_REGISTRATION
     )
   endfunction()
 
