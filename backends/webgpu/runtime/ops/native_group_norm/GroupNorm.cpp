@@ -37,6 +37,12 @@ static_assert(
     sizeof(GroupNormParams) == 32,
     "GroupNormParams must match the WGSL Params struct (32 bytes)");
 
+// The reduce shader's cooperative reduction uses var<workgroup> f32[256] arrays;
+// the workgroup size (used for both passes) must not exceed that width.
+static_assert(
+    kGroupNormWorkgroupSizeX <= 256,
+    "group_norm workgroup size exceeds the 256-wide shared reduction arrays");
+
 struct GnBinding {
   WGPUBuffer buffer;
   uint64_t size;
@@ -176,11 +182,13 @@ void native_group_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("group_norm: mean/rstd size != N * group");
   }
 
-  float eps = std::numeric_limits<float>::epsilon();
+  float eps;
   if (graph.get_value_type(eps_id) == WebGPUGraph::ValueType::Double) {
     eps = static_cast<float>(graph.get_double(eps_id));
   } else if (graph.get_value_type(eps_id) == WebGPUGraph::ValueType::Int) {
     eps = static_cast<float>(graph.get_int(eps_id));
+  } else {
+    throw std::runtime_error("group_norm: unexpected eps value type");
   }
 
   GroupNormParams params = {};
@@ -203,9 +211,9 @@ void native_group_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const WGPUBufferBindingType rw = WGPUBufferBindingType_Storage;
   const WGPUBufferBindingType uni = WGPUBufferBindingType_Uniform;
 
-  // Pass 1: reduce -> mean/rstd (one thread per (n, group)).
+  // Pass 1: reduce -> mean/rstd (one workgroup per (n, group), cooperative).
   utils::WgCount reduce_wgc = utils::compute_2d_workgroup_count(
-      device, mean_numel, wg_size, "gn_reduce");
+      device, mean_numel, 1, "gn_reduce");
   const size_t reduce_idx = add_gn_dispatch(
       graph,
       device,
@@ -257,19 +265,29 @@ void native_group_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         const uint32_t nb = static_cast<uint32_t>(d[0]);
         const uint32_t c = static_cast<uint32_t>(d[1]);
         const uint32_t hw = static_cast<uint32_t>(d[2] * d[3]);
+        if (c % num_groups != 0) {
+          throw std::runtime_error(
+              "group_norm(resize): C not divisible by group");
+        }
         const uint32_t dpg = c / num_groups;
+        const uint64_t numel64 = static_cast<uint64_t>(nb) * c * hw;
+        const uint64_t group_size64 = static_cast<uint64_t>(dpg) * hw;
+        if (numel64 > std::numeric_limits<uint32_t>::max() ||
+            group_size64 > std::numeric_limits<uint32_t>::max()) {
+          throw std::runtime_error("group_norm(resize): numel exceeds uint32");
+        }
         GroupNormParams p = {};
         p.n_channels = c;
         p.hxw = hw;
         p.num_groups = num_groups;
         p.chans_per_group = dpg;
-        p.numel = nb * c * hw;
+        p.numel = static_cast<uint32_t>(numel64);
         p.mean_numel = nb * num_groups;
-        p.group_size = dpg * hw;
+        p.group_size = static_cast<uint32_t>(group_size64);
         p.eps = eps;
         wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
         const utils::WgCount rwgc = utils::compute_2d_workgroup_count(
-            g.device(), p.mean_numel, wg_size, "gn_reduce(resize)");
+            g.device(), p.mean_numel, 1, "gn_reduce(resize)");
         g.dispatch_at(reduce_idx).workgroup_count_x = rwgc.x;
         g.dispatch_at(reduce_idx).workgroup_count_y = rwgc.y;
         const utils::WgCount nwgc = utils::compute_2d_workgroup_count(
