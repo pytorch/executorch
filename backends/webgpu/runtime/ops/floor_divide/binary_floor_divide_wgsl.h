@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from binary_floor_divide.wgsl - DO NOT EDIT.
-// wgsl-sha256: bbc1c3a39dd17c88e7df4f2adbf3b9cfe424693aed00deab268a03b2e0cdc958
+// wgsl-sha256: baf71d277da79389315a6b96b439e7f0a55842e8288283f2af121f84536b3af3
 inline constexpr const char* kBinaryFloorDivideWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
 @group(0) @binding(1) var<storage, read> input2: array<f32>;
@@ -22,8 +22,8 @@ inline constexpr const char* kBinaryFloorDivideWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(3) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(4) var<uniform> in1_meta: TensorMeta;
@@ -44,8 +44,8 @@ fn main(
     // Fast path: every input dim matches the output dim -> elementwise.
     var same = true;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        if (in1_meta.sizes[d] != out_meta.sizes[d] ||
-            in2_meta.sizes[d] != out_meta.sizes[d]) {
+        if (in1_meta.sizes[d >> 2u][d & 3u] != out_meta.sizes[d >> 2u][d & 3u] ||
+            in2_meta.sizes[d >> 2u][d & 3u] != out_meta.sizes[d >> 2u][d & 3u]) {
             same = false;
         }
     }
@@ -59,10 +59,10 @@ fn main(
     var l1: u32 = 0u;
     var l2: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        l1 = l1 + min(coord, in1_meta.sizes[d] - 1u) * in1_meta.strides[d];
-        l2 = l2 + min(coord, in2_meta.sizes[d] - 1u) * in2_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        l1 = l1 + min(coord, in1_meta.sizes[d >> 2u][d & 3u] - 1u) * in1_meta.strides[d >> 2u][d & 3u];
+        l2 = l2 + min(coord, in2_meta.sizes[d >> 2u][d & 3u] - 1u) * in2_meta.strides[d >> 2u][d & 3u];
     }
     output[idx] = floor(input1[l1] / input2[l2]);
 }
