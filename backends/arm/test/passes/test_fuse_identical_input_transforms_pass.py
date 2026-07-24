@@ -32,6 +32,7 @@ from torch.utils import _pytree as pytree
 
 _ADD = exir_ops.edge.aten.add.Tensor
 _CAT = exir_ops.edge.aten.cat.default
+_WHERE = exir_ops.edge.aten.where.self
 _VIEW = exir_ops.edge.aten.view_copy.default
 _PERMUTE = exir_ops.edge.aten.permute_copy.default
 
@@ -219,6 +220,32 @@ def test_fuse_identical_input_transforms_sunk_permute_replaces_stale_tag() -> No
     assert _compute_nodes(result.graph_module) == [_ADD, _PERMUTE]
     assert permute.meta["delegation_tag"] == "tag0"
     _validate_numerics(original, result.graph_module, (x_data, y_data))
+
+
+def test_fuse_identical_input_transforms_sinks_where_input_permutes() -> None:
+    condition_data = torch.randn(2, 3, 4) > 0
+    x_data = torch.randn(2, 3, 4)
+    y_data = torch.randn(2, 3, 4)
+
+    builder = GraphBuilder()
+    condition = builder.placeholder("condition", condition_data)
+    x = builder.placeholder("x", x_data)
+    y = builder.placeholder("y", y_data)
+    condition_permute = builder.call_operator(op=_PERMUTE, args=(condition, [0, 2, 1]))
+    x_permute = builder.call_operator(op=_PERMUTE, args=(x, [0, 2, 1]))
+    y_permute = builder.call_operator(op=_PERMUTE, args=(y, [0, 2, 1]))
+    where = builder.call_operator(
+        op=_WHERE, args=(condition_permute, x_permute, y_permute)
+    )
+    builder.output([where])
+    graph_module = builder.get_graph_module()
+
+    original, result = _apply_pass(graph_module)
+
+    assert result.modified
+    assert _count_node(result.graph_module, _PERMUTE) == 1
+    assert _compute_nodes(result.graph_module) == [_WHERE, _PERMUTE]
+    _validate_numerics(original, result.graph_module, (condition_data, x_data, y_data))
 
 
 def test_fuse_identical_input_transforms_sinks_cat_input_views() -> None:
@@ -790,16 +817,26 @@ def test_fuse_identical_input_transforms_sinks_views_through_rank_broadcasts(
     _validate_numerics(original, result.graph_module, (x_data, y_data))
 
 
-def test_fuse_identical_input_transforms_rejects_views_through_expanding_broadcast() -> (
-    None
-):
-    x_data = torch.randn(1, 6)
-    y_data = torch.randn(6, 1)
+@pytest.mark.parametrize(
+    "x_shape, y_shape, view_shape",
+    [
+        ((1, 6), (6, 1), (2, 3)),
+        ((1, 1, 6), (1, 6, 1), (3, 2)),
+        ((6,), (6, 1), (3, 2)),
+    ],
+)
+def test_fuse_identical_input_transforms_rejects_views_through_expanding_broadcast(
+    x_shape: tuple[int, ...],
+    y_shape: tuple[int, ...],
+    view_shape: tuple[int, ...],
+) -> None:
+    x_data = torch.randn(x_shape)
+    y_data = torch.randn(y_shape)
     graph_module = _binary_transform_graph(
         x_data,
         y_data,
-        [(_VIEW, [2, 3])],
-        [(_VIEW, [2, 3])],
+        [(_VIEW, view_shape)],
+        [(_VIEW, view_shape)],
     )
 
     original, result = _apply_pass(graph_module)
