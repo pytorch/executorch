@@ -140,9 +140,9 @@ Result<at::Tensor> parseTensor(
 
   if (s_tensor->shape_dynamism() ==
       executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    // Fully dynamic tensors get a CPU allocator so aten kernels can resize them.
-    // A device tensor cannot be honored here, so reject it rather than silently
-    // returning CPU storage that contradicts the serialized device.
+    // Fully dynamic tensors get a CPU allocator so aten kernels can resize
+    // them. A device tensor cannot be honored here, so reject it rather than
+    // silently returning CPU storage that contradicts the serialized device.
     ET_CHECK_OR_RETURN_ERROR(
         device_type == c10::DeviceType::CPU,
         NotSupported,
