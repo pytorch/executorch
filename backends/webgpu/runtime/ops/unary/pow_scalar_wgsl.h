@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from pow_scalar.wgsl - DO NOT EDIT.
-// wgsl-sha256: a9176c6a6b0da421cd3649e396390cd10859c1256f6d38fce6bc730d3e3788e6
+// wgsl-sha256: b5eda5edff9e51b475e258ddb14ce5bf1cc2399fcfc02b42d306cdfd5f4bf97b
 inline constexpr const char* kPowScalarWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -34,7 +34,23 @@ fn main(
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = pow(input[idx], params.minimum);
+    // WGSL pow(x, y) = exp2(y*log2(x)) is undefined for x < 0. Fix the common
+    // integer-exponent case to match PyTorch (|x|^y, sign-preserved for odd y);
+    // the rare non-integer negative case keeps the prior WGSL behavior.
+    let x = input[idx];
+    let e = params.minimum;
+    var r: f32;
+    if (x >= 0.0) {
+        r = pow(x, e);
+    } else if (fract(e) == 0.0) {
+        r = pow(abs(x), e);
+        if (fract(e * 0.5) != 0.0) {
+            r = -r;
+        }
+    } else {
+        r = pow(x, e);
+    }
+    output[idx] = r;
 }
 )";
 
