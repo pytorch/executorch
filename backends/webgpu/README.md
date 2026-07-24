@@ -1,153 +1,201 @@
-# WebGPU Backend
+# ExecuTorch WebGPU Backend
 
-Run ExecuTorch models on the GPU via [WebGPU](https://www.w3.org/TR/webgpu/). The backend compiles delegated subgraphs into WGSL compute shaders executed natively through [Dawn](https://dawn.googlesource.com/dawn), whose Tint compiler is the reference WGSL implementation (Metal on macOS, Vulkan on Linux/Windows).
+Run ExecuTorch models on the GPU through
+[WebGPU](https://www.w3.org/TR/webgpu/). The backend compiles delegated
+subgraphs into WGSL compute shaders and executes them through
+[Dawn](https://dawn.googlesource.com/dawn) and its Tint WGSL compiler. The same
+graph execution design targets Metal and Vulkan in native builds. Browser
+builds compile the same execution path with Emscripten and `emdawnwebgpu`.
 
-> **Status: Prototype, under active development.** The backend runs the core of transformer inference today — `add`, `rms_norm`, fused scaled-dot-product attention with KV cache, and 4-bit weight-only quantized linear — plus quantized embedding, rotary embedding, and constant prepacking. See [Progress](#progress) for shipped milestones.
+> **Status: under active development.** The backend has more than 100
+> registered operator symbols and has demonstrated optimized browser artifacts
+> for Llama and Qwen models.
 
-## Progress
+## Performance
 
-Milestones landed on `main`:
+Measured in July 2026 on an Apple M4 Pro in Chrome Canary, using WebGPU
+GPU-timestamp queries and a hash-pinned, optimized dynamic-shape 4-bit Llama
+3.2 1B artifact. Results are medians from five measured runs after three
+warmup runs.
 
-| Date | Milestone | Pull Request |
-|---|---|---|
-| 2026-04 | Made it possible to run ExecuTorch models on the GPU through WebGPU — built the backend from the ground up, including the runtime delegate that builds the GPU graph (buffers, pipelines, bind groups) and runs the model on Metal and Vulkan | [#18808](https://github.com/pytorch/executorch/pull/18808) |
-| 2026-06 | Grew model support beyond element-wise operators — added the root-mean-square normalization operator (`rms_norm`) and named-data weight loading | [#19963](https://github.com/pytorch/executorch/pull/19963) |
-| 2026-06 | Made sure every change is automatically tested — added WebGPU to ExecuTorch's standard backend test suite, running on Linux/x86 in CI | [#19964](https://github.com/pytorch/executorch/pull/19964) |
-| 2026-06 | Removed a class of bugs and manual upkeep — the WGSL shaders are now generated automatically, with a build-time check that fails the build on shader/source drift | [#19981](https://github.com/pytorch/executorch/pull/19981) |
-| 2026-06 | Got the test suite to actually run work on the GPU — added operator-allowlist delegation (unsupported operations fall back to the CPU) and a process-wide GPU device context, so models execute on the GPU during testing | [#20036](https://github.com/pytorch/executorch/pull/20036) |
-| 2026-06 | Made testing match the WebGPU standard exactly — switched the native runtime and tests to Google's Dawn shader compiler (Tint, the source-of-truth WGSL implementation) running on SwiftShader for headless GPU execution | [#20079](https://github.com/pytorch/executorch/pull/20079) |
-| 2026-06 | Strengthened correctness for models that run in several GPU passes — added dispatch-ordering and scratch-buffer (temporary GPU memory) support and tests | [#20080](https://github.com/pytorch/executorch/pull/20080) |
-| 2026-06 | Added the attention core of transformer inference — fused scaled-dot-product attention (`sdpa_with_kv_cache`) with an `update_cache` operator for autoregressive decode | [#20086](https://github.com/pytorch/executorch/pull/20086), [#20087](https://github.com/pytorch/executorch/pull/20087) |
-| 2026-06 | Added on-GPU kernel timing via WebGPU timestamp queries, for true GPU-side profiling | [#20201](https://github.com/pytorch/executorch/pull/20201) |
-| 2026-06 | Added the dominant compute in quantized LLMs — 4-bit weight-only quantized linear (`linear_q4gsw`), a dequantize-and-matmul kernel | [#20226](https://github.com/pytorch/executorch/pull/20226), [#20227](https://github.com/pytorch/executorch/pull/20227) |
+| Metric | Result |
+|---|---:|
+| Prefill (1,024-token prompt) | 2,176 tokens/s |
+| Decode (2,048-token context) | 151 tokens/s |
 
-In review:
+These figures describe the accepted hash-pinned artifact, not the performance
+of every model or hardware configuration.
 
-| Milestone | Pull Request |
+## Optimization Techniques
+
+| Category | Optimizations |
 |---|---|
-| Adds 4-bit quantized embedding (`embedding_q4gsw`) | [#20263](https://github.com/pytorch/executorch/pull/20263) |
-| Adds rotary position embedding / RoPE (`apply_rotary_emb`) | [#20264](https://github.com/pytorch/executorch/pull/20264) |
-| Adds constant prepacking (`prepack`) for end-to-end model weight handling | [#20265](https://github.com/pytorch/executorch/pull/20265) |
+| Prefill | Shared-memory tiled "Steel" GEMM with fp16 multiplication and fp32 accumulation, shape-routed kernel selection, scoped output suppression, and QKV fusion |
+| Decode | Cooperative GEMV with bi-column batching, FlashDecoding with split KV, and register-tiled SDPA |
+| SDPA | Register-tiled QK and AV, coalesced KV reads, causal-tile skipping, and aligned loads |
+| Quantization | Packed-word dequantization, 4-bit weight-only kernels, dynamic 8da4w quantization, and int8 q8ta kernels |
+| Memory | f16 KV cache and scratch-pool reuse |
+| Dispatch | Two-dimensional folded dispatch, runtime-configurable workgroup sizes, and SwiGLU fusion |
+
+## Demonstrated Model Artifacts
+
+| Model | Validation status |
+|---|---|
+| Llama 3.2 1B | Browser-validated, hash-pinned optimized 4-bit artifact |
+| Qwen2.5-0.5B | Demonstrated browser artifact with token match and numeric drift |
+| Qwen3-0.6B | Demonstrated browser artifact with token match and numeric drift |
+
+The registered operator surface is broader than this table, but registry
+coverage alone does not guarantee that an arbitrary model will run end to end.
+
+## Operator Support
+
+The backend registers more than 100 operator symbols. Representative groups
+are listed below; this is not an exhaustive registry listing.
+
+| Category | Representative operators |
+|---|---|
+| Quantized linear and embedding | `linear_q4gsw`, `embedding_q4gsw`, `linear_qcs4w`, `linear_dq8ca_q4gsw`, `choose_qparams_affine` |
+| Int8 quantized (q8ta) | `q8ta_linear`, `q8ta_conv2d`, `q8ta_add`, `q8ta_relu`, `q8ta_pixel_shuffle`, per-tensor quantize/dequantize |
+| Training primitives | `adamw_step`, `fused_ce`, `linear_q4gsw_backward`, `linear_dW`, `q4gsw_requant` |
+| Attention and position | `sdpa_with_kv_cache`, `update_cache`, `apply_rotary_emb` (default, interleaved, and Hugging Face layouts) |
+| Elementwise | `add`, `mul`, `sub`, `div`, `pow`, `minimum`, `sigmoid`, `relu`, `gelu`, `tanh`, `abs`, `neg`, `exp`, `sqrt`, `rsqrt`, `sin`, `cos`, `clamp` |
+| Comparison and boolean | `eq`, `ne`, `le`, `ge`, `lt`, `gt`, `where`, logical and bitwise operators |
+| Shape and memory | `view_copy`, `slice_copy`, `select_copy`, `cat`, `permute_copy`, `squeeze_copy`, `unsqueeze_copy`, `clone`, `expand_copy`, `fill`, `repeat`, `flip`, `pixel_shuffle` |
+| Reduction and normalization | `rms_norm`, `layer_norm`, `batch_norm`, `group_norm`, `softmax`, `log_softmax`, `sum`, `mean`, `argmax`, `argmin`, `amax`, `amin`, pooling |
+| Convolution and spatial | `conv1d`, `conv_with_clamp`, `grid_sampler_2d`, `grid_priors`, `upsample_bilinear2d` |
+| Matrix multiplication | `mm`, `bmm`, `linear` |
+| Indexing | `index.Tensor`, `gather`, `embedding`, `index_select` |
+| Infrastructure | `prepack`, `select_as_symint`, `_to_copy` |
 
 ## Architecture
 
-```
+```text
 PyTorch model
     │  torch.export
     ▼
 Exported Program
-    │  VulkanPartitioner (tags supported fp32 ops)
+    │  VulkanPartitioner (tags supported ops)
     ▼
 Edge Dialect IR
-    │  VulkanBackend.preprocess (builds Vulkan FlatBuffer, buffer-only storage)
+    │  VulkanBackend.preprocess (builds a Vulkan FlatBuffer)
     ▼
 .pte file (with VH00/VK00 delegate blob)
     │
-    ▼
-Native runtime (Dawn/Tint → Metal / Vulkan)
-    │  WebGPUGraph::build  → creates GPU buffers, pipelines, bind groups
-    │  WebGPUGraph::execute → encodes + submits compute passes
-    ▼
-GPU output (mapped back to CPU via wgpuDevicePoll)
+    ├── Native runtime (Dawn/Tint → Metal or Vulkan)
+    │   └── WebGPUGraph::build   → creates GPU buffers, pipelines, bind groups
+    │       WebGPUGraph::execute → encodes and submits compute passes
+    │
+    └── Browser runtime (Emscripten + emdawnwebgpu)
+        └── Same graph execution path, compiled to WebAssembly
 ```
 
 Key design choices:
-- **Reuses Vulkan serialization** — the delegate blob is a Vulkan FlatBuffer (`VK00`) with a `VH00` header. All tensor storage is forced to `BUFFER` (WebGPU has no 3D storage textures).
-- **Built-in WGSL shaders** — shader source is compiled as C++ string constants. Future work will embed fused shaders in the FlatBuffer for compile-time mega-kernel fusion.
-- **No Python AOT code** — directly consumes .pte files exported via `VulkanPartitioner`.
 
-## Operator Support
+- **Reuses Vulkan serialization.** The delegate blob is a Vulkan FlatBuffer
+  (`VK00`) with a `VH00` header. The WebGPU runtime ignores Vulkan texture
+  storage annotations and allocates tensors as buffers.
+- **Built-in WGSL shaders.** Shader source is embedded as C++ string constants,
+  with build-time code generation and drift validation.
+- **No Python AOT layer.** The backend directly consumes `.pte` files exported
+  with `VulkanPartitioner`.
+- **Dynamic shapes.** Tensors allocate at their maximum shape, with SymInt
+  arithmetic and per-operator resize hooks for runtime dimensions.
+- **Shape-routed dispatch.** Runtime tensor dimensions select specialized
+  kernels, such as tiled GEMM for prefill and cooperative GEMV for decode.
 
-| Operator | WGSL Shader | Notes |
-|---|---|---|
-| `aten.add.Tensor` | `binary_add.wgsl` | Element-wise with alpha: `out = in1 + alpha * in2` |
-| `et_vk.rms_norm.default` | `rms_norm.wgsl` | Root-mean-square normalization |
-| `sdpa_with_kv_cache.default` | `sdpa_compute_attn_weights.wgsl`, `sdpa_softmax.wgsl`, `sdpa_compute_out.wgsl` | Fused scaled-dot-product attention (QK / softmax / AV) with KV cache |
-| `llama.update_cache.default` | `update_cache.wgsl` | In-place KV cache update for autoregressive decode |
-| `et_vk.linear_q4gsw.default` | `q4gsw_linear.wgsl` | 4-bit weight-only quantized linear (dequantize + matmul) |
+## Infrastructure and Testing
 
-**In review:** quantized embedding (`embedding_q4gsw`), rotary embedding (`apply_rotary_emb`), and constant prepacking (`prepack`).
+- **CI:** Dawn/Tint and SwiftShader provide headless GPU execution on Linux/x86.
+- **Operator tests:** Python operator-test modules exercise export and
+  delegation. The code-generated op-test catalog and native runners compare
+  GPU output with eager-generated goldens.
+- **GPU profiling:** WebGPU timestamp queries provide per-kernel GPU timings on
+  devices that expose the feature.
+- **Shader code generation:** `gen_wgsl_headers.py` generates embedded
+  `*_wgsl.h` headers; source/header drift fails validation.
 
-**Planned:** `mul`, `sigmoid`, shape ops (`view`, `permute`, `slice`, `select`, `cat`, `squeeze`/`unsqueeze`), and `index` — the remaining ops needed for end-to-end Llama 3.2 1B.
+## Linux Native Quick Start
 
-## Quick Start
+The `test_build_webgpu.sh` flow sources
+`.ci/scripts/setup-webgpu-linux-deps.sh` to install Dawn and SwiftShader
+prebuilts on Linux. On macOS, provide a configured Dawn installation instead
+of using this script.
 
-### 1. Setup
-
-```bash
-bash backends/webgpu/scripts/setup-wgpu-native.sh
-```
-
-This downloads prebuilt wgpu-native binaries for your platform.
-
-### 2. Export a model
+### 1. Export an illustrative model
 
 ```python
 import torch
-from executorch.backends.vulkan import VulkanPartitioner
+
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
+    VulkanPartitioner,
+)
 from executorch.exir import to_edge_transform_and_lower
 
-class AddModule(torch.nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return a + b
 
-ep = torch.export.export(AddModule(), (torch.randn(4, 4), torch.randn(4, 4)))
+class AddOne(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + 1.0
+
+
+ep = torch.export.export(AddOne(), (torch.randn(4, 4),))
 et_program = to_edge_transform_and_lower(
     ep, partitioner=[VulkanPartitioner()]
 ).to_executorch()
 
-with open("add.pte", "wb") as f:
-    f.write(et_program.buffer)
+with open("model.pte", "wb") as file:
+    file.write(et_program.buffer)
 ```
 
-### 3. Build and run
+This snippet demonstrates the export path. The validation script below exports
+and runs its own native reference models; it does not consume `model.pte`.
+
+### 2. Build and run native validation
 
 ```bash
 bash backends/webgpu/test/test_build_webgpu.sh
 ```
 
-This runs Python export tests, exports a .pte, builds the native runtime, and validates GPU output.
+The script exports a `.pte`, builds the native runtime, and validates GPU
+output.
 
 ## Directory Structure
 
-```
+```text
 backends/webgpu/
 ├── CMakeLists.txt
 ├── README.md
 ├── runtime/
-│   ├── WebGPUBackend.h/cpp        # BackendInterface (init/execute)
-│   ├── WebGPUGraph.h/cpp          # GPU graph: buffers, pipelines, dispatch
-│   ├── WebGPUDelegateHeader.h/cpp # VH00 header parser
-│   ├── WebGPUDevice.h/cpp         # Dawn device abstraction
-│   ├── WebGPUUtils.h              # Workgroup-size helpers
-│   └── ops/
-│       ├── OperatorRegistry.h/cpp # Op dispatch table
+│   ├── WebGPUBackend.h/cpp          # BackendInterface (init/execute)
+│   ├── WebGPUGraph.h/cpp            # GPU graph: buffers, pipelines, dispatch
+│   ├── WebGPUDelegateHeader.h/cpp   # VH00 header parser
+│   ├── WebGPUDevice.h/cpp           # Dawn device abstraction
+│   ├── WebGPUUtils.h                # Workgroup-size helpers
+│   └── ops/                         # Operator implementations
+│       ├── OperatorRegistry.h/cpp   # Operator dispatch table
 │       ├── add/
-│       │   ├── BinaryOp.cpp       # aten.add.Tensor implementation
-│       │   ├── binary_add.wgsl    # WGSL shader source
-│       │   └── binary_add_wgsl.h  # Shader as C++ string constant
-│       └── rms_norm/
-│           ├── RmsNorm.cpp        # et_vk.rms_norm implementation
-│           ├── rms_norm.wgsl      # WGSL shader source
-│           └── rms_norm_wgsl.h    # Shader as C++ string constant
+│       │   ├── BinaryOp.cpp
+│       │   ├── binary_add.wgsl
+│       │   └── binary_add_wgsl.h
+│       └── ...
 ├── scripts/
-│   ├── setup-wgpu-native.sh      # Download wgpu-native binaries
-│   └── gen_wgsl_headers.py       # Generate the embedded *_wgsl.h shader headers
+│   ├── gen_wgsl_headers.py          # Generate embedded WGSL headers
+│   └── test_webgpu_native_ci.sh      # CI entry point for native tests
 └── test/
     ├── conftest.py
-    ├── tester.py                  # Partitioner stages + supported-op list
-    ├── test_build_webgpu.sh       # End-to-end build + test
-    ├── test_webgpu_native.cpp     # C++ native test runner
-    ├── test_wgsl_codegen.py       # Shader codegen check
-    ├── native/                    # C++ operator tests
-    └── ops/                       # Python op test suites (flat: test_<op>.py)
-        ├── test_add.py
-        ├── test_rms_norm.py
-        └── ...                    # one test_<op>.py per op
+    ├── tester.py                    # Partitioner and supported-op list
+    ├── test_build_webgpu.sh         # End-to-end build and test
+    ├── test_webgpu_native.cpp       # Native C++ test runner
+    ├── test_wgsl_codegen.py         # Shader drift check
+    ├── native/                      # Native C++ operator tests
+    ├── op_tests/                    # Codegen case catalog and generator
+    └── ops/                         # Python operator-test modules
 ```
 
 ## Requirements
 
-- **macOS**: Metal-capable GPU
-- **Linux**: Vulkan-capable GPU + drivers
-- **Build**: CMake 3.19+, conda environment with ExecuTorch installed
+- **macOS:** Metal-capable GPU
+- **Linux:** Vulkan-capable GPU and drivers
+- **Browser:** A WebGPU-enabled browser; the benchmark harness uses Chrome
+  Canary
+- **Build:** CMake 3.19+ and a Python environment with ExecuTorch installed
