@@ -12,6 +12,9 @@
 
 #include <webgpu/webgpu.h>
 
+#include <stdexcept>
+#include <string>
+
 namespace executorch::backends::webgpu {
 
 namespace {
@@ -40,8 +43,12 @@ void add_unary_op(
 
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
-  // 4-byte (fp32) alignment guard on both operands; also the dtype guard.
+  // 4-byte (fp32) alignment guard on both operands (null + size checks too).
   utils::check_elementwise_fp32_io(in_tensor, out_tensor, op_name);
+  // fp32-only backend: reject int operands (would be read as f32).
+  if (in_tensor.is_int || out_tensor.is_int) {
+    throw std::runtime_error(std::string(op_name) + ": int dtype unsupported");
+  }
 
   uint32_t num_elements =
       static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
