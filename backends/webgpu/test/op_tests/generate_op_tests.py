@@ -86,6 +86,49 @@ def _write_int64(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<i8").tofile(path)
 
 
+def _write_golden_output(
+    raw: torch.Tensor,
+    eager: torch.Tensor,
+    golden_dtype: str,
+    has_custom_golden: bool,
+    atol: float,
+    rtol: float,
+    path: str,
+) -> tuple[torch.Tensor, str]:
+    if raw.dtype == torch.bool:
+        # bool-output ops (comparisons): byte-exact 0/1 golden written as int8.
+        out_t = raw.to(torch.int8)
+        out_dtype = "bool"
+    elif raw.dtype == torch.int8:
+        # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
+        out_t = raw
+        out_dtype = "int8"
+    elif raw.dtype in (torch.int64, torch.int32):
+        # int64-index ops (argmax/argmin): exact golden, no fp32 cast/oracle.
+        out_t = raw.to(torch.int64)
+        out_dtype = "int64"
+    else:
+        out_t = raw.to(torch.float32)
+        out_dtype = "float32"
+        # Dual-oracle gate: the fp64 golden must match the fp32 eager within
+        # tol — proves the oracle isn't itself buggy. Skipped for float32.
+        if golden_dtype == "float64" and not has_custom_golden:
+            torch.testing.assert_close(
+                eager.to(torch.float32),
+                out_t,
+                atol=atol,
+                rtol=rtol,
+            )
+
+    if out_dtype in ("bool", "int8"):
+        _write_int8(out_t, path)
+    elif out_dtype == "int64":
+        _write_int64(out_t, path)
+    else:
+        _write_fp32(out_t, path)
+    return out_t, out_dtype
+
+
 def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[dict]:
     """Export one case; write its .pte + input/golden .bin(s). Returns one manifest
     entry per output tensor (multi-output ops emit N; single-output ops emit one,
@@ -138,42 +181,18 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
     n_out = len(golden_outs)
     for out_index in range(n_out):
         raw = golden_outs[out_index]
-        is_int8 = raw.dtype == torch.int8
-        is_int64 = raw.dtype in (torch.int64, torch.int32)
-        is_bool = raw.dtype == torch.bool
-        if is_bool:
-            # bool-output ops (comparisons): byte-exact 0/1 golden written as int8.
-            out_t = raw.to(torch.int8)
-            out_dtype = "bool"
-        elif is_int8:
-            # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
-            out_t = raw
-            out_dtype = "int8"
-        elif is_int64:
-            # int64-index ops (argmax/argmin): exact golden, no fp32 cast/oracle.
-            out_t = raw.to(torch.int64)
-            out_dtype = "int64"
-        else:
-            out_t = raw.to(torch.float32)
-            out_dtype = "float32"
-            # Dual-oracle gate: the fp64 golden must match the fp32 eager within
-            # tol — proves the oracle isn't itself buggy. Skipped for float32.
-            if golden_dtype == "float64" and case.golden_fn is None:
-                torch.testing.assert_close(
-                    eager_outs[out_index].to(torch.float32),
-                    out_t,
-                    atol=atol,
-                    rtol=rtol,
-                )
         # Single-output ops keep the original name/golden; multi-output ops suffix.
         suffix = f"_out{out_index}" if n_out > 1 else ""
         golden_rel = f"{case_id}{suffix}.golden.bin"
-        if is_bool or is_int8:
-            _write_int8(out_t, os.path.join(out_dir, golden_rel))
-        elif is_int64:
-            _write_int64(out_t, os.path.join(out_dir, golden_rel))
-        else:
-            _write_fp32(out_t, os.path.join(out_dir, golden_rel))
+        out_t, out_dtype = _write_golden_output(
+            raw,
+            eager_outs[out_index],
+            golden_dtype,
+            case.golden_fn is not None,
+            atol,
+            rtol,
+            os.path.join(out_dir, golden_rel),
+        )
         entries.append(
             {
                 "op": op,
