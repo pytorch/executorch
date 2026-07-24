@@ -32,8 +32,14 @@ class Conv1dDWModule(torch.nn.Module):
         super().__init__()
         g = torch.Generator().manual_seed(0)
         self.conv = torch.nn.Conv1d(
-            C, C, kernel, stride=stride, padding=padding,
-            dilation=dilation, groups=C, bias=bias,
+            C,
+            C,
+            kernel,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=C,
+            bias=bias,
         )
         with torch.no_grad():
             self.conv.weight.normal_(generator=g)

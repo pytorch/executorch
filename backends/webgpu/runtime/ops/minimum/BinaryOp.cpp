@@ -16,7 +16,8 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-// aten.minimum -> min(in1, in2), with NumPy broadcasting (mirrors mul + Vulkan).
+// aten.minimum -> min(in1, in2), with NumPy broadcasting (mirrors mul +
+// Vulkan).
 void minimum_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_binary_broadcast_op(
       graph,
