@@ -204,10 +204,15 @@ def _stable_silu(x: float) -> float:
     return x * _stable_sigmoid(x)
 
 
+def _gelu(x: float) -> float:
+    return 0.5 * x * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
 _ACTIVATION_FNS = {
     exir_ops.edge.aten.sigmoid.default: _stable_sigmoid,
     exir_ops.edge.aten.tanh.default: math.tanh,
     exir_ops.edge.aten.silu.default: _stable_silu,
+    exir_ops.edge.aten.gelu.default: _gelu,
 }
 
 
