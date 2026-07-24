@@ -13,27 +13,36 @@ on:
         type: number
         default: 30
       model:
-        description: 'Which model to run. Possible values are: add, mv2 (mobilenetv2)'
+        description: 'Which model to run (add, mv2, mobilebert, llama2, resnet18, yolo26)'
         required: false
         type: string
         default: 'add'
-      xnnpack:
-        description: 'Whether to enable XNNPACK'
-        required: false
-        type: boolean
-        default: false
       quantize:
         description: 'Produce an 8-bit quantized model'
         required: false
         type: boolean
         default: false
-      qemu-cpu:
-        description: 'Configuration(s) for the CPU to emulate with QEMU, expecting a JSON array'
-        required: true
-        type: string
-      docker-image:
-        description: 'The docker image to use for this job'
+      backend:
+        description: 'AOT backend to lower to (portable|xnnpack)'
         required: false
+        type: string
+        default: 'portable'
+      os:
+        description: 'Target OS for the runner (linux|baremetal)'
+        required: false
+        type: string
+        default: 'linux'
+      arch:
+        description: 'Target architecture (rv32|rv64)'
+        required: false
+        type: string
+        default: 'rv64'
+      qemu-cpu-ext:
+        description: >-
+          JSON array of QEMU -cpu *extension* strings (no rv32/rv64 prefix).
+          The script splices each entry with `arch` to form the final -cpu
+          value. Use [""] for plain base-ISA runs.
+        required: true
         type: string
 
 jobs:
@@ -41,7 +50,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-24.04-gcc14
+      docker-image: ${{ inputs.os == 'linux' && 'ci-image:executorch-ubuntu-24.04-gcc14' || 'ci-image:executorch-ubuntu-26.04-gcc14' }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ inputs.timeout }}
@@ -52,23 +61,29 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        # Allows failure in `echo | jq | while read` pipeline to bubble up and fail the workflow
+        # Allows failure in `echo | jq` pipeline to bubble up and fail the workflow
         set -o pipefail
 
-        echo '${{ inputs.qemu-cpu }}' | jq -r '.[]' | while IFS= read -r qemu_cpu; do
-          export QEMU_CPU="${qemu_cpu}"
-          export GCC_VERSION=14
+        for qemu_cpu_ext in $(echo '${{ inputs.qemu-cpu-ext }}' | jq -r '.[]'); do
+          variant_slug="${qemu_cpu_ext//,/_}"; variant_slug="${variant_slug//=/_}"; variant_slug="${variant_slug:-base}"
+          build_dir="riscv_test/${{ inputs.model }}${{ inputs.quantize && '_q' || '' }}/${{ inputs.backend }}/${{ inputs.os }}-${{ inputs.arch }}-${variant_slug}"
+
           bash .ci/scripts/test_riscv_qemu.sh \
             --model="${{ inputs.model }}" \
-            ${{ inputs.xnnpack && '--xnnpack --verbose-xnnpack' || '' }} \
+            --backend="${{ inputs.backend }}" \
+            --os="${{ inputs.os }}" \
+            --arch="${{ inputs.arch }}" \
+            --qemu-cpu-ext="${qemu_cpu_ext}" \
+            --build-dir="${build_dir}" \
+            ${{ inputs.backend == 'xnnpack' && '--verbose-xnnpack' || '' }} \
             ${{ inputs.quantize && '--quantize' || '' }}
 
-          # We only generate riscv_test/${{ inputs.model }}_riscv.etdump.json from `--verbose-xnnpack`.
-          if ${{ inputs.xnnpack }}; then
-            # Generate markdown table from riscv_test/${{ inputs.model }}_riscv.etdump.json, sorted by sum_ms
+          # We only generate run.etdump.json from `--verbose-xnnpack`.
+          if [[ "${{ inputs.backend }}" == "xnnpack" ]]; then
+            # Generate markdown table from ${build_dir}/run.etdump.json, sorted by sum_ms
             (
-              etdump_json="riscv_test/${{ inputs.model }}_riscv.etdump.json"
-              echo "### Model=${{ inputs.model }} XNNPACK=${{ inputs.xnnpack }} Quantize=${{ inputs.quantize }} QEMU_CPU='${QEMU_CPU}'"
+              etdump_json="${build_dir}/run.etdump.json"
+              echo "### Model=${{ inputs.model }} Quantize=${{ inputs.quantize }} Backend=${{ inputs.backend }} OS=${{ inputs.os }} Arch=${{ inputs.arch }}${qemu_cpu_ext:+,${qemu_cpu_ext}}"
               jq -r '
                 def r3: (. * 1000 | round) / 1000;
                 ["Section","Op","Count","Sum (ms)","Avg (ms)","Max (ms)","Microkernels"],
