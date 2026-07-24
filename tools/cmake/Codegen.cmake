@@ -465,6 +465,7 @@ function(executorch_load_build_variables)
       EXTENSION_MODULE_SRCS
       EXTENSION_NAMED_DATA_MAP_SRCS
       EXTENSION_RUNNER_UTIL_SRCS
+      EXTENSION_LLM_CACHE_SRCS
       EXTENSION_LLM_RUNNER_SRCS
       EXTENSION_TENSOR_SRCS
       EXTENSION_THREADPOOL_SRCS
@@ -499,6 +500,7 @@ function(executorch_load_build_variables)
       _extension_module__srcs
       _extension_named_data_map__srcs
       _extension_runner_util__srcs
+      _extension_llm_cache__srcs
       _extension_llm_runner__srcs
       _extension_tensor__srcs
       _extension_threadpool__srcs

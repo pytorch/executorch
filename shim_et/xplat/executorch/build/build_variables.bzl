@@ -358,6 +358,10 @@ EXTENSION_RUNNER_UTIL_SRCS = [
     "extension/runner_util/inputs_portable.cpp",
 ]
 
+EXTENSION_LLM_CACHE_SRCS = [
+    "extension/llm/cache/cache_registry.cpp",
+]
+
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/llm/runner/llm_runner_helper.cpp",
     "extension/llm/runner/multimodal_prefiller.cpp",
