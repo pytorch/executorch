@@ -185,6 +185,7 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.var.correction,),
         (torch.ops.aten.leaky_relu.default,),
         (torch.ops.aten.leaky_relu_.default,),
+        (torch.ops.aten.prelu.default,),
         (torch.ops.aten.linalg_vector_norm.default,),
         (torch.ops.aten.log_softmax.int,),
         (torch.ops.aten.round.default,),
