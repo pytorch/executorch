@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from conv_with_clamp.wgsl - DO NOT EDIT.
-// wgsl-sha256: 9d37439afcfc8059c271ccb87a5a091d51a01b5ae7eae13a56bfa5928e4e5706
+// wgsl-sha256: 262acfcd0b8ea1743d618c0d21dc140563da3ebf98c0399507f1005a16d64b5e
 inline constexpr const char* kConvWithClampWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_x: array<f32>;
@@ -38,7 +38,11 @@ struct Params {
   dil_w: u32,
   has_bias: u32,
   numel: u32,
+  groups: u32,
+  ic_per_group: u32,
   pad0: u32,
+  pad1: u32,
+  pad2: u32,
   output_min: f32,
   output_max: f32,
 }
@@ -67,8 +71,14 @@ fn main(
   if (params.has_bias != 0u) {
     acc = t_bias[oc];
   }
-  // General conv: full-IC windowed dot; weight [OC,IC,Kh,Kw], input [N,IC,H,W].
-  for (var ic: u32 = 0u; ic < params.IC; ic = ic + 1u) {
+  // Grouped conv: output channel oc belongs to group g and dots only that
+  // group's ic_per_group input channels. weight is [OC, IC/groups, Kh, Kw];
+  // groups==1 (ic_per_group==IC, g==0) is the general dense case.
+  let oc_per_group = params.OC / params.groups;
+  let g = oc / oc_per_group;
+  let ic_base = g * params.ic_per_group;
+  for (var ic_local: u32 = 0u; ic_local < params.ic_per_group; ic_local = ic_local + 1u) {
+    let ic = ic_base + ic_local;
     for (var kh: u32 = 0u; kh < params.Kh; kh = kh + 1u) {
       let ih = i32(oh) * i32(params.stride_h) - i32(params.pad_h) +
           i32(kh) * i32(params.dil_h);
@@ -76,7 +86,8 @@ fn main(
         continue;
       }
       let in_row = ((n * params.IC + ic) * params.H_in + u32(ih)) * params.W_in;
-      let w_row = ((oc * params.IC + ic) * params.Kh + kh) * params.Kw;
+      let w_row =
+          ((oc * params.ic_per_group + ic_local) * params.Kh + kh) * params.Kw;
       for (var kw: u32 = 0u; kw < params.Kw; kw = kw + 1u) {
         let iw = i32(ow) * i32(params.stride_w) - i32(params.pad_w) +
             i32(kw) * i32(params.dil_w);
