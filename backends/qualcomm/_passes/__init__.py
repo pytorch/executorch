@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from .annotate_avg_pool1d import AnnotateAvgPool1D
+from .annotate_get_attr import AnnotateGetAttr
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -70,6 +71,7 @@ from .tag_quant_io import TagQuantIO
 
 __all__ = [
     AnnotateAvgPool1D,
+    AnnotateGetAttr,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,

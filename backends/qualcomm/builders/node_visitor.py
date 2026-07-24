@@ -90,12 +90,14 @@ q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.torchao.quantize_affine.default,
 }
 
 dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.torchao.dequantize_affine.default,
 }
 
 q_dq_map = {
