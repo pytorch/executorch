@@ -46,6 +46,7 @@ from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
+from executorch.backends.webgpu.test.ops.test_grid_priors import GridPriorsModule
 from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
     GridSampler2dModule,
 )
@@ -607,6 +608,29 @@ def _index_select_suite() -> WebGPUTestSuite:
                 construct={"dim": 2, "index": [6, 1, 4]},
                 inputs=((XS, S, S1),),
             ),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("grid_priors")
+def _grid_priors_suite() -> WebGPUTestSuite:
+    # Detection anchor-grid op: out [H*W, 2] from the input's H/W (values unused)
+    # + baked stride/offset. Pure computed output -> float32 oracle. `offset0`
+    # covers offset=0; the shapes span square + non-square H/W.
+    def case(name, shape, stride, offset):
+        return Case(
+            name=name,
+            construct={"stride": stride, "offset": offset},
+            inputs=(shape,),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda stride, offset: GridPriorsModule(stride, offset),
+        cases=[
+            case("s8", (1, 3, 8, 10), 8, 0.5),
+            case("s16", (1, 3, 4, 4), 16, 0.0),
+            case("offset0", (1, 3, 5, 7), 4, 0.0),
         ],
         golden_dtype="float32",
     )
