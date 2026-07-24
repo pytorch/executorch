@@ -1903,9 +1903,12 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
 
   std::vector<MapCallbackData> cb_data(count);
   std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
+  // Map each output's LIVE staging size (an int64 output is int32-backed).
+  std::vector<size_t> map_nbytes(count, 0);
 
   for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second == 0) {
+    map_nbytes[i] = tensors_[output_ids_[i]].cur_nbytes;
+    if (map_nbytes[i] == 0) {
       cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
@@ -1917,29 +1920,62 @@ void WebGPUGraph::copy_outputs(std::vector<std::pair<void*, size_t>>& outputs) {
         output_staging_buffers_[i],
         WGPUMapMode_Read,
         0,
-        outputs[i].second,
+        map_nbytes[i],
         cb_info);
   }
 
-  for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second != 0 &&
-        webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
-      throw std::runtime_error("WebGPU: WaitAny failed for output map");
-    }
-  }
+  // Tracks which output buffers are currently mapped so a mid-loop throw can
+  // release them before propagating (no dangling mapped buffers).
+  std::vector<bool> is_mapped(count, false);
 
-  for (size_t i = 0; i < count; i++) {
-    if (outputs[i].second == 0) {
-      continue;
+  try {
+    for (size_t i = 0; i < count; i++) {
+      if (map_nbytes[i] == 0) {
+        continue;
+      }
+      if (webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
+        throw std::runtime_error("WebGPU: WaitAny failed for output map");
+      }
+      if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
+        is_mapped[i] = true;
+      }
     }
-    if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
+
+    for (size_t i = 0; i < count; i++) {
+      if (map_nbytes[i] == 0) {
+        continue;
+      }
+      if (cb_data[i].status != WGPUMapAsyncStatus_Success) {
+        throw std::runtime_error("WebGPU buffer map failed for output");
+      }
       const void* mapped = wgpuBufferGetConstMappedRange(
-          output_staging_buffers_[i], 0, outputs[i].second);
-      std::memcpy(outputs[i].first, mapped, outputs[i].second);
+          output_staging_buffers_[i], 0, map_nbytes[i]);
+      const size_t dst_nbytes = outputs[i].second;
+      if (dst_nbytes == map_nbytes[i]) {
+        std::memcpy(outputs[i].first, mapped, map_nbytes[i]);
+      } else if (
+          dst_nbytes == 2 * map_nbytes[i] && tensors_[output_ids_[i]].is_int &&
+          tensors_[output_ids_[i]].elem_size == 4) {
+        // int64 host output backed by an int32 GPU buffer: widen (sign-extend).
+        const int32_t* src = static_cast<const int32_t*>(mapped);
+        int64_t* dst = static_cast<int64_t*>(outputs[i].first);
+        const size_t n = map_nbytes[i] / sizeof(int32_t);
+        for (size_t k = 0; k < n; k++) {
+          dst[k] = static_cast<int64_t>(src[k]);
+        }
+      } else {
+        throw std::runtime_error("WebGPU: output buffer size mismatch");
+      }
       wgpuBufferUnmap(output_staging_buffers_[i]);
-    } else {
-      throw std::runtime_error("WebGPU buffer map failed for output");
+      is_mapped[i] = false;
     }
+  } catch (...) {
+    for (size_t j = 0; j < count; j++) {
+      if (is_mapped[j]) {
+        wgpuBufferUnmap(output_staging_buffers_[j]);
+      }
+    }
+    throw;
   }
 }
 
