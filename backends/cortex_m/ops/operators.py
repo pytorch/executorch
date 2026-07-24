@@ -1440,3 +1440,134 @@ def quantized_max_pool2d_impl(
     )
     result = torch.clamp(result, activation_min, activation_max)
     return result.to(torch.int8).contiguous(memory_format=torch.channels_last)
+
+
+# ===================================================================
+# QUANTIZED LSTM OPERATION DEFINITION
+# ===================================================================
+#
+# Fused single-layer unidirectional int8 LSTM backed by CMSIS-NN's
+# arm_nn_lstm_step_s8. Per-gate tensors are stacked in PyTorch IFGO order
+# (input, forget, cell, output); the C++ kernel maps them to CMSIS's by-name
+# gate structs. Gate/activation Q-formats are fixed by CMSIS (see lstm_params);
+# the AOT pass supplies the derived multipliers/shifts and effective biases.
+
+_LSTM_ARGS = (
+    "Tensor input, "
+    "Tensor input_weights, "
+    "Tensor hidden_weights, "
+    "Tensor input_effective_bias, "
+    "Tensor hidden_effective_bias, "
+    "int[] input_multipliers, "
+    "int[] input_shifts, "
+    "int[] hidden_multipliers, "
+    "int[] hidden_shifts, "
+    "int input_offset, "
+    "int output_offset, "
+    "int forget_to_cell_multiplier, "
+    "int forget_to_cell_shift, "
+    "int input_to_cell_multiplier, "
+    "int input_to_cell_shift, "
+    "int output_multiplier, "
+    "int output_shift, "
+    "int cell_scale_power, "
+    "int cell_clip, "
+    "bool time_major, "
+    "Tensor temp1, "
+    "Tensor temp2, "
+    "Tensor cell_state"
+)
+
+lib.define(f"quantized_lstm({_LSTM_ARGS}) -> Tensor")
+lib.define(f"quantized_lstm.out({_LSTM_ARGS}, *, Tensor(a!) out) -> Tensor(a!)")
+
+
+@register_fake("cortex_m::quantized_lstm")  # type: ignore[misc]
+def quantized_lstm_meta(
+    input: torch.Tensor,
+    input_weights: torch.Tensor,
+    hidden_weights: torch.Tensor,
+    input_effective_bias: torch.Tensor,
+    hidden_effective_bias: torch.Tensor,
+    input_multipliers: Sequence[int],
+    input_shifts: Sequence[int],
+    hidden_multipliers: Sequence[int],
+    hidden_shifts: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    forget_to_cell_multiplier: int,
+    forget_to_cell_shift: int,
+    input_to_cell_multiplier: int,
+    input_to_cell_shift: int,
+    output_multiplier: int,
+    output_shift: int,
+    cell_scale_power: int,
+    cell_clip: int,
+    time_major: bool,
+    temp1: torch.Tensor,
+    temp2: torch.Tensor,
+    cell_state: torch.Tensor,
+) -> torch.Tensor:
+    # Output keeps the input's [dim0, dim1] layout (time-major or batch-first).
+    hidden_size = input_weights.shape[0] // 4
+    shape = (input.shape[0], input.shape[1], hidden_size)
+    return torch.empty(shape, dtype=torch.int8, device=input.device)
+
+
+@impl(lib, "quantized_lstm", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_lstm_impl(
+    input: torch.Tensor,
+    input_weights: torch.Tensor,
+    hidden_weights: torch.Tensor,
+    input_effective_bias: torch.Tensor,
+    hidden_effective_bias: torch.Tensor,
+    input_multipliers: Sequence[int],
+    input_shifts: Sequence[int],
+    hidden_multipliers: Sequence[int],
+    hidden_shifts: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    forget_to_cell_multiplier: int,
+    forget_to_cell_shift: int,
+    input_to_cell_multiplier: int,
+    input_to_cell_shift: int,
+    output_multiplier: int,
+    output_shift: int,
+    cell_scale_power: int,
+    cell_clip: int,
+    time_major: bool,
+    temp1: torch.Tensor,
+    temp2: torch.Tensor,
+    cell_state: torch.Tensor,
+) -> torch.Tensor:
+    # Imported lazily: at operators.py load time the passes package (via its
+    # __init__) references edge cortex_m ops that this module has not finished
+    # registering yet, so a top-level import would deadlock.
+    from executorch.backends.cortex_m.passes.lstm_params import (
+        lstm_params_from_op_args,
+        run_quantized_lstm,
+    )
+
+    params = lstm_params_from_op_args(
+        input_weights,
+        hidden_weights,
+        input_effective_bias,
+        hidden_effective_bias,
+        list(input_multipliers),
+        list(input_shifts),
+        list(hidden_multipliers),
+        list(hidden_shifts),
+        input_offset,
+        output_offset,
+        forget_to_cell_multiplier,
+        forget_to_cell_shift,
+        input_to_cell_multiplier,
+        input_to_cell_shift,
+        output_multiplier,
+        output_shift,
+        cell_scale_power,
+        cell_clip,
+    )
+    x_tm = input if time_major else input.transpose(0, 1)
+    out_tm = run_quantized_lstm(params, x_tm)
+    return out_tm if time_major else out_tm.transpose(0, 1).contiguous()
