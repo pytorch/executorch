@@ -21,4 +21,17 @@ plugins {
 
 rootProject.name = 'executorch'
 
-include('executorch_android')
+// Shared platform-neutral API module (no android.* dependency)
+include(':executorch_java')
+project(':executorch_java').projectDir = new File(rootDir, '../java')
+
+// Android module — only included when Android SDK is available
+if (System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null || new java.io.File(rootDir, "local.properties").exists()) {
+    include('executorch_android')
+} else {
+    logger.warn("WARNING: ANDROID_HOME is not set, skipping Android subproject.")
+}
+
+// Desktop JVM module
+include(':executorch_jvm')
+project(':executorch_jvm').projectDir = new File(rootDir, '../jvm')
