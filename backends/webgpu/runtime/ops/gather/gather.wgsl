@@ -5,8 +5,8 @@
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(3) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(4) var<uniform> self_meta: TensorMeta;
@@ -27,13 +27,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var rem = o;
     var self_idx: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let c = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
+        let c = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
         var coord = c;
         if (d == params.dim) {
             coord = u32(indices[o]);
         }
-        self_idx = self_idx + coord * self_meta.strides[d];
+        self_idx = self_idx + coord * self_meta.strides[d >> 2u][d & 3u];
     }
     output[o] = self_[self_idx];
 }
