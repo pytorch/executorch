@@ -9,146 +9,155 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/view_copy/view_copy.h>
 
 #include <webgpu/webgpu.h>
 
-#include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace executorch::backends::webgpu {
 
 namespace {
 
-struct ToCopyParams {
-  uint32_t numel;
-  uint32_t convert_mode; // 0 = raw copy, 1 = int->float, 2 = float->int
-  uint32_t pad0;
-  uint32_t pad1;
+// Uniform buffer layout matching the WGSL Params struct; 16-byte aligned.
+struct ConvertParams {
+  uint32_t num_elements;
+  uint32_t _pad[3];
 };
-static_assert(sizeof(ToCopyParams) == 16, "ToCopyParams must be 16 bytes");
 
-// _to_copy / _to_dim_order_copy: same-dtype = raw copy; int<->float must CONVERT
-// (the dtype-promotion pass inserts int->float _to_copy before binary ops).
-void to_copy_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  const int in_id = args.at(0);
-  const int out_id = args.at(args.size() - 1);
-
+// Elementwise int32<->fp32 convert; mirrors Vulkan add_view_copy_convert_node.
+void add_convert_op(
+    WebGPUGraph& graph,
+    int in_id,
+    int out_id,
+    const char* wgsl_source,
+    uint32_t wg_size_x,
+    const char* op_name) {
   WGPUDevice device = graph.device();
+
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
   if (in_tensor.buffer == nullptr || out_tensor.buffer == nullptr) {
-    throw std::runtime_error("to_copy: null buffer binding");
-  }
-  // 4-byte elements only: numel below and the int<->float convert path assume a
-  // 4-byte element. to_copy legitimately handles fp32 AND int32, so guard on
-  // element size (not fp32-only) and reject bool/fp16/int64.
-  if (in_tensor.elem_size != sizeof(float) ||
-      out_tensor.elem_size != sizeof(float)) {
-    throw std::runtime_error(
-        "to_copy: only 4-byte element types (fp32/int32) are supported");
-  }
-  const uint64_t numel = out_tensor.nbytes / sizeof(float);
-  if (numel == 0 || numel > UINT32_MAX) {
-    throw std::runtime_error("to_copy: output numel is zero or exceeds u32");
-  }
-  if (in_tensor.nbytes != out_tensor.nbytes) {
-    throw std::runtime_error("to_copy: input/output size mismatch");
-  }
-  // int<->float differ only in interpretation of the same 4 bytes (nbytes equal),
-  // so a raw copy would ship the wrong bit pattern; select a converting shader.
-  uint32_t convert_mode = 0;
-  if (in_tensor.is_int && !out_tensor.is_int) {
-    convert_mode = 1; // int -> float
-  } else if (!in_tensor.is_int && out_tensor.is_int) {
-    convert_mode = 2; // float -> int
+    throw std::runtime_error(std::string(op_name) + ": null buffer binding");
   }
 
-  uint32_t wg_size = utils::clamp_workgroup_size(device, kToCopyWorkgroupSizeX);
-  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      device, static_cast<uint32_t>(numel), wg_size, "to_copy");
+  // 32-bit only: int64 consts are downcast to int32 by the Vulkan serializer.
+  if (in_tensor.elem_size != 4 || out_tensor.elem_size != 4) {
+    throw std::runtime_error(
+        std::string(op_name) + ": only 32-bit int<->float convert supported");
+  }
+  if (in_tensor.nbytes != out_tensor.nbytes) {
+    throw std::runtime_error(std::string(op_name) + ": numel mismatch");
+  }
+
+  uint32_t num_elements = static_cast<uint32_t>(out_tensor.nbytes / 4);
+
+  uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
+  uint32_t workgroup_count =
+      utils::compute_1d_workgroup_count(device, num_elements, wg_size, op_name);
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  ToCopyParams params = {};
-  params.numel = static_cast<uint32_t>(numel);
-  params.convert_mode = convert_mode;
-  WGPUBuffer params_buf =
-      utils::make_uniform(device, &params, sizeof(ToCopyParams));
-  graph.add_uniform_buffer_bytes(sizeof(ToCopyParams));
+  ConvertParams params = {};
+  params.num_elements = num_elements;
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kToCopyWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+  WGPUBuffer uniform_buffer =
+      utils::make_uniform(device, &params, sizeof(ConvertParams));
+  graph.add_uniform_buffer_bytes(sizeof(ConvertParams));
 
-  WGPUBindGroupLayoutEntry entries[3] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Storage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      wgsl_source,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(ConvertParams)},
+      },
+      &wg_size_constant,
+      1);
 
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 3;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+  const size_t dispatch_idx =
+      graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
 
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  // Dynamic shapes: recompute num_elements/dispatch for the live shape.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, wg_size, dispatch_idx, params_buf](WebGPUGraph& g) {
+        const auto& d = g.cur_dims(in_id);
+        const uint64_t numel = utils::numel_of(d);
+        g.set_cur_dims(out_id, d);
+        ConvertParams p = {};
+        p.num_elements = static_cast<uint32_t>(numel);
+        wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+        g.dispatch_at(dispatch_idx).workgroup_count_x =
+            utils::compute_1d_workgroup_count(
+                g.device(),
+                static_cast<uint32_t>(numel),
+                wg_size,
+                "to_copy(resize)");
+      });
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
+}
 
-  WGPUBindGroupEntry bg_entries[3] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in_tensor.buffer;
-  bg_entries[0].size = in_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = out_tensor.buffer;
-  bg_entries[1].size = out_tensor.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = params_buf;
-  bg_entries[2].size = sizeof(ToCopyParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 3;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count.x, "to_copy", workgroup_count.y});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  graph.own_uniform_buffer(params_buf);
+void to_copy_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  // aten._to_copy.default args: [self, ...kwargs, out]; out = last value id.
+  add_to_copy_node(graph, args.at(0), args.at(args.size() - 1));
 }
 
 } // namespace
 
+void add_to_copy_node(WebGPUGraph& graph, int in_id, int out_id) {
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+
+  // Same is_int+width = flat byte copy; unique dtype key in the 32-bit domain.
+  if (in_tensor.is_int == out_tensor.is_int &&
+      in_tensor.elem_size == out_tensor.elem_size) {
+    add_flat_copy(graph, in_id, out_id);
+    return;
+  }
+
+  // int<->float = numeric convert (mirrors Vulkan add_view_copy_convert_node).
+  if (in_tensor.is_int && !out_tensor.is_int) {
+    add_convert_op(
+        graph,
+        in_id,
+        out_id,
+        kToCopyIntToFloatWGSL,
+        kToCopyIntToFloatWorkgroupSizeX,
+        "to_copy_int_to_float");
+  } else {
+    add_convert_op(
+        graph,
+        in_id,
+        out_id,
+        kToCopyFloatToIntWGSL,
+        kToCopyFloatToIntWorkgroupSizeX,
+        "to_copy_float_to_int");
+  }
+}
+
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten._to_copy.default, to_copy_impl);
-  WEBGPU_REGISTER_OP(dim_order_ops._to_dim_order_copy.default, to_copy_impl);
 }
 
 } // namespace executorch::backends::webgpu
