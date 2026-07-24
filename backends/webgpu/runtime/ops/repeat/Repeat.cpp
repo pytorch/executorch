@@ -38,7 +38,7 @@ void repeat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& out_tensor = graph.get_tensor(out_id);
   if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
       in_tensor.dims.size() > kTensorMetaMaxNdim) {
-    throw std::runtime_error("repeat: tensor rank exceeds 4 (MAX_NDIM)");
+    throw std::runtime_error("repeat: tensor rank exceeds 8 (MAX_NDIM)");
   }
 
   TensorMeta out_meta;
