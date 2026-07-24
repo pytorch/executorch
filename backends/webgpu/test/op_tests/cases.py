@@ -30,84 +30,57 @@ from executorch.backends.webgpu.test.ops.test_add import (
     AddModule,
     AddSelfModule,
 )
-from executorch.backends.webgpu.test.ops.test_cat import (
-    CatModule,
-    CONFIGS as _CAT_CONFIGS,
+from executorch.backends.webgpu.test.ops.test_argmax import (
+    argmax_tie_gen,
+    ArgmaxModule,
+    argmin_tie_gen,
+    ArgminModule,
 )
-from executorch.backends.webgpu.test.ops.test_compare import (
-    CompareModule,
-    compare_gen_a,
-    compare_gen_b,
-)
-from executorch.backends.webgpu.test.ops.test_logical_and import (
-    la_gen_a,
-    la_gen_b,
-    LogicalAndModule,
-)
+from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_bitwise import (
     BitwiseAndModule,
     BitwiseNotModule,
     bw_gen_a,
     bw_gen_b,
 )
-from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
-from executorch.backends.webgpu.test.ops.test_argmax import (
-    argmax_tie_gen,
-    argmin_tie_gen,
-    ArgmaxModule,
-    ArgminModule,
+from executorch.backends.webgpu.test.ops.test_cat import (
+    CatModule,
+    CONFIGS as _CAT_CONFIGS,
 )
-from executorch.backends.webgpu.test.ops.test_flip import FlipModule
-from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
-from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
+from executorch.backends.webgpu.test.ops.test_compare import (
+    compare_gen_a,
+    compare_gen_b,
+    CompareModule,
+)
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
+from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
+from executorch.backends.webgpu.test.ops.test_flip import FlipModule
+from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_grid_priors import GridPriorsModule
-from executorch.backends.webgpu.test.ops.test_conv_with_clamp import (
-    ConvWithClampModule,
-)
-from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import (
-    GridSampler2dModule,
-)
-from executorch.backends.webgpu.test.ops.test_rope_interleaved import (
-    RopeInterleavedModule,
-)
-from executorch.backends.webgpu.test.ops.test_quant import (
-    DequantizeConstModule,
-    QuantizeModule,
-)
-from executorch.backends.webgpu.test.ops.test_q8ta_add import Q8taAddModule
-from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
-from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
-    Q8taPixelShuffleModule,
-)
-from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
-    make_qcs4w_linear_module,
+from executorch.backends.webgpu.test.ops.test_grid_sampler_2d import GridSampler2dModule
+from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
+from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
+from executorch.backends.webgpu.test.ops.test_linear_dq8ca_q4gsw import (
+    make_linear_dq8ca_q4gsw_module,
 )
 from executorch.backends.webgpu.test.ops.test_linear_q8ta_q8csw import (
     make_linear_q8ta_q8csw_module,
 )
-from executorch.backends.webgpu.test.ops.test_linear_dq8ca_q4gsw import (
-    make_linear_dq8ca_q4gsw_module,
+from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
+    make_qcs4w_linear_module,
 )
-from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
-    make_q8ta_linear_module,
+from executorch.backends.webgpu.test.ops.test_logical_and import (
+    la_gen_a,
+    la_gen_b,
+    LogicalAndModule,
 )
-from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_pw import (
-    make_q8ta_conv2d_pw_module,
+from executorch.backends.webgpu.test.ops.test_logical_or import (
+    BitwiseOrModule,
+    lo_gen_a,
+    lo_gen_b,
+    LogicalOrModule,
 )
-from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_dw import (
-    make_q8ta_conv2d_dw_module,
-)
-from executorch.backends.webgpu.test.ops.test_q8ta_conv2d import (
-    make_q8ta_conv2d_module,
-)
-from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_transposed import (
-    make_q8ta_conv2d_transposed_module,
-)
-from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
-from executorch.backends.webgpu.test.ops.test_group_norm import GroupNormModule
-from executorch.backends.webgpu.test.ops.test_index_select import IndexSelectModule
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
 from executorch.backends.webgpu.test.ops.test_mul import (
     CONFIGS as _MUL_CONFIGS,
@@ -117,13 +90,38 @@ from executorch.backends.webgpu.test.ops.test_permute import (
     CONFIGS as _PERMUTE_CONFIGS,
     PermuteModule,
 )
+from executorch.backends.webgpu.test.ops.test_pixel_shuffle import PixelShuffleModule
 from executorch.backends.webgpu.test.ops.test_pow import PowModule
+from executorch.backends.webgpu.test.ops.test_q8ta_add import Q8taAddModule
+from executorch.backends.webgpu.test.ops.test_q8ta_conv2d import make_q8ta_conv2d_module
+from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_dw import (
+    make_q8ta_conv2d_dw_module,
+)
+from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_pw import (
+    make_q8ta_conv2d_pw_module,
+)
+from executorch.backends.webgpu.test.ops.test_q8ta_conv2d_transposed import (
+    make_q8ta_conv2d_transposed_module,
+)
+from executorch.backends.webgpu.test.ops.test_q8ta_linear import make_q8ta_linear_module
+from executorch.backends.webgpu.test.ops.test_q8ta_pixel_shuffle import (
+    Q8taPixelShuffleModule,
+)
+from executorch.backends.webgpu.test.ops.test_q8ta_relu import Q8taReluModule
+from executorch.backends.webgpu.test.ops.test_quant import (
+    DequantizeConstModule,
+    QuantizeModule,
+)
 from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
+from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_rms_norm import (
     _CASES,
     _linspace_weight,
     _ramp,
     RmsNormModule,
+)
+from executorch.backends.webgpu.test.ops.test_rope_interleaved import (
+    RopeInterleavedModule,
 )
 from executorch.backends.webgpu.test.ops.test_select import (
     CONFIGS as _SELECT_CONFIGS,
@@ -379,6 +377,49 @@ def _bitwise_not_suite() -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda shape: BitwiseNotModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("logical_or")
+def _logical_or_suite() -> WebGPUTestSuite:
+    # out = (a>0) || (b>0): two bool masks derived on-GPU from float inputs via
+    # gt.Tensor (baked zeros), OR'd -> bool. Distinct a/b seeds (~50% each,
+    # independent -> OR ~75% True, a real mix an AND mutant fails); all shapes
+    # numel % 4 == 0. float32 oracle (byte-exact bool golden).
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=lo_gen_a),
+                InputSpec(shape=shape, gen=lo_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: LogicalOrModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("bitwise_or")
+def _bitwise_or_suite() -> WebGPUTestSuite:
+    # bool bitwise OR == logical_or for canonical 0/1 (shares the handler).
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=lo_gen_a),
+                InputSpec(shape=shape, gen=lo_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: BitwiseOrModule(shape),
         cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
         golden_dtype="float32",
     )
@@ -660,17 +701,13 @@ def _avg_pool2d_suite() -> WebGPUTestSuite:
         cases=[
             case("basic", [2, 2], [2, 2], [0, 0], True, False, None, (1, 2, 4, 4)),
             case("pad_cip", [3, 3], [2, 2], [1, 1], True, False, None, (1, 2, 5, 5)),
-            case(
-                "pad_nocip", [3, 3], [2, 2], [1, 1], False, False, None, (1, 2, 5, 5)
-            ),
+            case("pad_nocip", [3, 3], [2, 2], [1, 1], False, False, None, (1, 2, 5, 5)),
             case("asym", [3, 2], [2, 3], [1, 1], True, False, None, (2, 3, 5, 7)),
             case("divisor", [2, 2], [2, 2], [0, 0], True, False, 3, (1, 1, 4, 4)),
             # ceil_mode: last window overhangs -> exercises the overhang divisor
             # branch (beh/bew > 0) + the ceil output-size (3x3 vs floor 2x2).
             case("ceil_cip", [2, 2], [2, 2], [0, 0], True, True, None, (1, 1, 5, 5)),
-            case(
-                "ceil_nocip", [3, 3], [2, 2], [0, 0], False, True, None, (1, 2, 5, 5)
-            ),
+            case("ceil_nocip", [3, 3], [2, 2], [0, 0], False, True, None, (1, 2, 5, 5)),
         ],
         atol=1e-3,
         rtol=1e-3,
@@ -1726,7 +1763,9 @@ def _q8ta_pixel_shuffle_suite() -> WebGPUTestSuite:
     def case(name, n_ch, h, w, **kw):
         n = n_ch * h * w  # [1, n_ch, h, w], n_ch = C*r*r
         vals = [((i % 251) - 125) for i in range(n)]  # spread across int8 range
-        return Case(name=name, construct={"x_vals": vals, "shape": (1, n_ch, h, w), **kw})
+        return Case(
+            name=name, construct={"x_vals": vals, "shape": (1, n_ch, h, w), **kw}
+        )
 
     return WebGPUTestSuite(
         module_factory=lambda **kw: Q8taPixelShuffleModule(**kw),
