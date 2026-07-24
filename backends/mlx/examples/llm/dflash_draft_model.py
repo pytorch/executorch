@@ -289,10 +289,14 @@ class DFlashDraftModel(nn.Module):
             just accepted), NOT the full accumulated history. The caller
             (run_dflash.py) passes only this delta each round; the cache
             inside each attention layer retains everything older.
-        ctx_start_pos: absolute position (int/SymInt) -- total accepted
-            context length BEFORE this round, i.e. where new_target_hidden
-            begins and where it should be written into the cache.
+        ctx_start_pos: 1-element tensor -- total accepted context length
+            BEFORE this round, i.e. where new_target_hidden begins and where
+            it should be written into the cache. Passed as a tensor (not a
+            plain int) so it traces as a dynamic SymInt under torch.export;
+            extracted to a SymInt once here and reused across all layers,
+            per KVCache.update's documented multi-layer usage pattern.
         """
+        ctx_start_pos = ctx_start_pos[0].item()
         B, L = tokens.shape
         new_ctx_len = new_target_hidden.shape[1]
         ctx_total_len = ctx_start_pos + new_ctx_len
