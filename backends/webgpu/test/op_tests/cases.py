@@ -34,6 +34,11 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
     CONFIGS as _CAT_CONFIGS,
 )
+from executorch.backends.webgpu.test.ops.test_compare import (
+    CompareModule,
+    compare_gen_a,
+    compare_gen_b,
+)
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_argmax import (
     argmax_tie_gen,
@@ -254,6 +259,52 @@ def _minimum_suite() -> WebGPUTestSuite:
             Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
         ],
     )
+
+
+def _compare_suite(op: str) -> WebGPUTestSuite:
+    # Elementwise fp32 comparison -> bool (byte-exact golden). The two inputs use
+    # DIFFERENT discrete-range seeds so a!=b (real lt/gt mix) while colliding
+    # often (eq/le/ge ties); all shapes have numel % 4 == 0 (bool output packs 4
+    # bytes/word). Same-shape only (flat kernel; broadcast=smoke).
+    def case(name, shape):
+        return Case(
+            name=name,
+            inputs=(
+                InputSpec(shape=shape, gen=compare_gen_a),
+                InputSpec(shape=shape, gen=compare_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda: CompareModule(op),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="bool",
+    )
+
+
+@register_op_test("eq")
+def _eq_suite() -> WebGPUTestSuite:
+    return _compare_suite("eq")
+
+
+@register_op_test("lt")
+def _lt_suite() -> WebGPUTestSuite:
+    return _compare_suite("lt")
+
+
+@register_op_test("le")
+def _le_suite() -> WebGPUTestSuite:
+    return _compare_suite("le")
+
+
+@register_op_test("gt")
+def _gt_suite() -> WebGPUTestSuite:
+    return _compare_suite("gt")
+
+
+@register_op_test("ge")
+def _ge_suite() -> WebGPUTestSuite:
+    return _compare_suite("ge")
 
 
 @register_op_test("pow")
