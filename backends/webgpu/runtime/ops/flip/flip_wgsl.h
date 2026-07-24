@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from flip.wgsl - DO NOT EDIT.
-// wgsl-sha256: e85b3a7f753ec183e83f55f53cc764b5ffa748b4e229d81b978dabe58f576e80
+// wgsl-sha256: 0c3a6b73a4a4923df6b742a9dacc0d73e6b5b033e4b91835ec71107a06848552
 inline constexpr const char* kFlipWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -21,14 +21,14 @@ inline constexpr const char* kFlipWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
 
 struct Params {
-  flip: vec4<u32>,
+  flip: array<vec4<u32>, 2>,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
@@ -48,11 +48,11 @@ fn main(
     var rem = out_bufi;
     var in_bufi: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        let flipped = in_meta.sizes[d] - 1u - coord;
-        let in_coord = select(coord, flipped, params.flip[d] == 1u);
-        in_bufi = in_bufi + in_coord * in_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        let flipped = in_meta.sizes[d >> 2u][d & 3u] - 1u - coord;
+        let in_coord = select(coord, flipped, params.flip[d >> 2u][d & 3u] == 1u);
+        in_bufi = in_bufi + in_coord * in_meta.strides[d >> 2u][d & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }
