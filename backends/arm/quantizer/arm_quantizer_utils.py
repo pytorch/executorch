@@ -461,6 +461,7 @@ class SharedQspecQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.pixel_shuffle.default,
         torch.ops.aten.pixel_unshuffle.default,
         torch.ops.aten.cat.default,
+        torch.ops.aten.concat.default,
         torch.ops.aten.concatenate.default,
         torch.ops.aten.stack.default,
         torch.ops.aten.dropout.default,
