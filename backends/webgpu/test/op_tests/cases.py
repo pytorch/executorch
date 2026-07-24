@@ -87,6 +87,9 @@ from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
 from executorch.backends.webgpu.test.ops.test_linear_q8ta_q8csw import (
     make_linear_q8ta_q8csw_module,
 )
+from executorch.backends.webgpu.test.ops.test_linear_dq8ca_q4gsw import (
+    make_linear_dq8ca_q4gsw_module,
+)
 from executorch.backends.webgpu.test.ops.test_q8ta_linear import (
     make_q8ta_linear_module,
 )
@@ -1784,6 +1787,31 @@ def _linear_q8ta_q8csw_suite() -> WebGPUTestSuite:
             case("gemv", 1, 32, 16),  # M==1
             case("k48", 2, 48, 8),  # different K, smaller N
             case("n32", 3, 32, 32),  # larger N
+        ],
+        golden_dtype="float32",
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("linear_dq8ca_q4gsw")
+def _linear_dq8ca_q4gsw_suite() -> WebGPUTestSuite:
+    # torchao Int8DynamicActivationIntxWeightConfig(int4, PerGroup) -> delegated
+    # choose_qparams_affine (per-row act scale/zp) -> linear_dq8ca_q4gsw (fp32
+    # out). Golden = converted eager (fp32 fake-quant). q4gsw needs K % gs == 0,
+    # K % 8 == 0, N % 8 == 0.
+    def case(name, m, k, n, **kw):
+        return Case(
+            name=name, construct={"k": k, "n": n, "m": m, **kw}, inputs=((m, k),)
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda **kw: make_linear_dq8ca_q4gsw_module(**kw),
+        cases=[
+            case("basic", 4, 64, 16),
+            case("gemv", 1, 64, 16),  # M==1 decode
+            case("k128", 2, 128, 8),  # more groups, smaller N
+            case("n32", 3, 64, 32),  # larger N
         ],
         golden_dtype="float32",
         atol=1e-3,
