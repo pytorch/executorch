@@ -39,6 +39,11 @@ from executorch.backends.webgpu.test.ops.test_compare import (
     compare_gen_a,
     compare_gen_b,
 )
+from executorch.backends.webgpu.test.ops.test_logical_and import (
+    la_gen_a,
+    la_gen_b,
+    LogicalAndModule,
+)
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_argmax import (
     argmax_tie_gen,
@@ -305,6 +310,29 @@ def _gt_suite() -> WebGPUTestSuite:
 @register_op_test("ge")
 def _ge_suite() -> WebGPUTestSuite:
     return _compare_suite("ge")
+
+
+@register_op_test("logical_and")
+def _logical_and_suite() -> WebGPUTestSuite:
+    # out = (a>0) && (b>0): two bool masks derived on-GPU from float inputs via
+    # gt.Tensor (baked zeros), AND'd -> bool. Distinct a/b seeds so the masks
+    # differ (AND ~25% True, a real mix an OR mutant fails); all shapes numel %
+    # 4 == 0 (bool packs 4/word). float32 oracle (byte-exact bool golden).
+    def case(name, shape):
+        return Case(
+            name=name,
+            construct={"shape": shape},
+            inputs=(
+                InputSpec(shape=shape, gen=la_gen_a),
+                InputSpec(shape=shape, gen=la_gen_b),
+            ),
+        )
+
+    return WebGPUTestSuite(
+        module_factory=lambda shape: LogicalAndModule(shape),
+        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("pow")
