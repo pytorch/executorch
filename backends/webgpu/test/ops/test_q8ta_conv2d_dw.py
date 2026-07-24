@@ -15,10 +15,10 @@ the converted eager (fp32 fake-quant), e2e.
 
 import unittest
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
+
 import torch
 import torch.nn as nn
-
-import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (

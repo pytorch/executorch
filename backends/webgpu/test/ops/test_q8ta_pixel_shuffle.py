@@ -13,9 +13,9 @@ requant). Note the schema's 4th arg is `output_inv_scale` (already 1/scale).
 
 import unittest
 
-import torch
-
 import executorch.backends.vulkan.custom_ops_lib  # noqa: F401 registers et_vk ops
+
+import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
