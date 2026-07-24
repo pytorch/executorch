@@ -40,13 +40,17 @@ struct ConvWithClampParams {
   uint32_t dil_w;
   uint32_t has_bias;
   uint32_t numel;
+  uint32_t groups;
+  uint32_t ic_per_group;
   uint32_t pad0;
+  uint32_t pad1;
+  uint32_t pad2;
   float output_min;
   float output_max;
 };
 static_assert(
-    sizeof(ConvWithClampParams) == 80,
-    "ConvWithClampParams must match the WGSL Params struct (80 bytes)");
+    sizeof(ConvWithClampParams) == 96,
+    "ConvWithClampParams must match the WGSL Params struct (96 bytes)");
 
 std::pair<int64_t, int64_t> pair_or_throw(
     const std::vector<int64_t>& v,
@@ -117,8 +121,8 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("conv_with_clamp: transposed unsupported");
   }
   const int64_t groups = graph.get_int(args.at(8));
-  if (groups != 1) {
-    throw std::runtime_error("conv_with_clamp: only groups==1 supported");
+  if (groups < 1) {
+    throw std::runtime_error("conv_with_clamp: groups must be >= 1");
   }
   const float kInf = std::numeric_limits<float>::infinity();
   const float output_min = scalar_or(graph, args.at(9), -kInf);
@@ -148,13 +152,17 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         "conv_with_clamp: output dims inconsistent with conv2d formula");
   }
   const uint64_t numel = N * OC * H_out * W_out;
-  if (IC == 0 || numel == 0 || numel > UINT32_MAX ||
-      static_cast<uint64_t>(weight_tensor.dims.at(1)) != IC) {
-    throw std::runtime_error("conv_with_clamp: bad shape (IC/numel/weight)");
+  const uint64_t ug = static_cast<uint64_t>(groups);
+  // Grouped weight is [OC, IC/groups, Kh, Kw]; ic_per_group = weight.dims[1].
+  const uint64_t ic_per_group =
+      static_cast<uint64_t>(weight_tensor.dims.at(1));
+  if (IC == 0 || numel == 0 || numel > UINT32_MAX || IC % ug != 0 ||
+      OC % ug != 0 || ic_per_group * ug != IC) {
+    throw std::runtime_error("conv_with_clamp: bad shape (IC/numel/groups)");
   }
   if (out_tensor.nbytes != numel * sizeof(float) ||
       in_tensor.nbytes != N * IC * H_in * W_in * sizeof(float) ||
-      weight_tensor.nbytes != OC * IC * Kh * Kw * sizeof(float)) {
+      weight_tensor.nbytes != OC * ic_per_group * Kh * Kw * sizeof(float)) {
     throw std::runtime_error("conv_with_clamp: fp32 byte-size mismatch");
   }
   if (has_bias) {
@@ -182,6 +190,8 @@ void conv_with_clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.dil_w = static_cast<uint32_t>(dil_w);
   params.has_bias = has_bias ? 1u : 0u;
   params.numel = static_cast<uint32_t>(numel);
+  params.groups = static_cast<uint32_t>(groups);
+  params.ic_per_group = static_cast<uint32_t>(ic_per_group);
   params.output_min = output_min;
   params.output_max = output_max;
 
