@@ -22,6 +22,9 @@ from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
+    can_decompose_large_stride_maxpool2d,
+)
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
@@ -51,6 +54,36 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+class DecomposableLargeStrideMaxPool2dSupported(OperatorSupportBase):
+    """Accept U55 max-pool nodes that backend preprocessing can legalize."""
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can legalize the max pool."""
+        del submodules
+        if not self.tosa_spec.is_U55_subset or node.target not in {
+            exir_ops.edge.aten.max_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        }:
+            return False
+
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        return can_decompose_large_stride_maxpool2d(
+            node.args[1],
+            node.args[2],
+            node.args[3] if len(node.args) >= 4 else (0, 0),
+            node.args[4] if len(node.args) >= 5 else (1, 1),
+            node.args[5] if len(node.args) >= 6 else False,
+            input_shape,
+        )
 
 
 class DecomposableResizeSupported(OperatorSupportBase):
@@ -572,7 +605,10 @@ class TOSAPartitioner(Partitioner):
             containing_program,
             reporter,
             self.additional_checks,
-            additional_positive_checks=[self._decomposable_resize_support],
+            additional_positive_checks=[
+                self._decomposable_resize_support,
+                DecomposableLargeStrideMaxPool2dSupported(self.tosa_spec),
+            ],
         )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
