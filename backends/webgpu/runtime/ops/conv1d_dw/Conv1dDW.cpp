@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
 
@@ -492,8 +493,10 @@ void convolution_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
 } // namespace
 
-WEBGPU_REGISTER_OPERATORS {
-  WEBGPU_REGISTER_OP(aten.convolution.default, convolution_impl);
+// Single aten.convolution.default registration lives in Conv2d.cpp, which
+// dispatches on input rank; this is the 3D (conv1d) entry it calls.
+void conv1d_dispatch(WebGPUGraph& graph, const std::vector<int>& args) {
+  convolution_impl(graph, args);
 }
 
 } // namespace executorch::backends::webgpu
