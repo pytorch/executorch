@@ -2160,6 +2160,21 @@ def _moe_gather_inputs_handler(P: MLXProgramBuilder, n: Node):
         memo = P._sorted_indices_flag_memo = {}
     memo[id(out_slots[2])] = cond
 
+    # The flag reaches consumers through operator.getitem, whose handler copies
+    # the tuple element into a fresh slot (IdCopyNode) rather than aliasing it.
+    # Seed the memo under those slots too, so gather_mm/gather_qmm and
+    # moe_scatter_outputs resolve the flag without emitting an ItemIntNode --
+    # and, under static shapes, fold their IfNode away entirely (the property
+    # the static test configs assert).
+    for user in n.users:
+        if (
+            user.target is operator.getitem
+            and len(user.args) > 1
+            and user.args[1] == 2
+            and len(user.users) > 0
+        ):
+            memo[id(P.make_or_get_slot(user))] = cond
+
     emit_if_else(P, cond, emit_sorted, emit_unsorted)
     return out_slots
 
