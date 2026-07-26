@@ -442,7 +442,14 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Test ${{ matrix.model }}"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        gdb -batch \
+          -ex "set pagination off" \
+          -ex "handle SIGPIPE nostop noprint" \
+          -ex run \
+          -ex "thread apply all bt full" \
+          -ex "info registers" \
+          -ex "quit" \
+          --args python -X faulthandler .ci/scripts/test_huggingface_optimum_model.py --model gemma3-4b --quantize --recipe xnnpack
         echo "::endgroup::"
 
   test-moshi-linux:
