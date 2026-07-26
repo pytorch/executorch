@@ -136,6 +136,14 @@ class ProgramTestFriend final {
         FreeableBuffer{},
         std::nullopt);
   }
+
+  static Error get_backend_delegate_data(
+      const Program* program,
+      size_t index,
+      const void** out_data,
+      size_t* out_size) {
+    return program->get_backend_delegate_data(index, out_data, out_size);
+  }
 };
 } // namespace testing
 } // namespace runtime
@@ -975,6 +983,43 @@ TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
 
   // Should return error, not crash
   EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}
+
+TEST_F(ProgramTest, NullBackendDelegateDataDoesNotCrash) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  // backend_delegate_data defaults to 0 (null) — omit it entirely.
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      0, // execution_plan=null
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      0, // backend_delegate_data=null
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}),
+      constant_segment);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  alignas(16) uint8_t buf[1024];
+  std::memcpy(buf, builder.GetBufferPointer(), builder.GetSize());
+  BufferDataLoader loader(buf, builder.GetSize());
+
+  Result<Program> p = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(p.error(), Error::Ok);
+
+  const void* data = nullptr;
+  size_t size = 0;
+  EXPECT_EQ(
+      ProgramTestFriend::get_backend_delegate_data(&p.get(), 0, &data, &size),
+      Error::InvalidProgram);
 }
 
 #if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
