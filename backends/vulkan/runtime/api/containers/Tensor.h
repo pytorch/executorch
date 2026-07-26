@@ -24,7 +24,7 @@ static constexpr size_t kTensorDimLimit = 8;
 /*
  * PackedDimInfo describes how tensor data is organized in physical memory.
  * Specifically, it describes which dimensions are kept adjacent in memory, and
- * which dimensions may be aligned to accomodate minimum load/store granularity
+ * which dimensions may be aligned to accommodate minimum load/store granularity
  * of a selected storage type + memory layout combination.
  *
  * For non-quantized tensors that use GPU buffers, the tensor data is arranged
