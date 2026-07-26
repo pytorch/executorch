@@ -23,7 +23,7 @@
   gh_facebook_buck2_shims_meta = shim
 
 [cxx]
-  cxxflags = -g -std=c++17
+  cxxflags = -g -std=c++20
 
 [parser]
   target_platform_detector_spec = target:root//...->prelude//platforms:default target:shim//...->prelude//platforms:default
