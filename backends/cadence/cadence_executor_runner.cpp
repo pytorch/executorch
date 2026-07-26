@@ -180,7 +180,15 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Model executed successfully.");
 
   std::vector<executorch::runtime::EValue> outputs(method->outputs_size());
-  method->get_outputs(outputs.data(), outputs.size());
+  status = method->get_outputs(outputs.data(), outputs.size());
+  if (status != Error::Ok) {
+    ET_LOG(
+        Error,
+        "get_outputs() failed for '%s': 0x%" PRIx32,
+        method_name,
+        status);
+    return 1;
+  }
   for (std::size_t i = 0; i < outputs.size(); ++i) {
     if (!outputs[i].isTensor()) {
       ET_LOG(Info, "output[%zu]: non-tensor", i);
