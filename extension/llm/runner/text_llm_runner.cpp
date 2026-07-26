@@ -20,7 +20,50 @@
 #include <pytorch/tokenizers/sentencepiece.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
+#include <unordered_set>
+
 namespace executorch::extension::llm {
+
+namespace {
+// Known special tokens used by LLM chat templates.
+// When echo=false, these are filtered out of the streamed output so users
+// see clean assistant text. When echo=true, the user explicitly asked for
+// raw model output, so we emit them unchanged.
+const std::unordered_set<std::string> kKnownSpecialTokens = {
+    // Llama 3.x tokens
+    "<|begin_of_text|>",
+    "<|end_of_text|>",
+    "<|start_header_id|>",
+    "<|end_header_id|>",
+    "<|eot_id|>",
+    // Gemma tokens
+    "<bos>",
+    "<eos>",
+    "<start_of_turn>",
+    "<end_of_turn>",
+    // Common tokens
+    "</s>",
+    "<s>",
+    "<pad>",
+    "<unk>",
+};
+
+bool is_special_token(const std::string& text) {
+  if (text.empty()) {
+    return false;
+  }
+  // Check against known special tokens
+  if (kKnownSpecialTokens.count(text) > 0) {
+    return true;
+  }
+  // Match Llama-style tokens: <|...|>
+  if (text.size() >= 4 && text.front() == '<' && text[1] == '|' &&
+      text.back() == '>' && text[text.size() - 2] == '|') {
+    return true;
+  }
+  return false;
+}
+} // namespace
 
 using ::executorch::extension::Module;
 using ::executorch::runtime::Error;
@@ -96,8 +139,14 @@ Error TextLLMRunner::generate(
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback, config](const std::string& piece) {
         if (!config.warming) {
-          llm::safe_printf(piece.c_str());
-          fflush(stdout);
+          // When echo=false, filter out special tokens (e.g. <|eot_id|>) so
+          // users get clean assistant output. When echo=true, the user asked
+          // for raw model output including any chat-template tokens, so emit
+          // everything unchanged.
+          if (config.echo || !is_special_token(piece)) {
+            llm::safe_printf(piece.c_str());
+            fflush(stdout);
+          }
         }
         if (token_callback) {
           token_callback(piece);
