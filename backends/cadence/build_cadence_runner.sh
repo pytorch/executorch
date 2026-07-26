@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Builds cadence_runner and prints its path.
+# Invoked by the cpu-build job in .github/workflows/build-cadence-runner.yml.
 
 set -euo pipefail
 
