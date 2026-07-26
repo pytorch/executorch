@@ -1,6 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
-def _operator_registry_preprocessor_flags():
+def operator_registry_preprocessor_flags():
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
     if max_kernel_num != None:
         return select({
@@ -23,6 +23,20 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+
+    # Exposed so operator_registry_selective() in
+    # shim_et/xplat/executorch/runtime/kernel/selective_build.bzl can stage the
+    # source alongside a per-binary selected_max_kernel_num.h.
+    runtime.filegroup(
+        name = "operator_registry_sources",
+        srcs = ["operator_registry.cpp"],
+        visibility = ["PUBLIC"],
+    )
+    runtime.filegroup(
+        name = "operator_registry_headers",
+        srcs = ["operator_registry.h"],
+        visibility = ["PUBLIC"],
+    )
 
     runtime.cxx_library(
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
@@ -62,7 +76,7 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
             ],
-            preprocessor_flags = _operator_registry_preprocessor_flags(),
+            preprocessor_flags = operator_registry_preprocessor_flags(),
         )
 
         runtime.cxx_library(

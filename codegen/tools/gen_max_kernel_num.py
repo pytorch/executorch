@@ -10,7 +10,12 @@ one or more selected_operators.yaml files (produced by gen_oplist.py) and emit
 it as a C header.
 
 Total = sum of (op, kernel_key) variants across all input YAMLs
-      + prim ops always registered by kernels/prim_ops/register_prim_ops.cpp.
+      + prim ops registered by kernels/prim_ops/register_prim_ops.cpp.
+
+The prim-ops contribution is counted from the .cpp source by default. When
+ET_PRIM_OPS_SELECTIVE_BUILD is active (only some prim ops compile in), pass
+--selected-prim-ops-header instead so the count reflects what's actually
+linked.
 
 See runtime/kernel/operator_registry.cpp for how the emitted header is
 consumed and the full precedence order. Users that register kernels outside
@@ -53,6 +58,12 @@ PRIM_OPS_ARRAY_RE = re.compile(
 )
 PRIM_OPS_KERNEL_RE = re.compile(r"\bKernel\s*\(")
 
+# Matches the `#define INCLUDE_<MACRO>` lines emitted by gen_selected_prim_ops.py
+# into selected_prim_ops.h. Each define gates one prim op entry in
+# register_prim_ops.cpp under ET_PRIM_OPS_SELECTIVE_BUILD, so the count of
+# defines equals the number of prim ops actually compiled in.
+SELECTED_PRIM_OPS_DEFINE_RE = re.compile(r"^\s*#\s*define\s+INCLUDE_\S+", re.MULTILINE)
+
 
 def _count_prim_ops(prim_ops_source: Path) -> int:
     source = prim_ops_source.read_text()
@@ -70,6 +81,10 @@ def _count_prim_ops(prim_ops_source: Path) -> int:
             "Kernel(...) entries. The array layout may have changed."
         )
     return count
+
+
+def _count_selected_prim_ops(selected_prim_ops_header: Path) -> int:
+    return len(SELECTED_PRIM_OPS_DEFINE_RE.findall(selected_prim_ops_header.read_text()))
 
 
 def _count_yaml_kernels(yaml_path: Path) -> Optional[int]:
@@ -116,10 +131,18 @@ def _write_if_different(path: Path, content: str) -> None:
 
 def gen_max_kernel_num(
     oplist_yamls: List[Path],
-    prim_ops_source: Path,
     output_path: Path,
+    prim_ops_source: Optional[Path] = None,
+    selected_prim_ops_header: Optional[Path] = None,
 ) -> Optional[int]:
-    total = 0
+    if (prim_ops_source is None) == (selected_prim_ops_header is None):
+        raise ValueError(
+            "Pass exactly one of prim_ops_source / selected_prim_ops_header. "
+            "Use selected_prim_ops_header when ET_PRIM_OPS_SELECTIVE_BUILD is "
+            "active so the counter matches what actually compiles in."
+        )
+
+    yaml_kernels = 0
     for yaml_path in oplist_yamls:
         yaml_count = _count_yaml_kernels(yaml_path)
         if yaml_count is None:
@@ -130,9 +153,26 @@ def gen_max_kernel_num(
             )
             _write_if_different(output_path, OPT_OUT_HEADER)
             return None
-        total += yaml_count
+        yaml_kernels += yaml_count
 
-    total += _count_prim_ops(prim_ops_source)
+    # No selective build deps means none of the binary's kernel libraries went
+    # through this counter — auto-sizing would produce a too-small registry.
+    # Emit the opt-out header so operator_registry.cpp falls through to the
+    # compile-time default.
+    if yaml_kernels == 0:
+        print(
+            "gen_max_kernel_num: no kernels enumerated across input YAMLs; "
+            "emitting opt-out header (registry will use default size).",
+            file=sys.stderr,
+        )
+        _write_if_different(output_path, OPT_OUT_HEADER)
+        return None
+
+    if selected_prim_ops_header is not None:
+        total = yaml_kernels + _count_selected_prim_ops(selected_prim_ops_header)
+    else:
+        assert prim_ops_source is not None
+        total = yaml_kernels + _count_prim_ops(prim_ops_source)
 
     _write_if_different(output_path, HEADER_TEMPLATE.format(count=total))
     return total
@@ -147,11 +187,19 @@ def main(argv: List[str]) -> None:
         required=True,
         help="Path to a selected_operators.yaml. May be repeated.",
     )
-    parser.add_argument(
+    prim_ops_group = parser.add_mutually_exclusive_group(required=True)
+    prim_ops_group.add_argument(
         "--prim-ops-source",
         "--prim_ops_source",
-        required=True,
-        help="Path to kernels/prim_ops/register_prim_ops.cpp.",
+        help="Path to kernels/prim_ops/register_prim_ops.cpp. Use this when "
+        "ET_PRIM_OPS_SELECTIVE_BUILD is not active (all prim ops compile in).",
+    )
+    prim_ops_group.add_argument(
+        "--selected-prim-ops-header",
+        "--selected_prim_ops_header",
+        help="Path to the aggregated selected_prim_ops.h emitted by "
+        "gen_selected_prim_ops.py. Use this when ET_PRIM_OPS_SELECTIVE_BUILD "
+        "is active so only enabled prim ops are counted.",
     )
     parser.add_argument(
         "--output-path",
@@ -163,8 +211,13 @@ def main(argv: List[str]) -> None:
 
     count = gen_max_kernel_num(
         oplist_yamls=[Path(p) for p in args.oplist_yaml],
-        prim_ops_source=Path(args.prim_ops_source),
         output_path=Path(args.output_path),
+        prim_ops_source=Path(args.prim_ops_source) if args.prim_ops_source else None,
+        selected_prim_ops_header=(
+            Path(args.selected_prim_ops_header)
+            if args.selected_prim_ops_header
+            else None
+        ),
     )
     if count is not None:
         print(f"gen_max_kernel_num: wrote {args.output_path} (count={count})")

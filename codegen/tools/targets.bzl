@@ -188,6 +188,26 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    runtime.python_library(
+        name = "gen_max_kernel_num_lib",
+        srcs = ["gen_max_kernel_num.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+    )
+
+    runtime.python_binary(
+        name = "gen_max_kernel_num",
+        main_module = "executorch.codegen.tools.gen_max_kernel_num",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_max_kernel_num_lib",
+        ],
+        _is_external_target = True,
+    )
+
     
     runtime.cxx_python_extension(
         name = "selective_build",

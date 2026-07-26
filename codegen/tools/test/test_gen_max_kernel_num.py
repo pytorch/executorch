@@ -12,6 +12,7 @@ import yaml
 
 from executorch.codegen.tools.gen_max_kernel_num import (
     _count_prim_ops,
+    _count_selected_prim_ops,
     _count_yaml_kernels,
     gen_max_kernel_num,
 )
@@ -63,6 +64,91 @@ class TestGenMaxKernelNum(unittest.TestCase):
         empty_array.write_text("static Kernel prim_ops[] = {\n};\n")
         with self.assertRaises(RuntimeError):
             _count_prim_ops(empty_array)
+
+    def test_counts_selected_prim_ops_from_header(self) -> None:
+        header = self.tmp / "selected_prim_ops.h"
+        header.write_text(
+            "#pragma once\n"
+            "#define INCLUDE_ATEN_SYM_SIZE_INT\n"
+            "#define INCLUDE_EXECUTORCH_PRIM_ADD_INT_INT\n"
+            "// not a define: INCLUDE_FOO\n"
+            "#define INCLUDE_EXECUTORCH_PRIM_MUL_INT_INT\n"
+        )
+        self.assertEqual(_count_selected_prim_ops(header), 3)
+
+    def test_rejects_both_prim_ops_inputs(self) -> None:
+        yaml_path = self.tmp / "selected_operators.yaml"
+        _write_yaml(
+            yaml_path,
+            {
+                "operators": {"aten::add.out": {}},
+                "et_kernel_metadata": {"aten::add.out": ["v1/6"]},
+            },
+        )
+        header = self.tmp / "selected_prim_ops.h"
+        header.write_text("#define INCLUDE_FOO\n")
+        with self.assertRaises(ValueError):
+            gen_max_kernel_num(
+                oplist_yamls=[yaml_path],
+                prim_ops_source=self.prim_ops_source,
+                selected_prim_ops_header=header,
+                output_path=self.output,
+            )
+
+    def test_rejects_neither_prim_ops_input(self) -> None:
+        yaml_path = self.tmp / "selected_operators.yaml"
+        _write_yaml(
+            yaml_path,
+            {
+                "operators": {"aten::add.out": {}},
+                "et_kernel_metadata": {"aten::add.out": ["v1/6"]},
+            },
+        )
+        with self.assertRaises(ValueError):
+            gen_max_kernel_num(
+                oplist_yamls=[yaml_path],
+                output_path=self.output,
+            )
+
+    def test_empty_yaml_writes_opt_out_header(self) -> None:
+        yaml_path = self.tmp / "selected_operators.yaml"
+        _write_yaml(yaml_path, {"operators": {}, "et_kernel_metadata": {}})
+        total = gen_max_kernel_num(
+            oplist_yamls=[yaml_path],
+            prim_ops_source=self.prim_ops_source,
+            output_path=self.output,
+        )
+        self.assertIsNone(total)
+        self.assertTrue(self.output.exists())
+        self.assertNotIn(
+            "#define EXECUTORCH_SELECTED_MAX_KERNEL_NUM",
+            self.output.read_text(),
+        )
+
+    def test_end_to_end_with_selected_prim_ops_header(self) -> None:
+        yaml_path = self.tmp / "selected_operators.yaml"
+        _write_yaml(
+            yaml_path,
+            {
+                "operators": {"aten::add.out": {}},
+                "et_kernel_metadata": {"aten::add.out": ["v1/6"]},
+            },
+        )
+        header = self.tmp / "selected_prim_ops.h"
+        header.write_text(
+            "#define INCLUDE_ATEN_SYM_SIZE_INT\n"
+            "#define INCLUDE_EXECUTORCH_PRIM_ADD_INT_INT\n"
+        )
+        total = gen_max_kernel_num(
+            oplist_yamls=[yaml_path],
+            selected_prim_ops_header=header,
+            output_path=self.output,
+        )
+        self.assertEqual(total, 1 + 2)
+        self.assertIn(
+            "#define EXECUTORCH_SELECTED_MAX_KERNEL_NUM 3",
+            self.output.read_text(),
+        )
 
     def test_counts_single_variant_per_op(self) -> None:
         yaml_path = self.tmp / "selected_operators.yaml"
