@@ -590,7 +590,7 @@ Tensor& dequantize_per_token_out(
     Tensor& out) {
   // Refactor this into a util
   size_t num_channels = 1;
-  for (size_t i = 0; i < input.dim() - 1; i++) {
+  for (ssize_t i = 0; i < input.dim() - 1; i++) {
     num_channels *= input.size(i);
   }
   // This unfortunate change is needed because we compile op_quantize for aten

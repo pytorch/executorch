@@ -642,7 +642,7 @@ Tensor& quantize_per_token_out(
     ScalarType dtype,
     Tensor& out) {
   size_t num_tokens = 1;
-  for (size_t i = 0; i < input.dim() - 1; i++) {
+  for (ssize_t i = 0; i < input.dim() - 1; i++) {
     num_tokens *= input.size(i);
   }
 // This unfortunate change is needed because we compile op_quantize for aten

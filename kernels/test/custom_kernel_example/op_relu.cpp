@@ -38,7 +38,7 @@ void relu(const Tensor& input, Tensor& output) {
   CTYPE* out_data = output.data_ptr<CTYPE>();
   size_t lim = input.numel();
   Tensor::SizesType expected_output_size[16];
-  for (size_t i = 0; i < output.dim(); ++i) {
+  for (ssize_t i = 0; i < output.dim(); ++i) {
     expected_output_size[i] = input.size(i);
   }
   auto error = resize_tensor(
