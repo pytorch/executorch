@@ -61,7 +61,8 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // Java wrapper currently only supports contiguous tensors.
 
     const auto scalarType = tensor.scalar_type();
-    if (scalar_type_to_java_dtype.count(scalarType) == 0) {
+    const int jdtype = scalar_type_to_java_dtype(scalarType);
+    if (jdtype < 0) {
       std::stringstream ss;
       ss << "executorch::aten::Tensor scalar type "
          << static_cast<int>(scalarType) << " is not supported on java side";
@@ -69,7 +70,6 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
       return nullptr;
     }
-    int jdtype = scalar_type_to_java_dtype.at(scalarType);
 
     const auto& tensor_shape = tensor.sizes();
     std::vector<jlong> tensor_shape_vec;
@@ -130,14 +130,14 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
       numel *= shapeArr[i];
     }
     JNIEnv* jni = facebook::jni::Environment::current();
-    if (java_dtype_to_scalar_type.count(jdtype) == 0) {
+    const ScalarType scalar_type = java_dtype_to_scalar_type(jdtype);
+    if (scalar_type == ScalarType::Undefined) {
       std::stringstream ss;
       ss << "Unknown Tensor jdtype: [" << jdtype << "]";
       jni_helper::throwExecutorchException(
           static_cast<uint32_t>(Error::InvalidArgument), ss.str().c_str());
       return nullptr;
     }
-    ScalarType scalar_type = java_dtype_to_scalar_type.at(jdtype);
     const jlong dataCapacity = jni->GetDirectBufferCapacity(jbuffer.get());
     if (dataCapacity < 0) {
       std::stringstream ss;
