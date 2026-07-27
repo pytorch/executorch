@@ -12,6 +12,7 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <c10/util/irange.h>
@@ -1308,6 +1309,10 @@ namespace {
 void channelwise_gated_delta_rule_out_boxed(
     executorch::runtime::KernelRuntimeContext& ctx,
     executorch::runtime::Span<executorch::runtime::EValue*> stack) {
+  executorch::runtime::internal::EventTracerProfileOpScope
+      event_tracer_op_scope(
+          ctx.internal_event_tracer(),
+          "native_call_llama::channelwise_gated_delta_rule.out");
   // Multi-output out variants get a trailing TensorList aggregating the two
   // outputs appended by the emitter, so the boxed stack has 9 entries: 6 inputs
   // + out + final_state_out + [out, final_state_out]. The aggregate (stack[8])
