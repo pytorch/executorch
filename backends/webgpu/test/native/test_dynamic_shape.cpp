@@ -208,12 +208,12 @@ void run_embedding(Module& m, int n, const char* prefix = "emb_dyn") {
   auto t = make_tensor_ptr({n}, std::move(idx)); // int64 (Long) host input
   auto r = m.forward({EValue(t)});
   ASSERT_TRUE(r.ok() && !r.get().empty() && r.get()[0].isTensor())
-      << "emb N=" << n
+      << prefix << " N=" << n
       << " forward failed (err=" << (r.ok() ? 0 : (int)r.error()) << ")";
   const auto& out = r.get()[0].toTensor();
   const size_t numel = static_cast<size_t>(n) * kEmbDim;
   ASSERT_EQ(static_cast<size_t>(out.numel()), numel)
-      << "emb N=" << n << " output numel mismatch";
+      << prefix << " N=" << n << " output numel mismatch";
   std::vector<float> got(
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
   const float e = max_err(got, golden);
