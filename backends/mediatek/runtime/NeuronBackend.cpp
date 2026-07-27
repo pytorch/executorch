@@ -218,7 +218,7 @@ int NeuronExecuTorchDelegate::HintNeuronBackend(Span<EValue*> args) const {
     auto& allocator = GET_NEURON_ALLOCATOR;
     size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
     for (int i = 0; i < inputCount; i++) {
-      auto data_ptr = args[i]->toTensor().data_ptr();
+      auto data_ptr = args[i]->toTensor().mutable_data_ptr();
       if (mHasImported.count(data_ptr)) {
         continue;
       }
@@ -230,7 +230,7 @@ int NeuronExecuTorchDelegate::HintNeuronBackend(Span<EValue*> args) const {
       }
     }
     for (int o = inputCount; o < inputCount + outputCount; o++) {
-      auto data_ptr = args[o]->toTensor().data_ptr();
+      auto data_ptr = args[o]->toTensor().mutable_data_ptr();
       if (mHasImported.count(data_ptr)) {
         continue;
       }
