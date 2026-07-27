@@ -17,6 +17,19 @@ load(":targets.bzl", "define_common_targets")
 
 fbcode_target(_kind = define_common_targets,)
 
+fbcode_target(_kind = runtime.python_library,
+    name = "cache",
+    srcs = [
+        "reference_cache.py",
+        "update_and_attend.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:_warnings",
+    ],
+)
+
 fbcode_target(_kind = runtime.python_test,
     name = "test_update_and_attend",
     srcs = [

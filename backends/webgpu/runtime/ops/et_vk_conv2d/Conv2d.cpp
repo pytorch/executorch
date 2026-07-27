@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
@@ -235,6 +236,13 @@ void conv2d_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int transposed_id = args.at(6);
   const int groups_id = args.at(8);
   const int out_id = args.at(9);
+
+  // aten.convolution.default covers conv1d (3D) and conv2d (4D); the registry
+  // is first-wins, so one handler must serve both ranks. Route 3D to conv1d.
+  if (graph.get_tensor(in_id).dims.size() == 3) {
+    conv1d_dispatch(graph, args);
+    return;
+  }
 
   WGPUDevice device = graph.device();
 
