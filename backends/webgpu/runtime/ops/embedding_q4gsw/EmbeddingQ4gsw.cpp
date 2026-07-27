@@ -48,6 +48,7 @@ void resize_embedding_q4gsw(
     uint32_t gs_u,
     uint32_t groups_per_row,
     uint32_t bytes_per_row,
+    bool is_linear,
     uint32_t wg_size,
     size_t dispatch_idx,
     WGPUBuffer params_buf) {
@@ -72,6 +73,7 @@ void resize_embedding_q4gsw(
   p.groups_per_row = groups_per_row;
   p.bytes_per_row = bytes_per_row;
   p.total_blocks = static_cast<uint32_t>(total_blocks);
+  p.is_linear_weight = is_linear ? 1u : 0u;
   wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
   g.dispatch_at(dispatch_idx).workgroup_count_x =
       utils::compute_1d_workgroup_count(
@@ -241,6 +243,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        gs_u,
        groups_per_row,
        bytes_per_row,
+       is_linear,
        wg_size,
        dispatch_idx,
        params_buf](WebGPUGraph& g) {
@@ -253,6 +256,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             gs_u,
             groups_per_row,
             bytes_per_row,
+            is_linear,
             wg_size,
             dispatch_idx,
             params_buf);
