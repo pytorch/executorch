@@ -219,7 +219,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
                 program_data->size() - sizeof(flatbuffers::soffset_t),
         InvalidProgram,
         "Root table offset %u is invalid for program size %zu",
-        root_offset,
+        static_cast<unsigned>(root_offset),
         program_data->size());
   }
   // Get the pointer to the root flatbuffer table.

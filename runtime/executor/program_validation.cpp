@@ -41,7 +41,7 @@ validate_tensor(const executorch_flatbuffer::Tensor* tensor) {
       ET_LOG(
           Error,
           "Size must be non-negative, got %d at dimension %u",
-          size,
+          static_cast<int>(size),
           static_cast<unsigned>(i));
       return Error::InvalidProgram;
     }
@@ -199,7 +199,7 @@ validate_program(const executorch_flatbuffer::Program* program) {
                 "TensorList item %u has out-of-bounds index %d (values size "
                 "%u) in execution plan %u",
                 static_cast<unsigned>(item_idx),
-                evalue_index,
+                static_cast<int>(evalue_index),
                 static_cast<unsigned>(values->size()),
                 static_cast<unsigned>(plan_idx));
             return Error::InvalidProgram;
@@ -213,7 +213,7 @@ validate_program(const executorch_flatbuffer::Program* program) {
                 "TensorList item %u references null evalue at index %d in "
                 "execution plan %u",
                 static_cast<unsigned>(item_idx),
-                evalue_index,
+                static_cast<int>(evalue_index),
                 static_cast<unsigned>(plan_idx));
             return Error::InvalidProgram;
           }
@@ -226,7 +226,7 @@ validate_program(const executorch_flatbuffer::Program* program) {
                 "index %d in execution plan %u",
                 static_cast<unsigned>(item_idx),
                 static_cast<int>(referenced_value->val_type()),
-                evalue_index,
+                static_cast<int>(evalue_index),
                 static_cast<unsigned>(plan_idx));
             return Error::InvalidProgram;
           }
