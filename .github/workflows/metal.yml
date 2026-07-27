@@ -48,7 +48,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       runner: macos-m2-stable
@@ -73,7 +73,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       runner: macos-m2-stable
@@ -106,7 +106,7 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       runner: macos-m2-stable
@@ -218,7 +218,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     strategy:
       fail-fast: false
@@ -304,7 +304,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:

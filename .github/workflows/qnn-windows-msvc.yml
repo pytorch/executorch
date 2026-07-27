@@ -58,7 +58,7 @@ permissions:
 jobs:
   build-qnn-windows-msvc:
     name: build-qnn-windows-msvc
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.13
     with:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90

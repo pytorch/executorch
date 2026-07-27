@@ -40,7 +40,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       job-name: test-mlx
@@ -114,7 +114,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       job-name: test-mlx-qwen35-moe
@@ -197,7 +197,7 @@ jobs:
       fail-fast: false
       matrix:
         suite: [models, operators]
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
@@ -243,7 +243,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       job-name: test-mlx-parakeet
@@ -304,7 +304,7 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
       default-packages: ""
@@ -368,7 +368,7 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
       default-packages: ""
@@ -449,7 +449,7 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
       default-packages: ""
@@ -504,7 +504,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
       default-packages: ""
       job-name: test-mlx-stories110m
@@ -600,7 +600,7 @@ jobs:
             use-custom: false
             qconfig: "4w"
             runner: "macos-15-xlarge"
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
       default-packages: ""

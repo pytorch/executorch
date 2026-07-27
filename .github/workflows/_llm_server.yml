@@ -11,7 +11,7 @@ on:
 
 jobs:
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
