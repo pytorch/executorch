@@ -215,6 +215,8 @@ class NamedDataStore:
         max_data_bytes: int,
         tag_prefix: str,
     ) -> None:
+        # Keep this generic API defensive because callers can bypass backend
+        # option parsing and serialized compile-spec validation.
         if (
             isinstance(max_data_bytes, bool)
             or not isinstance(max_data_bytes, int)
@@ -231,6 +233,8 @@ class NamedDataStore:
         shards: List[Dict[str, DataEntry]] = []
         current_shard: Dict[str, DataEntry] = {}
         current_bytes = 0
+        # Prefer stable key order over size-based packing so equivalent stores
+        # always produce the same shards.
         ordered_groups = sorted(
             entries_by_buffer.items(), key=lambda item: tuple(sorted(item[1]))
         )

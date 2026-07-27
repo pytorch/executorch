@@ -288,6 +288,8 @@ def parse_compile_options(compile_options: Dict[str, Any]) -> List[CompileSpec]:
 
     for key, value in compile_options.items():
         if key == "external_constants_max_data_bytes":
+            # Validate at the user-facing option boundary. Preprocess and the
+            # data store repeat validation because they can be called directly.
             if (
                 isinstance(value, bool)
                 or not isinstance(value, int)
