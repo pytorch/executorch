@@ -867,7 +867,7 @@ class ET_EXPERIMENTAL CudaBackend final
         error == Error::Ok,
         Internal,
         "AOTInductorModelContainerRun failed with error code %d",
-        error);
+        static_cast<int>(error));
 
     if (is_capture_step) {
       // End capture → instantiate graph
