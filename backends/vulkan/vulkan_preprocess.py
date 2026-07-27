@@ -91,6 +91,8 @@ def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
 
 
 def _parse_external_constants_max_data_bytes(value_bytes: bytes) -> int:
+    # CompileSpec values can bypass parse_compile_options, so validate this
+    # serialized boundary independently.
     if len(value_bytes) != 8:
         raise ValueError("external_constants_max_data_bytes must be encoded as uint64")
     value = int.from_bytes(value_bytes, byteorder="little")
@@ -262,6 +264,8 @@ class VulkanBackend(BackendDetails):
             "external_constants_max_data_bytes"
         )
         if external_constants_max_data_bytes is not None:
+            # VkGraphBuilder populates pte_data only from constant tensors;
+            # already-tagged named data remains in external_data.
             graph_builder.named_data_store.externalize_pte_data(
                 external_constants_max_data_bytes,
                 "vulkan_constants",
