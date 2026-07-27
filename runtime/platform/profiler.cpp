@@ -182,8 +182,7 @@ void profiling_create_block(const char* name) {
 }
 
 void profiler_init(void) {
-  prof_header =
-      (prof_header_t*)((uintptr_t)prof_buf + prof_header_offset);
+  prof_header = (prof_header_t*)((uintptr_t)prof_buf + prof_header_offset);
   prof_arr = (prof_event_t*)((uintptr_t)prof_buf + prof_events_offset);
   mem_allocator_arr =
       (prof_allocator_t*)((uintptr_t)prof_buf + prof_mem_alloc_info_offset);
