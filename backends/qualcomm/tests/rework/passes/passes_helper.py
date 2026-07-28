@@ -250,9 +250,6 @@ class PassPipeline:
                 "edge",
                 match_fn=lambda p: isinstance(p, target_pass),
             )
-            assert (
-                edge_passes is not None
-            ), f"{target_pass.__name__} not found in edge passes"
         qnn_partitioner = QnnPartitioner(
             compile_spec,
             skip_node_id_set=skip_node_id_set,

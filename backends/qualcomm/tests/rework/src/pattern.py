@@ -3329,7 +3329,7 @@ class DecomposeTrunc:
 class DecomposeVar:
     class _WithCorrection(torch.nn.Module):
         def forward(self, x):
-            # correction=1 (Bessel's): scale = N/(N-1), adds mul + get_attr scale node
+            # correction=1 (Bessel's): scale = N/(N-1), adds mul by scalar
             return torch.var(x, dim=1, correction=1)
 
     class _NoCorrection(torch.nn.Module):
@@ -3407,7 +3407,7 @@ class DecomposeVar:
         target_pass = _passes.DecomposeVar
         _ = compile_spec
 
-        # correction=1: mean×2 + sub×1 + mul×2 (diff² + scale) + get_attr scale const
+        # correction=1: mean×2 + sub×1 + mul×2 (diff² + scale by scalar)
         with subtests.test(msg="with_correction"):
             gm = DecomposeVar._get_gm(
                 DecomposeVar._WithCorrection(),

@@ -64,11 +64,12 @@ def check_exception(msg):
 
 
 # extend this to tests that are agnostic across SoCs.
-def default_property():
-    @dataclass
-    class Property:
-        soc_model: str = "SM8850"
+@dataclass
+class Property:
+    soc_model: str = "SM8850"
 
+
+def default_property():
     return Property()
 
 

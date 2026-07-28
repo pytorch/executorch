@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import re
-
 import torch
 from executorch.exir import to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 
@@ -41,7 +40,10 @@ class DecomposeAny(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if re.search(r"any\.(dim|default)", str(node.target)):
+            if node.target in {
+                exir_ops.edge.aten.any.dim,
+                exir_ops.edge.aten.any.default,
+            }:
                 dim = node.args[1] if len(node.args) > 1 else None
                 keepdim = node.args[2] if len(node.args) > 2 else False
                 model = Any(dim, keepdim)

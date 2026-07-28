@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import operator
 import warnings
 from typing import cast, List
 
@@ -97,7 +98,12 @@ class DecomposeMaxPool3d(ExportPass):
                 # since the indices output might not be connected
                 # only traverse getitem user and check if any of them referring to the indices
                 return_indices = (
-                    any(user.args[1] == 1 for user in node.users)
+                    any(
+                        user.op == "call_function"
+                        and user.target is operator.getitem
+                        and user.args[1] == 1
+                        for user in node.users
+                    )
                     if len(node.meta["val"]) > 1
                     else False
                 )
