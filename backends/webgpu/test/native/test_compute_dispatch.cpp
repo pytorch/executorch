@@ -183,6 +183,24 @@ TEST(WebGPUExecution, FullySuppressedPlanPerformsNoQueueSubmission) {
   EXPECT_EQ(graph.execute(plan), 0u);
 }
 
+TEST(WebGPUExecution, RejectsPlanOutputCountMismatch) {
+  WebGPUGraph graph;
+  WebGPUExecutionPlan plan;
+  plan.copy_outputs = {true};
+  std::vector<std::pair<void*, size_t>> outputs;
+
+  EXPECT_THROW(graph.execute(plan), std::runtime_error);
+  EXPECT_THROW(graph.copy_outputs(outputs, plan), std::runtime_error);
+}
+
+TEST(WebGPUExecution, RejectsPlanDispatchOutOfRange) {
+  WebGPUGraph graph;
+  WebGPUExecutionPlan plan;
+  plan.dispatch_chunks = {{0u}};
+
+  EXPECT_THROW(graph.execute(plan), std::runtime_error);
+}
+
 } // namespace
 } // namespace executorch::backends::webgpu
 

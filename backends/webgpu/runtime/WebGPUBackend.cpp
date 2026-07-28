@@ -170,7 +170,14 @@ Error WebGPUBackend::execute(
     }
     graph_options =
         resolve_webgpu_graph_execution_options(delegate_outputs, options);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
+    return Error::Internal;
+  }
 
+  // Execute + read back; fail loud as a runtime Error so a throw never crosses
+  // the backend boundary.
+  try {
     const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
     graph->execute(plan);
 
@@ -184,10 +191,7 @@ Error WebGPUBackend::execute(
     }
     graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
-    ET_LOG(
-        Error,
-        "WebGPU input preparation / execute / output copy failed: %s",
-        e.what());
+    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;
   }
 
