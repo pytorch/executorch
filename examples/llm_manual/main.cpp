@@ -54,8 +54,8 @@ std::string generate(
     // sampler expects.
     Tensor logits_tensor = logits_evalue.get()[0].toTensor();
     std::vector<float> logits(
-        logits_tensor.data_ptr<float>(),
-        logits_tensor.data_ptr<float>() + logits_tensor.numel());
+        logits_tensor.const_data_ptr<float>(),
+        logits_tensor.const_data_ptr<float>() + logits_tensor.numel());
 
     // Sample the next token from the logits.
     int64_t next_token = sampler.sample(logits);
