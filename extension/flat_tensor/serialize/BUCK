@@ -30,6 +30,7 @@ fbcode_target(_kind = runtime.python_library,
 fbcode_target(_kind = runtime.python_library,
     name = "serialize",
     srcs = [
+        "__init__.py",
         "serialize.py",
     ],
     resources = [
@@ -39,6 +40,10 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         ":schema",
+        "//caffe2:torch",
         "//executorch/exir/_serialize:lib",
+        "//executorch/exir:scalar_type",
+        "//executorch/exir:tensor",
+        "//executorch/exir:tensor_layout",
     ],
 )
