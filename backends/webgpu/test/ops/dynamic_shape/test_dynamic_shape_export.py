@@ -13,6 +13,7 @@ are checked in the native test; this verifies the dynamic export side + writes
 goldens.
 """
 
+import math
 import os
 import unittest
 
@@ -23,6 +24,7 @@ from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
 MAXS = 128  # upper bound for the dynamic seq-len dim (within the 1D dispatch cap)
 HIDDEN = 64
+_Q4_DECODE_ROUTE_SPEC = "webgpu_record_q4gsw_decode_route"
 
 
 def _rms(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -107,24 +109,30 @@ class SwiGluModule(torch.nn.Module):
         graph_output: str = "",
         separate_inputs: bool = False,
         interleaved_projection: bool = False,
+        qkv_overlap: bool = False,
         width: int = 8192,
+        input_width: int = 64,
+        group_size: int = 32,
     ) -> None:
         super().__init__()
         from torchao.quantization.granularity import PerGroup
         from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-        def make_q4(seed: int):
+        def make_q4(seed: int, output_width: int = width):
             torch.manual_seed(seed)
-            linear = torch.nn.Linear(64, width, bias=False).eval()
+            linear = torch.nn.Linear(input_width, output_width, bias=False).eval()
             quantize_(
                 linear,
-                IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+                IntxWeightOnlyConfig(
+                    weight_dtype=torch.int4, granularity=PerGroup(group_size)
+                ),
             )
             return linear
 
         self.gate_proj = make_q4(0)
         self.up_proj = make_q4(1)
         self.interleaved_proj = make_q4(2) if interleaved_projection else None
+        self.overlap_q_proj = make_q4(3, 2048) if qkv_overlap else None
         self.reverse_inner = reverse_inner
         self.reverse_outer = reverse_outer
         self.extra_gate_consumer = extra_gate_consumer
@@ -134,8 +142,11 @@ class SwiGluModule(torch.nn.Module):
         self.graph_output = graph_output
         self.separate_inputs = separate_inputs
         self.interleaved_projection = interleaved_projection
+        self.qkv_overlap = qkv_overlap
+        self.input_width = input_width
 
     def forward(self, x: torch.Tensor, up_input: torch.Tensor | None = None):
+        overlap_q = torch.sigmoid(self.overlap_q_proj(x)) if self.qkv_overlap else None
         gate = self.gate_proj(x)
         up = self.up_proj(up_input if self.separate_inputs else x)
         sigmoid = torch.sigmoid(gate)
@@ -158,6 +169,8 @@ class SwiGluModule(torch.nn.Module):
             return output, silu
         if interleaved is not None:
             return output + interleaved
+        if overlap_q is not None:
+            return overlap_q, output
         return output
 
 
@@ -175,8 +188,17 @@ def _ramp(shape) -> torch.Tensor:
     return torch.linspace(-1.0, 1.0, n, dtype=torch.float32).reshape(shape)
 
 
-def _lower_fully_delegated(ep, label: str):
-    edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+def _lower_fully_delegated(
+    ep,
+    label: str,
+    compile_options=None,
+    *,
+    expect_q4_decode_route: bool = False,
+):
+    edge = to_edge_transform_and_lower(
+        ep,
+        partitioner=[VulkanPartitioner(compile_options=compile_options)],
+    )
     graph = edge.exported_program().graph_module.graph
     delegates = get_delegates(graph)
     portable = get_non_lowered_nodes(graph)
@@ -192,6 +214,19 @@ def _lower_fully_delegated(ep, label: str):
     ]
     if delegate_ids != ["VulkanBackend"]:
         raise RuntimeError(f"{label}: serialized delegates: {delegate_ids}")
+    route_values = [
+        spec.value
+        for plan in et.executorch_program.execution_plan
+        for delegate in plan.delegates
+        for spec in delegate.compile_specs
+        if spec.key == _Q4_DECODE_ROUTE_SPEC
+    ]
+    expected_route_values = [b"\x01"] if expect_q4_decode_route else []
+    if route_values != expected_route_values:
+        raise RuntimeError(
+            f"{label}: {_Q4_DECODE_ROUTE_SPEC}: "
+            f"expected {expected_route_values}, got {route_values}"
+        )
     return et
 
 
@@ -286,6 +321,7 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     _export_dynamic_sdpa(out_dir)
     _export_dynamic_k16_sdpa_cases(out_dir)
     _export_combined_routes(out_dir)
+    _export_dynamic_qkv_routes(out_dir)
     _export_dynamic_sdpa_wide(out_dir)
     _export_static_sdpa(out_dir, 1, "static_sdpa_s1")
     _export_static_sdpa(out_dir, 16, "static_sdpa_s16")
@@ -349,11 +385,12 @@ BK64_QKV_LIVE_M = (BK64_MAXM, 511, 508, 128, 127, 16, 2, 1)
 SWIGLU_MAXM = 512
 SWIGLU_WIDTH = 8192
 SWIGLU_SMALL_WIDTH = 64
+SWIGLU_QKV_OVERLAP_WIDTH = 512
 SWIGLU_K = 64
 
 
 def _swiglu_inputs(model: SwiGluModule, m: int):
-    x = _ramp((m, SWIGLU_K))
+    x = _ramp((m, model.input_width))
     if model.separate_inputs:
         return x, torch.flip(x, dims=[-1]).contiguous()
     return (x,)
@@ -435,6 +472,17 @@ def _export_dynamic_swiglu(out_dir: str) -> None:
             SwiGluModule(width=SWIGLU_SMALL_WIDTH, **kwargs),
             [128],
         )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_qkv_overlap",
+        SwiGluModule(
+            qkv_overlap=True,
+            width=SWIGLU_QKV_OVERLAP_WIDTH,
+            input_width=BK64_K,
+            group_size=BK64_GROUP,
+        ),
+        [128],
+    )
     _export_swiglu_case(
         out_dir,
         "dyn_swiglu_outer_reversed",
@@ -735,6 +783,10 @@ K16_PRIME_POS = 1
 K16_PRIME_S = K16_INPUT_POS - K16_PRIME_POS
 K16_POS_CONTROL = K16_INPUT_POS
 K16_LIVE_S = (K16_MAXS, 508, 128, 127, 16, 1)
+QWEN3_HQ = 16
+QWEN3_HKV = 8
+QWEN3_D = 128
+QWEN3_LIVE_S = (128, 17, 1)
 
 
 def _export_dynamic_sdpa(out_dir: str) -> None:
@@ -775,6 +827,17 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
         print(f"  golden sdpa_dyn S={s} (golden shape {tuple(g.shape)})")
 
 
+def _write_f32_tensors(base, tensors) -> None:
+    for name, tensor in tensors:
+        tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+
+
+def _zero_uninitialized_cache(initialized_cache, k_cache, v_cache) -> None:
+    if not initialized_cache:
+        k_cache.zero_()
+        v_cache.zero_()
+
+
 def _export_dynamic_k16_sdpa_case(
     out_dir: str,
     prefix: str,
@@ -783,10 +846,16 @@ def _export_dynamic_k16_sdpa_case(
     live_s,
     d: int = K16_D,
     scale: float | None = None,
+    cache_hkv: int | None = None,
+    expect_runtime_reject: bool = False,
+    denom: float = 16.0,
+    kv_f16_golden: bool = False,
+    initialized_cache: bool = False,
 ) -> None:
     from executorch.backends.webgpu.test.ops.test_sdpa import (
         _det_inputs,
         _golden,
+        _round_kv_for_storage,
         SdpaConfig,
     )
 
@@ -799,11 +868,15 @@ def _export_dynamic_k16_sdpa_case(
             s,
             K16_CMAX,
             K16_INPUT_POS,
+            denom,
+            kv_f16=kv_f16_golden,
         )
 
     q, k, v, kc, vc = _det_inputs(cfg(K16_MAXS))
-    kc.zero_()
-    vc.zero_()
+    if cache_hkv is not None:
+        kc = torch.zeros(1, K16_CMAX, cache_hkv, d)
+        vc = torch.zeros_like(kc)
+    _zero_uninitialized_cache(initialized_cache, kc, vc)
 
     class K16SdpaModule(torch.nn.Module):
         def __init__(self) -> None:
@@ -845,10 +918,14 @@ def _export_dynamic_k16_sdpa_case(
     with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
         f.write(et.buffer)
     print(f"Exported {prefix}.pte")
+    if expect_runtime_reject:
+        return
 
     def reference(live_cfg, q, k, v, kc, vc):
         if scale is None:
             return _golden(live_cfg, q, k, v, kc, vc)
+        k, v, kc, vc = _round_kv_for_storage(live_cfg, k, v, kc, vc)
+        runtime_scale = float(torch.tensor(scale, dtype=torch.float32).item())
         context_len = live_cfg.s + live_cfg.input_pos
         g = hq // hkv
         k_full = torch.cat((kc[0, : live_cfg.input_pos].double(), k[0].double()), dim=0)
@@ -860,44 +937,81 @@ def _export_dynamic_k16_sdpa_case(
         for token in range(live_cfg.s):
             mask[token, : live_cfg.input_pos + token + 1] = 0.0
         golden = torch.nn.functional.scaled_dot_product_attention(
-            q_heads, k_heads, v_heads, attn_mask=mask, scale=scale
+            q_heads, k_heads, v_heads, attn_mask=mask, scale=runtime_scale
         )
         return golden.transpose(0, 1).reshape(1, live_cfg.s, hq, d).float().contiguous()
 
-    prime_cfg = SdpaConfig(prefix, hq, hkv, d, K16_PRIME_S, K16_CMAX, K16_PRIME_POS)
+    if initialized_cache:
+        initial_cfg = cfg(17)
+        initial_q, initial_k, initial_v, initial_kc, initial_vc = _det_inputs(
+            initial_cfg
+        )
+        initial_golden = reference(
+            initial_cfg,
+            initial_q,
+            initial_k,
+            initial_v,
+            initial_kc,
+            initial_vc,
+        )
+        initial_base = os.path.join(out_dir, f"{prefix}.initial.")
+        _write_f32_tensors(
+            initial_base,
+            (
+                ("q", initial_q),
+                ("k", initial_k),
+                ("v", initial_v),
+                ("control", torch.zeros(1, K16_POS_CONTROL)),
+                ("golden", initial_golden),
+            ),
+        )
+
+    prime_cfg = SdpaConfig(
+        prefix,
+        hq,
+        hkv,
+        d,
+        K16_PRIME_S,
+        K16_CMAX,
+        K16_PRIME_POS,
+        denom,
+        kv_f16=kv_f16_golden,
+    )
     prime_q, prime_k, prime_v, prime_kc, prime_vc = _det_inputs(prime_cfg)
-    prime_kc.zero_()
-    prime_vc.zero_()
+    _zero_uninitialized_cache(initialized_cache, prime_kc, prime_vc)
     prime_golden = reference(prime_cfg, prime_q, prime_k, prime_v, prime_kc, prime_vc)
     prime_base = os.path.join(out_dir, f"{prefix}.prime.")
-    for name, tensor in (
-        ("q", prime_q),
-        ("k", prime_k),
-        ("v", prime_v),
-        ("control", torch.zeros(1, 1)),
-        ("golden", prime_golden),
-    ):
-        tensor.detach().numpy().astype("<f4").tofile(prime_base + name + ".bin")
+    _write_f32_tensors(
+        prime_base,
+        (
+            ("q", prime_q),
+            ("k", prime_k),
+            ("v", prime_v),
+            ("control", torch.zeros(1, 1)),
+            ("golden", prime_golden),
+        ),
+    )
 
     for s in live_s:
         live_cfg = cfg(s)
         q, k, v, kc, vc = _det_inputs(live_cfg)
-        kc.zero_()
-        vc.zero_()
+        _zero_uninitialized_cache(initialized_cache, kc, vc)
         kc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_k[0]
         vc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_v[0]
         golden = reference(live_cfg, q, k, v, kc, vc)
         base = os.path.join(out_dir, f"{prefix}.S{s}.")
-        for name, tensor in (
-            ("q", q),
-            ("k", k),
-            ("v", v),
-            ("control", torch.zeros(1, K16_POS_CONTROL)),
-            ("kc", kc),
-            ("vc", vc),
-            ("golden", golden),
-        ):
-            tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+        _write_f32_tensors(
+            base,
+            (
+                ("q", q),
+                ("k", k),
+                ("v", v),
+                ("control", torch.zeros(1, K16_POS_CONTROL)),
+                ("kc", kc),
+                ("vc", vc),
+                ("golden", golden),
+            ),
+        )
         print(f"  golden {prefix} S={s}")
 
 
@@ -908,6 +1022,28 @@ def _export_dynamic_k16_sdpa_cases(out_dir: str) -> None:
         K16_HQ,
         K16_HKV,
         K16_LIVE_S,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_qwen3",
+        QWEN3_HQ,
+        QWEN3_HKV,
+        QWEN3_LIVE_S,
+        d=QWEN3_D,
+        denom=10.0,
+        kv_f16_golden=True,
+        initialized_cache=True,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_qwen3_near_scale",
+        QWEN3_HQ,
+        QWEN3_HKV,
+        (128, 1),
+        d=QWEN3_D,
+        scale=1.0 / math.sqrt(float(QWEN3_D)) + 5e-7,
+        denom=10.0,
+        kv_f16_golden=True,
     )
     _export_dynamic_k16_sdpa_case(
         out_dir,
@@ -932,6 +1068,15 @@ def _export_dynamic_k16_sdpa_cases(out_dir: str) -> None:
         K16_HKV,
         (128, 1),
         scale=0.25,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_bad_cache_heads",
+        K16_HQ,
+        K16_HKV,
+        (),
+        cache_hkv=K16_HKV - 1,
+        expect_runtime_reject=True,
     )
 
 
@@ -1008,6 +1153,83 @@ def _export_combined_routes(out_dir: str) -> None:
         ):
             tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
         print(f"  golden combined_routes S={s}")
+
+
+QKV_NQ = 2048
+QKV_NK = 512
+QKV_NV = 512
+QKV_MAXM = 16
+QKV_BK64_K = 2048
+QKV_BK64_GROUP = 64
+QKV_BK64_MAXM = 128
+
+
+def _export_dynamic_qkv_routes(out_dir: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_quantized_linear import (
+        _make_quantized_model,
+    )
+
+    class QkvRoutes(torch.nn.Module):
+        def __init__(self, k: int = LIN_K, group: int = LIN_GROUP):
+            super().__init__()
+            self.q = _make_quantized_model(k, QKV_NQ, group, seed=0)
+            self.k = _make_quantized_model(k, QKV_NK, group, seed=1)
+            self.v = _make_quantized_model(k, QKV_NV, group, seed=2)
+
+        def forward(self, x):
+            # Keep the linears internal so graph-output copies do not capture
+            # the buffers that the runtime QKV pass later replaces.
+            return (
+                torch.sigmoid(self.q(x)),
+                torch.sigmoid(self.k(x)),
+                torch.sigmoid(self.v(x)),
+            )
+
+    model = QkvRoutes().eval()
+    x = _ramp((QKV_MAXM, LIN_K))
+    m_dim = torch.export.Dim("m", min=1, max=QKV_MAXM)
+    ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
+    et = _lower_fully_delegated(
+        ep,
+        "qkv_routes",
+        compile_options={_Q4_DECODE_ROUTE_SPEC: True},
+        expect_q4_decode_route=True,
+    )
+    with open(os.path.join(out_dir, "qkv_routes.pte"), "wb") as f:
+        f.write(et.buffer)
+    print("Exported qkv_routes.pte")
+
+    for m in [QKV_MAXM, 1]:
+        live_x = _ramp((m, LIN_K))
+        with torch.no_grad():
+            q, k, v = model(live_x)
+        base = os.path.join(out_dir, f"qkv_routes.S{m}.")
+        for name, tensor in (("input", live_x), ("q", q), ("k", k), ("v", v)):
+            tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+        print(f"  golden qkv_routes M={m}")
+
+    # Route-topology-only fixture: the q projection is BK64-eligible, so QKV
+    # coordination must suppress all three of its bicol/BK64/prefill routes.
+    bk64_model = QkvRoutes(QKV_BK64_K, QKV_BK64_GROUP).eval()
+    bk64_x = _ramp((QKV_BK64_MAXM, QKV_BK64_K))
+    bk64_m_dim = torch.export.Dim("qkv_bk64_m", min=1, max=QKV_BK64_MAXM)
+    bk64_ep = torch.export.export(
+        bk64_model, (bk64_x,), dynamic_shapes=({0: bk64_m_dim},)
+    )
+    bk64_et = _lower_fully_delegated(
+        bk64_ep,
+        "qkv_bk64_routes",
+        compile_options={_Q4_DECODE_ROUTE_SPEC: True},
+        expect_q4_decode_route=True,
+    )
+    with open(os.path.join(out_dir, "qkv_bk64_routes.pte"), "wb") as f:
+        f.write(bk64_et.buffer)
+    for m in [QKV_BK64_MAXM, 1]:
+        live_x = _ramp((m, QKV_BK64_K))
+        live_x.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"qkv_bk64_routes.S{m}.input.bin")
+        )
+    print("Exported qkv_bk64_routes.pte")
 
 
 def _export_dynamic_sdpa_wide(out_dir: str) -> None:
@@ -1183,6 +1405,19 @@ def _export_dynamic_select(out_dir: str) -> None:
 
 
 class TestDynamicShapeExport(unittest.TestCase):
+    def test_q4_route_compile_specs(self) -> None:
+        import tempfile
+
+        model = RmsNormModule(HIDDEN).eval()
+        x = _ramp((1, 1, MAXS, HIDDEN))
+        ep = torch.export.export(model, (x,))
+        _lower_fully_delegated(ep, "q4_route_negative_control")
+
+        with tempfile.TemporaryDirectory() as d:
+            _export_dynamic_qkv_routes(d)
+            self.assertTrue(os.path.exists(os.path.join(d, "qkv_routes.pte")))
+            self.assertTrue(os.path.exists(os.path.join(d, "qkv_bk64_routes.pte")))
+
     def test_export_dynamic_rms(self) -> None:
         import tempfile
 
@@ -1234,12 +1469,17 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_qkv_bk64_bias.pte",
                 "dyn_qkv_bk64_wrong_width.pte",
                 "dyn_qkv_bk64_different_input.pte",
+                "sdpa_k16_bad_cache_heads.pte",
+                "sdpa_k16_qwen3.pte",
+                "sdpa_k16_qwen3_near_scale.pte",
             ]
             for name in expected:
                 with self.subTest(artifact=name):
                     self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
             for prefix, live_s in (
                 ("sdpa_k16_llama", K16_LIVE_S),
+                ("sdpa_k16_qwen3", QWEN3_LIVE_S),
+                ("sdpa_k16_qwen3_near_scale", (128, 1)),
                 ("sdpa_k16_wrong_geometry", (128, 1)),
                 ("sdpa_k16_wrong_d", (128, 1)),
                 ("sdpa_k16_wrong_scale", (128, 1)),
@@ -1259,6 +1499,10 @@ class TestDynamicShapeExport(unittest.TestCase):
                             self.assertGreater(
                                 os.path.getsize(os.path.join(d, name)), 0
                             )
+            for kind in ("q", "k", "v", "control", "golden"):
+                name = f"sdpa_k16_qwen3.initial.{kind}.bin"
+                with self.subTest(artifact=name):
+                    self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
 
 
 if __name__ == "__main__":

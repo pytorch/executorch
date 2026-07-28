@@ -84,6 +84,4 @@ endif()
         )
         self.assertNotIn("find_package(Dawn", wasm_branch)
         self.assertNotIn("--use-port=emdawnwebgpu", native_branch)
-        self.assertRegex(
-            native_branch, r"find_package\s*\(\s*Dawn\s+REQUIRED\s*\)"
-        )
+        self.assertRegex(native_branch, r"find_package\s*\(\s*Dawn\s+REQUIRED\s*\)")

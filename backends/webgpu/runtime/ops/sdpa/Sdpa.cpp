@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -386,10 +387,13 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const size_t cn = k_cache.dims.size();
   const int64_t Cmax = k_cache.dims[cn - 3];
 
-  // Validate B == 1 (leading dims must all be 1).
-  for (size_t i = 0; i + 3 < qn; i++) {
-    if (q.dims[i] != 1) {
-      throw std::runtime_error("WebGPU sdpa: only batch size 1 is supported");
+  // Validate B == 1 for every tensor (leading dims must all be 1). Rank-3
+  // tensors are the equivalent squeezed-batch representation.
+  for (const WebGPUTensor* tensor : {&q, &k, &v, &k_cache, &v_cache, &out}) {
+    for (size_t i = 0; i + 3 < tensor->dims.size(); i++) {
+      if (tensor->dims[i] != 1) {
+        throw std::runtime_error("WebGPU sdpa: only batch size 1 is supported");
+      }
     }
   }
   if (S <= 0 || Hq <= 0 || D <= 0 || Hkv <= 0 || Cmax <= 0) {
@@ -422,14 +426,19 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (D != k_cache.dims[cn - 1]) {
     throw std::runtime_error("WebGPU sdpa: q and k_cache head_dim mismatch");
   }
-  if (k_cache.dims[cn - 2] != Hkv) {
-    throw std::runtime_error("WebGPU sdpa: k and k_cache num_heads mismatch");
-  }
   if (k_cache.dims != v_cache.dims) {
     throw std::runtime_error("WebGPU sdpa: k_cache and v_cache shape mismatch");
   }
+  if (k_cache.dims[cn - 2] != Hkv) {
+    throw std::runtime_error(
+        "WebGPU sdpa: cache num_heads must match projected k/v");
+  }
+  if (out.dims != q.dims) {
+    throw std::runtime_error("WebGPU sdpa: output shape must match q");
+  }
 
-  // fp32-only: validate byte counts against fp32 element counts.
+  // q/k/v/out are serialized fp32. KV caches are fp32 by default and use
+  // dedicated fp16 storage only when the graph-level option is active.
   auto numel = [](const WebGPUTensor& t) {
     uint64_t n = 1;
     for (int64_t d : t.dims) {
@@ -437,11 +446,23 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     }
     return n;
   };
-  if (q.nbytes != numel(q) * sizeof(float) ||
-      k.nbytes != numel(k) * sizeof(float) ||
-      v.nbytes != numel(v) * sizeof(float) ||
-      out.nbytes != numel(out) * sizeof(float)) {
-    throw std::runtime_error("WebGPU sdpa: fp32-only (byte-size mismatch)");
+  auto is_fp32 = [&numel](const WebGPUTensor& t) {
+    return !t.is_int && t.elem_size == sizeof(float) &&
+        t.nbytes == numel(t) * sizeof(float);
+  };
+  if (!is_fp32(q) || !is_fp32(k) || !is_fp32(v) || !is_fp32(out)) {
+    throw std::runtime_error("WebGPU sdpa: q/k/v/output must be fp32");
+  }
+  const size_t cache_elem_size =
+      graph.kv_f16() ? sizeof(uint16_t) : sizeof(float);
+  auto cache_storage_is_valid = [&numel,
+                                 cache_elem_size](const WebGPUTensor& t) {
+    return !t.is_int && t.elem_size == cache_elem_size &&
+        t.nbytes == numel(t) * cache_elem_size;
+  };
+  if (!cache_storage_is_valid(k_cache) || !cache_storage_is_valid(v_cache)) {
+    throw std::runtime_error(
+        "WebGPU sdpa: cache dtype does not match the selected storage mode");
   }
 
   // input_pos: build-time Int (baked) OR runtime SymInt (dynamic decode).
@@ -502,12 +523,12 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
           k16_buffers_distinct && k16_buffers[i] != k16_buffers[j];
     }
   }
-  // 1/sqrt(128) is not exactly representable in fp32 (unlike Llama's 0.125), so
-  // match the standard scale with a tolerance to avoid a silent fallback when a
-  // producer computes it via a slightly different path.
+  // The specialized shaders bake the standard Qwen3 scale, so eligibility must
+  // be exact. A nearby explicit scale has different operator semantics and must
+  // use the general path.
   const float qwen3_expected_scale = 1.0f / std::sqrt(128.0f);
   const bool qwen3_k16_geometry = Hq == 16 && Hkv == 8 && g == 2 && D == 128 &&
-      std::fabs(scale - qwen3_expected_scale) <= 1e-6f && out.dims == q.dims;
+      scale == qwen3_expected_scale && out.dims == q.dims;
   // Q16 is the default route for exact Qwen3 geometry; Q32 is an explicit
   // autotuning candidate requested via the sdpa_query_tile RuntimeSpec. Support
   // is evaluated per-tile so an unsupported Q32 request falls back to the Q16

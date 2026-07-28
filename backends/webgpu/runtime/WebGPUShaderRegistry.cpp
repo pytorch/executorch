@@ -12,8 +12,15 @@
 
 #include <executorch/backends/webgpu/runtime/ops/adamw/adamw_step_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/addmm/addmm_tiled_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/amax/amax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/amin/amin_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_div_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/bitwise_not/bitwise_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_tiled_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_eq_wgsl.h>
@@ -24,21 +31,63 @@
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/compare_ne_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/boolean_op/logical_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/cat/cat_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/choose_qparams_affine/choose_qparams_affine_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/compare/compare_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/constant_pad_nd/constant_pad_nd_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv_with_clamp/conv_with_clamp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/dequantize/dequantize_per_tensor_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/embedding/embedding_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/embedding_q4gsw/embedding_q4gsw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_gemm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_vec4_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_av_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/expand_copy/expand_copy_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/fill/fill_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/flip/flip_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/floor_divide/binary_floor_divide_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/fused_ce/fused_ce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/gather/gather_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/gelu/gelu_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/grid_priors/grid_priors_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/grid_sampler_2d/grid_sampler_2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/index/index_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/index_select/index_select_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/layer_norm/native_layer_norm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/leaky_relu/leaky_relu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/linear/linear_tiled_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/linear/linear_vec4_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/linear_dq8ca_q4gsw/linear_dq8ca_q4gsw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/linear_q8ta_q8csw/linear_q8ta_q8csw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/linear_qcs4w/qcs4w_linear_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/logical_and/logical_and_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/logical_or/logical_or_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/max_pool2d/max_pool2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/minimum/binary_minimum_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_tiled_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mul/binary_mul_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mul/silu_mul_fused_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/native_group_norm/group_norm_reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/native_group_norm/group_norm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/permute/permute_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/pixel_shuffle/pixel_shuffle_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/pow/binary_pow_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_add/q8ta_add_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d/q8ta_conv2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d_dw/q8ta_conv2d_dw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d_pw/q8ta_conv2d_pw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d_transposed/q8ta_conv2d_transposed_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_linear/q8ta_linear_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_pixel_shuffle/q8ta_pixel_shuffle_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/q8ta_relu/q8ta_relu_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantize/quantize_per_tensor_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/linear_dW_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_backward_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
@@ -52,8 +101,11 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_requant_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/reduce/reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/relu/relu_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/repeat/repeat_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rope/apply_rotary_emb_interleaved_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_hf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
@@ -72,8 +124,24 @@
 #include <executorch/backends/webgpu/runtime/ops/slice/slice_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/log_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/softmax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/rsqrt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/sin_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/upsample_bilinear2d/upsample_bilinear2d_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/upsample_nearest2d/upsample_nearest2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/where/where_wgsl.h>
 
 #include <array>
@@ -83,13 +151,69 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 133> kShaderRegistry = {{
+    {
+        "abs",
+        kAbsWGSL,
+        kAbsWorkgroupSizeX,
+        kAbsWorkgroupSizeY,
+        kAbsWorkgroupSizeZ,
+    },
     {
         "adamw_step",
         kAdamwStepWGSL,
         kAdamwStepWorkgroupSizeX,
         kAdamwStepWorkgroupSizeY,
         kAdamwStepWorkgroupSizeZ,
+    },
+    {
+        "addmm_tiled",
+        kAddmmTiledWGSL,
+        kAddmmTiledWorkgroupSizeX,
+        kAddmmTiledWorkgroupSizeY,
+        kAddmmTiledWorkgroupSizeZ,
+    },
+    {
+        "amax",
+        kAmaxWGSL,
+        kAmaxWorkgroupSizeX,
+        kAmaxWorkgroupSizeY,
+        kAmaxWorkgroupSizeZ,
+    },
+    {
+        "amin",
+        kAminWGSL,
+        kAminWorkgroupSizeX,
+        kAminWorkgroupSizeY,
+        kAminWorkgroupSizeZ,
+    },
+    {
+        "apply_rotary_emb_interleaved",
+        kApplyRotaryEmbInterleavedWGSL,
+        kApplyRotaryEmbInterleavedWorkgroupSizeX,
+        kApplyRotaryEmbInterleavedWorkgroupSizeY,
+        kApplyRotaryEmbInterleavedWorkgroupSizeZ,
+    },
+    {
+        "arg_reduce",
+        kArgReduceWGSL,
+        kArgReduceWorkgroupSizeX,
+        kArgReduceWorkgroupSizeY,
+        kArgReduceWorkgroupSizeZ,
+    },
+    {
+        "avg_pool2d",
+        kAvgPool2dWGSL,
+        kAvgPool2dWorkgroupSizeX,
+        kAvgPool2dWorkgroupSizeY,
+        kAvgPool2dWorkgroupSizeZ,
+    },
+    {
+        "batch_norm",
+        kBatchNormWGSL,
+        kBatchNormWorkgroupSizeX,
+        kBatchNormWorkgroupSizeY,
+        kBatchNormWorkgroupSizeZ,
     },
     {
         "binary_add",
@@ -106,6 +230,20 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kBinaryDivWorkgroupSizeZ,
     },
     {
+        "binary_floor_divide",
+        kBinaryFloorDivideWGSL,
+        kBinaryFloorDivideWorkgroupSizeX,
+        kBinaryFloorDivideWorkgroupSizeY,
+        kBinaryFloorDivideWorkgroupSizeZ,
+    },
+    {
+        "binary_minimum",
+        kBinaryMinimumWGSL,
+        kBinaryMinimumWorkgroupSizeX,
+        kBinaryMinimumWorkgroupSizeY,
+        kBinaryMinimumWorkgroupSizeZ,
+    },
+    {
         "binary_mul",
         kBinaryMulWGSL,
         kBinaryMulWorkgroupSizeX,
@@ -113,11 +251,25 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kBinaryMulWorkgroupSizeZ,
     },
     {
+        "binary_pow",
+        kBinaryPowWGSL,
+        kBinaryPowWorkgroupSizeX,
+        kBinaryPowWorkgroupSizeY,
+        kBinaryPowWorkgroupSizeZ,
+    },
+    {
         "binary_sub",
         kBinarySubWGSL,
         kBinarySubWorkgroupSizeX,
         kBinarySubWorkgroupSizeY,
         kBinarySubWorkgroupSizeZ,
+    },
+    {
+        "bitwise_not",
+        kBitwiseNotWGSL,
+        kBitwiseNotWorkgroupSizeX,
+        kBitwiseNotWorkgroupSizeY,
+        kBitwiseNotWorkgroupSizeZ,
     },
     {
         "bmm_tiled",
@@ -139,6 +291,27 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kCatWorkgroupSizeX,
         kCatWorkgroupSizeY,
         kCatWorkgroupSizeZ,
+    },
+    {
+        "choose_qparams_affine",
+        kChooseQparamsAffineWGSL,
+        kChooseQparamsAffineWorkgroupSizeX,
+        kChooseQparamsAffineWorkgroupSizeY,
+        kChooseQparamsAffineWorkgroupSizeZ,
+    },
+    {
+        "clamp",
+        kClampWGSL,
+        kClampWorkgroupSizeX,
+        kClampWorkgroupSizeY,
+        kClampWorkgroupSizeZ,
+    },
+    {
+        "compare",
+        kCompareWGSL,
+        kCompareWorkgroupSizeX,
+        kCompareWorkgroupSizeY,
+        kCompareWorkgroupSizeZ,
     },
     {
         "compare_eq",
@@ -183,6 +356,76 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kCompareNeWorkgroupSizeZ,
     },
     {
+        "constant_pad_nd",
+        kConstantPadNdWGSL,
+        kConstantPadNdWorkgroupSizeX,
+        kConstantPadNdWorkgroupSizeY,
+        kConstantPadNdWorkgroupSizeZ,
+    },
+    {
+        "conv1d_dw",
+        kConv1dDwWGSL,
+        kConv1dDwWorkgroupSizeX,
+        kConv1dDwWorkgroupSizeY,
+        kConv1dDwWorkgroupSizeZ,
+    },
+    {
+        "conv1d_pw",
+        kConv1dPwWGSL,
+        kConv1dPwWorkgroupSizeX,
+        kConv1dPwWorkgroupSizeY,
+        kConv1dPwWorkgroupSizeZ,
+    },
+    {
+        "conv2d",
+        kConv2dWGSL,
+        kConv2dWorkgroupSizeX,
+        kConv2dWorkgroupSizeY,
+        kConv2dWorkgroupSizeZ,
+    },
+    {
+        "conv2d_gemm",
+        kConv2dGemmWGSL,
+        kConv2dGemmWorkgroupSizeX,
+        kConv2dGemmWorkgroupSizeY,
+        kConv2dGemmWorkgroupSizeZ,
+    },
+    {
+        "conv2d_vec4",
+        kConv2dVec4WGSL,
+        kConv2dVec4WorkgroupSizeX,
+        kConv2dVec4WorkgroupSizeY,
+        kConv2dVec4WorkgroupSizeZ,
+    },
+    {
+        "conv_transpose2d",
+        kConvTranspose2dWGSL,
+        kConvTranspose2dWorkgroupSizeX,
+        kConvTranspose2dWorkgroupSizeY,
+        kConvTranspose2dWorkgroupSizeZ,
+    },
+    {
+        "conv_with_clamp",
+        kConvWithClampWGSL,
+        kConvWithClampWorkgroupSizeX,
+        kConvWithClampWorkgroupSizeY,
+        kConvWithClampWorkgroupSizeZ,
+    },
+    {
+        "cos",
+        kCosWGSL,
+        kCosWorkgroupSizeX,
+        kCosWorkgroupSizeY,
+        kCosWorkgroupSizeZ,
+    },
+    {
+        "dequantize_per_tensor",
+        kDequantizePerTensorWGSL,
+        kDequantizePerTensorWorkgroupSizeX,
+        kDequantizePerTensorWorkgroupSizeY,
+        kDequantizePerTensorWorkgroupSizeZ,
+    },
+    {
         "embedding",
         kEmbeddingWGSL,
         kEmbeddingWorkgroupSizeX,
@@ -195,6 +438,34 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kEmbeddingQ4gswWorkgroupSizeX,
         kEmbeddingQ4gswWorkgroupSizeY,
         kEmbeddingQ4gswWorkgroupSizeZ,
+    },
+    {
+        "et_vk_sdpa_av",
+        kEtVkSdpaAvWGSL,
+        kEtVkSdpaAvWorkgroupSizeX,
+        kEtVkSdpaAvWorkgroupSizeY,
+        kEtVkSdpaAvWorkgroupSizeZ,
+    },
+    {
+        "et_vk_sdpa_qk",
+        kEtVkSdpaQkWGSL,
+        kEtVkSdpaQkWorkgroupSizeX,
+        kEtVkSdpaQkWorkgroupSizeY,
+        kEtVkSdpaQkWorkgroupSizeZ,
+    },
+    {
+        "et_vk_sdpa_qk_entry",
+        kEtVkSdpaQkEntryWGSL,
+        kEtVkSdpaQkEntryWorkgroupSizeX,
+        kEtVkSdpaQkEntryWorkgroupSizeY,
+        kEtVkSdpaQkEntryWorkgroupSizeZ,
+    },
+    {
+        "exp",
+        kExpWGSL,
+        kExpWorkgroupSizeX,
+        kExpWorkgroupSizeY,
+        kExpWorkgroupSizeZ,
     },
     {
         "expand_copy",
@@ -211,6 +482,13 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kFillWorkgroupSizeZ,
     },
     {
+        "flip",
+        kFlipWGSL,
+        kFlipWorkgroupSizeX,
+        kFlipWorkgroupSizeY,
+        kFlipWorkgroupSizeZ,
+    },
+    {
         "fused_ce",
         kFusedCeWGSL,
         kFusedCeWorkgroupSizeX,
@@ -225,6 +503,48 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kGatherWorkgroupSizeZ,
     },
     {
+        "gelu",
+        kGeluWGSL,
+        kGeluWorkgroupSizeX,
+        kGeluWorkgroupSizeY,
+        kGeluWorkgroupSizeZ,
+    },
+    {
+        "grid_priors",
+        kGridPriorsWGSL,
+        kGridPriorsWorkgroupSizeX,
+        kGridPriorsWorkgroupSizeY,
+        kGridPriorsWorkgroupSizeZ,
+    },
+    {
+        "grid_sampler_2d",
+        kGridSampler2dWGSL,
+        kGridSampler2dWorkgroupSizeX,
+        kGridSampler2dWorkgroupSizeY,
+        kGridSampler2dWorkgroupSizeZ,
+    },
+    {
+        "group_norm",
+        kGroupNormWGSL,
+        kGroupNormWorkgroupSizeX,
+        kGroupNormWorkgroupSizeY,
+        kGroupNormWorkgroupSizeZ,
+    },
+    {
+        "group_norm_reduce",
+        kGroupNormReduceWGSL,
+        kGroupNormReduceWorkgroupSizeX,
+        kGroupNormReduceWorkgroupSizeY,
+        kGroupNormReduceWorkgroupSizeZ,
+    },
+    {
+        "hardswish",
+        kHardswishWGSL,
+        kHardswishWorkgroupSizeX,
+        kHardswishWorkgroupSizeY,
+        kHardswishWorkgroupSizeZ,
+    },
+    {
         "index",
         kIndexWGSL,
         kIndexWorkgroupSizeX,
@@ -232,11 +552,39 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kIndexWorkgroupSizeZ,
     },
     {
+        "index_select",
+        kIndexSelectWGSL,
+        kIndexSelectWorkgroupSizeX,
+        kIndexSelectWorkgroupSizeY,
+        kIndexSelectWorkgroupSizeZ,
+    },
+    {
+        "leaky_relu",
+        kLeakyReluWGSL,
+        kLeakyReluWorkgroupSizeX,
+        kLeakyReluWorkgroupSizeY,
+        kLeakyReluWorkgroupSizeZ,
+    },
+    {
         "linear_dW",
         kLinearDwWGSL,
         kLinearDwWorkgroupSizeX,
         kLinearDwWorkgroupSizeY,
         kLinearDwWorkgroupSizeZ,
+    },
+    {
+        "linear_dq8ca_q4gsw",
+        kLinearDq8caQ4gswWGSL,
+        kLinearDq8caQ4gswWorkgroupSizeX,
+        kLinearDq8caQ4gswWorkgroupSizeY,
+        kLinearDq8caQ4gswWorkgroupSizeZ,
+    },
+    {
+        "linear_q8ta_q8csw",
+        kLinearQ8taQ8cswWGSL,
+        kLinearQ8taQ8cswWorkgroupSizeX,
+        kLinearQ8taQ8cswWorkgroupSizeY,
+        kLinearQ8taQ8cswWorkgroupSizeZ,
     },
     {
         "linear_tiled",
@@ -260,11 +608,32 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kLogSoftmaxWorkgroupSizeZ,
     },
     {
+        "logical_and",
+        kLogicalAndWGSL,
+        kLogicalAndWorkgroupSizeX,
+        kLogicalAndWorkgroupSizeY,
+        kLogicalAndWorkgroupSizeZ,
+    },
+    {
         "logical_not",
         kLogicalNotWGSL,
         kLogicalNotWorkgroupSizeX,
         kLogicalNotWorkgroupSizeY,
         kLogicalNotWorkgroupSizeZ,
+    },
+    {
+        "logical_or",
+        kLogicalOrWGSL,
+        kLogicalOrWorkgroupSizeX,
+        kLogicalOrWorkgroupSizeY,
+        kLogicalOrWorkgroupSizeZ,
+    },
+    {
+        "max_pool2d",
+        kMaxPool2dWGSL,
+        kMaxPool2dWorkgroupSizeX,
+        kMaxPool2dWorkgroupSizeY,
+        kMaxPool2dWorkgroupSizeZ,
     },
     {
         "mm",
@@ -288,11 +657,39 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kMmVec4WorkgroupSizeZ,
     },
     {
+        "native_layer_norm",
+        kNativeLayerNormWGSL,
+        kNativeLayerNormWorkgroupSizeX,
+        kNativeLayerNormWorkgroupSizeY,
+        kNativeLayerNormWorkgroupSizeZ,
+    },
+    {
+        "neg",
+        kNegWGSL,
+        kNegWorkgroupSizeX,
+        kNegWorkgroupSizeY,
+        kNegWorkgroupSizeZ,
+    },
+    {
         "permute",
         kPermuteWGSL,
         kPermuteWorkgroupSizeX,
         kPermuteWorkgroupSizeY,
         kPermuteWorkgroupSizeZ,
+    },
+    {
+        "pixel_shuffle",
+        kPixelShuffleWGSL,
+        kPixelShuffleWorkgroupSizeX,
+        kPixelShuffleWorkgroupSizeY,
+        kPixelShuffleWorkgroupSizeZ,
+    },
+    {
+        "pow_scalar",
+        kPowScalarWGSL,
+        kPowScalarWorkgroupSizeX,
+        kPowScalarWorkgroupSizeY,
+        kPowScalarWorkgroupSizeZ,
     },
     {
         "q4gsw_backward",
@@ -372,11 +769,95 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kQ4gswSteelBk64WorkgroupSizeZ,
     },
     {
+        "q8ta_add",
+        kQ8taAddWGSL,
+        kQ8taAddWorkgroupSizeX,
+        kQ8taAddWorkgroupSizeY,
+        kQ8taAddWorkgroupSizeZ,
+    },
+    {
+        "q8ta_conv2d",
+        kQ8taConv2dWGSL,
+        kQ8taConv2dWorkgroupSizeX,
+        kQ8taConv2dWorkgroupSizeY,
+        kQ8taConv2dWorkgroupSizeZ,
+    },
+    {
+        "q8ta_conv2d_dw",
+        kQ8taConv2dDwWGSL,
+        kQ8taConv2dDwWorkgroupSizeX,
+        kQ8taConv2dDwWorkgroupSizeY,
+        kQ8taConv2dDwWorkgroupSizeZ,
+    },
+    {
+        "q8ta_conv2d_pw",
+        kQ8taConv2dPwWGSL,
+        kQ8taConv2dPwWorkgroupSizeX,
+        kQ8taConv2dPwWorkgroupSizeY,
+        kQ8taConv2dPwWorkgroupSizeZ,
+    },
+    {
+        "q8ta_conv2d_transposed",
+        kQ8taConv2dTransposedWGSL,
+        kQ8taConv2dTransposedWorkgroupSizeX,
+        kQ8taConv2dTransposedWorkgroupSizeY,
+        kQ8taConv2dTransposedWorkgroupSizeZ,
+    },
+    {
+        "q8ta_linear",
+        kQ8taLinearWGSL,
+        kQ8taLinearWorkgroupSizeX,
+        kQ8taLinearWorkgroupSizeY,
+        kQ8taLinearWorkgroupSizeZ,
+    },
+    {
+        "q8ta_pixel_shuffle",
+        kQ8taPixelShuffleWGSL,
+        kQ8taPixelShuffleWorkgroupSizeX,
+        kQ8taPixelShuffleWorkgroupSizeY,
+        kQ8taPixelShuffleWorkgroupSizeZ,
+    },
+    {
+        "q8ta_relu",
+        kQ8taReluWGSL,
+        kQ8taReluWorkgroupSizeX,
+        kQ8taReluWorkgroupSizeY,
+        kQ8taReluWorkgroupSizeZ,
+    },
+    {
+        "qcs4w_linear",
+        kQcs4wLinearWGSL,
+        kQcs4wLinearWorkgroupSizeX,
+        kQcs4wLinearWorkgroupSizeY,
+        kQcs4wLinearWorkgroupSizeZ,
+    },
+    {
+        "quantize_per_tensor",
+        kQuantizePerTensorWGSL,
+        kQuantizePerTensorWorkgroupSizeX,
+        kQuantizePerTensorWorkgroupSizeY,
+        kQuantizePerTensorWorkgroupSizeZ,
+    },
+    {
         "reduce",
         kReduceWGSL,
         kReduceWorkgroupSizeX,
         kReduceWorkgroupSizeY,
         kReduceWorkgroupSizeZ,
+    },
+    {
+        "relu",
+        kReluWGSL,
+        kReluWorkgroupSizeX,
+        kReluWorkgroupSizeY,
+        kReluWorkgroupSizeZ,
+    },
+    {
+        "repeat",
+        kRepeatWGSL,
+        kRepeatWorkgroupSizeX,
+        kRepeatWorkgroupSizeY,
+        kRepeatWorkgroupSizeZ,
     },
     {
         "rms_norm",
@@ -405,6 +886,20 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kRotaryEmbeddingHfWorkgroupSizeX,
         kRotaryEmbeddingHfWorkgroupSizeY,
         kRotaryEmbeddingHfWorkgroupSizeZ,
+    },
+    {
+        "round",
+        kRoundWGSL,
+        kRoundWorkgroupSizeX,
+        kRoundWorkgroupSizeY,
+        kRoundWorkgroupSizeZ,
+    },
+    {
+        "rsqrt",
+        kRsqrtWGSL,
+        kRsqrtWorkgroupSizeX,
+        kRsqrtWorkgroupSizeY,
+        kRsqrtWorkgroupSizeZ,
     },
     {
         "sdpa_compute_attn_weights",
@@ -484,6 +979,13 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kSiluMulFusedWorkgroupSizeZ,
     },
     {
+        "sin",
+        kSinWGSL,
+        kSinWorkgroupSizeX,
+        kSinWorkgroupSizeY,
+        kSinWorkgroupSizeZ,
+    },
+    {
         "slice",
         kSliceWGSL,
         kSliceWorkgroupSizeX,
@@ -496,6 +998,13 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kSoftmaxWorkgroupSizeX,
         kSoftmaxWorkgroupSizeY,
         kSoftmaxWorkgroupSizeZ,
+    },
+    {
+        "sqrt",
+        kSqrtWGSL,
+        kSqrtWorkgroupSizeX,
+        kSqrtWorkgroupSizeY,
+        kSqrtWorkgroupSizeZ,
     },
     {
         "streaming_attention_k16_causal_bound",
@@ -519,6 +1028,27 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kStreamingAttentionQwen3Q32K16CausalBoundWorkgroupSizeZ,
     },
     {
+        "tanh",
+        kTanhWGSL,
+        kTanhWorkgroupSizeX,
+        kTanhWorkgroupSizeY,
+        kTanhWorkgroupSizeZ,
+    },
+    {
+        "to_copy_float_to_int",
+        kToCopyFloatToIntWGSL,
+        kToCopyFloatToIntWorkgroupSizeX,
+        kToCopyFloatToIntWorkgroupSizeY,
+        kToCopyFloatToIntWorkgroupSizeZ,
+    },
+    {
+        "to_copy_int_to_float",
+        kToCopyIntToFloatWGSL,
+        kToCopyIntToFloatWorkgroupSizeX,
+        kToCopyIntToFloatWorkgroupSizeY,
+        kToCopyIntToFloatWorkgroupSizeZ,
+    },
+    {
         "update_cache",
         kUpdateCacheWGSL,
         kUpdateCacheWorkgroupSizeX,
@@ -531,6 +1061,20 @@ constexpr std::array<WebGPUShaderInfo, 65> kShaderRegistry = {{
         kUpdateCacheHalfWorkgroupSizeX,
         kUpdateCacheHalfWorkgroupSizeY,
         kUpdateCacheHalfWorkgroupSizeZ,
+    },
+    {
+        "upsample_bilinear2d",
+        kUpsampleBilinear2dWGSL,
+        kUpsampleBilinear2dWorkgroupSizeX,
+        kUpsampleBilinear2dWorkgroupSizeY,
+        kUpsampleBilinear2dWorkgroupSizeZ,
+    },
+    {
+        "upsample_nearest2d",
+        kUpsampleNearest2dWGSL,
+        kUpsampleNearest2dWorkgroupSizeX,
+        kUpsampleNearest2dWorkgroupSizeY,
+        kUpsampleNearest2dWorkgroupSizeZ,
     },
     {
         "where",

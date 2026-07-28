@@ -232,6 +232,61 @@ void check_linear_tiled(int m_rows) {
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
 }
 
+constexpr int kQkvNq = 2048;
+constexpr int kQkvNk = 512;
+constexpr int kQkvNv = 512;
+constexpr int kQkvMaxM = 16;
+
+void run_qkv_routes(Module& m, int m_rows) {
+  const std::string base =
+      g_dir + "/qkv_routes.S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  ASSERT_FALSE(input.empty()) << "missing qkv_routes.S" << m_rows;
+  auto tensor = make_tensor_ptr({m_rows, kLinK}, std::move(input));
+  auto result = m.forward({EValue(tensor)});
+  ASSERT_TRUE(result.ok()) << "qkv_routes M=" << m_rows << " forward failed";
+  ASSERT_EQ(result.get().size(), 3u);
+
+  const int widths[] = {kQkvNq, kQkvNk, kQkvNv};
+  const char* names[] = {"q", "k", "v"};
+  for (size_t i = 0; i < 3; i++) {
+    ASSERT_TRUE(result.get()[i].isTensor());
+    const auto& output = result.get()[i].toTensor();
+    ASSERT_EQ(output.dim(), 2);
+    ASSERT_EQ(output.size(0), m_rows);
+    ASSERT_EQ(output.size(1), widths[i]);
+    const size_t numel = static_cast<size_t>(m_rows) * widths[i];
+    std::vector<float> got(
+        output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+    auto golden = read_bin(base + names[i] + ".bin");
+    ASSERT_EQ(golden.size(), numel);
+    EXPECT_LT(max_err(got, golden), 1e-2f)
+        << "qkv_routes " << names[i] << " M=" << m_rows;
+  }
+}
+
+constexpr int kQkvBk64K = 2048;
+constexpr int kQkvBk64MaxM = 128;
+
+void run_qkv_bk64_routes(Module& module, int m_rows) {
+  const std::string path =
+      g_dir + "/qkv_bk64_routes.S" + std::to_string(m_rows) + ".input.bin";
+  auto input = read_bin(path);
+  ASSERT_EQ(input.size(), static_cast<size_t>(m_rows) * kQkvBk64K);
+  auto tensor = make_tensor_ptr({m_rows, kQkvBk64K}, std::move(input));
+  auto result = module.forward({EValue(tensor)});
+  ASSERT_TRUE(result.ok()) << "qkv_bk64_routes M=" << m_rows;
+  ASSERT_EQ(result.get().size(), 3u);
+  const int widths[] = {kQkvNq, kQkvNk, kQkvNv};
+  for (size_t i = 0; i < 3; i++) {
+    ASSERT_TRUE(result.get()[i].isTensor());
+    const auto& output = result.get()[i].toTensor();
+    EXPECT_EQ(
+        static_cast<size_t>(output.numel()),
+        static_cast<size_t>(m_rows) * widths[i]);
+  }
+}
+
 constexpr int kBk64K = 2048;
 constexpr int kBk64N = 2048;
 constexpr int kBk64KvN = 512;
@@ -345,6 +400,7 @@ void run_bk64_linear(
 
 constexpr int kSwiGluWidth = 8192;
 constexpr int kSwiGluSmallWidth = 64;
+constexpr int kSwiGluQkvOverlapWidth = 512;
 constexpr int kSwiGluK = 64;
 
 void run_swiglu(
@@ -408,6 +464,29 @@ void run_swiglu_outputs(
 
 void run_swiglu_graph_outputs(Module& module, int m_rows) {
   run_swiglu_outputs(module, m_rows, "dyn_swiglu_graph_outputs", 4);
+}
+
+void run_swiglu_qkv_overlap(Module& module, int m_rows) {
+  const std::string base =
+      g_dir + "/dyn_swiglu_qkv_overlap.S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  ASSERT_FALSE(input.empty());
+  auto input_tensor = make_tensor_ptr({m_rows, kBk64K}, std::move(input));
+  auto result = module.forward({EValue(input_tensor)});
+  ASSERT_TRUE(result.ok());
+  ASSERT_EQ(result.get().size(), 2u);
+  const int widths[] = {2048, kSwiGluQkvOverlapWidth};
+  for (size_t index = 0; index < 2; index++) {
+    ASSERT_TRUE(result.get()[index].isTensor());
+    const auto& output = result.get()[index].toTensor();
+    const size_t numel = static_cast<size_t>(m_rows) * widths[index];
+    ASSERT_EQ(static_cast<size_t>(output.numel()), numel);
+    std::vector<float> got(
+        output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+    const auto golden =
+        read_bin(base + "golden" + std::to_string(index) + ".bin");
+    EXPECT_LT(max_err(got, golden), 1e-2f) << "overlap output " << index;
+  }
 }
 
 // Dynamic SDPA (GQA prefill, input_pos=0): q[1,s,hq,d] k/v[1,s,hkv,d]
@@ -476,6 +555,9 @@ void check_sdpa(int s) {
 constexpr int kK16Hq = 32;
 constexpr int kK16Hkv = 8;
 constexpr int kK16D = 64;
+constexpr int kQwen3Hq = 16;
+constexpr int kQwen3Hkv = 8;
+constexpr int kQwen3D = 128;
 
 bool k16_device_supported() {
   const auto* context = get_default_webgpu_context();
@@ -486,6 +568,21 @@ bool k16_device_supported() {
       limits.maxComputeWorkgroupSizeX >= 32u &&
       limits.maxComputeWorkgroupSizeY >= 4u &&
       limits.maxComputeWorkgroupStorageSize >= 14720u;
+}
+
+bool qwen3_q16_device_supported() {
+  constexpr uint32_t kQ16StorageBytes = 512u * 4u * sizeof(float) +
+      512u * 4u * sizeof(uint16_t) + 128u * 2u * sizeof(float) +
+      3u * 16u * sizeof(float);
+  const auto* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 16u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 128u &&
+      limits.maxComputeWorkgroupStorageSize >= kQ16StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
 }
 
 void load_sdpa_module(Module& module, bool f16_kv) {
@@ -507,9 +604,13 @@ void run_k16_sdpa(
     int hq = kK16Hq,
     int hkv = kK16Hkv,
     int d = kK16D,
-    bool prime = false) {
-  const std::string base = g_dir + "/" + prefix +
-      (prime ? ".prime." : ".S" + std::to_string(s) + ".");
+    bool prime = false,
+    float max_error_limit = 3e-3f,
+    bool initial = false) {
+  const std::string suffix = initial ? ".initial."
+      : prime                        ? ".prime."
+                                     : ".S" + std::to_string(s) + ".";
+  const std::string base = g_dir + "/" + prefix + suffix;
   auto q = read_bin(base + "q.bin");
   auto k = read_bin(base + "k.bin");
   auto v = read_bin(base + "v.bin");
@@ -534,8 +635,7 @@ void run_k16_sdpa(
   std::vector<float> got(
       output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
   ASSERT_EQ(got.size(), golden.size());
-  constexpr float kMaxError = 3e-3f;
-  EXPECT_LT(max_err(got, golden), kMaxError)
+  EXPECT_LT(max_err(got, golden), max_error_limit)
       << prefix << " S=" << s << " full output";
   for (int token : {0, std::min(15, s - 1), std::min(16, s - 1), s - 1}) {
     float token_error = 0.0f;
@@ -543,7 +643,7 @@ void run_k16_sdpa(
     for (size_t i = begin; i < begin + token_width; ++i) {
       token_error = std::fmax(token_error, std::fabs(got[i] - golden[i]));
     }
-    EXPECT_LT(token_error, kMaxError)
+    EXPECT_LT(token_error, max_error_limit)
         << prefix << " S=" << s << " causal token=" << token;
   }
 }
@@ -553,24 +653,22 @@ void prime_k16_sdpa(
     const char* prefix,
     int hq = kK16Hq,
     int hkv = kK16Hkv,
-    int d = kK16D) {
-  run_k16_sdpa(module, 12, prefix, hq, hkv, d, true);
+    int d = kK16D,
+    float max_error_limit = 3e-3f) {
+  run_k16_sdpa(module, 12, prefix, hq, hkv, d, true, max_error_limit);
 }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void expect_sdpa_route(
     const std::vector<std::string>& names,
     int s,
-    bool expect_k16) {
+    bool expect_k16,
+    const char* k16_kernel_name = "sdpa_streaming_attention_k16_causal_bound") {
   const bool expect_fd = s == 1;
   const bool expect_materialized = !expect_fd && !expect_k16;
   EXPECT_EQ(std::count(names.begin(), names.end(), "update_cache"), 2);
   EXPECT_EQ(
-      std::count(
-          names.begin(),
-          names.end(),
-          "sdpa_streaming_attention_k16_causal_bound"),
-      expect_k16);
+      std::count(names.begin(), names.end(), k16_kernel_name), expect_k16);
   EXPECT_EQ(std::count(names.begin(), names.end(), "fd_split"), expect_fd);
   EXPECT_EQ(std::count(names.begin(), names.end(), "fd_reduce"), expect_fd);
   EXPECT_EQ(
@@ -885,6 +983,16 @@ TEST(DynamicShape, QuantizedLinearTiledReusedGraph) {
   }
 }
 
+// The first max-shape execution does not invoke resize hooks. This sequence
+// therefore checks both initial QKV route selection and max/decode transitions.
+TEST(DynamicShape, QkvRoutesReusedGraph) {
+  Module m(g_dir + "/qkv_routes.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load qkv_routes.pte";
+  for (int m_rows : {kQkvMaxM, 1, kQkvMaxM}) {
+    run_qkv_routes(m, m_rows);
+  }
+}
+
 TEST(DynamicShape, QuantizedLinearBk64ReusedGraphAndFallbacks) {
   Module candidate(g_dir + "/dyn_linear_bk64.pte");
   ASSERT_EQ(candidate.load_forward(), Error::Ok) << "load dyn_linear_bk64.pte";
@@ -959,6 +1067,66 @@ TEST(DynamicShape, QuantizedLinearBk64QkvReusedGraphAndFallbacks) {
 }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+TEST(DynamicShape, QkvLiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "timestamp queries or shader-f16 unavailable";
+  }
+  Module m(g_dir + "/qkv_routes.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load qkv_routes.pte";
+  for (int m_rows : {kQkvMaxM, 1, kQkvMaxM}) {
+    run_qkv_routes(m, m_rows);
+    const auto names = current_profile_names();
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_bk64_qkv"), 0);
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_coop4_bicol"),
+        m_rows == 1 ? 3 : 0);
+    EXPECT_EQ(
+        std::count_if(
+            names.begin(),
+            names.end(),
+            [](const std::string& name) {
+              return name.rfind("linear_q4gsw", 0) == 0;
+            }),
+        3);
+  }
+}
+
+TEST(DynamicShape, QkvBk64LiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "timestamp queries or shader-f16 unavailable";
+  }
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(context->device, &limits) != WGPUStatus_Success ||
+      limits.maxComputeInvocationsPerWorkgroup < 256u ||
+      limits.maxComputeWorkgroupSizeX < 16u ||
+      limits.maxComputeWorkgroupSizeY < 16u ||
+      limits.maxComputeWorkgroupStorageSize < 16384u ||
+      limits.maxComputeWorkgroupsPerDimension < 384u) {
+    GTEST_SKIP() << "BK64 workgroup limits unavailable";
+  }
+  Module module(g_dir + "/qkv_bk64_routes.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok);
+  for (int m_rows : {kQkvBk64MaxM, 1, kQkvBk64MaxM}) {
+    run_qkv_bk64_routes(module, m_rows);
+    const auto names = current_profile_names();
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_bk64_qkv"),
+        m_rows > 1 ? 1 : 0);
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_coop4_bicol"),
+        m_rows == 1 ? 3 : 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_bk64"), 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_steel"), 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_shmem"), 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_tiled"), 0);
+  }
+}
+
 void expect_single_q4_profile(
     const char* expected_name,
     uint32_t expected_x,
@@ -1163,7 +1331,7 @@ TEST(DynamicShape, CombinedLiveRoutesProfile) {
     run_combined_routes(m, s);
     const auto names = current_profile_names();
     ASSERT_EQ(names.size(), s == 1 ? 6 : 7);
-    EXPECT_EQ(std::count(names.begin(), names.end(), ""), 1);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "add"), 1);
     EXPECT_EQ(
         std::count(names.begin(), names.end(), "linear_q4gsw_coop4_bicol"),
         s == 1 ? 1 : 0);
@@ -1283,6 +1451,55 @@ TEST(DynamicShape, K16CausalNumericsReusedGraph) {
   }
 }
 
+TEST(DynamicShape, Qwen3K16CausalNumericsReusedGraph) {
+  if (!qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "Qwen3 Q16 K16 device limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module, "sdpa_k16_qwen3", kQwen3Hq, kQwen3Hkv, kQwen3D, kQwen3MaxError);
+  for (int s : {128, 1, 17, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+  }
+}
+
+TEST(DynamicShape, Qwen3InitializedConstantCachePreserved) {
+  if (!qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "Qwen3 Q16 K16 device limits unavailable";
+  }
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  run_k16_sdpa(
+      module,
+      17,
+      "sdpa_k16_qwen3",
+      kQwen3Hq,
+      kQwen3Hkv,
+      kQwen3D,
+      false,
+      1e-2f,
+      true);
+}
+
+TEST(DynamicShape, K16CacheHeadMismatchRejectedAtLoad) {
+  executorch::runtime::BackendOptions<1> options;
+  ASSERT_EQ(options.set_option("enable_f16_kv_cache", true), Error::Ok);
+  executorch::runtime::LoadBackendOptionsMap option_map;
+  ASSERT_EQ(option_map.set_options("VulkanBackend", options.view()), Error::Ok);
+  Module module(g_dir + "/sdpa_k16_bad_cache_heads.pte");
+  EXPECT_NE(module.load_forward(nullptr, nullptr, &option_map), Error::Ok);
+}
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 TEST(DynamicShape, SdpaLiveRoutesProfile) {
   const auto* context = get_default_webgpu_context();
@@ -1321,6 +1538,65 @@ TEST(DynamicShape, K16CausalLiveRoutesProfile) {
   for (int s : {512, 128, 1, 508, 127, 1, 512}) {
     run_k16_sdpa(module, s, "sdpa_k16_llama");
     expect_sdpa_route(current_profile_names(), s, s > 1);
+  }
+}
+
+TEST(DynamicShape, Qwen3K16CausalLiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or Qwen3 Q16 K16 limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  constexpr const char* kQwen3Kernel =
+      "sdpa_streaming_attention_qwen3_k16_causal_bound";
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module, "sdpa_k16_qwen3", kQwen3Hq, kQwen3Hkv, kQwen3D, kQwen3MaxError);
+  expect_sdpa_route(current_profile_names(), 12, true, kQwen3Kernel);
+  for (int s : {128, 1, 17, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+    expect_sdpa_route(current_profile_names(), s, s > 1, kQwen3Kernel);
+  }
+}
+
+TEST(DynamicShape, Qwen3NearScaleFallsBackToExistingRoutes) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or Qwen3 Q16 K16 limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  Module module(g_dir + "/sdpa_k16_qwen3_near_scale.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module,
+      "sdpa_k16_qwen3_near_scale",
+      kQwen3Hq,
+      kQwen3Hkv,
+      kQwen3D,
+      kQwen3MaxError);
+  expect_sdpa_route(current_profile_names(), 12, false);
+  for (int s : {128, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3_near_scale",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+    expect_sdpa_route(current_profile_names(), s, false);
   }
 }
 
@@ -1479,6 +1755,10 @@ TEST(DynamicShape, SwiGluCommutativeAndOwnership) {
   Module interleaved(g_dir + "/dyn_swiglu_interleaved_q4.pte");
   ASSERT_EQ(interleaved.load_forward(), Error::Ok);
   run_swiglu(interleaved, 128, "dyn_swiglu_interleaved_q4", kSwiGluSmallWidth);
+
+  Module overlap(g_dir + "/dyn_swiglu_qkv_overlap.pte");
+  ASSERT_EQ(overlap.load_forward(), Error::Ok);
+  run_swiglu_qkv_overlap(overlap, 128);
 }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -1610,6 +1890,30 @@ TEST(DynamicShape, SwiGluFusionProfile) {
       1);
   EXPECT_EQ(
       std::count(interleaved_names.begin(), interleaved_names.end(), "mul"), 0);
+}
+
+TEST(DynamicShape, SwiGluQkvOverlapProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "timestamp queries or shader-f16 unavailable";
+  }
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(context->device, &limits) != WGPUStatus_Success ||
+      limits.maxComputeInvocationsPerWorkgroup < 256u ||
+      limits.maxComputeWorkgroupSizeX < 16u ||
+      limits.maxComputeWorkgroupSizeY < 16u ||
+      limits.maxComputeWorkgroupStorageSize < 16384u ||
+      limits.maxComputeWorkgroupsPerDimension < 384u) {
+    GTEST_SKIP() << "QKV workgroup limits unavailable";
+  }
+  Module overlap(g_dir + "/dyn_swiglu_qkv_overlap.pte");
+  ASSERT_EQ(overlap.load_forward(), Error::Ok);
+  run_swiglu_qkv_overlap(overlap, 128);
+  const auto names = current_profile_names();
+  EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_bk64_qkv"), 0);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "silu_mul_fused"), 1);
+  EXPECT_EQ(std::count(names.begin(), names.end(), "mul"), 0);
 }
 #endif
 

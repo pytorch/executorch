@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.llm.custom_ops import (  # noqa: F401  registers llama ops
     custom_ops,
@@ -65,8 +65,10 @@ CONFIGS = [
     # 2D-dispatch cap (>65535 wg): S=512 folds QK; S=2048 folds QK+softmax+AV (cap+1).
     SdpaConfig("llama1b_prefill_512", 32, 8, 64, 512, 512, 0),
     SdpaConfig("llama1b_prefill_2048", 32, 8, 64, 2048, 2048, 0),
-    SdpaConfig("qwen3_prefill", 16, 8, 128, 128, 256, 0, kv_f16=True),
-    SdpaConfig("qwen3_odd_boundary", 16, 8, 128, 17, 64, 31, kv_f16=True),
+    # denom=10 intentionally makes K/V values lossy in fp16, so native
+    # execution exercises the real fp32->fp16->fp32 cache conversion path.
+    SdpaConfig("qwen3_prefill", 16, 8, 128, 128, 256, 0, 10.0, kv_f16=True),
+    SdpaConfig("qwen3_odd_boundary", 16, 8, 128, 17, 64, 31, 10.0, kv_f16=True),
 ]
 
 
@@ -274,6 +276,21 @@ class TestSdpa(unittest.TestCase):
         expected = probe.to(torch.float16).to(torch.float32)
         torch.testing.assert_close(rounded, expected, atol=0.0, rtol=0.0)
         self.assertFalse(torch.equal(rounded, probe))
+
+        boundary = configs["qwen3_odd_boundary"]
+        q, k, v, k_cache, v_cache = _det_inputs(boundary)
+        self.assertGreater(torch.count_nonzero(k_cache).item(), 0)
+        self.assertGreater(torch.count_nonzero(v_cache).item(), 0)
+        initialized = _golden(boundary, q, k, v, k_cache, v_cache)
+        cleared = _golden(
+            boundary,
+            q,
+            k,
+            v,
+            torch.zeros_like(k_cache),
+            torch.zeros_like(v_cache),
+        )
+        self.assertFalse(torch.equal(initialized, cleared))
 
     def test_sdpa_export_delegates(self) -> None:
         for cfg in CONFIGS:

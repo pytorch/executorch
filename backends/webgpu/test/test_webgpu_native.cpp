@@ -11,14 +11,17 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_hf_wgsl.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 
+#include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -26,7 +29,9 @@
 #include <cstring>
 #include <exception>
 #include <iterator>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -306,13 +311,12 @@ bool sdpa_within_tol(
     const float* golden,
     int n,
     float* ma,
-    float* mr) {
+    float* mr,
+    bool kv_f16 = false) {
   float atol = 1e-4f, rtol = 1e-3f;
-  // f16 KV (runtime opt-in) reads K/V at reduced precision; loosen the tol on a
-  // shader-f16 device to cover that rounding. Harmless for f32 KV (looser
-  // gate).
-  const WebGPUContext* kv_ctx = get_default_webgpu_context();
-  if (kv_ctx != nullptr && kv_ctx->shader_f16_supported) {
+  // Only fp16-KV cases receive the tolerance needed for storage rounding;
+  // device capability alone must not weaken unrelated fp32 tests.
+  if (kv_f16) {
     atol = 2e-3f;
     rtol = 1e-2f;
   }
@@ -509,6 +513,152 @@ std::vector<float> run_rms_norm_at_wg(
     throw std::runtime_error("rms_norm wg-size probe: output map failed");
   }
   return result;
+}
+
+struct RotaryHfProbeParams {
+  uint32_t n_heads;
+  uint32_t seq;
+  uint32_t head_dim;
+  uint32_t half_dim;
+  uint32_t num_pairs;
+  uint32_t rotary_dim;
+  uint32_t start_pos;
+  uint32_t _pad;
+};
+
+std::vector<float> run_rope_hf_2d_probe(const WebGPUContext& ctx) {
+  constexpr uint32_t kWorkgroupSize = 2;
+  constexpr uint32_t kWorkgroupsX = 2;
+  constexpr uint32_t kWorkgroupsY = 2;
+  constexpr uint32_t kNumPairs = kWorkgroupSize * kWorkgroupsX * kWorkgroupsY;
+  constexpr uint32_t kHeadDim = kNumPairs * 2;
+
+  std::vector<float> input(kHeadDim);
+  std::vector<float> output(kHeadDim, 0.0f);
+  std::vector<float> freqs_cos(kHeadDim, 1.0f);
+  std::vector<float> freqs_sin(kHeadDim, 0.0f);
+  for (uint32_t i = 0; i < kHeadDim; i++) {
+    input[i] = static_cast<float>(i + 1u);
+    if (i >= kNumPairs) {
+      freqs_cos[i] = 2.0f;
+    }
+  }
+
+  WGPUDevice device = ctx.device;
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kRotaryEmbeddingHfWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  WGPUConstantEntry wg_const = {};
+  wg_const.key = {"wg_size", WGPU_STRLEN};
+  wg_const.value = static_cast<double>(kWorkgroupSize);
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_const;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  WGPUBindGroupLayout layout =
+      wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+
+  auto make_buffer =
+      [device](const void* data, uint64_t size, WGPUBufferUsage usage) {
+        WGPUBufferDescriptor desc = {};
+        desc.size = size;
+        desc.usage = usage;
+        desc.mappedAtCreation = true;
+        WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &desc);
+        std::memcpy(wgpuBufferGetMappedRange(buffer, 0, size), data, size);
+        wgpuBufferUnmap(buffer);
+        return buffer;
+      };
+
+  const uint64_t data_bytes = kHeadDim * sizeof(float);
+  WGPUBuffer out_buffer = make_buffer(
+      output.data(),
+      data_bytes,
+      WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+  WGPUBuffer in_buffer =
+      make_buffer(input.data(), data_bytes, WGPUBufferUsage_Storage);
+  WGPUBuffer cos_buffer =
+      make_buffer(freqs_cos.data(), data_bytes, WGPUBufferUsage_Storage);
+  WGPUBuffer sin_buffer =
+      make_buffer(freqs_sin.data(), data_bytes, WGPUBufferUsage_Storage);
+  const RotaryHfProbeParams params = {
+      1u, 1u, kHeadDim, kNumPairs, kNumPairs, kHeadDim, 0u, 0u};
+  WGPUBuffer params_buffer =
+      make_buffer(&params, sizeof(params), WGPUBufferUsage_Uniform);
+
+  WGPUBindGroupEntry entries[5] = {};
+  const WGPUBuffer buffers[] = {
+      out_buffer, in_buffer, cos_buffer, sin_buffer, params_buffer};
+  const uint64_t sizes[] = {
+      data_bytes, data_bytes, data_bytes, data_bytes, sizeof(params)};
+  for (uint32_t i = 0; i < 5; i++) {
+    entries[i].binding = i;
+    entries[i].buffer = buffers[i];
+    entries[i].size = sizes[i];
+  }
+  WGPUBindGroupDescriptor bind_group_desc = {};
+  bind_group_desc.layout = layout;
+  bind_group_desc.entryCount = 5;
+  bind_group_desc.entries = entries;
+  WGPUBindGroup bind_group =
+      wgpuDeviceCreateBindGroup(device, &bind_group_desc);
+
+  WGPUBufferDescriptor staging_desc = {};
+  staging_desc.size = data_bytes;
+  staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+  WGPUBuffer staging = wgpuDeviceCreateBuffer(device, &staging_desc);
+
+  WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+  WGPUComputePassDescriptor pass_desc = {};
+  WGPUComputePassEncoder pass =
+      wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+  wgpuComputePassEncoderSetPipeline(pass, pipeline);
+  wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+  wgpuComputePassEncoderDispatchWorkgroups(pass, kWorkgroupsX, kWorkgroupsY, 1);
+  wgpuComputePassEncoderEnd(pass);
+  wgpuComputePassEncoderRelease(pass);
+  wgpuCommandEncoderCopyBufferToBuffer(
+      encoder, out_buffer, 0, staging, 0, data_bytes);
+  WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, nullptr);
+  wgpuQueueSubmit(ctx.queue, 1, &command);
+  wgpuCommandBufferRelease(command);
+  wgpuCommandEncoderRelease(encoder);
+
+  WgMapData callback = {};
+  WGPUBufferMapCallbackInfo callback_info = {};
+  callback_info.mode = WGPUCallbackMode_WaitAnyOnly;
+  callback_info.callback = wg_map_cb;
+  callback_info.userdata1 = &callback;
+  WGPUFuture future = wgpuBufferMapAsync(
+      staging, WGPUMapMode_Read, 0, data_bytes, callback_info);
+  const WGPUWaitStatus wait = webgpu_wait(ctx.instance, future);
+  if (wait == WGPUWaitStatus_Success &&
+      callback.status == WGPUMapAsyncStatus_Success) {
+    const void* mapped = wgpuBufferGetConstMappedRange(staging, 0, data_bytes);
+    std::memcpy(output.data(), mapped, data_bytes);
+    wgpuBufferUnmap(staging);
+  } else {
+    output.clear();
+  }
+
+  wgpuBufferRelease(staging);
+  wgpuBindGroupRelease(bind_group);
+  wgpuBufferRelease(params_buffer);
+  wgpuBufferRelease(sin_buffer);
+  wgpuBufferRelease(cos_buffer);
+  wgpuBufferRelease(in_buffer);
+  wgpuBufferRelease(out_buffer);
+  wgpuBindGroupLayoutRelease(layout);
+  wgpuComputePipelineRelease(pipeline);
+  wgpuShaderModuleRelease(shader);
+  return output;
 }
 
 // linear_q4gsw sweep config; mirrors CONFIGS in test_quantized_linear.py.
@@ -861,11 +1011,34 @@ void test_rope_hf_dynamic(const std::string& dir) {
   auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
   auto fct = make_tensor_ptr({MAXS, HD}, std::move(freqs_cos));
   auto fst = make_tensor_ptr({MAXS, HD}, std::move(freqs_sin));
+
+  auto overflow_post =
+      make_tensor_ptr({1}, std::vector<int64_t>{INT64_C(1) << 32});
+  auto overflow = module.forward({
+      EValue(xqt),
+      EValue(xkt),
+      EValue(fct),
+      EValue(fst),
+      EValue(overflow_post),
+  });
+  EXPECT_FALSE(overflow.ok())
+      << "HF RoPE accepted a start_pos that aliases to zero when narrowed";
+
   auto post = make_tensor_ptr({1}, std::vector<int64_t>{MAXS});
   auto out_of_range = module.forward(
       {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
   EXPECT_FALSE(out_of_range.ok())
       << "HF RoPE accepted start_pos + seq beyond the frequency table";
+
+  auto negative_post = make_tensor_ptr({1}, std::vector<int64_t>{-1});
+  auto negative = module.forward({
+      EValue(xqt),
+      EValue(xkt),
+      EValue(fct),
+      EValue(fst),
+      EValue(negative_post),
+  });
+  EXPECT_FALSE(negative.ok()) << "HF RoPE accepted a negative start_pos";
 }
 
 void test_prepack(
@@ -1040,7 +1213,7 @@ const SdpaConfig kSdpaConfigs[] = {
      128,
      256,
      0,
-     16.0f,
+     10.0f,
      /*required=*/true,
      /*expect_reject=*/false,
      /*kv_f16=*/true},
@@ -1051,7 +1224,7 @@ const SdpaConfig kSdpaConfigs[] = {
      17,
      64,
      31,
-     16.0f,
+     10.0f,
      /*required=*/true,
      /*expect_reject=*/false,
      /*kv_f16=*/true},
@@ -1122,12 +1295,25 @@ Error load_sdpa_forward(Module& module, bool kv_f16, int sdpa_query_tile = 0) {
   return module.load_forward(nullptr, nullptr, &option_map);
 }
 
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
-constexpr uint32_t kTestRouteMaterializedAttention = 1u << 2;
-constexpr uint32_t kTestRouteFlashDecoding = 1u << 10;
-constexpr uint32_t kTestRouteK16CausalBound = 1u << 11;
-constexpr uint32_t kTestRouteQwen3Q16K16 = 1u << 13;
-constexpr uint32_t kTestRouteQwen3Q32K16 = 1u << 14;
+bool shader_f16_supported_on_test_device() {
+  const WebGPUContext* context = get_default_webgpu_context();
+  return context != nullptr && context->shader_f16_supported;
+}
+
+bool qwen3_q16_supported_on_test_device() {
+  constexpr uint32_t kQ16StorageBytes = 512u * 4u * sizeof(float) +
+      512u * 4u * sizeof(uint16_t) + 128u * 2u * sizeof(float) +
+      3u * 16u * sizeof(float);
+  const WebGPUContext* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 16u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 128u &&
+      limits.maxComputeWorkgroupStorageSize >= kQ16StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
+}
 
 bool qwen3_q32_supported_on_test_device() {
   constexpr uint32_t kQ32StorageBytes = 1024u * 4u * sizeof(float) +
@@ -1143,6 +1329,13 @@ bool qwen3_q32_supported_on_test_device() {
       limits.maxComputeWorkgroupStorageSize >= kQ32StorageBytes &&
       limits.maxStorageBuffersPerShaderStage >= 4u;
 }
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+constexpr uint32_t kTestRouteMaterializedAttention = 1u << 2;
+constexpr uint32_t kTestRouteFlashDecoding = 1u << 10;
+constexpr uint32_t kTestRouteK16CausalBound = 1u << 11;
+constexpr uint32_t kTestRouteQwen3Q16K16 = 1u << 13;
+constexpr uint32_t kTestRouteQwen3Q32K16 = 1u << 14;
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 void test_sdpa_config(
@@ -1160,6 +1353,11 @@ void test_sdpa_config(
       cfg.s,
       cfg.cmax,
       cfg.input_pos);
+
+  if (cfg.kv_f16 && !shader_f16_supported_on_test_device()) {
+    printf("SKIP: %s requires shader-f16\n", cfg.name);
+    return;
+  }
 
   Module module(model_path);
   auto err = load_sdpa_forward(module, cfg.kv_f16, sdpa_query_tile);
@@ -1214,7 +1412,9 @@ void test_sdpa_config(
     // kernel variant; both map to the K16CausalBound bit. A non-Qwen3 fp16-KV
     // shape falls back to the materialized path (or flash-decoding at S==1).
     const bool qwen3_geometry = cfg.hq == 16 && cfg.hkv == 8 && cfg.d == 128;
-    const uint32_t expected_route = qwen3_geometry && cfg.s > 1
+    const bool qwen3_streaming =
+        qwen3_geometry && cfg.s > 1 && qwen3_q16_supported_on_test_device();
+    const uint32_t expected_route = qwen3_streaming
         ? kTestRouteK16CausalBound
         : (cfg.s == 1 ? kTestRouteFlashDecoding
                       : kTestRouteMaterializedAttention);
@@ -1226,7 +1426,7 @@ void test_sdpa_config(
     EXPECT_EQ(g_last_route_conflict_count, 0u);
     const uint32_t qwen3_tile_routes =
         g_last_route_mask & (kTestRouteQwen3Q16K16 | kTestRouteQwen3Q32K16);
-    if (qwen3_geometry && cfg.s > 1) {
+    if (qwen3_streaming) {
       const uint32_t expected_tile_route =
           sdpa_query_tile == 32 && qwen3_q32_supported_on_test_device()
           ? kTestRouteQwen3Q32K16
@@ -1268,8 +1468,8 @@ void test_sdpa_config(
   ASSERT_FALSE(golden.empty()) << "could not load golden " << golden_path;
 
   float max_abs_err = 0.0f, max_rel_err = 0.0f;
-  const bool pass =
-      sdpa_within_tol(out_data, golden.data(), on, &max_abs_err, &max_rel_err);
+  const bool pass = sdpa_within_tol(
+      out_data, golden.data(), on, &max_abs_err, &max_rel_err, cfg.kv_f16);
   printf(
       "Max abs error: %e   Max rel error: %e (checked %d elements)\n",
       max_abs_err,
@@ -1291,6 +1491,10 @@ void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
       seq.d,
       seq.cmax,
       seq.seq_lens.size());
+  if (seq.kv_f16 && !shader_f16_supported_on_test_device()) {
+    printf("SKIP: %s requires shader-f16\n", seq.name);
+    return;
+  }
 
   const int cn = seq.cmax * seq.hkv * seq.d;
   std::vector<float> kc(cn, 0.0f), vc(cn, 0.0f);
@@ -1336,8 +1540,10 @@ void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
       // prefill -> the K16 streaming (causal-bound) route by default (no env);
       // any other multi-token fp16-KV shape -> materialized.
       const bool qwen3_geometry = seq.hq == 16 && seq.hkv == 8 && seq.d == 128;
+      const bool qwen3_streaming =
+          qwen3_geometry && qwen3_q16_supported_on_test_device();
       const uint32_t expected_route = s == 1 ? kTestRouteFlashDecoding
-          : qwen3_geometry                   ? kTestRouteK16CausalBound
+          : qwen3_streaming                  ? kTestRouteK16CausalBound
                                              : kTestRouteMaterializedAttention;
       EXPECT_EQ(
           g_last_route_mask &
@@ -1395,7 +1601,8 @@ void test_sdpa_replay(const SdpaSequence& seq, const std::string& dir) {
     ASSERT_FALSE(golden.empty()) << "could not load " << base << ".golden.bin";
     const float* ad = outs[attn_idx].toTensor().const_data_ptr<float>();
     float ma = 0.0f, mr = 0.0f;
-    const bool step_ok = sdpa_within_tol(ad, golden.data(), qn, &ma, &mr);
+    const bool step_ok =
+        sdpa_within_tol(ad, golden.data(), qn, &ma, &mr, seq.kv_f16);
     printf(
         "  step%zu (S=%d pos=%d ctx=%d): max abs %e  rel %e\n",
         t,
@@ -1686,15 +1893,322 @@ void test_sdpa_incache_decode(
   }
 }
 
-// S1 SymInt round-trip: build a graph directly from a dynamic-input_pos SDPA
-// blob; confirm input_pos deserializes as a live SymInt and set/read
-// round-trips.
+void exercise_symint_host_inputs(
+    WebGPUGraph& graph,
+    int symint_id,
+    int input_tensor_id) {
+  const auto& input_ids = graph.input_ids();
+  std::vector<InputData> inputs(input_ids.size());
+  int64_t host_value = 5;
+  bool found = false;
+  for (size_t i = 0; i < input_ids.size(); i++) {
+    if (input_ids[i] == input_tensor_id) {
+      inputs[i] = {&host_value, sizeof(host_value), true};
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found) << "select_as_symint source is not a graph input";
+
+  const auto update_from_host = [&](int64_t value) {
+    host_value = value;
+    graph.update_symints_from_inputs(inputs);
+    return graph.read_symint(symint_id);
+  };
+  EXPECT_EQ(update_from_host(5), 5);
+  EXPECT_EQ(
+      update_from_host(std::numeric_limits<int32_t>::min()),
+      std::numeric_limits<int32_t>::min());
+  EXPECT_EQ(
+      update_from_host(std::numeric_limits<int32_t>::max()),
+      std::numeric_limits<int32_t>::max());
+
+  const auto expect_out_of_range = [&](int64_t value) {
+    ASSERT_EQ(update_from_host(17), 17);
+    host_value = value;
+    try {
+      graph.update_symints_from_inputs(inputs);
+      ADD_FAILURE() << "accepted out-of-range select_as_symint value " << value;
+    } catch (const std::runtime_error& error) {
+      EXPECT_STREQ(
+          error.what(),
+          "select_as_symint: selected value is outside int32 range");
+    }
+    EXPECT_EQ(graph.read_symint(symint_id), 17)
+        << "rejected value changed the live SymInt";
+  };
+  expect_out_of_range(
+      int64_t{std::numeric_limits<int32_t>::min()} - int64_t{1});
+  expect_out_of_range(
+      int64_t{std::numeric_limits<int32_t>::max()} + int64_t{1});
+  expect_out_of_range(INT64_C(1) << 32);
+}
+
+void test_symint_input_narrowing() {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+  const std::vector<uint32_t> dims = {1u};
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::INT32,
+          &dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::SymInt, vk::CreateSymInt(fbb, 0).Union()));
+  const std::vector<int32_t> args = {0, 1, 2, 3};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(vk::CreateOperatorCallDirect(
+      fbb, 0, "et_vk.select_as_symint.default", &args));
+  const std::vector<uint32_t> input_ids = {0};
+  const std::vector<uint32_t> output_ids = {0};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  ASSERT_NO_THROW(graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr));
+  ASSERT_EQ(graph.symint_sources().size(), 1u);
+  const auto& source = graph.symint_sources().front();
+  exercise_symint_host_inputs(graph, source.symint_id, source.input_tensor_id);
+}
+
+void write_u16_le(std::vector<uint8_t>& data, size_t offset, uint16_t value) {
+  data.at(offset) = static_cast<uint8_t>(value);
+  data.at(offset + 1) = static_cast<uint8_t>(value >> 8);
+}
+
+void write_u32_le(std::vector<uint8_t>& data, size_t offset, uint32_t value) {
+  for (size_t i = 0; i < sizeof(value); i++) {
+    data.at(offset + i) = static_cast<uint8_t>(value >> (8 * i));
+  }
+}
+
+void write_u64_le(std::vector<uint8_t>& data, size_t offset, uint64_t value) {
+  for (size_t i = 0; i < sizeof(value); i++) {
+    data.at(offset + i) = static_cast<uint8_t>(value >> (8 * i));
+  }
+}
+
+std::vector<uint8_t> make_delegate_header_test_blob() {
+  std::vector<uint8_t> blob(44, 0);
+  std::memcpy(blob.data() + 4, "VH00", 4);
+  write_u16_le(blob, 8, 30);
+  write_u32_le(blob, 10, 32);
+  write_u32_le(blob, 14, 8);
+  write_u32_le(blob, 18, 40);
+  write_u64_le(blob, 22, 4);
+  return blob;
+}
+
+void finish_inline_constant_graph(
+    ::flatbuffers::FlatBufferBuilder& fbb,
+    bool mark_as_kv_cache,
+    const std::vector<uint32_t>& dims,
+    uint64_t inline_offset = 0) {
+  namespace vk = vkgraph;
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  const int tensor_count = mark_as_kv_cache ? 5 : 1;
+  for (int i = 0; i < tensor_count; i++) {
+    const bool is_cache = mark_as_kv_cache && i >= 3;
+    const bool is_constant = !mark_as_kv_cache || is_cache;
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb,
+            vk::VkDataType::FLOAT32,
+            &dims,
+            is_constant ? (is_cache ? i - 3 : 0) : -1,
+            is_constant ? -1 : i)
+            .Union()));
+  }
+
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  if (mark_as_kv_cache) {
+    const std::vector<int32_t> args = {0, 1, 2, 3, 4};
+    chain.push_back(vk::CreateOperatorCallDirect(
+        fbb, 0, "sdpa_with_kv_cache.default", &args));
+  }
+  std::vector<::flatbuffers::Offset<vk::VkBytes>> constants;
+  constants.push_back(
+      vk::CreateVkBytesDirect(fbb, inline_offset, sizeof(float)));
+  if (mark_as_kv_cache) {
+    constants.push_back(vk::CreateVkBytesDirect(fbb, 0, sizeof(float)));
+  }
+  const std::vector<uint32_t> output_ids = {0};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, nullptr, &output_ids, &constants);
+  vk::FinishVkGraphBuffer(fbb, root);
+}
+
+TEST(WebGPUNative, DelegateHeaderRejectsTruncatedRanges) {
+  const auto blob = make_delegate_header_test_blob();
+  EXPECT_TRUE(WebGPUDelegateHeader::parse(blob.data(), blob.size()).ok());
+  EXPECT_FALSE(WebGPUDelegateHeader::parse(blob.data(), 29).ok());
+  EXPECT_FALSE(WebGPUDelegateHeader::parse(blob.data(), blob.size() - 1).ok());
+}
+
+TEST(WebGPUNative, InlineConstantExtentIsBounded) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_inline_constant_graph(fbb, false, {1u});
+  const std::array<uint8_t, sizeof(float)> data = {0, 0, 0, 0};
+
+  WebGPUGraph exact_graph;
+  EXPECT_NO_THROW(exact_graph.build(
+      fbb.GetBufferPointer(), data.data(), data.size(), nullptr));
+
+  WebGPUGraph short_graph;
+  EXPECT_THROW(
+      short_graph.build(
+          fbb.GetBufferPointer(), data.data(), data.size() - 1, nullptr),
+      std::runtime_error);
+}
+
+TEST(WebGPUNative, ZeroByteInlineConstantOffsetIsBounded) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_inline_constant_graph(fbb, false, {0u}, 1);
+  const std::array<uint8_t, 1> data = {0};
+
+  WebGPUGraph graph;
+  EXPECT_THROW(
+      graph.build(fbb.GetBufferPointer(), data.data(), 0, nullptr),
+      std::runtime_error);
+}
+
+TEST(WebGPUNative, F16KvInlineConstantExtentIsBounded) {
+  const auto* context = get_default_webgpu_context();
+  if (context == nullptr || !context->shader_f16_supported) {
+    GTEST_SKIP() << "shader-f16 unavailable";
+  }
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_inline_constant_graph(fbb, true, {1u});
+  const std::array<uint8_t, sizeof(float)> data = {0, 0, 0, 0};
+
+  WebGPUGraph graph;
+  WebGPUGraphConfig config;
+  config.f16_kv_cache = true;
+  try {
+    graph.build(
+        fbb.GetBufferPointer(), data.data(), data.size() - 1, nullptr, config);
+    FAIL() << "undersized inline fp16 KV constant was accepted";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(
+        error.what(),
+        "WebGPU f16 KV: inline cache constant exceeds constant data");
+  }
+}
+
+void expect_tensor_extent_error(
+    const std::vector<uint32_t>& dims,
+    const char* expected_error) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_inline_constant_graph(fbb, false, dims);
+  const std::array<uint8_t, sizeof(float)> data = {0, 0, 0, 0};
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), data.data(), data.size(), nullptr);
+    ADD_FAILURE() << "overflowing tensor extent was accepted";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(error.what(), expected_error);
+  }
+}
+
+TEST(WebGPUNative, TensorExtentOverflowIsRejected) {
+  expect_tensor_extent_error(
+      {UINT32_MAX, UINT32_MAX, 2u}, "WebGPU: tensor element count overflows");
+  expect_tensor_extent_error(
+      {UINT32_MAX, UINT32_MAX}, "WebGPU: tensor byte size overflows");
+}
+
+struct DelegateBlobView {
+  size_t base_offset;
+  WebGPUDelegateHeader header;
+};
+
+std::optional<DelegateBlobView> find_delegate_blob(
+    const std::vector<uint8_t>& blob) {
+  constexpr size_t kHeaderSize = 30;
+  constexpr size_t kMagicOffset = 4;
+  constexpr char kMagic[] = {'V', 'H', '0', '0'};
+  if (blob.size() < kHeaderSize) {
+    return std::nullopt;
+  }
+
+  for (size_t base_offset = 0; base_offset <= blob.size() - kHeaderSize;
+       base_offset++) {
+    const uint8_t* base = blob.data() + base_offset;
+    if (std::memcmp(base + kMagicOffset, kMagic, sizeof(kMagic)) != 0) {
+      continue;
+    }
+    auto header = WebGPUDelegateHeader::parse(base, blob.size() - base_offset);
+    if (!header.ok()) {
+      continue;
+    }
+
+    const uint64_t available = blob.size() - base_offset;
+    const auto range_is_in_blob = [available](uint64_t offset, uint64_t size) {
+      return offset <= available && size <= available - offset;
+    };
+    if (!range_is_in_blob(header->flatbuffer_offset, header->flatbuffer_size) ||
+        !range_is_in_blob(header->bytes_offset, header->bytes_size)) {
+      continue;
+    }
+    return DelegateBlobView{base_offset, *header};
+  }
+  return std::nullopt;
+}
+
+TEST(WebGPUNative, StructurallyInvalidVkGraphIsRejectedAtLoad) {
+  if (g_symint_blob.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_SYMINT_BLOB not set";
+  }
+  FILE* input = std::fopen(g_symint_blob.c_str(), "rb");
+  ASSERT_NE(input, nullptr);
+  std::fseek(input, 0, SEEK_END);
+  const long file_size = std::ftell(input);
+  std::fseek(input, 0, SEEK_SET);
+  ASSERT_GT(file_size, 0);
+  std::vector<uint8_t> blob(static_cast<size_t>(file_size));
+  ASSERT_EQ(std::fread(blob.data(), 1, blob.size(), input), blob.size());
+  std::fclose(input);
+
+  const auto delegate = find_delegate_blob(blob);
+  ASSERT_TRUE(delegate.has_value());
+  ASSERT_GE(delegate->header.flatbuffer_size, sizeof(uint32_t));
+  const size_t root_offset =
+      delegate->base_offset + delegate->header.flatbuffer_offset;
+  std::fill_n(blob.begin() + root_offset, sizeof(uint32_t), UINT8_MAX);
+
+  const std::string malformed_path = "/tmp/webgpu_invalid_vkgraph_" +
+      std::to_string(reinterpret_cast<uintptr_t>(blob.data())) + ".pte";
+  FILE* output = std::fopen(malformed_path.c_str(), "wb");
+  ASSERT_NE(output, nullptr);
+  ASSERT_EQ(std::fwrite(blob.data(), 1, blob.size(), output), blob.size());
+  std::fclose(output);
+
+  Error load_result = Error::Ok;
+  {
+    Module module(malformed_path);
+    load_result = module.load_forward();
+  }
+  EXPECT_NE(load_result, Error::Ok);
+  EXPECT_EQ(std::remove(malformed_path.c_str()), 0);
+}
+
+// S1 SymInt round-trip: confirm a dynamic input_pos stays live.
 void test_symint_roundtrip(const std::string& blob_path) {
   printf("\n--- Test: symint round-trip (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
-  if (!f) {
-    GTEST_SKIP() << blob_path << " not present";
-  }
+  ASSERT_NE(f, nullptr) << blob_path << " not present";
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
@@ -1703,13 +2217,17 @@ void test_symint_roundtrip(const std::string& blob_path) {
   std::fclose(f);
   ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
 
-  auto header = WebGPUDelegateHeader::parse(blob.data());
-  ASSERT_TRUE(header.ok()) << "delegate header parse";
-  const uint8_t* base = blob.data();
+  const auto delegate = find_delegate_blob(blob);
+  ASSERT_TRUE(delegate.has_value())
+      << "no complete VH00 delegate blob found in " << blob_path;
+  const uint8_t* base = blob.data() + delegate->base_offset;
   WebGPUGraph graph;
   try {
     graph.build(
-        base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
+        base + delegate->header.flatbuffer_offset,
+        base + delegate->header.bytes_offset,
+        delegate->header.bytes_size,
+        nullptr);
   } catch (const std::exception& e) {
     FAIL() << "graph build: " << e.what();
   }
@@ -1732,22 +2250,10 @@ void test_symint_roundtrip(const std::string& blob_path) {
   ASSERT_EQ(graph.read_symint(sid), 7)
       << "set/read round-trip (got " << graph.read_symint(sid) << ")";
 
-  // Execute-read: feed a fake input_pos=5 via the recorded select_as_symint
-  // source and confirm update_symints_from_inputs populates the SymInt.
   const auto& srcs = graph.symint_sources();
   ASSERT_FALSE(srcs.empty()) << "no select_as_symint source recorded";
-  const auto& in_ids = graph.input_ids();
-  std::vector<InputData> fake_inputs(in_ids.size());
-  int64_t fake_pos = 5;
-  for (size_t i = 0; i < in_ids.size(); i++) {
-    if (in_ids[i] == srcs[0].input_tensor_id) {
-      fake_inputs[i] = {&fake_pos, sizeof(int64_t), true};
-    }
-  }
-  graph.update_symints_from_inputs(fake_inputs);
-  ASSERT_EQ(graph.read_symint(srcs[0].symint_id), 5)
-      << "execute-read (got " << graph.read_symint(srcs[0].symint_id)
-      << ", want 5)";
+  exercise_symint_host_inputs(
+      graph, srcs[0].symint_id, srcs[0].input_tensor_id);
 
   printf(
       "PASS: symint round-trip (SymInt %d: deserialize, live buffer, "
@@ -1761,9 +2267,7 @@ void test_symint_roundtrip(const std::string& blob_path) {
 void test_resize_hook(const std::string& blob_path) {
   printf("\n--- Test: resize-hook dirty-gating (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
-  if (!f) {
-    GTEST_SKIP() << blob_path << " not present";
-  }
+  ASSERT_NE(f, nullptr) << blob_path << " not present";
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
@@ -1771,13 +2275,17 @@ void test_resize_hook(const std::string& blob_path) {
   size_t rd = std::fread(blob.data(), 1, blob.size(), f);
   std::fclose(f);
   ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
-  auto header = WebGPUDelegateHeader::parse(blob.data());
-  ASSERT_TRUE(header.ok()) << "delegate header parse";
-  const uint8_t* base = blob.data();
+  const auto delegate = find_delegate_blob(blob);
+  ASSERT_TRUE(delegate.has_value())
+      << "no complete VH00 delegate blob found in " << blob_path;
+  const uint8_t* base = blob.data() + delegate->base_offset;
   WebGPUGraph graph;
   try {
     graph.build(
-        base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
+        base + delegate->header.flatbuffer_offset,
+        base + delegate->header.bytes_offset,
+        delegate->header.bytes_size,
+        nullptr);
   } catch (const std::exception& e) {
     FAIL() << "graph build: " << e.what();
   }
@@ -1851,6 +2359,279 @@ const EmbConfig kEmbConfigs[] = {
      4,
      2048},
 };
+
+// Regression: an edge-dialect-serialized integer slice `start` can arrive as a
+// Double (e.g. Florence-2 DaViT serialized start=0 as Double 0.0), which once
+// threw "slice: dynamic/unsupported start". The Python op-tests can only emit
+// an Int start (the serializer keys on the Python runtime type), so this case
+// is unreachable from a .pte export -- it must be built natively. Here we
+// hand-author a VkGraph flatbuffer whose slice `start` is a Double value, run
+// it on the device, and assert the gather matches in[start + i*step]. Two
+// cases: a Double 0.0 (identity) and a Double 2.0 (non-zero offset).
+static bool test_slice_double_start_case(double start_d, int out_len) {
+  namespace vk = vkgraph;
+  // Slice x[1, kInLen] along dim 1 with `start` as a Double; out is
+  // [1,out_len].
+  constexpr int kInLen = 6;
+  printf(
+      "\n--- Test: slice Double start (start=%.1f -> out[1,%d]) ---\n",
+      start_d,
+      out_len);
+
+  // Value ids: 0=in tensor, 1=dim(Int), 2=start(Double), 3=end(Int),
+  // 4=step(Int), 5=out tensor. dims are uint vectors; tensors take distinct
+  // mem_obj_ids so build() allocates a real Storage buffer for each.
+  ::flatbuffers::FlatBufferBuilder fbb;
+
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(out_len)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  // The value under test: `start` serialized as a Double, not an Int.
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/start_d).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: graph build threw: %s\n", e.what());
+    return false;
+  }
+
+  std::vector<float> in(kInLen);
+  for (int i = 0; i < kInLen; i++) {
+    in[i] = static_cast<float>(i) + 0.5f;
+  }
+  std::vector<InputData> inputs(1);
+  inputs[0] = {in.data(), in.size() * sizeof(float), false};
+  std::vector<float> out(out_len, -1.0f);
+  std::vector<OutputData> outputs(1);
+  outputs[0] = {out.data(), out.size() * sizeof(float), true};
+  try {
+    graph.copy_inputs(inputs);
+    const WebGPUExecutionPlan plan = graph.make_execution_plan({});
+    graph.execute(plan);
+    graph.copy_outputs(outputs, plan);
+  } catch (const std::exception& e) {
+    printf("FAIL: slice execute threw: %s\n", e.what());
+    return false;
+  }
+
+  const int start = static_cast<int>(start_d);
+  float max_abs_err = 0.0f;
+  for (int i = 0; i < out_len; i++) {
+    const float expected = in[start + i]; // step == 1
+    max_abs_err = std::max(max_abs_err, std::abs(out[i] - expected));
+  }
+  printf("Max abs error: %e (checked %d elements)\n", max_abs_err, out_len);
+  if (max_abs_err != 0.0f) { // pure gather: must be bit-exact
+    printf("FAIL: slice Double-start gather mismatch\n");
+    return false;
+  }
+  printf("PASS: slice Double start (start=%.1f)\n", start_d);
+  return true;
+}
+
+// Negative control: a Double `start` that is fractional, NaN, or outside the
+// int64 range must throw (never silently truncate, never invoke UB via the
+// int64_t cast).
+static bool test_slice_double_start_rejects(double bad_start) {
+  namespace vk = vkgraph;
+  constexpr int kInLen = 6;
+  printf("\n--- Test: slice Double start REJECTS (start=%g) ---\n", bad_start);
+
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(kInLen)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/bad_start).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+  } catch (const std::exception& e) {
+    printf("PASS: rejected as expected: %s\n", e.what());
+    return true;
+  }
+  printf(
+      "FAIL: expected a throw for start=%g, graph.build() succeeded\n",
+      bad_start);
+  return false;
+}
+
+static bool test_slice_double_start() {
+  // start=0.0 (identity copy) + start=2.0 (non-zero gather offset).
+  bool ok = true;
+  ok = test_slice_double_start_case(/*start_d=*/0.0, /*out_len=*/6) && ok;
+  ok = test_slice_double_start_case(/*start_d=*/2.0, /*out_len=*/4) && ok;
+  // Reject: fractional, NaN, and out-of-int64-range Doubles.
+  ok = test_slice_double_start_rejects(/*bad_start=*/0.5) && ok;
+  ok = test_slice_double_start_rejects(
+           /*bad_start=*/std::numeric_limits<double>::quiet_NaN()) &&
+      ok;
+  ok = test_slice_double_start_rejects(/*bad_start=*/1e300) && ok;
+  return ok;
+}
+
+void expect_rope_hf_resize_numel_overflow(uint32_t q_heads, uint32_t k_heads) {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+
+  const std::vector<uint32_t> q_dims = {1u, 1u, q_heads, 2u};
+  const std::vector<uint32_t> k_dims = {1u, 1u, k_heads, 2u};
+  const std::vector<uint32_t> freqs_dims = {2u, 2u};
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  const auto add_tensor = [&](const std::vector<uint32_t>& dims, int mem_id) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb,
+            vk::VkDataType::FLOAT32,
+            &dims,
+            /*constant_id=*/-1,
+            /*mem_obj_id=*/mem_id)
+            .Union()));
+  };
+  add_tensor(q_dims, 0);
+  add_tensor(k_dims, 1);
+  add_tensor(freqs_dims, 2);
+  add_tensor(freqs_dims, 3);
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  add_tensor(q_dims, 4);
+  add_tensor(k_dims, 5);
+  const std::vector<int32_t> output_items = {5, 6};
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::ValueList,
+      vk::CreateValueListDirect(fbb, &output_items).Union()));
+
+  const std::vector<int32_t> args = {0, 1, 2, 3, 4, 7};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(vk::CreateOperatorCallDirect(
+      fbb, 0, "et_vk.apply_rotary_emb_hf.default", &args));
+  const std::vector<uint32_t> input_ids = {0, 1, 2, 3};
+  const std::vector<uint32_t> output_ids = {5, 6};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  ASSERT_NO_THROW(graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr));
+  ASSERT_EQ(graph.num_dispatches(), 2u);
+  const uint32_t q_x = graph.dispatch_at(0).workgroup_count_x;
+  const uint32_t q_y = graph.dispatch_at(0).workgroup_count_y;
+  const uint32_t k_x = graph.dispatch_at(1).workgroup_count_x;
+  const uint32_t k_y = graph.dispatch_at(1).workgroup_count_y;
+
+  constexpr int64_t kLargeBatch = INT64_C(1) << 30;
+  const std::vector<int64_t> q_live = {
+      kLargeBatch, 1, static_cast<int64_t>(q_heads), 2};
+  const std::vector<int64_t> k_live = {
+      kLargeBatch, 1, static_cast<int64_t>(k_heads), 2};
+  graph.get_tensor(0).dims = q_live;
+  graph.get_tensor(1).dims = k_live;
+  ASSERT_NO_THROW(graph.resize_input(0, q_live));
+  ASSERT_NO_THROW(graph.resize_input(1, k_live));
+
+  try {
+    graph.propagate_resize();
+    FAIL() << "accepted q/k element count outside uint32 range";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(
+        error.what(),
+        "apply_rotary_emb_hf(resize): element index exceeds uint32 range");
+  }
+  EXPECT_EQ(graph.dispatch_at(0).workgroup_count_x, q_x);
+  EXPECT_EQ(graph.dispatch_at(0).workgroup_count_y, q_y);
+  EXPECT_EQ(graph.dispatch_at(1).workgroup_count_x, k_x);
+  EXPECT_EQ(graph.dispatch_at(1).workgroup_count_y, k_y);
+}
 
 // apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
 struct RopeConfig {
@@ -2037,11 +2818,34 @@ TEST(WebGPUNative, RopeHfDynamic) {
   test_rope_hf_dynamic(dir);
 }
 
+TEST(WebGPUNative, RopeHfUsesFull2DGridStride) {
+  const WebGPUContext* ctx = get_default_webgpu_context();
+  ASSERT_NE(ctx, nullptr);
+  const std::vector<float> output = run_rope_hf_2d_probe(*ctx);
+  ASSERT_EQ(output.size(), 16u) << "HF RoPE probe output map failed";
+  for (size_t i = 0; i < output.size(); i++) {
+    const float expected =
+        static_cast<float>(i + 1u) * (i < output.size() / 2u ? 1.0f : 2.0f);
+    EXPECT_EQ(output[i], expected)
+        << "HF RoPE 2D grid or second-half frequency mismatch at element " << i;
+  }
+}
+
+TEST(WebGPUNative, RopeHfResizeRejectsQOrKNumelOverflow) {
+  expect_rope_hf_resize_numel_overflow(/*q_heads=*/2, /*k_heads=*/1);
+  expect_rope_hf_resize_numel_overflow(/*q_heads=*/1, /*k_heads=*/2);
+}
+
 TEST(WebGPUNative, Prepack) {
   if (g_prepack_model_path.empty() || g_prepack_golden_path.empty()) {
     GTEST_SKIP() << "WEBGPU_TEST_PREPACK_MODEL/GOLDEN not set";
   }
   test_prepack(g_prepack_model_path, g_prepack_golden_path);
+}
+
+TEST(WebGPUNative, SliceDoubleStart) {
+  EXPECT_TRUE(test_slice_double_start())
+      << "slice Double-start gather/reject checks failed";
 }
 
 TEST(WebGPUNative, Prepack2) {
@@ -2110,7 +2914,12 @@ TEST(WebGPUNative, Qwen3SdpaFixtureContract) {
 }
 
 TEST(WebGPUNative, Qwen3SdpaRoutes) {
-  ASSERT_FALSE(g_sdpa_dir.empty()) << "WEBGPU_TEST_SDPA_DIR not set";
+  if (g_sdpa_dir.empty()) {
+    GTEST_SKIP() << "WEBGPU_TEST_SDPA_DIR not set";
+  }
+  if (!qwen3_q16_supported_on_test_device()) {
+    GTEST_SKIP() << "Qwen3 Q16 K16 device limits unavailable";
+  }
   // Default route: exact-Qwen3-geometry fp16-KV configs select the Q16 K16
   // streaming (causal-bound) route by geometry (no runtime config needed) --
   // the per-config assertions live in test_sdpa_config / test_sdpa_replay.
@@ -2130,19 +2939,20 @@ TEST(WebGPUNative, Qwen3SdpaRoutes) {
   ASSERT_NE(replay, std::end(kSdpaSequences));
   test_sdpa_replay(*replay, g_sdpa_dir);
 
-  const auto q32_prefill = std::find_if(
-      std::begin(kSdpaConfigs),
-      std::end(kSdpaConfigs),
-      [](const SdpaConfig& cfg) {
-        return std::strcmp(cfg.name, "qwen3_prefill") == 0;
-      });
-  ASSERT_NE(q32_prefill, std::end(kSdpaConfigs));
-  const std::string q32_base = g_sdpa_dir + "sdpa_" + q32_prefill->name;
-  test_sdpa_config(
-      *q32_prefill,
-      q32_base + ".pte",
-      q32_base + ".golden.bin",
-      /*sdpa_query_tile=*/32);
+  // Run Q32 over both an aligned prefill and the S=17/nonzero-position case so
+  // the partial final workgroup's row mask is covered. Unsupported Q32 devices
+  // intentionally fall back to the already-qualified Q16 route.
+  for (const auto& cfg : kSdpaConfigs) {
+    if (std::strncmp(cfg.name, "qwen3_", 6) != 0) {
+      continue;
+    }
+    const std::string base = g_sdpa_dir + "sdpa_" + cfg.name;
+    test_sdpa_config(
+        cfg,
+        base + ".pte",
+        base + ".golden.bin",
+        /*sdpa_query_tile=*/32);
+  }
 }
 
 TEST(WebGPUNative, SdpaSweep) {
@@ -2274,7 +3084,8 @@ TEST(WebGPUNative, SdpaAllFamiliesRanWhenDirSet) {
 
 TEST(WebGPUNative, SymintRoundtrip) {
   if (g_symint_blob.empty()) {
-    GTEST_SKIP() << "WEBGPU_TEST_SYMINT_BLOB not set";
+    test_symint_input_narrowing();
+    return;
   }
   test_symint_roundtrip(g_symint_blob);
 }

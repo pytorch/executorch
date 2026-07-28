@@ -124,6 +124,12 @@ def escape(line: str) -> str:
 def preprocess(
     input_text: str, variables: Dict[str, Any], input_path: str = "codegen"
 ) -> str:
+    # Normalize line endings first. Templates checked out with CRLF (common on
+    # Windows) otherwise break the trailing-backslash handling below: in
+    # re.MULTILINE, $ matches immediately before \n, so a CR would sit between a
+    # trailing \ and the line end and defeat the r"\\$" match, leaving a lone
+    # backslash that escape() turns into an unterminated Python string literal.
+    input_text = input_text.replace("\r\n", "\n").replace("\r", "\n")
     # Workaround to handle source files using \ to extend mecros to a new line
     input_text = re.sub(r"\\$", r"\\\\", input_text, flags=re.MULTILINE)
 
@@ -636,6 +642,16 @@ def _report_drift(missing, stale) -> None:
             print(f"  {h.relative_to(BACKEND_ROOT)}")
 
 
+def _sync_generated_output(output, want, check, missing, stale) -> None:
+    """Write one generated file, or record its --check drift."""
+    if output.exists() and output.read_text() == want:
+        return
+    if check:
+        (missing if not output.exists() else stale).append(output)
+    else:
+        output.write_text(want)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -660,22 +676,13 @@ def main(argv=None) -> int:
             continue
         for header, want in rendered:
             # Full-content compare (not just the sha) catches generator-logic drift too.
-            if header.exists() and header.read_text() == want:
-                continue
-            if args.check:
-                (missing if not header.exists() else stale).append(header)
-            else:
-                header.write_text(want)
+            _sync_generated_output(header, want, args.check, missing, stale)
 
     if not errors:
         try:
             registry = render_registry(registry_entries())
             output = registry_path()
-            if not output.exists() or output.read_text() != registry:
-                if args.check:
-                    (missing if not output.exists() else stale).append(output)
-                else:
-                    output.write_text(registry)
+            _sync_generated_output(output, registry, args.check, missing, stale)
         except ValueError as e:
             errors.append(f"shader registry: {e}")
 

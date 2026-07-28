@@ -9,6 +9,7 @@
 // Device-free unit test for the pure 2D workgroup-count fold that lifts the
 // 65535 per-dim dispatch cap. Exercises the fold arithmetic only — no GPU.
 
+#include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 
@@ -203,22 +204,76 @@ TEST(DispatchRoute, ExecuteRejectsHalfZeroGrid) {
   dispatch.workgroup_count_x = 0;
   dispatch.workgroup_count_y = 1;
   graph.add_dispatch(dispatch);
-  EXPECT_ANY_THROW(graph.execute({}));
+  EXPECT_ANY_THROW(graph.make_execution_plan({}));
 }
 
-TEST(DispatchRoute, RecordsAlternatesOnlyForDynamicEligibleGraphs) {
+TEST(DispatchRoute, RecordsEligibleQ4AndDynamicSdpaAlternates) {
   using executorch::backends::webgpu::utils::should_record_q4gsw_dual_route;
   using executorch::backends::webgpu::utils::should_record_sdpa_dual_route;
 
-  EXPECT_FALSE(should_record_q4gsw_dual_route(32, true, false));
-  EXPECT_FALSE(should_record_q4gsw_dual_route(1, true, true));
-  EXPECT_FALSE(should_record_q4gsw_dual_route(32, false, true));
-  EXPECT_TRUE(should_record_q4gsw_dual_route(32, true, true));
+  EXPECT_FALSE(should_record_q4gsw_dual_route(1, true, true, true));
+  EXPECT_FALSE(should_record_q4gsw_dual_route(32, false, true, true));
+  EXPECT_FALSE(should_record_q4gsw_dual_route(32, true, false, false));
+  EXPECT_TRUE(should_record_q4gsw_dual_route(32, true, true, false));
+  EXPECT_TRUE(should_record_q4gsw_dual_route(32, true, false, true));
 
   EXPECT_FALSE(should_record_sdpa_dual_route(true, false, false));
   EXPECT_FALSE(should_record_sdpa_dual_route(false, true, true));
   EXPECT_TRUE(should_record_sdpa_dual_route(true, true, false));
   EXPECT_TRUE(should_record_sdpa_dual_route(true, false, true));
+}
+
+TEST(WebGPUGraphConfig, ParsesExactBooleanCompileOption) {
+  using executorch::backends::webgpu::parse_webgpu_graph_config;
+  using executorch::runtime::CompileSpec;
+
+  auto absent = parse_webgpu_graph_config({});
+  ASSERT_TRUE(absent.ok());
+  EXPECT_FALSE(absent->record_q4gsw_decode_route);
+  EXPECT_FALSE(absent->f16_kv_cache);
+  EXPECT_FALSE(absent->f16_accumulate_gemm);
+  EXPECT_EQ(absent->sdpa_query_tile, 0);
+
+  uint8_t false_value = 0;
+  CompileSpec false_spec = {
+      "webgpu_record_q4gsw_decode_route", {&false_value, 1}};
+  auto parsed_false = parse_webgpu_graph_config(false_spec);
+  ASSERT_TRUE(parsed_false.ok());
+  EXPECT_FALSE(parsed_false->record_q4gsw_decode_route);
+
+  uint8_t true_value = 1;
+  CompileSpec true_spec = {
+      "webgpu_record_q4gsw_decode_route", {&true_value, 1}};
+  auto parsed_true = parse_webgpu_graph_config(true_spec);
+  ASSERT_TRUE(parsed_true.ok());
+  EXPECT_TRUE(parsed_true->record_q4gsw_decode_route);
+
+  CompileSpec unknown_spec = {"unknown_webgpu_option", {nullptr, 0}};
+  auto parsed_unknown = parse_webgpu_graph_config(unknown_spec);
+  ASSERT_TRUE(parsed_unknown.ok());
+  EXPECT_FALSE(parsed_unknown->record_q4gsw_decode_route);
+}
+
+TEST(WebGPUGraphConfig, RejectsMalformedRouteCompileOption) {
+  using executorch::backends::webgpu::parse_webgpu_graph_config;
+  using executorch::runtime::CompileSpec;
+  using executorch::runtime::Error;
+
+  uint8_t values[2] = {0, 1};
+  CompileSpec empty = {"webgpu_record_q4gsw_decode_route", {values, 0}};
+  auto parsed_empty = parse_webgpu_graph_config(empty);
+  ASSERT_FALSE(parsed_empty.ok());
+  EXPECT_EQ(parsed_empty.error(), Error::DelegateInvalidCompatibility);
+
+  CompileSpec oversized = {"webgpu_record_q4gsw_decode_route", {values, 2}};
+  auto parsed_oversized = parse_webgpu_graph_config(oversized);
+  ASSERT_FALSE(parsed_oversized.ok());
+  EXPECT_EQ(parsed_oversized.error(), Error::DelegateInvalidCompatibility);
+
+  CompileSpec null_value = {"webgpu_record_q4gsw_decode_route", {nullptr, 1}};
+  auto parsed_null = parse_webgpu_graph_config(null_value);
+  ASSERT_FALSE(parsed_null.ok());
+  EXPECT_EQ(parsed_null.error(), Error::DelegateInvalidCompatibility);
 }
 
 TEST(DispatchRoute, Bk64RequiresExactLlamaShapeAndCapabilities) {
