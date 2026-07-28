@@ -874,6 +874,9 @@ class StaticAttention(Attention):
         self._init_wo(config)
         self.rope = _Rope(rope.params)
         self.layer_id = layer_id
+        # NoPE: when False this layer skips RoPE (e.g. Llama4 global layers).
+        # Plain Python bool set at construction so torch.export folds it structurally.
+        self.use_rope: bool = kwargs.get("use_rope", True)
         self._init_qk_norms(config, is_kv_shared_layer)
 
     def _init_wo(self, config: ModelArgs) -> None:
@@ -966,6 +969,9 @@ class StaticAttention(Attention):
             scale_query_by=getattr(other, "scale_query_by", 1.0),
         )
 
+        # Preserve NoPE: copy the source layer's use_rope so global (NoPE) layers
+        # continue to skip RoPE after conversion to StaticAttention.
+        kwargs.setdefault("use_rope", getattr(other, "use_rope", True))
         instance = cls(
             config=config,
             layer_id=other.layer_id,
@@ -1123,6 +1129,8 @@ class StaticAttention(Attention):
             freqs_cos (list): List of cosine frequencies.
             freqs_sin (list): List of sine frequencies.
         """
+        if not self.use_rope:
+            return qs, ks
         qs = [self.rope(q, freqs_cos, freqs_sin) for q in qs]
         if ks is not None:
             ks = [self.rope(k, freqs_cos, freqs_sin) for k in ks]
@@ -1339,7 +1347,8 @@ class StaticAttention(Attention):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
 
-            q = self.rope(q, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by
@@ -1354,8 +1363,9 @@ class StaticAttention(Attention):
                 q = self.q_norm(q) * self.scale_query_by
                 k = self.k_norm(k)
 
-            q = self.rope(q, freqs_cos, freqs_sin)
-            k = self.rope(k, freqs_cos, freqs_sin)
+            if self.use_rope:
+                q = self.rope(q, freqs_cos, freqs_sin)
+                k = self.rope(k, freqs_cos, freqs_sin)
 
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q = self.q_norm(q) * self.scale_query_by

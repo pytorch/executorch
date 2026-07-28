@@ -401,6 +401,10 @@ class AttentionMHA(Attention):
 
         self.layer_id = layer_id
         self.rope = rope
+        # NoPE (no positional encoding): layers listed in args.no_rope_layers skip
+        # RoPE entirely (e.g. Llama4 global-attention layers). Resolved at
+        # construction time so torch.export folds the branch structurally.
+        self.use_rope: bool = layer_id not in (args.no_rope_layers or [])
 
         causal_mask = torch.tril(
             torch.ones(
@@ -498,7 +502,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
 
         # Apply RoPE to Q only (K already has RoPE from donor layer)
-        q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
         q = q.transpose(1, 2)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
@@ -532,7 +537,8 @@ class AttentionMHA(Attention):
                 q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
-        q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
+        if self.use_rope:
+            q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
