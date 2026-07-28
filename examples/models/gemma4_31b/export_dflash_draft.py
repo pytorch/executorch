@@ -5,6 +5,7 @@ Uses the same generic DFlash export flow as Qwen3, but loads embed_tokens and lm
 
 import argparse
 import json
+from pathlib import Path
 
 import torch
 
@@ -14,7 +15,6 @@ from executorch.backends.mlx.examples.llm.dflash_draft_model import (
 )
 from executorch.examples.models.gemma4_31b.quant.quantize import dequantize_weight
 from huggingface_hub import snapshot_download
-from pathlib import Path
 from safetensors import safe_open
 from safetensors.torch import load_file
 from torch.export import Dim
@@ -23,8 +23,7 @@ from torch.export import Dim
 def _load_dequantized_tensor(
     safetensors_path: str, logical_name: str, dtype: torch.dtype = torch.bfloat16
 ) -> torch.Tensor:
-    """Loads and dequantizes a named weight from a torchao-quantized safetensors checkpoint into a dense tensor. 
-    """
+    """Loads and dequantizes a named weight from a torchao-quantized safetensors checkpoint into a dense tensor."""
     from torchao.prototype.safetensors.safetensors_support import (
         unflatten_tensor_state_dict,
     )
@@ -43,9 +42,7 @@ def _load_dequantized_tensor(
         prefix = f"{module_fqn}._{weight_name}_"
         partial = {k: f.get_tensor(k) for k in all_keys if k.startswith(prefix)}
         if not partial:
-            raise KeyError(
-                f"No keys found with prefix {prefix!r} for {logical_name!r}"
-            )
+            raise KeyError(f"No keys found with prefix {prefix!r} for {logical_name!r}")
         result, _ = unflatten_tensor_state_dict(partial, metadata)
 
     reconstructed = result[logical_name]
@@ -102,7 +99,7 @@ def main():
     )
     model.eval()
 
-    # Quantize the draft model to match the target model. 
+    # Quantize the draft model to match the target model.
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
     quantize_model_(

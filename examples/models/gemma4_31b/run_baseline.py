@@ -17,9 +17,7 @@ BOS_TOKEN_ID = 2
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument(
-        "--target-pte", default="gemma4_31b_dflash_exports_mlx/model.pte"
-    )
+    p.add_argument("--target-pte", default="gemma4_31b_dflash_exports_mlx/model.pte")
     p.add_argument(
         "--tokenizer-path",
         default="./gemma-4-31B-it-HQQ-INT4/tokenizer.json",
@@ -36,7 +34,9 @@ def main():
 
     tokenizer = Tokenizer.from_file(args.tokenizer_path)
 
-    prompt_str = args.prompt if not args.chat_template else apply_chat_template(args.prompt)
+    prompt_str = (
+        args.prompt if not args.chat_template else apply_chat_template(args.prompt)
+    )
     input_ids = tokenizer.encode(prompt_str).ids
     if not input_ids or input_ids[0] != BOS_TOKEN_ID:
         input_ids = [BOS_TOKEN_ID] + input_ids

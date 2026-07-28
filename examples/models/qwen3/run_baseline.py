@@ -21,7 +21,9 @@ def main():
     p.add_argument("--tokenizer", default="Qwen/Qwen3-4B")
     p.add_argument("--prompt", required=True)
     p.add_argument("--max-new-tokens", type=int, default=128)
-    p.add_argument("--no-chat-template", dest="chat_template", action="store_false", default=True)
+    p.add_argument(
+        "--no-chat-template", dest="chat_template", action="store_false", default=True
+    )
     p.add_argument("--enable-thinking", action="store_true", default=False)
     args = p.parse_args()
 

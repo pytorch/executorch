@@ -28,9 +28,7 @@ def first_mismatch(draft_ids, target_ids):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument(
-        "--target-pte", default="gemma4_31b_dflash_exports_mlx/model.pte"
-    )
+    p.add_argument("--target-pte", default="gemma4_31b_dflash_exports_mlx/model.pte")
     p.add_argument("--draft-pte", default="gemma4_31b_dflash_draft.pte")
     p.add_argument(
         "--draft-config-dir",
@@ -77,7 +75,9 @@ def main():
         args.draft_pte, verification=Verification.Minimal
     ).load_method("forward")
 
-    prompt_str = args.prompt if not args.chat_template else apply_chat_template(args.prompt)
+    prompt_str = (
+        args.prompt if not args.chat_template else apply_chat_template(args.prompt)
+    )
     input_ids = tokenizer.encode(prompt_str).ids
     if not input_ids or input_ids[0] != BOS_TOKEN_ID:
         input_ids = [BOS_TOKEN_ID] + input_ids

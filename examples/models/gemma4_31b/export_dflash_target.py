@@ -5,14 +5,11 @@ The exported model returns full-sequence logits and hidden states from the confi
 
 import argparse
 import gc
-import json
 import os
 
 import torch
 
-from executorch.examples.models.gemma4_31b.dflash_export import (
-    Gemma4_31BWithHidden,
-)
+from executorch.examples.models.gemma4_31b.dflash_export import Gemma4_31BWithHidden
 from executorch.examples.models.gemma4_31b.export import _pack_for_backend
 from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31BConfig,
@@ -25,8 +22,7 @@ def load_prequantized_dflash_target(
     layer_ids: list,
     max_seq_len: int = 4096,
 ) -> tuple:
-    """Loads the prequantized target model with DFlash hidden-state outputs.
-    """
+    """Loads the prequantized target model with DFlash hidden-state outputs."""
     config = Gemma4_31BConfig.from_hf_config(
         os.path.join(prequantized_dir, "config.json")
     )
@@ -53,11 +49,9 @@ def export_dflash_target_mlx(
     config: Gemma4_31BConfig,
     output_dir: str,
 ) -> None:
-    """Exports the DFlash target model through torch.export and the MLX backend.
-    """
+    """Exports the DFlash target model through torch.export and the MLX backend."""
     import executorch.backends.mlx.custom_kernel_ops.gguf.patterns
-    import executorch.extension.llm.export.gguf
-    import executorch.extension.llm.export.int4
+    import executorch.extension.llm.export.gguf  # noqa: F401
 
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
@@ -161,7 +155,11 @@ def main() -> None:
             "Comma separated 0-indexed layer IDs matching the draft checkpoint, e.g. 1,12,23,35,46,57."
         ),
     )
-    p.add_argument("--output-dir", required=True, help="Directory for the exported .pte and .ptd files.")
+    p.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory for the exported .pte and .ptd files.",
+    )
     p.add_argument("--max-seq-len", type=int, default=4096)
     args = p.parse_args()
 

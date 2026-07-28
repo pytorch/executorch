@@ -1,4 +1,5 @@
-// C++ DFlash runner for benchmarking the exported Gemma4-31B target and draft models. 
+// C++ DFlash runner for benchmarking the exported Gemma4-31B target and draft
+// models.
 
 #include <gflags/gflags.h>
 
@@ -10,25 +11,34 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
 
-using executorch::extension::Module;
 using executorch::extension::make_tensor_ptr;
+using executorch::extension::Module;
 using executorch::extension::TensorPtr;
-using executorch::runtime::EValue;
 using executorch::runtime::Error;
+using executorch::runtime::EValue;
 
-DEFINE_string(target_pte, "gemma4_31b_dflash_exports_mlx/model.pte", "Target .pte path.");
+DEFINE_string(
+    target_pte,
+    "gemma4_31b_dflash_exports_mlx/model.pte",
+    "Target .pte path.");
 DEFINE_string(draft_pte, "gemma4_31b_dflash_draft.pte", "Draft .pte path.");
-DEFINE_string(tokenizer_path, "gemma-4-31B-it-HQQ-INT4/tokenizer.json", "Tokenizer path.");
+DEFINE_string(
+    tokenizer_path,
+    "gemma-4-31B-it-HQQ-INT4/tokenizer.json",
+    "Tokenizer path.");
 DEFINE_string(prompt, "The capital of France is", "Prompt text.");
 DEFINE_int32(max_new_tokens, 64, "Maximum tokens to generate.");
 DEFINE_int32(block_size, 16, "DFlash draft block size.");
-DEFINE_int32(mask_id, 4, "DFlash mask token id (from draft checkpoint config).");
+DEFINE_int32(
+    mask_id,
+    4,
+    "DFlash mask token id (from draft checkpoint config).");
 DEFINE_bool(raw_prompt, false, "Skip chat-template wrapping.");
 DEFINE_bool(verbose, false, "Print per-round timing/acceptance debug output.");
 
@@ -72,7 +82,8 @@ int64_t first_mismatch(
   return static_cast<int64_t>(draft_ids.size());
 }
 
-// Convert BF16 hidden states returned by the target model to FP32 for the draft model. 
+// Convert BF16 hidden states returned by the target model to FP32 for the draft
+// model.
 std::vector<float> bf16_tensor_to_fp32(const executorch::aten::Tensor& t) {
   int64_t numel = t.numel();
   const uint16_t* src = reinterpret_cast<const uint16_t*>(t.const_data_ptr());
@@ -84,7 +95,7 @@ std::vector<float> bf16_tensor_to_fp32(const executorch::aten::Tensor& t) {
   return out;
 }
 
-}
+} // namespace
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -122,15 +133,20 @@ int main(int argc, char** argv) {
   printf("Prompt tokens: %lld\n", (long long)prompt_len);
 
   std::vector<int64_t> input_pos_vec(prompt_len);
-  for (int64_t i = 0; i < prompt_len; ++i) input_pos_vec[i] = i;
+  for (int64_t i = 0; i < prompt_len; ++i)
+    input_pos_vec[i] = i;
 
-  auto prompt_ids_tensor =
-      make_tensor_ptr({1, (int)prompt_len}, prompt_ids.data(), executorch::aten::ScalarType::Long);
+  auto prompt_ids_tensor = make_tensor_ptr(
+      {1, (int)prompt_len},
+      prompt_ids.data(),
+      executorch::aten::ScalarType::Long);
   auto input_pos_tensor = make_tensor_ptr(
-      {(int)prompt_len}, input_pos_vec.data(), executorch::aten::ScalarType::Long);
+      {(int)prompt_len},
+      input_pos_vec.data(),
+      executorch::aten::ScalarType::Long);
 
-  auto prefill_result =
-      target_module.forward({EValue(prompt_ids_tensor), EValue(input_pos_tensor)});
+  auto prefill_result = target_module.forward(
+      {EValue(prompt_ids_tensor), EValue(input_pos_tensor)});
   if (!prefill_result.ok()) {
     ET_LOG(Error, "Prefill forward failed");
     return 1;
@@ -148,31 +164,36 @@ int main(int argc, char** argv) {
   int64_t accepted_total = 0;
   int64_t emitted_total = 0;
 
-
-
   int64_t hidden_concat_dim = hidden.sizes()[2];
   std::vector<float> hidden_history = bf16_tensor_to_fp32(hidden);
   int64_t hidden_len = prompt_len;
 
-  // Warm up the draft model to avoid including one-time MLX JIT compilation in benchmark timings. 
+  // Warm up the draft model to avoid including one-time MLX JIT compilation in
+  // benchmark timings.
   {
     std::vector<int64_t> warm_input_vec(FLAGS_block_size);
     warm_input_vec[0] = last_token;
-    for (int64_t i = 1; i < FLAGS_block_size; ++i) warm_input_vec[i] = FLAGS_mask_id;
+    for (int64_t i = 1; i < FLAGS_block_size; ++i)
+      warm_input_vec[i] = FLAGS_mask_id;
     auto warm_input_tensor = make_tensor_ptr(
-        {1, (int)FLAGS_block_size}, warm_input_vec.data(), executorch::aten::ScalarType::Long);
+        {1, (int)FLAGS_block_size},
+        warm_input_vec.data(),
+        executorch::aten::ScalarType::Long);
     auto warm_hidden_tensor = make_tensor_ptr(
         {1, (int)hidden_len, (int)hidden_concat_dim},
         hidden_history.data(),
         executorch::aten::ScalarType::Float);
     std::vector<int64_t> warm_pos_vec(hidden_len + FLAGS_block_size);
-    for (int64_t i = 0; i < hidden_len + FLAGS_block_size; ++i) warm_pos_vec[i] = i;
+    for (int64_t i = 0; i < hidden_len + FLAGS_block_size; ++i)
+      warm_pos_vec[i] = i;
     auto warm_pos_tensor = make_tensor_ptr(
         {1, (int)(hidden_len + FLAGS_block_size)},
         warm_pos_vec.data(),
         executorch::aten::ScalarType::Long);
     auto warm_result = draft_module.forward(
-        {EValue(warm_input_tensor), EValue(warm_hidden_tensor), EValue(warm_pos_tensor)});
+        {EValue(warm_input_tensor),
+         EValue(warm_hidden_tensor),
+         EValue(warm_pos_tensor)});
     if (!warm_result.ok()) {
       ET_LOG(Error, "Draft warm-up forward failed");
       return 1;
@@ -188,9 +209,12 @@ int main(int argc, char** argv) {
 
     std::vector<int64_t> draft_input_vec(bs);
     draft_input_vec[0] = last_token;
-    for (int64_t i = 1; i < bs; ++i) draft_input_vec[i] = FLAGS_mask_id;
-    auto draft_input_tensor =
-        make_tensor_ptr({1, (int)bs}, draft_input_vec.data(), executorch::aten::ScalarType::Long);
+    for (int64_t i = 1; i < bs; ++i)
+      draft_input_vec[i] = FLAGS_mask_id;
+    auto draft_input_tensor = make_tensor_ptr(
+        {1, (int)bs},
+        draft_input_vec.data(),
+        executorch::aten::ScalarType::Long);
 
     auto hidden_tensor = make_tensor_ptr(
         {1, (int)hidden_len, (int)hidden_concat_dim},
@@ -198,13 +222,18 @@ int main(int argc, char** argv) {
         executorch::aten::ScalarType::Float);
 
     std::vector<int64_t> draft_pos_vec(hidden_len + bs);
-    for (int64_t i = 0; i < hidden_len + bs; ++i) draft_pos_vec[i] = i;
+    for (int64_t i = 0; i < hidden_len + bs; ++i)
+      draft_pos_vec[i] = i;
     auto draft_pos_tensor = make_tensor_ptr(
-        {1, (int)(hidden_len + bs)}, draft_pos_vec.data(), executorch::aten::ScalarType::Long);
+        {1, (int)(hidden_len + bs)},
+        draft_pos_vec.data(),
+        executorch::aten::ScalarType::Long);
 
     double dt0 = now_ms();
     auto draft_result = draft_module.forward(
-        {EValue(draft_input_tensor), EValue(hidden_tensor), EValue(draft_pos_tensor)});
+        {EValue(draft_input_tensor),
+         EValue(hidden_tensor),
+         EValue(draft_pos_tensor)});
     double draft_exec_ms = now_ms() - dt0;
     if (!draft_result.ok()) {
       ET_LOG(Error, "Draft forward failed at round %lld", (long long)rounds);
@@ -215,15 +244,21 @@ int main(int argc, char** argv) {
 
     std::vector<int64_t> verify_input_vec;
     verify_input_vec.push_back(last_token);
-    verify_input_vec.insert(verify_input_vec.end(), draft_ids.begin(), draft_ids.end());
+    verify_input_vec.insert(
+        verify_input_vec.end(), draft_ids.begin(), draft_ids.end());
     int64_t verify_len = static_cast<int64_t>(verify_input_vec.size());
     auto verify_input_tensor = make_tensor_ptr(
-        {1, (int)verify_len}, verify_input_vec.data(), executorch::aten::ScalarType::Long);
+        {1, (int)verify_len},
+        verify_input_vec.data(),
+        executorch::aten::ScalarType::Long);
 
     std::vector<int64_t> verify_pos_vec(verify_len);
-    for (int64_t i = 0; i < verify_len; ++i) verify_pos_vec[i] = pos + i;
+    for (int64_t i = 0; i < verify_len; ++i)
+      verify_pos_vec[i] = pos + i;
     auto verify_pos_tensor = make_tensor_ptr(
-        {(int)verify_len}, verify_pos_vec.data(), executorch::aten::ScalarType::Long);
+        {(int)verify_len},
+        verify_pos_vec.data(),
+        executorch::aten::ScalarType::Long);
 
     double vt0 = now_ms();
     auto verify_result = target_module.forward(
@@ -247,14 +282,16 @@ int main(int argc, char** argv) {
           (long long)hidden_len);
     }
 
-    std::vector<int64_t> new_tokens(draft_ids.begin(), draft_ids.begin() + accepted);
+    std::vector<int64_t> new_tokens(
+        draft_ids.begin(), draft_ids.begin() + accepted);
     new_tokens.push_back(target_ids[accepted]);
 
     bool hit_eos = false;
     for (size_t i = 0; i < new_tokens.size(); ++i) {
       if (kEosIds.count(new_tokens[i])) {
         new_tokens.resize(i + 1);
-        accepted = std::min(accepted, static_cast<int64_t>(new_tokens.size()) - 1);
+        accepted =
+            std::min(accepted, static_cast<int64_t>(new_tokens.size()) - 1);
         hit_eos = true;
         break;
       }
@@ -274,7 +311,8 @@ int main(int argc, char** argv) {
         new_hidden_fp32.begin() + append_len * hidden_concat_dim);
     hidden_len += append_len;
 
-    if (hit_eos) break;
+    if (hit_eos)
+      break;
   }
 
   double total_ms = now_ms() - t0;
