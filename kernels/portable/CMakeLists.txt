@@ -127,7 +127,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_custom_ops_yaml "${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml")
   set(_portable_custom_ops "aten::allclose.out" "aten::allclose.Tensor")
   gen_selected_ops(
-    LIB_NAME "portable_custom_ops_aot_lib" SELECT_OPS_LIST ${_portable_custom_ops}
+    LIB_NAME "portable_custom_ops_aot_lib" SELECT_OPS_LIST
+    ${_portable_custom_ops}
   )
   generate_bindings_for_kernels(
     LIB_NAME "portable_custom_ops_aot_lib" CUSTOM_OPS_YAML
