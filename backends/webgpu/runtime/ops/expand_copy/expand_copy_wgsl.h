@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from expand_copy.wgsl - DO NOT EDIT.
-// wgsl-sha256: ad996b7fd6eca5c5773715af3a9a117da83ef522042eb0ee918a623096417815
+// wgsl-sha256: 99953670bea89e42bc9c689ab80addfd9a331442c8c8f1a5b0c39dbe11c19370
 inline constexpr const char* kExpandCopyWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -21,8 +21,8 @@ inline constexpr const char* kExpandCopyWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
@@ -38,9 +38,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var rem = idx;
     var l: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        l = l + min(coord, in_meta.sizes[d] - 1u) * in_meta.strides[d];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        l = l + min(coord, in_meta.sizes[d >> 2u][d & 3u] - 1u) * in_meta.strides[d >> 2u][d & 3u];
     }
     output[idx] = input[l];
 }

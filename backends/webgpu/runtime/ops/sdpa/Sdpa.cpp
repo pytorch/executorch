@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -310,10 +311,13 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const size_t cn = k_cache.dims.size();
   const int64_t Cmax = k_cache.dims[cn - 3];
 
-  // Validate B == 1 (leading dims must all be 1).
-  for (size_t i = 0; i + 3 < qn; i++) {
-    if (q.dims[i] != 1) {
-      throw std::runtime_error("WebGPU sdpa: only batch size 1 is supported");
+  // Validate B == 1 for every tensor (leading dims must all be 1). Rank-3
+  // tensors are the equivalent squeezed-batch representation.
+  for (const WebGPUTensor* tensor : {&q, &k, &v, &k_cache, &v_cache, &out}) {
+    for (size_t i = 0; i + 3 < tensor->dims.size(); i++) {
+      if (tensor->dims[i] != 1) {
+        throw std::runtime_error("WebGPU sdpa: only batch size 1 is supported");
+      }
     }
   }
   if (S <= 0 || Hq <= 0 || D <= 0 || Hkv <= 0 || Cmax <= 0) {
@@ -348,6 +352,13 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
   if (k_cache.dims != v_cache.dims) {
     throw std::runtime_error("WebGPU sdpa: k_cache and v_cache shape mismatch");
+  }
+  if (k_cache.dims[cn - 2] != Hkv) {
+    throw std::runtime_error(
+        "WebGPU sdpa: cache num_heads must match projected k/v");
+  }
+  if (out.dims != q.dims) {
+    throw std::runtime_error("WebGPU sdpa: output shape must match q");
   }
 
   // fp32-only: validate byte counts against fp32 element counts.
