@@ -92,13 +92,19 @@ fbcode_target(_kind = runtime.python_test,
     ],
 )
 
+fbcode_target(_kind = runtime.python_library,
+    name = "bench_channelwise_gated_delta_rule_lib",
+    srcs = ["bench_channelwise_gated_delta_rule.py"],
+    base_module = "executorch.extension.llm.custom_ops",
+    deps = ["//caffe2:torch"],
+)
+
 fbcode_target(_kind = runtime.python_binary,
     name = "bench_channelwise_gated_delta_rule",
-    srcs = ["bench_channelwise_gated_delta_rule.py"],
     main_module = "executorch.extension.llm.custom_ops.bench_channelwise_gated_delta_rule",
     preload_deps = [
         ":custom_ops_aot_lib_mkl_noomp",
         ":custom_ops_aot_py",
     ],
-    deps = ["//caffe2:torch"],
+    deps = [":bench_channelwise_gated_delta_rule_lib"],
 )

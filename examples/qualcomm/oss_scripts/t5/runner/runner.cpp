@@ -116,7 +116,7 @@ Error Runner::load() {
 
 uint64_t Runner::logits_to_token(
     const executorch::aten::Tensor& logits_tensor) {
-  return sampler_->sample(logits_tensor.data_ptr<float>());
+  return sampler_->sample(logits_tensor.mutable_data_ptr<float>());
 }
 
 Error Runner::generate(
