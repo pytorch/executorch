@@ -8,18 +8,6 @@
 
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/exp_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/hardswish_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/neg_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/pow_scalar_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/round_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/rsqrt_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/sin_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/sqrt_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/unary/tanh_wgsl.h>
 
 #include <limits>
 #include <stdexcept>
@@ -46,101 +34,64 @@ float get_val_or_inf(WebGPUGraph& graph, int id, bool is_max) {
 }
 
 void abs_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kAbsWGSL, kAbsWorkgroupSizeX, "abs");
+  add_unary_op(graph, args.at(0), args.at(1), "abs", "abs");
 }
 
 void exp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kExpWGSL, kExpWorkgroupSizeX, "exp");
+  add_unary_op(graph, args.at(0), args.at(1), "exp", "exp");
 }
 
 void sqrt_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kSqrtWGSL, kSqrtWorkgroupSizeX, "sqrt");
+  add_unary_op(graph, args.at(0), args.at(1), "sqrt", "sqrt");
 }
 
 void rsqrt_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kRsqrtWGSL, kRsqrtWorkgroupSizeX, "rsqrt");
+  add_unary_op(graph, args.at(0), args.at(1), "rsqrt", "rsqrt");
 }
 
 void sin_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kSinWGSL, kSinWorkgroupSizeX, "sin");
+  add_unary_op(graph, args.at(0), args.at(1), "sin", "sin");
 }
 
 void cos_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kCosWGSL, kCosWorkgroupSizeX, "cos");
+  add_unary_op(graph, args.at(0), args.at(1), "cos", "cos");
 }
 
 void tanh_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kTanhWGSL, kTanhWorkgroupSizeX, "tanh");
+  add_unary_op(graph, args.at(0), args.at(1), "tanh", "tanh");
 }
 
 void round_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kRoundWGSL, kRoundWorkgroupSizeX, "round");
+  add_unary_op(graph, args.at(0), args.at(1), "round", "round");
 }
 
 void neg_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph, args.at(0), args.at(1), kNegWGSL, kNegWorkgroupSizeX, "neg");
+  add_unary_op(graph, args.at(0), args.at(1), "neg", "neg");
 }
 
 void hardswish_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  add_unary_op(
-      graph,
-      args.at(0),
-      args.at(1),
-      kHardswishWGSL,
-      kHardswishWorkgroupSizeX,
-      "hardswish");
+  add_unary_op(graph, args.at(0), args.at(1), "hardswish", "hardswish");
 }
 
 void clamp_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.clamp.default args: [in, min, max, out]; min/max None -> +/-inf.
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
   const float hi = get_val_or_inf(graph, args.at(2), /*is_max=*/true);
-  add_unary_op(
-      graph,
-      args.at(0),
-      args.at(3),
-      kClampWGSL,
-      kClampWorkgroupSizeX,
-      "clamp",
-      lo,
-      hi);
+  add_unary_op(graph, args.at(0), args.at(3), "clamp", "clamp", lo, hi);
 }
 
 void hardtanh_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.hardtanh.default args: [in, min_val, max_val, out].
   const float lo = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
   const float hi = get_val_or_inf(graph, args.at(2), /*is_max=*/true);
-  add_unary_op(
-      graph,
-      args.at(0),
-      args.at(3),
-      kClampWGSL,
-      kClampWorkgroupSizeX,
-      "hardtanh",
-      lo,
-      hi);
+  add_unary_op(graph, args.at(0), args.at(3), "clamp", "hardtanh", lo, hi);
 }
 
 void pow_scalar_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.pow.Tensor_Scalar args: [in, exponent, out]; exponent = min slot.
   const float exponent = get_val_or_inf(graph, args.at(1), /*is_max=*/false);
   add_unary_op(
-      graph,
-      args.at(0),
-      args.at(2),
-      kPowScalarWGSL,
-      kPowScalarWorkgroupSizeX,
-      "pow_scalar",
-      exponent);
+      graph, args.at(0), args.at(2), "pow_scalar", "pow_scalar", exponent);
 }
 
 } // namespace

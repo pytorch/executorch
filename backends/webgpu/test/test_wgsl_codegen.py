@@ -9,12 +9,17 @@
 Loads the generator by file path (no package/namespace dependency).
 """
 
+import contextlib
 import hashlib
 import importlib.util
+import io
+import os
 import re
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -72,6 +77,46 @@ def _function_source(text: str, name: str) -> str:
 
 
 class WgslCodegenTest(unittest.TestCase):
+    def test_registry_entries_match_concrete_headers(self) -> None:
+        entries = g.registry_entries()
+        names = [entry.name for entry in entries]
+        expected = sorted(
+            header.name[: -len("_wgsl.h")]
+            for wgsl in g.discover()
+            for header, _ in g.headers_for_shader(wgsl)
+        )
+        self.assertEqual(names, expected)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_registry_render_is_deterministic(self) -> None:
+        entries = g.registry_entries()
+        self.assertEqual(
+            g.render_registry(entries),
+            g.render_registry(list(reversed(entries))),
+        )
+
+    def test_registry_rejects_duplicate_names(self) -> None:
+        entry = g.registry_entries()[0]
+        with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
+            g.render_registry([entry, entry])
+
+    def test_unary_builder_uses_graph_dispatch_descriptor(self) -> None:
+        unary = (g.BACKEND_ROOT / "runtime/ops/unary/UnaryOp.cpp").read_text()
+        self.assertIn("get_webgpu_shader_info(shader_name)", unary)
+        self.assertIn("workgroup_size_x", unary)
+        self.assertIn("graph.create_params_buffer", unary)
+        self.assertIn("graph.add_compute_dispatch", unary)
+        self.assertIn("workgroup_count.x, workgroup_count.y", unary)
+        self.assertIn("workgroup_count_x = wgc.x", unary)
+        self.assertIn("workgroup_count_y = wgc.y", unary)
+        for legacy in (
+            "utils::make_uniform",
+            "utils::make_compute_pipeline",
+            "graph.add_uniform_buffer_bytes",
+            "graph.own_uniform_buffer",
+        ):
+            self.assertNotIn(legacy, unary)
+
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
@@ -133,6 +178,22 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(g.embedded_sha256(h), want)
         self.assertEqual(g.wgsl_sha256(wgsl), want)
 
+    def test_render_header_long_name_is_clang_format_stable(self) -> None:
+        stem = "streaming_attention_qwen3_q32_k16_causal_bound"
+        wgsl = "@compute @workgroup_size(32, 8, 1)\nfn main(){}\n"
+        h = g.render_header(Path(f"runtime/ops/sdpa/{stem}.wgsl"), wgsl)
+
+        self.assertIn(
+            f"// @generated from {stem}.wgsl\n// DO NOT EDIT.",
+            h,
+        )
+        self.assertIn(
+            "inline constexpr uint32_t\n"
+            "    kStreamingAttentionQwen3Q32K16CausalBoundWorkgroupSizeX = 32;",
+            h,
+        )
+        self.assertEqual(g.embedded_sha256(h), g.wgsl_sha256(wgsl))
+
     def test_embedded_sha256_missing_returns_empty(self) -> None:
         self.assertEqual(g.embedded_sha256("no sha line here\n"), "")
 
@@ -152,6 +213,74 @@ class WgslCodegenTest(unittest.TestCase):
                 self.assertEqual(
                     got, want, f"{header.name} stale; run scripts/gen_wgsl_headers.py"
                 )
+
+    def test_generated_output_manifest_digest(self) -> None:
+        outputs = sorted(
+            [
+                *(g.BACKEND_ROOT / "runtime/ops").glob("**/*_wgsl.h"),
+                g.registry_path(),
+            ]
+        )
+        digest = hashlib.sha256()
+        for output in outputs:
+            digest.update(output.relative_to(g.BACKEND_ROOT).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(output.read_bytes())
+            digest.update(b"\0")
+        self.assertEqual(len(outputs), 134)
+        self.assertEqual(
+            digest.hexdigest(),
+            "19a0baf9345bec02fe2091a0e6320b81d966724bedc33feb0779c6a824925972",
+        )
+
+    def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
+        shader = (
+            g.BACKEND_ROOT / "runtime" / "ops" / "rope" / "rotary_embedding_hf.wgsl"
+        ).read_text()
+        self.assertIn("@builtin(num_workgroups) num_workgroups", shader)
+        self.assertIn(
+            "gid.x + gid.y * (num_workgroups.x * wg_size)",
+            shader,
+        )
+        self.assertIn("let freqs_b_idx = freqs_a_idx + half_dim;", shader)
+        self.assertIn("t_out[b_idx] = x_b * c_b + x_a * si_b;", shader)
+
+        wg_size = 2
+        workgroups_x = 2
+        indices = [
+            group_x * wg_size + lane + group_y * (workgroups_x * wg_size)
+            for group_y in range(2)
+            for group_x in range(workgroups_x)
+            for lane in range(wg_size)
+        ]
+        self.assertEqual(indices, list(range(8)))
+
+    def test_qwen3_runtime_eligibility_is_exact(self) -> None:
+        sdpa = (g.BACKEND_ROOT / "runtime/ops/sdpa/Sdpa.cpp").read_text()
+        self.assertIn("q/k/v/output must be fp32", sdpa)
+        self.assertIn("cache dtype does not match the selected storage mode", sdpa)
+        self.assertIn("scale == qwen3_expected_scale", sdpa)
+        self.assertNotIn("std::fabs(scale - qwen3_expected_scale)", sdpa)
+
+    def test_fp16_kv_graph_guards_transfer_and_topology(self) -> None:
+        graph = (g.BACKEND_ROOT / "runtime/WebGPUGraph.cpp").read_text()
+        self.assertIn("serialized cache tensor must be fp32", graph)
+        self.assertIn("consumed through a ValueList", graph)
+        self.assertIn("preserve it while changing storage", graph)
+
+        copy_inputs = graph.index("void WebGPUGraph::copy_inputs")
+        input_guard = graph.index(
+            "fp16 device input requires an fp32 host tensor", copy_inputs
+        )
+        fast_path = graph.index("// Fast path", copy_inputs)
+        self.assertLess(input_guard, fast_path)
+
+        copy_outputs = graph.index("void WebGPUGraph::copy_outputs")
+        output_guard = graph.index(
+            "fp16 device output requires an fp32 host tensor", copy_outputs
+        )
+        map_request = graph.index("wgpuBufferMapAsync", copy_outputs)
+        self.assertLess(output_guard, map_request)
 
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
@@ -179,7 +308,12 @@ class WgslCodegenTest(unittest.TestCase):
             orig = g.BACKEND_ROOT
             g.BACKEND_ROOT = Path(tmp)
             try:
-                self.assertEqual(g.main(["--check"]), 1)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(g.main(["--check"]), 1)
+                self.assertEqual(
+                    output.getvalue().count("Stale embedded WGSL headers"), 1
+                )
             finally:
                 g.BACKEND_ROOT = orig
 
@@ -237,6 +371,352 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertIn("inline constexpr uint32_t kFooWorkgroupSizeX = 4;", h)
         self.assertIn("inline constexpr uint32_t kFooWorkgroupSizeY = 8;", h)
         self.assertIn("inline constexpr uint32_t kFooWorkgroupSizeZ = 2;", h)
+
+
+class WgslGenerationTransactionTest(unittest.TestCase):
+    _VALID_SHADER = "@compute @workgroup_size(1)\nfn main() {}\n"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        (self.root / "runtime/ops").mkdir(parents=True)
+        self._original_root = g.BACKEND_ROOT
+        g.BACKEND_ROOT = self.root
+
+    def tearDown(self) -> None:
+        g.BACKEND_ROOT = self._original_root
+        self._tmp.cleanup()
+
+    def _write_shader(
+        self, directory: str, stem: str, text: str = _VALID_SHADER
+    ) -> Path:
+        op_dir = self.root / "runtime/ops" / directory
+        op_dir.mkdir(parents=True, exist_ok=True)
+        shader = op_dir / f"{stem}.wgsl"
+        shader.write_text(text)
+        return shader
+
+    def _write_template(
+        self, directory: str, stem: str, text: str, names: list[str]
+    ) -> Path:
+        shader = self._write_shader(directory, stem, text)
+        spec = {
+            stem: {
+                "parameter_names_with_default_values": {},
+                "shader_variants": [{"NAME": name} for name in names],
+            }
+        }
+        shader.with_suffix(".yaml").write_text(yaml.safe_dump(spec))
+        return shader
+
+    def _snapshot(self):
+        return {
+            path.relative_to(self.root).as_posix(): (
+                path.read_bytes(),
+                stat.S_IMODE(path.stat().st_mode),
+            )
+            for path in sorted(self.root.rglob("*"))
+            if path.is_file()
+        }
+
+    def _run(self, *args: str):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = g.main(list(args))
+        return result, output.getvalue()
+
+    def _assert_no_temps(self) -> None:
+        self.assertEqual(list(self.root.rglob("*.tmp")), [])
+
+    @staticmethod
+    def _fail_nth(real_fn, n: int):
+        calls = 0
+
+        def wrapped(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == n:
+                raise OSError(f"injected failure on call {n}")
+            return real_fn(*args, **kwargs)
+
+        return wrapped
+
+    def test_late_malformed_shader_leaves_tree_unchanged(self) -> None:
+        good = self._write_shader("a", "good")
+        good.with_name("good_wgsl.h").write_text("stale\n")
+        self._write_shader("z", "bad", "${MISSING\n")
+        before = self._snapshot()
+
+        result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_duplicate_registry_name_leaves_tree_unchanged(self) -> None:
+        self._write_shader("a", "shared")
+        self._write_shader("b", "shared")
+        before = self._snapshot()
+
+        result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_duplicate_registry_symbol_leaves_tree_unchanged(self) -> None:
+        self._write_shader("a", "foo_bar")
+        self._write_shader("b", "foo__bar")
+        before = self._snapshot()
+
+        result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_duplicate_output_path_leaves_tree_unchanged(self) -> None:
+        self._write_template("op", "op", self._VALID_SHADER, ["duplicate", "duplicate"])
+        before = self._snapshot()
+
+        result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_second_stage_failure_leaves_tree_unchanged(self) -> None:
+        self._write_shader("a", "first")
+        self._write_shader("b", "second")
+        before = self._snapshot()
+        real_mkstemp = tempfile.mkstemp
+
+        with mock.patch(
+            "tempfile.mkstemp", side_effect=self._fail_nth(real_mkstemp, 2)
+        ):
+            result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+
+    def test_staging_interrupt_leaves_tree_unchanged(self) -> None:
+        self._write_shader("a", "first")
+        self._write_shader("b", "second")
+        before = self._snapshot()
+        real_chmod = Path.chmod
+
+        def interrupt_second(path, mode, **kwargs):
+            interrupt_second.calls += 1
+            if interrupt_second.calls == 2:
+                raise KeyboardInterrupt("injected staging interruption")
+            return real_chmod(path, mode, **kwargs)
+
+        interrupt_second.calls = 0
+        with mock.patch.object(
+            Path, "chmod", autospec=True, side_effect=interrupt_second
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                self._run()
+
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+
+    def test_replace_failure_restores_existing_destination(self) -> None:
+        self._write_shader("op", "op")
+        registry = g.registry_path()
+        registry.write_text("old registry\n")
+        registry.chmod(0o600)
+        before = self._snapshot()
+        real_replace = os.replace
+
+        with mock.patch("os.replace", side_effect=self._fail_nth(real_replace, 2)):
+            result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+
+    def test_replace_failure_removes_new_destination(self) -> None:
+        self._write_shader("op", "op")
+        before = self._snapshot()
+        real_replace = os.replace
+
+        with mock.patch("os.replace", side_effect=self._fail_nth(real_replace, 2)):
+            result, _ = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+
+    def test_multiple_rollback_errors_do_not_stop_later_restores(self) -> None:
+        headers = []
+        for directory in ("a", "b", "c"):
+            shader = self._write_shader(directory, directory)
+            header = shader.with_name(f"{directory}_wgsl.h")
+            header.write_text(f"old {directory}\n")
+            headers.append(header)
+        registry = g.registry_path()
+        registry.write_text("old registry\n")
+        real_replace = os.replace
+        calls = []
+
+        def fail_commit_and_two_rollbacks(source, destination):
+            calls.append(Path(destination))
+            if len(calls) in (4, 5, 6):
+                raise OSError(f"injected failure on replace {len(calls)}")
+            return real_replace(source, destination)
+
+        with mock.patch("os.replace", side_effect=fail_commit_and_two_rollbacks):
+            result, output = self._run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(calls[-3:], [headers[1], headers[0], registry])
+        self.assertIn(f"cannot roll back {headers[1]}", output)
+        self.assertIn(f"cannot roll back {headers[0]}", output)
+        self.assertEqual(registry.read_text(), "old registry\n")
+        self.assertNotEqual(headers[0].read_text(), "old a\n")
+        self.assertNotEqual(headers[1].read_text(), "old b\n")
+        self.assertEqual(headers[2].read_text(), "old c\n")
+        self._assert_no_temps()
+
+    def test_success_preserves_existing_mode_and_creates_0644(self) -> None:
+        shader = self._write_shader("op", "op")
+        registry = g.registry_path()
+        registry.write_text("old registry\n")
+        registry.chmod(0o600)
+
+        result, _ = self._run()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(stat.S_IMODE(registry.stat().st_mode), 0o600)
+        self.assertEqual(
+            stat.S_IMODE(shader.with_name("op_wgsl.h").stat().st_mode), 0o644
+        )
+
+    def test_orphans_are_sorted_reported_and_never_deleted(self) -> None:
+        self._write_shader("new", "new")
+        orphan_z = self.root / "runtime/ops/z/old_z_wgsl.h"
+        orphan_a = self.root / "runtime/ops/a/old_a_wgsl.h"
+        orphan_z.parent.mkdir(parents=True)
+        orphan_a.parent.mkdir(parents=True)
+        orphan_z.write_text("// @generated\n")
+        orphan_a.write_text("// @generated\n")
+        before = self._snapshot()
+
+        check_result, check_output = self._run("--check")
+        normal_result, normal_output = self._run()
+
+        self.assertEqual(check_result, 1)
+        self.assertEqual(normal_result, 1)
+        for output in (check_output, normal_output):
+            self.assertIn("Orphan", output)
+            self.assertLess(output.index("old_a_wgsl.h"), output.index("old_z_wgsl.h"))
+        self.assertEqual(self._snapshot(), before)
+
+    def test_check_fails_read_only_when_outputs_are_only_missing(self) -> None:
+        self._write_shader("op", "op")
+        before = self._snapshot()
+
+        result, output = self._run("--check")
+
+        self.assertEqual(result, 1)
+        self.assertIn("Missing embedded WGSL headers", output)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_check_catches_template_syntax_error_without_writing(self) -> None:
+        self._write_template(
+            "a", "syntax", "$if :\n  " + self._VALID_SHADER, ["syntax"]
+        )
+        before = self._snapshot()
+
+        result, output = self._run("--check")
+
+        self.assertEqual(result, 1)
+        self.assertIn("runtime/ops/a/syntax.wgsl", output)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_check_catches_template_name_error_without_writing(self) -> None:
+        self._write_template(
+            "op", "name", "$if MISSING:\n  " + self._VALID_SHADER, ["name"]
+        )
+        before = self._snapshot()
+
+        result, output = self._run("--check")
+
+        self.assertEqual(result, 1)
+        self.assertIn("runtime/ops/op/name.wgsl", output)
+        self.assertEqual(self._snapshot(), before)
+
+    def test_interrupted_commit_is_detected_and_repaired(self) -> None:
+        self._write_shader("op", "op")
+        before = self._snapshot()
+        real_replace = os.replace
+
+        def interrupt_second(source, destination):
+            interrupt_second.calls += 1
+            if interrupt_second.calls == 2:
+                raise KeyboardInterrupt("injected interruption")
+            return real_replace(source, destination)
+
+        interrupt_second.calls = 0
+        with mock.patch("os.replace", side_effect=interrupt_second):
+            with self.assertRaises(KeyboardInterrupt):
+                self._run()
+
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+        check_result, check_output = self._run("--check")
+        self.assertEqual(check_result, 1)
+        self.assertNotIn("Orphan", check_output)
+
+        normal_result, _ = self._run()
+        self.assertEqual(normal_result, 0)
+        final_check_result, _ = self._run("--check")
+        self.assertEqual(final_check_result, 0)
+        self._assert_no_temps()
+
+    def test_interrupt_after_replace_restores_tree(self) -> None:
+        self._write_shader("op", "op")
+        before = self._snapshot()
+        real_replace = os.replace
+
+        def interrupt_after_second(source, destination):
+            interrupt_after_second.calls += 1
+            result = real_replace(source, destination)
+            if interrupt_after_second.calls == 2:
+                raise KeyboardInterrupt("injected post-replace interruption")
+            return result
+
+        interrupt_after_second.calls = 0
+        with mock.patch("os.replace", side_effect=interrupt_after_second):
+            with self.assertRaises(KeyboardInterrupt):
+                self._run()
+
+        self.assertEqual(self._snapshot(), before)
+        self._assert_no_temps()
+
+    def test_generation_renders_once_and_second_run_does_no_io(self) -> None:
+        shaders = [
+            self._write_shader("a", "first"),
+            self._write_shader("b", "second"),
+        ]
+        render_counts = {shader: 0 for shader in shaders}
+        real_headers_for_shader = g.headers_for_shader
+
+        def counted(shader):
+            render_counts[shader] += 1
+            return real_headers_for_shader(shader)
+
+        with mock.patch.object(g, "headers_for_shader", side_effect=counted):
+            first_result, _ = self._run()
+        self.assertEqual(first_result, 0)
+        self.assertEqual(render_counts, {shader: 1 for shader in shaders})
+
+        with mock.patch(
+            "tempfile.mkstemp", wraps=tempfile.mkstemp
+        ) as mkstemp, mock.patch("os.replace", wraps=os.replace) as replace:
+            second_result, _ = self._run()
+        self.assertEqual(second_result, 0)
+        mkstemp.assert_not_called()
+        replace.assert_not_called()
 
 
 class WgslTemplateEngineTest(unittest.TestCase):
