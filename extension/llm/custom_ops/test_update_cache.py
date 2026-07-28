@@ -646,7 +646,19 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
     def test_channelwise_gated_delta_rule_chunked_matches_full_sequence(self):
         torch.manual_seed(0)
 
-        query, key, value, decay, beta, initial_state = self._make_inputs(seq_len=6)
+        # seq_len > CHUNK_SIZE (32 in the C++ kernel): the single full call runs
+        # the internal chunk loop over multiple chunks (6 * 32 + 8), while the
+        # per-segment calls are chunked externally as (0, 64), (64, 192),
+        # (192, 200) — 2, 4, and 1 partial internal chunks respectively — at
+        # different boundaries than the single-call internal loop. Equality
+        # validates the inter-chunk state carry independent of outer
+        # segmentation.
+        # fp32 accumulation over a 32-token chunk needs a looser tol than the
+        # single-chunk tests above.
+        seq_len = 200
+        query, key, value, decay, beta, initial_state = self._make_inputs(
+            seq_len=seq_len
+        )
 
         full_output, full_state = torch.ops.llama.channelwise_gated_delta_rule(
             query,
@@ -659,7 +671,7 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
 
         chunk_state = initial_state
         chunk_outputs = []
-        for start, end in ((0, 2), (2, 5), (5, 6)):
+        for start, end in ((0, 64), (64, 192), (192, 200)):
             chunk_output, chunk_state = torch.ops.llama.channelwise_gated_delta_rule(
                 query[:, :, start:end, :],
                 key[:, :, start:end, :],
@@ -671,8 +683,36 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             chunk_outputs.append(chunk_output)
 
         chunked_output = torch.cat(chunk_outputs, dim=2)
-        self.assertTrue(torch.allclose(chunked_output, full_output, atol=1e-5))
-        self.assertTrue(torch.allclose(chunk_state, full_state, atol=1e-5))
+        self.assertTrue(
+            torch.allclose(chunked_output, full_output, atol=1e-3, rtol=1e-3)
+        )
+        self.assertTrue(torch.allclose(chunk_state, full_state, atol=1e-3, rtol=1e-3))
+
+    def test_channelwise_gated_delta_rule_multichunk_matches_reference(self):
+        torch.manual_seed(0)
+
+        # Drive the prefill route past a single CHUNK_SIZE (32) so the kernel's
+        # internal chunk loop runs multiple times against the token-by-token
+        # reference: 130 exercises a ragged final chunk (4 * 32 + 2), 256
+        # exercises an exact multiple (8 * 32). fp32 accumulation over a full
+        # chunk needs a looser tol than the single-chunk tests.
+        for seq_len in (130, 256):
+            with self.subTest(seq_len=seq_len):
+                inputs = self._make_inputs(seq_len=seq_len)
+                expected_output, expected_state = (
+                    self._reference_channelwise_gated_delta_rule(*inputs)
+                )
+
+                actual_output, actual_state = (
+                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
+                )
+
+                self.assertTrue(
+                    torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
+                )
+                self.assertTrue(
+                    torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
+                )
 
     def test_channelwise_gated_delta_rule_exports(self):
         class Module(torch.nn.Module):

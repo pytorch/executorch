@@ -13,6 +13,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 
@@ -49,8 +50,19 @@ void add_fill(
   if (out_tensor.buffer == nullptr) {
     throw std::runtime_error(std::string(op_name) + ": null output buffer");
   }
-  uint32_t num_elements =
-      static_cast<uint32_t>(out_tensor.nbytes / sizeof(float));
+  // fp32-only: the shader writes an f32 fill_value and numel below assumes a
+  // 4-byte element; a bool/int output would be miscounted + bit-wrong ->
+  // reject.
+  if (out_tensor.is_int || out_tensor.elem_size != sizeof(float)) {
+    throw std::runtime_error(
+        std::string(op_name) + ": only fp32 output is supported");
+  }
+  const uint64_t numel = out_tensor.nbytes / sizeof(float);
+  if (numel == 0 || numel > UINT32_MAX) {
+    throw std::runtime_error(
+        std::string(op_name) + ": output numel is zero or exceeds u32");
+  }
+  uint32_t num_elements = static_cast<uint32_t>(numel);
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, kFillWorkgroupSizeX);
   utils::WgCount workgroup_count =
@@ -67,57 +79,28 @@ void add_fill(
       utils::make_uniform(device, &params, sizeof(FillParams));
   graph.add_uniform_buffer_bytes(sizeof(FillParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kFillWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[2] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 2;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[2] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out_tensor.buffer;
-  bg_entries[0].size = out_tensor.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = uniform_buffer;
-  bg_entries[1].size = sizeof(FillParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 2;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kFillWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(FillParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count.x, "", workgroup_count.y});
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "",
+       workgroup_count.y});
 
   // Dynamic shapes: recompute num_elements/dispatch from the live output dims.
   WGPUBuffer params_buf = uniform_buffer;
@@ -136,9 +119,6 @@ void add_fill(
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 
@@ -158,6 +138,22 @@ void full_like_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       "full_like");
 }
 
+void zeros_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_fill(graph, args.at(args.size() - 1), 0.0f, "zeros");
+}
+
+void zeros_like_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_fill(graph, args.at(args.size() - 1), 0.0f, "zeros_like");
+}
+
+void ones_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_fill(graph, args.at(args.size() - 1), 1.0f, "ones");
+}
+
+void ones_like_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  add_fill(graph, args.at(args.size() - 1), 1.0f, "ones_like");
+}
+
 void scalar_tensor_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   add_fill(
       graph,
@@ -171,6 +167,10 @@ void scalar_tensor_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(aten.full.default, full_impl);
   WEBGPU_REGISTER_OP(aten.full_like.default, full_like_impl);
+  WEBGPU_REGISTER_OP(aten.zeros.default, zeros_impl);
+  WEBGPU_REGISTER_OP(aten.zeros_like.default, zeros_like_impl);
+  WEBGPU_REGISTER_OP(aten.ones.default, ones_impl);
+  WEBGPU_REGISTER_OP(aten.ones_like.default, ones_like_impl);
   WEBGPU_REGISTER_OP(aten.scalar_tensor.default, scalar_tensor_impl);
 }
 
