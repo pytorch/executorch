@@ -38,6 +38,8 @@ from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 logger = logging.getLogger(__name__)
 
+NodeTarget = Callable[..., Any] | str
+
 if TYPE_CHECKING:
     from executorch.backends.cortex_m.quantizer.pattern_matcher import PatternMatcher
 
@@ -255,6 +257,13 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
         torch.ops.aten.conv_transpose2d.input,
     }
 
+    # These operands are parameters or mutable state, not activation inputs.
+    # Observing mutable state would redirect in-place updates to the observer
+    # output instead of the registered buffer.
+    UNOBSERVED_INPUT_INDICES: dict[NodeTarget, tuple[int, ...]] = {
+        torch.ops.aten.batch_norm.default: (1, 2, 3, 4),
+    }
+
     def __init__(
         self,
         quantization_config: QuantizationConfig | None,
@@ -319,6 +328,22 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
         return True
 
+    def is_unobserved_input(self, node: Node, input_node: Node) -> bool:
+        """Return whether an input must remain directly connected to state.
+
+        Args:
+            node: Consumer node whose positional inputs are inspected.
+            input_node: Input node being considered for quantization annotation.
+
+        Returns:
+            True when the input occupies an unobserved position for the target.
+
+        """
+        return any(
+            index < len(node.args) and input_node is node.args[index]
+            for index in self.UNOBSERVED_INPUT_INDICES.get(node.target, ())
+        )
+
     def annotate_match(
         self,
         match: list[Node],
@@ -326,6 +351,12 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
     ) -> None:
         """Annotates a matched pattern according to the given quantization
         config.
+
+        Args:
+            match: Nodes in the accepted pattern to annotate.
+            config: Quantization configuration for the pattern, or None to mark
+                its nodes as unquantized.
+
         """
 
         for node in match:
@@ -334,6 +365,8 @@ class PatternQuantizer(Quantizer, QuantizerReporterUser):
 
             for input_node in node.all_input_nodes:
                 if not has_float_output(input_node):
+                    continue
+                if self.is_unobserved_input(node, input_node):
                     continue
                 if self.is_weight(input_node):
                     input_qspec_map[input_node] = (

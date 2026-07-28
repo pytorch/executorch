@@ -7556,6 +7556,84 @@ class NVFP4QuantizedLinearTest(OpTestCase):
         return (x,)
 
 
+class MXFP8QuantizedLinearModel(nn.Module):
+    """Simple linear layer that will be quantized with MXFP8."""
+
+    def __init__(
+        self, in_features: int = 64, out_features: int = 128, bias: bool = True
+    ):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear(x)
+
+
+@register_test
+class MXFP8QuantizedLinearTest(OpTestCase):
+    """Test case for MXFP8 quantized nn.Linear (mode="mxfp8", group_size 32)."""
+
+    name = "mxfp8_quantized_linear"
+    rtol = 0.1
+    atol = 0.1
+
+    def __init__(
+        self,
+        in_features: int = 64,
+        out_features: int = 128,
+        batch_size: int = 2,
+        seq_len: int = 16,
+        bias: bool = True,
+        dtype: torch.dtype = torch.float32,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.batch_size = batch_size
+        self.seq_len = seq_len
+        self.bias = bias
+        self.dtype = dtype
+
+        parts = ["mxfp8_quantized_linear"]
+        if not bias:
+            parts.append("no_bias")
+        if dtype != torch.float32:
+            parts.append(str(dtype).split(".")[-1])
+        self.name = "_".join(parts)
+
+    @classmethod
+    def get_test_configs(cls) -> List["MXFP8QuantizedLinearTest"]:
+        return [
+            cls(),
+            cls(bias=False),
+            cls(dtype=torch.bfloat16),
+            cls(bias=False, dtype=torch.bfloat16),
+        ]
+
+    def get_edge_compile_config(self):
+        from executorch.exir import EdgeCompileConfig
+
+        return EdgeCompileConfig(_check_ir_validity=False)
+
+    def create_model(self) -> nn.Module:
+        model = MXFP8QuantizedLinearModel(
+            self.in_features, self.out_features, bias=self.bias
+        )
+        model = model.to(self.dtype)
+
+        from executorch.extension.llm.export.mx import ExportableMXConfig
+        from torchao.quantization import quantize_
+
+        quantize_(model, ExportableMXConfig())
+
+        return model
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        x = torch.randn(
+            self.batch_size, self.seq_len, self.in_features, dtype=self.dtype
+        )
+        return (x,)
+
+
 def _make_int4_quantized_weight(weight: torch.Tensor, group_size: int) -> torch.Tensor:
     """Groupwise affine 4-bit quantize a ``(N, K)`` weight into an
     ``ExportableInt4Tensor`` (torchao ``Int4Tensor`` packed layout)."""
