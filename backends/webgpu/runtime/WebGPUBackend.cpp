@@ -18,6 +18,7 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/log.h>
 
+#include <cstring>
 #include <vector>
 
 #include <new>
@@ -43,6 +44,27 @@ using executorch::runtime::resize_tensor;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
+Result<WebGPUGraphConfig> parse_webgpu_graph_config(
+    ArrayRef<CompileSpec> compile_specs) {
+  WebGPUGraphConfig config;
+  for (const CompileSpec& spec : compile_specs) {
+    if (spec.key == nullptr ||
+        std::strcmp(spec.key, "webgpu_record_q4gsw_decode_route") != 0) {
+      continue;
+    }
+    if (spec.value.nbytes != sizeof(uint8_t) || spec.value.buffer == nullptr) {
+      ET_LOG(
+          Error,
+          "WebGPU compile option webgpu_record_q4gsw_decode_route must be "
+          "exactly one byte");
+      return Error::DelegateInvalidCompatibility;
+    }
+    config.record_q4gsw_decode_route =
+        *static_cast<const uint8_t*>(spec.value.buffer) != 0;
+  }
+  return config;
+}
+
 bool WebGPUBackend::is_available() const {
   return true;
 }
@@ -51,6 +73,13 @@ Result<DelegateHandle*> WebGPUBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
+  Result<WebGPUGraphConfig> parsed_config =
+      parse_webgpu_graph_config(compile_specs);
+  if (!parsed_config.ok()) {
+    return parsed_config.error();
+  }
+  WebGPUGraphConfig config = parsed_config.get();
+
   // Allocate graph on the runtime allocator
   WebGPUGraph* graph =
       context.get_runtime_allocator()->allocateInstance<WebGPUGraph>();
@@ -83,29 +112,23 @@ Result<DelegateHandle*> WebGPUBackend::init(
   // Load-time backend option (BackendOption / LoadBackendOptionsMap), keyed by
   // the registered backend name; default false. Mirrors the CoreML/XNNPACK
   // runtime-spec pattern -- no compile flag and no .pte re-export needed.
-  bool enable_f16_kv_cache = false;
   {
     Result<bool> spec = context.get_runtime_spec<bool>("enable_f16_kv_cache");
     if (spec.ok()) {
-      enable_f16_kv_cache = spec.get();
+      config.f16_kv_cache = spec.get();
     }
   }
-  bool enable_f16_accumulate_gemm = false;
   {
     Result<bool> spec =
         context.get_runtime_spec<bool>("enable_f16_accumulate_gemm");
     if (spec.ok()) {
-      enable_f16_accumulate_gemm = spec.get();
+      config.f16_accumulate_gemm = spec.get();
     }
   }
 
   try {
     graph->build(
-        flatbuffer_data,
-        constant_data,
-        context.get_named_data_map(),
-        enable_f16_kv_cache,
-        enable_f16_accumulate_gemm);
+        flatbuffer_data, constant_data, context.get_named_data_map(), config);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -170,7 +193,14 @@ Error WebGPUBackend::execute(
     }
     graph_options =
         resolve_webgpu_graph_execution_options(delegate_outputs, options);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU input/output resize / copy failed: %s", e.what());
+    return Error::Internal;
+  }
 
+  // Execute + read back; fail loud as a runtime Error so a throw never crosses
+  // the backend boundary.
+  try {
     const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
     graph->execute(plan);
 
@@ -184,10 +214,7 @@ Error WebGPUBackend::execute(
     }
     graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
-    ET_LOG(
-        Error,
-        "WebGPU input preparation / execute / output copy failed: %s",
-        e.what());
+    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;
   }
 
