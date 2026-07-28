@@ -7,7 +7,12 @@ from typing import Dict, Tuple
 
 import executorch.backends.arm.tosa.dialect  # noqa: F401
 import torch
-from executorch.backends.arm._passes import FuseDuplicateUsersPass
+from executorch.backends.arm._passes import (
+    EnsureUniqueOutputNodesPass,
+    FuseDuplicateUsersPass,
+    InsertRescalePass,
+    RemoveNoopPass,
+)
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
@@ -191,9 +196,8 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
     )
     edge_exported_program = edge_program.exported_program()
 
-    graph_module = ArmPassManager(
-        TosaCompileSpec("TOSA-1.0+FP")
-    ).transform_to_backend_pipeline(
+    pass_manager = ArmPassManager(TosaCompileSpec("TOSA-1.0+FP"))
+    graph_module = pass_manager.transform_to_backend_pipeline(
         edge_exported_program, edge_exported_program.graph_module
     )
 
@@ -213,3 +217,15 @@ def test_fuse_duplicate_users_runs_after_tosa_transformations():
     assert len(identity_nodes) == 2
     assert all(node.args[0] is add_nodes[0] for node in identity_nodes)
     assert graph_module.graph.output_node().args[0] == tuple(identity_nodes)
+
+    pass_types = [type(pass_) for pass_ in pass_manager.passes]
+    post_noop_index = max(
+        index
+        for index, pass_type in enumerate(pass_types)
+        if pass_type is RemoveNoopPass
+    )
+    assert pass_types[post_noop_index + 1 : post_noop_index + 4] == [
+        FuseDuplicateUsersPass,
+        InsertRescalePass,
+        EnsureUniqueOutputNodesPass,
+    ]
