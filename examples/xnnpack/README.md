@@ -51,7 +51,7 @@ cmake \
 Then you can build the runtime components with
 
 ```bash
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Now finally you should be able to run this model with the following command
@@ -105,7 +105,7 @@ cmake \
 Then you can build the runtime componenets with
 
 ```bash
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 Now you should be able to find the executable built at `./cmake-out/executor_runner` you can run the executable with the model you generated as such

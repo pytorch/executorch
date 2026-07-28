@@ -686,6 +686,14 @@ class ComputeGraph final {
     return context_->adapter_ptr()->device_type() == vkapi::DeviceType::MALI;
   }
 
+  // AMD-RDNA GPUs (Samsung Xclipse, AMD Radeon). There is no DeviceType for
+  // AMD, so this matches on the driver-reported device name; both casings are
+  // checked since the string casing varies by driver.
+  inline bool device_is_amd() {
+    return device_name_contains("Xclipse") || device_name_contains("xclipse") ||
+        device_name_contains("Radeon") || device_name_contains("radeon");
+  }
+
   const std::string& device_name() {
     return context()->adapter_ptr()->device_name();
   }
