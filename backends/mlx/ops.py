@@ -1961,7 +1961,9 @@ def _moe_gather_inputs_handler(P: MLXProgramBuilder, n: Node):
     top_k = args[2]  # static int
     sort_cutoff = args[3]  # static int, consulted here at emission
     if not isinstance(top_k, int) or top_k < 1:
-        raise ValueError(f"moe_gather_inputs: top_k must be a static int >= 1, got {top_k!r}")
+        raise ValueError(
+            f"moe_gather_inputs: top_k must be a static int >= 1, got {top_k!r}"
+        )
     if not isinstance(sort_cutoff, int) or sort_cutoff < 1:
         raise ValueError(
             f"moe_gather_inputs: sort_cutoff must be a static int >= 1, got {sort_cutoff!r}"
@@ -2244,7 +2246,6 @@ def _moe_scatter_outputs_handler(P: MLXProgramBuilder, n: Node) -> Slot:
 
     emit_if_else(P, cond, emit_then, emit_else)
     return out_slot
-
 
 
 @REGISTRY.register(
