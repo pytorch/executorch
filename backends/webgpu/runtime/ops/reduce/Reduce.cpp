@@ -13,6 +13,7 @@
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -31,28 +32,53 @@ struct ReduceParams {
 };
 static_assert(sizeof(ReduceParams) == 16, "ReduceParams must be 16 bytes");
 
-void decompose(
+// Normalize + validate CONTIGUOUS reduced dims, then fold the tensor into
+// [outer, r, inner] where r spans the reduced range. The kernel reduces r
+// elements per (outer, inner) output — identical for 1 or N contiguous dims
+// (e.g. global avg pool over [H,W] -> r = H*W). Non-contiguous multi-dim reduce
+// is rejected (rare; would need a separate gather).
+void decompose_dims(
     const std::vector<int64_t>& dims,
-    int64_t dim,
+    std::vector<int64_t> reduce_dims,
     uint32_t& outer,
     uint32_t& r,
     uint32_t& inner) {
   const int64_t ndim = static_cast<int64_t>(dims.size());
-  if (dim < 0) {
-    dim += ndim;
-  }
-  if (ndim == 0 || dim < 0 || dim >= ndim) {
+  if (ndim == 0 || reduce_dims.empty()) {
     throw std::runtime_error("WebGPU reduce: dim out of range");
   }
-  uint64_t o = 1, in = 1;
-  for (int64_t d = 0; d < dim; ++d) {
+  for (int64_t& d : reduce_dims) {
+    if (d < 0) {
+      d += ndim;
+    }
+    if (d < 0 || d >= ndim) {
+      throw std::runtime_error("WebGPU reduce: dim out of range");
+    }
+  }
+  std::sort(reduce_dims.begin(), reduce_dims.end());
+  for (size_t i = 1; i < reduce_dims.size(); ++i) {
+    if (reduce_dims[i] == reduce_dims[i - 1]) {
+      throw std::runtime_error("WebGPU reduce: duplicate reduced dim");
+    }
+    if (reduce_dims[i] != reduce_dims[i - 1] + 1) {
+      throw std::runtime_error(
+          "WebGPU reduce: only contiguous reduced dims supported");
+    }
+  }
+  const int64_t first_rd = reduce_dims.front();
+  const int64_t last_rd = reduce_dims.back();
+  uint64_t o = 1, rr = 1, in = 1;
+  for (int64_t d = 0; d < first_rd; ++d) {
     o *= static_cast<uint64_t>(dims[d]);
   }
-  for (int64_t d = dim + 1; d < ndim; ++d) {
+  for (int64_t d = first_rd; d <= last_rd; ++d) {
+    rr *= static_cast<uint64_t>(dims[d]);
+  }
+  for (int64_t d = last_rd + 1; d < ndim; ++d) {
     in *= static_cast<uint64_t>(dims[d]);
   }
   outer = static_cast<uint32_t>(o);
-  r = static_cast<uint32_t>(dims[dim]);
+  r = static_cast<uint32_t>(rr);
   inner = static_cast<uint32_t>(in);
 }
 
@@ -81,16 +107,15 @@ void reduce_impl(
   if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::IntList) {
     throw std::runtime_error("WebGPU reduce: dim arg is not an IntList");
   }
-  const std::vector<int64_t>& reduce_dims = graph.get_int_list(dim_id);
-  // Single-dim reduction only for now; multi-dim is a tracked extension.
-  if (reduce_dims.size() != 1) {
-    throw std::runtime_error(
-        "WebGPU reduce: only single-dim reduction is supported");
+  // Contiguous multi-dim reduction (e.g. global avg pool over [H,W]) folds into
+  // one [outer, r, inner]; single-dim is the r = one-dim case.
+  const std::vector<int64_t> reduce_dims = graph.get_int_list(dim_id);
+  if (reduce_dims.empty()) {
+    throw std::runtime_error("WebGPU reduce: empty dim list");
   }
-  const int64_t dim = reduce_dims[0];
 
   uint32_t outer = 0, r = 0, inner = 0;
-  decompose(in.dims, dim, outer, r, inner);
+  decompose_dims(in.dims, reduce_dims, outer, r, inner);
   if (outer == 0 || r == 0 || inner == 0) {
     throw std::runtime_error("WebGPU reduce: zero-sized reduction");
   }
@@ -132,67 +157,30 @@ void reduce_impl(
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(ReduceParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kReduceWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[3] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_Storage;
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 3;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[3] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = in.buffer;
-  bg_entries[0].size = in.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = out.buffer;
-  bg_entries[1].size = out.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = uniform_buffer;
-  bg_entries[2].size = sizeof(ReduceParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 3;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kReduceWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {1, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {2,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(ReduceParams)},
+      },
+      &wg_size_constant,
+      1);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count.x, op_name, workgroup_count.y});
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       op_name,
+       workgroup_count.y});
 
   // Dynamic shapes: recompute the decomposition for the reduced dim + dispatch.
   WGPUBuffer params_buf = uniform_buffer;
@@ -202,7 +190,7 @@ void reduce_impl(
       in_id,
       [in_id,
        out_id,
-       dim,
+       reduce_dims,
        keepdim,
        is_mean_u,
        build_outputs,
@@ -210,7 +198,8 @@ void reduce_impl(
        params_buf](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         uint32_t o = 0, rr = 0, n = 0;
-        decompose(std::vector<int64_t>(d.begin(), d.end()), dim, o, rr, n);
+        decompose_dims(
+            std::vector<int64_t>(d.begin(), d.end()), reduce_dims, o, rr, n);
         if (o == 0u || rr == 0u || n == 0u) {
           throw std::runtime_error("WebGPU reduce: live zero-sized reduction");
         }
@@ -234,10 +223,16 @@ void reduce_impl(
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
         // Propagate reduced output dims for downstream resize hooks.
         int64_t nd = static_cast<int64_t>(d.size());
-        int64_t rd = dim < 0 ? dim + nd : dim;
+        std::vector<bool> is_rd(static_cast<size_t>(nd), false);
+        for (int64_t rd : reduce_dims) {
+          const int64_t n2 = rd < 0 ? rd + nd : rd;
+          if (n2 >= 0 && n2 < nd) {
+            is_rd[static_cast<size_t>(n2)] = true;
+          }
+        }
         std::vector<int64_t> od;
         for (int64_t i = 0; i < nd; ++i) {
-          if (i == rd) {
+          if (is_rd[static_cast<size_t>(i)]) {
             if (keepdim) {
               od.push_back(1);
             }
@@ -248,9 +243,6 @@ void reduce_impl(
         g.set_cur_dims(out_id, od);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }
