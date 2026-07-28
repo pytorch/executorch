@@ -58,8 +58,7 @@ TEST_F(TrainingLoopTest, OptimizerSteps) {
   auto param_res = mod.named_parameters("forward");
   ASSERT_EQ(param_res.error(), Error::Ok);
 
-  float orig_data =
-      param_res.get().at("linear.weight").const_data_ptr<float>()[0];
+  float orig_data = param_res.get().at("linear.weight").data_ptr<float>()[0];
 
   SGDOptions options{0.1};
   SGD optimizer(param_res.get(), options);
@@ -78,6 +77,5 @@ TEST_F(TrainingLoopTest, OptimizerSteps) {
 
   // Check that the data has changed.
   ASSERT_NE(
-      param_res.get().at("linear.weight").const_data_ptr<float>()[0],
-      orig_data);
+      param_res.get().at("linear.weight").data_ptr<float>()[0], orig_data);
 }
