@@ -143,7 +143,7 @@ function(arm_runner_create_selected_ops_lib)
   set(_arm_runner_selected_ops_args
       LIB_NAME
       "${ARG_LIB_NAME}"
-      ROOT_OPS
+      SELECT_OPS_LIST
       "${ARG_OP_LIST}"
       OPS_FROM_MODEL
       "${ARG_OPS_FROM_MODEL}"
