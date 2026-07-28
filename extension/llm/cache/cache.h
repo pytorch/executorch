@@ -13,9 +13,10 @@
 // as_control()/as_planner() (static upcasts -- no dynamic_cast/RTTI, no
 // diamond): a runner-facing control face (SequenceControl) and a backend-facing
 // planner face (SequencePlanner). One controller (SequenceCache) drives all
-// layers and dispatches per-layer layout to a LayoutPolicy (full-history flat
-// today), so a multi-layer model shares one logical length. Errors are plain
-// C++ (bool / std::optional); cache_et.h adapts them to Error/Result for ET
+// layers and dispatches per-layer layout to a LayoutPolicy (flat = full
+// history, ring = sliding window), so a mixed model (e.g. gemma4's alternating
+// full/sliding-window layers) shares one logical length. Errors are plain C++
+// (bool / std::optional); cache_et.h adapts them to Error/Result for ET
 // consumers.
 
 #include <optional>
@@ -58,10 +59,10 @@ struct Run {
 };
 
 // Integer-only handoff from the planner to the backend byte layer. Runs are in
-// logical order (oldest -> newest); a flat layer uses one run, a windowing
-// layer up to two (a write/read that wraps its buffer splits in two).
-// read_base_pos is the logical position of read[0].start (0 for flat), so the
-// backend can align RoPE / the attention mask.
+// logical order (oldest -> newest); a flat layer uses one run, a ring layer up
+// to two (a write/read that wraps the buffer splits in two). read_base_pos is
+// the logical position of read[0].start (0 for flat; the window start for
+// ring), so the backend can align RoPE / the attention mask.
 struct SeqStepPlan {
   Run write[2];
   int n_write;
@@ -84,26 +85,27 @@ class SequencePlanner {
   virtual void commit(const SeqStepPlan& plan) = 0;
 };
 
-// Per-layer layout behavior (e.g. full-history flat). Pure: plan() has no side
-// effects, so the controller (SequenceCache) owns length.
+// Per-layer layout behavior (flat = full history; ring = sliding window). Pure:
+// plan() has no side effects, so the controller (SequenceCache) owns length.
 class LayoutPolicy {
  public:
   virtual ~LayoutPolicy() = default;
   // Write/read runs for T cells at logical `position`. Precondition: T fits the
   // policy's window (the runner chunks prefill so a step fits).
   virtual SeqStepPlan plan(int position, int T) const = 0;
-  // Oldest logical position still retained given the current length (0 for a
-  // full-history policy; a windowing policy retains only its last window). Used
-  // to bound rewind.
+  // Oldest logical position still retained given the current length (0 for
+  // flat; length - window for ring). Used to bound rewind.
   virtual int retained_from(int length) const = 0;
 };
 
 // Per-layer cache kind and its parameters.
 struct LayerPolicy {
-  enum class Kind : int { Flat = 0 }; // serialized values: append-only
+  enum class Kind : int {
+    Flat = 0,
+    Ring = 1
+  }; // serialized values: append-only
   Kind kind = Kind::Flat;
-  int window =
-      0; // sliding-window size for windowing policies; 0 = full history
+  int window = 0; // Ring: sliding-window size; must be 0 when Flat
 };
 
 // Per-layer architecture facts + cache policy.
@@ -114,13 +116,17 @@ struct LayerConfig {
 };
 
 // Model facts + runtime policy the byte layer sizes its pools from. capacity is
-// the logical cap; initial_capacity tunes the byte layer's lazy-doubling pool.
-// `layers` is per-layer: size 1 == uniform across all layers, else == n_layers.
+// the logical cap; initial_capacity tunes the byte layer's lazy-doubling pool;
+// max_write is the max tokens written per step (a ring layer sizes its slots to
+// window + max_write - 1 so a multi-token step fits); unset means each ring
+// layer uses its own window. `layers` is per-layer: size 1 == uniform across
+// all layers, else == n_layers.
 struct CacheConfig {
   int capacity;
   int n_layers;
   std::vector<LayerConfig> layers;
   int initial_capacity = 512;
+  std::optional<int> max_write;
 };
 
 } // namespace cache
