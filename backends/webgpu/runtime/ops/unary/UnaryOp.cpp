@@ -8,6 +8,7 @@
 
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
 
+#include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 
 #include <webgpu/webgpu.h>
@@ -34,8 +35,7 @@ void add_unary_op(
     WebGPUGraph& graph,
     int in_id,
     int out_id,
-    const char* wgsl_source,
-    uint32_t wg_size_x,
+    const char* shader_name,
     const char* op_name,
     float min,
     float max) {
@@ -56,47 +56,34 @@ void add_unary_op(
   // Adaptive 1D->2D dispatch: wg=clamp(device,256) + 2D-spill past the 65535
   // per-dim ceiling. The shader decodes idx via num_workgroups.x, so the live
   // count_x sets the stride at runtime (resize-safe, no override to re-bake).
-  uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
+  const WebGPUShaderInfo& shader_info = get_webgpu_shader_info(shader_name);
+  uint32_t wg_size =
+      utils::clamp_workgroup_size(device, shader_info.workgroup_size_x);
   utils::WgCount workgroup_count =
       utils::compute_2d_workgroup_count(device, num_elements, wg_size, op_name);
-
-  WGPUConstantEntry wg_size_constant = utils::make_wg_size_constant(wg_size);
 
   UnaryParams params = {};
   params.num_elements = num_elements;
   params.min = min;
   params.max = max;
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(UnaryParams));
-  graph.add_uniform_buffer_bytes(sizeof(UnaryParams));
+  WGPUBuffer params_buffer = graph.create_params_buffer(params);
 
   // input (read storage) + output (storage) + params.
-  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
-      device,
-      wgsl_source,
-      {
-          {0,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           in_tensor.buffer,
-           in_tensor.nbytes},
-          {1,
-           WGPUBufferBindingType_Storage,
-           out_tensor.buffer,
-           out_tensor.nbytes},
-          {2,
-           WGPUBufferBindingType_Uniform,
-           uniform_buffer,
-           sizeof(UnaryParams)},
-      },
-      &wg_size_constant,
-      1);
-
-  const size_t dispatch_idx = graph.add_dispatch_2d(
-      bundle.pipeline, bundle.bind_group, workgroup_count.x, workgroup_count.y);
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = shader_name;
+  descriptor.kernel_name = op_name;
+  descriptor.bindings = {
+      {in_tensor.buffer, 0u, in_tensor.nbytes},
+      {out_tensor.buffer, 0u, out_tensor.nbytes},
+      {params_buffer, 0u, sizeof(UnaryParams)},
+  };
+  descriptor.constants = {{"wg_size", static_cast<double>(wg_size)}};
+  descriptor.grid = {workgroup_count.x, workgroup_count.y};
+  const size_t dispatch_idx = graph.add_compute_dispatch(descriptor);
 
   // Dynamic shapes: rewrite full params (incl. min/max) + 2D dispatch count.
-  WGPUBuffer params_buf = uniform_buffer;
+  WGPUBuffer params_buf = params_buffer;
   graph.add_tensor_resize_hook(
       in_id,
       [in_id, out_id, wg_size, dispatch_idx, params_buf, min, max](
@@ -114,9 +101,6 @@ void add_unary_op(
         g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
         g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
       });
-
-  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace executorch::backends::webgpu

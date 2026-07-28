@@ -7,8 +7,6 @@
  */
 
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/relu/relu_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/sigmoid/sigmoid_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/UnaryOp.h>
 
 #include <vector>
@@ -19,19 +17,12 @@ namespace {
 
 void sigmoid_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.sigmoid.default args: [in, out]
-  add_unary_op(
-      graph,
-      args.at(0),
-      args.at(1),
-      kSigmoidWGSL,
-      kSigmoidWorkgroupSizeX,
-      "sigmoid");
+  add_unary_op(graph, args.at(0), args.at(1), "sigmoid", "sigmoid");
 }
 
 void relu_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // aten.relu.default args: [in, out]
-  add_unary_op(
-      graph, args.at(0), args.at(1), kReluWGSL, kReluWorkgroupSizeX, "relu");
+  add_unary_op(graph, args.at(0), args.at(1), "relu", "relu");
 }
 
 } // namespace
