@@ -65,8 +65,8 @@
 #include <executorch/backends/webgpu/runtime/ops/linear_dq8ca_q4gsw/linear_dq8ca_q4gsw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/linear_q8ta_q8csw/linear_q8ta_q8csw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/linear_qcs4w/qcs4w_linear_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/logical_and/logical_and_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/logical_or/logical_or_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/logical_binary/logical_and_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/logical_binary/logical_or_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/max_pool2d/max_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/minimum/binary_minimum_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_tiled_wgsl.h>

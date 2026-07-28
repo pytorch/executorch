@@ -11,6 +11,11 @@ import torch
 
 from executorch.backends.webgpu.test.op_tests import generate_op_tests as g
 from executorch.backends.webgpu.test.op_tests.test_suite import op_test_registry
+from executorch.backends.webgpu.test.ops.test_logical_and import (
+    LOGICAL_BINARY_CASES,
+    logical_binary_gen_a,
+    logical_binary_gen_b,
+)
 
 
 def _add_regular_case():
@@ -112,3 +117,47 @@ def test_manifest_schema_roundtrip(tmp_path):
         gd = e["golden"]
         assert {"path", "shape", "dtype", "output_index"} <= set(gd)
         assert gd["output_index"] == 0
+
+
+def test_logical_binary_case_contract():
+    expected_cases = (
+        ("2d", (4, 8)),
+        ("3d", (2, 3, 8)),
+        ("sq", (16, 16)),
+        ("words63", (252,)),
+        ("words64", (256,)),
+        ("words65", (260,)),
+    )
+    assert LOGICAL_BINARY_CASES == expected_cases
+    assert logical_binary_gen_a((8,)).tolist() == [
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+        -1.0,
+        -1.0,
+        1.0,
+        1.0,
+    ]
+    assert logical_binary_gen_b((8,)).tolist() == [
+        -1.0,
+        1.0,
+        -1.0,
+        1.0,
+        -1.0,
+        1.0,
+        -1.0,
+        1.0,
+    ]
+
+    for op in ("logical_and", "bitwise_and", "logical_or", "bitwise_or"):
+        suite = op_test_registry[op]
+        assert tuple((case.name, case.construct["shape"]) for case in suite.cases) == (
+            expected_cases
+        )
+        for case in suite.cases:
+            assert case.required is True
+            assert case.heavy is False
+            assert len(case.inputs) == 2
+            assert case.inputs[0].gen is logical_binary_gen_a
+            assert case.inputs[1].gen is logical_binary_gen_b

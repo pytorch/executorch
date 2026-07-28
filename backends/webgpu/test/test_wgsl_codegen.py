@@ -230,7 +230,11 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 134)
         self.assertEqual(
             digest.hexdigest(),
-            "a3f6324b224c049f239beea3c38e1dd532e364f8d44c595eb5fcc84dba4a1a83",
+            "6c2b6fa24aca2de0ae395979d15015155afe81b64d51b3fee81368da315ceaf6",
+        )
+        self.assertEqual(
+            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
+            "e82cab9afb45a880e3f33da73ff0d000bee8092eccca3ccf5819701bb433d6d7",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -967,10 +971,6 @@ class WgslTemplateEngineTest(unittest.TestCase):
             entries["to_copy_int_to_float"].include,
             "runtime/ops/to_copy/to_copy_int_to_float_wgsl.h",
         )
-        self.assertEqual(
-            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
-        )
 
     def test_extrema_template_roundtrip_byte_identical(self) -> None:
         extrema_dir = g.BACKEND_ROOT / "runtime/ops/extrema"
@@ -1021,10 +1021,56 @@ class WgslTemplateEngineTest(unittest.TestCase):
                 hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
             )
 
-        self.assertEqual(
-            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
-        )
+    def test_logical_binary_template_roundtrip_byte_identical(self) -> None:
+        logical_dir = g.BACKEND_ROOT / "runtime/ops/logical_binary"
+        template_path = logical_dir / "logical_binary.wgsl"
+        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
+        variants = {params["NAME"]: params for params in spec[template_path.stem]}
+        expected = {
+            "logical_and": (
+                "&",
+                "cf7c1d1dbba94e429120796c9c25a6717786cca03c08f3bd1e291d5627089c20",
+            ),
+            "logical_or": (
+                "|",
+                "4ad19ee04e2c7b396b4669cf44f95133d658c3ec2e6f37d7b271bedc0e582ecf",
+            ),
+        }
+        self.assertEqual(set(variants), set(expected))
+        template = template_path.read_text()
+
+        for name, (op, expected_hash) in expected.items():
+            params = variants[name]
+            self.assertEqual(params["OP"], op)
+            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
+            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
+
+            header_path = logical_dir / f"{name}_wgsl.h"
+            header = header_path.read_text()
+            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
+            self.assertEqual(body, expanded)
+            self.assertEqual(g.embedded_sha256(header), expected_hash)
+            self.assertEqual(g.parse_workgroup_size(body), (64, 1, 1))
+
+        entries = {entry.name: entry for entry in g.registry_entries()}
+        for name in expected:
+            self.assertEqual(
+                entries[name].include,
+                f"runtime/ops/logical_binary/{name}_wgsl.h",
+            )
+            self.assertEqual(entries[name].symbol, g.symbol_base(name))
+
+        handler_hashes = {
+            "logical_and": "eb85a8f97ee7640298a661da49feb08aa79b8c24d3d4458b71d24d3f01bc388d",
+            "logical_or": "bda18617f7077fee5a812c21cdc495c89542a1688f7e1ef6739ed01da343a66b",
+        }
+        for name, expected_hash in handler_hashes.items():
+            handler = (
+                g.BACKEND_ROOT / f"runtime/ops/{name}/Logical{name[8:].title()}.cpp"
+            )
+            self.assertEqual(
+                hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
+            )
 
     def test_rms_norm_half_variant_is_type_correct(self) -> None:
         # A DTYPE=half expansion must emit compilable WGSL: `enable f16;`, an f32
