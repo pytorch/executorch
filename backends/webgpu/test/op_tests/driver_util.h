@@ -24,6 +24,7 @@ struct GoldenRef {
   std::string path;
   std::vector<int> shape;
   int output_index = 0;
+  std::string dtype = "float32"; // "float32" | "int8" | "int64" (argmax index)
 };
 
 struct ManifestEntry {
@@ -44,6 +45,12 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path);
 /// Load raw little-endian fp32; empty on size/IO mismatch.
 std::vector<float> load_fp32_bin(const std::string& path, size_t numel);
 std::vector<int32_t> load_int32_bin(const std::string& path, size_t numel);
+
+/// Load raw int8 (one byte per element); empty on size/IO mismatch.
+std::vector<int8_t> load_int8_bin(const std::string& path, size_t numel);
+
+/// Load raw little-endian int64 (8B/elem); empty on size/IO mismatch.
+std::vector<int64_t> load_int64_bin(const std::string& path, size_t numel);
 
 /// Element OK if abs_err <= atol OR rel_err <= rtol (rel floored at
 /// |golden|=1e-6). Sets the reported maxima; true iff all elements pass.
