@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from permute.wgsl - DO NOT EDIT.
-// wgsl-sha256: 05884aeb14426c979ea037b066266d8cab11f4fed76ee21ee8778e7fc13ad84e
+// wgsl-sha256: ec71705cb9feb46edd5398986cfe4f5a40028b8d5a603f0d2bf06d056a844c26
 inline constexpr const char* kPermuteWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -21,14 +21,14 @@ inline constexpr const char* kPermuteWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
 
 struct Params {
-  perm: vec4<u32>,
+  perm: array<vec4<u32>, 2>,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
@@ -48,9 +48,10 @@ fn main(
     var rem = out_bufi;
     var in_bufi: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        in_bufi = in_bufi + coord * in_meta.strides[params.perm[d]];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        let p = params.perm[d >> 2u][d & 3u];
+        in_bufi = in_bufi + coord * in_meta.strides[p >> 2u][p & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }

@@ -23,6 +23,7 @@ from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_gather,
     emit_stop_position,
     parse_dequant_int4_node,
+    parse_dequant_mx_node,
     parse_dequant_node,
     parse_dequant_nvfp4_node,
     regroup_affine_scales,
@@ -1153,6 +1154,196 @@ class NVFP4QuantizedLinearHandler(PatternHandler):
                     out=P.slot_to_tid(out),
                 )
             )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
+        return out
+
+
+def _mx_mlx_mode_bits(elem_dtype: torch.dtype):
+    """Map an MX element dtype to the MLX (mode, bits). Rejects unsupported formats.
+
+    MLX's block-scaled kernels only implement E4M3 elements (mxfp8). Other MX
+    element encodings (e5m2, fp4/fp6, ...) are rejected rather than silently
+    mis-lowered.
+    """
+    if elem_dtype == torch.float8_e4m3fn:
+        return "mxfp8", 8
+    raise ValueError(
+        f"MLX backend does not support MX element dtype {elem_dtype}; "
+        "only float8_e4m3fn (mxfp8) is supported."
+    )
+
+
+def _mx_pack_for_mlx(P, qdata_node, scale_node):
+    """Reinterpret ExportableMXTensor's native FP8/E8M0 storage to MLX layout.
+
+    ExportableMXTensor stores ``qdata`` as native FP8 (one value per byte) and
+    ``scale`` as ``float8_e8m0fnu``; MLX's kernel wants ``qdata`` as uint32
+    (4 FP8 codes per word) and ``scale`` as uint8. Both conversions are pure bit
+    reinterpretations (``view``), registered as MLX constants.
+    """
+    qdata_target, qdata = P.get_placeholder_target_and_tensor(qdata_node)
+    scale_target, scale = P.get_placeholder_target_and_tensor(scale_node)
+    w = qdata.contiguous().view(torch.uint8).view(torch.uint32)
+    sc = scale.contiguous().view(torch.uint8)
+    w_slot = P.make_or_get_constant(f"{qdata_target}_mx_packed", w)
+    scale_slot = P.make_or_get_constant(f"{scale_target}_mx_u8", sc)
+    return w_slot, scale_slot
+
+
+@REGISTRY.register_pattern(name="MX_QUANTIZED_LINEAR")
+class MXQuantizedLinearHandler(PatternHandler):
+    """Fuse dequantize_mx + linear into QuantizedMatmulNode for the MX format.
+
+    Matches:
+        linear(x, dequantize_mx(qdata, scale, elem_dtype, block_size), bias)
+
+    Emits:
+        QuantizedMatmulNode [→ AddNode(bias)] [→ AsTypeNode]
+
+    The element dtype is mapped to the MLX ``mode``/``bits`` (rejecting formats
+    MLX can't lower). MX has no per-tensor scale, so no MultiplyNode is emitted.
+    """
+
+    def __init__(self, head, body, qdata, scale, elem_dtype, block_size, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.elem_dtype = elem_dtype
+        self.block_size = block_size
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.linear.default):
+            return None
+        x, dequant = head.args[0:2]
+        if not isinstance(dequant, Node):
+            return None
+        if not has_single_user(dequant):
+            return None
+        parsed = parse_dequant_mx_node(dequant)
+        if parsed is None:
+            return None
+        qdata, scale, elem_dtype, block_size, output_dtype = parsed
+        return cls(head, [dequant], qdata, scale, elem_dtype, block_size, output_dtype)
+
+    def __call__(self, P, n):
+        assert n == self.head
+
+        x_node, w_node = n.args[0:2]
+        b_node = n.args[2] if len(n.args) > 2 else None
+
+        mode, bits = _mx_mlx_mode_bits(self.elem_dtype)
+        needs_cast = x_node.meta["val"].dtype != self.output_dtype
+        has_bias = b_node is not None
+
+        w, scales = _mx_pack_for_mlx(P, self.qdata, self.scale)
+        x, bias = P.slot_map([x_node, b_node])
+
+        out = P.make_or_get_slot(n)
+        P.emit(
+            QuantizedMatmulNode(
+                x=P.slot_to_tid(x),
+                w=P.slot_to_tid(w),
+                scales=P.slot_to_tid(scales),
+                out=P.slot_to_tid(out),
+                biases=None,
+                group_size=self.block_size,
+                bits=bits,
+                mode=mode,
+                transpose=True,
+            )
+        )
+
+        if has_bias:
+            P.emit(
+                AddNode(
+                    a=P.slot_to_tid(out),
+                    b=P.slot_to_tid(bias),
+                    out=P.slot_to_tid(out),
+                )
+            )
+
+        if needs_cast:
+            P.emit(
+                AsTypeNode(
+                    x=P.slot_to_tid(out),
+                    out=P.slot_to_tid(out),
+                    scalar_type=torch_dtype_to_scalar_type(self.output_dtype),
+                )
+            )
+
+        return out
+
+
+@REGISTRY.register_pattern(name="MX_QUANTIZED_EMBEDDING")
+class MXQuantizedEmbeddingHandler(PatternHandler):
+    """Fuse dequantize_mx + embedding into gather + DequantizeNode for the MX format.
+
+    Matches:
+        embedding(dequantize_mx(qdata, scale, elem_dtype, block_size), indices)
+
+    Emits:
+        TakeNode(qdata) → TakeNode(scales) → DequantizeNode [→ AsTypeNode]
+    """
+
+    def __init__(self, head, body, qdata, scale, elem_dtype, block_size, output_dtype):
+        super().__init__(head, body)
+        self.qdata = qdata
+        self.scale = scale
+        self.elem_dtype = elem_dtype
+        self.block_size = block_size
+        self.output_dtype = output_dtype
+
+    @classmethod
+    def maybe_create(cls, ep, head):
+        if not match_target(head, torch.ops.aten.embedding.default):
+            return None
+
+        w, x = head.args[0:2]
+        if not isinstance(w, Node):
+            return None
+        if not has_single_user(w):
+            return None
+        parsed = parse_dequant_mx_node(w)
+        if parsed is None:
+            return None
+        qdata, scale, elem_dtype, block_size, output_dtype = parsed
+        return cls(head, [w], qdata, scale, elem_dtype, block_size, output_dtype)
+
+    def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
+        assert n == self.head
+        w_node, x_node = n.args[0:2]
+
+        mode, bits = _mx_mlx_mode_bits(self.elem_dtype)
+        x_dtype = x_node.meta["val"].dtype
+        needs_cast = self.output_dtype != x_dtype
+
+        qdata_slot, scales_slot = _mx_pack_for_mlx(P, self.qdata, self.scale)
+        (x,) = P.slot_map([x_node])
+
+        out = P.make_or_get_slot(n)
+        emit_quantized_gather(
+            P,
+            out,
+            x,
+            qdata_slot,
+            scales_slot,
+            None,
+            group_size=self.block_size,
+            bits=bits,
+            mode=mode,
+            out_dtype=self.output_dtype,
+        )
 
         if needs_cast:
             P.emit(
