@@ -53,6 +53,13 @@ def _get_quantized_moe_preproc_flags():
     if runtime.is_oss:
         return []
     if is_xplat():
+        # TODO: enable KleidiAI for the runtime here by adding
+        # -DTORCHAO_ENABLE_KLEIDI (+ -DTORCHAO_ENABLE_ARM_I8MM=1) on arm64 and
+        # linking the kleidi kernel target in _get_quantized_moe_deps(). The
+        # runtime (op_moe.cpp) already selects the ukernel from the header, so
+        # kleidi headers resolve automatically once the kernels are compiled.
+        # Must be paired with the AoT packer emitting kleidi headers (see
+        # _get_quantized_moe_aot_packer_deps()).
         return select({
             "DEFAULT": [],
             "ovr_config//cpu:arm64": [
@@ -68,6 +75,12 @@ def _get_quantized_moe_aot_packer_deps():
     which is registered by torchao's AOT (aten) library. Pull this in
     only on fbcode so that Python tests can pack experts; xplat builds
     do not need the AOT packer.
+
+    TODO: enable KleidiAI on the AoT side — build this packer with
+    -DTORCHAO_ENABLE_KLEIDI so select_packed_weights_format emits kleidi
+    headers, otherwise it always packs the universal format regardless of the
+    runtime kernels. Must be coordinated with the runtime enabling kleidi (see
+    _get_quantized_moe_preproc_flags() and op_moe.cpp).
     """
     if runtime.is_oss:
         return []

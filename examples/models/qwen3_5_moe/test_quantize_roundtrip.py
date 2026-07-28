@@ -218,9 +218,9 @@ class TestSerializerFormatDispatch(unittest.TestCase):
 
     @staticmethod
     def _cpu_subclass():
-        from executorch.examples.models.gemma4_31b.quant import (
+        from executorch.extension.llm.export.quant import (
             QuantConfig,
-            quantize_model,
+            quantize_stream,
             QuantRecipe,
             QuantRule,
         )
@@ -237,7 +237,12 @@ class TestSerializerFormatDispatch(unittest.TestCase):
                 )
             ]
         )
-        return "0.weight", next(iter(quantize_model(model, recipe).values()))
+        # Serializer round-trip: use the serialization form (torchao-native
+        # Int4Tensor from quantize_stream), which is what quantize_and_save
+        # writes. quantize_model yields an ExportableInt4Tensor (in-memory form)
+        # that torchao's flatten cannot serialize.
+        params = ((n, p.data) for n, p in model.named_parameters())
+        return next(iter(quantize_stream(params, recipe)))
 
     def _assert_subclass_equal(self, a, b):
         names_a, attrs_a = a.__tensor_flatten__()

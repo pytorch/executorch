@@ -34,13 +34,22 @@ namespace {
 
 using executorch::aten::string_view;
 
+// Numerically-stable sigmoid. Branching on sign keeps exp()'s argument
+// non-positive on both sides, so it can never overflow.
+inline float stable_sigmoid(float v) {
+  if (v >= 0.0f) {
+    return 1.0f / (1.0f + std::exp(-v));
+  }
+  const float e = std::exp(v);
+  return e / (1.0f + e);
+}
+
 // SwiGLU epilogue: out = silu(h1) * h3 (in place over h1).
-// silu(x) = x * sigmoid(x) = x / (1 + exp(-x)).
+// silu(x) = x * sigmoid(x).
 inline void swiglu_inplace(float* h1, const float* h3, int64_t n) {
   for (int64_t i = 0; i < n; ++i) {
     const float v = h1[i];
-    const float s = v / (1.0f + std::exp(-v));
-    h1[i] = s * h3[i];
+    h1[i] = v * stable_sigmoid(v) * h3[i];
   }
 }
 
@@ -66,7 +75,7 @@ inline void softmax_row(float* row, int64_t e) {
 // In-place sigmoid over a contiguous buffer.
 inline void sigmoid_inplace(float* p, int64_t n) {
   for (int64_t i = 0; i < n; ++i) {
-    p[i] = 1.0f / (1.0f + std::exp(-p[i]));
+    p[i] = stable_sigmoid(p[i]);
   }
 }
 
@@ -202,8 +211,43 @@ inline void torchao_linear(
           static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()),
       "torchao packed blob too small to contain header");
   auto header = torchao::ops::PackedWeightsHeader::read(packed_w_blob);
+  // Select the ukernel from the format declared in the header. This resolves
+  // the universal or kleidi packing automatically; a format whose kernels are
+  // not compiled into this build (e.g. kleidi when TORCHAO_ENABLE_KLEIDI is
+  // unset) throws here instead of being silently mis-read.
+  // TODO: enable KleidiAI here — build this op on xplat arm64 with
+  // -DTORCHAO_ENABLE_KLEIDI (+ -DTORCHAO_ENABLE_ARM_I8MM) and link the kleidi
+  // kernel target so a kleidi header actually resolves to a kleidi ukernel.
+  // Must be coordinated with the AoT packer emitting kleidi headers (see
+  // targets.bzl).
   auto uk = torchao::ops::linear_8bit_act_xbit_weight::select_ukernel_config<
       kWeightNbit>(header);
+
+  // Validate the blob against the *selected* format's layout. nr/kr/sr and the
+  // size formula differ between universal and kleidi, so derive them from the
+  // chosen config rather than assuming a fixed layout.
+  const int64_t required_bytes =
+      static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()) +
+      static_cast<int64_t>(uk.packed_weights_size(
+          static_cast<int>(n),
+          static_cast<int>(k),
+          static_cast<int>(group_size),
+          kWeightNbit,
+          /*has_weight_zeros=*/false,
+          /*has_bias=*/false,
+          uk.nr,
+          uk.kr,
+          uk.sr));
+  ET_CHECK_MSG(
+      packed_blob_bytes >= required_bytes,
+      "torchao packed blob too small: have %lld bytes, need >= %lld for "
+      "(n=%lld, k=%lld, group_size=%lld, weight_nbit=%d)",
+      static_cast<long long>(packed_blob_bytes),
+      static_cast<long long>(required_bytes),
+      static_cast<long long>(n),
+      static_cast<long long>(k),
+      static_cast<long long>(group_size),
+      kWeightNbit);
 
   torchao::ops::linear_8bit_act_xbit_weight::linear_operator(
       uk,
@@ -232,8 +276,12 @@ inline void expert_linear_dispatch(
     int64_t k,
     int64_t group_size,
     float* out) {
-  // Validate the blob holds at least the header plus the torchao packed
-  // weight-data bytes for the claimed dims before any path dereferences it.
+#ifndef ENABLE_QUANTIZED_MOE_FFN
+  // Reference path only: it unpacks the universal layout, so validate the blob
+  // holds the header plus the universal packed weight-data bytes for the
+  // claimed dims before any path dereferences it. The torchao path validates
+  // against its own selected format (universal or kleidi) inside
+  // torchao_linear.
   constexpr int kNr = 8, kKr = 16, kSr = 2;
   const int64_t required_bytes =
       static_cast<int64_t>(torchao::ops::PackedWeightsHeader::size()) +
@@ -257,6 +305,7 @@ inline void expert_linear_dispatch(
       static_cast<long long>(k),
       static_cast<long long>(group_size),
       static_cast<long long>(weight_nbit));
+#endif // !ENABLE_QUANTIZED_MOE_FFN
   switch (weight_nbit) {
     case 4:
 #ifdef ENABLE_QUANTIZED_MOE_FFN
