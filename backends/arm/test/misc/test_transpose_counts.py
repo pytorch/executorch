@@ -399,7 +399,7 @@ cases = {
         (torch.randn(1, 2, 8, 8),),
         2,
     ),
-    "views": TransposeCountCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 4),
+    "views": TransposeCountCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 2),
     "transposes": TransposeCountCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4),),

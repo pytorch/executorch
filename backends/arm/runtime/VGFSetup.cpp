@@ -174,6 +174,7 @@ static uint32_t get_format_component_count(VkFormat format) {
     case VK_FORMAT_R32G32_SFLOAT:
       return 2;
     case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_R8G8B8A8_SNORM:
     case VK_FORMAT_R8G8B8A8_SINT:
     case VK_FORMAT_R16G16B16A16_UINT:
     case VK_FORMAT_R16G16B16A16_SINT:
@@ -253,6 +254,7 @@ static bool get_format_info(VkFormat format, FormatInfo* info) {
     case VK_FORMAT_R8G8B8A8_UINT:
       *info = FormatInfo{4, 1, FormatScalarKind::Uint};
       return true;
+    case VK_FORMAT_R8G8B8A8_SNORM:
     case VK_FORMAT_R8G8B8A8_SINT:
       *info = FormatInfo{4, 1, FormatScalarKind::Sint};
       return true;
@@ -3823,6 +3825,7 @@ static uint32_t get_format_size(VkFormat format) {
     case VK_FORMAT_R32_SINT:
     case VK_FORMAT_R32_SFLOAT:
     case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_R8G8B8A8_SNORM:
     case VK_FORMAT_R8G8B8A8_SINT:
       return 4;
     case VK_FORMAT_R32G32_UINT:
