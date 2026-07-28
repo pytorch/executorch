@@ -172,8 +172,8 @@ Tensor& quantized_transpose_conv2d_out(
   transpose_conv_params.activation.max = activation_max_val;
 
   cmsis_nn_per_channel_quant_params quant_params;
-  quant_params.multiplier = requantize_multipliers.data_ptr<int32_t>();
-  quant_params.shift = requantize_shifts.data_ptr<int32_t>();
+  quant_params.multiplier = requantize_multipliers.mutable_data_ptr<int32_t>();
+  quant_params.shift = requantize_shifts.mutable_data_ptr<int32_t>();
 
   const int8_t* input_data = input.const_data_ptr<int8_t>();
   const int8_t* weight_data = weight.const_data_ptr<int8_t>();
