@@ -1,29 +1,10 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Gemma4-31B DFlash hidden-state export wrapper. 
 
-"""DFlash-aware MLX source transformations for Gemma4-31B.
-
-mlx_source_transformations.py's mlx_source_transformations() ends by calling
-_replace_model_forward(model), which unconditionally overwrites the top-level
-forward with a (tokens, input_pos) -> (B, 1, V) last-token-only, single-output
-variant -- it does a full `types.MethodType` replacement, not a wrapper, so
-whatever forward the model had before (including Gemma4_31BWithHidden's
-full-sequence, two-output forward) is discarded entirely and never called at
-export time. That silently turned our DFlash target export back into a
-last-token-only, hidden-state-free model with no error at any stage.
-
-This module reuses everything else from mlx_source_transformations.py
-unchanged (KV cache attachment, per-layer attention/layer forward rewrites
-via mlx.rope / mlx.custom_sdpa -- both output-shape-agnostic, operate within
-a layer) and only replaces the final _replace_model_forward(model) call with
-a DFlash-aware top-level forward that preserves full-sequence logits and
-hidden-state capture at model.dflash_layer_ids.
+Gemma4-31B uses its own forward() implementation instead of the generic export_llm_hf.py path, so this patches Gemma4_31B.forward to also return hidden states from the configured target layers. 
 """
 
 import types
+from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -35,17 +16,53 @@ from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
     _replace_attention_forward,
     _replace_layer_forward,
 )
+from executorch.examples.models.gemma4_31b.model import Gemma4_31B, Gemma4_31BConfig
+
+
+class Gemma4_31BWithHidden(Gemma4_31B):
+
+    def __init__(self, config: Gemma4_31BConfig, layer_ids: Sequence[int] = ()):
+        super().__init__(config)
+        if not layer_ids:
+            raise ValueError("layer_ids must be non-empty")
+        self.dflash_layer_ids: List[int] = list(layer_ids)
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        input_pos: torch.LongTensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns full-sequence logits and hidden states for DFlash block verification. 
+        Unlike the base implementation, which only returns the last token logits for single-token decoding, DFlash returns logits for every position in the drafted block so run_dflash.py can perform greedy verification and first-mismatch acceptance. 
+        """
+        x = self.embed_tokens(tokens) * self.embed_normalizer
+        sliding_mask, full_mask = self._build_masks(input_pos)
+
+        layer_id_set = set(self.dflash_layer_ids)
+        captured = {}
+        for i, layer in enumerate(self.layers):
+            x = layer(x, input_pos, sliding_mask, full_mask)
+            if i in layer_id_set:
+                captured[i] = x
+
+        missing = layer_id_set - captured.keys()
+        if missing:
+            raise ValueError(
+                f"dflash_layer_ids {sorted(missing)} not reached: "
+                f"model only has {len(self.layers)} layers"
+            )
+        hidden = torch.cat([captured[i] for i in self.dflash_layer_ids], dim=-1)
+
+        x = self.norm(x)
+        logits = self.lm_head(x).float()
+        cap = self.logit_softcap.float()
+        logits = torch.tanh(logits / cap) * cap
+        return logits, hidden
 
 
 def _replace_dflash_model_forward(model: nn.Module) -> None:
-    """Replace the top-level forward with a DFlash-aware, MLX-optimized variant.
-
-    Signature: (tokens, input_pos) -> (logits, hidden) where logits is
-    (B, T, V) over every position (not last-token-only) and hidden is
-    (B, T, len(dflash_layer_ids) * hidden_size) -- matching
-    Gemma4_31BWithHidden.forward's contract, but using the per-layer
-    MLX-optimized attention/layer forwards installed by
-    dflash_mlx_source_transformations instead of the original PyTorch ops.
+    """Installs a DFlash-aware top-level forward after MLX op rewrites are applied.
+    The stock mlx_source_transformations' _replace_model_forward overwrites the model's forward entirely, discarding Gemma4_31BWithHidden.forward, so this reinstalls the same hidden-capturing logic on top of the MLX-optimized layers.
     """
 
     def _mlx_dflash_model_forward(
@@ -63,13 +80,13 @@ def _replace_dflash_model_forward(model: nn.Module) -> None:
         missing = layer_id_set - captured.keys()
         if missing:
             raise ValueError(
-                f"dflash_layer_ids {sorted(missing)} not reached -- "
+                f"dflash_layer_ids {sorted(missing)} not reached: "
                 f"model only has {len(self.layers)} layers"
             )
         hidden = torch.cat([captured[i] for i in self.dflash_layer_ids], dim=-1)
 
         x = self.norm(x)
-        logits = self.lm_head(x).float()  # (B, T, V) -- NOT x[:, -1, :]
+        logits = self.lm_head(x).float()
         cap = self.logit_softcap.float()
         logits = torch.tanh(logits / cap) * cap
         return logits, hidden
@@ -81,17 +98,10 @@ def dflash_mlx_source_transformations(
     model: nn.Module,
     dtype: torch.dtype = torch.bfloat16,
     use_turboquant: bool = False,
-    max_write_len: int | None = None,
+    max_write_len: Optional[int] = None,
 ) -> None:
-    """Apply MLX source transformations to a Gemma4_31BWithHidden model in-place.
-
-    Identical to mlx_source_transformations.mlx_source_transformations()
-    except the final step installs a DFlash-aware top-level forward
-    (full-sequence logits + hidden-state capture) instead of the stock
-    last-token-only, single-output one. See module docstring for why this
-    duplication is necessary rather than composing with the original.
-
-    model must be a Gemma4_31BWithHidden instance (needs .dflash_layer_ids).
+    """DFlash-aware variant of mlx_source_transformations for a Gemma4_31BWithHidden model.
+    Reuses the same per-layer attention/KV-cache rewrites as the stock transform, but installs the hidden-capturing forward above instead of the stock last-token-only one.
     """
     if not hasattr(model, "dflash_layer_ids"):
         raise TypeError(

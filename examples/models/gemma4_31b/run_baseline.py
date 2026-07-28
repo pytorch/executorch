@@ -1,29 +1,6 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Greedy autoregressive decoding used as the DFlash baseline. 
 
-"""Standard autoregressive decoding used as the baseline for the comparison.
-
-Mirrors examples/models/qwen3/run_baseline.py's structure (same target .pte
-reused for both baseline and DFlash -- see run_dflash.py's module docstring
-for why), but Gemma4-31B's tokenizer/chat-template handling genuinely
-differs from Qwen3's and is NOT a drop-in AutoTokenizer.apply_chat_template
-call:
-
-- Uses the raw `tokenizers.Tokenizer` API (`Tokenizer.from_file` +
-  `.encode(...).ids` / `.decode(...)`), not transformers.AutoTokenizer --
-  this checkpoint's tokenizer_config.json has no chat_template field at all.
-- BOS is not part of the chat-template string; it must be prepended at the
-  token-ID level or, per inference.py's docstring, "the model's logits
-  collapse to a single high-frequency vocab token."
-- Three stop tokens, not one: eos_token_ids = {1, 50, 106} (hardcoded in
-  inference.py's main(), not derived from the tokenizer's own eos_token
-  field).
-
-apply_chat_template is imported directly from inference.py rather than
-reimplemented, so this only has one place to go stale.
+Reuses the same exported target model as DFlash for a fair comparison. Gemma4-specific prompt formatting is handled by inference.py's apply_chat_template(). 
 """
 
 import argparse

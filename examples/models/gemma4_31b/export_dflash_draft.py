@@ -1,28 +1,6 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Exports the Gemma4-31B DFlash draft model as a .pte program. 
 
-"""Exports the Gemma4-31B DFlash draft model to a .pte program.
-
-Mirrors examples/models/qwen3/export_dflash_draft.py's flow (DFlashDraftModel
-and load_dflash_config are fully generic -- no Gemma4-specific changes
-needed there), but pulls the shared embed_tokens/lm_head weights from the
-*prequantized* target checkpoint instead of loading the full bf16 target
-model via AutoModelForCausalLM. For a 31B model, loading the full bf16
-target (~62GB resident) just to copy two weight tensors before discarding
-it would resurrect the exact memory problem the prequantized-checkpoint
-export path was chosen to avoid.
-
-embed_tokens and lm_head are stored as separately-quantized tensors in the
-prequantized checkpoint (confirmed via direct safetensors key inspection:
-embed_tokens._weight_qdata/_scale/_zero_point and lm_head._weight_qdata/...
-both present) -- config.json's tie_word_embeddings: true is stale/does not
-reflect this; do not rely on it. Each is unflattened back into its torchao
-tensor subclass via unflatten_tensor_state_dict (same utility
-quant/pack_mlx.py's load_and_pack_for_mlx uses) and dequantized to bf16
-before being copied into the draft model's own embed_tokens/lm_head.
+Uses the same generic DFlash export flow as Qwen3, but loads embed_tokens and lm_head directly from the prequantized checkpoint instead of the full 31B bf16 model, avoiding the large memory overhead. Both weights are restored from their quantized form and copied into the draft model before export. 
 """
 
 import argparse
@@ -45,12 +23,7 @@ from torch.export import Dim
 def _load_dequantized_tensor(
     safetensors_path: str, logical_name: str, dtype: torch.dtype = torch.bfloat16
 ) -> torch.Tensor:
-    """Load one named weight from a torchao-quantized safetensors checkpoint,
-    reconstructing the tensor subclass then dequantizing to a dense tensor.
-
-    logical_name is a dotted module path, e.g. "embed_tokens.weight" or
-    "lm_head.weight" -- matches the tensor_names entries in the checkpoint's
-    safetensors metadata, not the raw on-disk key prefixes.
+    """Loads and dequantizes a named weight from a torchao-quantized safetensors checkpoint into a dense tensor. 
     """
     from torchao.prototype.safetensors.safetensors_support import (
         unflatten_tensor_state_dict,
@@ -98,11 +71,11 @@ def load_draft_model_from_prequantized_target(
     assert not still_missing, f"Missing draft checkpoint keys: {still_missing}"
 
     target_safetensors = f"{target_prequantized_dir}/model.safetensors"
-    print(f"Dequantizing embed_tokens.weight from {target_safetensors}...")
+    print(f"Dequantizing embed_tokens.weight from {target_safetensors}: ")
     embed_weight = _load_dequantized_tensor(target_safetensors, "embed_tokens.weight")
     model.embed_tokens.weight.data.copy_(embed_weight)
 
-    print(f"Dequantizing lm_head.weight from {target_safetensors}...")
+    print(f"Dequantizing lm_head.weight from {target_safetensors}: ")
     lm_head_weight = _load_dequantized_tensor(target_safetensors, "lm_head.weight")
     model.lm_head.weight.data.copy_(lm_head_weight)
 
@@ -114,16 +87,12 @@ def main():
     parser.add_argument(
         "--target-prequantized",
         default="./gemma-4-31B-it-HQQ-INT4",
-        help="Directory with the prequantized target checkpoint "
-        "(model.safetensors + config.json) -- used only to source "
-        "embed_tokens/lm_head weights, not to build the full target model.",
+        help="Directory containing the prequantized target checkpoint used to load embed_tokens and lm_head.",
     )
     parser.add_argument("--draft-model", default="z-lab/gemma-4-31B-it-DFlash")
     parser.add_argument("--output", default="gemma4_31b_dflash_draft.pte")
     parser.add_argument("--block-size", type=int, default=16)
-    # --ctx-len only seeds the example shape used for tracing (ctx_len is a
-    # dynamic dim below via Dim("ctx_len", ...)); it is not a runtime cap.
-    # --max-ctx-len is the actual bound on context length at inference time.
+    # --ctx-len is only used for export tracing
     parser.add_argument("--ctx-len", type=int, default=8)
     parser.add_argument("--max-ctx-len", type=int, default=4096)
     args = parser.parse_args()
@@ -133,9 +102,7 @@ def main():
     )
     model.eval()
 
-    # Quantize the draft model to match the target model's precision --
-    # keeping both at the same precision reduces memory and helps keep
-    # their predictions consistent, important for a high acceptance rate.
+    # Quantize the draft model to match the target model. 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
     quantize_model_(

@@ -1,14 +1,4 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * Standalone C++ DFlash speculative decoding driver for Gemma4-31B.
- * Ports run_dflash.py's draft/verify/accept loop directly using
- * ExecuTorch's Module API (raw tensor I/O), since the higher-level
- * LLMEngine/LLMSession framework used by main.cpp is built for
- * single-model token-at-a-time generation, not this two-model
- * draft-then-verify pattern with multi-output tensors.
- */
+// C++ DFlash runner for benchmarking the exported Gemma4-31B target and draft models. 
 
 #include <gflags/gflags.h>
 
@@ -82,14 +72,7 @@ int64_t first_mismatch(
   return static_cast<int64_t>(draft_ids.size());
 }
 
-// The target's hidden-state output is BFloat16 (confirmed via MethodMeta:
-// dtype=BFloat16), NOT Float32 -- treating its raw bytes as float32 via
-// const_data_ptr<float>() silently reinterprets 2-byte bf16 values as
-// 4-byte floats, producing garbage that made the draft's context
-// essentially random (observed: near-zero acceptance, ctx_len advancing
-// by ~1 per round instead of the expected 5-15). bf16 is simply the top
-// 16 bits of a float32 (same exponent width, truncated mantissa), so
-// converting is a left-shift into the upper half of a 32-bit word.
+// Convert BF16 hidden states returned by the target model to FP32 for the draft model. 
 std::vector<float> bf16_tensor_to_fp32(const executorch::aten::Tensor& t) {
   int64_t numel = t.numel();
   const uint16_t* src = reinterpret_cast<const uint16_t*>(t.const_data_ptr());
@@ -101,7 +84,7 @@ std::vector<float> bf16_tensor_to_fp32(const executorch::aten::Tensor& t) {
   return out;
 }
 
-} // namespace
+}
 
 int main(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -125,7 +108,7 @@ int main(int argc, char** argv) {
 
   std::string prompt_text =
       FLAGS_raw_prompt ? FLAGS_prompt : format_prompt(FLAGS_prompt);
-  auto encoded = tokenizer->encode(prompt_text, /*bos=*/0, /*eos=*/0);
+  auto encoded = tokenizer->encode(prompt_text, 0, 0);
   if (!encoded.ok()) {
     ET_LOG(Error, "Failed to encode prompt");
     return 1;
@@ -171,14 +154,7 @@ int main(int argc, char** argv) {
   std::vector<float> hidden_history = bf16_tensor_to_fp32(hidden);
   int64_t hidden_len = prompt_len;
 
-  // Warm-up: MLX/Metal lazily JIT-compiles kernels on a delegate's FIRST
-  // real execution, not at Module::load() time. Without this, that one-time
-  // compile cost lands inside round 1's timed draft_exec (observed: ~296ms
-  // vs ~40ms steady-state) and skews the reported tokens/s. Run one
-  // throwaway forward with the actual round-1 inputs, discard the result,
-  // so the timed loop below only measures steady-state performance --
-  // matching what Python's Runtime.load_program().load_method() chain
-  // appears to already do more eagerly at load time.
+  // Warm up the draft model to avoid including one-time MLX JIT compilation in benchmark timings. 
   {
     std::vector<int64_t> warm_input_vec(FLAGS_block_size);
     warm_input_vec[0] = last_token;
@@ -203,9 +179,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Timer starts AFTER prefill AND warm-up, matching run_dflash.py's t0
-  // placement -- tokens/s measures only the speculative decoding round
-  // loop's steady-state performance.
+  // Measure only steady-state speculative decoding.
   double t0 = now_ms();
 
   while (static_cast<int64_t>(generated.size()) < FLAGS_max_new_tokens) {
@@ -308,7 +282,7 @@ int main(int argc, char** argv) {
 
   printf("\nPrompt: %s\n", FLAGS_prompt.c_str());
   printf("Generated (%lld tokens)\n", (long long)n);
-  printf("\n--stats--\n");
+  printf("\nStats:--\n");
   printf("rounds: %lld\n", (long long)rounds);
   printf(
       "avg accepted/round (draft-only): %.2f\n",

@@ -1,24 +1,6 @@
+"""Exports Gemma4-31B as a DFlash target model for MLX backend. 
 
-"""Export Gemma4-31B as a DFlash target model (logits + hidden states) to
-the MLX backend.
-
-Mirrors export.py's load_prequantized_model + _export_mlx flow, but builds
-Gemma4_31BWithHidden instead of Gemma4_31B, and skips the sample=True /
-SamplingHead branch entirely -- DFlash verification needs raw per-position
-logits (see dflash_hidden_export.py's forward docstring for why), not an
-on-device sampled token.
-
-layer_ids should match the DFlash draft checkpoint's config.json
-dflash_config.target_layer_ids exactly (e.g. z-lab/gemma-4-31B-it-DFlash:
-[1, 12, 23, 35, 46, 57]) -- a mismatch here would silently condition the
-draft on the wrong hidden states with no error, only degraded tau.
-
-Usage:
-    python3 export_dflash_target.py \\
-        --prequantized ./gemma-4-31B-it-HQQ-INT4 \\
-        --dflash-layers 1,12,23,35,46,57 \\
-        --output-dir ./gemma4_31b_dflash_exports_mlx \\
-        --max-seq-len 4096
+The exported model returns full-sequence logits and hidden states from the configured target layers. These layer IDs must match the draft checkpoint. 
 """
 
 import argparse
@@ -28,7 +10,7 @@ import os
 
 import torch
 
-from executorch.examples.models.gemma4_31b.dflash_hidden_export import (
+from executorch.examples.models.gemma4_31b.dflash_export import (
     Gemma4_31BWithHidden,
 )
 from executorch.examples.models.gemma4_31b.export import _pack_for_backend
@@ -43,23 +25,19 @@ def load_prequantized_dflash_target(
     layer_ids: list,
     max_seq_len: int = 4096,
 ) -> tuple:
-    """Load a quantized checkpoint into Gemma4_31BWithHidden, packed for MLX.
-
-    Same as export.py's load_prequantized_model, except the meta-device
-    model is Gemma4_31BWithHidden (adds no new parameters/buffers beyond
-    Gemma4_31B, so _pack_for_backend's generic by-FQN packing is unaffected).
+    """Loads the prequantized target model with DFlash hidden-state outputs.
     """
     config = Gemma4_31BConfig.from_hf_config(
         os.path.join(prequantized_dir, "config.json")
     )
     config.max_seq_len = max_seq_len
 
-    print("Building Gemma4_31BWithHidden on meta device...")
+    print("Building Gemma4_31BWithHidden on meta device:")
     with torch.device("meta"):
         model = Gemma4_31BWithHidden(config, layer_ids=layer_ids)
 
     safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
-    print(f"Loading quantized checkpoint from {safetensors_path}...")
+    print(f"Loading quantized checkpoint from {safetensors_path}:")
     _pack_for_backend(model, safetensors_path, "mlx")
     model.eval()
 
@@ -75,21 +53,15 @@ def export_dflash_target_mlx(
     config: Gemma4_31BConfig,
     output_dir: str,
 ) -> None:
-    """Export the DFlash target (logits, hidden) via torch.export + MLX backend.
-
-    Adapted from export.py's _export_mlx: same source transforms and
-    lowering pipeline, but no sample=True / SamplingHead branch (not
-    applicable -- see load call site), and example_args/dynamic_shapes
-    reflect forward(tokens, input_pos) -> (logits, hidden) instead of
-    forward(tokens, input_pos, temperature) -> sampled_token.
+    """Exports the DFlash target model through torch.export and the MLX backend.
     """
-    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns  # noqa: F401
-    import executorch.extension.llm.export.gguf  # noqa: F401
-    import executorch.extension.llm.export.int4  # noqa: F401
+    import executorch.backends.mlx.custom_kernel_ops.gguf.patterns
+    import executorch.extension.llm.export.gguf
+    import executorch.extension.llm.export.int4
 
     from executorch.backends.mlx import MLXPartitioner
     from executorch.backends.mlx.passes import get_default_passes
-    from executorch.examples.models.gemma4_31b.dflash_mlx_source_transformations import (
+    from executorch.examples.models.gemma4_31b.dflash_export import (
         dflash_mlx_source_transformations,
     )
     from executorch.exir import (
@@ -100,10 +72,7 @@ def export_dflash_target_mlx(
     from executorch.exir.passes import MemoryPlanningPass
     from torch.export import Dim, export
 
-    # block_size (max verified block length) governs the upper bound here,
-    # not max_prefill in the general sense -- DFlash target verification
-    # forward passes are always <= block_size tokens. 256 matches export.py's
-    # ceiling and comfortably covers any realistic block_size (e.g. 16).
+    # Upper bound for the drafted block verified in one forward pass.
     max_verify_len = 256
 
     dflash_mlx_source_transformations(
@@ -121,7 +90,7 @@ def export_dflash_target_mlx(
     example_args = (example_tokens, example_input_pos)
     dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
-    print(f"Exporting DFlash target (T in [1, {max_verify_len}])...")
+    print(f"Exporting DFlash target (T in [1, {max_verify_len}]): ")
     with torch.no_grad():
         exported = export(
             model,
@@ -133,7 +102,7 @@ def export_dflash_target_mlx(
     del model
     gc.collect()
 
-    print("Lowering to ExecuTorch with MLX backend...")
+    print("Lowering to ExecuTorch with MLX backend: ")
     et_prog = to_edge_transform_and_lower(
         exported,
         transform_passes=get_default_passes(),
@@ -168,7 +137,7 @@ def export_dflash_target_mlx(
 
     os.makedirs(output_dir, exist_ok=True)
     pte_path = os.path.join(output_dir, "model.pte")
-    print(f"Saving to {pte_path}...")
+    print(f"Saving to {pte_path}: ")
     with open(pte_path, "wb") as f:
         et_program.write_to_file(f)
     print(f"  {os.path.getsize(pte_path) / 1024**2:.1f} MB")
@@ -183,19 +152,16 @@ def main() -> None:
     p.add_argument(
         "--prequantized",
         required=True,
-        help="Directory with quantized checkpoint (model.safetensors + config.json).",
+        help="Directory with quantized checkpoint.",
     )
     p.add_argument(
         "--dflash-layers",
         required=True,
         help=(
-            "Comma-separated 0-indexed target layer ids to tap for hidden "
-            "states, matching the DFlash draft checkpoint's config.json "
-            "dflash_config.target_layer_ids exactly (e.g. "
-            "'1,12,23,35,46,57' for z-lab/gemma-4-31B-it-DFlash)."
+            "Comma separated 0-indexed layer IDs matching the draft checkpoint, e.g. 1,12,23,35,46,57."
         ),
     )
-    p.add_argument("--output-dir", required=True, help="Output dir for model.pte/.ptd.")
+    p.add_argument("--output-dir", required=True, help="Directory for the exported .pte and .ptd files.")
     p.add_argument("--max-seq-len", type=int, default=4096)
     args = p.parse_args()
 

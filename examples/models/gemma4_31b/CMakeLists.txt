@@ -74,8 +74,7 @@ target_include_directories(
 )
 target_link_libraries(gemma4_31b_worker PUBLIC ${link_libraries})
 
-# Standalone C++ DFlash driver -- benchmarks speculative decoding via
-# Module API directly, bypassing the Python pybind runtime entirely.
+# Standalone C++ DFlash benchmark runner using the Module API. 
 add_executable(dflash_cpp_driver dflash_cpp_driver.cpp)
 target_include_directories(
   dflash_cpp_driver PUBLIC ${_common_include_directories} ${_json_include}

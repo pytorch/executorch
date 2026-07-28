@@ -1,17 +1,6 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""Python implementation of DFlash speculative decoding for Gemma4-31B. 
 
-"""Python implementation of the DFlash speculative decoding loop for Gemma4-31B.
-
-Mirrors examples/models/qwen3/run_dflash.py's algorithm exactly (see that
-file's module docstring for the four-step round structure and V1 scope
-notes -- unchanged here). Tokenizer/chat-template handling differs
-genuinely from Qwen3 -- see run_baseline.py's module docstring for why
-(raw tokenizers.Tokenizer API, manual BOS prepend, three hardcoded EOS ids,
-apply_chat_template imported directly from inference.py).
+Uses the exported target and draft models to benchmark DFlash against standard autoregressive decoding. 
 """
 
 import argparse
@@ -30,7 +19,7 @@ BOS_TOKEN_ID = 2
 
 
 def first_mismatch(draft_ids, target_ids):
-    """Returns the number of consecutive draft predictions that match the target."""
+    """Returns the first mistmatched token between the draft and target."""
     for i in range(len(draft_ids)):
         if draft_ids[i] != target_ids[i]:
             return i
@@ -46,8 +35,7 @@ def main():
     p.add_argument(
         "--draft-config-dir",
         default="./gemma-4-31B-it-DFlash",
-        help="Local directory with the draft checkpoint's config.json "
-        "(from `hf download z-lab/gemma-4-31B-it-DFlash --local-dir ...`).",
+        help="Directory containing the draft checkpoint config.",
     )
     p.add_argument(
         "--tokenizer-path",
@@ -60,21 +48,18 @@ def main():
         dest="chat_template",
         action="store_false",
         default=True,
-        help="Disable Gemma4's chat template. On by default (matches the "
-        "draft model's training distribution).",
+        help="Disable the chat template.",
     )
     p.add_argument(
         "--verbose",
         action="store_true",
-        help="Print per-round timing/acceptance debug output.",
+        help="Print per round debug output.",
     )
     p.add_argument(
         "--block-size",
         type=int,
         default=None,
-        help="Override the draft checkpoint config's block_size -- needed when "
-        "--draft-pte was exported with a different block_size than the "
-        "z-lab checkpoint's native config.",
+        help="Override the draft checkpoint block size.",
     )
     args = p.parse_args()
 
@@ -177,7 +162,7 @@ def main():
     n = len(generated)
     print(f"\nPrompt: {args.prompt}")
     print(f"Generated ({n} tokens): {text}")
-    print("\n--stats--")
+    print("\nStats: ")
     print(f"rounds: {rounds}")
     print(f"avg accepted/round (draft-only): {accepted_total / rounds:.2f}")
     print(f"avg emitted/round (tau, incl. bonus): {emitted_total / rounds:.2f}")
