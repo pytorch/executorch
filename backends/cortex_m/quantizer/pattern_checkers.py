@@ -3,8 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast
-
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
@@ -250,8 +248,8 @@ class CortexMAvgPool2DCheck(PatternCheck):
         if not pattern:
             return False
         node = pattern[0]
-        ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
-        return not ceil_mode
+        divisor_override = node.args[6] if len(node.args) > 6 else None
+        return divisor_override is None
 
     @classmethod
     def check_quantization_config(

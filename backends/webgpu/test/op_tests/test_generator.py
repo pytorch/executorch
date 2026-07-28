@@ -28,7 +28,10 @@ def test_export_case_has_delegate():
 
 def test_generate_case_writes_artifacts(tmp_path):
     suite, case = _add_regular_case()
-    entry = g.generate_case("add", suite, case, str(tmp_path))
+    # generate_case returns one entry per output; add is single-output.
+    entries = g.generate_case("add", suite, case, str(tmp_path))
+    assert len(entries) == 1
+    entry = entries[0]
     # .pte + 2 input .bin + golden .bin all exist
     assert (tmp_path / entry["pte"]).exists()
     assert len(entry["inputs"]) == 2
