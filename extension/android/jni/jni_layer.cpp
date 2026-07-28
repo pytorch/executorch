@@ -88,7 +88,7 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     // value immediately so the data is valid.
     facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
         facebook::jni::JByteBuffer::wrapBytes(
-            (uint8_t*)tensor.data_ptr(), tensor.nbytes());
+            (uint8_t*)tensor.mutable_data_ptr(), tensor.nbytes());
     jTensorBuffer->order(facebook::jni::JByteOrder::nativeOrder());
 
     static const auto jMethodNewTensor =
