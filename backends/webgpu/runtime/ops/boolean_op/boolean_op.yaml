@@ -1,0 +1,20 @@
+boolean_op:
+  parameter_names_with_default_values:
+    IN_TYPE: f32
+    OP_EXPR: input[i] == params.scalar
+  shader_variants:
+    - NAME: compare_eq
+      OP_EXPR: input[i] == params.scalar
+    - NAME: compare_ne
+      OP_EXPR: input[i] != params.scalar
+    - NAME: compare_le
+      OP_EXPR: input[i] <= params.scalar
+    - NAME: compare_ge
+      OP_EXPR: input[i] >= params.scalar
+    - NAME: compare_lt
+      OP_EXPR: input[i] < params.scalar
+    - NAME: compare_gt
+      OP_EXPR: input[i] > params.scalar
+    - NAME: logical_not
+      IN_TYPE: u32
+      OP_EXPR: ((input[i >> 2u] >> ((i & 3u) * 8u)) & 0xFFu) == 0u
