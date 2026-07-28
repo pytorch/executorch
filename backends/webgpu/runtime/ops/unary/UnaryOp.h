@@ -10,8 +10,6 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 
-#include <cstdint>
-
 namespace executorch::backends::webgpu {
 
 // Dummy min/max for no-param activations; mirrors Vulkan kDummyFloat.
@@ -22,8 +20,7 @@ void add_unary_op(
     WebGPUGraph& graph,
     int in_id,
     int out_id,
-    const char* wgsl_source,
-    uint32_t wg_size_x,
+    const char* shader_name,
     const char* op_name,
     float min = kUnaryDummyFloat,
     float max = kUnaryDummyFloat);
