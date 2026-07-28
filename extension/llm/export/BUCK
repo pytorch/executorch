@@ -99,8 +99,45 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "nvfp4",
+    srcs = [
+        "nvfp4.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "mx",
+    srcs = [
+        "mx.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.extension.llm.export",
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+        "//executorch/extension/llm/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "quant",
     srcs = [
+        "__init__.py",
         "quant/__init__.py",
         "quant/convert.py",
         "quant/quantize.py",
@@ -116,6 +153,8 @@ fbcode_target(_kind = runtime.python_library,
     deps = [
         ":gguf",
         ":int4",
+        ":mx",
+        ":nvfp4",
         "//caffe2:torch",
         "//executorch/backends/cuda:dp4a_planar_int6_tensor",
         "//pytorch/ao:torchao",

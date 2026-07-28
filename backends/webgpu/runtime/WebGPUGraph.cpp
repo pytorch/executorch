@@ -16,12 +16,15 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 
 namespace executorch::backends::webgpu {
@@ -574,7 +577,13 @@ void WebGPUGraph::update_symints_from_inputs(
     // elem_size (buffer-derived) would misread int64 host data as int32.
     int32_t val;
     if (inputs[pos].host_is_int64) {
-      val = static_cast<int32_t>(static_cast<const int64_t*>(host)[offset]);
+      const int64_t raw = static_cast<const int64_t*>(host)[offset];
+      if (raw < std::numeric_limits<int32_t>::min() ||
+          raw > std::numeric_limits<int32_t>::max()) {
+        throw std::runtime_error(
+            "select_as_symint: selected value is outside int32 range");
+      }
+      val = static_cast<int32_t>(raw);
     } else {
       val = static_cast<const int32_t*>(host)[offset];
     }
@@ -743,8 +752,7 @@ void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
     const executorch::runtime::NamedDataMap* named_data_map,
-    bool f16_kv_cache,
-    bool f16_accumulate_gemm) {
+    WebGPUGraphConfig config) {
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -767,12 +775,10 @@ void WebGPUGraph::build(
 
   // f16 KV cache (runtime opt-in): store K/V caches as f16 iff the opt-in is
   // set AND the device negotiated shader-f16 (fail-closed).
+  config_ = config;
   const WebGPUContext* kv_ctx = get_default_webgpu_context();
-  kv_f16_ = f16_kv_cache && (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
-
-  // f16-accumulate q4gsw steel prefill GEMM (runtime opt-in). QuantizedLinear
-  // additionally gates the kernel on the negotiated shader-f16 feature.
-  f16_accumulate_gemm_ = f16_accumulate_gemm;
+  kv_f16_ = config_.f16_kv_cache &&
+      (kv_ctx != nullptr && kv_ctx->shader_f16_supported);
 
   // Phase 1: Create all values
   const auto* values = graph->values();
@@ -785,6 +791,7 @@ void WebGPUGraph::build(
   value_lists_.resize(num_vals);
   doubles_.resize(num_vals, 0.0);
   bools_.resize(num_vals, false);
+  strings_.resize(num_vals);
 
   // Pre-scan the op chain: a constant may be DEFERRED (no eager GPU buffer; the
   // prepack node materializes it once) only if it is a prepack source AND never
@@ -880,6 +887,7 @@ void WebGPUGraph::build(
         }
         tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
+        tensor.is_int8 = vk_tensor->datatype() == vkgraph::VkDataType::INT8;
         tensor.nbytes = numel * tensor.elem_size;
         // Live dims start == max (serialized upper bound); resize_input shrinks
         // them per call. Static graphs keep cur == max forever.
@@ -998,6 +1006,14 @@ void WebGPUGraph::build(
         bools_[i] = val->value_as_Bool()->bool_val();
         break;
       }
+      case vkgraph::GraphTypes::String: {
+        value_types_[i] = ValueType::String;
+        const auto* sv = val->value_as_String()->string_val();
+        if (sv) {
+          strings_[i] = sv->str();
+        }
+        break;
+      }
       case vkgraph::GraphTypes::SymInt: {
         // Live scalar: small Uniform buffer the CPU rewrites per execute.
         value_types_[i] = ValueType::SymInt;
@@ -1077,6 +1093,7 @@ void WebGPUGraph::build(
   std::unordered_map<unsigned, size_t> swiglu_gate_producers;
   std::unordered_map<unsigned, size_t> swiglu_anchors;
   std::unordered_set<unsigned> swiglu_skipped_ops;
+  std::unordered_set<unsigned> claimed_fusion_ops;
 
   // Detect only the exact q4 gate/up MLP pattern. Full-chain occurrence and
   // definition counts make every folded intermediate private to the pattern.
@@ -1144,7 +1161,6 @@ void WebGPUGraph::build(
       return std::find(output_ids_.begin(), output_ids_.end(), id) !=
           output_ids_.end();
     };
-    std::unordered_set<unsigned> claimed_ops;
     for (unsigned mul2_op = 0; mul2_op < chain->size(); mul2_op++) {
       const auto* mul2_call = chain->Get(mul2_op);
       const auto* mul2_args = mul2_call->args();
@@ -1271,7 +1287,7 @@ void WebGPUGraph::build(
           fusion.mul2_op};
       bool overlaps = false;
       for (unsigned op : pattern_ops) {
-        overlaps = overlaps || claimed_ops.count(op) != 0;
+        overlaps = overlaps || claimed_fusion_ops.count(op) != 0;
       }
       if (overlaps) {
         continue;
@@ -1286,7 +1302,7 @@ void WebGPUGraph::build(
       // dispatch and continues before the skipped-ops check, so it needs no
       // swiglu_skipped_ops entry.
       for (unsigned op : pattern_ops) {
-        claimed_ops.insert(op);
+        claimed_fusion_ops.insert(op);
       }
     }
   }
@@ -1349,6 +1365,11 @@ void WebGPUGraph::build(
         const auto& ops = by_input[inp];
         if (ops.size() != 3) {
           continue; // gate+up is a 2-group; o/down/lm_head are 1 each.
+        }
+        if (std::any_of(ops.begin(), ops.end(), [&](unsigned op) {
+              return claimed_fusion_ops.count(op) != 0;
+            })) {
+          continue;
         }
         // args: [in, weight, scales, group_size, bias, out].
         const int wq = op_arg(ops[0], 1), sqid = op_arg(ops[0], 2),
@@ -1457,6 +1478,7 @@ void WebGPUGraph::build(
         qkv_member[ops[0]] = gidx;
         qkv_member[ops[1]] = gidx;
         qkv_member[ops[2]] = gidx;
+        claimed_fusion_ops.insert(ops.begin(), ops.end());
       }
     }
   }
@@ -1528,9 +1550,14 @@ void WebGPUGraph::build(
         auto mit = qkv_member.find(i);
         if (mit != qkv_member.end()) {
           QkvFusionGroup& g = qkv_groups[mit->second];
-          const size_t di = num_dispatches() - 1; // this linear's dispatch
+          const utils::DispatchRange dispatch_range = {
+              dispatch_begin, num_dispatches()};
+          if (dispatch_range.begin == dispatch_range.end) {
+            throw std::runtime_error(
+                "WebGPU QKV fusion member emitted no dispatch");
+          }
           if (i == g.op_idx[0]) {
-            g.sep_dispatch[0] = di;
+            g.sep_dispatch[0] = dispatch_range;
             // Emit the fused dispatch RIGHT AFTER the q-linear (the anchor) so
             // at M>1 it writes q/k/v BEFORE any consumer. q/k/v may be
             // interleaved with rope in the chain, so emitting it at the LAST
@@ -1538,14 +1565,14 @@ void WebGPUGraph::build(
             // fresh_q -> garbage.
             add_qkv_fused_dispatch(g);
           } else if (i == g.op_idx[1]) {
-            g.sep_dispatch[1] = di;
+            g.sep_dispatch[1] = dispatch_range;
           } else {
-            g.sep_dispatch[2] = di;
+            g.sep_dispatch[2] = dispatch_range;
           }
         }
         auto lit = qkv_last.find(i);
         if (lit != qkv_last.end()) {
-          // All 3 sep dispatch indices + the fused index are now known.
+          // All 3 separate route ranges + the fused index are now known.
           add_qkv_fused_hook(qkv_groups[lit->second]);
         }
       }
@@ -1873,8 +1900,9 @@ void WebGPUGraph::add_qkv_fused_dispatch(QkvFusionGroup& g) {
   g.fused_params = uniform_buffer;
 }
 
-// M-gate coordinator: registered at the LAST triple op (all dispatch indices
-// known). Prefill (M>1): run the fused GEMM, zero the 3 separate linears.
+// M-gate coordinator: registered at the LAST triple op (all dispatch ranges
+// known). Prefill (M>1): run the fused GEMM, zero every route of the 3 separate
+// linears.
 // Decode (M==1): zero the fused, leave the 3 coop4 GEMVs (their own hooks set
 // the decode wg) -- the fused 64x64 tile wastes 63/64 rows at M=1. Recomputes
 // live M + the 3 output cur_dims + fused params. Inert on a static graph; a
@@ -1884,62 +1912,68 @@ void WebGPUGraph::add_qkv_fused_hook(const QkvFusionGroup& g) {
             out_v_id = g.out_v;
   const uint32_t K = g.K, Kp = g.K_packed, gs = g.group_size, Nq = g.Nq,
                  Nk = g.Nk, Nv = g.Nv, Nf = g.Nq + g.Nk + g.Nv;
-  const size_t fused_idx = g.fused_dispatch, sep0 = g.sep_dispatch[0],
-               sep1 = g.sep_dispatch[1], sep2 = g.sep_dispatch[2];
+  const size_t fused_idx = g.fused_dispatch;
+  const std::array<utils::DispatchRange, 3> separate_ranges = {
+      g.sep_dispatch[0], g.sep_dispatch[1], g.sep_dispatch[2]};
   WGPUBuffer params_buf = g.fused_params;
-  add_tensor_resize_hook(
-      input_id,
-      [input_id,
-       out_q_id,
-       out_k_id,
-       out_v_id,
-       K,
-       Kp,
-       gs,
-       Nq,
-       Nk,
-       Nv,
-       Nf,
-       fused_idx,
-       sep0,
-       sep1,
-       sep2,
-       params_buf](WebGPUGraph& gr) {
-        const auto& d = gr.cur_dims(input_id);
-        uint64_t numel = 1;
-        for (int64_t v : d) {
-          numel *= static_cast<uint64_t>(v);
+  auto update_route = [input_id,
+                       out_q_id,
+                       out_k_id,
+                       out_v_id,
+                       K,
+                       Kp,
+                       gs,
+                       Nq,
+                       Nk,
+                       Nv,
+                       Nf,
+                       fused_idx,
+                       separate_ranges,
+                       params_buf](WebGPUGraph& gr) {
+    const auto& d = gr.cur_dims(input_id);
+    uint64_t numel = 1;
+    for (int64_t v : d) {
+      numel *= static_cast<uint64_t>(v);
+    }
+    const uint32_t m = static_cast<uint32_t>(numel / K);
+    std::vector<int64_t> oq = d;
+    oq.back() = static_cast<int64_t>(Nq);
+    std::vector<int64_t> ok = d;
+    ok.back() = static_cast<int64_t>(Nk);
+    std::vector<int64_t> ov = d;
+    ov.back() = static_cast<int64_t>(Nv);
+    gr.set_cur_dims(out_q_id, oq);
+    gr.set_cur_dims(out_k_id, ok);
+    gr.set_cur_dims(out_v_id, ov);
+    QkvFusedParams p = {};
+    p.M = m;
+    p.N = Nf;
+    p.K = K;
+    p.K_packed = Kp;
+    p.group_size = gs;
+    p.padded_N = Nf;
+    p.has_bias = 0;
+    wgpuQueueWriteBuffer(gr.queue(), params_buf, 0, &p, sizeof(p));
+    if (m > 1u) {
+      const uint32_t nbN2 = (Nf + 63u) / 64u;
+      const uint32_t nbM2 = (m + 63u) / 64u;
+      gr.dispatch_at(fused_idx).workgroup_count_x = nbN2 * nbM2;
+      gr.dispatch_at(fused_idx).workgroup_count_y = 1u;
+      for (const auto& range : separate_ranges) {
+        for (size_t i = range.begin; i < range.end; i++) {
+          gr.dispatch_at(i).workgroup_count_x = 0u;
+          gr.dispatch_at(i).workgroup_count_y = 0u;
         }
-        const uint32_t m = static_cast<uint32_t>(numel / K);
-        std::vector<int64_t> oq = d;
-        oq.back() = static_cast<int64_t>(Nq);
-        std::vector<int64_t> ok = d;
-        ok.back() = static_cast<int64_t>(Nk);
-        std::vector<int64_t> ov = d;
-        ov.back() = static_cast<int64_t>(Nv);
-        gr.set_cur_dims(out_q_id, oq);
-        gr.set_cur_dims(out_k_id, ok);
-        gr.set_cur_dims(out_v_id, ov);
-        QkvFusedParams p = {};
-        p.M = m;
-        p.N = Nf;
-        p.K = K;
-        p.K_packed = Kp;
-        p.group_size = gs;
-        p.padded_N = Nf;
-        p.has_bias = 0;
-        wgpuQueueWriteBuffer(gr.queue(), params_buf, 0, &p, sizeof(p));
-        if (m > 1u) {
-          const uint32_t nbN2 = (Nf + 63u) / 64u;
-          const uint32_t nbM2 = (m + 63u) / 64u;
-          gr.dispatch_at(fused_idx).workgroup_count_x = nbN2 * nbM2;
-          gr.dispatch_at(sep0).workgroup_count_x = 0u;
-          gr.dispatch_at(sep1).workgroup_count_x = 0u;
-          gr.dispatch_at(sep2).workgroup_count_x = 0u;
-        } else {
-          gr.dispatch_at(fused_idx).workgroup_count_x = 0u;
-        }
-      });
+      }
+    } else {
+      gr.dispatch_at(fused_idx).workgroup_count_x = 0u;
+      gr.dispatch_at(fused_idx).workgroup_count_y = 0u;
+    }
+  };
+  // Apply the max-shape route immediately. Resize hooks do not run before the
+  // first execution when cur_dims already equal the serialized max shape.
+  update_route(*this);
+  add_tensor_resize_hook(input_id, std::move(update_route));
 }
 
 void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
@@ -2029,6 +2063,17 @@ WebGPUExecutionPlan WebGPUGraph::make_execution_plan(
 size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
+  if (plan.copy_outputs.size() != output_copies_.size()) {
+    throw std::runtime_error("WebGPU: execution plan output count mismatch");
+  }
+  for (const auto& dispatch_chunk : plan.dispatch_chunks) {
+    for (size_t dispatch_index : dispatch_chunk) {
+      if (dispatch_index >= n) {
+        throw std::runtime_error(
+            "WebGPU: execution plan dispatch index out of range");
+      }
+    }
+  }
 
   if (plan.dispatch_chunks.empty()) {
     return 0;
@@ -2113,12 +2158,13 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     }
 
     for (size_t i = 0; i < output_copies_.size(); i++) {
-      if (!plan.copy_outputs[i]) {
+      const size_t copy_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+      if (!plan.copy_outputs[i] || copy_nbytes == 0) {
         continue;
       }
       const auto& copy = output_copies_[i];
       wgpuCommandEncoderCopyBufferToBuffer(
-          encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
+          encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy_nbytes);
     }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -2184,12 +2230,13 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
 
     if (chunk_index + 1 == plan.dispatch_chunks.size()) {
       for (size_t i = 0; i < output_copies_.size(); i++) {
-        if (!plan.copy_outputs[i]) {
+        const size_t copy_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+        if (!plan.copy_outputs[i] || copy_nbytes == 0) {
           continue;
         }
         const auto& copy = output_copies_[i];
         wgpuCommandEncoderCopyBufferToBuffer(
-            encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy.nbytes);
+            encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy_nbytes);
       }
     }
 
@@ -2209,13 +2256,16 @@ struct MapCallbackData {
   WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
 };
 
+using MapCallbackDataPtr = std::shared_ptr<MapCallbackData>;
+
 void buffer_map_callback(
     WGPUMapAsyncStatus status,
     WGPUStringView /*message*/,
     void* userdata1,
     void* /*userdata2*/) {
-  auto* data = static_cast<MapCallbackData*>(userdata1);
-  data->status = status;
+  std::unique_ptr<MapCallbackDataPtr> data_owner(
+      static_cast<MapCallbackDataPtr*>(userdata1));
+  (*data_owner)->status = status;
 }
 
 } // namespace
@@ -2223,47 +2273,67 @@ void buffer_map_callback(
 void WebGPUGraph::copy_outputs(
     std::vector<std::pair<void*, size_t>>& outputs,
     const WebGPUExecutionPlan& plan) {
+  if (plan.copy_outputs.size() != output_copies_.size()) {
+    throw std::runtime_error("WebGPU: execution plan output count mismatch");
+  }
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
-
-  std::vector<MapCallbackData> cb_data(count);
-  std::vector<WGPUFuture> map_futures(count, WGPUFuture{});
 
   for (size_t i = 0; i < count; i++) {
     if (!plan.copy_outputs[i] || outputs[i].second == 0) {
-      cb_data[i].status = WGPUMapAsyncStatus_Success;
       continue;
     }
+    const size_t map_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+    if (map_nbytes == 0) {
+      continue;
+    }
+    const size_t dst_nbytes = outputs[i].second;
+    const bool widen_int32 = dst_nbytes == 2 * map_nbytes &&
+        tensors_[output_ids_[i]].is_int &&
+        tensors_[output_ids_[i]].elem_size == 4;
+    if (dst_nbytes != map_nbytes && !widen_int32) {
+      throw std::runtime_error("WebGPU: output buffer size mismatch");
+    }
+
+    const auto cb_data = std::make_shared<MapCallbackData>();
     WGPUBufferMapCallbackInfo cb_info = {};
     cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
     cb_info.callback = buffer_map_callback;
-    cb_info.userdata1 = &cb_data[i];
-    map_futures[i] = wgpuBufferMapAsync(
-        output_staging_buffers_[i],
-        WGPUMapMode_Read,
-        0,
-        outputs[i].second,
-        cb_info);
-  }
-
-  for (size_t i = 0; i < count; i++) {
-    if (plan.copy_outputs[i] && outputs[i].second != 0 &&
-        webgpu_wait(instance_, map_futures[i]) != WGPUWaitStatus_Success) {
+    cb_info.userdata1 = new MapCallbackDataPtr(cb_data);
+    const WGPUFuture map_future = wgpuBufferMapAsync(
+        output_staging_buffers_[i], WGPUMapMode_Read, 0, map_nbytes, cb_info);
+    if (webgpu_wait(instance_, map_future) != WGPUWaitStatus_Success) {
+      // Cancel the outstanding request, then drain its WaitAny-only callback
+      // when possible. The callback owns a shared reference, so even a failed
+      // drain cannot leave it pointing at stack-owned storage.
+      wgpuBufferUnmap(output_staging_buffers_[i]);
+      const WGPUWaitStatus drain_status = webgpu_wait(instance_, map_future);
+      if (drain_status != WGPUWaitStatus_Success) {
+        throw std::runtime_error(
+            "WebGPU: output map cancellation callback did not drain");
+      }
       throw std::runtime_error("WebGPU: WaitAny failed for output map");
     }
-  }
-
-  for (size_t i = 0; i < count; i++) {
-    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
-      continue;
-    }
-    if (cb_data[i].status == WGPUMapAsyncStatus_Success) {
-      const void* mapped = wgpuBufferGetConstMappedRange(
-          output_staging_buffers_[i], 0, outputs[i].second);
-      std::memcpy(outputs[i].first, mapped, outputs[i].second);
-      wgpuBufferUnmap(output_staging_buffers_[i]);
-    } else {
+    if (cb_data->status != WGPUMapAsyncStatus_Success) {
       throw std::runtime_error("WebGPU buffer map failed for output");
     }
+    const void* mapped = wgpuBufferGetConstMappedRange(
+        output_staging_buffers_[i], 0, map_nbytes);
+    if (mapped == nullptr) {
+      wgpuBufferUnmap(output_staging_buffers_[i]);
+      throw std::runtime_error("WebGPU mapped output range is null");
+    }
+    if (!widen_int32) {
+      std::memcpy(outputs[i].first, mapped, map_nbytes);
+    } else {
+      // int64 host output backed by an int32 GPU buffer: widen (sign-extend).
+      const int32_t* src = static_cast<const int32_t*>(mapped);
+      int64_t* dst = static_cast<int64_t*>(outputs[i].first);
+      const size_t n = map_nbytes / sizeof(int32_t);
+      for (size_t k = 0; k < n; k++) {
+        dst[k] = static_cast<int64_t>(src[k]);
+      }
+    }
+    wgpuBufferUnmap(output_staging_buffers_[i]);
   }
 }
 
