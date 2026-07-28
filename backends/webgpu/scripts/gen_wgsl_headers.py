@@ -26,11 +26,14 @@ import argparse
 import copy
 import hashlib
 import io
+import os
 import re
+import stat
 import sys
+import tempfile
 from itertools import product
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Set
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
 
 import yaml
 from yaml.constructor import ConstructorError
@@ -523,23 +526,51 @@ def registry_path() -> Path:
     return BACKEND_ROOT / "runtime/WebGPUShaderRegistry.cpp"
 
 
+def _registry_entry(header: Path) -> RegistryEntry:
+    suffix = "_wgsl.h"
+    if not header.name.endswith(suffix):
+        raise ValueError(f"unexpected generated header name: {header.name}")
+    name = header.name[: -len(suffix)]
+    return RegistryEntry(
+        name=name,
+        include=header.relative_to(BACKEND_ROOT).as_posix(),
+        symbol=symbol_base(name),
+    )
+
+
+def _collect_header_outputs() -> Tuple[Dict[Path, str], List[RegistryEntry]]:
+    """Render every concrete header once and reject global collisions."""
+    outputs: Dict[Path, str] = {}
+    entries: List[RegistryEntry] = []
+    registry_names: Set[str] = set()
+    registry_symbols: Set[str] = set()
+    for wgsl in discover():
+        try:
+            rendered_headers = list(headers_for_shader(wgsl))
+        except Exception as error:
+            raise ValueError(f"{wgsl.relative_to(BACKEND_ROOT)}: {error}") from error
+        for header, rendered in rendered_headers:
+            if header in outputs:
+                raise ValueError(
+                    "duplicate generated header path: "
+                    f"{header.relative_to(BACKEND_ROOT)}"
+                )
+            entry = _registry_entry(header)
+            if entry.name in registry_names:
+                raise ValueError(f"duplicate shader registry name: {entry.name}")
+            if entry.symbol in registry_symbols:
+                raise ValueError(f"duplicate shader registry symbol: {entry.symbol}")
+            outputs[header] = rendered
+            entries.append(entry)
+            registry_names.add(entry.name)
+            registry_symbols.add(entry.symbol)
+    return outputs, sorted(entries)
+
+
 def registry_entries() -> List[RegistryEntry]:
     """Return one registry entry for every concrete generated shader."""
-    entries = []
-    for wgsl in discover():
-        for header, _ in headers_for_shader(wgsl):
-            suffix = "_wgsl.h"
-            if not header.name.endswith(suffix):
-                raise ValueError(f"unexpected generated header name: {header.name}")
-            name = header.name[: -len(suffix)]
-            entries.append(
-                RegistryEntry(
-                    name=name,
-                    include=header.relative_to(BACKEND_ROOT).as_posix(),
-                    symbol=symbol_base(name),
-                )
-            )
-    return sorted(entries)
+    _, entries = _collect_header_outputs()
+    return entries
 
 
 def render_registry(entries: List[RegistryEntry]) -> str:
@@ -630,7 +661,143 @@ def headers_for_shader(wgsl):
         yield header, render_header(stem, text, stem)
 
 
-def _report_drift(missing, stale) -> None:
+def collect_outputs() -> Tuple[Dict[Path, bytes], List[Path]]:
+    """Render the complete output tree and report unexpected old headers."""
+    header_outputs, entries = _collect_header_outputs()
+    outputs = {
+        path: rendered.encode("utf-8") for path, rendered in header_outputs.items()
+    }
+    registry = registry_path()
+    if registry in outputs:
+        raise ValueError(f"duplicate generated output path: {registry}")
+    outputs[registry] = render_registry(entries).encode("utf-8")
+
+    expected_headers = set(header_outputs)
+    actual_headers = set((BACKEND_ROOT / "runtime/ops").glob("**/*_wgsl.h"))
+    return outputs, sorted(actual_headers - expected_headers)
+
+
+class _OriginalOutput(NamedTuple):
+    existed: bool
+    contents: bytes
+    mode: int
+
+
+def _stage_bytes(destination: Path, contents: bytes, mode: int) -> Path:
+    """Write one same-directory candidate without changing its destination."""
+    fd, name = tempfile.mkstemp(
+        prefix=f".{destination.name}.wgsl-gen-",
+        suffix=".tmp",
+        dir=destination.parent,
+    )
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(contents)
+        temporary.chmod(mode)
+    except BaseException:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return temporary
+
+
+def _cleanup_temporaries(temporaries) -> List[str]:
+    errors = []
+    for temporary in temporaries:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError as error:
+            errors.append(f"cannot remove temporary {temporary}: {error}")
+    return errors
+
+
+def _stage_outputs(
+    outputs: Dict[Path, bytes], changed: List[Path]
+) -> Tuple[Dict[Path, _OriginalOutput], Dict[Path, Path], List[str]]:
+    originals: Dict[Path, _OriginalOutput] = {}
+    staged: Dict[Path, Path] = {}
+    try:
+        for destination in sorted(changed):
+            if destination.exists():
+                original = _OriginalOutput(
+                    existed=True,
+                    contents=destination.read_bytes(),
+                    mode=stat.S_IMODE(destination.stat().st_mode),
+                )
+            else:
+                original = _OriginalOutput(False, b"", 0o644)
+            originals[destination] = original
+            staged[destination] = _stage_bytes(
+                destination, outputs[destination], original.mode
+            )
+    except BaseException as error:
+        cleanup_errors = _cleanup_temporaries(staged.values())
+        if isinstance(error, OSError):
+            errors = [f"cannot stage generated output: {error}"] + cleanup_errors
+            return originals, staged, errors
+        raise
+    return originals, staged, []
+
+
+def _rollback_outputs(
+    originals: Dict[Path, _OriginalOutput],
+    replaced: List[Path],
+    staged: Dict[Path, Path],
+) -> List[str]:
+    errors = []
+    for destination in reversed(replaced):
+        original = originals[destination]
+        restore_temporary: Optional[Path] = None
+        try:
+            if original.existed:
+                restore_temporary = _stage_bytes(
+                    destination, original.contents, original.mode
+                )
+                os.replace(restore_temporary, destination)
+            else:
+                destination.unlink(missing_ok=True)
+        except OSError as error:
+            errors.append(f"cannot roll back {destination}: {error}")
+        finally:
+            if restore_temporary is not None:
+                errors.extend(_cleanup_temporaries([restore_temporary]))
+    errors.extend(_cleanup_temporaries(staged.values()))
+    return errors
+
+
+def _publish_outputs(outputs: Dict[Path, bytes], changed: List[Path]) -> List[str]:
+    """Stage and publish changed outputs, rolling back reported failures."""
+    originals, staged, stage_errors = _stage_outputs(outputs, changed)
+    if stage_errors:
+        return stage_errors
+
+    replaced: List[Path] = []
+    try:
+        for destination in sorted(changed):
+            try:
+                os.replace(staged[destination], destination)
+            except OSError:
+                raise
+            except BaseException:
+                replaced.append(destination)
+                raise
+            else:
+                replaced.append(destination)
+    except OSError as commit_error:
+        return [f"cannot publish generated output: {commit_error}"] + _rollback_outputs(
+            originals, replaced, staged
+        )
+    except BaseException:
+        _rollback_outputs(originals, replaced, staged)
+        raise
+
+    return _cleanup_temporaries(staged.values())
+
+
+def _report_drift(missing, stale, orphans) -> None:
     """Print the --check report for missing/stale committed headers."""
     if missing:
         print("Missing embedded WGSL headers (run scripts/gen_wgsl_headers.py):")
@@ -640,16 +807,10 @@ def _report_drift(missing, stale) -> None:
         print("Stale embedded WGSL headers (run scripts/gen_wgsl_headers.py):")
         for h in stale:
             print(f"  {h.relative_to(BACKEND_ROOT)}")
-
-
-def _sync_generated_output(output, want, check, missing, stale) -> None:
-    """Write one generated file, or record its --check drift."""
-    if output.exists() and output.read_text() == want:
-        return
-    if check:
-        (missing if not output.exists() else stale).append(output)
-    else:
-        output.write_text(want)
+    if orphans:
+        print("Orphan embedded WGSL headers (remove or restore their sources):")
+        for h in orphans:
+            print(f"  {h.relative_to(BACKEND_ROOT)}")
 
 
 def main(argv=None) -> int:
@@ -661,38 +822,35 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    stale = []
-    missing = []
-    errors = []
-    for wgsl in discover():
-        try:
-            rendered = list(headers_for_shader(wgsl))
-        # A malformed spec raises yaml.YAMLError (incl. UniqueKeyLoader's
-        # ConstructorError) / ValueError / KeyError from parse_template_spec, and
-        # a malformed template raises AssertionError from preprocess; catch them
-        # all so a bad shader is a clean --check report, not a traceback.
-        except (ValueError, KeyError, AssertionError, yaml.YAMLError) as e:
-            errors.append(f"{wgsl.relative_to(BACKEND_ROOT)}: {e}")
-            continue
-        for header, want in rendered:
-            # Full-content compare (not just the sha) catches generator-logic drift too.
-            _sync_generated_output(header, want, args.check, missing, stale)
-
-    if not errors:
-        try:
-            registry = render_registry(registry_entries())
-            output = registry_path()
-            _sync_generated_output(output, registry, args.check, missing, stale)
-        except ValueError as e:
-            errors.append(f"shader registry: {e}")
-
-    if errors:
-        print("Cannot generate header (malformed shader):")
-        for e in errors:
-            print(f"  {e}")
+    try:
+        outputs, orphans = collect_outputs()
+        missing = []
+        stale = []
+        for output, want in sorted(outputs.items()):
+            if not output.exists():
+                missing.append(output)
+            elif output.read_bytes() != want:
+                stale.append(output)
+    except Exception as error:
+        print("Cannot generate WGSL outputs:")
+        print(f"  {error}")
         return 1
-    if args.check and (stale or missing):
-        _report_drift(missing, stale)
+
+    if orphans:
+        _report_drift([], [], orphans)
+        return 1
+
+    if args.check:
+        if stale or missing:
+            _report_drift(missing, stale, [])
+            return 1
+        return 0
+
+    errors = _publish_outputs(outputs, missing + stale)
+    if errors:
+        print("Cannot publish WGSL outputs:")
+        for error in errors:
+            print(f"  {error}")
         return 1
     return 0
 
