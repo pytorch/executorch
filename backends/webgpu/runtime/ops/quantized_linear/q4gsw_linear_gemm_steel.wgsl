@@ -1,6 +1,6 @@
 $if DTYPE == "half":
   enable f16;
-@group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
+@group(0) @binding(0) var<storage, read_write> t_out: array<${"vec4<f32>" if BK == 64 else "f32"}>;
 @group(0) @binding(1) var<storage, read> t_input: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
 @group(0) @binding(3) var<storage, read> t_scales: array<f32>;
@@ -31,9 +31,10 @@ struct Params {
 //   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
 //     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
 //     accumulate -- BIT-EXACT to the per-nibble half kernel.
-const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
-var<workgroup> As: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BM*BK
-var<workgroup> Bs: array<${buffer_scalar_type(DTYPE)}, 1024>;   // BK*BN
+//   BK=64 (PWDQ + ACC=half only) stages a full quantization group at once.
+const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = ${BK}u;
+var<workgroup> As: array<${buffer_scalar_type(DTYPE)}, ${64 * BK}>;   // BM*BK
+var<workgroup> Bs: array<${buffer_scalar_type(DTYPE)}, ${BK * 64}>;   // BK*BN
 // 16x16 = 256 threads, bound to the 64x64 tile + 4x4 reg tile (not a knob).
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
@@ -64,14 +65,35 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
       // vec4<f32> coalesced load; base is 4-aligned on the steel route (K%16==0, ac/k0 multiples of 4).
-      let av = t_input[base >> 2u];
-      As[ar * BK + ac + 0u] = ${buffer_scalar_type(DTYPE)}(av.x);
-      As[ar * BK + ac + 1u] = ${buffer_scalar_type(DTYPE)}(av.y);
-      As[ar * BK + ac + 2u] = ${buffer_scalar_type(DTYPE)}(av.z);
-      As[ar * BK + ac + 3u] = ${buffer_scalar_type(DTYPE)}(av.w);
+      $if BK == 64:
+        let av0 = t_input[(base + 0u) >> 2u];
+        let av1 = t_input[(base + 16u) >> 2u];
+        let av2 = t_input[(base + 32u) >> 2u];
+        let av3 = t_input[(base + 48u) >> 2u];
+        As[ar * BK + ac + 0u] = f16(av0.x); As[ar * BK + ac + 1u] = f16(av0.y);
+        As[ar * BK + ac + 2u] = f16(av0.z); As[ar * BK + ac + 3u] = f16(av0.w);
+        As[ar * BK + ac + 16u] = f16(av1.x); As[ar * BK + ac + 17u] = f16(av1.y);
+        As[ar * BK + ac + 18u] = f16(av1.z); As[ar * BK + ac + 19u] = f16(av1.w);
+        As[ar * BK + ac + 32u] = f16(av2.x); As[ar * BK + ac + 33u] = f16(av2.y);
+        As[ar * BK + ac + 34u] = f16(av2.z); As[ar * BK + ac + 35u] = f16(av2.w);
+        As[ar * BK + ac + 48u] = f16(av3.x); As[ar * BK + ac + 49u] = f16(av3.y);
+        As[ar * BK + ac + 50u] = f16(av3.z); As[ar * BK + ac + 51u] = f16(av3.w);
+      $else:
+        let av = t_input[base >> 2u];
+        As[ar * BK + ac + 0u] = ${buffer_scalar_type(DTYPE)}(av.x);
+        As[ar * BK + ac + 1u] = ${buffer_scalar_type(DTYPE)}(av.y);
+        As[ar * BK + ac + 2u] = ${buffer_scalar_type(DTYPE)}(av.z);
+        As[ar * BK + ac + 3u] = ${buffer_scalar_type(DTYPE)}(av.w);
     } else {
-      As[ar * BK + ac + 0u] = ${"0.0h" if PWDQ else "0.0"}; As[ar * BK + ac + 1u] = ${"0.0h" if PWDQ else "0.0"};
-      As[ar * BK + ac + 2u] = ${"0.0h" if PWDQ else "0.0"}; As[ar * BK + ac + 3u] = ${"0.0h" if PWDQ else "0.0"};
+      $if BK == 64:
+        for (var segment: u32 = 0u; segment < 4u; segment = segment + 1u) {
+          for (var ai: u32 = 0u; ai < 4u; ai = ai + 1u) {
+            As[ar * BK + ac + segment * 16u + ai] = 0.0h;
+          }
+        }
+      $else:
+        As[ar * BK + ac + 0u] = ${"0.0h" if PWDQ else "0.0"}; As[ar * BK + ac + 1u] = ${"0.0h" if PWDQ else "0.0"};
+        As[ar * BK + ac + 2u] = ${"0.0h" if PWDQ else "0.0"}; As[ar * BK + ac + 3u] = ${"0.0h" if PWDQ else "0.0"};
     }
     $if PWDQ:
       // Packed-word dequant: threads [0,BN) each stage one full BK-column of Bs.
@@ -83,16 +105,28 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
           // group sizes; K%BK==0 on the steel route), so hoist it to one read.
           let scale_row = (k0 / params.group_size) * params.padded_N;
           let scale = f16(t_scales[scale_row + n]);
-          // Column n's 16-nibble K-slice for this tile = two consecutive words.
+          // Column n's BK-nibble K-slice starts at this packed word.
           // K_packed multiple of 8 => base_word stays inside column n's own region.
           let base_word = n * (params.K_packed >> 2u) + (k0 >> 3u);
-          let w0 = t_weight[base_word];
-          let w1 = t_weight[base_word + 1u];
-          for (var br: u32 = 0u; br < BK; br = br + 1u) {
-            let word = select(w1, w0, br < 8u);        // word0 holds K-slice [0,8)
-            let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
-            Bs[br * BN + c] = f16(i32(nib) - 8) * scale;
-          }
+          $if BK == 64:
+            let words = array<u32, 8>(
+                t_weight[base_word + 0u], t_weight[base_word + 1u],
+                t_weight[base_word + 2u], t_weight[base_word + 3u],
+                t_weight[base_word + 4u], t_weight[base_word + 5u],
+                t_weight[base_word + 6u], t_weight[base_word + 7u]);
+            for (var br: u32 = 0u; br < BK; br = br + 1u) {
+              let word = words[br >> 3u];
+              let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
+              Bs[br * BN + c] = f16(i32(nib) - 8) * scale;
+            }
+          $else:
+            let w0 = t_weight[base_word];
+            let w1 = t_weight[base_word + 1u];
+            for (var br: u32 = 0u; br < BK; br = br + 1u) {
+              let word = select(w1, w0, br < 8u);        // word0 holds K-slice [0,8)
+              let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
+              Bs[br * BN + c] = f16(i32(nib) - 8) * scale;
+            }
         } else {
           for (var br: u32 = 0u; br < BK; br = br + 1u) { Bs[br * BN + c] = 0.0h; }
         }
@@ -135,15 +169,30 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     workgroupBarrier();
     k0 = k0 + BK;
   }
-  for (var m: u32 = 0u; m < 4u; m = m + 1u) {
-    for (var n: u32 = 0u; n < 4u; n = n + 1u) {
+  $if BK == 64:
+    for (var m: u32 = 0u; m < 4u; m = m + 1u) {
       let r = row0 + lid.y * 4u + m;
-      let c = col0 + lid.x * 4u + n;
-      if (r < params.M && c < params.N) {
-        var v = ${"f32(acc[m][n])" if ACC == "half" else "acc[m][n]"};
-        if (params.has_bias != 0u) { v = v + t_bias[c]; }
-        t_out[r * params.N + c] = v;
+      let c0 = col0 + lid.x * 4u;
+      if (r < params.M && c0 < params.N) {
+        var vv = vec4<f32>(
+            f32(acc[m][0]), f32(acc[m][1]), f32(acc[m][2]), f32(acc[m][3]));
+        if (params.has_bias != 0u) {
+          vv = vv + vec4<f32>(
+              t_bias[c0], t_bias[c0 + 1u], t_bias[c0 + 2u], t_bias[c0 + 3u]);
+        }
+        t_out[(r * params.N + c0) >> 2u] = vv;
       }
     }
-  }
+  $else:
+    for (var m: u32 = 0u; m < 4u; m = m + 1u) {
+      for (var n: u32 = 0u; n < 4u; n = n + 1u) {
+        let r = row0 + lid.y * 4u + m;
+        let c = col0 + lid.x * 4u + n;
+        if (r < params.M && c < params.N) {
+          var v = ${"f32(acc[m][n])" if ACC == "half" else "acc[m][n]"};
+          if (params.has_bias != 0u) { v = v + t_bias[c]; }
+          t_out[r * params.N + c] = v;
+        }
+      }
+    }
 }

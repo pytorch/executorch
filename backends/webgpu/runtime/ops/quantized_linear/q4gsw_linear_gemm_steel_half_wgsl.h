@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: 363916e1aacae9635b4573d2ce35d0ee22916ce225537a3717df98a0ed3353da
+// wgsl-sha256: 95cd59521a07d686a0eb396f79fe4e260e16e81d61f3c185ed7ed9be72963d59
 inline constexpr const char* kQ4gswLinearGemmSteelHalfWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
@@ -47,6 +47,7 @@ struct Params {
 //   ACC=half (PWDQ only)  f16 accumulate with fma(), cast to f32 in the epilogue
 //     -- LOSSY, perplexity-gated, opt-in via a runtime spec. ACC=float is f32
 //     accumulate -- BIT-EXACT to the per-nibble half kernel.
+//   BK=64 (PWDQ + ACC=half only) stages a full quantization group at once.
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN

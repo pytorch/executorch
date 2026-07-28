@@ -9,8 +9,10 @@
 Loads the generator by file path (no package/namespace dependency).
 """
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import re
 import tempfile
 import unittest
@@ -72,6 +74,46 @@ def _function_source(text: str, name: str) -> str:
 
 
 class WgslCodegenTest(unittest.TestCase):
+    def test_registry_entries_match_concrete_headers(self) -> None:
+        entries = g.registry_entries()
+        names = [entry.name for entry in entries]
+        expected = sorted(
+            header.name[: -len("_wgsl.h")]
+            for wgsl in g.discover()
+            for header, _ in g.headers_for_shader(wgsl)
+        )
+        self.assertEqual(names, expected)
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_registry_render_is_deterministic(self) -> None:
+        entries = g.registry_entries()
+        self.assertEqual(
+            g.render_registry(entries),
+            g.render_registry(list(reversed(entries))),
+        )
+
+    def test_registry_rejects_duplicate_names(self) -> None:
+        entry = g.registry_entries()[0]
+        with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
+            g.render_registry([entry, entry])
+
+    def test_unary_builder_uses_graph_dispatch_descriptor(self) -> None:
+        unary = (g.BACKEND_ROOT / "runtime/ops/unary/UnaryOp.cpp").read_text()
+        self.assertIn("get_webgpu_shader_info(shader_name)", unary)
+        self.assertIn("workgroup_size_x", unary)
+        self.assertIn("graph.create_params_buffer", unary)
+        self.assertIn("graph.add_compute_dispatch", unary)
+        self.assertIn("workgroup_count.x, workgroup_count.y", unary)
+        self.assertIn("workgroup_count_x = wgc.x", unary)
+        self.assertIn("workgroup_count_y = wgc.y", unary)
+        for legacy in (
+            "utils::make_uniform",
+            "utils::make_compute_pipeline",
+            "graph.add_uniform_buffer_bytes",
+            "graph.own_uniform_buffer",
+        ):
+            self.assertNotIn(legacy, unary)
+
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
@@ -133,6 +175,22 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(g.embedded_sha256(h), want)
         self.assertEqual(g.wgsl_sha256(wgsl), want)
 
+    def test_render_header_long_name_is_clang_format_stable(self) -> None:
+        stem = "streaming_attention_qwen3_q32_k16_causal_bound"
+        wgsl = "@compute @workgroup_size(32, 8, 1)\nfn main(){}\n"
+        h = g.render_header(Path(f"runtime/ops/sdpa/{stem}.wgsl"), wgsl)
+
+        self.assertIn(
+            f"// @generated from {stem}.wgsl\n// DO NOT EDIT.",
+            h,
+        )
+        self.assertIn(
+            "inline constexpr uint32_t\n"
+            "    kStreamingAttentionQwen3Q32K16CausalBoundWorkgroupSizeX = 32;",
+            h,
+        )
+        self.assertEqual(g.embedded_sha256(h), g.wgsl_sha256(wgsl))
+
     def test_embedded_sha256_missing_returns_empty(self) -> None:
         self.assertEqual(g.embedded_sha256("no sha line here\n"), "")
 
@@ -152,6 +210,55 @@ class WgslCodegenTest(unittest.TestCase):
                 self.assertEqual(
                     got, want, f"{header.name} stale; run scripts/gen_wgsl_headers.py"
                 )
+
+    def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
+        shader = (
+            g.BACKEND_ROOT / "runtime" / "ops" / "rope" / "rotary_embedding_hf.wgsl"
+        ).read_text()
+        self.assertIn("@builtin(num_workgroups) num_workgroups", shader)
+        self.assertIn(
+            "gid.x + gid.y * (num_workgroups.x * wg_size)",
+            shader,
+        )
+        self.assertIn("let freqs_b_idx = freqs_a_idx + half_dim;", shader)
+        self.assertIn("t_out[b_idx] = x_b * c_b + x_a * si_b;", shader)
+
+        wg_size = 2
+        workgroups_x = 2
+        indices = [
+            group_x * wg_size + lane + group_y * (workgroups_x * wg_size)
+            for group_y in range(2)
+            for group_x in range(workgroups_x)
+            for lane in range(wg_size)
+        ]
+        self.assertEqual(indices, list(range(8)))
+
+    def test_qwen3_runtime_eligibility_is_exact(self) -> None:
+        sdpa = (g.BACKEND_ROOT / "runtime/ops/sdpa/Sdpa.cpp").read_text()
+        self.assertIn("q/k/v/output must be fp32", sdpa)
+        self.assertIn("cache dtype does not match the selected storage mode", sdpa)
+        self.assertIn("scale == qwen3_expected_scale", sdpa)
+        self.assertNotIn("std::fabs(scale - qwen3_expected_scale)", sdpa)
+
+    def test_fp16_kv_graph_guards_transfer_and_topology(self) -> None:
+        graph = (g.BACKEND_ROOT / "runtime/WebGPUGraph.cpp").read_text()
+        self.assertIn("serialized cache tensor must be fp32", graph)
+        self.assertIn("consumed through a ValueList", graph)
+        self.assertIn("preserve it while changing storage", graph)
+
+        copy_inputs = graph.index("void WebGPUGraph::copy_inputs")
+        input_guard = graph.index(
+            "fp16 device input requires an fp32 host tensor", copy_inputs
+        )
+        fast_path = graph.index("// Fast path", copy_inputs)
+        self.assertLess(input_guard, fast_path)
+
+        copy_outputs = graph.index("void WebGPUGraph::copy_outputs")
+        output_guard = graph.index(
+            "fp16 device output requires an fp32 host tensor", copy_outputs
+        )
+        map_request = graph.index("wgpuBufferMapAsync", copy_outputs)
+        self.assertLess(output_guard, map_request)
 
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
@@ -179,7 +286,12 @@ class WgslCodegenTest(unittest.TestCase):
             orig = g.BACKEND_ROOT
             g.BACKEND_ROOT = Path(tmp)
             try:
-                self.assertEqual(g.main(["--check"]), 1)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(g.main(["--check"]), 1)
+                self.assertEqual(
+                    output.getvalue().count("Stale embedded WGSL headers"), 1
+                )
             finally:
                 g.BACKEND_ROOT = orig
 
