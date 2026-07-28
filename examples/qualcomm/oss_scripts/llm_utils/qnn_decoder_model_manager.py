@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
+from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit_hf
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -310,6 +311,7 @@ class QnnLLMEdgeManager:
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
+            custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
