@@ -23,6 +23,7 @@ from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
 MAXS = 128  # upper bound for the dynamic seq-len dim (within the 1D dispatch cap)
 HIDDEN = 64
+_Q4_DECODE_ROUTE_SPEC = "webgpu_record_q4gsw_decode_route"
 
 
 def _rms(x: torch.Tensor, weight: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -107,15 +108,16 @@ class SwiGluModule(torch.nn.Module):
         graph_output: str = "",
         separate_inputs: bool = False,
         interleaved_projection: bool = False,
+        qkv_overlap: bool = False,
         width: int = 8192,
     ) -> None:
         super().__init__()
         from torchao.quantization.granularity import PerGroup
         from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
-        def make_q4(seed: int):
+        def make_q4(seed: int, output_width: int = width):
             torch.manual_seed(seed)
-            linear = torch.nn.Linear(64, width, bias=False).eval()
+            linear = torch.nn.Linear(64, output_width, bias=False).eval()
             quantize_(
                 linear,
                 IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
@@ -125,6 +127,7 @@ class SwiGluModule(torch.nn.Module):
         self.gate_proj = make_q4(0)
         self.up_proj = make_q4(1)
         self.interleaved_proj = make_q4(2) if interleaved_projection else None
+        self.overlap_q_proj = make_q4(3, 2048) if qkv_overlap else None
         self.reverse_inner = reverse_inner
         self.reverse_outer = reverse_outer
         self.extra_gate_consumer = extra_gate_consumer
@@ -134,8 +137,10 @@ class SwiGluModule(torch.nn.Module):
         self.graph_output = graph_output
         self.separate_inputs = separate_inputs
         self.interleaved_projection = interleaved_projection
+        self.qkv_overlap = qkv_overlap
 
     def forward(self, x: torch.Tensor, up_input: torch.Tensor | None = None):
+        overlap_q = torch.sigmoid(self.overlap_q_proj(x)) if self.qkv_overlap else None
         gate = self.gate_proj(x)
         up = self.up_proj(up_input if self.separate_inputs else x)
         sigmoid = torch.sigmoid(gate)
@@ -158,6 +163,8 @@ class SwiGluModule(torch.nn.Module):
             return output, silu
         if interleaved is not None:
             return output + interleaved
+        if overlap_q is not None:
+            return overlap_q, output
         return output
 
 
@@ -175,8 +182,17 @@ def _ramp(shape) -> torch.Tensor:
     return torch.linspace(-1.0, 1.0, n, dtype=torch.float32).reshape(shape)
 
 
-def _lower_fully_delegated(ep, label: str):
-    edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+def _lower_fully_delegated(
+    ep,
+    label: str,
+    compile_options=None,
+    *,
+    expect_q4_decode_route: bool = False,
+):
+    edge = to_edge_transform_and_lower(
+        ep,
+        partitioner=[VulkanPartitioner(compile_options=compile_options)],
+    )
     graph = edge.exported_program().graph_module.graph
     delegates = get_delegates(graph)
     portable = get_non_lowered_nodes(graph)
@@ -192,6 +208,19 @@ def _lower_fully_delegated(ep, label: str):
     ]
     if delegate_ids != ["VulkanBackend"]:
         raise RuntimeError(f"{label}: serialized delegates: {delegate_ids}")
+    route_values = [
+        spec.value
+        for plan in et.executorch_program.execution_plan
+        for delegate in plan.delegates
+        for spec in delegate.compile_specs
+        if spec.key == _Q4_DECODE_ROUTE_SPEC
+    ]
+    expected_route_values = [b"\x01"] if expect_q4_decode_route else []
+    if route_values != expected_route_values:
+        raise RuntimeError(
+            f"{label}: {_Q4_DECODE_ROUTE_SPEC}: "
+            f"expected {expected_route_values}, got {route_values}"
+        )
     return et
 
 
@@ -284,6 +313,7 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     # 2e) Fused SDPA with a DYNAMIC seq-len S (prefill, input_pos=0).
     _export_dynamic_sdpa(out_dir)
     _export_combined_routes(out_dir)
+    _export_dynamic_qkv_routes(out_dir)
     _export_dynamic_sdpa_wide(out_dir)
     _export_static_sdpa(out_dir, 1, "static_sdpa_s1")
     _export_static_sdpa(out_dir, 16, "static_sdpa_s16")
@@ -336,6 +366,7 @@ LIN_MAXM = 128
 SWIGLU_MAXM = 512
 SWIGLU_WIDTH = 8192
 SWIGLU_SMALL_WIDTH = 64
+SWIGLU_QKV_OVERLAP_WIDTH = 512
 SWIGLU_K = 64
 
 
@@ -422,6 +453,12 @@ def _export_dynamic_swiglu(out_dir: str) -> None:
             SwiGluModule(width=SWIGLU_SMALL_WIDTH, **kwargs),
             [128],
         )
+    _export_swiglu_case(
+        out_dir,
+        "dyn_swiglu_qkv_overlap",
+        SwiGluModule(qkv_overlap=True, width=SWIGLU_QKV_OVERLAP_WIDTH),
+        [128],
+    )
     _export_swiglu_case(
         out_dir,
         "dyn_swiglu_outer_reversed",
@@ -614,6 +651,57 @@ def _export_combined_routes(out_dir: str) -> None:
         print(f"  golden combined_routes S={s}")
 
 
+QKV_NQ = 2048
+QKV_NK = 512
+QKV_NV = 512
+QKV_MAXM = 16
+
+
+def _export_dynamic_qkv_routes(out_dir: str) -> None:
+    from executorch.backends.webgpu.test.ops.test_quantized_linear import (
+        _make_quantized_model,
+    )
+
+    class QkvRoutes(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q = _make_quantized_model(LIN_K, QKV_NQ, LIN_GROUP, seed=0)
+            self.k = _make_quantized_model(LIN_K, QKV_NK, LIN_GROUP, seed=1)
+            self.v = _make_quantized_model(LIN_K, QKV_NV, LIN_GROUP, seed=2)
+
+        def forward(self, x):
+            # Keep the linears internal so graph-output copies do not capture
+            # the buffers that the runtime QKV pass later replaces.
+            return (
+                torch.sigmoid(self.q(x)),
+                torch.sigmoid(self.k(x)),
+                torch.sigmoid(self.v(x)),
+            )
+
+    model = QkvRoutes().eval()
+    x = _ramp((QKV_MAXM, LIN_K))
+    m_dim = torch.export.Dim("m", min=1, max=QKV_MAXM)
+    ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
+    et = _lower_fully_delegated(
+        ep,
+        "qkv_routes",
+        compile_options={_Q4_DECODE_ROUTE_SPEC: True},
+        expect_q4_decode_route=True,
+    )
+    with open(os.path.join(out_dir, "qkv_routes.pte"), "wb") as f:
+        f.write(et.buffer)
+    print("Exported qkv_routes.pte")
+
+    for m in [QKV_MAXM, 1]:
+        live_x = _ramp((m, LIN_K))
+        with torch.no_grad():
+            q, k, v = model(live_x)
+        base = os.path.join(out_dir, f"qkv_routes.S{m}.")
+        for name, tensor in (("input", live_x), ("q", q), ("k", k), ("v", v)):
+            tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+        print(f"  golden qkv_routes M={m}")
+
+
 def _export_dynamic_sdpa_wide(out_dir: str) -> None:
     from executorch.backends.webgpu.test.ops.test_sdpa import (
         _det_inputs,
@@ -787,6 +875,18 @@ def _export_dynamic_select(out_dir: str) -> None:
 
 
 class TestDynamicShapeExport(unittest.TestCase):
+    def test_q4_route_compile_specs(self) -> None:
+        import tempfile
+
+        model = RmsNormModule(HIDDEN).eval()
+        x = _ramp((1, 1, MAXS, HIDDEN))
+        ep = torch.export.export(model, (x,))
+        _lower_fully_delegated(ep, "q4_route_negative_control")
+
+        with tempfile.TemporaryDirectory() as d:
+            _export_dynamic_qkv_routes(d)
+            self.assertTrue(os.path.exists(os.path.join(d, "qkv_routes.pte")))
+
     def test_export_dynamic_rms(self) -> None:
         import tempfile
 
