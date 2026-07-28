@@ -241,7 +241,12 @@ def gen_oplist(
         delimiter = "," if "," in select_ops_list else " "
         print(select_ops_list)
         op_set.update(
-            set(filter(lambda x: len(x) > 0, map(str.strip, select_ops_list.split(delimiter))))
+            set(
+                filter(
+                    lambda x: len(x) > 0,
+                    map(str.strip, select_ops_list.split(delimiter)),
+                )
+            )
         )
         et_kernel_metadata = merge_et_kernel_metadata(
             et_kernel_metadata, {op: ["default"] for op in op_set}

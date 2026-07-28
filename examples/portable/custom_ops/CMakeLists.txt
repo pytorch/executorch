@@ -81,7 +81,9 @@ message("Generated files ${gen_command_sources}")
 
 # C++ library to register custom ops into PyTorch.
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-  gen_selected_ops(LIB_NAME "custom_ops_aot_lib" SELECT_OPS_LIST "my_ops::mul4.out")
+  gen_selected_ops(
+    LIB_NAME "custom_ops_aot_lib" SELECT_OPS_LIST "my_ops::mul4.out"
+  )
   generate_bindings_for_kernels(
     LIB_NAME "custom_ops_aot_lib" CUSTOM_OPS_YAML
     ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml
