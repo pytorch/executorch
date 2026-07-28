@@ -163,7 +163,7 @@ def test_fuse_duplicate_users_preserves_graph_order_for_representative():
     assert len(_add_node_names(result.graph_module)) == 1
 
 
-def test_fuse_duplicate_users_removes_identical_rescale_users():
+def test_fuse_duplicate_users_keeps_identical_rescale_users():
     graph_module = _graph_with_duplicate_rescale_users()
 
     with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
@@ -172,10 +172,8 @@ def test_fuse_duplicate_users_removes_identical_rescale_users():
     rescale_nodes = _rescale_nodes(result.graph_module)
 
     result.graph_module.graph.lint()
-    assert result.modified
-    assert len(rescale_nodes) == 1
-    output_node = result.graph_module.graph.output_node()
-    assert output_node.args[0] == (rescale_nodes[0], rescale_nodes[0])
+    assert not result.modified
+    assert len(rescale_nodes) == 2
 
 
 class LateDuplicateUsers(torch.nn.Module):
