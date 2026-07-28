@@ -112,8 +112,8 @@ See [Partitioner API](arm-vgf-partitioner.md) for more information of the Partit
 
 ## Quantization
 
-The VGF quantizer supports [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
-and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html).
+The VGF quantizer supports [Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html)
+and [Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_qat.html).
 
 Partial quantization is supported, allowing users to quantize only specific parts of the model while leaving others in floating-point.
 

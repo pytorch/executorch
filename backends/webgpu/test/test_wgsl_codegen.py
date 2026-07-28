@@ -9,8 +9,10 @@
 Loads the generator by file path (no package/namespace dependency).
 """
 
+import contextlib
 import hashlib
 import importlib.util
+import io
 import re
 import tempfile
 import unittest
@@ -95,6 +97,23 @@ class WgslCodegenTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
             g.render_registry([entry, entry])
 
+    def test_unary_builder_uses_graph_dispatch_descriptor(self) -> None:
+        unary = (g.BACKEND_ROOT / "runtime/ops/unary/UnaryOp.cpp").read_text()
+        self.assertIn("get_webgpu_shader_info(shader_name)", unary)
+        self.assertIn("workgroup_size_x", unary)
+        self.assertIn("graph.create_params_buffer", unary)
+        self.assertIn("graph.add_compute_dispatch", unary)
+        self.assertIn("workgroup_count.x, workgroup_count.y", unary)
+        self.assertIn("workgroup_count_x = wgc.x", unary)
+        self.assertIn("workgroup_count_y = wgc.y", unary)
+        for legacy in (
+            "utils::make_uniform",
+            "utils::make_compute_pipeline",
+            "graph.add_uniform_buffer_bytes",
+            "graph.own_uniform_buffer",
+        ):
+            self.assertNotIn(legacy, unary)
+
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
@@ -176,6 +195,28 @@ class WgslCodegenTest(unittest.TestCase):
                     got, want, f"{header.name} stale; run scripts/gen_wgsl_headers.py"
                 )
 
+    def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
+        shader = (
+            g.BACKEND_ROOT / "runtime" / "ops" / "rope" / "rotary_embedding_hf.wgsl"
+        ).read_text()
+        self.assertIn("@builtin(num_workgroups) num_workgroups", shader)
+        self.assertIn(
+            "gid.x + gid.y * (num_workgroups.x * wg_size)",
+            shader,
+        )
+        self.assertIn("let freqs_b_idx = freqs_a_idx + half_dim;", shader)
+        self.assertIn("t_out[b_idx] = x_b * c_b + x_a * si_b;", shader)
+
+        wg_size = 2
+        workgroups_x = 2
+        indices = [
+            group_x * wg_size + lane + group_y * (workgroups_x * wg_size)
+            for group_y in range(2)
+            for group_x in range(workgroups_x)
+            for lane in range(wg_size)
+        ]
+        self.assertEqual(indices, list(range(8)))
+
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
         self.assertEqual(
@@ -202,7 +243,12 @@ class WgslCodegenTest(unittest.TestCase):
             orig = g.BACKEND_ROOT
             g.BACKEND_ROOT = Path(tmp)
             try:
-                self.assertEqual(g.main(["--check"]), 1)
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(g.main(["--check"]), 1)
+                self.assertEqual(
+                    output.getvalue().count("Stale embedded WGSL headers"), 1
+                )
             finally:
                 g.BACKEND_ROOT = orig
 

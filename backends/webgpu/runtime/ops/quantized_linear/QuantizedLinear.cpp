@@ -350,25 +350,6 @@ void resize_q4gsw(WebGPUGraph& graph, const Q4gswResizeContext& context) {
   graph.set_cur_dims(context.out_id, state.output_dims);
 }
 
-size_t add_q4gsw_compute_dispatch(
-    WebGPUGraph& graph,
-    const char* shader_name,
-    const std::vector<WebGPUBufferBinding>& bindings,
-    utils::WgCount grid,
-    const char* kernel_name,
-    bool fixed_workgroup_size,
-    uint32_t workgroup_size) {
-  WebGPUComputeDispatchDescriptor descriptor;
-  descriptor.shader_name = shader_name;
-  descriptor.kernel_name = kernel_name;
-  descriptor.bindings = bindings;
-  if (!fixed_workgroup_size) {
-    descriptor.constants = {{"wg_size", static_cast<double>(workgroup_size)}};
-  }
-  descriptor.grid = {grid.x, grid.y};
-  return graph.add_compute_dispatch(descriptor);
-}
-
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
 void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in_id = args.at(0);
@@ -472,7 +453,10 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const bool bicol_eligible = K % 8u == 0u && gs % 8u == 0u;
   const bool use_gemv = M == 1u && bicol_eligible;
   const bool use_dual_route = utils::should_record_q4gsw_dual_route(
-      M, bicol_eligible, graph.has_dynamic_shapes());
+      M,
+      bicol_eligible,
+      graph.has_dynamic_shapes(),
+      graph.config().record_q4gsw_decode_route);
   const bool bk64_eligible =
       steel_bk64_eligible(device, K, N, gs, has_bias != 0u);
   const bool record_bk64_route = use_dual_route && bk64_eligible && M >= 128u;
@@ -552,13 +536,39 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       use_shmem_gemm);
 
   WGPUBuffer params_buffer = graph.create_params_buffer(initial_state.params);
-  const std::vector<WebGPUBufferBinding> bindings = {
-      {out.buffer, 0u, out.nbytes},
-      {in.buffer, 0u, in.nbytes},
-      {weight.buffer, 0u, weight.nbytes},
-      {scales.buffer, 0u, scales.nbytes},
-      {bias_buffer, 0u, bias_size},
-      {params_buffer, 0u, sizeof(Q4gswParams)}};
+  const std::vector<utils::BindingSpec> bindings = {
+      {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+      {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+      {2, WGPUBufferBindingType_ReadOnlyStorage, weight.buffer, weight.nbytes},
+      {3, WGPUBufferBindingType_ReadOnlyStorage, scales.buffer, scales.nbytes},
+      {4, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
+      {5, WGPUBufferBindingType_Uniform, params_buffer, sizeof(Q4gswParams)},
+  };
+  auto make_bundle =
+      [&](const char* source, bool fixed_wg, uint32_t override_wg_size) {
+        const WGPUConstantEntry wg_size_constant =
+            utils::make_wg_size_constant(override_wg_size);
+        return utils::make_compute_pipeline(
+            device,
+            source,
+            bindings,
+            fixed_wg ? nullptr : &wg_size_constant,
+            fixed_wg ? 0u : 1u);
+      };
+  auto make_shared_bundle =
+      [&](const char* source,
+          const utils::ComputePipelineBundle& shared_resources,
+          bool fixed_wg,
+          uint32_t override_wg_size) {
+        const WGPUConstantEntry wg_size_constant =
+            utils::make_wg_size_constant(override_wg_size);
+        return utils::make_compute_pipeline(
+            device,
+            source,
+            shared_resources,
+            fixed_wg ? nullptr : &wg_size_constant,
+            fixed_wg ? 0u : 1u);
+      };
 
   const bool fixed_prefill_wg = use_steel || use_shmem_gemm;
   const char* prefill_label = use_steel ? "linear_q4gsw_steel"
@@ -567,33 +577,39 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   size_t dispatch_idx = 0;
   size_t route_group = 0;
   if (use_dual_route) {
-    const size_t bicol_idx = add_q4gsw_compute_dispatch(
-        graph,
-        kQ4gswBicolShader,
-        bindings,
-        initial_state.active_grid,
-        "linear_q4gsw_coop4_bicol",
-        false,
-        gemv_wg_size);
+    utils::ComputePipelineBundle bicol_bundle = make_bundle(
+        get_webgpu_shader_info(kQ4gswBicolShader).source, false, gemv_wg_size);
+    const size_t bicol_idx = graph.add_dispatch(
+        {bicol_bundle.pipeline,
+         bicol_bundle.bind_group,
+         initial_state.active_grid.x,
+         "linear_q4gsw_coop4_bicol",
+         initial_state.active_grid.y});
     size_t bk64_idx = 0;
     if (record_bk64_route) {
-      bk64_idx = add_q4gsw_compute_dispatch(
-          graph,
-          kQ4gswSteelBk64Shader,
-          bindings,
-          initial_state.active_grid,
-          "linear_q4gsw_bk64",
+      utils::ComputePipelineBundle bk64_bundle = make_shared_bundle(
+          get_webgpu_shader_info(kQ4gswSteelBk64Shader).source,
+          bicol_bundle,
           true,
           0u);
+      bk64_idx = graph.add_dispatch(
+          {bk64_bundle.pipeline,
+           bk64_bundle.bind_group,
+           initial_state.active_grid.x,
+           "linear_q4gsw_bk64",
+           initial_state.active_grid.y});
     }
-    const size_t prefill_idx = add_q4gsw_compute_dispatch(
-        graph,
-        prefill_shader_name,
-        bindings,
-        initial_state.active_grid,
-        prefill_label,
+    utils::ComputePipelineBundle prefill_bundle = make_shared_bundle(
+        get_webgpu_shader_info(prefill_shader_name).source,
+        bicol_bundle,
         fixed_prefill_wg,
         wg_size);
+    const size_t prefill_idx = graph.add_dispatch(
+        {prefill_bundle.pipeline,
+         prefill_bundle.bind_group,
+         initial_state.active_grid.x,
+         prefill_label,
+         initial_state.active_grid.y});
     if (record_bk64_route) {
       route_group = graph.register_dispatch_route_group(
           {{bicol_idx, bicol_idx + 1},
@@ -607,15 +623,17 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         route_group, initial_state.active_route, {initial_state.active_grid});
   } else {
     const bool fixed_wg = use_gemv ? false : (use_bk64 || fixed_prefill_wg);
-    dispatch_idx = add_q4gsw_compute_dispatch(
-        graph,
-        shader_name,
-        bindings,
-        initial_state.active_grid,
-        use_gemv ? "linear_q4gsw_coop4_bicol"
-                 : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label),
+    utils::ComputePipelineBundle bundle = make_bundle(
+        get_webgpu_shader_info(shader_name).source,
         fixed_wg,
         use_gemv ? gemv_wg_size : wg_size);
+    dispatch_idx = graph.add_dispatch(
+        {bundle.pipeline,
+         bundle.bind_group,
+         initial_state.active_grid.x,
+         use_gemv ? "linear_q4gsw_coop4_bicol"
+                  : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label),
+         initial_state.active_grid.y});
   }
 
   // Dynamic shapes: recompute one shared Params block and select exactly one
