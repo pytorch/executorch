@@ -175,6 +175,39 @@ void check_linear_tiled(int m_rows) {
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
 }
 
+constexpr int kQkvNq = 2048;
+constexpr int kQkvNk = 512;
+constexpr int kQkvNv = 512;
+constexpr int kQkvMaxM = 16;
+
+void run_qkv_routes(Module& m, int m_rows) {
+  const std::string base =
+      g_dir + "/qkv_routes.S" + std::to_string(m_rows) + ".";
+  auto input = read_bin(base + "input.bin");
+  ASSERT_FALSE(input.empty()) << "missing qkv_routes.S" << m_rows;
+  auto tensor = make_tensor_ptr({m_rows, kLinK}, std::move(input));
+  auto result = m.forward({EValue(tensor)});
+  ASSERT_TRUE(result.ok()) << "qkv_routes M=" << m_rows << " forward failed";
+  ASSERT_EQ(result.get().size(), 3u);
+
+  const int widths[] = {kQkvNq, kQkvNk, kQkvNv};
+  const char* names[] = {"q", "k", "v"};
+  for (size_t i = 0; i < 3; i++) {
+    ASSERT_TRUE(result.get()[i].isTensor());
+    const auto& output = result.get()[i].toTensor();
+    ASSERT_EQ(output.dim(), 2);
+    ASSERT_EQ(output.size(0), m_rows);
+    ASSERT_EQ(output.size(1), widths[i]);
+    const size_t numel = static_cast<size_t>(m_rows) * widths[i];
+    std::vector<float> got(
+        output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
+    auto golden = read_bin(base + names[i] + ".bin");
+    ASSERT_EQ(golden.size(), numel);
+    EXPECT_LT(max_err(got, golden), 1e-2f)
+        << "qkv_routes " << names[i] << " M=" << m_rows;
+  }
+}
+
 // Dynamic SDPA (GQA prefill, input_pos=0): q[1,s,hq,d] k/v[1,s,hkv,d]
 // caches[1,cmax,hkv,d]; attn output [1,s,hq,d] selected by shape (3 outputs).
 constexpr int kSdHq = 8, kSdHkv = 2, kSdD = 16, kSdCmax = 64;
@@ -533,7 +566,40 @@ TEST(DynamicShape, QuantizedLinearTiledReusedGraph) {
   }
 }
 
+// The first max-shape execution does not invoke resize hooks. This sequence
+// therefore checks both initial QKV route selection and max/decode transitions.
+TEST(DynamicShape, QkvRoutesReusedGraph) {
+  Module m(g_dir + "/qkv_routes.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load qkv_routes.pte";
+  for (int m_rows : {kQkvMaxM, 1, kQkvMaxM}) {
+    run_qkv_routes(m, m_rows);
+  }
+}
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
+TEST(DynamicShape, QkvLiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !context->shader_f16_supported) {
+    GTEST_SKIP() << "timestamp queries or shader-f16 unavailable";
+  }
+  Module m(g_dir + "/qkv_routes.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load qkv_routes.pte";
+  for (int m_rows : {kQkvMaxM, 1, kQkvMaxM}) {
+    run_qkv_routes(m, m_rows);
+    const auto names = current_profile_names();
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_qkv_fused"),
+        m_rows > 1 ? 1 : 0);
+    EXPECT_EQ(
+        std::count(names.begin(), names.end(), "linear_q4gsw_coop4_bicol"),
+        m_rows == 1 ? 3 : 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_steel"), 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_shmem"), 0);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "linear_q4gsw_tiled"), 0);
+  }
+}
+
 TEST(DynamicShape, CombinedLiveRoutesProfile) {
   const auto* context = get_default_webgpu_context();
   if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
@@ -546,7 +612,7 @@ TEST(DynamicShape, CombinedLiveRoutesProfile) {
     run_combined_routes(m, s);
     const auto names = current_profile_names();
     ASSERT_EQ(names.size(), s == 1 ? 6 : 7);
-    EXPECT_EQ(std::count(names.begin(), names.end(), ""), 1);
+    EXPECT_EQ(std::count(names.begin(), names.end(), "add"), 1);
     EXPECT_EQ(
         std::count(names.begin(), names.end(), "linear_q4gsw_coop4_bicol"),
         s == 1 ? 1 : 0);
