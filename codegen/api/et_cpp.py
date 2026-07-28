@@ -54,8 +54,6 @@ Difference between this file and torchgen.api.cpp.py:
   - Executorch doesn't support TensorOptions, however in this file we still keep the logic here to be compatible with
     torchgen.api.cpp, so that we can do stuff like ATen mode (running ATen kernels in Executorch).
 
-  - Executorch doesn't support Dimname.
-
   - Executorch runtime doesn't support SymInt, will treat it as int.
 """
 
@@ -140,8 +138,6 @@ def argumenttype_type(
         # TODO: keeping these special cases for Tensor[] and Tensor?[] so that we can hookup with ATen kernels.
         if str(t.elem) == "Tensor":
             return NamedCType(binds, BaseCType(tensorListT))
-        elif str(t.elem) == "Dimname":
-            raise NotImplementedError("Executorch doesn't support Dimname")
         elif str(t.elem) == "Tensor?":
             return NamedCType(binds, ArrayRefCType(OptionalCType(BaseCType(tensorT))))
         elem = argumenttype_type(t.elem, mutable=mutable, binds=binds)
