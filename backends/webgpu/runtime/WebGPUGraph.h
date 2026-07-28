@@ -18,8 +18,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <executorch/backends/webgpu/runtime/WebGPUDispatchMath.h>
 #include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
-#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/runtime/core/named_data_map.h>
 
 namespace executorch::backends::webgpu {
@@ -37,6 +37,8 @@ struct WebGPUTensor {
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
+  // Exactly int8 (not uint8/bool), so int8-only ops can guard their dtype.
+  bool is_int8 = false;
 };
 
 // Host-side view of one graph input, passed to copy_inputs.
@@ -123,6 +125,12 @@ struct WebGPUMemoryStats {
   }
 };
 
+struct WebGPUGraphConfig {
+  bool f16_kv_cache = false;
+  bool f16_accumulate_gemm = false;
+  bool record_q4gsw_decode_route = false;
+};
+
 class WebGPUGraph {
  public:
   WebGPUGraph();
@@ -134,8 +142,7 @@ class WebGPUGraph {
       const void* flatbuffer_data,
       const uint8_t* constant_data,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
-      bool f16_kv_cache = false,
-      bool f16_accumulate_gemm = false);
+      WebGPUGraphConfig config = {});
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -186,6 +193,10 @@ class WebGPUGraph {
   }
   bool get_bool(int id) const {
     return bools_[id];
+  }
+  // String value (e.g. gelu's `approximate` kwarg).
+  const std::string& get_string(int id) const {
+    return strings_[id];
   }
 
   // Live-scalar (SymInt) API; mirrors the Vulkan SymInt/ParamsBuffer UBO.
@@ -300,6 +311,20 @@ class WebGPUGraph {
   size_t add_dispatch(WebGPUDispatch dispatch) {
     dispatches_.push_back(dispatch);
     return dispatches_.size() - 1;
+  }
+
+  // 2D sibling of add_dispatch (sets workgroup_count_y); returns the index.
+  size_t add_dispatch_2d(
+      WGPUComputePipeline pipeline,
+      WGPUBindGroup bind_group,
+      uint32_t count_x,
+      uint32_t count_y) {
+    WebGPUDispatch d;
+    d.pipeline = pipeline;
+    d.bind_group = bind_group;
+    d.workgroup_count_x = count_x;
+    d.workgroup_count_y = count_y;
+    return add_dispatch(d);
   }
 
   // In-graph buffer-to-buffer DMA (e.g. flat copy); returns the dispatch index.
@@ -437,13 +462,17 @@ class WebGPUGraph {
   // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
   // (runtime opt-in; perplexity-gated, not bit-exact).
   bool f16_accumulate_gemm() const {
-    return f16_accumulate_gemm_;
+    return config_.f16_accumulate_gemm;
+  }
+
+  const WebGPUGraphConfig& config() const {
+    return config_;
   }
 
  private:
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
-  bool f16_accumulate_gemm_ = false;
+  WebGPUGraphConfig config_;
 
  private:
   WGPUInstance instance_ = nullptr;
@@ -459,6 +488,7 @@ class WebGPUGraph {
   std::vector<std::vector<int>> value_lists_;
   std::vector<double> doubles_;
   std::vector<bool> bools_;
+  std::vector<std::string> strings_;
 
   // SymInt (live scalar): id -> {live Uniform buffer, current value}, sparse.
   struct SymIntSlot {
@@ -537,15 +567,6 @@ class WebGPUGraph {
   std::unordered_map<std::string, WGPUBindGroupLayout> bgl_cache_;
 
   size_t uniform_buffer_bytes_ = 0;
-
-  // SwiGLU fusion: emit ONE fused elementwise dispatch
-  // computing out = (gate * sigmoid(gate)) * up, replacing the sigmoid + 2
-  // muls. `out` is repointed to a private pooled buffer (aliasing guard);
-  // `gate` is likewise given a private pooled buffer at its producer op by the
-  // build() walk (the planner reuse-aliases up onto gate's slot, so up_proj
-  // would stomp gate before the fused reads it). Only used during build(); the
-  // detection maps are empty (inert) when no SwiGLU triple matches.
-  void add_swiglu_fused_dispatch(int gate_id, int up_id, int out_id);
 };
 
 } // namespace executorch::backends::webgpu
