@@ -150,6 +150,15 @@ def _create_const_ops_for_rescale(
     return [multipliers.name, shifts.name, input_zp.name, output_zp.name]
 
 
+def _unsigned_dtype_offset(dtype: ts.DType) -> int:
+    if dtype == ts.DType.INT8:
+        return 128
+    raise ValueError(
+        "Wide-to-unsigned RESCALE legalization only supports "
+        f"INT8 output, got {dtype}"
+    )
+
+
 @register_node_visitor
 class RescaleVisitor(NodeVisitor):
     target = "tosa.RESCALE.default"
@@ -176,6 +185,36 @@ class RescaleVisitor(NodeVisitor):
         multipliers, otherwise 32-bit multipliers are used.
 
         """
+        if output_unsigned and input_node.dtype not in (ts.DType.INT8, ts.DType.INT16):
+            unsigned_offset = _unsigned_dtype_offset(output.dtype)
+            signed_output = tosa_graph.addIntermediate(output.shape, output.dtype)
+            self._build_rescale(
+                node=node,
+                tosa_graph=tosa_graph,
+                scale=scale,
+                input_node=input_node,
+                output=signed_output,
+                input_zp=input_zp,
+                output_zp=[output_zp[0] - unsigned_offset],
+                rounding_mode=rounding_mode,
+                per_channel=per_channel,
+                input_unsigned=input_unsigned,
+                output_unsigned=False,
+            )
+            self._build_rescale(
+                node=node,
+                tosa_graph=tosa_graph,
+                scale=[1.0],
+                input_node=signed_output,
+                output=output,
+                input_zp=[-unsigned_offset],
+                output_zp=[0],
+                rounding_mode=rounding_mode,
+                input_unsigned=False,
+                output_unsigned=True,
+            )
+            return
+
         scale_width = 16 if input_node.dtype == ts.DType.INT48 else 32
         is_scale32 = input_node.dtype != ts.DType.INT48
 

@@ -170,10 +170,11 @@ def _propose_reduction_view_swap(
     if not view_map.is_valid_map:
         return None
 
-    target_dims = view_map.map_dim(source_dims)
-    if target_dims is None:
+    proposal = view_map.map_reduction_after_view(input_shape, source_dims)
+    if proposal is None:
         return None
-    return list(view_shape), target_dims
+    view_shape, target_dims = proposal
+    return cast(list[_DimT], view_shape), target_dims
 
 
 def _propose_view_reduction_swap(
@@ -185,10 +186,11 @@ def _propose_view_reduction_swap(
     if not view_map.is_valid_map:
         return None
 
-    source_dims = view_map.map_dim_inverse(target_dims)
-    if source_dims is None:
+    proposal = view_map.map_reduction_before_view(target_dims)
+    if proposal is None:
         return None
-    return source_dims, _reduce_shape(view_shape, target_dims)
+    source_dims, output_shape = proposal
+    return source_dims, cast(list[_DimT], output_shape)
 
 
 def _bruteforce_permute_view_swaps(
@@ -301,6 +303,42 @@ def test_dim_map_matches_view_map_docstring_example_reduction_dims() -> None:
     assert view_map.map_dim(1) is None
     assert view_map.map_dim(2) is None
     assert view_map.map_dim_inverse(2) is None
+
+
+def test_dim_map_allows_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    proposal = _propose_reduction_view_swap([6, 4], [0], [6, 1, 4])
+    candidates = _bruteforce_reduction_view_swaps(x, [0], [6, 1, 4])
+
+    assert proposal == ([6, 1, 4], [0])
+    assert proposal in candidates
+
+
+def test_dim_map_allows_inverse_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    proposal = _propose_view_reduction_swap([6, 4], [6, 1, 4], [0])
+    candidates = _bruteforce_view_reduction_swaps(x, [6, 1, 4], [0])
+
+    assert proposal == ([0], [1, 1, 4])
+    assert proposal in candidates
+
+
+def test_dim_map_allows_output_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    view_map = ViewMap.from_shapes([1, 4], [1, 1, 4])
+    proposal = view_map.map_reduction_after_view([6, 4], [0])
+
+    assert proposal == ([6, 1, 4], [0, 1])
+    view_shape, target_dims = proposal
+    original = x.sum(dim=0, keepdim=True).reshape(1, 1, 4)
+    candidate = x.reshape(view_shape).sum(dim=tuple(target_dims), keepdim=True)
+    assert _same(original, candidate)
+
+
+def test_dim_map_rejects_invalid_zero_dim_remap() -> None:
+    view_map = ViewMap.from_shapes([5, 2, 60], [2, 60])
+
+    assert view_map.remap_target_shape([1, 2, 60]) is None
 
 
 def test_dim_map_matches_view_map_docstring_example_permutation_dims() -> None:
@@ -505,7 +543,7 @@ def test_dim_map_reduction_view_swap_preserves_symbolic_view_shape_dims() -> Non
     assert proposal is not None
     view_shape, target_dims = proposal
     assert isinstance(view_shape[0], torch.SymInt)
-    assert view_shape[0] is batch
+    assert sympy.simplify(view_shape[0].node.expr - batch.node.expr) == 0
     assert view_shape[1:] == [2, 3]
     assert target_dims == [1, 2]
 

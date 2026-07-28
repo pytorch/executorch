@@ -43,6 +43,7 @@ __all__ = [
     "PipelineContext",
     "PipelineContextBuilder",
     "PipelineError",
+    "PipelineStage",
     "QuantizationInputConfig",
     "QuantizationOutputConfig",
     "StageError",
