@@ -112,7 +112,7 @@ quantized_graph_module = calibrate_and_quantize(
 )
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/stable/pt2e_quantization/pt2e_quant_ptq.html) for more information.
 
 ### Quantization Aware Training
 
