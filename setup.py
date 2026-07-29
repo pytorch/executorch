@@ -320,6 +320,27 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
+def _read_soname(lib_path: Path) -> Optional[str]:
+    """Return the ELF SONAME of a shared library, or None if unavailable.
+
+    Used to recreate the SONAME symlink for a versioned .so in the wheel. Best
+    effort: any failure (non-ELF, no readelf, non-Linux) returns None.
+    """
+    try:
+        out = subprocess.run(
+            ["readelf", "-d", os.fspath(lib_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    except Exception:
+        return None
+    for line in out.splitlines():
+        if "SONAME" in line and "[" in line and "]" in line:
+            return line[line.index("[") + 1 : line.index("]")]
+    return None
+
+
 def get_executable_name(name: str) -> str:
     if _is_windows():
         return name + ".exe"
@@ -508,6 +529,43 @@ class BuiltFile(_BaseExtension):
         return Path(package_dir)
 
 
+class BuiltSharedLib(BuiltFile):
+    """Installs a SONAME-versioned shared library plus its symlink chain.
+
+    A normal ``BuiltFile`` copies one file. A shared library like
+    ``libexecutorch.so.1.4.0`` also needs the loader-visible SONAME symlink
+    (``libexecutorch.so.1``) and the developer symlink (``libexecutorch.so``),
+    or a consumer that links ``-lexecutorch`` fails at runtime because the
+    SONAME recorded in dependents cannot be found. This recreates that chain in
+    the wheel, matching a standard ``cmake --install`` layout.
+    """
+
+    def __init__(self, src_dir: str, src_name: str, dst: str):
+        # src_name is the base library name (e.g. "executorch"); the real file
+        # is libexecutorch.so.<version>, resolved by glob in src_path().
+        super().__init__(
+            src_dir=src_dir,
+            src_name=f"lib{src_name}.so.*",
+            dst=dst,
+            dependent_cmake_flags=[],
+        )
+
+    def src_path(self, installer: "InstallerBuildExt") -> Path:
+        # The glob matches the versioned real file and any symlinks; pick the
+        # regular file (the real library), not the symlinks.
+        build_dir = self._get_build_dir(installer)
+        pattern = self.src.replace("%CMAKE_CACHE_DIR%/", "")
+        matches = [
+            p for p in build_dir.glob(pattern) if p.is_file() and not p.is_symlink()
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"Expecting exactly 1 real shared library matching {self.src} "
+                f"in {build_dir}, found {matches}."
+            )
+        return matches[0]
+
+
 class BuiltExtension(_BaseExtension):
     """An extension that installs a python extension that was built by cmake."""
 
@@ -663,6 +721,31 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
+        # For a SONAME-versioned shared library, also recreate the symlink chain
+        # (libexecutorch.so -> libexecutorch.so.<major> -> libexecutorch.so.<ver>)
+        # so `-lexecutorch` links and the SONAME resolves at load time.
+        if isinstance(ext, BuiltSharedLib):
+            self._create_soname_symlinks(src_file, dst_file)
+
+    def _create_soname_symlinks(self, src_file: Path, dst_file: Path) -> None:
+        real_name = dst_file.name  # e.g. libexecutorch.so.1.4.0
+        link_dir = dst_file.parent
+        # SONAME (e.g. libexecutorch.so.1) read from the built library; fall back
+        # to none if unreadable. The dev symlink drops all version suffixes.
+        links = set()
+        soname = _read_soname(src_file)
+        if soname and soname != real_name:
+            links.add(soname)
+        dev_name = real_name.split(".so")[0] + ".so"
+        if dev_name != real_name:
+            links.add(dev_name)
+        for link_name in links:
+            link_path = link_dir / link_name
+            if link_path.exists() or link_path.is_symlink():
+                link_path.unlink()
+            # Relative link so the wheel is relocatable.
+            os.symlink(real_name, os.fspath(link_path))
+
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
         # but that would clobber the X bit on any executables. TODO(dbort): This
@@ -749,6 +832,38 @@ class CustomBuildPy(build_py):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
+            # Delegate-only C++ SDK headers: the Program/Module/Tensor/DataLoader/
+            # .ptd APIs a standalone C++ runner needs, so it can link the prebuilt
+            # runtime without an ExecuTorch source tree. These are listed
+            # explicitly (not rglob) so we only advertise APIs whose implementation
+            # archive is actually shipped in executorch/lib/. Excluded on purpose:
+            # bundled_module.h (needs the separate bundled_module archive),
+            # flat_tensor/serialize/serialize.h (serializer .cpp not shipped),
+            # file_descriptor_data_loader.h (impl not in the shipped archive), and
+            # cpu_caching_malloc_allocator.h (needs a memory_allocator archive we
+            # do not ship). flat_tensor_header.h IS shipped: it is the .ptd reader.
+            # Linux only, matching the SDK archives below; keeps Windows/macOS
+            # wheels unchanged.
+            sdk_headers = (
+                [
+                    "extension/module/module.h",
+                    "extension/data_loader/buffer_data_loader.h",
+                    "extension/data_loader/file_data_loader.h",
+                    "extension/data_loader/mmap_data_loader.h",
+                    "extension/data_loader/mman.h",
+                    "extension/data_loader/mman_windows.h",
+                    "extension/data_loader/shared_ptr_data_loader.h",
+                    "extension/flat_tensor/flat_tensor_data_map.h",
+                    "extension/flat_tensor/serialize/flat_tensor_header.h",
+                    "extension/named_data_map/merged_data_map.h",
+                    "extension/memory_allocator/malloc_memory_allocator.h",
+                    "extension/memory_allocator/memory_allocator_utils.h",
+                ]
+                if sys.platform == "linux"
+                else []
+            )
+            for src in sdk_headers:
+                src_to_dst.append((src, os.path.join("include/executorch", src)))
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
 
@@ -900,6 +1015,12 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_OPENVINO=ON"]
 
+        # Build the consolidated shared runtime libexecutorch.so so the wheel can
+        # ship a linkable C++ SDK (see the executorch_shared build target and the
+        # packaging step). Linux only; the SDK is not shipped on Windows/macOS.
+        if not minimal_build and sys.platform == "linux":
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_SHARED=ON"]
+
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
             # is predictable.
@@ -954,6 +1075,16 @@ class CustomBuild(build):
             # list explicitly rather than relying on each flag being OFF.
             cmake_build_args += ["--target", "flatbuffers_ep"]
         else:
+            # Delegate-only C++ SDK: ship the consolidated shared runtime
+            # libexecutorch.so (the executorch_shared target), which bundles the
+            # runtime core plus the common extensions (module, tensor,
+            # data_loader, flat_tensor, named_data_map). Shared is required so a
+            # separately distributed backend/delegate .so can register into the
+            # one process-global registry inside libexecutorch.so. Build it
+            # explicitly, Linux only, so packaging below always finds it.
+            if sys.platform == "linux":
+                cmake_build_args += ["--target", "executorch_shared"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
                 cmake_build_args += ["--target", "portable_lib"]
                 cmake_build_args += ["--target", "data_loader"]
@@ -1124,6 +1255,28 @@ setup(
                     src="PyQnnManagerAdaptor.*",
                     modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+                ),
+                # Delegate-only C++ SDK: the consolidated shared runtime
+                # libexecutorch.so (core + module/tensor/data_loader/flat_tensor/
+                # named_data_map), plus its SONAME symlink chain. Shipping it
+                # shared (not static archives) lets a separately distributed
+                # backend/delegate .so register into the one process-global
+                # registry inside libexecutorch.so, which is what coalesced
+                # multi-backend .pte execution requires. Paired with
+                # executorch-config.cmake (executorch::runtime target) and
+                # executorch.utils.cmake_prefix_path. Linux only: the .so naming
+                # and symlink chain are Unix specific, so Windows/macOS wheels are
+                # unchanged.
+                *(
+                    [
+                        BuiltSharedLib(
+                            src_dir="%CMAKE_CACHE_DIR%/",
+                            src_name="executorch",
+                            dst="executorch/lib/",
+                        )
+                    ]
+                    if sys.platform == "linux"
+                    else []
                 ),
             ]
         ),
