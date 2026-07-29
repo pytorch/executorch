@@ -312,7 +312,7 @@ class QnnLLMEdgeManager:
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
-            # custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
+            custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
@@ -359,7 +359,7 @@ class QnnLLMEdgeManager:
         compiler_spec = generate_qnn_executorch_compiler_spec(
             soc_model=get_soc_to_chipset_map()[soc_model],
             backend_options=backend_options,
-            # use_mha2sha=True,
+            use_mha2sha=False,
         )
         with torch.no_grad():
             self.edge_prog_mgr = to_edge_transform_and_lower_to_qnn(

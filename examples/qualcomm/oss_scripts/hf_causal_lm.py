@@ -72,7 +72,7 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
             # KV cache IO is 8-bit: annotate_kv_8bit_hf tags the KV cat 8-bit
             # regardless of the activation width (matches static_llama's
             # `annotate_kv_8bit` recipe wiring).
-            fixed_point_type["kv_type"] = torch.uint16
+            fixed_point_type["kv_type"] = torch.uint8
         else:
             raise ValueError(
                 f"No support for quant type {args.ptq}. Support 8a8w, 16a8w, 16a4w and 16a4w_block."
