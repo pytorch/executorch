@@ -603,6 +603,10 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.split_copy.Tensor,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
+    torch.ops.aten.moveaxis.int,
+    torch.ops.aten.moveaxis.intlist,
+    torch.ops.aten.movedim.int,
+    torch.ops.aten.movedim.intlist,
     torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
@@ -627,25 +631,6 @@ _one_to_one_shared_input_qspec: set[OpOverload] = {
     torch.ops.aten.neg.default,
     torch.ops.aten.detach_copy.default,
 }
-
-# Dimname has been removed from upstream PyTorch, but there may be a window
-# where developers in this backend are using a mainline build of this backend
-# with an older version of PyTorch.
-# TODO: remove this once the build has time to be propagated and majority of
-# dev expected to be unimpacted
-_transpose_dimname = getattr(torch.ops.aten.transpose, "Dimname", None)
-if _transpose_dimname is not None:
-    _one_to_one_shared_input_qspec.add(_transpose_dimname)
-
-for _op in (
-    getattr(torch.ops.aten.moveaxis, "int", None),
-    getattr(torch.ops.aten.moveaxis, "intlist", None),
-    getattr(torch.ops.aten.movedim, "int", None),
-    getattr(torch.ops.aten.movedim, "intlist", None),
-):
-    if _op is not None:
-        _one_to_one_shared_input_qspec.add(_op)
-
 
 _one_to_one_shared_input_or_input_act_qspec: set[OpOverload] = {
     torch.ops.aten.alias.default,
