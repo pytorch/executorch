@@ -7,6 +7,8 @@ on:
       - release/*
     tags:
       - ciflow/trunk/*
+      - v*.*.*
+      - '!v*.*.*-*'
   pull_request:
     paths:
       - .ci/scripts/setup-ios.sh
@@ -51,13 +53,21 @@ jobs:
             echo "Expected format: X.Y.Z (e.g., 1.2.0 or 1.2.0a0)"
             exit 1
           fi
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [[ ! "${TAG_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ERROR: Expected final release tag format vX.Y.Z, got ${GITHUB_REF_NAME}"
+              exit 1
+            fi
+            BASE_VERSION="${TAG_VERSION}"
+          fi
           # Extract major.minor for release branch matching
           MAJOR_MINOR=$(echo "${BASE_VERSION}" | grep -oE '^[0-9]+\.[0-9]+')
           RELEASE_BRANCH="refs/heads/release/${MAJOR_MINOR}"
           echo "release_branch=${RELEASE_BRANCH}" >> "$GITHUB_OUTPUT"
-          # For release branch matching version.txt (release/X.Y), use base version without date suffix
-          # For all other branches, append date for nightly builds
-          if [[ "${GITHUB_REF}" == "${RELEASE_BRANCH}" ]]; then
+          # For final release tags and matching release branches, use base version
+          # without date suffix. For all other branches, append date for nightly builds.
+          if [[ "${GITHUB_REF_TYPE}" == "tag" || "${GITHUB_REF}" == "${RELEASE_BRANCH}" ]]; then
             VERSION="${BASE_VERSION}"
           else
             VERSION="${BASE_VERSION}.$(TZ='PST8PDT' date +%Y%m%d)"
@@ -68,7 +78,7 @@ jobs:
           echo "GITHUB_REF=${GITHUB_REF}"
           echo "VERSION=${VERSION}"
       - name: Guardrail
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == steps.set_version.outputs.release_branch) }}
+        if: ${{ ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == steps.set_version.outputs.release_branch)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
         shell: bash
         run: |
           VERSION="${{ steps.set_version.outputs.version }}"
@@ -227,7 +237,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
-    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == needs.set-version.outputs.release_branch) && 'cherry-pick-bot' || '' }}
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == needs.set-version.outputs.release_branch || startsWith(github.ref, 'refs/tags/v')) && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
       contents: write
@@ -251,8 +261,8 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 when running the workflow manually from main or release branch
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == needs.set-version.outputs.release_branch) }}
+      - name: Enable S3 and SwiftPM upload for publishable release runs
+        if: ${{ ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == needs.set-version.outputs.release_branch)) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
         shell: bash
         run: |
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
