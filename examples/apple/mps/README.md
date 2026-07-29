@@ -40,7 +40,7 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DEXECUTORCH_BUILD_MPS=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-cmake --build cmake-out -j9 --target install --config Release
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
 # build mps_executor_runner
 rm -rf cmake-out/examples/apple/mps
@@ -51,7 +51,7 @@ cmake \
     -Bcmake-out/examples/apple/mps \
     examples/apple/mps
 
-cmake --build cmake-out/examples/apple/mps -j9 --config Release
+cmake --build cmake-out/examples/apple/mps -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 
 # Run the mv2 generated model using the mps_executor_runner
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv2_mps_bundled.pte --bundled_program

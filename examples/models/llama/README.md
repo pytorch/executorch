@@ -288,7 +288,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out-android .
 
-cmake --build cmake-out-android -j16 --target install --config Release
+cmake --build cmake-out-android -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --target install --config Release
 ```
 
 **1.2 Build llama runner for android**
@@ -307,7 +307,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
 
-cmake --build cmake-out-android/examples/models/llama -j16 --config Release
+cmake --build cmake-out-android/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 **2. Run on Android via adb shell**
@@ -400,7 +400,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --config Release --target install
+cmake --build cmake-out -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -410,7 +410,7 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+cmake --build cmake-out/examples/models/llama -j$(( $(nproc 2>/dev/null || sysctl -n hw.ncpu) + 1 )) --config Release
 ```
 
 Finally run your model (similar to step 3.3 above):
