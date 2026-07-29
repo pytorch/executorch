@@ -252,7 +252,7 @@ class TestProfiling:
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
             0: (6,),  # Conv2DStandardV2
-            1: (),  # Conv2DDepthwiseV2 (AvgPool)
+            1: (8,),  # Conv2DDepthwiseV2 (AvgPool)
             2: (7,),  # MaxPool
             3: (),  # TransposeCHW
             4: (),  # TransposeCHW
@@ -279,7 +279,7 @@ class TestProfiling:
         )
         neutron_map = extract_map_from_logs(caplog)
         assert neutron_map == {
-            0: (10,),  # Pad
+            0: (10, 11),  # Pad
             1: (10, 11),  # Conv2DStandardV1 (Pad + Conv2d)
             2: (12,),  # MaxPool
             3: (13, 14),  # Conv2DStandardV1 (Pad + Conv2d)
@@ -333,7 +333,7 @@ class TestProfiling:
             0: (8, 9),  # Conv2DStandardV1 (Pad + Conv2d)
             1: (10,),  # Conv2DStandardV1
             2: (11,),  # Add
-            3: (),  # Conv2DDepthwiseV2 (AvgPool)
+            3: (13,),  # Conv2DDepthwiseV2 (AvgPool)
             4: (12,),  # MaxPool
             5: (14,),  # StridedSliceConcat
             6: (15, 16),  # Conv2DPointwise (Conv2D + Relu)
@@ -372,7 +372,7 @@ class TestProfiling:
             12: (35,),  # Conv2DStandardV1
             13: (37,),  # Add
             14: (38,),  # GlobalBiasScale (Relu)
-            15: (),  # GlobalAvgPool (Mean)
+            15: (39, 40),  # GlobalAvgPool (Mean + Reshape)
             16: (41,),  # FullyConnected
             17: (),  # Neutron Dump
         }
@@ -453,7 +453,7 @@ class TestProfiling:
             24: (104, 105),  # Conv2DPointwise (Conv + Relu)
             25: (107, 108),  # Conv2DDepthwiseDense (DepthwiseConv + Relu)
             26: (110, 111),  # Conv2DPointwise (Conv + Relu)
-            27: (),  # Mean (GlobalAvgPool)
+            27: (112, 113),  # GlobalAvgPool (Mean + Reshape)
             28: (114,),  # FullyConnected
             29: (),  # Neutron Dump
         }
