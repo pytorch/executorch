@@ -42,6 +42,7 @@ class DecomposeAny(ExportPass):
         for node in graph.nodes:
             if node.target in {
                 exir_ops.edge.aten.any.dim,
+                exir_ops.edge.aten.any.dims,
                 exir_ops.edge.aten.any.default,
             }:
                 dim = node.args[1] if len(node.args) > 1 else None
