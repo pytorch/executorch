@@ -20,15 +20,18 @@
 # EXECUTORCH_LIBRARIES    -- Libraries to link against
 #
 # In addition to the legacy variables above, this config defines namespaced
-# imported targets for the prebuilt delegate-only C++ SDK when the corresponding
-# static libraries are shipped in the wheel (see the "C++ SDK targets" section
+# imported targets for the prebuilt delegate-only C++ SDK when the shared
+# runtime library is shipped in the wheel (see the "C++ SDK targets" section
 # below):
 #
-# executorch::core                 -- executorch_core (runtime, no ops)
-# executorch::runtime              -- executorch (adds primitive ops)
-# executorch::extension_data_loader executorch::extension_flat_tensor
-# executorch::extension_named_data_map executorch::extension_tensor
-# executorch::extension_module
+# executorch::runtime              -- libexecutorch.so (runtime core + the
+# bundled common extensions below) executorch::core                 -- alias of
+# executorch::runtime executorch::extension_module     -- alias of
+# executorch::runtime executorch::extension_tensor     -- alias of
+# executorch::runtime executorch::extension_data_loader     -- alias of
+# executorch::runtime executorch::extension_flat_tensor     -- alias of
+# executorch::runtime executorch::extension_named_data_map  -- alias of
+# executorch::runtime
 #
 cmake_minimum_required(VERSION 3.19)
 
@@ -103,10 +106,10 @@ if(_portable_lib_LIBRARY)
 endif()
 
 # ---------------------------------------------------------------------------
-# C++ SDK targets (delegate-only). Defined only when the prebuilt static
-# archives are present in the wheel (they are shipped alongside this config
-# under ../../lib). This lets a C++ application link the ExecuTorch runtime and
-# the common runtime extensions without an ExecuTorch source checkout:
+# C++ SDK targets (delegate-only). Defined only when the prebuilt shared runtime
+# library is present in the wheel (shipped alongside this config under
+# ../../lib). This lets a C++ application link the ExecuTorch runtime and the
+# common runtime extensions without an ExecuTorch source checkout:
 #
 # find_package(executorch REQUIRED) target_link_libraries(app PRIVATE
 # executorch::runtime executorch::extension_module executorch::extension_tensor)
