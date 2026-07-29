@@ -528,7 +528,13 @@ Tensor& quantized_moe_ffn_out(
         w_row[k] = v;
         row_sum += v;
       }
-      const float scale = static_cast<float>(route_scale) / (row_sum + 1e-20f);
+      // Match eager: clamp the denominator to the smallest normal float
+      // (torch.finfo(float32).tiny) rather than adding an epsilon, so a tiny
+      // score sum still normalizes to route_scale instead of being suppressed.
+      const float denom = row_sum < std::numeric_limits<float>::min()
+          ? std::numeric_limits<float>::min()
+          : row_sum;
+      const float scale = static_cast<float>(route_scale) / denom;
       for (int64_t k = 0; k < K; ++k) {
         w_row[k] *= scale;
       }
