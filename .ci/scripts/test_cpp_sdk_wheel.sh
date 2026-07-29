@@ -66,6 +66,7 @@ with zipfile.ZipFile(wheel_file) as wheel:
 
 required = [
     "executorch/lib/libexecutorch.so",
+    "executorch/lib/libexecutorch.so.1",
     "executorch/share/cmake/executorch-config.cmake",
     "executorch/utils/__init__.py",
     "executorch/include/executorch/runtime/executor/program.h",
@@ -74,6 +75,21 @@ required = [
 missing = [name for name in required if name not in names]
 if missing:
     raise AssertionError(f"{wheel_file} is missing SDK files: {missing}")
+
+# The loader resolves the SONAME (libexecutorch.so.<major>), so a versioned
+# real library must be present in addition to the dev symlink. Without it the
+# wheel links at build time but fails to load at runtime.
+versioned = [
+    name
+    for name in names
+    if name.startswith("executorch/lib/libexecutorch.so.")
+    and name.split("libexecutorch.so.")[1][:1].isdigit()
+]
+if not versioned:
+    raise AssertionError(
+        f"{wheel_file} has no versioned libexecutorch.so.<ver>; the SONAME "
+        "symlink chain is broken and the library will fail to load at runtime."
+    )
 
 # Headers whose implementation is not shipped must not be advertised.
 forbidden = [
@@ -109,9 +125,17 @@ cd "${WORK_DIR}"
 
 cat > main.cpp <<'CPP'
 #include <cstdio>
+#include <vector>
+
+#include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
+using executorch::extension::from_blob;
+using executorch::extension::Module;
+using executorch::extension::TensorPtr;
 using executorch::runtime::get_backend_class;
 using executorch::runtime::get_num_registered_backends;
 using executorch::runtime::runtime_init;
@@ -123,13 +147,30 @@ int main() {
   // is that the symbol links and resolves from libexecutorch.so.
   printf("stock backend lookup resolves: %d\n",
          get_backend_class("NonexistentBackend") == nullptr);
-  printf("PASS: linked executorch::runtime from the wheel\n");
+
+  // Exercise the advertised SDK surface so a broken header or missing symbol in
+  // Module / Tensor / DataLoader is caught at compile+link time, not just the
+  // runtime/backend headers.
+  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
+  TensorPtr tensor = from_blob(data.data(), {2, 2});
+  printf("tensor numel: %zu\n", tensor->numel());
+
+  // Construct a Module from a tiny in-memory buffer via the buffer data loader.
+  // Loading is expected to fail (not a real .pte); we only need this to
+  // compile and link against the Module/DataLoader symbols in libexecutorch.so.
+  const uint8_t fake_pte[8] = {0};
+  Module module(std::make_unique<executorch::extension::BufferDataLoader>(
+      fake_pte, sizeof(fake_pte)));
+  (void)module.method_names();
+
+  printf("PASS: linked executorch runtime + Module/Tensor/DataLoader from the "
+         "wheel\n");
   return 0;
 }
 CPP
 
 cat > CMakeLists.txt <<'CMAKE'
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.19)
 project(executorch_cpp_sdk_consumer LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 find_package(executorch CONFIG REQUIRED)
