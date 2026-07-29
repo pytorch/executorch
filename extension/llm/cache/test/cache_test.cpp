@@ -33,6 +33,9 @@ namespace {
 LayerConfig flat_layer() {
   return LayerConfig{LayerPolicy{LayerPolicy::Kind::Flat, 0}, 2, 8};
 }
+LayerConfig ring_layer(int window) {
+  return LayerConfig{LayerPolicy{LayerPolicy::Kind::Ring, window}, 2, 8};
+}
 } // namespace
 
 // Initializes the ExecuTorch PAL so the ET adapter's error paths (which ET_LOG)
@@ -66,6 +69,58 @@ TEST_F(CacheTest, FlatPlanAppendsAndReadsAllHistory) {
   EXPECT_EQ(p1->read[0].len, 5);
 }
 
+// ---- Ring policy: wrap, eviction, read base position -----------------------
+
+TEST_F(CacheTest, RingPlanWrapsAndEvicts) {
+  // window 4, max_write unset -> defaults to window -> ring of 2*4 - 1 = 7.
+  SequenceCache cache(CacheConfig{100, 1, {ring_layer(4)}});
+
+  // Prefill chunk of 4 at position 0: one write run, reads [0,4), no wrap.
+  auto p0 = cache.plan(0, 0, 4);
+  ASSERT_TRUE(p0.has_value());
+  EXPECT_EQ(p0->n_write, 1);
+  EXPECT_EQ(p0->write[0].start, 0);
+  EXPECT_EQ(p0->write[0].len, 4);
+  EXPECT_EQ(p0->n_read, 1);
+  EXPECT_EQ(p0->read[0].start, 0);
+  EXPECT_EQ(p0->read[0].len, 4);
+  EXPECT_EQ(p0->read_base_pos, 0);
+  cache.commit(*p0);
+
+  // Decode at position 7: write wraps to slot 0 (7 % 7); the read window
+  // [4,8) wraps the ring -> phys [4,6] then [0,0]. Positions 0-3 evicted.
+  auto p1 = cache.plan(0, 7, 1);
+  ASSERT_TRUE(p1.has_value());
+  EXPECT_EQ(p1->n_write, 1);
+  EXPECT_EQ(p1->write[0].start, 0);
+  EXPECT_EQ(p1->write[0].len, 1);
+  EXPECT_EQ(p1->n_read, 2);
+  EXPECT_EQ(p1->read[0].start, 4);
+  EXPECT_EQ(p1->read[0].len, 3);
+  EXPECT_EQ(p1->read[1].start, 0);
+  EXPECT_EQ(p1->read[1].len, 1);
+  EXPECT_EQ(p1->read_base_pos, 4); // oldest retained is logical position 4
+
+  // A step larger than max_write would overrun the ring -> rejected.
+  EXPECT_FALSE(cache.plan(0, 0, 5).has_value());
+}
+
+// ---- Mixed flat/ring: one shared length across layers ----------------------
+
+TEST_F(CacheTest, MixedFlatRingShareOneLength) {
+  SequenceCache cache(CacheConfig{100, 2, {flat_layer(), ring_layer(4)}});
+
+  // Same step drives both layers (T <= window); commit once.
+  auto p = cache.plan(0, 0, 3);
+  ASSERT_TRUE(p.has_value());
+  ASSERT_TRUE(cache.plan(1, 0, 3).has_value());
+  cache.commit(*p);
+
+  // Length advanced once (not per layer): length == 3.
+  EXPECT_TRUE(cache.can_extend(97));
+  EXPECT_FALSE(cache.can_extend(98));
+}
+
 // ---- Admission / rewind ----------------------------------------------------
 
 TEST_F(CacheTest, CanExtendBoundedByCapacity) {
@@ -87,6 +142,21 @@ TEST_F(CacheTest, FlatRewindsFreelyToZero) {
   EXPECT_FALSE(cache.rewind(1)); // cannot grow
   cache.clear();
   EXPECT_TRUE(cache.can_extend(8));
+}
+
+TEST_F(CacheTest, RewindBoundedByRingWindow) {
+  SequenceCache cache(CacheConfig{100, 2, {flat_layer(), ring_layer(4)}});
+  // Advance length to 10 in chunks of 2 (<= window).
+  for (int pos = 0; pos < 10; pos += 2) {
+    auto p = cache.plan(0, pos, 2);
+    ASSERT_TRUE(p.has_value());
+    ASSERT_TRUE(cache.plan(1, pos, 2).has_value());
+    cache.commit(*p);
+  }
+  // ring(4) has evicted everything older than 10 - 4 = 6.
+  EXPECT_FALSE(cache.rewind(5)); // older than the ring retains
+  EXPECT_TRUE(cache.rewind(6)); // exactly the floor
+  EXPECT_FALSE(cache.rewind(11)); // cannot grow
 }
 
 // ---- Faces / registry / session --------------------------------------------
