@@ -16,7 +16,9 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
-from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit_hf
+from executorch.backends.qualcomm.quantizer.custom_annotation import (  # noqa: F401
+    annotate_kv_8bit_hf,  # kept for the commented-out 8-bit KV IO wiring below
+)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -74,7 +76,6 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.max_batch_size = batch_size
     config.enable_spinquant_r3 = enable_spinquant_r3
     config.use_cache = True
-    # config.num_hidden_layers = 1
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
     if not hasattr(config, "head_dim"):
@@ -216,7 +217,7 @@ class QnnLLMEdgeManager:
             # Prefix layout additive mask [1, 1, ar_len=1, context_len]:
             # attend to real past [0, n_past), mask the pad [n_past, past_len),
             # attend to the new token at column past_len.
-            mask = torch.full((1, 1, 1, context_len), -65504.0)
+            mask = torch.full((1, 1, 1, context_len), -65535.0)
             mask[..., :n_past] = 0.0
             mask[..., past_len:] = 0.0
             return mask
@@ -311,7 +312,7 @@ class QnnLLMEdgeManager:
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
-            custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
+            # custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
@@ -340,6 +341,8 @@ class QnnLLMEdgeManager:
             tokenizer_path,
         )
         self.graph_module = convert_pt2e(self.graph_module)
+        # from executorch.backends.qualcomm.utils.utils import draw_graph
+        # draw_graph("qdq", "./hf_llm", self.graph_module)
 
         self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
@@ -356,6 +359,7 @@ class QnnLLMEdgeManager:
         compiler_spec = generate_qnn_executorch_compiler_spec(
             soc_model=get_soc_to_chipset_map()[soc_model],
             backend_options=backend_options,
+            # use_mha2sha=True,
         )
         with torch.no_grad():
             self.edge_prog_mgr = to_edge_transform_and_lower_to_qnn(

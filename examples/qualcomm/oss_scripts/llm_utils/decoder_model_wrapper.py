@@ -159,11 +159,57 @@ def _qnn_attention_mask(
     kv_arange = torch.arange(kv_length, device=cache_position.device)
     reshaped_cache_position = cache_position.view(-1, 1)
     causal_mask = kv_arange <= reshaped_cache_position
-    atten_mask = torch.full((causal_mask.shape[0], kv_length), -65504.0)
+    # -255 matches static_llama's PADDING_MASK_VALUE (masking_utils.py:12). A
+    # tighter range keeps the mask input's quant scale small during calibration,
+    # which preserves precision on the attention-logit space near 0. Using a
+    # very-large negative (e.g. -65504) forces a coarse quant scale that
+    # destroys attention numerics under 16a8w — repetitive/degenerate output.
+    atten_mask = torch.full((causal_mask.shape[0], kv_length), -255.0)
     atten_mask = atten_mask.masked_fill(causal_mask, 0)
     atten_mask = atten_mask[None, None, :, :].expand(batch_size, -1, -1, -1)
 
     return atten_mask
+
+
+class QnnPrecomputedRotaryEmbedding(torch.nn.Module):
+    """Drop-in replacement for HF's ``*RotaryEmbedding`` that serves cos/sin from
+    precomputed tables instead of computing them in the graph.
+
+    HF computes RoPE inside the traced graph: ``inv_freq @ position_ids`` then
+    cos/sin. For rope_type="llama3" (llama3.2) ``inv_freq`` spans ~7 orders of
+    magnitude (min 9.4e-08, max/min 1.06e7), so quantizing those in-graph
+    intermediates destroys the low-frequency (long-range) position information
+    and the model degenerates into repetitive output.
+
+    static_llama avoids this by precomputing ``freqs_cos``/``freqs_sin`` on the
+    host in fp32 and indexing them with ``input_pos`` (static_llama.py:697-698,
+    727-731). Only the results -- bounded in [-1, 1] -- enter the graph, which
+    quantizes cleanly. This module reproduces that: the tables are built once
+    with the original module's own math (so any rope_type/scaling is honored)
+    and the graph is left with a gather.
+    """
+
+    def __init__(self, rotary_emb: torch.nn.Module, max_seq_len: int, dtype):
+        super().__init__()
+        positions = torch.arange(max_seq_len, dtype=torch.long).unsqueeze(0)
+        # Reuse the original module's forward so rope_type/scaling/attention
+        # scaling are all applied exactly as HF would.
+        dummy = torch.zeros(1, max_seq_len, 1, dtype=dtype)
+        with torch.no_grad():
+            cos, sin = rotary_emb(dummy, positions)
+        self.register_buffer("cos_table", cos[0].to(dtype), persistent=False)
+        self.register_buffer("sin_table", sin[0].to(dtype), persistent=False)
+
+    def forward(self, x, position_ids):
+        # position_ids: [batch, seq] -> gather [batch, seq, head_dim]
+        flat = position_ids.reshape(-1)
+        cos = self.cos_table.index_select(0, flat).view(
+            *position_ids.shape, self.cos_table.shape[-1]
+        )
+        sin = self.sin_table.index_select(0, flat).view(
+            *position_ids.shape, self.sin_table.shape[-1]
+        )
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class QnnCausalLMExportableModule(torch.nn.Module):
@@ -186,6 +232,24 @@ class QnnCausalLMExportableModule(torch.nn.Module):
         self.past_len = self.max_seq_len - self.ar_len
 
         self._register_attention_mask_for_4_53()
+        self._use_precomputed_rope()
+
+    def _use_precomputed_rope(self):
+        """Swap HF's in-graph RoPE for precomputed cos/sin tables (see
+        QnnPrecomputedRotaryEmbedding). Keeps HF's plumbing intact -- the decoder
+        still calls ``self.rotary_emb(hidden_states, position_ids)`` -- but the
+        wide-dynamic-range inv_freq math now happens on the host in fp32."""
+        decoder = self.model.model
+        rotary_emb = getattr(decoder, "rotary_emb", None)
+        if rotary_emb is None:
+            logging.warning("No rotary_emb found; skipping RoPE precompute.")
+            return
+        decoder.rotary_emb = QnnPrecomputedRotaryEmbedding(
+            rotary_emb, self.max_seq_len, self.model.dtype
+        )
+        logging.info(
+            f"Replaced in-graph RoPE with precomputed tables (max_seq_len={self.max_seq_len})."
+        )
 
     def _register_attention_mask_for_4_53(self):
         if transformers.__version__ >= TRANSFORMERS_VERSION:
