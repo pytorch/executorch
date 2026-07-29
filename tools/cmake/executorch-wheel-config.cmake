@@ -30,7 +30,7 @@
 # executorch::extension_named_data_map executorch::extension_tensor
 # executorch::extension_module
 #
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.19)
 
 # ---------------------------------------------------------------------------
 # Legacy: discover the CPython _portable_lib extension for custom-op authors.

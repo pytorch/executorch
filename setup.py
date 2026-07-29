@@ -320,11 +320,14 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
-def _read_soname(lib_path: Path) -> Optional[str]:
-    """Return the ELF SONAME of a shared library, or None if unavailable.
+def _read_soname(lib_path: Path) -> str:
+    """Return the ELF SONAME of a shared library.
 
-    Used to recreate the SONAME symlink for a versioned .so in the wheel. Best
-    effort: any failure (non-ELF, no readelf, non-Linux) returns None.
+    Used to recreate the loader-visible SONAME symlink for a versioned .so in
+    the wheel. Raises if the SONAME cannot be read: without it the wheel would
+    link at build time but fail to load at runtime (the SONAME recorded in
+    dependents would have no matching file), so this must fail the build loudly
+    rather than silently ship a broken wheel.
     """
     try:
         out = subprocess.run(
@@ -333,12 +336,19 @@ def _read_soname(lib_path: Path) -> Optional[str]:
             text=True,
             check=True,
         ).stdout
-    except Exception:
-        return None
+    except (OSError, subprocess.CalledProcessError) as e:
+        raise RuntimeError(
+            f"Could not read the SONAME of {lib_path} via readelf: {e}. "
+            "The shared-library SONAME symlink cannot be created, which would "
+            "produce a wheel that fails to load at runtime."
+        ) from e
     for line in out.splitlines():
         if "SONAME" in line and "[" in line and "]" in line:
             return line[line.index("[") + 1 : line.index("]")]
-    return None
+    raise RuntimeError(
+        f"{lib_path} has no ELF SONAME; cannot create the SONAME symlink for "
+        "the wheel. Expected a versioned shared library (e.g. libfoo.so.1.2.3)."
+    )
 
 
 def get_executable_name(name: str) -> str:
@@ -727,38 +737,48 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
-        # For a SONAME-versioned shared library, also recreate the symlink chain
-        # (libexecutorch.so -> libexecutorch.so.<major> -> libexecutorch.so.<ver>)
-        # so `-lexecutorch` links and the SONAME resolves at load time.
+        # For a SONAME-versioned shared library, normalize what ships in the
+        # wheel. pip does not preserve symlinks (it materializes every wheel
+        # entry as a regular file), so a libexecutorch.so -> .so.1 -> .so.1.2.3
+        # chain would become three identical multi-hundred-KB copies. Instead
+        # ship exactly two files: the SONAME (libexecutorch.so.1, what the loader
+        # resolves via DT_NEEDED) as the real library, and the dev name
+        # (libexecutorch.so, what -lexecutorch / find_library(NAMES executorch)
+        # need). On a filesystem the dev name is a relative symlink; if the wheel
+        # packer dereferences it, it becomes at most one extra copy, not two.
         if isinstance(ext, BuiltSharedLib):
-            self._create_soname_symlinks(src_file, dst_file)
+            self._normalize_shared_lib(src_file, dst_file)
 
-    def _create_soname_symlinks(self, src_file: Path, dst_file: Path) -> None:
-        real_name = dst_file.name  # e.g. libexecutorch.so.1.4.0
-        link_dir = dst_file.parent
-        # SONAME (e.g. libexecutorch.so.1) read from the built library; fall back
-        # to none if unreadable. The dev symlink drops all version suffixes.
-        links = set()
+    def _normalize_shared_lib(self, src_file: Path, dst_file: Path) -> None:
+        lib_dir = dst_file.parent
+        # SONAME (e.g. libexecutorch.so.1) read from the built library. Required,
+        # not best-effort: it is what the loader resolves at runtime.
+        # _read_soname raises if it cannot be determined.
         soname = _read_soname(src_file)
-        if soname and soname != real_name:
-            links.add(soname)
-        dev_name = real_name.split(".so")[0] + ".so"
-        if dev_name != real_name:
-            links.add(dev_name)
-        for link_name in links:
-            link_path = link_dir / link_name
-            if link_path.exists() or link_path.is_symlink():
-                link_path.unlink()
-            # Relative link so the wheel is relocatable.
-            os.symlink(real_name, os.fspath(link_path))
+        soname_path = lib_dir / soname
+        # Make the SONAME file the real library. dst_file is the fully versioned
+        # name (e.g. libexecutorch.so.1.4.0) that copy_file just wrote; rename it
+        # to the SONAME so we do not keep a third redundant copy.
+        if dst_file.name != soname:
+            if soname_path.exists() or soname_path.is_symlink():
+                soname_path.unlink()
+            os.replace(os.fspath(dst_file), os.fspath(soname_path))
 
-        # Ensure that the destination file is writable, even if the source was
-        # not. build_py does this by passing preserve_mode=False to copy_file,
-        # but that would clobber the X bit on any executables. TODO(dbort): This
-        # probably won't work on Windows.
-        if not os.access(src_file, os.W_OK):
-            # Make the file writable. This should respect the umask.
-            os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
+        # Dev name (drop all version suffixes), e.g. libexecutorch.so.
+        dev_name = soname.split(".so")[0] + ".so"
+        if dev_name != soname:
+            dev_path = lib_dir / dev_name
+            if dev_path.exists() or dev_path.is_symlink():
+                dev_path.unlink()
+            # Relative link so the wheel is relocatable on a real filesystem.
+            os.symlink(soname, os.fspath(dev_path))
+
+        # Ensure the shipped library is writable (the CMake output may be
+        # read-only), so a later rebuild/repack can overwrite it. Mirrors the
+        # writability fix build_py applies via copy_file(preserve_mode=False),
+        # but scoped to this file so it does not clobber X bits elsewhere.
+        if not os.access(soname_path, os.W_OK):
+            os.chmod(soname_path, os.stat(soname_path).st_mode | 0o222)
 
 
 class CustomBuildPy(build_py):
