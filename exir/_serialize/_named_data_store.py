@@ -210,6 +210,66 @@ class NamedDataStore:
                 tensor_layout,
             )
 
+    def externalize_pte_data(
+        self,
+        max_data_bytes: int,
+        tag_prefix: str,
+    ) -> None:
+        # Keep this generic API defensive because callers can bypass backend
+        # option parsing and serialized compile-spec validation.
+        if (
+            isinstance(max_data_bytes, bool)
+            or not isinstance(max_data_bytes, int)
+            or max_data_bytes <= 0
+        ):
+            raise ValueError("external data shard cap must be a positive integer")
+        if not tag_prefix:
+            raise ValueError("external data tag prefix must be nonempty")
+
+        entries_by_buffer: Dict[int, Dict[str, DataEntry]] = {}
+        for key, entry in self.pte_data.items():
+            entries_by_buffer.setdefault(entry.buffer_index, {})[key] = entry
+
+        shards: List[Dict[str, DataEntry]] = []
+        current_shard: Dict[str, DataEntry] = {}
+        current_bytes = 0
+        # Prefer stable key order over size-based packing so equivalent stores
+        # always produce the same shards.
+        ordered_groups = sorted(
+            entries_by_buffer.items(), key=lambda item: tuple(sorted(item[1]))
+        )
+        for buffer_index, entries in ordered_groups:
+            buffer_size = len(self.buffers[buffer_index])
+            if buffer_size > max_data_bytes:
+                raise ValueError(
+                    f"buffer {buffer_index} has {buffer_size} bytes and exceeds "
+                    f"external data shard cap {max_data_bytes}"
+                )
+            if current_shard and current_bytes + buffer_size > max_data_bytes:
+                shards.append(current_shard)
+                current_shard = {}
+                current_bytes = 0
+            current_shard.update(entries)
+            current_bytes += buffer_size
+        if current_shard:
+            shards.append(current_shard)
+
+        external_data = {
+            tag: dict(entries) for tag, entries in self.external_data.items()
+        }
+        for entries in shards:
+            keys = sorted(entries)
+            digest = hashlib.sha256("\0".join(keys).encode("utf-8")).hexdigest()
+            tag = f"{tag_prefix}_{digest}"
+            canonical_entries = {key: entries[key] for key in keys}
+            existing = external_data.get(tag)
+            if existing is not None and existing != canonical_entries:
+                raise ValueError(f"external data tag collision for {tag}")
+            external_data[tag] = canonical_entries
+
+        self.external_data = external_data
+        self.pte_data = {}
+
     def get_named_data_store_output(self) -> NamedDataStoreOutput:
         # Clean up empty maps inside self.external_data
         self.external_data = {k: v for k, v in self.external_data.items() if len(v) > 0}
