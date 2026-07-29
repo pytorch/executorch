@@ -24,7 +24,7 @@ void compute_var_mean(
     const Tensor& in,
     Tensor& var_out,
     Tensor& mean_out,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     const size_t num,
     const double denominator) {
   CTYPE_OUT* var_data = var_out.mutable_data_ptr<CTYPE_OUT>();
@@ -102,8 +102,8 @@ void compute_var_mean(
 std::tuple<Tensor&, Tensor&> var_mean_correction_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
-    const optional<Scalar>& correction,
+    std::optional<ArrayRef<int64_t>> dim_list,
+    const std::optional<Scalar>& correction,
     bool keepdim,
     Tensor& out0,
     Tensor& out1) {

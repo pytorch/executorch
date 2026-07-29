@@ -20,7 +20,6 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpSliceScatterTensorOutTest : public OperatorTest {
@@ -29,8 +28,8 @@ class OpSliceScatterTensorOutTest : public OperatorTest {
       const Tensor& self,
       const Tensor& src,
       int64_t dim,
-      optional<int64_t> start,
-      optional<int64_t> end,
+      std::optional<int64_t> start,
+      std::optional<int64_t> end,
       int64_t step,
       Tensor& out) {
     return torch::executor::aten::slice_scatter_outf(

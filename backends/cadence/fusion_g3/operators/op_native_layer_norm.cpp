@@ -23,7 +23,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 namespace impl {
 namespace G3 {
@@ -35,8 +34,8 @@ template <typename CTYPE>
 void layer_norm(
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const optional<Tensor>& weight,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
@@ -112,8 +111,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     IntArrayRef normalized_shape,
-    const optional<Tensor>& weight,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& weight,
+    const std::optional<Tensor>& bias,
     double eps,
     Tensor& out,
     Tensor& mean_out,

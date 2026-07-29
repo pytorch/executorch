@@ -25,7 +25,6 @@ using namespace ::testing;
 using executorch::aten::MemoryFormat;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we test the conversion
@@ -58,7 +57,7 @@ class OpToTest : public OperatorTest {
   Tensor& op_to_copy_out(
       const Tensor& self,
       bool non_blocking,
-      optional<MemoryFormat> memory_format,
+      std::optional<MemoryFormat> memory_format,
       Tensor& out) {
     return torch::executor::aten::_to_copy_outf(
         context_, self, non_blocking, memory_format, out);
@@ -225,7 +224,7 @@ class OpToTest : public OperatorTest {
   op = "op_to_copy_out"
   opt_setup_params = """
     bool non_blocking = false;
-    optional<MemoryFormat> memory_format;
+    std::optional<MemoryFormat> memory_format;
   """
   opt_extra_params = "non_blocking, memory_format,"
   out_args = "out_shape, dynamism"
@@ -258,7 +257,7 @@ class OpToTest : public OperatorTest {
          0.6340786814689636});
 
     bool non_blocking = false;
-    optional<MemoryFormat> memory_format;
+    std::optional<MemoryFormat> memory_format;
 
     Tensor out = tf.zeros(out_shape, dynamism);
     op_to_copy_out(x, non_blocking, memory_format, out);

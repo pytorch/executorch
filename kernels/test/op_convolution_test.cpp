@@ -20,7 +20,6 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpConvOutTest : public OperatorTest {
@@ -28,7 +27,7 @@ class OpConvOutTest : public OperatorTest {
   Tensor& op_convolution_out(
       const Tensor& input,
       const Tensor& weight,
-      const optional<Tensor>& bias,
+      const std::optional<Tensor>& bias,
       ArrayRef<int64_t> stride,
       ArrayRef<int64_t> padding,
       ArrayRef<int64_t> dilation,
@@ -114,7 +113,7 @@ class OpConvOutTest : public OperatorTest {
         tf.make({4, 2, 3}, {8.1, 6.6, 1.6, 4.9, 3.8, 6.6, 4.6, 2.8,
                             2.4, 1.3, 3.6, 3.9, 8.1, 8.4, 5.4, 5.1,
                             8.9, 9.9, 7.9, 1.0, 1.1, 8.2, 6.3, 7.0});
-    optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
+    std::optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
     Tensor expected = tf.make(
         {1, 4, 2},
         {172.11, 237.72, 102.24, 132.28, 248.51, 320.18, 189.38, 236.07});
@@ -206,7 +205,7 @@ TEST_F(OpConvCorrectnessTest, NonZeroPadding) {
   Tensor weight = tf.make(
       {4, 2, 3}, {8.1, 6.6, 1.6, 4.9, 3.8, 6.6, 4.6, 2.8, 2.4, 1.3, 3.6, 3.9,
                   8.1, 8.4, 5.4, 5.1, 8.9, 9.9, 7.9, 1.0, 1.1, 8.2, 6.3, 7.0});
-  optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
+  std::optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
   Tensor expected = tf.make(
       {1, 4, 4},
       {61.78,
@@ -279,7 +278,7 @@ TEST_F(OpConvCorrectnessTest, MultipleInputBatches) {
   Tensor weight = tf.make(
       {4, 2, 3}, {1.1, 8.2, 6.3, 7.0, 6.5, 2.5, 9.2, 9.9, 8.1, 9.8, 4.8, 1.3,
                   2.6, 8.9, 1.1, 8.7, 2.3, 3.5, 4.2, 7.1, 5.0, 3.9, 3.3, 4.1});
-  optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
+  std::optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
   Tensor expected = tf.make(
       {3, 4, 4}, {54.77, 168.21, 208.92, 57.93, 55.01, 241.19, 312.18, 121.3,
                   34.59, 143.87, 201.88, 78.29, 60.39, 154.12, 194.07, 51.73,
@@ -363,7 +362,7 @@ TEST_F(OpConvCorrectnessTest, 2DSanityCheck) {
        4.0, 8.3, 5.2, 4.0, 4.8, 7.6, 7.1, 5.9, 9.1, 9.6, 3.9, 6.8,
        7.6, 2.5, 8.1, 7.3, 7.5, 7.5, 9.3, 5.6, 5.2, 4.7, 4.5, 8.7,
        8.7, 1.3, 4.1, 4.5, 4.9, 6.5, 7.9, 4.6, 7.0, 8.0, 1.6, 3.5});
-  optional<Tensor> bias(tf.make({2}, {1.0, 1.0}));
+  std::optional<Tensor> bias(tf.make({2}, {1.0, 1.0}));
   Tensor expected = tf.make(
       {1, 2, 4, 4},
       {642.33, 714.6,   687.96,  717.12,  859.79, 939.27,  996.79,  1189.59,
@@ -427,7 +426,7 @@ TEST_F(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
        4.0, 8.3, 5.2, 4.0, 4.8, 7.6, 7.1, 5.9, 9.1, 9.6, 3.9, 6.8,
        7.6, 2.5, 8.1, 7.3, 7.5, 7.5, 9.3, 5.6, 5.2, 4.7, 4.5, 8.7,
        8.7, 1.3, 4.1, 4.5, 4.9, 6.5, 7.9, 4.6, 7.0, 8.0, 1.6, 3.5});
-  optional<Tensor> bias(tf.make({2}, {1.0, 1.0}));
+  std::optional<Tensor> bias(tf.make({2}, {1.0, 1.0}));
   Tensor expected = tf.make_channels_last(
       {1, 2, 4, 4},
       {624.92, 656.07, 710.91,  800.45,  622.48,  596.14,  831.26,  882.43,
@@ -479,7 +478,7 @@ TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
 
   Tensor input = tf.ones({2, 4, 4, 5});
   Tensor weight = tf.ones({8, 3, 2, 2});
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   Tensor out = tf.zeros({2, 8, 3, 4});
 
   int64_t stride[1] = {1};
@@ -522,7 +521,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
 
   Tensor input = tf.full({2, 4, 3, 2}, 2.0);
   Tensor weight = tf.full({4, 1, 2, 2}, 0.5);
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   Tensor out = tf.full({2, 2, 4, 3}, 0.7);
   Tensor expected =
       tf.make({2, 2, 4, 3}, {2, 4, 2, 4, 8, 4, 4, 8, 4, 2, 4, 2, 2, 4, 2, 4,
@@ -620,7 +619,7 @@ TEST_F(OpConvCorrectnessTest, TransposedDefaultParamsChannelsLast) {
 
   Tensor input = tf.full_channels_last({2, 4, 3, 2}, 2.0);
   Tensor weight = tf.full_channels_last({4, 1, 2, 2}, 0.5);
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   Tensor out = tf.full_channels_last({2, 2, 4, 3}, 0.7);
   Tensor expected =
       tf.make({2, 2, 4, 3}, {2, 4, 2, 4, 8, 4, 4, 8, 4, 2, 4, 2, 2, 4, 2, 4,
@@ -735,7 +734,7 @@ TEST_F(OpConvCorrectnessTest, HalfTypeSmokeTest) {
 
   auto input = tf.make({1, 2, 3}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
   auto weight = tf.make({2, 2, 2}, {0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0});
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   auto expected = tf.make({1, 2, 2}, {6.0, 8.0, 12.0, 16.0});
   auto out = tf.zeros({1, 2, 2});
 
@@ -763,7 +762,7 @@ TEST_F(OpConvCorrectnessTest, BFloat16TypeSmokeTest) {
 
   auto input = tf.make({1, 2, 3}, {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
   auto weight = tf.make({2, 2, 2}, {0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0});
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   auto expected = tf.make({1, 2, 2}, {6.0, 8.0, 12.0, 16.0});
   auto out = tf.zeros({1, 2, 2});
 
@@ -801,7 +800,7 @@ TEST_F(OpConvCorrectnessTest, TransposedWeightNonDefaultDimOrder) {
   Tensor weight = tf.make_with_dimorder(
       {2, 1, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}, /*dim_order=*/{1, 0, 2, 3});
 
-  optional<Tensor> bias;
+  std::optional<Tensor> bias;
   Tensor out = tf.zeros({1, 1, 3, 3});
   Tensor expected =
       tf.make({1, 1, 3, 3}, {26, 64, 40, 76, 184, 112, 58, 136, 80});

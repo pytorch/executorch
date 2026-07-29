@@ -15,7 +15,6 @@ namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
@@ -27,7 +26,7 @@ void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]

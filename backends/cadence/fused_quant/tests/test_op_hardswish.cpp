@@ -17,12 +17,11 @@
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
-using std::optional;
 
 namespace {
 
-optional<Tensor> none_tensor() {
-  return optional<Tensor>();
+std::optional<Tensor> none_tensor() {
+  return std::optional<Tensor>();
 }
 
 } // namespace
@@ -57,13 +56,13 @@ TEST_F(FusedQuantHardswishTest, AllQuantizedPerTensor) {
   cadence::fused_quant::native::hardswish_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -97,8 +96,8 @@ TEST_F(FusedQuantHardswishTest, FloatInputQuantizedOutput) {
       ScalarType::Float,
       0,
       0,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -127,8 +126,8 @@ TEST_F(FusedQuantHardswishTest, QuantizedInputFloatOutput) {
   cadence::fused_quant::native::hardswish_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
@@ -173,13 +172,13 @@ TEST_F(FusedQuantHardswishTest, PerChannelInput) {
   cadence::fused_quant::native::hardswish_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -218,8 +217,8 @@ TEST_F(FusedQuantHardswishTest, PerChannelOutput) {
       ScalarType::Float,
       0,
       0,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -254,13 +253,13 @@ TEST_F(FusedQuantHardswishTest, NonZeroZeroPoint) {
   cadence::fused_quant::native::hardswish_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -297,8 +296,8 @@ TEST_F(FusedQuantHardswishTest, NegativeRegion) {
       ScalarType::Float,
       0,
       0,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
@@ -368,13 +367,13 @@ TEST_F(FusedQuantHardswishTest, TransitionRegion) {
   cadence::fused_quant::native::hardswish_out(
       context_,
       inp,
-      optional<Tensor>(inp_scale),
-      optional<Tensor>(inp_zp),
+      std::optional<Tensor>(inp_scale),
+      std::optional<Tensor>(inp_zp),
       ScalarType::Float,
       -128,
       127,
-      optional<Tensor>(out_scale),
-      optional<Tensor>(out_zp),
+      std::optional<Tensor>(out_scale),
+      std::optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,

@@ -19,7 +19,6 @@ namespace native {
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 Tensor& quantized_fully_connected_out(
     ET_UNUSED KernelRuntimeContext& ctx,
@@ -31,7 +30,7 @@ Tensor& quantized_fully_connected_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype)              \
   case ScalarType::dtype: {                               \
@@ -69,7 +68,7 @@ Tensor& quantized_fully_connected_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype)                         \
   case ScalarType::dtype: {                                          \
@@ -107,7 +106,7 @@ Tensor& quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype)                         \
   case ScalarType::dtype: {                                          \
@@ -145,7 +144,7 @@ Tensor& quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    ET_UNUSED const optional<Tensor>& offset,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
 #define typed_quantized_linear(ctype, dtype)                         \
   case ScalarType::dtype: {                                          \
