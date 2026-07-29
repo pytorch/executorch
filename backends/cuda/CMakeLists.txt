@@ -236,3 +236,48 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+# Loadable CUDA backend shared library for the C++ SDK / pip wheel.
+#
+# aoti_cuda_backend above is a static archive whose static initializer registers
+# the "CudaBackend". Today that archive is only force-linked into
+# _portable_lib.so for Python. To let a standalone C++ program (or a coalesced
+# TensorRT+CUDA .pte) load the CUDA delegate the same way QNN ships
+# libqnn_executorch_backend.so, wrap it in a shared library that whole-archives
+# aoti_cuda_backend so the registration constructor is retained and runs when
+# the .so is loaded. The backend resolves executorch_core / extension_cuda
+# symbols from the co-shipped libexecutorch.so and libextension_cuda.so at load
+# time, so this stays libtorch-free.
+#
+# Not built on MSVC: the wheel C++ SDK is Linux only.
+if(NOT _cuda_is_msvc_toolchain)
+  add_library(
+    executorch_cuda_backend SHARED runtime/executorch_cuda_backend_lib.cpp
+  )
+  # Link the static CUDA backend plainly: aoti_cuda_backend already carries a
+  # whole-archive INTERFACE link option
+  # (executorch_target_link_options_shared_lib above), which force-loads it into
+  # this .so so its "CudaBackend" registration constructor runs on load. Do NOT
+  # also wrap it in $<LINK_LIBRARY:WHOLE_ARCHIVE> here: that would whole-archive
+  # the same archive twice and run the static allocator/backend registration
+  # twice, aborting on the duplicate-registration ET_CHECK at load. Link the
+  # SHARED runtime (executorch_shared -> libexecutorch.so), not the static
+  # executorch_core, so runtime symbols resolve from the one process-wide
+  # libexecutorch.so at load (DT_NEEDED) instead of embedding a second copy of
+  # the registry.
+  target_link_libraries(
+    executorch_cuda_backend PUBLIC aoti_cuda_backend executorch_shared
+                                   extension_cuda
+  )
+  # Find co-shipped libexecutorch.so / libextension_cuda.so next to this .so in
+  # the wheel (executorch/lib/), matching QNN's backend rpath approach.
+  set_target_properties(
+    executorch_cuda_backend PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH
+                                                             "$ORIGIN"
+  )
+  install(
+    TARGETS executorch_cuda_backend
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
+endif()

@@ -864,6 +864,12 @@ class CustomBuildPy(build_py):
                     "extension/named_data_map/merged_data_map.h",
                     "extension/memory_allocator/malloc_memory_allocator.h",
                     "extension/memory_allocator/memory_allocator_utils.h",
+                    # CUDA caller-stream extension headers. Harmless on a CPU
+                    # wheel (headers only); the matching libextension_cuda.so and
+                    # the executorch::extension_cuda / executorch::cuda_backend
+                    # CMake targets are shipped/defined only in a CUDA wheel.
+                    "extension/cuda/caller_stream.h",
+                    "extension/cuda/export.h",
                 ]
                 if sys.platform == "linux"
                 else []
@@ -1110,6 +1116,11 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
+                # Loadable CUDA delegate + caller-stream shared libs for the C++
+                # SDK, built only for a wheel that also builds the shared runtime.
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                    cmake_build_args += ["--target", "executorch_cuda_backend"]
+                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1289,6 +1300,35 @@ setup(
                             dst="executorch/lib/",
                             dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                         )
+                    ]
+                    if sys.platform == "linux"
+                    else []
+                ),
+                # CUDA delegate binaries for the C++ SDK, shipped only in a
+                # CUDA-enabled wheel (PyTorch-style: the default wheel has the core
+                # runtime, the CUDA-index wheel adds these). Co-located with
+                # libexecutorch.so in executorch/lib/ so a C++ consumer, or a
+                # coalesced TensorRT+CUDA .pte, can load and register the CUDA
+                # delegate. executorch_cuda_backend whole-archives the backend so
+                # its "CudaBackend" registration runs on load; extension_cuda
+                # carries the single process-wide caller-stream TLS. Both are
+                # unversioned .so, so a plain dynamic-lib copy is enough.
+                *(
+                    [
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                            src_name="executorch_cuda_backend",
+                            dst="executorch/lib/",
+                            is_dynamic_lib=True,
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                        ),
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                            src_name="extension_cuda",
+                            dst="executorch/lib/",
+                            is_dynamic_lib=True,
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                        ),
                     ]
                     if sys.platform == "linux"
                     else []

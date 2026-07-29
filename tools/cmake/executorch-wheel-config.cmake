@@ -172,4 +172,55 @@ if(_executorch_shared_LIBRARY)
       )
     endif()
   endforeach()
+
+  # CUDA delegate targets. Present only in a CUDA-enabled wheel, so each target
+  # is defined only when its shared library is shipped in executorch/lib/. These
+  # are real separate shared libraries (not aliases of libexecutorch.so):
+  # extension_cuda holds the one process-wide caller-stream TLS, and
+  # cuda_backend whole-archives the CUDA delegate so loading it registers
+  # "CudaBackend" into the runtime.
+  find_library(
+    _executorch_extension_cuda_LIBRARY
+    NAMES extension_cuda
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_extension_cuda_LIBRARY AND NOT TARGET
+                                            executorch::extension_cuda
+  )
+    # caller_stream.h includes <cuda_runtime.h> and the real target links
+    # CUDA::cudart PUBLIC, so reproduce that usage requirement.
+    include(CMakeFindDependencyMacro)
+    find_dependency(CUDAToolkit)
+    add_library(executorch::extension_cuda SHARED IMPORTED)
+    set_target_properties(
+      executorch::extension_cuda
+      PROPERTIES IMPORTED_LOCATION "${_executorch_extension_cuda_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+                 INTERFACE_LINK_LIBRARIES CUDA::cudart
+    )
+  endif()
+
+  find_library(
+    _executorch_cuda_backend_LIBRARY
+    NAMES executorch_cuda_backend
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_cuda_backend_LIBRARY AND NOT TARGET executorch::cuda_backend)
+    add_library(executorch::cuda_backend SHARED IMPORTED)
+    set_target_properties(
+      executorch::cuda_backend
+      PROPERTIES IMPORTED_LOCATION "${_executorch_cuda_backend_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+    )
+    set_property(
+      TARGET executorch::cuda_backend
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+               executorch::extension_cuda
+    )
+  endif()
 endif()
