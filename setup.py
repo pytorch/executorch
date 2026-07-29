@@ -1332,7 +1332,11 @@ setup(
                 # delegate. executorch_cuda_backend whole-archives the backend so
                 # its "CudaBackend" registration runs on load; extension_cuda
                 # carries the single process-wide caller-stream TLS. Both are
-                # unversioned .so, so a plain dynamic-lib copy is enough.
+                # unversioned .so, so a plain dynamic-lib copy is enough. Gated on
+                # BUILD_SHARED as well as BUILD_CUDA: executorch_cuda_backend links
+                # the shared runtime and is only defined/built when SHARED is on,
+                # so packaging must require the same to avoid referencing an
+                # unbuilt artifact.
                 *(
                     [
                         BuiltFile(
@@ -1340,14 +1344,20 @@ setup(
                             src_name="executorch_cuda_backend",
                             dst="executorch/lib/",
                             is_dynamic_lib=True,
-                            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                            dependent_cmake_flags=[
+                                "EXECUTORCH_BUILD_CUDA",
+                                "EXECUTORCH_BUILD_SHARED",
+                            ],
                         ),
                         BuiltFile(
                             src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
                             src_name="extension_cuda",
                             dst="executorch/lib/",
                             is_dynamic_lib=True,
-                            dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                            dependent_cmake_flags=[
+                                "EXECUTORCH_BUILD_CUDA",
+                                "EXECUTORCH_BUILD_SHARED",
+                            ],
                         ),
                     ]
                     if sys.platform == "linux"
