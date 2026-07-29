@@ -18,9 +18,9 @@ TRANSFORMERS_VERSION = "4.53.1"
 
 
 class QnnCustomStaticLayer(StaticLayer):
-    """StaticLayer that returns cat(past, new) to attention (so the current layer
-    sees the full context, matching static_llama.py:494), and stashes the pre-cat
-    new K/V slice so the wrapper can return only the new slot as graph output."""
+    """
+    Using Custom Cache so model output kv cache like static_llama.
+    """
 
     def __init__(self, max_cache_len):
         super().__init__(max_cache_len=max_cache_len)
@@ -39,9 +39,6 @@ class QnnCustomStaticLayer(StaticLayer):
 
 
 class QnnCustomStaticCache(Cache):
-    """StaticCache-shaped cache seeded from external past K/V tensors, one pair
-    per layer. `max_cache_len` is the full context length (past_len + ar_len)."""
-
     def __init__(self, past_k_list, past_v_list, max_cache_len):
         layers = []
         for pk, pv in zip(past_k_list, past_v_list):
@@ -152,18 +149,9 @@ def _qnn_attention_mask(
     kv_length: int,
     **kwargs,
 ):
-    # Prefix layout (matches static_llama.py + KVManager): past occupies the
-    # front of the context [0, n_past), the new token(s) sit in the tail region
-    # starting at (kv_length - ar_len). This fallback is only used if no explicit
-    # 4D mask is provided; the QNN flow feeds an explicit mask instead.
     kv_arange = torch.arange(kv_length, device=cache_position.device)
     reshaped_cache_position = cache_position.view(-1, 1)
     causal_mask = kv_arange <= reshaped_cache_position
-    # -255 matches static_llama's PADDING_MASK_VALUE (masking_utils.py:12). A
-    # tighter range keeps the mask input's quant scale small during calibration,
-    # which preserves precision on the attention-logit space near 0. Using a
-    # very-large negative (e.g. -65504) forces a coarse quant scale that
-    # destroys attention numerics under 16a8w — repetitive/degenerate output.
     atten_mask = torch.full((causal_mask.shape[0], kv_length), -255.0)
     atten_mask = atten_mask.masked_fill(causal_mask, 0)
     atten_mask = atten_mask[None, None, :, :].expand(batch_size, -1, -1, -1)
@@ -172,31 +160,13 @@ def _qnn_attention_mask(
 
 
 class QnnPrecomputedRotaryEmbedding(torch.nn.Module):
-    """Drop-in replacement for HF's ``*RotaryEmbedding`` that serves cos/sin from
-    precomputed tables instead of computing them in the graph.
-
-    HF computes RoPE inside the traced graph: ``inv_freq @ position_ids`` then
-    cos/sin. For rope_type="llama3" (llama3.2) ``inv_freq`` spans ~7 orders of
-    magnitude (min 9.4e-08, max/min 1.06e7), so quantizing those in-graph
-    intermediates destroys the low-frequency (long-range) position information
-    and the model degenerates into repetitive output.
-
-    static_llama avoids this by precomputing ``freqs_cos``/``freqs_sin`` on the
-    host in fp32 and indexing them with ``input_pos`` (static_llama.py:697-698,
-    727-731). Only the results -- bounded in [-1, 1] -- enter the graph, which
-    quantizes cleanly. This module reproduces that: the tables are built once
-    with the original module's own math (so any rope_type/scaling is honored)
-    and the graph is left with a gather.
-    """
-
     def __init__(self, rotary_emb: torch.nn.Module, max_seq_len: int, dtype):
         super().__init__()
         positions = torch.arange(max_seq_len, dtype=torch.long).unsqueeze(0)
-        # Reuse the original module's forward so rope_type/scaling/attention
-        # scaling are all applied exactly as HF would.
-        dummy = torch.zeros(1, max_seq_len, 1, dtype=dtype)
         with torch.no_grad():
-            cos, sin = rotary_emb(dummy, positions)
+            cos, sin = rotary_emb(
+                torch.zeros(1, max_seq_len, 1, dtype=dtype), positions
+            )
         self.register_buffer("cos_table", cos[0].to(dtype), persistent=False)
         self.register_buffer("sin_table", sin[0].to(dtype), persistent=False)
 
@@ -244,6 +214,7 @@ class QnnCausalLMExportableModule(torch.nn.Module):
         if rotary_emb is None:
             logging.warning("No rotary_emb found; skipping RoPE precompute.")
             return
+        # HF API does not have a way to replace, so manually replace it.
         decoder.rotary_emb = QnnPrecomputedRotaryEmbedding(
             rotary_emb, self.max_seq_len, self.model.dtype
         )

@@ -16,9 +16,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
-from executorch.backends.qualcomm.quantizer.custom_annotation import (  # noqa: F401
-    annotate_kv_8bit_hf,  # kept for the commented-out 8-bit KV IO wiring below
-)
+from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit_hf
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -46,8 +44,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, GenerationConfig
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-# Method name the shared qnn_llama_runner expects for the KV path
-# (see examples/qualcomm/oss_scripts/llama/runner/runner.cpp).
+# Use this method name so we can reuse qnn_llama_runner
 KV_FORWARD = "kv_forward"
 
 HUGGING_FACE_REPO_IDS = {
@@ -76,7 +73,6 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.max_batch_size = batch_size
     config.enable_spinquant_r3 = enable_spinquant_r3
     config.use_cache = True
-    # config.num_hidden_layers = 1
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
     if not hasattr(config, "head_dim"):
@@ -134,9 +130,6 @@ class QnnLLMEdgeManager:
         return self
 
     def _tag_ios(self, node, fixed_point_type, config):
-        # static_llama layout: K is transposed (seq last), V is seq-major.
-        #   K in:  [B, H, head_dim, past_len]   K out: [B, H, head_dim, ar_len]
-        #   V in:  [B, H, past_len, head_dim]   V out: [B, H, ar_len, head_dim]
         past_len = config.max_seq_len - config.ar_len
         kv_cache_shape = {
             # K (head_dim, seq)
@@ -342,8 +335,6 @@ class QnnLLMEdgeManager:
             tokenizer_path,
         )
         self.graph_module = convert_pt2e(self.graph_module)
-        # from executorch.backends.qualcomm.utils.utils import draw_graph
-        # draw_graph("qdq", "./hf_llm", self.graph_module)
 
         self.passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         self.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][

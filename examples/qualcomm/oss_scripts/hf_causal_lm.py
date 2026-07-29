@@ -69,9 +69,7 @@ def compile(args: argparse.Namespace, qnn_config: QnnConfig):  # noqa: C901
             "16a16w",
         ):
             fixed_point_type["io_type"] = torch.uint16
-            # KV cache IO is 8-bit: annotate_kv_8bit_hf tags the KV cat 8-bit
-            # regardless of the activation width (matches static_llama's
-            # `annotate_kv_8bit` recipe wiring).
+            # uint8 because annotate 8bit kv io
             fixed_point_type["kv_type"] = torch.uint8
         else:
             raise ValueError(
@@ -136,10 +134,9 @@ def inference(args: argparse, qnn_config: QnnConfig):
     runner_bin = "examples/qualcomm/oss_scripts/llama/qnn_llama_runner"
     decoder_model_version = DECODER_MODEL_VERSION[args.decoder_model]
 
-    # The base (non-instruct) HF models were not trained on the runner's chat
-    # template. Tokenize the raw prompt here (matching the Python calibration
-    # path) and feed it via --tokenized_prompt so the runner skips
-    # get_formatted_prompt. File format: raw little-endian uint64 tokens.
+    # Using tokenized prompt as a workaround.
+    # qnn_llama_runner expects llama3 equals to instruct one while hf llama3 is not.
+    # Using tokenized prompt so qnn_llama_runner won't append sytstem prompt on user input prompt.
     import numpy as np
 
     prompt_token_ids = tokenizer(args.prompt)["input_ids"]

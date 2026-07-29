@@ -281,23 +281,9 @@ def annotate_kv_8bit_hf(  # noqa: C901
     is_qat=False,
 ) -> None:
     """
-    HuggingFace-decoder variant of annotate_kv_8bit (Q @ K^T @ V, 16a8w).
-
-    Same intent as annotate_kv_8bit -- tag the KV cache IO (the cat of past +
-    new K/V, and the graph-input/output K/V tensors) 8-bit -- but adapted to the
-    HF graph, which differs from static_llama in two ways:
-
-      1. q/k/v projections are `aten.linear` (conv2d conversion happens later at
-         lowering), so the backward walk must stop at `linear` too.
-      2. GQA head expansion (`repeat_kv`) sits between the cat and the matmul as
-         a 5D `expand`/`unsqueeze`/`reshape`. QNN HTP cannot delegate an 8-bit 5D
-         reshape (validation error 0xc26), which fragments the graph into one
-         partition per layer. So the walk PASSES THROUGH these repeat_kv ops
-         without tagging them -- they stay at the default 16-bit and remain
-         delegatable, while the cat (and thus the KV cache IO) is still 8-bit.
-
-    Net boundary: past_k/v graph inputs, the cat, and new_k/v graph outputs are
-    8-bit; the repeat_kv expansion feeding the matmul is 16-bit.
+    Demo purpose only, could possibly be merged into annotate_kv_8bit in future.
+    Main idea is to tag io as 8bit here.
+    Will ensure all ops are properly tagged like annotate_kv_8bit during official PR.
     """
 
     def annotate_matmul(node: Node, quantization_config: QuantizationConfig):

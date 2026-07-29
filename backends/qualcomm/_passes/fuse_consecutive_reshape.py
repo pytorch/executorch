@@ -12,18 +12,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 
 
 class FuseConsecutiveReshape(ExportPass):
-    """
-    Collapse chains of consecutive view_copy into a single view_copy. A
-    view_copy is order-preserving, so ``view(view(x, A), B) == view(x, B)`` for
-    any valid shapes; only the final shape matters.
-
-    This matters for the ConvInplaceLinear -> ConvertMhaToSha interaction: the
-    ConvertLinearToConv2d restore emits a rank-3 view_copy that sits between the
-    conv and the head-making rank-4 view_copy. That intermediate view stops
-    ConvertMhaToSha's _is_making_mha matcher from reaching the rank-4 reshape, so
-    the Q/K/V projection weight is never split per head. Fusing the views away
-    restores the conv -> permute -> view(4D) shape the matcher expects.
-    """
+    "For Demo Purpose Only, could possibly be done in other passes."
 
     def __init__(self):
         super().__init__()
