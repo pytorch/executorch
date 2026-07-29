@@ -9,8 +9,10 @@
 #include <executorch/extension/llm/custom_ops/op_moe.h>
 
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <torchao/csrc/cpu/shared_kernels/internal/packed_weights_header.h>
 #include <torchao/csrc/cpu/torch_free_kernels/weight_packing/weight_packing.h>
@@ -21,6 +23,7 @@
 #include <optional> // std::nullopt, used only by the optimized aarch64 path
 #endif // ENABLE_QUANTIZED_MOE_FFN
 
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -32,7 +35,7 @@ namespace native {
 
 namespace {
 
-using executorch::aten::string_view;
+using ::executorch::aten::string_view;
 
 // Numerically-stable sigmoid. Branching on sign keeps exp()'s argument
 // non-positive on both sides, so it can never overflow.
@@ -424,11 +427,11 @@ Tensor& quantized_moe_ffn_out(
       InvalidArgument,
       out,
       "output must be fp32");
-  Tensor::SizesType expected_out_sizes[2] = {
+  std::array<Tensor::SizesType, 2> expected_out_sizes = {
       static_cast<Tensor::SizesType>(T), static_cast<Tensor::SizesType>(D)};
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(out, {expected_out_sizes, 2}) == Error::Ok,
+      resize_tensor(out, {expected_out_sizes.data(), 2}) == Error::Ok,
       InvalidArgument,
       out);
 
@@ -508,7 +511,13 @@ Tensor& quantized_moe_ffn_out(
         w_row[k] = v;
         row_sum += v;
       }
-      const float scale = static_cast<float>(route_scale) / (row_sum + 1e-20f);
+      // Match eager: clamp the denominator to the smallest normal float
+      // (torch.finfo(float32).tiny) rather than adding an epsilon, so a tiny
+      // score sum still normalizes to route_scale instead of being suppressed.
+      const float denom = row_sum < std::numeric_limits<float>::min()
+          ? std::numeric_limits<float>::min()
+          : row_sum;
+      const float scale = static_cast<float>(route_scale) / denom;
       for (int64_t k = 0; k < K; ++k) {
         w_row[k] *= scale;
       }
@@ -561,7 +570,6 @@ Tensor& quantized_moe_ffn_out(
   }
 
   // ----- 6. Per-expert grouped GEMM via torchao -----
-  // Reusable per-expert scratch (sized for the worst case max_m_e).
   int64_t max_m_e = 0;
   for (int64_t e = 0; e < E; ++e) {
     const int64_t m_e = expert_offsets[e + 1] - expert_offsets[e];
@@ -569,64 +577,94 @@ Tensor& quantized_moe_ffn_out(
       max_m_e = m_e;
     }
   }
-  // h13_buf holds the fused [m_e, 2F] output of the w1+w3 GEMM.
-  // mid_buf holds the [m_e, F] SwiGLU result compacted for the w2 GEMM.
-  std::vector<float> h13_buf(static_cast<size_t>(max_m_e * 2 * F), 0.0f);
-  std::vector<float> mid_buf(static_cast<size_t>(max_m_e * F), 0.0f);
-  std::vector<float> out_e_buf(static_cast<size_t>(max_m_e * D), 0.0f);
+  // Experts are independent: expert e owns the disjoint permuted-row range
+  // [expert_offsets[e], expert_offsets[e + 1]), so it writes into its own slice
+  // of y_perm with no contention. The one cross-expert interaction is the
+  // weighted scatter-add back to token rows (step 7), which is a reduction and
+  // runs serially after the parallel region.
+  std::vector<float> y_perm(static_cast<size_t>(total_pairs * D), 0.0f);
 
-  for (int64_t e = 0; e < E; ++e) {
-    const int64_t m_e = expert_offsets[e + 1] - expert_offsets[e];
-    if (m_e == 0) {
-      continue;
-    }
-    const float* x_e = x_perm.data() + expert_offsets[e] * D;
-    const uint8_t* w13_e = pw13_ptr + e * pw13_bytes;
-    const uint8_t* w2_e = pw2_ptr + e * pw2_bytes;
-
-    // Fused up+gate projection (D -> 2F): H13 = x_e @ w13[e]^T
-    // First F columns are h1 (up), last F are h3 (gate).
-    expert_linear_dispatch(
-        weight_nbit,
-        w13_e,
-        pw13_bytes,
-        x_e,
-        m_e,
-        2 * F,
-        D,
-        group_size,
-        h13_buf.data());
-    // SwiGLU + compact: read [m_e, 2F] interleaved, write [m_e, F]
-    for (int64_t i = 0; i < m_e; ++i) {
-      const float* src = h13_buf.data() + i * 2 * F;
-      float* dst = mid_buf.data() + i * F;
-      for (int64_t j = 0; j < F; ++j) {
-        const float v = src[j];
-        dst[j] = v * stable_sigmoid(v) * src[F + j];
+  auto run_experts = [&](int64_t begin, int64_t end) {
+    // Scratch is per call, reused across the experts it handles.
+    std::vector<float> h13_buf(static_cast<size_t>(max_m_e * 2 * F), 0.0f);
+    std::vector<float> mid_buf(static_cast<size_t>(max_m_e * F), 0.0f);
+    for (int64_t e = begin; e < end; ++e) {
+      const int64_t m_e = expert_offsets[e + 1] - expert_offsets[e];
+      if (m_e == 0) {
+        continue;
       }
-    }
-    // Down-projection (F -> D): OUT_e = MID @ w2[e]^T
-    expert_linear_dispatch(
-        weight_nbit,
-        w2_e,
-        pw2_bytes,
-        mid_buf.data(),
-        m_e,
-        D,
-        F,
-        group_size,
-        out_e_buf.data());
+      const float* x_e = x_perm.data() + expert_offsets[e] * D;
+      const uint8_t* w13_e = pw13_ptr + e * pw13_bytes;
+      const uint8_t* w2_e = pw2_ptr + e * pw2_bytes;
+      // Disjoint from every other expert's rows -> safe to write in parallel.
+      float* y_e = y_perm.data() + expert_offsets[e] * D;
 
-    // ----- 7. Weighted scatter-add unpermute for this expert's block -----
-    for (int64_t r_local = 0; r_local < m_e; ++r_local) {
-      const int64_t r = expert_offsets[e] + r_local;
-      const int32_t t = permuted_token_idx[r];
-      const float gate = permuted_gate[r];
-      float* dst = out_ptr + static_cast<int64_t>(t) * D;
-      const float* src = out_e_buf.data() + r_local * D;
-      for (int64_t d = 0; d < D; ++d) {
-        dst[d] += gate * src[d];
+      // Fused up+gate projection (D -> 2F): H13 = x_e @ w13[e]^T
+      // First F columns are h1 (up), last F are h3 (gate).
+      expert_linear_dispatch(
+          weight_nbit,
+          w13_e,
+          pw13_bytes,
+          x_e,
+          m_e,
+          2 * F,
+          D,
+          group_size,
+          h13_buf.data());
+      // SwiGLU + compact: read [m_e, 2F] interleaved, write [m_e, F]
+      for (int64_t i = 0; i < m_e; ++i) {
+        const float* src = h13_buf.data() + i * 2 * F;
+        float* dst = mid_buf.data() + i * F;
+        for (int64_t j = 0; j < F; ++j) {
+          const float v = src[j];
+          dst[j] = v * stable_sigmoid(v) * src[F + j];
+        }
       }
+      // Down-projection (F -> D): OUT_e = MID @ w2[e]^T
+      expert_linear_dispatch(
+          weight_nbit,
+          w2_e,
+          pw2_bytes,
+          mid_buf.data(),
+          m_e,
+          D,
+          F,
+          group_size,
+          y_e);
+    }
+  };
+
+#ifdef ENABLE_QUANTIZED_MOE_FFN
+  // torchao linear path (perf-sensitive). The kernel threads internally on the
+  // shared pool in the common config, or runs single-threaded when only the
+  // thread-pool-free variant is linked. Distribute experts across the pool
+  // ourselves only when the kernel won't and the pool has more than one thread
+  // -- running both would nest on one pthreadpool and deadlock.
+  const bool parallelize_experts = torchao::ops::linear_8bit_act_xbit_weight::
+                                       linear_operator_num_threads() == 1 &&
+      ::executorch::extension::threadpool::get_threadpool()
+              ->get_thread_count() > 1;
+#else
+  // Portable reference path: prefer simplicity over speed and run experts
+  // serially.
+  const bool parallelize_experts = false;
+#endif
+  if (parallelize_experts) {
+    torch::executor::parallel_for(0, E, /*grain_size=*/1, run_experts);
+  } else {
+    run_experts(0, E);
+  }
+
+  // ----- 7. Weighted scatter-add unpermute (cross-expert reduction) -----
+  // Each token sums the contributions of its top-k experts; run serially to
+  // avoid races on shared output rows.
+  for (int64_t r = 0; r < total_pairs; ++r) {
+    const int32_t t = permuted_token_idx[r];
+    const float gate = permuted_gate[r];
+    float* dst = out_ptr + static_cast<int64_t>(t) * D;
+    const float* src = y_perm.data() + r * D;
+    for (int64_t d = 0; d < D; ++d) {
+      dst[d] += gate * src[d];
     }
   }
 
