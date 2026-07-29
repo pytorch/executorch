@@ -221,6 +221,14 @@ def _build_quantized_moe_ffn_from_eager(
     weight_nbit: int,
 ) -> QuantizedMoEFFN:
     """Construct a QuantizedMoEFFN from an existing eager MOEFeedForward."""
+    # The op only implements sigmoid and (post-top-k) softmax routing. Reject
+    # anything else (e.g. softmax_all) here with a clear message rather than
+    # letting export hit an opaque kernel check.
+    if moe.score_func not in ("sigmoid", "softmax"):
+        raise NotImplementedError(
+            f"quantized_moe_ffn supports score_func 'sigmoid' or 'softmax', "
+            f"not '{moe.score_func}'"
+        )
     cond = moe.cond_ffn
     e = cond.num_experts
     w1 = cond.w1  # [E, F, D]
@@ -267,10 +275,10 @@ def _build_quantized_moe_ffn_from_eager(
     packed_w3 = _stack_per_expert_packed(packed_w3_list)
     packed_w2 = _stack_per_expert_packed(packed_w2_list)
 
+    # `MOEFeedForward` registers `expert_bias` as a buffer that is None unless
+    # the model enables it; gate on the buffer itself, not a nonexistent flag.
     expert_bias = (
-        moe.expert_bias.detach().clone()
-        if getattr(moe, "use_expert_bias", False) and hasattr(moe, "expert_bias")
-        else None
+        moe.expert_bias.detach().clone() if moe.expert_bias is not None else None
     )
 
     replacement = QuantizedMoEFFN(
