@@ -76,6 +76,7 @@ def get_qnn_llm_edge_manager(model_name, max_seq_len=128, enable_spinquant_r3=Tr
     config.max_batch_size = batch_size
     config.enable_spinquant_r3 = enable_spinquant_r3
     config.use_cache = True
+    # config.num_hidden_layers = 1
 
     # Some config has head_dim provided that is different from equation below(e.g., qwen3)
     if not hasattr(config, "head_dim"):
@@ -359,7 +360,7 @@ class QnnLLMEdgeManager:
         compiler_spec = generate_qnn_executorch_compiler_spec(
             soc_model=get_soc_to_chipset_map()[soc_model],
             backend_options=backend_options,
-            use_mha2sha=False,
+            use_mha2sha=True,
         )
         with torch.no_grad():
             self.edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
