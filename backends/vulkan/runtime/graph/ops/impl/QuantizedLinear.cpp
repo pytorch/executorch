@@ -833,10 +833,18 @@ void quantized_linear_impl(
     num_groups = graph.size_at<int64_t>(-2, weight_scales_data);
   }
 
+  // Per-group int8 input sums buffer, indexed as ivec4[group_idx * M4 + m4]
+  // by both the producer (quantize_and_pack_4h4w_with_group_sums.glsl) and the
+  // consumer (linear_int8_input_sums_load.glslh). Capacity must therefore be
+  // num_groups * M4 ivec4 texels, sized by the input row count M -- NOT K.
+  // dtype is kInt to match the shaders' `int`/ivec4 binding (each texel is 4
+  // int32 sums = 16 bytes).
+  const int64_t M = utils::val_at(-2, input_sizes);
+  const int64_t M4 = utils::div_up(M, int64_t(4));
   TmpTensor int_input_sums(
       &graph,
-      {num_groups, K},
-      graph.dtype_of(output),
+      {num_groups * M4 * 4},
+      vkapi::kInt,
       utils::kBuffer,
       utils::kWidthPacked);
 
