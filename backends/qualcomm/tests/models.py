@@ -2413,6 +2413,25 @@ class ScaledDotProductAttention(torch.nn.Module):
         return attn_output
 
 
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim=1, reduce="sum"):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+
 class ScatterSrc(torch.nn.Module):
     def __init__(self, dim=1):
         super().__init__()

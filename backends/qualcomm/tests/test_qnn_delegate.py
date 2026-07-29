@@ -2274,6 +2274,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    # NOTE: only scatter.src (reduction=NONE) is delegatable in fp16. QNN HTP
+    # ScatterElements rejects reduction != NONE in the fp backend validator, so
+    # scatter_add / scatter_reduce have no fp tests here. See
+    # backends/qualcomm/tests/rework/htp/op/v68/test.py, which asserts the
+    # expected fp failure explicitly.
     def test_qnn_backend_scatter_src(self):
         test_comb = [
             {
@@ -5871,6 +5876,36 @@ class TestQNNQuantizedOperator(TestQNN):
                         index += 1
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_add(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        module = ScatterAdd(dim=1)  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5))
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_reduce_sum(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        module = ScatterReduce(dim=1, reduce="sum")  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5))
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_reduce_prod(self):
+        index_dim1 = torch.tensor(
+            [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+        )
+        # "prod" multiplies up to 3 values per output element, so in 8a8w the
+        # relative error compounds multiplicatively; loosen the bound.
+        self.atol, self.rtol = 3e-1, 1
+        module = ScatterReduce(dim=1, reduce="prod")  # noqa: F405
+        sample_input = (torch.ones(3, 5), index_dim1, torch.rand(3, 5) + 0.5)
+        qdq_module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_scatter_value(self):
         test_comb = [

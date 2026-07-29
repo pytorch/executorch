@@ -4208,6 +4208,163 @@ class Rsqrt(torch.nn.Module):
                     )
 
 
+class ScatterAdd(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter_add(data, self.dim, index, src)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        # duplicate indices are intentional: they are what distinguishes
+        # scatter_add (accumulate) from scatter (overwrite)
+        cases = [
+            (
+                1,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            (
+                0,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            # negative dim exercises the "dim % rank" normalization
+            (
+                -1,
+                (
+                    torch.ones(3, 5),
+                    torch.tensor(
+                        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]],
+                        dtype=torch.int64,
+                    ),
+                    torch.rand(3, 5),
+                ),
+            ),
+            # 4D exercises the QCOM_AXIS_ORDER remap in the builder
+            (
+                1,
+                (
+                    torch.ones(1, 4, 2, 3),
+                    torch.randint(0, 4, (1, 4, 2, 3), dtype=torch.int64),
+                    torch.rand(1, 4, 2, 3),
+                ),
+            ),
+        ]
+        for dim, inputs in cases:
+            with subtests.test(msg=f"dim:{dim}, shape:{tuple(inputs[0].shape)}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class ScatterReduce(torch.nn.Module):
+    def __init__(self, dim, reduce):
+        super().__init__()
+        self.dim = dim
+        self.reduce = reduce
+
+    def forward(self, data, index, src):
+        return data.scatter_reduce(self.dim, index, src, reduce=self.reduce)
+
+    # index containing duplicates, so the reduction actually combines values
+    _INDEX_DIM1 = torch.tensor(
+        [[0, 1, 2, 0, 1], [2, 0, 1, 2, 0], [1, 2, 0, 1, 2]], dtype=torch.int64
+    )
+    _INDEX_DIM0 = torch.tensor(
+        [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]], dtype=torch.int64
+    )
+
+    @staticmethod
+    def _run(subtests, qnn_config, quantizer, compile_spec, expected, cases):
+        for module, inputs in cases:
+            with subtests.test(
+                msg=f"reduce:{module.reduce}, dim:{module.dim}, "
+                f"shape:{tuple(inputs[0].shape)}"
+            ):
+                with expected as metrics:
+                    export_and_verify(
+                        module=module,
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+    @staticmethod
+    @unpack_fixtures
+    def test_sum(subtests, qnn_config, quantizer, compile_spec, expected):
+        cls = ScatterReduce
+        cases = [
+            (
+                cls(dim=1, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5)),
+            ),
+            (
+                cls(dim=0, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM0, torch.rand(3, 5)),
+            ),
+            # negative dim exercises the "dim % rank" normalization
+            (
+                cls(dim=-1, reduce="sum"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5)),
+            ),
+            # 4D exercises the QCOM_AXIS_ORDER remap in the builder
+            (
+                cls(dim=1, reduce="sum"),
+                (
+                    torch.ones(1, 4, 2, 3),
+                    torch.randint(0, 4, (1, 4, 2, 3), dtype=torch.int64),
+                    torch.rand(1, 4, 2, 3),
+                ),
+            ),
+        ]
+        cls._run(subtests, qnn_config, quantizer, compile_spec, expected, cases)
+
+    @staticmethod
+    @unpack_fixtures
+    def test_prod(subtests, qnn_config, quantizer, compile_spec, expected):
+        cls = ScatterReduce
+        # keep src bounded away from 0 so the running product does not
+        # collapse toward the bottom of the quantization range.
+        # Only dim=0/1 here: neg-dim normalization and the 4-D axis-order
+        # remap are builder-level paths already covered by test_sum, and
+        # "prod" adds no new coverage there (only more error compounding).
+        cases = [
+            (
+                cls(dim=1, reduce="prod"),
+                (torch.ones(3, 5), cls._INDEX_DIM1, torch.rand(3, 5) + 0.5),
+            ),
+            (
+                cls(dim=0, reduce="prod"),
+                (torch.ones(3, 5), cls._INDEX_DIM0, torch.rand(3, 5) + 0.5),
+            ),
+        ]
+        cls._run(subtests, qnn_config, quantizer, compile_spec, expected, cases)
+
+
 class ScatterSrc(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
