@@ -540,14 +540,20 @@ class BuiltSharedLib(BuiltFile):
     the wheel, matching a standard ``cmake --install`` layout.
     """
 
-    def __init__(self, src_dir: str, src_name: str, dst: str):
+    def __init__(
+        self,
+        src_dir: str,
+        src_name: str,
+        dst: str,
+        dependent_cmake_flags: Optional[List[str]] = None,
+    ):
         # src_name is the base library name (e.g. "executorch"); the real file
         # is libexecutorch.so.<version>, resolved by glob in src_path().
         super().__init__(
             src_dir=src_dir,
             src_name=f"lib{src_name}.so.*",
             dst=dst,
-            dependent_cmake_flags=[],
+            dependent_cmake_flags=dependent_cmake_flags or [],
         )
 
     def src_path(self, installer: "InstallerBuildExt") -> Path:
@@ -1017,8 +1023,12 @@ class CustomBuild(build):
 
         # Build the consolidated shared runtime libexecutorch.so so the wheel can
         # ship a linkable C++ SDK (see the executorch_shared build target and the
-        # packaging step). Linux only; the SDK is not shipped on Windows/macOS.
-        if not minimal_build and sys.platform == "linux":
+        # packaging step). Only for an actual wheel build: EXECUTORCH_BUILD_SHARED
+        # also forces global PIC and changes link behavior, so it must not leak
+        # into editable/develop/install builds that other CI (unittest, arm, etc.)
+        # rely on. Linux only; the SDK is not shipped on Windows/macOS.
+        building_wheel = "bdist_wheel" in self.distribution.commands
+        if not minimal_build and sys.platform == "linux" and building_wheel:
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_SHARED=ON"]
 
         with Buck2EnvironmentFixer():
@@ -1080,9 +1090,13 @@ class CustomBuild(build):
             # runtime core plus the common extensions (module, tensor,
             # data_loader, flat_tensor, named_data_map). Shared is required so a
             # separately distributed backend/delegate .so can register into the
-            # one process-global registry inside libexecutorch.so. Build it
-            # explicitly, Linux only, so packaging below always finds it.
-            if sys.platform == "linux":
+            # one process-global registry inside libexecutorch.so. Built only for
+            # a wheel build (guarded by the EXECUTORCH_BUILD_SHARED cache entry,
+            # which is set just above only for bdist_wheel), so editable/develop
+            # builds are unaffected and the target always exists when requested.
+            if sys.platform == "linux" and cmake_cache.is_enabled(
+                "EXECUTORCH_BUILD_SHARED"
+            ):
                 cmake_build_args += ["--target", "executorch_shared"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
@@ -1273,6 +1287,7 @@ setup(
                             src_dir="%CMAKE_CACHE_DIR%/",
                             src_name="executorch",
                             dst="executorch/lib/",
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                         )
                     ]
                     if sys.platform == "linux"
