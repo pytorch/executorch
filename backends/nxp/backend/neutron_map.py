@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 
 # example:  Type: CONV_2D
@@ -19,7 +20,12 @@ PATTERN_NODE = (
     r"Outputs:(?P<outputs>[\s\S]*?)"
     r"Location:\s+(?P<location>\d+)"
 )
-# The pattern is very similar to operator pattern
+# Match a tensor name followed by its kind on the next non-empty line.
+# example:
+#   Name: quantized_decomposed_dequantize_per_tensor_default_5
+#   Kind: Variable
+PATTERN_TENSOR_KIND = r"Name:\s+(?P<name>\S+)\s+Kind:\s+(?P<kind>[^\r\n]+)"
+# The pattern is very similar to operator pattern.
 PATTERN_SUBGRAPH = (
     r"^(?P<num>\d+)\s*"
     r"Inputs:(?P<inputs>[\s\S]*?)"
@@ -44,416 +50,550 @@ PATTERN_VERBOSE_KERNELS = (
     r"Kernels:\s*(?P<kernels>[\s\S]*?)"
     r"\s*(NeutronOperator|^$|=)"
 )
-# example:  NeutronGraph "subgraph_074":
-PATTERN_VERBOSE_GRAPH = (
-    r"NeutronGraph\s*\"subgraph_(?P<subgraph>\d+)\":(?P<operators>[\s\S]*?)\s*(^$|=)"
-)
 # Two graphs are expected in the input log: original and converted.
 EXPECTED_GRAPHS = 2
-# List of single-input nodes that shouldn't be mapped on the same TFLite node.
-SINGLE_INPUT_NODES = [
-    "ABS",
-    "AVERAGE_POOL_2D",
-    "CAST",
-    "EXP",
-    "HARD_SWISH",
-    "LEAKY_RELU",
-    "LOG",
-    "LOGISTIC",
-    "MAX_POOL_2D",
-    "QUANTIZE",
-    "RSQRT",
-    "TANH",
-]
+# Marker for a Variable (dynamic) tensor kind in the converter log.
+TENSOR_KIND_VARIABLE = "Variable"
 
 
 @dataclass
 class Node:
-    name: str  # Name of the node.
-    inputs: list[str]  # List of nodes inputs.
-    outputs: list[str]  # List of nodes outputs.
+    name: str  # Name of the node/operator.
+    inputs: list[str]  # Dynamic (variable) inputs only.
+    outputs: list[str]  # Dynamic (variable) outputs only.
     location: int  # Location in graph/subgraph.
 
 
 @dataclass
 class SubgraphInfo:
     num: int  # Subgraph number.
-    location: int  # Location in neutron graph
-    inputs: list[str]  # List of subgraphs inputs.
-    outputs: list[str]  # List of subgraphs outputs.
-    kernels: int  # Number of neutron kernels in neutron subgraph.
-    nodes: list[Node]  # List of tflite nodes in neutron subgraph.
+    location: int  # Location in neutron graph.
+    inputs: list[str]  # Dynamic inputs.
+    outputs: list[str]  # Dynamic outputs.
+    kernels: int  # Number of neutron kernels in this subgraph.
+    nodes: list[Node]  # Operator nodes (for diagnostics).
 
 
 def get_tensors_name(tensors: str) -> list[str]:
-    """Split input string with tensor names into list of names"""
+    """Parse a tensor-list string and return the tensor names."""
     return [m.group("name") for m in re.finditer(PATTERN_IO_TENSOR_NAME, tensors)]
+
+
+def extract_tensor_kinds(graph_dump: str) -> dict[str, bool]:
+    """Return a map of tensor name -> True (Variable/dynamic) or False (Constant/static).
+
+    :param graph_dump: Raw text of a graph section from the Neutron converter log.
+    """
+    return {
+        m.group("name"): m.group("kind").strip() == TENSOR_KIND_VARIABLE
+        for m in re.finditer(PATTERN_TENSOR_KIND, graph_dump)
+    }
+
+
+def filter_dynamic(tensor_names: list[str], kinds: dict[str, bool]) -> list[str]:
+    """Return only the dynamic (Variable) tensor names.
+
+    Tensors absent from kinds are kept (no Kind annotation implies dynamic).
+
+    :param tensor_names: Candidate tensor names.
+    :param kinds: Map produced by extract_tensor_kinds().
+    """
+    return [n for n in tensor_names if kinds.get(n, True)]
+
+
+def tensors_match(a: str, b: str) -> bool:
+    """Return True if two tensor names refer to the same tensor.
+
+    Matching strategy (in order):
+      1. Exact equality.
+      2. Hierarchical prefix: one name is a "/" - separated prefix of the other.
+         Handles cases where the Neutron converter appends suffixes such as "/pad"
+         or "/transpose" to the original name.
+
+    Leaf-name matching is intentionally omitted - short generic names like "Relu"
+    or "pad" appear in many unrelated tensors and cause false positives.
+
+    :param a: First tensor name.
+    :param b: Second tensor name.
+    """
+    if a == b:
+        return True
+    if b + "/" in a or a + "/" in b:
+        return True
+    return False
+
+
+def count_tensor_matches(names_a: list[str], names_b: list[str]) -> int:
+    """Count how many names in names_a have at least one match in names_b."""
+    return sum(1 for a in names_a if any(tensors_match(a, b) for b in names_b))
 
 
 class NeutronMap:
     """Mapping between Neutron, TFLite, and Edge operators based on the Neutron compiler log.
 
-    Parses the Neutron compiler log to extract information about TFLite nodes and Neutron subgraphs.
-    Maps TFLite operators to corresponding Neutron operators.
-    Maps Edge operators to Neutron operators via the Edge-to-TFLite mapping.
+    Parses the Neutron converter log to extract TFLite nodes and Neutron subgraphs, then
+    maps TFLite operators to Neutron operators using dynamic (variable) I/O tensor names.
+
+    Matching operates at the Neutron subgraph chain level, which is robust to internal
+    optimizer transformations and supports all mapping cardinalities (1-to-1, many-to-1,
+    1-to-many, many-to-many).
 
     Attributes:
-        tflite_nodes (list[Node]): TFLite node information extracted from the compiler log.
-        neutron_subgraphs (list[SubgraphInfo]): Neutron subgraph information extracted from the compiler log.
-        neutron_graphs (list[int]): Indices of final Neutron graphs derived from neutron_subgraphs.
-        edge_to_tflite_map (dict[int, tuple[int, ...]]): Mapping from Edge operators to TFLite operators.
-        edge_to_neutron_map (dict[int, tuple[int, ...]]): Mapping from Edge operators to Neutron operators.
-        tflite_to_neutron_map (dict[int, tuple[int, ...]]): Mapping from TFLite operators to Neutron operators.
+        tflite_nodes (list[Node]): TFLite node information (dynamic I/O only).
+        neutron_subgraphs (list[SubgraphInfo]): Neutron subgraph information.
+        neutron_graphs (list[int]): Numbers of top-level Neutron graphs.
+        neutron_kernels_num (int): Total number of Neutron kernels.
+        edge_to_tflite_map (dict[int, tuple[int, ...]]): Edge -> TFLite operator map.
+        tflite_to_neutron_map (dict[int, tuple[int, ...]]): TFLite -> Neutron operator map.
+        edge_to_neutron_map (dict[int, tuple[int, ...]]): Edge -> Neutron operator map.
 
     Example:
-        >>> map = NeutronMap(log_output, edge_to_tflite_map)
-        >>> neutron_to_edge_map = map.get_neutron_to_edge_map()
+        >>> nmap = NeutronMap(log_output, edge_to_tflite_map)
+        >>> neutron_to_edge = nmap.get_neutron_to_edge_map()
     """
-
-    tflite_nodes: list[Node]
-    neutron_subgraphs: list[SubgraphInfo]
-    neutron_graphs: list[int]
-    edge_to_tflite_map: dict[int, tuple[int, ...]]
-    edge_to_neutron_map: dict[int, tuple[int, ...]]
-    tflite_to_neutron_map: dict[int, tuple[int, ...]]
 
     def __init__(
         self, neutron_compiler_log: str, edge_to_tflite_map: dict[int, tuple[int, ...]]
     ) -> None:
         """Initialize neutron map from neutron compiler log.
 
-        :param neutron_compiler_log: neutron compiler log obtained during model compilation. It should contain
-        original tflite graph and neutron graph dump. To add these dumps to compiler log the dumpAfterImport and
-        dumpAfterGenerate flags have to be set to "console".
+        :param neutron_compiler_log: Log text with dumpAfterImport and dumpAfterGenerate
+            set to "console" so TFLite and Neutron graph dumps are present.
+        :param edge_to_tflite_map: Edge operator index -> tuple of TFLite operator indices.
         """
-        super().__init__()
-        self.tflite_nodes = []
-        self.neutron_subgraphs = []
-        self.neutron_graphs = []
+        self.tflite_nodes: list[Node] = []
+        self.neutron_subgraphs: list[SubgraphInfo] = []
+        self.neutron_graphs: list[int] = []
+        self.neutron_kernels_num: int = 0
         self.edge_to_tflite_map = edge_to_tflite_map
-        self.tflite_to_neutron_map = {}
-        self.edge_to_neutron_map = {}
-        self.neutron_kernels_num = 0
+        self.tflite_to_neutron_map: dict[int, tuple[int, ...]] = {}
+        self.edge_to_neutron_map: dict[int, tuple[int, ...]] = {}
+        self._tflite_tensor_names: set[str] = set()
         self._split_profiling_log(neutron_compiler_log)
 
-    def _split_profiling_log(self, log: str) -> None:
-        """Process profiling log to split it into original TFLite and converted Neutron nodes.
+    # ------------------------------------------------------------------
+    # Log parsing
+    # ------------------------------------------------------------------
 
-        :param log: Neutron compiler log obtained during model compilation, containing the original
-            TFLite graph and Neutron graph dump.
-        :return: None. Sets class attributes tflite_nodes and neutron_subgraphs with node information.
-        """
+    def _split_profiling_log(self, log: str) -> None:
+        """Parse the compiler log and populate tflite_nodes and neutron_subgraphs."""
         graphs = log.split("Graphs:")
-        # Check if there is two graphs in the input dump
         if len(graphs) != EXPECTED_GRAPHS + 1:
             return
         optimization_dump, neutron_graph_dump = graphs[1:]
 
-        # Get tflite model dump
         tflite_graph_dump = optimization_dump.partition("= Optimize Graph =")[0]
-
-        # Get verbose Neutron graphs located in the Extract Graphs section.
         extracted_graph_dump = optimization_dump.partition("= Extract Graphs =")[
             2
         ].partition("Generate code for NeutronGraph")[0]
 
-        # Get list of original operators from first dumped graph.
+        tflite_kinds = extract_tensor_kinds(tflite_graph_dump)
         self.tflite_nodes = [
             Node(
-                matched_operator.group("type"),
-                get_tensors_name(matched_operator.group("inputs")),
-                get_tensors_name(matched_operator.group("outputs")),
-                int(matched_operator.group("location")),
+                m.group("type"),
+                filter_dynamic(get_tensors_name(m.group("inputs")), tflite_kinds),
+                filter_dynamic(get_tensors_name(m.group("outputs")), tflite_kinds),
+                int(m.group("location")),
             )
-            for matched_operator in re.finditer(PATTERN_NODE, tflite_graph_dump)
+            for m in re.finditer(PATTERN_NODE, tflite_graph_dump)
         ]
-        # Get list of neutron subgraphs.
-        self.neutron_subgraphs = self._get_neutron_subgraphs(neutron_graph_dump)
+
+        # Collect TFLite tensor names (dynamic I/O of every TFLite node).
+        # Used in _is_neutron_consumer to distinguish TFLite-boundary tensors from
+        # Neutron-internal tensors and prevent false-positive hierarchical chaining.
+        self._tflite_tensor_names = {
+            t for n in self.tflite_nodes for t in n.inputs + n.outputs
+        }
+
+        # Cache lookup structures for _find_matching_tflite_chain so they are
+        # built once per NeutronMap instance rather than on every chain search.
+        self._node_by_loc: dict[int, Node] = {n.location: n for n in self.tflite_nodes}
+        self._input_to_locs: dict[str, list[int]] = defaultdict(list)
+        for _n in self.tflite_nodes:
+            for _inp in _n.inputs:
+                self._input_to_locs[_inp].append(_n.location)
+
+        neutron_kinds = extract_tensor_kinds(neutron_graph_dump)
+        self.neutron_subgraphs = self._parse_neutron_subgraphs(
+            neutron_graph_dump, neutron_kinds
+        )
         if self.neutron_subgraphs:
             self._update_neutron_subgraphs_info(extracted_graph_dump)
 
-    def _get_neutron_subgraphs(self, graph_dump: str) -> list[SubgraphInfo]:
-        """Parse Neutron graph dump and extract subgraph information.
+    def _parse_neutron_subgraphs(
+        self, graph_dump: str, tensor_kinds: dict[str, bool]
+    ) -> list[SubgraphInfo]:
+        """Parse the Neutron graph dump and return subgraph metadata with dynamic I/O only.
 
         :param graph_dump: String containing the Neutron graph dump from the compiler log.
         :return: List of SubgraphInfo objects containing subgraph metadata and operator nodes.
         """
 
-        def get_subgraph_nodes(subrgraph_dump: str) -> list[Node]:
-            """Parse subgraph dump and extract operator nodes.
-
-            :param subgraph_dump: String containing a single Neutron subgraph definition.
-            :return: List of Node objects representing operators in the subgraph.
-            """
+        def parse_nodes(subgraph_dump: str) -> list[Node]:
             return [
                 Node(
-                    matched_operator.group("type"),
-                    get_tensors_name(matched_operator.group("inputs")),
-                    get_tensors_name(matched_operator.group("outputs")),
-                    int(matched_operator.group("location")),
+                    m.group("type"),
+                    filter_dynamic(get_tensors_name(m.group("inputs")), tensor_kinds),
+                    filter_dynamic(get_tensors_name(m.group("outputs")), tensor_kinds),
+                    int(m.group("location")),
                 )
-                for matched_operator in re.finditer(PATTERN_NODE, subrgraph_dump)
+                for m in re.finditer(PATTERN_NODE, subgraph_dump)
             ]
 
-        subgraphs = graph_dump.split(r"Name: subgraph_")
-        if len(subgraphs) < 3:
+        sections = graph_dump.split(r"Name: subgraph_")
+        if len(sections) < 3:
             return []
 
-        # Get numbers of final neutron graphs in converted model.
         self.neutron_graphs = [
-            int(matched_graphs.group("num"))
-            for matched_graphs in re.finditer(PATTERN_GRAPH, subgraphs[-1])
+            int(m.group("num")) for m in re.finditer(PATTERN_GRAPH, sections[-1])
         ]
         if not self.neutron_graphs:
             return []
 
-        # Get subgraphs
-        neutron_subgraphs: list[SubgraphInfo] = []
-        for subgraph in subgraphs[1:]:
-            subgraph_match = re.search(PATTERN_SUBGRAPH, subgraph)
-            if not subgraph_match:
+        subgraphs: list[SubgraphInfo] = []
+        for section in sections[1:]:
+            m = re.search(PATTERN_SUBGRAPH, section)
+            if not m:
                 continue
-            neutron_subgraph = SubgraphInfo(
-                int(subgraph_match.group("num")),
-                -1,
-                get_tensors_name(subgraph_match.group("inputs")),
-                get_tensors_name(subgraph_match.group("outputs")),
-                0,
-                get_subgraph_nodes(subgraph),
+            subgraphs.append(
+                SubgraphInfo(
+                    num=int(m.group("num")),
+                    location=-1,
+                    inputs=filter_dynamic(
+                        get_tensors_name(m.group("inputs")), tensor_kinds
+                    ),
+                    outputs=filter_dynamic(
+                        get_tensors_name(m.group("outputs")), tensor_kinds
+                    ),
+                    kernels=0,
+                    nodes=parse_nodes(section),
             )
-            neutron_subgraphs.append(neutron_subgraph)
-        return neutron_subgraphs
+            )
+        return subgraphs
 
     def _update_neutron_subgraphs_info(self, extracted_graph: str) -> None:
-        """Update Neutron subgraphs with verbose info.
+        """Fill in location and kernel count for each Neutron subgraph from verbose output.
 
-        - Set numbers of Neutron kernels in each Neutron subgraph. 99% of subgraphs contain only one Neutron kernel,
-        but there are some exceptions and some subgraphs can have more kernels. This number can be taken from
-        final Neutron graph info.
-        - Set Neutron subgraphs location in the final Neutron Graph. The function updates the location parameter
-        for each Neutron subgraph according to its position in the final Neutron graph. Location is calculated
-        continuously across all Neutron graphs in the model. Non-Neutron operators are skipped.
-
-        :param extracted_graph: verbose Neutron graph dump.
+        :param extracted_graph: Verbose Neutron graph dump (Extract Graphs section).
         """
-        # Neutron graphs.
-        neutron_graphs = extracted_graph.split("NeutronGraph")
         location_shift = 0
-        for neutron_graph in neutron_graphs:
-
-            subgraph_nodes = {
-                int(matched_subgraph.group("subgraph")): {
-                    "location": i + location_shift,
-                    "kernels": [
-                        kernel.replace(" ", "")
-                        for kernel in matched_subgraph.group("kernels").split("\n")
-                        if kernel.strip()
-                    ],
+        for graph_text in extracted_graph.split("NeutronGraph"):
+            node_info: dict[int, dict] = {}
+            running_loc = location_shift
+            for m in re.finditer(PATTERN_VERBOSE_KERNELS, graph_text):
+                kernels = [k for k in m.group("kernels").split("\n") if k.strip()]
+                node_info[int(m.group("subgraph"))] = {
+                    "location": running_loc,
+                    "kernels": kernels,
                 }
-                for i, matched_subgraph in enumerate(
-                    re.finditer(PATTERN_VERBOSE_KERNELS, neutron_graph)
-                )
-            }
-            if not subgraph_nodes:
+                running_loc += len(kernels)
+            if not node_info:
                 continue
-            # Update location offset according to the number of kernels in the subgraph.
-            location_shift += len(subgraph_nodes)
+            location_shift = running_loc
 
-            # Neutron graphs.
             graph_num = -1
-            matched_graph = re.search(r"subgraph_(?P<subgraph>\d+)", neutron_graph)
-            if matched_graph:
-                graph_num = int(matched_graph.group("subgraph"))
+            gm = re.search(r"subgraph_(?P<subgraph>\d+)", graph_text)
+            if gm:
+                graph_num = int(gm.group("subgraph"))
 
-            # Update number of kernels for all subgraphs.
-            for subgraph in self.neutron_subgraphs:
-                if subgraph.num in subgraph_nodes:
-                    subgraph.kernels = len(subgraph_nodes[subgraph.num]["kernels"])
-                    subgraph.location = subgraph_nodes[subgraph.num]["location"]
-                elif subgraph.num == graph_num:
-                    subgraph.kernels = sum(
-                        len(s["kernels"]) for s in subgraph_nodes.values()
-                    )
-                    self.neutron_kernels_num += subgraph.kernels
+            for sg in self.neutron_subgraphs:
+                if sg.num in node_info:
+                    sg.kernels = len(node_info[sg.num]["kernels"])
+                    sg.location = node_info[sg.num]["location"]
+                elif sg.num == graph_num:
+                    sg.kernels = sum(len(v["kernels"]) for v in node_info.values())
+                    self.neutron_kernels_num += sg.kernels
 
-    def _nodes_match_by_io(self, tf_node: Node, neutron_node: Node) -> bool:
+    # ------------------------------------------------------------------
+    # Neutron subgraph chain helpers
+    # ------------------------------------------------------------------
+
+    def _is_neutron_consumer(
+        self, consumer: SubgraphInfo, producer: SubgraphInfo
+    ) -> bool:
+        """Return True if consumer directly follows producer in a Neutron subgraph chain.
+
+        A connecting tensor must satisfy two conditions:
+          1. tensors_match() confirms the producer output and consumer input are related.
+          2. BOTH the producer output and consumer input must be absent from the original
+             TFLite tensor name set (i.e. they are Neutron-internal tensors).
+             This dual check is required because tensors_match() uses hierarchical
+             containment. For example, "CifarNet/logits/BiasAdd" (TFLite-level output)
+             would hierarchically match "CifarNet/logits/BiasAdd/pad" (Neutron-internal
+             input), which would wrongly chain subgraphs across TFLite boundaries.
         """
-        Determine whether a TFLite node can be mapped to a Neutron node
-        based on their input and output compatibility.
-
-        :param tf_node: Source TFLite node.
-        :param neutron_node: Target Neutron node.
-        :return: True if the nodes can be considered mapped, False otherwise.
-        """
-
-        def get_name_matches(tf_names: list[str], neutron_names: list[str]) -> int:
-            # Count how many names from tf_names have a corresponding match in
-            # neutron_names. A match is defined as:
-            #   - exact equality, or
-            #   - one name being a hierarchical variant of the other
-            #     (i.e., sharing a common prefix separated by "/").
-            result = 0
-            for tf_name in tf_names:
-                # Determine if the tensor name corresponds to a special operation input.
-                # Matches names like "perm0", "perm1", etc. used by Transpose ops,
-                # and names like "padding0", "padding1", etc. used by Pad ops.
-                special_op = (
-                    "permutation"
-                    if re.fullmatch(r"perm(\d+)?", tf_name)
-                    else (
-                        "padding"
-                        if re.fullmatch(r"padding(s)?(\d+)?", tf_name)
-                        else None
-                    )
-                )
-                for neutron_name in neutron_names:
-                    if (
-                        neutron_name == tf_name
-                        or neutron_name + "/" in tf_name
-                        or tf_name + "/" in neutron_name
-                    ):
-                        result += 1
-                        break
-
-                    # Check if the neutron input is also the special op (Pad or Transpose)
-                    if special_op and special_op in neutron_name:
-                        result += 1
-                        break
-            return result
-
-        name_matches = get_name_matches(tf_node.inputs, neutron_node.inputs)
-        # Map the node if all TFLite inputs match Neutron inputs.
-        # Note: the Neutron node may still have additional extra inputs.
-        if name_matches == len(tf_node.inputs):
+        if not consumer.inputs or not producer.outputs:
+            return False
+        connecting_pairs = [
+            (out, inp)
+            for out in producer.outputs
+            for inp in consumer.inputs
+            if tensors_match(inp, out)
+        ]
+        if not connecting_pairs:
+            return False
+        # Pass-through subgraph (input name == output name): always chain after predecessor.
+        # These are injected by the Neutron converter purely for data routing.
+        if consumer.inputs == consumer.outputs:
             return True
-        elif name_matches == len(tf_node.inputs) - 1:
-            # If there is only one unmatched input, check matching of outputs.
-            name_matches = get_name_matches(tf_node.outputs, neutron_node.outputs)
-            if name_matches == len(tf_node.outputs):
-                # Map the node if all TFLite outputs match Neutron outputs.
-                return True
-        return False
+        # Both sides of each connecting pair must be Neutron-internal (not TFLite tensors).
+        return all(
+            out not in self._tflite_tensor_names
+            and inp not in self._tflite_tensor_names
+            for out, inp in connecting_pairs
+                    )
+
+    def _get_neutron_subgraph_chains(self) -> list[list[SubgraphInfo]]:
+        """Group active Neutron subgraphs into linearly-connected execution chains.
+
+        A chain is a sequence [sg_0, sg_1, ...] where each sg_{i+1} is the unique
+        consumer of sg_i's outputs. Subgraphs not part of a longer chain form singletons.
+        """
+        active = sorted(
+            (
+                sg
+                for sg in self.neutron_subgraphs
+                if sg.num not in self.neutron_graphs and sg.location >= 0
+            ),
+            key=lambda sg: sg.location,
+        )
+
+        has_predecessor: set[int] = {
+            sg.num
+            for sg in active
+            for other in active
+            if other is not sg and self._is_neutron_consumer(sg, other)
+        }
+
+        chains: list[list[SubgraphInfo]] = []
+        visited: set[int] = set()
+
+        for start in active:
+            if start.num in visited or start.num in has_predecessor:
+                continue
+            chain = [start]
+            visited.add(start.num)
+            while True:
+                successors = [
+                    sg
+                    for sg in active
+                    if sg.num not in visited
+                    and self._is_neutron_consumer(sg, chain[-1])
+                ]
+                if len(successors) != 1:
+                    break
+                chain.append(successors[0])
+                visited.add(successors[0].num)
+            chains.append(chain)
+
+        # Any subgraphs unreachable from a chain root become singletons.
+        for sg in active:
+            if sg.num not in visited:
+                chains.append([sg])
+
+        return chains
+
+    def _get_chain_boundary_io(
+        self, chain: list[SubgraphInfo]
+    ) -> tuple[list[str], list[str]]:
+        """Return the external (boundary) inputs and outputs of a Neutron subgraph chain.
+
+        Chain inputs = inputs of the first subgraph.
+        Chain outputs = outputs not consumed internally by any later subgraph.
+        """
+        if not chain:
+            return [], []
+
+        chain_inputs = list(chain[0].inputs)
+        chain_outputs = list(chain[0].outputs)
+
+        for sg in chain[1:]:
+            consumed = set(sg.inputs)
+            chain_outputs = [
+                o
+                for o in chain_outputs
+                if not any(tensors_match(o, c) for c in consumed)
+            ]
+            chain_outputs.extend(sg.outputs)
+
+        return chain_inputs, chain_outputs
+
+    # ------------------------------------------------------------------
+    # TFLite chain matching helpers
+    # ------------------------------------------------------------------
+
+    def _inputs_match(self, sg_inputs: list[str], tf_node: Node) -> bool:
+        """Return True if all dynamic inputs of tf_node are covered by sg_inputs."""
+        return (
+            bool(tf_node.inputs)
+            and bool(sg_inputs)
+            and (count_tensor_matches(tf_node.inputs, sg_inputs) == len(tf_node.inputs))
+                    )
+
+    def _outputs_match(self, sg_outputs: list[str], chain_outputs: list[str]) -> bool:
+        """Return True if all chain_outputs are covered by sg_outputs."""
+        return (
+            bool(chain_outputs)
+            and bool(sg_outputs)
+            and (count_tensor_matches(chain_outputs, sg_outputs) == len(chain_outputs))
+                )
+
+    def _find_matching_tflite_chain(
+        self, sg_inputs: list[str], sg_outputs: list[str]
+    ) -> list[int]:
+        """Find the TFLite operator chain whose collective I/O matches the given boundary I/O.
+
+        Algorithm:
+          1. Identify candidate starting nodes whose dynamic inputs match sg_inputs.
+          2. For each candidate, check for a 1-to-1 output match.
+          3. Otherwise, extend the chain forward greedily until the outputs match sg_outputs.
+
+        :param sg_inputs: Dynamic inputs of the (virtual) Neutron subgraph/chain.
+        :param sg_outputs: Dynamic outputs of the (virtual) Neutron subgraph/chain.
+        :return: Ordered list of TFLite node locations forming the match, or [].
+        """
+        for start in (n for n in self.tflite_nodes if self._inputs_match(sg_inputs, n)):
+            chain_locs = [start.location]
+            chain_outs = list(start.outputs)
+
+            if self._outputs_match(sg_outputs, chain_outs):
+                return chain_locs
+
+            for _ in range(len(self.tflite_nodes)):
+                next_loc = self._find_next_chain_node(
+                    chain_locs, chain_outs, self._node_by_loc, self._input_to_locs
+                            )
+                if next_loc is None:
+                        break
+                next_node = self._node_by_loc[next_loc]
+                chain_locs.append(next_loc)
+                consumed = set(next_node.inputs)
+                chain_outs = [
+                    o for o in chain_outs if o not in consumed
+                ] + next_node.outputs
+                if self._outputs_match(sg_outputs, chain_outs):
+                    return chain_locs
+
+        return []
+
+    def _find_next_chain_node(
+        self,
+        chain_locs: list[int],
+        chain_outputs: list[str],
+        node_by_loc: dict[int, Node],
+        input_to_locs: dict[str, list[int]],
+    ) -> int | None:
+        """Return the unique next TFLite node that can extend the current chain, or None.
+
+        A node is eligible only if all its dynamic inputs are covered by the current chain
+        outputs (no external dependency). A fork (multiple eligible nodes) returns None.
+        """
+        chain_loc_set = set(chain_locs)
+        chain_out_set = set(chain_outputs)
+        eligible: set[int] = set()
+
+        for out_name in chain_outputs:
+            # Exact-name consumers first.
+            consumers = [
+                loc
+                for loc in input_to_locs.get(out_name, [])
+                if loc not in chain_loc_set
+            ]
+            # Fallback: hierarchical match (handles Neutron-renamed tensors).
+            if not consumers:
+                consumers = [
+                    n.location
+                    for n in self.tflite_nodes
+                    if n.location not in chain_loc_set
+                    and any(tensors_match(out_name, inp) for inp in n.inputs)
+                ]
+            for loc in consumers:
+                candidate = node_by_loc[loc]
+                if all(
+                    any(tensors_match(inp, co) for co in chain_out_set)
+                    for inp in candidate.inputs
+                ):
+                    eligible.add(loc)
+
+        return next(iter(eligible)) if len(eligible) == 1 else None
+
+    # ------------------------------------------------------------------
+    # Public mapping API
+    # ------------------------------------------------------------------
 
     def get_tflite_to_neutron_map(self) -> dict[int, tuple[int, ...]]:
-        """Map TFLite nodes from the original model to Neutron nodes in the converted model.
+        """Map TFLite node locations to Neutron kernel indices.
 
-        The mapping is built based on input and output tensor names. Neutron tensors may have
-        exactly the same names or use the format "tflite_input/additional_name".
+        Neutron subgraphs are first grouped into chains; each chain is matched as a unit
+        against a TFLite operator chain using dynamic I/O tensor names.
 
-        :return: Dictionary mapping TFLite node indices to tuple of Neutron subgraph indices.
+        :return: Dict: TFLite node location -> tuple of Neutron kernel indices.
         """
-        tflite_to_neutron_dict = {}
-        for tf_idx, tf_node in enumerate(self.tflite_nodes):
-            subgraph_idxs = []
-            location_shift = 0
-            for subgraph in self.neutron_subgraphs:
-                if subgraph.num in self.neutron_graphs:
-                    continue
-                for neutron_node in subgraph.nodes:
-                    if self._nodes_match_by_io(tf_node, neutron_node):
-                        for kernel in range(subgraph.kernels):
-                            subgraph_idxs.append(
-                                subgraph.location + location_shift + kernel
-                            )
-                        break
-                location_shift += max(subgraph.kernels - 1, 0)
-            # Filter subgraph_idxs to avoid mapping multiple parallel single-input nodes that consume the
-            # same input tensor into the same TFLite node.
-            subgraph_idxs = self._filter_single_input_nodes(tf_node.name, subgraph_idxs)
-            if subgraph_idxs:
-                tflite_to_neutron_dict[tf_idx] = tuple(subgraph_idxs)
+        result: dict[int, set[int]] = {}
 
-        self.tflite_to_neutron_map = tflite_to_neutron_dict
+        for chain in self._get_neutron_subgraph_chains():
+            chain_inputs, chain_outputs = self._get_chain_boundary_io(chain)
+            if not chain_inputs or not chain_outputs:
+                continue
+
+            neutron_indices = [
+                idx
+                for sg in chain
+                for idx in range(sg.location, sg.location + max(sg.kernels, 1))
+            ]
+
+            tflite_locs = self._find_matching_tflite_chain(chain_inputs, chain_outputs)
+            if not tflite_locs:
+                logging.debug(
+                    f"No TFLite match for Neutron chain {[sg.num for sg in chain]} "
+                    f"(inputs={chain_inputs}, outputs={chain_outputs})"
+            )
+                continue
+
+            for loc in tflite_locs:
+                result.setdefault(loc, set()).update(neutron_indices)
+
+        self.tflite_to_neutron_map = {k: tuple(sorted(v)) for k, v in result.items()}
         return self.tflite_to_neutron_map
 
-    def _filter_single_input_nodes(
-        self, node_name: str, subgraph_loc: list[int]
-    ) -> list[int]:
-        """
-        Filter the Neutron-to-TFLite mapping to avoid mapping multiple parallel single-input nodes
-        that consume the same input tensor to a single TFLite node.
-
-        The function checks whether the current TFLite node is a supported single-input node
-        (as defined in SINGLE_INPUT_NODES) and whether it is mapped to multiple Neutron nodes.
-        In such cases, it is possible that parallel single-input Neutron nodes were incorrectly
-        mapped to the same TFLite node.
-
-        If more than one single-input Neutron node is mapped, only one is kept in the mapping:
-        the Neutron node whose operation name matches the operation name of the current TFLite node.
-
-        :param node_name: Operation name of the current TFLite node.
-        :param subgraph_loc: List of Neutron subgraph indices whose inputs correspond to the
-                            input of the current TFLite node.
-        :return: Filtered list of Neutron subgraph indices to be mapped to the current TFLite node.
-        """
-        # Check if there can be potential issue in mapping.
-        if node_name in SINGLE_INPUT_NODES and len(subgraph_loc) > 1:
-            single_in_nodes = []
-            # Find all single-input nodes in subgraph_idxs.
-            subgraphs = (
-                subgraph
-                for subgraph in self.neutron_subgraphs
-                if subgraph.location in subgraph_loc
-            )
-            for subgraph in subgraphs:
-                for neutron_node in subgraph.nodes:
-                    if neutron_node.name in SINGLE_INPUT_NODES:
-                        single_in_nodes.append((subgraph.location, neutron_node.name))
-            if len(single_in_nodes) > 0:
-                # Keep only the node with the matching name when multiple single-input nodes are present in subgraph_idxs.
-                for subgraph_id, single_in_node_name in single_in_nodes:
-                    if single_in_node_name == node_name:
-                        return [subgraph_id]
-                return []
-        return subgraph_loc
-
     def get_edge_to_neutron_map(self) -> dict[int, tuple[int, ...]]:
-        """Map Edge nodes to Neutron nodes.
+        """Map Edge node handles to Neutron kernel indices.
 
-        :return: Dictionary mapping Edge node handles to tuple of Neutron subgraph indices.
+        :return: Dict: Edge handle -> tuple of Neutron kernel indices.
         """
         self.get_tflite_to_neutron_map()
-        edge_to_neutron_dict = {}
-
+        result: dict[int, tuple[int, ...]] = {}
         for edge_handle, tflite_indices in self.edge_to_tflite_map.items():
-            neutron_nodes = set()
-            for tf_node in tflite_indices:
-                if tf_node in self.tflite_to_neutron_map:
-                    neutron_nodes.update(self.tflite_to_neutron_map[tf_node])
-            if neutron_nodes:
-                edge_to_neutron_dict[edge_handle] = tuple(neutron_nodes)
-
-        self.edge_to_neutron_map = edge_to_neutron_dict
-        return self.edge_to_neutron_map
+            neutron = {
+                n
+                for tf_idx in tflite_indices
+                for n in self.tflite_to_neutron_map.get(tf_idx, ())
+            }
+            if neutron:
+                result[edge_handle] = tuple(neutron)
+        self.edge_to_neutron_map = result
+        return result
 
     def get_neutron_to_edge_map(self) -> dict[int, tuple[int, ...]]:
-        """
-        Transform edge-to-neutron map to neutron-to-edge map.
+        """Return the inverse of the Edge-to-Neutron map.
 
-        :return: Dictionary mapping neutron_index to tuple of edge_handles
+        :return: Dict: Neutron kernel index -> tuple of Edge handles.
+                 All indices up to neutron_kernels_num are present (empty tuple if unmapped).
+                 One extra entry is added for the Neutron Dump event at the end.
         """
         if not self.edge_to_neutron_map:
-            _ = self.get_edge_to_neutron_map()
+            self.get_edge_to_neutron_map()
 
-        neutron_to_edge = {}
-
+        inverse: dict[int, list[int]] = defaultdict(list)
         for edge_handle, neutron_indices in self.edge_to_neutron_map.items():
-            for neutron_idx in neutron_indices:
-                if neutron_idx not in neutron_to_edge:
-                    neutron_to_edge[neutron_idx] = []
-                neutron_to_edge[neutron_idx].append(edge_handle)
+            for idx in neutron_indices:
+                inverse[idx].append(edge_handle)
 
-        # Fill gaps with empty tuples and convert lists to tuples.
-        if neutron_to_edge:
-            max_neutron_idx = self.neutron_kernels_num
-            result = {}
-            # Add one more non-mapped event at the end of list for the Neutron Dump event.
-            for i in range(max_neutron_idx + 1):
-                if i in neutron_to_edge:
-                    result[i] = tuple(neutron_to_edge[i])
-                else:
-                    result[i] = ()
+        if not inverse:
+            return {}
+
+        result = {
+            i: tuple(inverse.get(i, ())) for i in range(self.neutron_kernels_num + 1)
+        }
             logging.info(f"Neutron to Edge map was created: {result}")
             return result
-        else:
-            return {}
