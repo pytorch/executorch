@@ -368,6 +368,291 @@ TEST(WebGPUComputeDispatch, RejectsBindingRangeBeyondDawnBuffer) {
   wgpuBufferRelease(buffer);
 }
 
+constexpr int kResizeQ = 0;
+constexpr int kResizeK = 1;
+constexpr int kResizeUnrelated = 2;
+constexpr int kResizeCascade = 3;
+constexpr int kResizeOutput = 4;
+constexpr int kResizeSymInt = 5;
+
+void build_resize_test_graph(WebGPUGraph& graph) {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  const std::vector<uint32_t> dims = {8, 8};
+  for (int mem_obj_id = 0; mem_obj_id < 5; mem_obj_id++) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb,
+            vk::VkDataType::FLOAT32,
+            &dims,
+            /*constant_id=*/-1,
+            mem_obj_id)
+            .Union()));
+  }
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::SymInt, vk::CreateSymInt(fbb, 0).Union()));
+
+  const std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  const std::vector<uint32_t> input_ids = {
+      kResizeQ, kResizeK, kResizeUnrelated};
+  const std::vector<uint32_t> output_ids = {kResizeOutput};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  graph.set_device(g_device);
+  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+}
+
+WebGPUComputeDispatchDescriptor make_dynamic_test_descriptor(
+    WebGPUGraph& graph,
+    const char* kernel_name) {
+  const auto& input = graph.get_tensor(kResizeQ);
+  const auto& output = graph.get_tensor(kResizeOutput);
+  WGPUBuffer params =
+      graph.create_params_buffer(UnaryParams{64u, -1.0f, 1.0f, 0u});
+  WebGPUComputeDispatchDescriptor descriptor;
+  descriptor.shader_name = "clamp";
+  descriptor.kernel_name = kernel_name;
+  descriptor.bindings = {
+      {input.buffer, 0u, input.nbytes},
+      {output.buffer, 0u, output.nbytes},
+      {params, 0u, sizeof(UnaryParams)}};
+  descriptor.constants = {{"wg_size", 64.0}};
+  descriptor.grid = {99u, 97u};
+  return descriptor;
+}
+
+struct ResizeProbeContext {
+  int marker;
+  int* observed;
+  int* calls;
+};
+
+void record_resize_probe(WebGPUGraph&, const ResizeProbeContext& context) {
+  *context.observed = context.marker;
+  ++*context.calls;
+}
+
+struct GridPickerContext {
+  int tensor_id;
+  uint32_t x_bias;
+  uint32_t y_bias;
+  int* calls;
+  const bool* fail;
+};
+
+WebGPUDispatchGrid pick_tensor_grid(
+    const WebGPUGraph& graph,
+    const GridPickerContext& context) {
+  ++*context.calls;
+  if (context.fail != nullptr && *context.fail) {
+    throw std::runtime_error("dynamic grid picker failure");
+  }
+  const auto& dims = graph.cur_dims(context.tensor_id);
+  return {
+      static_cast<uint32_t>(dims.at(0)) + context.x_bias,
+      static_cast<uint32_t>(dims.at(1)) + context.y_bias};
+}
+
+struct CascadeContext {
+  int source_id;
+  int output_id;
+};
+
+void resize_cascade_output(WebGPUGraph& graph, const CascadeContext& context) {
+  graph.set_cur_dims(context.output_id, graph.cur_dims(context.source_id));
+}
+
+void expect_dispatch_grid(
+    WebGPUGraph& graph,
+    size_t dispatch_index,
+    uint32_t x,
+    uint32_t y) {
+  const auto& dispatch = graph.dispatch_at(dispatch_index);
+  EXPECT_EQ(dispatch.workgroup_count_x, x);
+  EXPECT_EQ(dispatch.workgroup_count_y, y);
+}
+
+TEST(WebGPUResizeHooks, TypedRegistrationOwnsContextCopies) {
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  int tensor_observed = 0;
+  int tensor_calls = 0;
+  int symint_observed = 0;
+  int symint_calls = 0;
+  {
+    ResizeProbeContext tensor_context = {17, &tensor_observed, &tensor_calls};
+    ResizeProbeContext symint_context = {23, &symint_observed, &symint_calls};
+    graph.add_tensor_resize_hook(kResizeQ, record_resize_probe, tensor_context);
+    graph.add_resize_hook(kResizeSymInt, record_resize_probe, symint_context);
+    tensor_context.marker = 101;
+    symint_context.marker = 103;
+  }
+
+  graph.resize_input(kResizeQ, {7, 8});
+  graph.propagate_resize();
+  EXPECT_EQ(tensor_observed, 17);
+  EXPECT_EQ(tensor_calls, 1);
+  EXPECT_EQ(symint_observed, 0);
+  EXPECT_EQ(symint_calls, 0);
+
+  graph.set_symint(kResizeSymInt, 9);
+  graph.propagate_resize();
+  EXPECT_EQ(tensor_calls, 1);
+  EXPECT_EQ(symint_observed, 23);
+  EXPECT_EQ(symint_calls, 1);
+}
+
+TEST(WebGPUDynamicDispatch, InitializesAndIsolatesTriggeredGrids) {
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  int q_calls = 0;
+  int k_calls = 0;
+  GridPickerContext q_context = {kResizeQ, 1u, 2u, &q_calls, nullptr};
+  const GridPickerContext k_context = {kResizeK, 3u, 4u, &k_calls, nullptr};
+  const size_t q_dispatch = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_q"),
+      kResizeQ,
+      pick_tensor_grid,
+      q_context);
+  const size_t k_dispatch = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_k"),
+      kResizeK,
+      pick_tensor_grid,
+      k_context);
+  q_context.x_bias = 101u;
+  q_context.y_bias = 103u;
+  expect_dispatch_grid(graph, q_dispatch, 9u, 10u);
+  expect_dispatch_grid(graph, k_dispatch, 11u, 12u);
+  EXPECT_EQ(q_calls, 1);
+  EXPECT_EQ(k_calls, 1);
+  q_calls = 0;
+  k_calls = 0;
+
+  graph.resize_input(kResizeUnrelated, {7, 7});
+  graph.propagate_resize();
+  EXPECT_EQ(q_calls, 0);
+  EXPECT_EQ(k_calls, 0);
+
+  graph.resize_input(kResizeQ, {4, 3});
+  graph.propagate_resize();
+  expect_dispatch_grid(graph, q_dispatch, 5u, 5u);
+  expect_dispatch_grid(graph, k_dispatch, 11u, 12u);
+  EXPECT_EQ(q_calls, 1);
+  EXPECT_EQ(k_calls, 0);
+
+  graph.resize_input(kResizeQ, {2, 5});
+  graph.propagate_resize();
+  expect_dispatch_grid(graph, q_dispatch, 3u, 7u);
+  EXPECT_EQ(q_calls, 2);
+  graph.resize_input(kResizeQ, {2, 5});
+  graph.propagate_resize();
+  EXPECT_EQ(q_calls, 2);
+
+  graph.resize_input(kResizeK, {6, 1});
+  graph.propagate_resize();
+  expect_dispatch_grid(graph, k_dispatch, 9u, 5u);
+  EXPECT_EQ(k_calls, 1);
+}
+
+TEST(WebGPUDynamicDispatch, HandlesCascadesAndStagesPickerFailures) {
+  {
+    WebGPUGraph graph;
+    build_resize_test_graph(graph);
+    int same_pass_calls = 0;
+    int cascade_pass_calls = 0;
+    graph.add_tensor_resize_hook(
+        kResizeQ,
+        resize_cascade_output,
+        CascadeContext{kResizeQ, kResizeCascade});
+    const size_t same_pass_dispatch = graph.add_dynamic_compute_dispatch(
+        make_dynamic_test_descriptor(graph, "dynamic_same_pass"),
+        kResizeQ,
+        pick_tensor_grid,
+        GridPickerContext{kResizeCascade, 5u, 7u, &same_pass_calls, nullptr});
+    const size_t cascade_pass_dispatch = graph.add_dynamic_compute_dispatch(
+        make_dynamic_test_descriptor(graph, "dynamic_cascade_pass"),
+        kResizeCascade,
+        pick_tensor_grid,
+        GridPickerContext{
+            kResizeCascade, 9u, 11u, &cascade_pass_calls, nullptr});
+    same_pass_calls = 0;
+    cascade_pass_calls = 0;
+    graph.resize_input(kResizeQ, {4, 6});
+    graph.propagate_resize();
+    EXPECT_EQ(same_pass_calls, 1);
+    EXPECT_EQ(cascade_pass_calls, 1);
+    expect_dispatch_grid(graph, same_pass_dispatch, 9u, 13u);
+    expect_dispatch_grid(graph, cascade_pass_dispatch, 13u, 17u);
+  }
+
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  int first_calls = 0;
+  int second_calls = 0;
+  bool second_fails = false;
+  const size_t first = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_first"),
+      kResizeQ,
+      pick_tensor_grid,
+      GridPickerContext{kResizeQ, 1u, 2u, &first_calls, nullptr});
+  const size_t second = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_second"),
+      kResizeQ,
+      pick_tensor_grid,
+      GridPickerContext{kResizeQ, 3u, 4u, &second_calls, &second_fails});
+  expect_dispatch_grid(graph, first, 9u, 10u);
+  expect_dispatch_grid(graph, second, 11u, 12u);
+  second_fails = true;
+  graph.resize_input(kResizeQ, {4, 3});
+  EXPECT_THROW(graph.propagate_resize(), std::runtime_error);
+  expect_dispatch_grid(graph, first, 9u, 10u);
+  expect_dispatch_grid(graph, second, 11u, 12u);
+}
+
+TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  int calls = 0;
+  bool initial_fails = true;
+  const size_t dispatches_before_failure = graph.num_dispatches();
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_initial_failure"),
+          kResizeQ,
+          pick_tensor_grid,
+          GridPickerContext{kResizeQ, 0u, 0u, &calls, &initial_fails}),
+      std::runtime_error);
+  EXPECT_EQ(graph.num_dispatches(), dispatches_before_failure);
+
+  const size_t dynamic = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_route_guard"),
+      kResizeQ,
+      pick_tensor_grid,
+      GridPickerContext{kResizeQ, 0u, 0u, &calls, nullptr});
+  ASSERT_EQ(dynamic, 0u);
+  graph.add_dispatch(WebGPUDispatch{});
+  graph.add_dispatch(WebGPUDispatch{});
+
+  EXPECT_THROW(
+      graph.register_dispatch_route_group({{0, 1}, {1, 2}}),
+      std::runtime_error);
+  calls = 0;
+  graph.resize_input(kResizeQ, {7, 6});
+  graph.propagate_resize();
+  EXPECT_EQ(calls, 1);
+  expect_dispatch_grid(graph, dynamic, 7u, 6u);
+  const size_t group = graph.register_dispatch_route_group({{1, 2}, {2, 3}});
+  EXPECT_EQ(group, 0u);
+  graph.select_dispatch_route(group, 1, {{13u, 17u}});
+  expect_dispatch_grid(graph, 1u, 0u, 0u);
+  expect_dispatch_grid(graph, 2u, 13u, 17u);
+}
+
 TEST(WebGPUExecution, FullySuppressedPlanPerformsNoQueueSubmission) {
   WebGPUGraph graph;
   const WebGPUExecutionPlan plan;
