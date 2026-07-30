@@ -1095,9 +1095,7 @@ class CustomBuild(build):
             # Ship optimized CPU kernels (with portable fallback for uncovered
             # ops) in the standalone kernels .so, so the SDK can run non- or
             # partially-delegated models. Mirrors iOS kernels_optimized.
-            cmake_configuration_args += [
-                "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"
-            ]
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"]
 
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
