@@ -190,6 +190,29 @@ if(_executorch_shared_LIBRARY)
   # its op-registration static initializers, so force it to stay linked.
   # Discover the versioned SONAME rather than hardcoding a major (see the
   # runtime lookup above).
+  file(GLOB _executorch_threadpool_candidates
+       "${_executorch_sdk_libdir}/libexecutorch_threadpool.so.*"
+  )
+  if(_executorch_threadpool_candidates)
+    list(GET _executorch_threadpool_candidates 0 _executorch_threadpool_LIBRARY)
+  endif()
+  if(_executorch_threadpool_LIBRARY AND NOT TARGET executorch::threadpool)
+    # One process-wide get_threadpool() singleton lives here; kernels (and
+    # future delegates) link it so they share a single pool.
+    add_library(executorch::threadpool SHARED IMPORTED)
+    set_target_properties(
+      executorch::threadpool
+      PROPERTIES IMPORTED_LOCATION "${_executorch_threadpool_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+    )
+    set_property(
+      TARGET executorch::threadpool
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+    )
+  endif()
+
   file(GLOB _executorch_kernels_candidates
        "${_executorch_sdk_libdir}/libexecutorch_kernels.so.*"
   )
@@ -209,6 +232,15 @@ if(_executorch_shared_LIBRARY)
       APPEND
       PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
     )
+    # The kernels lib has a DT_NEEDED on the shared threadpool; expose it so a
+    # consumer's rpath/link resolves the one pool.
+    if(TARGET executorch::threadpool)
+      set_property(
+        TARGET executorch::kernels
+        APPEND
+        PROPERTY INTERFACE_LINK_LIBRARIES executorch::threadpool
+      )
+    endif()
     if(NOT APPLE AND NOT WIN32)
       set_property(
         TARGET executorch::kernels

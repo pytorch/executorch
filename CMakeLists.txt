@@ -1438,6 +1438,10 @@ if(EXECUTORCH_BUILD_SHARED AND _executorch_kernels)
   target_compile_definitions(
     executorch_kernels_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
   )
+  # Link the shared threadpool first so its exported get_threadpool()/
+  # parallel_for satisfy the kernels' references, and the static
+  # extension_threadpool archive is not pulled in (which would embed a second
+  # singleton pool). executorch_shared provides the runtime core symbols.
   target_link_libraries(
     executorch_kernels_shared PRIVATE executorch_shared ${_executorch_kernels}
   )
