@@ -48,10 +48,11 @@ from executorch.backends.webgpu.test.ops.test_update_cache import export_update_
 export_update_cache_model('${PTE_UPDATE_CACHE_MODEL}')
 " || { echo "WARN: update_cache export failed; skipping update_cache native test"; UPDATE_CACHE_OK=0; }
 
-echo "=== Export dynamic HuggingFace RoPE model and goldens ==="
+echo "=== Export dynamic HuggingFace RoPE models and goldens ==="
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.test_rope_hf import export_rope_hf_dynamic
+from executorch.backends.webgpu.test.ops.test_rope_hf import export_rope_hf_dynamic, export_rope_hf_dynamic_sequence
 export_rope_hf_dynamic('${ROPE_HF_DIR}')
+export_rope_hf_dynamic_sequence('${ROPE_HF_DIR}')
 "
 
 echo "=== Export SDPA sweep models (sdpa_<name>.pte + .golden.bin to /tmp) ==="
@@ -104,6 +105,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_native_test -j${NPROC}
+cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_compute_dispatch_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_dispatch_order_test -j${NPROC}
 cmake --build "${NATIVE_BUILD_DIR}" --target webgpu_scratch_buffer_test -j${NPROC}
 
@@ -120,6 +122,7 @@ env \
     WEBGPU_TEST_SDPA_DIR=/tmp/ \
     "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_native_test"
 
+"${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_compute_dispatch_test"
 "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
 "${NATIVE_BUILD_DIR}/backends/webgpu/webgpu_scratch_buffer_test"
 

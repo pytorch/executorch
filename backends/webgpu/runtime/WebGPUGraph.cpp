@@ -756,6 +756,59 @@ size_t WebGPUGraph::add_compute_dispatch(
   return dispatch_index;
 }
 
+size_t WebGPUGraph::add_dynamic_compute_dispatch_impl(
+    const WebGPUComputeDispatchDescriptor& descriptor,
+    int trigger_tensor_id,
+    std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid) {
+  if (trigger_tensor_id < 0 || trigger_tensor_id >= num_values() ||
+      get_value_type(trigger_tensor_id) != ValueType::Tensor) {
+    throw std::runtime_error(
+        "WebGPU dynamic dispatch: trigger must be a Tensor");
+  }
+  if (!pick_grid) {
+    throw std::runtime_error("WebGPU dynamic dispatch: null grid picker");
+  }
+
+  const WebGPUDispatchGrid initial_grid = pick_grid(*this);
+  if (initial_grid.x == 0 || initial_grid.y == 0) {
+    throw std::runtime_error("WebGPU dynamic dispatch: zero grid");
+  }
+
+  WebGPUComputeDispatchDescriptor initial_descriptor = descriptor;
+  initial_descriptor.grid = initial_grid;
+
+  // Reserve both vectors before creating GPU objects, then stage the sidecar.
+  // If GPU-object creation fails, removing the sidecar restores the graph; no
+  // operation that can fail remains after add_compute_dispatch succeeds.
+  const size_t new_size = dynamic_dispatch_grids_.size() + 1;
+  dynamic_dispatch_grids_.reserve(new_size);
+  pending_dynamic_dispatch_grids_.reserve(new_size);
+
+  const size_t expected_index = dispatches_.size();
+  dynamic_dispatch_grids_.push_back(
+      {expected_index, trigger_tensor_id, std::move(pick_grid)});
+  try {
+    add_compute_dispatch(initial_descriptor);
+  } catch (...) {
+    dynamic_dispatch_grids_.pop_back();
+    throw;
+  }
+  return expected_index;
+}
+
+void WebGPUGraph::validate_dynamic_dispatch_route_ranges(
+    const std::vector<utils::DispatchRange>& ranges) const {
+  for (const auto& dynamic_grid : dynamic_dispatch_grids_) {
+    for (const auto& range : ranges) {
+      if (range.begin <= dynamic_grid.dispatch_index &&
+          dynamic_grid.dispatch_index < range.end) {
+        throw std::runtime_error(
+            "WebGPU dispatch cannot have both dynamic-grid and route ownership");
+      }
+    }
+  }
+}
+
 void WebGPUGraph::update_symints_from_inputs(
     const std::vector<InputData>& inputs) {
   for (const auto& src : symint_sources_) {
@@ -892,11 +945,41 @@ void WebGPUGraph::propagate_resize() {
        pass++) {
     std::unordered_set<int> processing;
     processing.swap(dirty_tensors_);
-    for (auto& hook : tensor_resize_hooks_) {
-      if (processing.count(hook.trigger_tensor_id) != 0) {
-        hook.fn(*this);
+    pending_dynamic_dispatch_grids_.clear();
+    try {
+      for (auto& hook : tensor_resize_hooks_) {
+        if (processing.count(hook.trigger_tensor_id) != 0) {
+          hook.fn(*this);
+        }
       }
+
+      // A hook or picker may fail, so compute and validate every affected grid
+      // before changing any dispatch. The graph-owned staging vector has
+      // capacity for every registered dynamic grid and is reused on execute.
+      for (const auto& dynamic_grid : dynamic_dispatch_grids_) {
+        if (processing.count(dynamic_grid.trigger_tensor_id) == 0) {
+          continue;
+        }
+        const WebGPUDispatchGrid grid = dynamic_grid.pick_grid(*this);
+        if (grid.x == 0 || grid.y == 0) {
+          throw std::runtime_error("WebGPU dynamic dispatch: zero grid");
+        }
+        pending_dynamic_dispatch_grids_.push_back(
+            {dynamic_grid.dispatch_index, grid});
+      }
+    } catch (...) {
+      pending_dynamic_dispatch_grids_.clear();
+      // Keep both the current triggers and any cascaded outputs dirty so the
+      // caller can fix the hook or picker and retry without rebuilding.
+      dirty_tensors_.insert(processing.begin(), processing.end());
+      throw;
     }
+    for (const auto& pending : pending_dynamic_dispatch_grids_) {
+      auto& dispatch = dispatches_[pending.dispatch_index];
+      dispatch.workgroup_count_x = pending.grid.x;
+      dispatch.workgroup_count_y = pending.grid.y;
+    }
+    pending_dynamic_dispatch_grids_.clear();
   }
   if (!dirty_tensors_.empty()) {
     throw std::runtime_error(
