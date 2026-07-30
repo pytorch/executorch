@@ -132,6 +132,7 @@ constexpr int kLinK = 64;
 constexpr int kLinAltK = 72;
 constexpr int kLinN = 128;
 constexpr int kLinNShmem = 2048;
+constexpr int kFp32LinearN = 32;
 // Run <prefix> at [m_rows, kLinK] on an already-loaded module (so it can be
 // reused across M without a fresh load), and compare to the golden.
 void run_linear(
@@ -230,6 +231,14 @@ void check_linear_tiled(int m_rows) {
   Module m(g_dir + "/dyn_linear_tiled.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear_tiled.pte";
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
+}
+
+void check_fp32_linear_reused(const char* prefix, int k) {
+  Module module(g_dir + "/" + prefix + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load " << prefix << ".pte";
+  for (int m_rows : {128, 32, 1, 128}) {
+    run_linear(module, m_rows, prefix, kFp32LinearN, k, 1e-3f);
+  }
 }
 
 constexpr int kQkvNq = 2048;
@@ -738,31 +747,31 @@ void run_combined_routes(Module& m, int s) {
 constexpr int kEmbDim = 64;
 // Run emb_dyn at N tokens on an already-loaded module (so it can be reused
 // across N), and compare to the golden.
-void run_embedding(Module& m, int n) {
-  const std::string b = g_dir + "/emb_dyn.S" + std::to_string(n) + ".";
+void run_embedding(Module& m, int n, const char* prefix = "emb_dyn") {
+  const std::string b = g_dir + "/" + prefix + ".S" + std::to_string(n) + ".";
   std::ifstream f(b + "idx.bin", std::ios::binary | std::ios::ate);
-  ASSERT_TRUE(f.good()) << "missing emb_dyn.S" << n;
+  ASSERT_TRUE(f.good()) << "missing " << prefix << ".S" << n;
   const std::streamsize nb = f.tellg();
-  ASSERT_GE(nb, 0) << "missing emb_dyn.S" << n;
+  ASSERT_GE(nb, 0) << "missing " << prefix << ".S" << n;
   f.seekg(0);
   std::vector<int64_t> idx(static_cast<size_t>(nb) / sizeof(int64_t));
   f.read(reinterpret_cast<char*>(idx.data()), nb);
   ASSERT_EQ(idx.size(), static_cast<size_t>(n))
-      << "wrong emb_dyn idx size S" << n;
+      << "wrong " << prefix << " idx size S" << n;
   auto golden = read_bin(b + "golden.bin");
   auto t = make_tensor_ptr({n}, std::move(idx)); // int64 (Long) host input
   auto r = m.forward({EValue(t)});
   ASSERT_TRUE(r.ok() && !r.get().empty() && r.get()[0].isTensor())
-      << "emb N=" << n
+      << prefix << " N=" << n
       << " forward failed (err=" << (r.ok() ? 0 : (int)r.error()) << ")";
   const auto& out = r.get()[0].toTensor();
   const size_t numel = static_cast<size_t>(n) * kEmbDim;
   ASSERT_EQ(static_cast<size_t>(out.numel()), numel)
-      << "emb N=" << n << " output numel mismatch";
+      << prefix << " N=" << n << " output numel mismatch";
   std::vector<float> got(
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
   const float e = max_err(got, golden);
-  EXPECT_LT(e, 5e-3f) << "emb_dyn N=" << n << " max_err=" << e;
+  EXPECT_LT(e, 5e-3f) << prefix << " N=" << n << " max_err=" << e;
 }
 
 void check_embedding(int n) {
@@ -933,6 +942,23 @@ TEST(DynamicShape, RmsMul) {
     ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_rmsmul.pte";
     check_s(m, "dyn_rmsmul", s);
   }
+}
+
+// I0: dynamic fp32 linear preserves bias across repeated resizes.
+TEST(DynamicShape, Fp32LinearVec4BiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_vec4_bias", 64);
+}
+
+TEST(DynamicShape, Fp32LinearVec4UnbiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_vec4_no_bias", 64);
+}
+
+TEST(DynamicShape, Fp32LinearTiledBiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_tiled_bias", 63);
+}
+
+TEST(DynamicShape, Fp32LinearTiledUnbiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_tiled_no_bias", 63);
 }
 
 // I: dynamic 4-bit quantized linear (prefill GEMM) at several M.
@@ -1661,6 +1687,16 @@ TEST(DynamicShape, EmbeddingReusedGraph) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn.pte";
   for (int n : {16, 8, 1, 16}) {
     run_embedding(m, n);
+  }
+}
+
+TEST(DynamicShape, EmbeddingLayoutsReusedGraph) {
+  for (const char* prefix : {"emb_dyn_linear", "emb_dyn_nonlinear"}) {
+    Module m(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(m.load_forward(), Error::Ok) << "load " << prefix << ".pte";
+    for (int n : {16, 8, 1, 16}) {
+      run_embedding(m, n, prefix);
+    }
   }
 }
 
