@@ -8,7 +8,10 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_backend import (
+    CudaBackend,
+    _compile_time_cpu_clones,
+)
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
@@ -17,6 +20,20 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_low_memory_clone_rehydrates_emptied_tensor_for_autotuning(self):
+        tensor = torch.empty_strided((2, 3), (3, 1))
+        tensor.untyped_storage().resize_(0)
+
+        with _compile_time_cpu_clones(torch.device("cuda")):
+            from torch._inductor import compile_fx
+
+            clone = compile_fx.clone_preserve_strides(tensor)
+
+        self.assertEqual(clone.shape, tensor.shape)
+        self.assertEqual(clone.stride(), tensor.stride())
+        self.assertEqual(clone.untyped_storage().nbytes(), 6 * tensor.element_size())
+        self.assertEqual(torch.count_nonzero(clone), 0)
+
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="emulate_precision_casts", value=b"OFF")]
