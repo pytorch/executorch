@@ -51,6 +51,12 @@ DYNAMIC_N_HEADS_K = 8
 DYNAMIC_HEAD_DIM = 128
 DYNAMIC_MAX_SEQ = 16
 DYNAMIC_POSITIONS = (0, 7, 15)
+DYNAMIC_SEQUENCE_CASES = (
+    (DYNAMIC_MAX_SEQ, 0),
+    (5, 7),
+    (1, DYNAMIC_MAX_SEQ - 1),
+    (DYNAMIC_MAX_SEQ, 0),
+)
 
 
 class HfRope(torch.nn.Module):
@@ -101,7 +107,7 @@ def _inputs(
     return xq, xk, freqs_cos, freqs_sin
 
 
-def _dynamic_inputs() -> tuple[
+def _dynamic_inputs(seq: int = DYNAMIC_SEQ) -> tuple[
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
@@ -109,15 +115,15 @@ def _dynamic_inputs() -> tuple[
     torch.Tensor,
 ]:
     xq = _ramp(
-        DYNAMIC_BATCH * DYNAMIC_SEQ * DYNAMIC_N_HEADS_Q * DYNAMIC_HEAD_DIM,
+        DYNAMIC_BATCH * seq * DYNAMIC_N_HEADS_Q * DYNAMIC_HEAD_DIM,
         17,
         8,
-    ).reshape(DYNAMIC_BATCH, DYNAMIC_SEQ, DYNAMIC_N_HEADS_Q, DYNAMIC_HEAD_DIM)
+    ).reshape(DYNAMIC_BATCH, seq, DYNAMIC_N_HEADS_Q, DYNAMIC_HEAD_DIM)
     xk = _ramp(
-        DYNAMIC_BATCH * DYNAMIC_SEQ * DYNAMIC_N_HEADS_K * DYNAMIC_HEAD_DIM,
+        DYNAMIC_BATCH * seq * DYNAMIC_N_HEADS_K * DYNAMIC_HEAD_DIM,
         13,
         6,
-    ).reshape(DYNAMIC_BATCH, DYNAMIC_SEQ, DYNAMIC_N_HEADS_K, DYNAMIC_HEAD_DIM)
+    ).reshape(DYNAMIC_BATCH, seq, DYNAMIC_N_HEADS_K, DYNAMIC_HEAD_DIM)
     freqs_cos, freqs_sin = hf_precompute_freqs_cis(
         DYNAMIC_HEAD_DIM,
         DYNAMIC_MAX_SEQ,
@@ -147,8 +153,8 @@ def _dynamic_golden(
     return hf_apply_rotary_emb(
         xq,
         xk,
-        freqs_cos[position : position + DYNAMIC_SEQ],
-        freqs_sin[position : position + DYNAMIC_SEQ],
+        freqs_cos[position : position + xq.shape[1]],
+        freqs_sin[position : position + xq.shape[1]],
     )
 
 
@@ -191,9 +197,53 @@ def _lower_dynamic_program():
     return edge
 
 
+def _lower_dynamic_sequence_program():
+    inputs = _dynamic_inputs(DYNAMIC_MAX_SEQ)
+    s_dim = torch.export.Dim("rope_hf_s", min=1, max=DYNAMIC_MAX_SEQ)
+    dynamic_shapes = ({1: s_dim}, {1: s_dim}, None, None, None)
+    with torch._dynamo.config.patch(capture_scalar_outputs=True):
+        ep = torch.export.export(
+            DynamicHfRope().eval(),
+            inputs,
+            dynamic_shapes=dynamic_shapes,
+        )
+
+    scalar_symints = [
+        node
+        for node in ep.graph_module.graph.nodes
+        if isinstance(node.meta.get("val"), torch.SymInt)
+    ]
+    if not scalar_symints:
+        raise AssertionError("input_pos did not lower to a SymInt")
+    xq_placeholder = next(
+        node
+        for node in ep.graph_module.graph.nodes
+        if node.op == "placeholder" and node.target == "xq"
+    )
+    if not isinstance(xq_placeholder.meta["val"].shape[1], torch.SymInt):
+        raise AssertionError("query sequence dimension did not remain symbolic")
+
+    edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+    _assert_fully_delegated(edge)
+    return edge
+
+
 def _export_dynamic_program():
     edge = _lower_dynamic_program()
 
+    et = edge.to_executorch()
+    delegate_ids = [
+        delegate.id
+        for plan in et.executorch_program.execution_plan
+        for delegate in plan.delegates
+    ]
+    if delegate_ids != ["VulkanBackend"]:
+        raise AssertionError(f"unexpected delegates: {delegate_ids}")
+    return et
+
+
+def _export_dynamic_sequence_program():
+    edge = _lower_dynamic_sequence_program()
     et = edge.to_executorch()
     delegate_ids = [
         delegate.id
@@ -244,6 +294,23 @@ class TestRopeHf(unittest.TestCase):
         self.assertFalse(torch.allclose(position_outputs[0], position_outputs[1]))
         self.assertFalse(torch.allclose(position_outputs[1], position_outputs[2]))
 
+    def test_dynamic_sequence_export_is_fully_delegated(self) -> None:
+        self.assertIsNotNone(_lower_dynamic_sequence_program())
+
+    def test_dynamic_sequence_goldens_match_custom_op(self) -> None:
+        _, _, freqs_cos, freqs_sin, _ = _dynamic_inputs(DYNAMIC_MAX_SEQ)
+        for seq, position in dict.fromkeys(DYNAMIC_SEQUENCE_CASES):
+            with self.subTest(seq=seq, position=position):
+                xq, xk, _, _, _ = _dynamic_inputs(seq)
+                expected_q, expected_k = _dynamic_golden(
+                    xq, xk, freqs_cos, freqs_sin, position
+                )
+                actual_q, actual_k = torch.ops.et_vk.apply_rotary_emb_hf.default(
+                    xq, xk, freqs_cos, freqs_sin, position
+                )
+                torch.testing.assert_close(actual_q, expected_q)
+                torch.testing.assert_close(actual_k, expected_k)
+
 
 def export_rope_hf_model(
     pte_path: str, xq_golden_path: str, xk_golden_path: str, shape_name: str = "multi"
@@ -289,6 +356,32 @@ def export_rope_hf_dynamic(out_dir: str) -> None:
         gk.detach().numpy().astype("<f4").tofile(
             os.path.join(out_dir, f"rope_hf_dynamic.pos{position}.xk.golden.bin")
         )
+
+
+def export_rope_hf_dynamic_sequence(out_dir: str) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    _, _, freqs_cos, freqs_sin, _ = _dynamic_inputs(DYNAMIC_MAX_SEQ)
+    et = _export_dynamic_sequence_program()
+    prefix = "rope_hf_dynamic_sequence"
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as output:
+        output.write(et.buffer)
+
+    for name, tensor in (("freqs_cos", freqs_cos), ("freqs_sin", freqs_sin)):
+        tensor.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.{name}.bin")
+        )
+
+    for seq, position in dict.fromkeys(DYNAMIC_SEQUENCE_CASES):
+        xq, xk, _, _, _ = _dynamic_inputs(seq)
+        golden_q, golden_k = _dynamic_golden(xq, xk, freqs_cos, freqs_sin, position)
+        case_prefix = os.path.join(out_dir, f"{prefix}.S{seq}.pos{position}")
+        for name, tensor in (
+            ("xq", xq),
+            ("xk", xk),
+            ("xq.golden", golden_q),
+            ("xk.golden", golden_k),
+        ):
+            tensor.detach().numpy().astype("<f4").tofile(f"{case_prefix}.{name}.bin")
 
 
 if __name__ == "__main__":
