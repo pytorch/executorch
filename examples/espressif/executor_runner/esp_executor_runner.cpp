@@ -73,7 +73,6 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #include "esp_executor_runner.h"
-#include "esp_memory_allocator.h"
 #include "esp_perf_monitor.h"
 
 #if defined(ESP_PLATFORM)
@@ -128,7 +127,6 @@ using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::Tag;
-using executorch::runtime::TensorInfo;
 using executorch::runtime::toString;
 
 #if defined(ET_BUNDLE_IO)
@@ -138,11 +136,9 @@ using executorch::bundled_program::verify_method_outputs;
 #endif
 
 #if defined(ET_EVENT_TRACER_ENABLED)
-using executorch::etdump::BufferDataSink;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::runtime::EventTracerDebugLogLevel;
-using torch::executor::etdump_result;
 #endif
 
 /**
@@ -478,8 +474,8 @@ struct RunnerContext {
   bool bundle_io = false;
   Box<BufferDataLoader> loader;
   Box<Program> program;
-  Box<EspMemoryAllocator> method_allocator;
-  Box<EspMemoryAllocator> temp_allocator;
+  Box<MemoryAllocator> method_allocator;
+  Box<MemoryAllocator> temp_allocator;
   std::vector<Span<uint8_t>> planned_spans;
   Box<HierarchicalAllocator> planned_memory;
   Box<MemoryManager> memory_manager;
@@ -1020,7 +1016,7 @@ bool et_runner_init(void) {
     return false;
   }
 #endif
-  EspMemoryAllocator file_allocator(
+  MemoryAllocator file_allocator(
       method_allocation_pool_size, method_allocation_pool);
   auto [buffer, buffer_size] =
       load_file_from_fs("/spiffs/model.pte", file_allocator);

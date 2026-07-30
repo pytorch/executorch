@@ -18,6 +18,8 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -35,6 +37,12 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _mxfp_payload_dtypes = {
+        TosaSpecialDtype.FP4E2M1,
+        TosaSpecialDtype.FP6E2M3,
+        TosaSpecialDtype.FP6E3M2,
+    }
+
     def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
         """Ensure uint8 tensors only appear at IO boundaries.
 
@@ -51,21 +59,23 @@ class InsertRescalePass(ArmPass):
                 continue
             if node.op in ("placeholder", "output"):
                 continue
-            if node.op == "call_function" and node.target == operator.getitem:
-                if all(user.op == "output" for user in node.users):
+            if node.op == "call_function":
+                if node.target == operator.getitem and all(
+                    user.op == "output" for user in node.users
+                ):
                     continue
-            if (
-                node.op == "call_function"
-                and node.target
-                == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
-            ):
-                # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                if node.target == exir_ops.backend.tosa.RESCALE.default:
+                    continue
+                if (
+                    node.target
+                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+                ):
+                    # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                    continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) in self._mxfp_payload_dtypes:
+                # Sub-byte FP types are stored uint8 arrays, so we need an exception for those.
                 continue
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.backend.tosa.RESCALE.default
-            ):
-                continue
+
             raise ValueError(
                 f"Found internal uint8 tensor at node {node.name} "
                 f"({node.target}). Uint8 is only allowed at IO boundaries."
@@ -100,6 +110,14 @@ class InsertRescalePass(ArmPass):
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
             graph_module.graph.erase_node(user)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().support_integer():
+            return False
+        return any(
+            graph_module.graph.find_nodes(op="call_function", target=target, sort=False)
+            for target in DQ_OPS
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False

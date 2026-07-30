@@ -42,12 +42,12 @@ python -m pip install \
   certifi \
   torch \
   torchvision \
-  --index-url https://download.pytorch.org/whl/cpu \
+  --index-url "${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
   --extra-index-url https://pypi.org/simple
 
 (
   cd "${REPO_ROOT}"
-  python setup.py bdist_wheel
+  CMAKE_ARGS="${SDK_WHEEL_CMAKE_ARGS:-}" python setup.py bdist_wheel
 )
 
 WHEEL_FILE="$(find "${REPO_ROOT}/dist" -maxdepth 1 -name 'executorch-*.whl' | head -1)"
@@ -66,7 +66,6 @@ with zipfile.ZipFile(wheel_file) as wheel:
 
 required = [
     "executorch/lib/libexecutorch.so",
-    "executorch/lib/libexecutorch.so.1",
     "executorch/share/cmake/executorch-config.cmake",
     "executorch/utils/__init__.py",
     "executorch/include/executorch/runtime/executor/program.h",
@@ -129,6 +128,7 @@ cat > main.cpp <<'CPP'
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
+#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -169,6 +169,15 @@ int main() {
             .get());
     printf(".ptd data-map load attempted (ok=%d)\n",
            data_map_result.ok());
+  }
+
+  // odr-use MergedDataMap so a dropped symbol fails the link, not just
+  // a header include. An empty span is a valid no-op merge.
+  {
+    executorch::runtime::Span<const executorch::runtime::NamedDataMap*>
+        maps;
+    auto merged = executorch::extension::MergedDataMap::load(maps);
+    printf("merged data-map load attempted (ok=%d)\n", merged.ok());
   }
 
   // Construct a Module from a tiny in-memory buffer via the buffer data loader.
@@ -287,6 +296,10 @@ cmake --build build
 # registers "CudaBackend" into the runtime in libexecutorch.so.
 SDK_LIB_DIR="$(python -c 'import os, executorch.utils as u; print(os.path.join(os.path.dirname(os.path.dirname(u.cmake_prefix_path)), "lib"))')"
 CUDA_BACKEND_SO="${SDK_LIB_DIR}/libexecutorch_cuda_backend.so"
+if [ ! -f "${CUDA_BACKEND_SO}" ] && [ "${EXPECT_CUDA:-0}" = "1" ]; then
+  echo "EXPECT_CUDA=1 but libexecutorch_cuda_backend.so is missing" >&2
+  exit 1
+fi
 if [ -f "${CUDA_BACKEND_SO}" ]; then
   echo "CUDA backend present; verifying it registers CudaBackend"
   cat > cuda_reg.cpp <<'CPP'

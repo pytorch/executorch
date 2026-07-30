@@ -969,6 +969,21 @@ def _unsafe_adjust_original_program(  # noqa: C901
     Directly modify the original exported program's signature and state dict
     based on the consumed params/buffers in the delegate.
     """
+    # First pass: identify placeholder nodes that still have users in the graph.
+    # These cannot be deleted because they are shared between the delegate and
+    # the remaining program (e.g., due to identity ops like no-op dropout
+    # causing parameter aliasing across partitions).
+    nodes_to_keep = set()
+    for node in original_program.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in input_specs_to_delete and len(node.users) > 0:
+                nodes_to_keep.add(node.name)
+        else:
+            break
+
+    for name in nodes_to_keep:
+        del input_specs_to_delete[name]
+
     original_program._graph_signature.input_specs = [
         input_spec
         for input_spec in original_program.graph_signature.input_specs
@@ -1005,14 +1020,14 @@ def _unsafe_adjust_original_program(  # noqa: C901
             continue
 
         if input_spec.kind == InputKind.PARAMETER:
-            del original_program._state_dict[input_target]
+            original_program._state_dict.pop(input_target, None)
         elif input_spec.kind == InputKind.BUFFER:
             if input_spec.persistent:
                 original_program._state_dict.pop(input_target, None)
             else:
-                del original_program._constants[input_spec.target]
+                original_program._constants.pop(input_spec.target, None)
         elif input_spec.kind == InputKind.CONSTANT_TENSOR:
-            del original_program._constants[input_spec.target]
+            original_program._constants.pop(input_spec.target, None)
         else:
             raise RuntimeError(f"Invalid input spec {input_spec} received")
 

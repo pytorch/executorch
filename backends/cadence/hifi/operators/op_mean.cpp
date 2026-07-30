@@ -17,8 +17,8 @@ using executorch::aten::RuntimeContext;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::ArrayRef;
+using std::optional;
 using torch::executor::Error;
-using torch::executor::optional;
 
 namespace impl {
 namespace HiFi {

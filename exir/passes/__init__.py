@@ -32,13 +32,16 @@ from executorch.exir.operator.convert import (
     to_scratch_op,
 )
 from executorch.exir.pass_base import ExportPass
-from executorch.exir.pass_manager import PassManager, PassType
+from executorch.exir.pass_manager import ExportedProgramPassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
+)
+from executorch.exir.passes.legalize_portable_dim_order_pass import (
+    LegalizePortableDimOrderPass,
 )
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -76,6 +79,7 @@ __all__ = [
     "OpReplacePass",
     "ToDevicePass",
     "EdgeToBackendOpsPass",
+    "LegalizePortableDimOrderPass",
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
@@ -498,25 +502,27 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 # Passes to convert a graph module from ATen to Edge IR
 
-base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = PassManager(
-    passes=[
-        # ReplaceSymSizeOpPass need to be run before other passes which inherits
-        # from ExportPass. ExportPass can not handle OpOverloadPacket in its
-        # call_function method. The ReplaceSymSizeOpPass pass converts sym size
-        # ops from OpOverloadPacket to OpOverload.
-        ReplaceSymSizeOpPass(),
-        NormalizeTransposePass(),
-        ReplaceBrokenOpsWithFunctionalOpsPass(),
-        ScalarToTensorPass(),
-        SymToTensorPass(),
-        RemoveNoopPass(),
-        PruneEmptyTensorsPass(),
-        RemoveToCopyPass(),
-    ]
-).passes
+base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
+    ExportedProgramPassManager(
+        passes=[
+            # ReplaceSymSizeOpPass need to be run before other passes which inherits
+            # from ExportPass. ExportPass can not handle OpOverloadPacket in its
+            # call_function method. The ReplaceSymSizeOpPass pass converts sym size
+            # ops from OpOverloadPacket to OpOverload.
+            ReplaceSymSizeOpPass(),
+            NormalizeTransposePass(),
+            ReplaceBrokenOpsWithFunctionalOpsPass(),
+            ScalarToTensorPass(),
+            SymToTensorPass(),
+            RemoveNoopPass(),
+            PruneEmptyTensorsPass(),
+            RemoveToCopyPass(),
+        ]
+    ).passes
+)
 
 base_post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
-    PassManager(
+    ExportedProgramPassManager(
         passes=[
             dead_code_elimination_pass,
             DebugHandleGeneratorPass(),

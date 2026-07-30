@@ -25,7 +25,6 @@ using executorch::extension::BufferDataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::HierarchicalAllocator;
-using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
 using executorch::runtime::Method;
 using executorch::runtime::MethodMeta;

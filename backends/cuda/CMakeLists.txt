@@ -114,6 +114,8 @@ if(CMAKE_CUDA_COMPILER)
     _aoti_cuda_shim_sources
     runtime/shims/int4mm.cu
     runtime/shims/int4_plain_mm.cu
+    runtime/shims/int5_plain_mm.cu
+    runtime/shims/int6_plain_mm.cu
     runtime/shims/int8_plain_mm.cu
     runtime/shims/sort.cu
     runtime/shims/rand.cu
@@ -159,7 +161,7 @@ endif()
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
     aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            ${CMAKE_DL_LIBS}
+                            extension_cuda ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -168,8 +170,13 @@ else()
   target_link_libraries(
     aoti_cuda_shims
     PRIVATE cuda_platform
-    PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart CUDA::curand ${CMAKE_DL_LIBS}
+    PUBLIC -Wl,--whole-archive
+           aoti_common_shims_slim
+           -Wl,--no-whole-archive
+           CUDA::cudart
+           CUDA::curand
+           extension_cuda
+           ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -184,7 +191,9 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
+                               runtime/cuda_mutable_state.cpp
+)
 if(_cuda_is_msvc_toolchain)
   # MSVC links aoti_cuda_backend into portable_lib without relying on C++
   # symbols exported from aoti_cuda_shims.dll.
@@ -236,6 +245,22 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_cuda_allocator SOURCES runtime/test/test_cuda_allocator.cpp EXTRA_LIBS
+    aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_allocator PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+endif()
 
 # Loadable CUDA backend shared library for the C++ SDK / pip wheel.
 #
@@ -290,14 +315,18 @@ if(NOT _cuda_is_msvc_toolchain AND EXECUTORCH_BUILD_SHARED)
     PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH
                                              "$ORIGIN:$ORIGIN/../backends/cuda"
   )
-  # Force-load for consumers of the EXPORTED target (from-source installs via
-  # ExecuTorchTargets), matching how QNN ships its backend. This library only
-  # has load-time registration side effects and no referenced symbols, so under
-  # an --as-needed-default toolchain a consumer linking the bare target would
-  # otherwise drop it and CudaBackend would never register. The prebuilt
-  # wheel-config imported target carries an equivalent --no-as-needed anchor;
-  # this covers the source-export path.
-  executorch_target_link_options_shared_lib(executorch_cuda_backend)
+  # Force-load for consumers of the EXPORTED target. This library has only
+  # load-time registration side effects and no referenced symbols, so under an
+  # --as-needed toolchain it would be dropped and CudaBackend never register.
+  # --whole-archive is a no-op on a .so, so anchor with --no-as-needed like the
+  # wheel-config imported target does.
+  if(NOT APPLE AND NOT WIN32)
+    target_link_options(
+      executorch_cuda_backend
+      INTERFACE
+      "SHELL:LINKER:--push-state,--no-as-needed       $<TARGET_FILE:executorch_cuda_backend> LINKER:--pop-state"
+    )
+  endif()
   install(
     TARGETS executorch_cuda_backend
     EXPORT ExecuTorchTargets

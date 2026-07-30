@@ -18,7 +18,6 @@
 static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
 using namespace executorch::runtime;
-using executorch::runtime::testing::TensorFactory;
 
 namespace {
 // TODO: Move the following methods to a utility class, so that it can be shared with `executor_runner.main.mm`

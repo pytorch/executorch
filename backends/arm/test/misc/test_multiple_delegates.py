@@ -1,4 +1,4 @@
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,6 +10,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -49,5 +50,22 @@ def test_multiple_delegates_tosa_INT(test_data: input_t1):
     )
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MultipleDelegatesModule.inputs)
+@common.SkipIfNoModelConverter
+def test_multiple_delegates_vgf_INT(test_data: input_t1):
+    aten_ops: list[str] = []
+    exir_ops: list[str] = []
+    pipeline = VgfPipeline[input_t1](
+        MultipleDelegatesModule(),
+        test_data,
+        aten_ops,
+        exir_ops,
+        quantize=True,
+        run_on_vulkan_runtime=False,
+        n_expected_delegates=2,
     )
     pipeline.run()

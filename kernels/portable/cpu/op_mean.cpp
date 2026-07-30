@@ -7,6 +7,8 @@
  */
 #include <c10/util/irange.h>
 
+#include <type_traits>
+
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -58,17 +60,24 @@ Tensor& mean_dim_out(
 
       // @lint-ignore CLANGTIDY facebook-hte-CArray
       static constexpr const char op_name[] = "mean.out";
+      // For half-precision inputs, accumulate in float to avoid saturation.
+      // Matches ATen's acc_type behavior.
       ET_SWITCH_FLOATHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
+        using ACC = std::conditional_t<
+            std::is_same_v<CTYPE, executorch::aten::Half> ||
+                std::is_same_v<CTYPE, executorch::aten::BFloat16>,
+            float,
+            CTYPE>;
         const CTYPE* in_data = in.const_data_ptr<CTYPE>();
         CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-        const CTYPE denom = static_cast<CTYPE>(reduce_size);
+        const ACC denom = static_cast<ACC>(reduce_size);
         for (int64_t i = 0; i < outer_size; i++) {
           const CTYPE* row = in_data + i * reduce_size;
-          CTYPE acc = 0;
+          ACC acc = 0;
           for (int64_t j = 0; j < reduce_size; j++) {
             acc += row[j];
           }
-          out_data[i] = acc / denom;
+          out_data[i] = static_cast<CTYPE>(acc / denom);
         }
       });
       return out;
@@ -83,19 +92,25 @@ Tensor& mean_dim_out(
   static constexpr const char op_name[] = "mean.out";
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+      using ACC = std::conditional_t<
+          std::is_same_v<CTYPE_OUT, executorch::aten::Half> ||
+              std::is_same_v<CTYPE_OUT, executorch::aten::BFloat16>,
+          float,
+          CTYPE_OUT>;
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       const size_t num = get_reduced_dim_product(in, dim_list);
       const bool success = parallel_for_each_reduce_over_dim_list_output_index(
           in, dim_list, out, [&](const auto begin, const auto end) {
             for (const auto out_ix : c10::irange(begin, end)) {
-              CTYPE_OUT sum = 0;
+              ACC sum = 0;
               if (plan.has_value()) {
-                sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
-                    [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
-                    [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
+                sum = plan->execute<CTYPE_IN, ACC>(
+                    [](CTYPE_IN v) { return static_cast<ACC>(v); },
+                    [](ACC outv, ACC acc) { return acc + outv; },
                     out_ix);
               }
-              out_data[out_ix] = sum / static_cast<float>(num);
+              out_data[out_ix] =
+                  static_cast<CTYPE_OUT>(sum / static_cast<float>(num));
             }
           });
       ET_KERNEL_CHECK_MSG(ctx, success, Internal, , "parallel_for failed");

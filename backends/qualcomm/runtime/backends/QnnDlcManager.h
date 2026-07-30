@@ -14,6 +14,8 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
 #include <executorch/backends/qualcomm/runtime/backends/ir/IrContext.h>
 
+#include <pal/Path.h>
+
 namespace executorch {
 namespace backends {
 namespace qnn {
@@ -105,7 +107,8 @@ class QnnDlcManager {
   }
 
  private:
-  static constexpr const char* library_name_ = "libQnnIr.so";
+  static inline const std::string library_name_ =
+      pal::path::GetLibraryName("QnnIr");
 
   const QnnExecuTorchContextBinary& qnn_context_blob_;
   const QnnExecuTorchOptions* options_;

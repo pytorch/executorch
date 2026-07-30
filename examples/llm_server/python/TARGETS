@@ -1,0 +1,29 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+        "chat_template.py",
+        "errors.py",
+        "openai_transcript.py",
+        "protocol.py",
+        "server.py",
+        "serving_chat.py",
+        "session_runtime.py",
+        "tool_parsers/__init__.py",
+        "tool_parsers/gemma.py",
+        "tool_parsers/hermes.py",
+        "tool_parsers/qwen.py",
+        "tool_parsers/types.py",
+        "worker_client.py",
+    ],
+    base_module = "executorch.examples.llm_server.python",
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/fastapi:fastapi",
+        "fbsource//third-party/pypi/pydantic:pydantic",
+    ],
+)

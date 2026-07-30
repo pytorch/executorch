@@ -9,8 +9,8 @@ cmake_minimum_required(VERSION 3.19)
 if(APPLE)
   enable_language(OBJCXX)
   add_library(
-    extension_image image_processor_common.cpp image_processor_apple.cpp
-                    image_processor_apple_gpu.mm
+    extension_image image_processor_common.cpp image_processor_simd.cpp
+                    image_processor_apple.cpp image_processor_apple_gpu.mm
   )
   set_source_files_properties(
     image_processor_apple_gpu.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc"
@@ -39,7 +39,10 @@ else()
   )
   FetchContent_MakeAvailable(stb)
 
-  add_library(extension_image image_processor_common.cpp image_processor.cpp)
+  add_library(
+    extension_image image_processor_common.cpp image_processor_simd.cpp
+                    image_processor.cpp
+  )
 
   # stb_image_resize.h lives under deprecated/ in current stb. Private: only the
   # .cpp uses it, not the installed public headers.

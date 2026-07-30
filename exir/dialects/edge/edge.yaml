@@ -3777,7 +3777,7 @@
   namespace: edge
   inherits: aten::expand_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -6523,7 +6523,7 @@
   namespace: edge
   inherits: aten::permute_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7185,7 +7185,7 @@
   namespace: edge
   inherits: aten::slice_copy.Tensor
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7272,7 +7272,7 @@
   namespace: edge
   inherits: aten::squeeze_copy.dim
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7281,7 +7281,7 @@
   namespace: edge
   inherits: aten::squeeze_copy.dims
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0
@@ -7821,7 +7821,7 @@
   namespace: edge
   inherits: aten::unsqueeze_copy
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16]
+    T0: [Bool, Byte, Char, Double, Float, Half, BFloat16, Int, Long, Short, UInt16, ComplexFloat, ComplexDouble]
   type_constraint:
   - self: T0
     __ret_0: T0

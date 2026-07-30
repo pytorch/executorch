@@ -52,14 +52,14 @@ function zephyr_select_toolchain() {
     fi
 
     if [[ "${ARCH}" == "x86_64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v1.0.1/toolchain_gnu_linux-x86_64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="68ae71edc0106c3093055b97aaa47017"
+        toolchain_md5_checksum="da38a6b6a20bfae8249ab9c7eef72cdd"
         toolchain_archive="${toolchain_dir}.tar.xz"
     elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]] ; then
-        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
+        toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v1.0.1/toolchain_gnu_linux-aarch64_arm-zephyr-eabi.tar.xz"
         toolchain_dir="arm-zephyr-eabi"
-        toolchain_md5_checksum="d8a6dfd4314d55da713957d0b161d01f"
+        toolchain_md5_checksum="ebb47b3f29fa468c6c06fcaa43ebe108"
         toolchain_archive="${toolchain_dir}.tar.xz"
     else
         # This should never happen, it should be covered by setup.sh but catch it anyway

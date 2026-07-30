@@ -30,6 +30,8 @@ class DecomposeColIm(ExportPass):
             if node.target == self.im2col_op:
                 input_node = node.args[0]
                 kernel_size = node.args[1]
+                dilation = node.args[2]
+                padding = node.args[3]
                 stride = node.args[4]
                 batch_size = node.meta["val"].shape[0]
                 assert (
@@ -41,6 +43,12 @@ class DecomposeColIm(ExportPass):
                 assert (
                     kernel_size[0] == kernel_size[1]
                 ), "im2col can only be converted when kernel height == width"
+                assert all(
+                    d == 1 for d in dilation
+                ), "col2im can only be converted when dilation equals to (1, 1)"
+                assert all(
+                    p == 0 for p in padding
+                ), "col2im can only be converted when padding equals to (0, 0)"
                 users = list(node.users.keys())
                 with graph_module.graph.inserting_after(input_node):
                     pixel_unshuffle_node = graph_module.graph.create_node(
@@ -77,6 +85,8 @@ class DecomposeColIm(ExportPass):
                 input_node = node.args[0]
                 output_size = node.args[1]
                 kernel_size = node.args[2]
+                dilation = node.args[3]
+                padding = node.args[4]
                 stride = node.args[5]
                 batch_size = node.meta["val"].shape[0]
                 assert (
@@ -88,6 +98,13 @@ class DecomposeColIm(ExportPass):
                 assert (
                     kernel_size[0] == kernel_size[1]
                 ), "col2im can only be converted when kernel height == width"
+                assert all(
+                    d == 1 for d in dilation
+                ), "col2im can only be converted when dilation equals to (1, 1)"
+                assert all(
+                    p == 0 for p in padding
+                ), "col2im can only be converted when padding equals to (0, 0)"
+
                 users = list(node.users.keys())
                 with graph_module.graph.inserting_after(input_node):
                     view_tensor = input_node.meta["val"].reshape(

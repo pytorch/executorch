@@ -7,7 +7,7 @@ from pathlib import Path
 
 import executorch.backends.arm as arm
 from executorch.backends.arm import LAZY_IMPORTS
-from executorch.backends.arm.scripts.generate_public_api_manifest import (
+from executorch.backends.arm.scripts.public_api_manifest.generate_public_api_manifest import (
     _collect_entry,
     _collect_public_api,
     _is_unstable_api,
@@ -76,6 +76,20 @@ def test_public_api_manifest_collection_handles_deprecated_symbols():
     _collect_entry("old_foo", old_foo, entries)
 
     assert "old_foo" not in entries
+
+
+def test_public_api_manifest_collection_can_include_deprecated_symbols():
+    @deprecated("old foo")
+    def old_foo(x: int) -> int:
+        return x
+
+    old_foo.__module__ = "executorch.backends.arm.synthetic"
+    entries: dict[str, dict[str, str]] = {}
+
+    _collect_entry("old_foo", old_foo, entries, include_deprecated=True)
+
+    assert entries["old_foo"]["kind"] == "function"
+    assert entries["old_foo"]["signature"] == "old_foo(x: int) -> int"
 
 
 def test_public_api_manifest_collection_excludes_init_for_equivalent_classes():

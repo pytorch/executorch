@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import Set, Type
+from typing import cast, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
@@ -45,7 +45,7 @@ def create_test_pass_manager() -> ArmPassManager:
 def run_single_pass(graph_module: GraphModule, test_pass: ExportPass) -> PassResult:
     pass_manager = create_test_pass_manager()
     pass_manager.add_pass(test_pass)
-    return pass_manager(graph_module)
+    return cast(PassResult, pass_manager(graph_module))
 
 
 class DummyTargetedPass(ArmOpTargetedPass):

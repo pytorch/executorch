@@ -388,6 +388,26 @@ class TestTensor(unittest.TestCase):
         strides = stride_from_dim_order(sizes, dim_order)
         self.assertEqual(expected_strides, strides)
 
+    def test_strides_from_dim_order_with_symbolic_sizes(self) -> None:
+        class ViewModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.view(x.shape[0], -1)
+
+        exported_program = torch.export.export(
+            ViewModule(),
+            (torch.randn(2, 3, 4),),
+            dynamic_shapes={"x": {0: torch.export.Dim("batch", min=1, max=8)}},
+        )
+        placeholder = next(
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if node.op == "placeholder"
+        )
+        sizes = list(placeholder.meta["val"].shape)
+
+        self.assertIsInstance(sizes[0], torch.SymInt)
+        self.assertEqual([12, 4, 1], stride_from_dim_order(sizes, [0, 1, 2]))
+
     def test_num_bytes_from_shape_and_dtype(self) -> None:
         shape = (2, 3, 4)
         self.assertEqual(24, num_bytes_from_shape_and_dtype(shape, torch.int8))

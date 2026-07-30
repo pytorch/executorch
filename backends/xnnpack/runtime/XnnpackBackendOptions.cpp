@@ -39,6 +39,7 @@ Error XnnpackBackendOptions::get_option(BackendOption& option) const {
     option.value = weight_cache_enabled_.load();
   } else if (strcmp(option.key, packed_cache_path_option_key) == 0) {
     std::array<char, runtime::kMaxOptionValueLength> arr{};
+    const std::lock_guard<std::mutex> lock(path_mutex_);
     size_t len =
         std::min(packed_cache_path_.size(), runtime::kMaxOptionValueLength - 1);
     memcpy(arr.data(), packed_cache_path_.data(), len);
@@ -79,13 +80,44 @@ Error XnnpackBackendOptions::set_option(const BackendOption& option) {
       ET_LOG(Error, "XNNPACK packed cache path must be a string.");
       return Error::InvalidArgument;
     }
+    // path_mutex_ also guards get_packed_cache_path so the read in
+    // XNNPACKBackend::init never tears against a concurrent write here.
+    const std::lock_guard<std::mutex> lock(path_mutex_);
     packed_cache_path_ = std::string(val->data());
     ET_LOG(
         Debug,
         "Setting XNNPACK packed cache path to %s.",
         packed_cache_path_.c_str());
+  } else if (strcmp(option.key, save_weight_cache_on_disk_option_key) == 0) {
+    auto* val = std::get_if<bool>(&option.value);
+    if (!val) {
+      ET_LOG(Error, "XNNPACK save_weight_cache_on_disk must be a bool.");
+      return Error::InvalidArgument;
+    }
+    if (*val) {
+      return save_weights_cache_locked();
+    }
   }
   return Error::Ok;
+}
+
+XNNWeightsCacheManager& XnnpackBackendOptions::weights_cache_manager() {
+  return weights_cache_manager_;
+}
+
+const XNNWeightsCacheManager& XnnpackBackendOptions::weights_cache_manager()
+    const {
+  return weights_cache_manager_;
+}
+
+runtime::Result<std::shared_ptr<delegate::XNNWeightsCache>>
+XnnpackBackendOptions::get_or_create_weights_cache(
+    const std::string& cache_file_path) {
+  return weights_cache_manager_.get_or_create(cache_file_path);
+}
+
+Error XnnpackBackendOptions::save_weights_cache_locked() {
+  return weights_cache_manager_.save_all();
 }
 
 bool XnnpackBackendOptions::resolve_weight_cache(
@@ -126,11 +158,13 @@ const XNNWorkspaceManager& XnnpackBackendOptions::workspace_manager() const {
   return workspace_manager_;
 }
 
-const std::string& XnnpackBackendOptions::get_packed_cache_path() const {
+std::string XnnpackBackendOptions::get_packed_cache_path() const {
+  const std::lock_guard<std::mutex> lock(path_mutex_);
   return packed_cache_path_;
 }
 
 void XnnpackBackendOptions::set_packed_cache_path(const std::string& path) {
+  const std::lock_guard<std::mutex> lock(path_mutex_);
   packed_cache_path_ = path;
 }
 

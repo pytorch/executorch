@@ -22,7 +22,7 @@ struct DlCloser {
   int operator()(void* handle) {
     if (handle == nullptr)
       return 0;
-    return dlclose(handle);
+    return pal::dynamic_loading::DlClose(handle);
   }
 };
 
@@ -59,22 +59,26 @@ const QnnInterface_t* QnnImplementation::StartBackend(
 
 #ifdef __hexagon__
   FARF(RUNTIME_HIGH, "Opening lib_path %s", lib_path.c_str());
-  std::unique_ptr<void, DlCloser> lib_handle(
-      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL));
+  std::unique_ptr<void, DlCloser> lib_handle(pal::dynamic_loading::DlOpen(
+      lib_path.c_str(),
+      pal::dynamic_loading::DL_NOW | pal::dynamic_loading::DL_GLOBAL));
   FARF(RUNTIME_HIGH, "Done loading lib_path %s", lib_path.c_str());
 #else
   // If the library is already loaded, return the handle.
-  std::unique_ptr<void, DlCloser> lib_handle(
-      dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD | RTLD_GLOBAL));
+  std::unique_ptr<void, DlCloser> lib_handle(pal::dynamic_loading::DlOpen(
+      lib_path.c_str(),
+      pal::dynamic_loading::DL_NOW | pal::dynamic_loading::DL_NOLOAD |
+          pal::dynamic_loading::DL_GLOBAL));
   if (!lib_handle) {
-    lib_handle = std::unique_ptr<void, DlCloser>(
-        dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL));
+    lib_handle = std::unique_ptr<void, DlCloser>(pal::dynamic_loading::DlOpen(
+        lib_path.c_str(),
+        pal::dynamic_loading::DL_NOW | pal::dynamic_loading::DL_GLOBAL));
   }
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
-        dlerror());
+        pal::dynamic_loading::DlError());
     return nullptr;
   }
 #endif
@@ -87,7 +91,7 @@ const QnnInterface_t* QnnImplementation::StartBackend(
     QNN_EXECUTORCH_LOG_ERROR(
         "QnnImplementation::Load Cannot load symbol "
         "QnnInterface_getProviders : %s",
-        dlerror());
+        pal::dynamic_loading::DlError());
     return nullptr;
   }
 
@@ -131,12 +135,12 @@ Error QnnImplementation::Unload() {
     return Error::Ok;
   }
 
-  int dlclose_error = dlclose(lib_handle_);
+  int dlclose_error = pal::dynamic_loading::DlClose(lib_handle_);
   if (dlclose_error != 0) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to close QNN backend %s with error %s",
         lib_path_.c_str(),
-        dlerror());
+        pal::dynamic_loading::DlError());
     return Error::Internal;
   }
   lib_handle_ = nullptr;

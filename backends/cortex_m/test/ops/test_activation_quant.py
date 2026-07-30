@@ -61,6 +61,24 @@ class _SiLU(torch.nn.Module):
         return torch.nn.functional.silu(x)
 
 
+class _GELU(torch.nn.Module):
+    ops_before_transforms = {
+        **_OPS_BEFORE,
+        "executorch_exir_dialects_edge__ops_aten_gelu_default": 1,
+    }
+    ops_after_transforms = {
+        **_OPS_AFTER,
+        "executorch_exir_dialects_edge__ops_aten_gelu_default": 0,
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.gelu = torch.nn.GELU()  # default: exact / erf
+
+    def forward(self, x):
+        return self.gelu(x)
+
+
 import torch as _torch
 
 
@@ -133,12 +151,34 @@ test_cases = {
         model=_SiLU(),
         example_inputs=(_zero_input((16,)),),
     ),
+    "gelu_rank1": McuTestCase(
+        model=_GELU(),
+        example_inputs=(ramp_tensor(-6, 6, (16,)),),
+    ),
+    "gelu_rank4": McuTestCase(
+        model=_GELU(),
+        example_inputs=(ramp_tensor(-4, 4, (1, 8, 4, 4)),),
+    ),
+    "gelu_saturating": McuTestCase(
+        model=_GELU(),
+        example_inputs=(ramp_tensor(-50, 50, (32,)),),
+    ),
+    "gelu_asymmetric_zp": McuTestCase(
+        model=_GELU(),
+        example_inputs=(ramp_tensor(-1, 9, (16,)),),
+    ),
+    "gelu_zero": McuTestCase(
+        model=_GELU(),
+        example_inputs=(_zero_input((16,)),),
+    ),
 }
 
 
 @parametrize("test_case", test_cases)
-def test_dialect_quantized_activation(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_quantized_activation(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms,
         test_case.model.ops_after_transforms,
@@ -147,6 +187,8 @@ def test_dialect_quantized_activation(test_case):
 
 
 @parametrize("test_case", test_cases)
-def test_implementation_quantized_activation(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_quantized_activation(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation(qtol=1)

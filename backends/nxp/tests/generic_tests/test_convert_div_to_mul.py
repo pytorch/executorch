@@ -208,7 +208,7 @@ class TestConvertDivToMul:
         ids=lambda is_scalar: "scalar" if is_scalar else "tensor",
     )
     def test__static__full_pipeline(
-        self, mocker, input_shape: tuple[int, ...], is_scalar: bool
+        self, mocker, request, input_shape: tuple[int, ...], is_scalar: bool
     ):
         if is_scalar:
             divisor = np.random.uniform(0.01, 15)
@@ -231,5 +231,6 @@ class TestConvertDivToMul:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
         )

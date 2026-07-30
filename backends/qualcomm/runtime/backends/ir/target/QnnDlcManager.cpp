@@ -6,10 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 #include <fstream>
 
 namespace executorch {

@@ -8,19 +8,21 @@ import argparse
 import json
 import logging
 import re
-import warnings
-from typing import Callable, List
+from typing import Dict, List
 
 from executorch.examples.qualcomm.oss_scripts.llama import LLMModelConfig
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     AUDIO_ENCODER,
     VISION_ENCODER,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import ModelArgs
 from pytorch_tokenizers import get_tokenizer, TiktokenTokenizer
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenizer
 
 from transformers import AutoTokenizer
 
+
+# Generic special tokens for multimodality, used for runtime identification.
 IMG_TOKEN = "<image>"
 AUDIO_TOKEN = "<audio>"
 
@@ -66,7 +68,32 @@ class TokenizerWrapper:
         self.control_args = control_args
         self.config = config
         self.repo_id = config.repo_id
-        self.apply_chat_template = config.instruct_model
+        self._instruct_model = config.instruct_model
+
+        self.tokenizer = None
+        self.chat_template = None
+
+        params_path = (
+            config.params_path if control_args.params is None else control_args.params
+        )
+        with open(params_path) as f:
+            model_args = ModelArgs(**json.load(f))
+        self.vocab_size = model_args.vocab_size
+
+        self.runtime_tokenizer_path = self._init_tokenizer(
+            control_args.tokenizer_model, control_args.tokenizer_bin
+        )
+
+    def _init_tokenizer(self, tokenizer_model, tokenizer_bin) -> str:
+        if self.decoder_model in {"stories110m", "stories260k"}:
+            path, self.tokenizer = self._from_tokenizer_model_and_bin(
+                tokenizer_model, tokenizer_bin
+            )
+        elif "llama3_2" in self.decoder_model:
+            path, self.tokenizer = self._from_tokenizer_model(tokenizer_model)
+        else:
+            path, self.tokenizer, self.chat_template = self._from_hf()
+        return path
 
     def _from_tokenizer_model_and_bin(self, tokenizer_model, tokenizer_bin):
         tokenizer = get_tokenizer(tokenizer_model)
@@ -89,7 +116,7 @@ class TokenizerWrapper:
         tokenizer = AutoTokenizer.from_pretrained(self.repo_id)
         chat_template = (
             tokenizer.apply_chat_template
-            if hasattr(tokenizer, "apply_chat_template") and self.apply_chat_template
+            if hasattr(tokenizer, "apply_chat_template") and self._instruct_model
             else None
         )
         tokenizer_artifacts = tokenizer.save_pretrained(self.artifact)
@@ -109,23 +136,6 @@ class TokenizerWrapper:
             # Override the default BOS and EOS token IDs for codegen2_1b
             tokenizer.bos_id = 1
             tokenizer.eos_id = 2
-
-        return runtime_tokenizer_path, tokenizer, chat_template
-
-    def get_runtime_tokenizer(self, tokenizer_model, tokenizer_bin):
-        tokenizer = None
-        runtime_tokenizer_path = ""
-        chat_template = None
-        if self.decoder_model in {"stories110m", "stories260k"}:
-            runtime_tokenizer_path, tokenizer = self._from_tokenizer_model_and_bin(
-                tokenizer_model, tokenizer_bin
-            )
-        elif "llama3_2" in self.decoder_model:
-            runtime_tokenizer_path, tokenizer = self._from_tokenizer_model(
-                tokenizer_model
-            )
-        else:
-            runtime_tokenizer_path, tokenizer, chat_template = self._from_hf()
 
         return runtime_tokenizer_path, tokenizer, chat_template
 
@@ -184,14 +194,9 @@ class TokenizerWrapper:
 
         audio_paths = self.control_args.audio_path
         if hasattr(self.config, AUDIO_ENCODER):
-            # Load audio from user-specified path (URL or local file)
-            # fall back to the default audio URL if no audio is provided.
             if not audio_paths:
-                audio_paths = [getattr(self.config, AUDIO_ENCODER).audio_url]
-                warnings.warn(
-                    f"No audio path/URL provided, using default audio URL from huggingface: {audio_paths}",
-                    UserWarning,
-                    stacklevel=1,
+                raise ValueError(
+                    "No audio path/URL provided. Please specify --audio_path."
                 )
             num_audios = len(audio_paths)
             total_audio_tokens = sum(prompt.count(AUDIO_TOKEN) for prompt in prompts)
@@ -200,24 +205,17 @@ class TokenizerWrapper:
             elif total_audio_tokens != num_audios:
                 raise ValueError(
                     f"Number of <audio> tokens ({total_audio_tokens}) does not match "
-                    f"number of audios ({num_audios}). Please check your prompts and audio paths."
-                    "Please check your prompts and audio paths.\n\n"
+                    f"number of audios ({num_audios}). Please check your prompts and audio paths.\n\n"
                     f"=== Prompt ===\n{prompts}\n"
                     f"=== Audio paths ===\n{audio_paths}"
                 )
 
         image_paths = self.control_args.image_path
         if hasattr(self.config, VISION_ENCODER):
-            # Load image from user-specified path (URL or local file)
-            # fall back to the default image URL if no image is provided.
             if not image_paths:
-                image_paths = [getattr(self.config, VISION_ENCODER).img_url]
-                warnings.warn(
-                    f"No image path/URL provided, using default image URL: {image_paths}",
-                    UserWarning,
-                    stacklevel=1,
+                raise ValueError(
+                    "No image path/URL provided. Please specify --image_path."
                 )
-
             num_images = len(image_paths)
             total_image_tokens = sum(prompt.count(IMG_TOKEN) for prompt in prompts)
 
@@ -226,8 +224,7 @@ class TokenizerWrapper:
             elif total_image_tokens != num_images:
                 raise ValueError(
                     f"Number of <image> tokens ({total_image_tokens}) does not match "
-                    f"number of images ({num_images}). Please check your prompts and image paths."
-                    "Please check your prompts and image paths.\n\n"
+                    f"number of images ({num_images}). Please check your prompts and image paths.\n\n"
                     f"=== Prompt ===\n{prompts}\n"
                     f"=== Image paths ===\n{image_paths}"
                 )
@@ -334,26 +331,34 @@ class TokenizerWrapper:
         pattern = f"({'|'.join(map(re.escape, split_tokens))})"
         return [part for part in re.split(pattern, prompt) if part]
 
-    def apply_prompt_template(
+    def make_chat_template(
         self,
-        chat_template: Callable,
         prompt: str,
         system_prompt: str = None,
-    ) -> str:
-        """
-        Apply chat template to format the prompt for different modalities.
+        assistant_text: str = None,
+    ) -> List[Dict]:
+        """Build a HuggingFace-format message list for runtime evaluation.
+
+        Converts a raw prompt into the structured message format expected by
+        ``apply_chat_template``
 
         Args:
-            chat_template: The chat template function from tokenizer
-            prompt: Input text prompt
-            system_prompt: Optional system prompt
+            prompt: Raw user prompt, may contain ``<image>`` or ``<audio>`` tokens.
+            system_prompt: Optional system message appended to the message list.
+            assistant_text: Optional assistant turn; disables generation prompt when set.
 
         Returns:
-            Formatted prompt string
+            HuggingFace-format message list
         """
 
         messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
         message = {"role": "user", "content": prompt}
+        if self.chat_template is None:
+            messages.append(message)
+            return messages
+
         if self.decoder_model in VLM_SPECIAL_TOKENS:
             contents = self._split_prompt(prompt)
             message["content"] = []
@@ -367,32 +372,43 @@ class TokenizerWrapper:
                         {"type": "text", "text": content},
                     )
         elif self.decoder_model in ALM_SPECIAL_TOKENS:
+            specials = ALM_SPECIAL_TOKENS[self.decoder_model]
+
             contents = self._split_prompt(prompt)
             message["content"] = ""
             for content in contents:
                 if content == AUDIO_TOKEN:
-                    message["content"] += ALM_SPECIAL_TOKENS[self.decoder_model][
-                        AUDIO_TOKEN
-                    ]
+                    message["content"] += specials[AUDIO_TOKEN]
                 else:
                     message["content"] += content
 
         messages.append(message)
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        if assistant_text is not None:
+            messages.append({"role": "assistant", "content": assistant_text})
 
-        template_prompt = chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+        return messages
+
+    def apply_chat_template(
+        self,
+        messages: List[Dict],
+    ) -> str:
+        """Format a message list into a prompt string.
+
+        Intended for calibration dataset formatting where the input is already
+        a HuggingFace-format message list (e.g. loaded from --calib_samples JSON).
+
+        If chat_template is not set (non-instruct or non-HF models), falls back
+        to concatenating each message's 'content' field directly.
+        """
+        if self.chat_template is None:
+            return "".join(m["content"] for m in messages)
+
+        template_prompt = self.chat_template(
+            messages, tokenize=False, add_generation_prompt=False
         )
 
-        # edge cases handling:
         # Gemma may produce unexpected output if the prompt contains an extra <bos> token.
-        # This can happen after applying a prompt template, which might inject <bos> unintentionally.
-        # To prevent decoding issues, we explicitly remove <bos> token
-        if chat_template and self.decoder_model in {
-            "gemma-2b",
-            "gemma3-1b",
-        }:
+        if self.decoder_model in {"gemma-2b", "gemma3-1b"}:
             template_prompt = template_prompt.replace("<bos>", "")
 
         return template_prompt

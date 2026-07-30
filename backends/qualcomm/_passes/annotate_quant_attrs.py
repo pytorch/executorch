@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
-from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.builders.utils import get_parameter, is_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
@@ -130,7 +130,7 @@ class AnnotateQuantAttrs(ExportPass):
             self._annotate_requant(n)
             # With fold_quant enabled, check if the input of dq op is quantized param.
             param = None
-            if n.target in dq_ops:
+            if n.target in dq_ops and is_parameter(n.args[0], self.edge_program):
                 param = get_parameter(n.args[0], self.edge_program)
             if n.target not in q_ops and param is None:
                 continue

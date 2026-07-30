@@ -1,12 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
 
-import copy
 from typing import cast, List
 
 import torch
@@ -108,7 +108,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 # view_node_shape is almost same as permute_node_shape
                 # except it has one more dim somewhere
                 # and the extra dim has value of 1.
-                new_view_shape = copy.deepcopy(pred_shape)
+                new_view_shape = list(pred_shape)
                 new_view_shape.insert(index, 1)
                 new_permute_dims = [x + 1 if x >= index else x for x in permute_dims]
                 new_permute_dims.insert(index, index)
@@ -132,7 +132,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 # and the extra dim has value of 1.
                 # Convert permute_dims to list of ints
                 index_to_remove = permute_dims[index]
-                new_view_shape = copy.deepcopy(pred_shape)
+                new_view_shape = list(pred_shape)
                 del new_view_shape[index_to_remove]
                 new_permute_dims = [
                     x - 1 if x > index_to_remove else x for x in permute_dims

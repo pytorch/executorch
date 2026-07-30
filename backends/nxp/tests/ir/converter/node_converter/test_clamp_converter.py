@@ -24,9 +24,6 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
-from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
-)
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
@@ -68,6 +65,35 @@ class AddClampModule(torch.nn.Module):
 
 
 class TestClamp:
+
+    @pytest.mark.parametrize(
+        "min, max",
+        [
+            pytest.param(-1, 2, id="min = -1, max = 2 (Max/Min)"),
+            pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
+        ],
+    )
+    def test__qat(self, mocker, request, min, max, use_qat):
+        input_shape = (2, 7, 2)  # Indivisible by num_macs
+        model = AddClampModule(min, max)
+
+        x_input_spec = ModelInputSpec(input_shape)
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={
+                AddTensor: 1,
+                Clamp: 1,
+            },
+            expected_non_delegated_ops={},
+        )
+
+        lower_run_compare(
+            model=model,
+            input_spec=[x_input_spec],
+            request=request,
+            dlg_model_verifier=graph_verifier,
+        )
+
     @pytest.mark.parametrize(
         "min, max",
         [
@@ -90,12 +116,11 @@ class TestClamp:
             pytest.param(0.0, None, id="min = 0, max = None (Relu)"),
         ],
     )
-    def test_convert_clamp__full_pipeline(self, mocker, min, max, use_qat):
+    def test_convert_clamp__full_pipeline(self, mocker, request, min, max):
         input_shape = (2, 7, 2)  # Indivisible by num_macs
         model = AddClampModule(min, max)
 
         x_input_spec = ModelInputSpec(input_shape)
-        comparator = NumericalStatsOutputComparator()
         graph_verifier = DetailedGraphVerifier(
             mocker,
             expected_delegated_ops={
@@ -109,8 +134,7 @@ class TestClamp:
             model=model,
             input_spec=[x_input_spec],
             dlg_model_verifier=graph_verifier,
-            output_comparator=comparator,
-            use_qat=use_qat,
+            request=request,
         )
 
     @pytest.mark.parametrize(

@@ -2141,14 +2141,18 @@ def get_where_inputs():
     return test_suite
 
 
-@register_test_suite("aten.bitwise_and.Tensor")
-def get_bitwise_and_inputs():
+@register_test_suite(
+    ["aten.bitwise_and.Tensor", "aten.bitwise_or.Tensor", "aten.logical_or.default"]
+)
+def get_bitwise_binary_inputs():
     test_suite = VkTestSuite(
         [
             ((M1, M2), (M1, M2)),
             ((S, S1, S2), (S, S1, S2)),
             ((XS, S, S1, S2), (XS, S, S1, S2)),
             ((1, M1), (1, M1)),
+            ((1, M2), (M1, M2)),
+            ((XS, 1, S1, 1), (1, S, 1, S2)),
         ]
     )
     test_suite.layouts = [
@@ -2160,7 +2164,6 @@ def get_bitwise_and_inputs():
         "utils::kTexture3D",
     ]
     test_suite.dtypes = ["at::kBool"]
-    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 
@@ -2213,4 +2216,37 @@ def get_pow_tensor_scalar_inputs():
         "utils::kChannelsPacked",
     ]
     test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
+@register_test_suite("aten.eq.Scalar")
+def get_eq_scalar_inputs():
+    # Scalars are chosen to fall within the make_seq_tensor range (1..numel),
+    # so each case exercises a genuine mix of equal / not-equal elements rather
+    # than a trivially all-false comparison.
+    test_suite = VkTestSuite(
+        [
+            ((M1,), 5),
+            ((M2, M1), 100),
+            ((S1, M1, M2), 1000),
+            ((S1, S2, S2, M2), 2000),
+            ((S, S1, S2), 50),
+            ((M1, M2), 700),
+            ((S1, S2), 20),
+            # Int tensor (dtype below) vs non-integer float scalar exercises the
+            # mixed int32/float shader variant: comparing in the promoted float
+            # type yields all-false (no integer equals 3.5).
+            ((M1,), 3.5),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kInt", "at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite

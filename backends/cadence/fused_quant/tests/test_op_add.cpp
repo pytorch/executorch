@@ -14,19 +14,15 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::testing::TensorFactory;
+using std::optional;
 
 namespace {
 
 optional<Tensor> none_tensor() {
   return optional<Tensor>();
-}
-
-optional<int64_t> none_axis() {
-  return optional<int64_t>();
 }
 
 } // namespace
@@ -66,19 +62,16 @@ TEST_F(FusedQuantAddTest, AllQuantizedPerTensor) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 
@@ -112,19 +105,16 @@ TEST_F(FusedQuantAddTest, FloatInputsQuantizedOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 
@@ -161,19 +151,16 @@ TEST_F(FusedQuantAddTest, QuantizedInpFloatOther) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 
@@ -210,19 +197,16 @@ TEST_F(FusedQuantAddTest, FloatInpQuantizedOther) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 
@@ -259,19 +243,16 @@ TEST_F(FusedQuantAddTest, QuantizedInputsFloatOutput) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       1.0,
       out);
 
@@ -305,19 +286,16 @@ TEST_F(FusedQuantAddTest, QuantizedInpFloatOtherFloatOutput) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       1.0,
       out);
 
@@ -351,19 +329,16 @@ TEST_F(FusedQuantAddTest, FloatInpQuantizedOtherFloatOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       1.0,
       out);
 
@@ -376,15 +351,16 @@ TEST_F(FusedQuantAddTest, PerChannelInput) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
-  // Shape [2, 2], axis=0 → 2 channels, axis_stride=2
+  // Per-channel along axis 0: full-rank scale shape [2, 1] encodes the block
+  // layout (block_size = [2/2, 2/1] = [1, 2]).
   const std::vector<int> sizes{2, 2};
 
   Tensor inp = tf_int8.make(sizes, {2, 4, 6, 8});
   Tensor other = tf_float.make(sizes, {1.0, 1.0, 1.0, 1.0});
 
   // Per-channel: channel 0 scale=0.5, channel 1 scale=1.0
-  Tensor inp_scale = tf_float.make({2}, {0.5, 1.0});
-  Tensor inp_zp = tf_long.make({2}, {0, 0});
+  Tensor inp_scale = tf_float.make({2, 1}, {0.5, 1.0});
+  Tensor inp_zp = tf_long.make({2, 1}, {0, 0});
   Tensor out_scale = tf_float.make({1}, {0.5});
   Tensor out_zp = tf_long.make({1}, {0});
 
@@ -403,19 +379,16 @@ TEST_F(FusedQuantAddTest, PerChannelInput) {
       ScalarType::Float,
       -128,
       127,
-      optional<int64_t>(0),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 
@@ -428,15 +401,15 @@ TEST_F(FusedQuantAddTest, PerChannelOutput) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
-  // Shape [2, 2], axis=0 → 2 channels
+  // Per-channel along axis 0: full-rank scale shape [2, 1] (block_size [1, 2])
   const std::vector<int> sizes{2, 2};
 
   Tensor inp = tf_float.make(sizes, {2.0, 3.0, 7.0, 9.0});
   Tensor other = tf_float.make(sizes, {0.0, 0.0, 0.0, 0.0});
 
   // Per-channel output: channel 0 scale=0.5, channel 1 scale=1.0
-  Tensor out_scale = tf_float.make({2}, {0.5, 1.0});
-  Tensor out_zp = tf_long.make({2}, {0, 0});
+  Tensor out_scale = tf_float.make({2, 1}, {0.5, 1.0});
+  Tensor out_zp = tf_long.make({2, 1}, {0, 0});
 
   Tensor out = tf_int8.zeros(sizes);
 
@@ -452,19 +425,16 @@ TEST_F(FusedQuantAddTest, PerChannelOutput) {
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       none_tensor(),
       none_tensor(),
       ScalarType::Float,
       0,
       0,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      optional<int64_t>(0),
       1.0,
       out);
 
@@ -504,19 +474,16 @@ TEST_F(FusedQuantAddTest, AlphaScaling) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       2.0,
       out);
 
@@ -559,19 +526,16 @@ TEST_F(FusedQuantAddTest, NonZeroZeroPoint) {
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(other_scale),
       optional<Tensor>(other_zp),
       ScalarType::Float,
       -128,
       127,
-      none_axis(),
       optional<Tensor>(out_scale),
       optional<Tensor>(out_zp),
       ScalarType::Char,
       -128,
       127,
-      none_axis(),
       1.0,
       out);
 

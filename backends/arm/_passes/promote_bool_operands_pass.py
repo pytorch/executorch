@@ -3,9 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# The TOSA BITWISE_AND, BITWISE_OR, and BITWISE_XOR don't handle bool inputs.
-# When a targeted op receives boolean tensors, we promote them to an integer type before
-# invocation and cast the result back to the expected dtype afterwards.
+# Some TOSA ops don't handle bool inputs. When a targeted op receives boolean
+# tensors, we promote them to an integer type before invocation and cast the
+# result back to the expected dtype afterwards.
 
 from typing import Set, Type
 
@@ -23,10 +23,9 @@ class PromoteBoolOperandsPass(ArmOpTargetedPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    # Bool bitwise ops are handled by RewriteBoolBitwiseToLogicalPass. Promoting
+    # them here would hide the bool dtype and prevent that rewrite.
     target_ops = {
-        exir_ops.edge.aten.bitwise_and.Tensor,
-        exir_ops.edge.aten.bitwise_or.Tensor,
-        exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.mul.Tensor,
     }
 
@@ -41,14 +40,9 @@ class PromoteBoolOperandsPass(ArmOpTargetedPass):
         # select the first non-bool dtype, or None if all bool
         promoted_dtype = next((dt for dt in original_dtypes if dt != torch.bool), None)
 
-        # if we don't have a dtype specified by the op, promote to default choice for the op
+        # If all operands are bool, promote mul to int32.
         if promoted_dtype is None:
-            if op == exir_ops.edge.aten.mul.Tensor:
-                # mul as int32
-                promoted_dtype = torch.int32
-            else:
-                # bitwise ops can be int8
-                promoted_dtype = torch.int8
+            promoted_dtype = torch.int32
 
         target_dtypes = []
         for dt in original_dtypes:

@@ -28,12 +28,9 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::Module;
-using executorch::runtime::DeviceAllocator;
 using executorch::runtime::DeviceMemoryBuffer;
 using executorch::runtime::Error;
 using executorch::runtime::register_device_allocator;
-using executorch::runtime::Result;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::MockCudaAllocator;
 

@@ -1,0 +1,160 @@
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# ExecuTorch CMSIS Pack Configuration
+# This file defines build options and compiler defines derived from CMake
+
+# Pack metadata
+pack:
+  vendor: PyTorch
+  name: ExecuTorch
+  description: "ExecuTorch: PyTorch Edge Runtime for embedded systems"
+  url: "https://github.com/pytorch/executorch"
+  license: BSD-3-Clause
+
+# Version is set during pack generation
+version: "1.1.0-rc1"
+
+# Required dependencies
+dependencies:
+  - pack: ARM::CMSIS
+    version: "6.0.0:6.99.99"
+  - pack: ARM::CMSIS-NN
+    version: "7.0.0:7.99.99"
+    optional: true  # Only for CMSIS-NN optimized backend
+  - pack: ARM::ethos-u-core-driver
+    version: "1.0.0:1.99.99"
+    optional: true  # Only for Ethos-U backend
+
+# Compiler defines derived from CMake build configuration
+# These match the flags used in build_stage1.sh and build_stage2_selective.sh
+defines:
+  # Core defines (always required)
+  core:
+    - C10_USING_CUSTOM_GENERATED_MACROS
+    - ET_EVENT_TRACER_ENABLED: 0
+    - EXECUTORCH_ENABLE_LOGGING: 1
+
+  # FlatBuffers configuration
+  flatbuffers:
+    - FLATBUFFERS_MAX_ALIGNMENT: 1024
+    - FLATBUFFERS_LOCALE_INDEPENDENT: 0
+
+  # Memory optimization (reduces binary size)
+  size_optimization:
+    - ET_MIN_LOG_LEVEL: Info
+    - EXECUTORCH_OPTIMIZE_SIZE: 1
+
+  # Ethos-U backend defines
+  ethos_u:
+    - EXECUTORCH_BUILD_ARM_BAREMETAL: 1
+    - ET_USE_ETHOS_U_BACKEND: 1
+
+  # Cortex-M backend defines
+  cortex_m:
+    - EXECUTORCH_BUILD_CORTEX_M: 1
+
+# Compiler flags for different toolchains
+compiler_flags:
+  common:
+    cpp:
+      - "-fno-exceptions"
+      - "-fno-rtti"
+      - "-fno-unwind-tables"
+      - "-fdata-sections"
+      - "-ffunction-sections"
+    c:
+      - "-fdata-sections"
+      - "-ffunction-sections"
+
+  GCC:
+    cpp:
+      - "-std=gnu++17"
+    c:
+      - "-std=gnu11"
+
+  AC6:
+    cpp:
+      - "-std=c++17"
+    c:
+      - "-std=c11"
+    # AC6-specific: No sys/types.h in bare-metal mode
+    defines:
+      - __ARMCC_VERSION
+
+  CLANG:
+    cpp:
+      - "-std=gnu++17"
+    c:
+      - "-std=gnu11"
+
+# Backend configurations
+backends:
+  portable:
+    description: "Portable (reference) implementation for all Cortex-M"
+    default: true
+
+  cortex_m:
+    description: "Cortex-M optimized with CMSIS-NN kernels"
+    requires:
+      - ARM::CMSIS-NN
+    defines:
+      - EXECUTORCH_BUILD_CORTEX_M: 1
+
+  ethos_u:
+    description: "Ethos-U NPU acceleration (U55/U65)"
+    requires:
+      - ARM::ethos-u-core-driver
+    defines:
+      - ET_USE_ETHOS_U_BACKEND: 1
+    variants:
+      - ethos-u55-128
+      - ethos-u55-256
+      - ethos-u65-256
+      - ethos-u65-512
+
+# Source organization for component generation
+# Maps directory patterns to component groups
+source_mapping:
+  runtime:
+    path: "runtime/"
+    component: "Runtime"
+    description: "ExecuTorch core runtime"
+
+  schema:
+    path: "schema/"
+    component: "Runtime"  # Part of core runtime
+
+  kernels_portable:
+    path: "kernels/portable/cpu/"
+    component_prefix: "Operators Portable"
+    # Each op_*.cpp becomes its own component
+    pattern: "op_*.cpp"
+
+  kernels_quantized:
+    path: "kernels/quantized/cpu/"
+    component_prefix: "Operators Quantized"
+    pattern: "op_*.cpp"
+
+  kernels_cortex_m:
+    path: "backends/cortex_m/ops/"
+    component_prefix: "Operators Cortex-M"
+    # Each op_*.cpp ships in its own per-op component, mirroring the
+    # portable / quantized split. Cortex-M ops that route through the
+    # ARM::CMSIS-NN pack get an extra "<require condition='CMSIS-NN'/>"
+    # in their generated condition; the q/dq/softmax pure-CPU ops do
+    # not (set automatically by generate_components.py via include scan).
+    pattern: "op_*.cpp"
+
+  backends_ethos_u:
+    path: "backends/arm/runtime/"
+    # Cortex-M host only. The Cortex-A/Linux host variant
+    # (EthosUBackend_Cortex_A.cpp) is intentionally not exposed in this
+    # pack — generate_components.py filters it out via exclude_patterns
+    # so the Cortex-M backend component does not pull in the Linux TU
+    # (the two define the same platform_* symbols).
+    components:
+      - name: "Backend EthosU"         # Cortex-M host (bare-metal)
+        exclude_patterns: ["VGF", "Cortex_A"]

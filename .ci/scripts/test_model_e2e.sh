@@ -228,7 +228,7 @@ case "$HF_MODEL" in
     AUDIO_FILE=""
     IMAGE_PATH=""
     ;;
-  SocialLocalMobile/gemma-4-31B-it-HQQ-INT4)
+  unsloth/gemma-4-31B-it-GGUF)
     MODEL_NAME="gemma4_31b"
     RUNNER_TARGET="gemma4_31b_runner"
     RUNNER_PATH="gemma4_31b"
@@ -242,7 +242,7 @@ case "$HF_MODEL" in
     ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, SocialLocalMobile/gemma-4-31B-it-HQQ-INT4"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, nvidia/diar_streaming_sortformer_4spk-v2, openai/whisper series (whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}), google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF"
     exit 1
     ;;
 esac
@@ -446,5 +446,106 @@ case "$MODEL_NAME" in
     ;;
 esac
 echo "::endgroup::"
+
+if [ "$DEVICE" = "cuda" ] && [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
+  echo "::group::Run $MODEL_NAME OpenAI serving smoke"
+  pip install -r examples/llm_server/python/requirements.txt "transformers==5.0.0rc1"
+  python -m pip install --no-deps --no-build-isolation --editable . -v
+
+  PORT=$(python - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind(("127.0.0.1", 0))
+    print(s.getsockname()[1])
+PY
+)
+  SERVER_LOG=$(mktemp)
+  WORKER_BIN="cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_worker"
+  python -u -m executorch.examples.models.qwen3_5_moe.serve \
+    --model-path "${MODEL_DIR}/model.pte" \
+    --data-path "${MODEL_DIR}/aoti_cuda_blob.ptd" \
+    --tokenizer-path "${MODEL_DIR}/tokenizer.json" \
+    --hf-tokenizer "${MODEL_DIR}" \
+    --model-id qwen3.5-moe \
+    --max-context 4096 \
+    --max-sessions 2 \
+    --no-think \
+    --worker-bin "$WORKER_BIN" \
+    --host 127.0.0.1 \
+    --port "$PORT" >"$SERVER_LOG" 2>&1 &
+  SERVER_PID=$!
+
+  cleanup_qwen_server() {
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+      kill "$SERVER_PID" 2>/dev/null || true
+      wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    rm -f "$SERVER_LOG"
+  }
+  trap cleanup_qwen_server EXIT
+
+  if ! python - "$PORT" "$SERVER_LOG" <<'PY'
+import json
+import sys
+import time
+import urllib.request
+
+port = sys.argv[1]
+log_path = sys.argv[2]
+base = f"http://127.0.0.1:{port}"
+
+
+def request(path, payload=None):
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base + path, data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+last = None
+for _ in range(180):
+    try:
+        request("/health")
+        break
+    except Exception as e:
+        last = e
+        time.sleep(1)
+else:
+    print(open(log_path, encoding="utf-8", errors="replace").read())
+    raise RuntimeError(f"server did not become healthy: {last}")
+
+models = request("/v1/models")
+ids = {m["id"] for m in models["data"]}
+if "qwen3.5-moe" not in ids:
+    raise AssertionError(f"qwen3.5-moe missing from /v1/models: {ids}")
+
+body = {
+    "model": "qwen3.5-moe",
+    "messages": [{"role": "user", "content": "What is the capital of France?"}],
+    "max_tokens": 32,
+    "temperature": 0,
+}
+resp = request("/v1/chat/completions", body)
+content = resp["choices"][0]["message"].get("content") or ""
+if "Paris" not in content:
+    raise AssertionError(f"expected Paris in serving response, got: {content!r}")
+
+print("Qwen3.5-MoE serving smoke passed")
+PY
+  then
+    echo "Qwen3.5-MoE serving smoke failed; server log:"
+    cat "$SERVER_LOG"
+    exit 1
+  fi
+
+  cleanup_qwen_server
+  trap - EXIT
+  echo "::endgroup::"
+fi
 
 popd

@@ -19,15 +19,9 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using executorch::extension::FlatTensorDataMap;
-using executorch::extension::FlatTensorHeader;
-using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
-using executorch::runtime::TensorLayout;
 using torch::executor::Error;
-using torch::executor::Span;
 using torch::executor::testing::TensorFactory;
 using torch::executor::util::FileDataLoader;
 
@@ -121,7 +115,7 @@ TEST_F(TrainingModuleTest, NonTrainingModuleTest) {
   ASSERT_EQ(res.error(), Error::InvalidArgument);
 }
 
-TEST_F(TrainingModuleTest, SeperateDataTest) {
+TEST_F(TrainingModuleTest, SeparateDataTest) {
   // Load data map.
   // The eager linear model is defined at:
   // //executorch/test/models/linear_model.py

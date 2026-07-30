@@ -21,6 +21,7 @@ Config Zephyr Corstone300 FVP
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone300
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps3_board.uart0.shutdown_on_eot=1 -C ethosu.num_macs=128"
 ```
 
@@ -76,7 +77,7 @@ Config Zephyr Corstone320 FVP
 ```
 export FVP_ROOT=$PWD/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 export ARMFVP_BIN_PATH=${FVP_ROOT}/models/Linux64_GCC-9.3
-export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=${FVP_ROOT}/python/lib:${ARMFVP_BIN_PATH}:${LD_LIBRARY_PATH:-}
 export ARMFVP_EXTRA_FLAGS="-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"
 ```
 

@@ -111,8 +111,10 @@ endif()
 # ../../lib). This lets a C++ application link the ExecuTorch runtime and the
 # common runtime extensions without an ExecuTorch source checkout:
 #
-# find_package(executorch REQUIRED) target_link_libraries(app PRIVATE
-# executorch::runtime executorch::extension_module executorch::extension_tensor)
+# find_package(executorch REQUIRED) if(TARGET executorch::runtime)  # only
+# defined by the Linux C++ SDK wheel target_link_libraries(app PRIVATE
+# executorch::runtime) endif() Installed (not build-tree) consumers set
+# LD_LIBRARY_PATH to the wheel lib dir, matching PyTorch's TorchConfig.cmake.
 #
 # The set is intentionally libtorch-free and excludes CPU operator/kernel
 # libraries; delegates (e.g. TensorRT, CUDA) supply their own compute. If your
@@ -142,7 +144,7 @@ set(_executorch_sdk_libdir "${_executorch_sdk_root}/lib")
 set(EXECUTORCH_SDK_FOUND OFF)
 find_library(
   _executorch_shared_LIBRARY
-  NAMES executorch
+  NAMES executorch libexecutorch.so.1
   PATHS "${_executorch_sdk_libdir}"
   NO_DEFAULT_PATH
 )
@@ -175,6 +177,42 @@ if(_executorch_shared_LIBRARY)
       )
     endif()
   endforeach()
+
+  # Optional standalone CPU kernels library. Shipped separately from
+  # libexecutorch.so so a fully delegated model links only executorch::runtime
+  # and carries no kernel weight; a model with non-delegated ops additionally
+  # links executorch::kernels for a full CPU operator set (optimized + portable
+  # fallback). Defined only when the kernels .so is present. Loaded purely for
+  # its op-registration static initializers, so force it to stay linked.
+  find_library(
+    _executorch_kernels_LIBRARY
+    NAMES executorch_kernels libexecutorch_kernels.so.1
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_kernels_LIBRARY AND NOT TARGET executorch::kernels)
+    add_library(executorch::kernels SHARED IMPORTED)
+    set_target_properties(
+      executorch::kernels
+      PROPERTIES IMPORTED_LOCATION "${_executorch_kernels_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+    )
+    set_property(
+      TARGET executorch::kernels
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+    )
+    if(NOT APPLE AND NOT WIN32)
+      set_property(
+        TARGET executorch::kernels
+        APPEND
+        PROPERTY
+          INTERFACE_LINK_OPTIONS
+          "SHELL:-Wl,--push-state,--no-as-needed,${_executorch_kernels_LIBRARY},--pop-state"
+      )
+    endif()
+  endif()
 
   # CUDA delegate targets. Present only in a CUDA-enabled wheel, so each target
   # is defined only when its shared library is shipped in executorch/lib/. These

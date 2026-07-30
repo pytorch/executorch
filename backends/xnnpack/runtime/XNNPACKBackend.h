@@ -20,6 +20,17 @@ const char weight_cache_option_key[] = "weight_cache_enabled";
 // @lint-ignore CLANGTIDY facebook-hte-CArray
 const char packed_cache_path_option_key[] = "packed_cache_path";
 
+/// EXPERIMENTAL — option name and semantics may change without notice.
+///
+/// Setting this to `true` triggers persisting the packed weight cache to disk
+/// so a subsequent process load can mmap the same file and skip XNNPACK weight
+/// repacking. The on-disk path is configured via
+/// `packed_cache_path_option_key`. The disk write is a one-shot side effect
+/// (the value is not stored): every `true` set fires another save.
+// Must remain a C array for the BackendOptions template overloads.
+// @lint-ignore CLANGTIDY facebook-hte-CArray
+const char save_weight_cache_on_disk_option_key[] = "save_weight_cache_on_disk";
+
 /// Workspace sharing mode. This is a backend option that can be set via the
 /// set_option API to control memory sharing between CALL_DELEGATE instances.
 /// This is useful for reducing memory consumption.

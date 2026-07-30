@@ -6,9 +6,9 @@
 
 """Test ReplaceEdgeOpWithTritonOpPass split-K SDPA kernel selection.
 
-Exports a minimal model containing F.scaled_dot_product_attention through
-the CUDA backend and verifies that the pass routes to split-K for decode
-(L_q=1, large L_kv) and standard SDPA otherwise.
+Exports a minimal model containing F.scaled_dot_product_attention through the
+CUDA backend and verifies that the pass routes to split-K for decode
+(L_q==1, L_kv >= 256) and standard SDPA otherwise.
 """
 
 import logging
@@ -106,25 +106,9 @@ class TestSplitKReplacement(unittest.TestCase):
     def setUp(self):
         _require_cuda(self)
 
-    def test_large_kv_cache_uses_splitk(self):
-        """L_kv=4096 > threshold → split-K selected for decode."""
-        model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=4096).to(
-            torch.bfloat16
-        )
-        args = (
-            torch.zeros(1, 1, 256, dtype=torch.bfloat16),
-            torch.tensor([0], dtype=torch.long),
-        )
-
-        _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
-
-        splitk = [m for m in msgs if "split-K" in m]
-        self.assertEqual(len(splitk), 1, f"Expected 1 split-K selection. Log: {msgs}")
-        self.assertIn("L_kv=4096", splitk[0])
-
-    def test_small_kv_cache_uses_standard(self):
-        """L_kv=512 <= threshold → standard SDPA, no split-K."""
-        model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=512).to(
+    def test_below_threshold_uses_standard(self):
+        """L_kv=128 < threshold (256) -> standard SDPA, no split-K."""
+        model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=128).to(
             torch.bfloat16
         )
         args = (
@@ -143,8 +127,40 @@ class TestSplitKReplacement(unittest.TestCase):
             f"Expected 1 SDPA replaced with standard kernel. Log: {msgs}",
         )
 
+    def test_at_threshold_uses_splitk(self):
+        """L_kv=256 == threshold -> split-K selected (boundary, inclusive)."""
+        model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=256).to(
+            torch.bfloat16
+        )
+        args = (
+            torch.zeros(1, 1, 256, dtype=torch.bfloat16),
+            torch.tensor([0], dtype=torch.long),
+        )
+
+        _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
+
+        splitk = [m for m in msgs if "split-K" in m]
+        self.assertEqual(len(splitk), 1, f"Expected 1 split-K selection. Log: {msgs}")
+        self.assertIn("L_kv=256", splitk[0])
+
+    def test_large_kv_cache_uses_splitk(self):
+        """L_kv=4096 > threshold -> split-K selected for decode."""
+        model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=64, kv_len=4096).to(
+            torch.bfloat16
+        )
+        args = (
+            torch.zeros(1, 1, 256, dtype=torch.bfloat16),
+            torch.tensor([0], dtype=torch.long),
+        )
+
+        _, msgs = _capture_pass_logs(lambda: _export_through_cuda_backend(model, args))
+
+        splitk = [m for m in msgs if "split-K" in m]
+        self.assertEqual(len(splitk), 1, f"Expected 1 split-K selection. Log: {msgs}")
+        self.assertIn("L_kv=4096", splitk[0])
+
     def test_non_pow2_head_dim_uses_standard(self):
-        """Non-power-of-2 head_dim → standard SDPA even with large L_kv."""
+        """Non-power-of-2 head_dim -> standard SDPA even with large L_kv."""
         model = SDPAModule(n_heads=4, n_kv_heads=2, head_dim=96, kv_len=8192).to(
             torch.bfloat16
         )

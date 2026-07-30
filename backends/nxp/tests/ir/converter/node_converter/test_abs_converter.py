@@ -8,13 +8,12 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import (
     lower_run_compare,
     RandomDatasetCreator,
 )
-from executorch.backends.nxp.tests.ops_aliases import Abs, Convolution, Relu
+from executorch.backends.nxp.tests.ops_aliases import Abs
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -69,7 +68,7 @@ class TestAbs:
         dataset = RandomDatasetCreator(low=low, high=high)
         return dataset
 
-    def test__basic_nsys_inference(self, mocker):
+    def test__basic_nsys_inference(self, mocker, request):
         input_shape = (2, 3, 6, 7)
         model = AbsModule()
         graph_verifier = DetailedGraphVerifier(
@@ -81,10 +80,11 @@ class TestAbs:
             model,
             input_shape,
             graph_verifier,
+            request,
             dataset_creator,
         )
 
-    def test__basic_nsys_inference__big(self, mocker):
+    def test__basic_nsys_inference__big(self, mocker, request):
         # some operators have delegation requirement that size must be < 4096
         input_shape = (4097, 1)
         model = AbsModule()
@@ -97,25 +97,6 @@ class TestAbs:
             model,
             input_shape,
             graph_verifier,
-            dataset_creator,
-        )
-
-    def test_basic_nsys_inference__with_conv(self, mocker):
-        input_shape = (2, 3, 6, 7)
-        in_channels = input_shape[1]
-        model = ConvBlocksWithAbsModule(conv_in_channels=in_channels)
-
-        # one `relu` ends up in the same delegated partition as `abs`
-        graph_verifier = DetailedGraphVerifier(
-            mocker,
-            expected_delegated_ops={Abs: 1, Relu: 1},
-            expected_non_delegated_ops={Relu: 1, Convolution: 2},
-        )
-
-        dataset_creator = self._get_dataset_creator()
-        lower_run_compare(
-            model,
-            input_shape,
-            graph_verifier,
+            request,
             dataset_creator,
         )

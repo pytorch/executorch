@@ -98,20 +98,27 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
   return;
 }
 
-// OUT_T is the corresponding C++ type for out.scalar_type(). Only takes float
-// or double.
-template <
-    typename OUT_T,
-    std::enable_if_t<std::is_floating_point<OUT_T>::value, bool> = true>
+// OUT_T is the corresponding C++ type for out.scalar_type().
+template <typename OUT_T>
 bool log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
-  auto input_scalar_type = X.scalar_type();
-  switch (input_scalar_type) {
-    // TODO: support Double as well
-    case ScalarType::Float:
-      log_softmax_kernel<float, OUT_T>(X, dim, out);
-      return true;
-    default:
-      return false; // Unsupported input dtype
+  if constexpr (
+      std::is_same_v<OUT_T, executorch::aten::BFloat16> ||
+      std::is_same_v<OUT_T, executorch::aten::Half>) {
+    // Input dtype equals output dtype (enforced by check_log_softmax_args).
+    // Use if constexpr to avoid instantiating cross-type combinations that
+    // the ATen vectorized functions do not support.
+    log_softmax_kernel<OUT_T, OUT_T>(X, dim, out);
+    return true;
+  } else {
+    auto input_scalar_type = X.scalar_type();
+    switch (input_scalar_type) {
+      // TODO: support Double as well
+      case ScalarType::Float:
+        log_softmax_kernel<float, OUT_T>(X, dim, out);
+        return true;
+      default:
+        return false; // Unsupported input dtype
+    }
   }
 }
 } // namespace
@@ -145,6 +152,18 @@ Tensor& opt_log_softmax_out(
     // TODO: support Double as well
     case ScalarType::Float: {
       bool success = log_softmax_wrapper<float>(self, dim, out);
+      ET_KERNEL_CHECK(context, success, InvalidArgument, out);
+      break;
+    }
+    case ScalarType::BFloat16: {
+      bool success =
+          log_softmax_wrapper<executorch::aten::BFloat16>(self, dim, out);
+      ET_KERNEL_CHECK(context, success, InvalidArgument, out);
+      break;
+    }
+    case ScalarType::Half: {
+      bool success =
+          log_softmax_wrapper<executorch::aten::Half>(self, dim, out);
       ET_KERNEL_CHECK(context, success, InvalidArgument, out);
       break;
     }

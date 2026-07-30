@@ -56,7 +56,7 @@ mkdir zephyr_workspace && cd zephyr_workspace
 python3 -m venv .venv && source .venv/bin/activate
 pip install west "cmake<4.0.0" pyelftools ninja jsonschema
 
-west init --manifest-rev v4.3.0
+west init --manifest-rev v4.4.0
 ```
 
 ### 2. Add ExecuTorch as a module
@@ -77,6 +77,7 @@ west config manifest.project-filter -- '-.*,+zephyr,+executorch,+cmsis,+cmsis_6,
 west update
 rm -rf modules/lib/executorch
 ln -s /path/to/your/executorch modules/lib/executorch
+west packages pip --install
 ```
 
 ### 3. Install ExecuTorch
@@ -91,12 +92,7 @@ cd ../../..
 ### 4. Install Zephyr SDK
 
 ```bash
-wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/zephyr-sdk-0.17.4_linux-x86_64_minimal.tar.xz
-tar xf zephyr-sdk-0.17.4_linux-x86_64_minimal.tar.xz
-wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.4/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz
-tar xf toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz -C zephyr-sdk-0.17.4/
-./zephyr-sdk-0.17.4/setup.sh -c -t arm-zephyr-eabi
-export ZEPHYR_SDK_INSTALL_DIR=$(realpath ./zephyr-sdk-0.17.4)
+west sdk install --gnu-toolchains arm-zephyr-eabi
 ```
 
 ### 5. Install Ethos-U tools (if targeting NPU boards)

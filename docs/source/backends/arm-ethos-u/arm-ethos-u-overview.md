@@ -67,8 +67,7 @@ Args:
 ```python
 def EthosUCompileSpec.dump_intermediate_artifacts_to(self, output_path: str | None):
 ```
-Sets a path for dumping intermediate results during such as tosa and
-pte.
+Set a path for dumping TOSA and PTE intermediate results.
 
 Args:
 - **output_path**: Path to dump intermediate results to.
@@ -89,8 +88,7 @@ Args:
 ```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
-Sets the configuration that controls how the Arm pass pipeline should
-behave. Subclasses may override to tweak defaults for specific targets.
+Set the configuration for the Arm pass pipeline.
 
 Args:
 - **config**: The custom ArmPassPipelineConfig to set.
@@ -122,6 +120,11 @@ contains a complete DeiT-based export and runtime walkthrough. The README shows
 how to run `model_export/export_deit.py`, build the sample firmware, and convert
 test images into C arrays so the workflow described in this guide can be tried
 end to end.
+
+[`examples/arm/mobilesam_prompt_segmentation_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/mobilesam_prompt_segmentation_example_ethos_u)
+contains a complete MobileSAM prompt segmentation workflow for Ethos-U85,
+including fixed-prompt export, PT2E quantization, transformer lowering, debug
+masks and overlays, a bare-metal Corstone-320 runtime app, and FVP execution.
 
 ### Ethos-U memory modes
 

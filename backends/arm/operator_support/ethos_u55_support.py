@@ -125,13 +125,13 @@ class EthosU55DtypeSupport(OperatorSupportBase):
             ifm_dtype = _try_determine_dtype(ifm)
             if ifm_dtype is not None and ifm_dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
-                    node, f"Unsupported input dtype {dtype} (Supports i8, i16)."
+                    node, f"Unsupported input dtype {ifm_dtype} (Supports i8, i16)."
                 )
                 return False
             weight_dtype = _try_determine_dtype(weight)
             if weight_dtype is not None and weight_dtype not in (torch.int8,):
                 self.reporter.report_reject(
-                    node, f"Unsupported weight dtype {dtype} (Supports i8)."
+                    node, f"Unsupported weight dtype {weight_dtype} (Supports i8)."
                 )
                 return False
             if len(node.all_input_nodes) > 2:
@@ -139,7 +139,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 bias_dtype = _try_determine_dtype(bias)
                 if bias_dtype is not None and bias_dtype not in (torch.int32,):
                     self.reporter.report_reject(
-                        node, f"Unsupported bias dtype {dtype} (Supports i32)."
+                        node, f"Unsupported bias dtype {bias_dtype} (Supports i32)."
                     )
                     return False
 

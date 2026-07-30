@@ -15,10 +15,10 @@ namespace impl {
 namespace generic {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 void linear(
     const Tensor& input,

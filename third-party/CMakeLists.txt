@@ -22,6 +22,20 @@ endif()
 # MARK: - flatbuffers
 
 if(WIN32)
+  # On Windows with the Visual Studio generator, unsetting CMAKE_TOOLCHAIN_FILE is
+  # not sufficient to force a host (AMD64) build when cross-compiling for ARM64.
+  # The VS generator propagates the parent's platform (-A ARM64) to child
+  # ExternalProjects automatically.  CMAKE_GENERATOR_PLATFORM overrides it, but
+  # CMake requires CMAKE_GENERATOR to be set explicitly alongside it.  We pass
+  # the parent's generator string verbatim so the child uses the same VS version
+  # but targets x64 (the host) and produces a runnable flatc.exe / flatcc.exe.
+  if(CMAKE_CROSSCOMPILING AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "ARM64|arm64|aarch64")
+    set(_flatbuffers_ep_additional_args
+        CMAKE_GENERATOR "${CMAKE_GENERATOR}"
+        CMAKE_GENERATOR_PLATFORM x64)
+  else()
+    set(_flatbuffers_ep_additional_args)
+  endif()
   set(_executorch_external_project_additional_args)
 else()
   # Always use Make to avoid needing to codesign flatc if the project is using
@@ -29,8 +43,18 @@ else()
   set(_executorch_external_project_additional_args CMAKE_GENERATOR
                                                    "Unix Makefiles"
   )
+  set(_flatbuffers_ep_additional_args)
 endif()
 
+# Allow reusing a prebuilt host flatc instead of building it from source. This is
+# required when cross-compiling with the Ninja generator on Windows: the WIN32
+# branch above only supports the Visual Studio generator (it passes the VS-only
+# CMAKE_GENERATOR_PLATFORM), and the flatbuffers_ep host sub-build otherwise
+# fails under Ninja. Pass -DFLATC_EXECUTABLE=<path to a host flatc(.exe)>.
+if(FLATC_EXECUTABLE)
+  add_executable(flatc IMPORTED GLOBAL)
+  set_target_properties(flatc PROPERTIES IMPORTED_LOCATION "${FLATC_EXECUTABLE}")
+else()
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
@@ -55,11 +79,12 @@ ExternalProject_Add(
     -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=${CMAKE_OSX_DEPLOYMENT_TARGET}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatc
                    ${_executorch_external_project_additional_args}
+                   ${_flatbuffers_ep_additional_args}
 )
 ExternalProject_Get_Property(flatbuffers_ep INSTALL_DIR)
 add_executable(flatc IMPORTED GLOBAL)
 add_dependencies(flatc flatbuffers_ep)
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_HOST_WIN32)
   # flatbuffers does not use CMAKE_BUILD_TYPE. Internally, the build forces
   # Release config, but from CMake's perspective the build type is always Debug.
   set_target_properties(
@@ -69,6 +94,7 @@ else()
   set_target_properties(
     flatc PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatc
   )
+endif()
 endif()
 
 # TODO: re-enable once flatbuffers is added as a subdirectory.
@@ -88,6 +114,14 @@ else()
   set(_flatcc_extra_cmake_args)
 endif()
 
+# Allow reusing a prebuilt host flatcc (see the flatc note above). Needed for the
+# Ninja-on-Windows cross-compile, where the flatcc_ep host sub-build fails. Pass
+# -DFLATCC_EXECUTABLE=<path to a host flatcc(.exe)>. flatcc_cli is only consumed
+# by devtools/etdump, so this imported target is unused when devtools is off.
+if(FLATCC_EXECUTABLE)
+  add_executable(flatcc_cli IMPORTED GLOBAL)
+  set_target_properties(flatcc_cli PROPERTIES IMPORTED_LOCATION "${FLATCC_EXECUTABLE}")
+else()
 # Similar to flatbuffers, we want to build flatcc for the host. See inline
 # comments in the flatbuffers ExternalProject_Add for more details.
 ExternalProject_Add(
@@ -111,12 +145,13 @@ ExternalProject_Add(
     ${_flatcc_extra_cmake_args}
   BUILD_BYPRODUCTS <INSTALL_DIR>/bin/flatcc
                    ${_executorch_external_project_additional_args}
+                   ${_flatbuffers_ep_additional_args}
 )
 file(REMOVE_RECURSE ${PROJECT_SOURCE_DIR}/third-party/flatcc/lib)
 ExternalProject_Get_Property(flatcc_ep INSTALL_DIR)
 add_executable(flatcc_cli IMPORTED GLOBAL)
 add_dependencies(flatcc_cli flatcc_ep)
-if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_HOST_WIN32)
   set_target_properties(
     flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc.exe
   )
@@ -124,6 +159,7 @@ else()
   set_target_properties(
     flatcc_cli PROPERTIES IMPORTED_LOCATION ${INSTALL_DIR}/bin/flatcc
   )
+endif()
 endif()
 
 set(FLATCC_RTONLY
@@ -170,4 +206,4 @@ add_dependencies(flatccrt flatcc_cli)
 #
 # Learn more: https://github.com/pytorch/executorch/pull/2467
 set_property(TARGET flatccrt PROPERTY POSITION_INDEPENDENT_CODE ON)
-install(TARGETS flatccrt DESTINATION ${CMAKE_BINARY_DIR}/lib)
+install(TARGETS flatccrt DESTINATION ${CMAKE_INSTALL_LIBDIR})
