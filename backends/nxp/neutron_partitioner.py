@@ -345,6 +345,8 @@ class NeutronPartitioner(Partitioner):
                                               `edge_program` only contains fake tensors without any data. In this case,
                                               this state dict is used instead (if provided). Notice: It may potentially
                                               contain outdated data,
+        :param preserve_ops: List of aten operators to not decompose during the lowering.
+        :param check_op_support: Optional callable to check if an operator is supported.
         """
         super().__init__()
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
