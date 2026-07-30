@@ -1441,10 +1441,6 @@ if(EXECUTORCH_BUILD_SHARED AND _executorch_kernels)
   target_link_libraries(
     executorch_kernels_shared PRIVATE executorch_shared ${_executorch_kernels}
   )
-  # No EXPORT set: the .so is shipped by setup.py (BuiltSharedLib file copy) and
-  # found via find_library in executorch-wheel-config.cmake, so it must not also
-  # join ExecuTorchTargets (that double-registers the target).
-  install(TARGETS executorch_kernels_shared DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
 install(TARGETS executorch_backends executorch_extensions executorch_kernels
