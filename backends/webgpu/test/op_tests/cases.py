@@ -252,7 +252,7 @@ def _rms_norm_suite() -> WebGPUTestSuite:
 
 @register_op_test("mul")
 def _mul_suite() -> WebGPUTestSuite:
-    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    # Full binary_op-family numeric coverage, including broadcast.
     return WebGPUTestSuite(
         module_factory=lambda: MulModule(),
         cases=[
@@ -277,12 +277,19 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
 
 @register_op_test("minimum")
 def _minimum_suite() -> WebGPUTestSuite:
-    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    # Same-shape and mixed-rank broadcast numeric coverage.
     return WebGPUTestSuite(
         module_factory=lambda: MinimumModule(),
         cases=[
             Case(name="2d", inputs=((M1, M2), (M1, M2))),
             Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-3.0, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 4.0)),
+                ),
+            ),
         ],
     )
 
@@ -413,6 +420,13 @@ def _pow_suite() -> WebGPUTestSuite:
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
                 ),
             ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
         ],
     )
 
@@ -443,6 +457,14 @@ def _floor_divide_suite() -> WebGPUTestSuite:
                 inputs=(
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-8.0, 8.0)),
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.5, 4.0)),
+                ),
+                golden_fn=_floor_div_golden,
+            ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-8.0, 8.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(0.5, 4.0)),
                 ),
                 golden_fn=_floor_div_golden,
             ),

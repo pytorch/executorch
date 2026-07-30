@@ -17,6 +17,10 @@
 #include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_div_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_floor_divide_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_minimum_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_mul_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_pow_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bitwise_not/bitwise_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_tiled_wgsl.h>
@@ -50,7 +54,6 @@
 #include <executorch/backends/webgpu/runtime/ops/extrema/amin_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/fill/fill_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/flip/flip_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/floor_divide/binary_floor_divide_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/fused_ce/fused_ce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/gather/gather_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/gelu/gelu_wgsl.h>
@@ -68,17 +71,14 @@
 #include <executorch/backends/webgpu/runtime/ops/logical_binary/logical_and_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/logical_binary/logical_or_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/max_pool2d/max_pool2d_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/minimum/binary_minimum_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_tiled_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mm/mm_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/mul/binary_mul_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/mul/silu_mul_fused_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/native_group_norm/group_norm_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/native_group_norm/group_norm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/permute/permute_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/pixel_shuffle/pixel_shuffle_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/pow/binary_pow_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/q8ta_add/q8ta_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d/q8ta_conv2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/q8ta_conv2d_dw/q8ta_conv2d_dw_wgsl.h>

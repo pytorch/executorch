@@ -100,23 +100,6 @@ class WgslCodegenTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
             g.render_registry([entry, entry])
 
-    def test_unary_builder_uses_graph_dispatch_descriptor(self) -> None:
-        unary = (g.BACKEND_ROOT / "runtime/ops/unary/UnaryOp.cpp").read_text()
-        self.assertIn("get_webgpu_shader_info(shader_name)", unary)
-        self.assertIn("workgroup_size_x", unary)
-        self.assertIn("graph.create_params_buffer", unary)
-        self.assertIn("graph.add_compute_dispatch", unary)
-        self.assertIn("workgroup_count.x, workgroup_count.y", unary)
-        self.assertIn("workgroup_count_x = wgc.x", unary)
-        self.assertIn("workgroup_count_y = wgc.y", unary)
-        for legacy in (
-            "utils::make_uniform",
-            "utils::make_compute_pipeline",
-            "graph.add_uniform_buffer_bytes",
-            "graph.own_uniform_buffer",
-        ):
-            self.assertNotIn(legacy, unary)
-
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
@@ -230,11 +213,11 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 134)
         self.assertEqual(
             digest.hexdigest(),
-            "6c2b6fa24aca2de0ae395979d15015155afe81b64d51b3fee81368da315ceaf6",
+            "e502196846f0f8100f468e5d9f8f9c006b67e08df54e1e2e667daa2fc50d8844",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "e82cab9afb45a880e3f33da73ff0d000bee8092eccca3ccf5819701bb433d6d7",
+            "492535b396833ad6ebfed29b093057e38f40b1182b5c7d6b3eb2f3577cab024e",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -1071,6 +1054,90 @@ class WgslTemplateEngineTest(unittest.TestCase):
             self.assertEqual(
                 hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
             )
+
+    def test_binary_family_roundtrip_byte_identical(self) -> None:
+        binary_dir = g.BACKEND_ROOT / "runtime/ops/binary_op"
+        template_path = binary_dir / "binary_op.wgsl"
+        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
+        variants = {params["NAME"]: params for params in spec[template_path.stem]}
+        expected = {
+            "binary_div": (
+                0,
+                "e36b560fd623dd5337b9ae57acd8981c9c635b995d6021caf1331c182cd3f0cd",
+            ),
+            "binary_sub": (
+                0,
+                "63209ff70422a21fc340d9aadba0945bc259bba89bdf05db018a6507d01c7ae5",
+            ),
+            "binary_minimum": (
+                1,
+                "929b7ba85936e3652baea9f4e5e7f049d232c7ae7a74814a536b4c2674897972",
+            ),
+            "binary_pow": (
+                1,
+                "a88c161bd3f43d21a72ebd8ca6f8611b6b9b854e3572a8e6b820602091bc464c",
+            ),
+            "binary_floor_divide": (
+                1,
+                "baf71d277da79389315a6b96b439e7f0a55842e8288283f2af121f84536b3af3",
+            ),
+            "binary_mul": (
+                1,
+                "d248c0f1856b57115a5001a47f4936caa564dd3b787c02ceba504a13ab987812",
+            ),
+        }
+        self.assertEqual(set(variants), set(expected))
+        template = template_path.read_text()
+        entries = {entry.name: entry for entry in g.registry_entries()}
+
+        for name, (inline, expected_hash) in expected.items():
+            params = variants[name]
+            self.assertEqual(params["INLINE"], inline)
+            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
+            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
+
+            header = (binary_dir / f"{name}_wgsl.h").read_text()
+            literal = header.split('R"(', 1)[1].split(')";', 1)[0]
+            self.assertEqual(literal, "\n" + expanded)
+            self.assertEqual(g.embedded_sha256(header), expected_hash)
+            self.assertEqual(g.parse_workgroup_size(expanded), (64, 1, 1))
+            self.assertIn(f"k{g.symbol_base(name)}WGSL", header)
+            self.assertEqual(
+                entries[name].include,
+                f"runtime/ops/binary_op/{name}_wgsl.h",
+            )
+
+    def test_unary_template_roundtrip_byte_identical(self) -> None:
+        unary_dir = g.BACKEND_ROOT / "runtime/ops/unary"
+        template_path = unary_dir / "unary.wgsl"
+        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
+        variants = {params["NAME"]: params for params in spec[template_path.stem]}
+        expected = {
+            "abs": "39d3c163fdf6a92286828f4b3217e00294e3ca5634a878ed5fd34e3b1cdf0a27",
+            "cos": "9df78873e5fae98d347c26db2a02b047ea3d5d2c93f0761cb9ac6995f9a71ab2",
+            "exp": "3171399bc36acf9c1cb2a03c2a31038318203c4c63ab03c4881df7a660346020",
+            "hardswish": "c874a15ef6cdaec71187296016cc2a1515f5e7c889b97dfa8fd4b278e6e2c3d5",
+            "neg": "8851b9f42d14153f6f04484fee2f8bf67bda26dea892ff48768e09e6ad49cee1",
+            "round": "8f3e0edbeb81aa50f35e691c78554e8057fa8d78fe8a86454f4f42e5e8871452",
+            "rsqrt": "108765d5a23b87473f34651875d08abf2a5fa8980bd92fc8cbe3617295097747",
+            "sin": "e5762804773659d348fddddcef4935807ae6fe7d92c92eb17a2f44aae8f2c5b9",
+            "sqrt": "008534ae365969f5c180b42e8d6d0b131df78f181e5435abbcafc3ffb8be8aac",
+            "tanh": "5bd7eb1c6411940d84a9b311884f35b39f15b82103b14bab02902290ed6b0339",
+        }
+        self.assertEqual(set(variants), set(expected))
+        template = template_path.read_text()
+        entries = {entry.name: entry for entry in g.registry_entries()}
+        for name, expected_hash in expected.items():
+            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **variants[name]})
+            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
+            header = (unary_dir / f"{name}_wgsl.h").read_text()
+            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
+            self.assertEqual(body, expanded)
+            self.assertEqual(g.embedded_sha256(header), expected_hash)
+            self.assertEqual(g.parse_workgroup_size(body), (256, 1, 1))
+            self.assertEqual(entries[name].include, f"runtime/ops/unary/{name}_wgsl.h")
+            self.assertEqual(entries[name].symbol, g.symbol_base(name))
+        self.assertTrue({"clamp", "pow_scalar"}.isdisjoint(variants))
 
     def test_rms_norm_half_variant_is_type_correct(self) -> None:
         # A DTYPE=half expansion must emit compilable WGSL: `enable f16;`, an f32
