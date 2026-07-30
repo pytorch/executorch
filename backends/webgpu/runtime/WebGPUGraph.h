@@ -667,10 +667,10 @@ class WebGPUGraph {
     uint32_t K = 0, K_packed = 0, group_size = 0, num_groups = 0;
     uint32_t padded_N_q = 0, padded_N_k = 0, padded_N_v = 0;
     unsigned op_idx[3] = {0, 0, 0}; // the 3 q/k/v linear op-chain indices
-    size_t sep_dispatch[3] = {
-        0,
-        0,
-        0}; // their dispatch indices (filled in build())
+    utils::DispatchRange sep_dispatch[3] = {
+        {0, 0},
+        {0, 0},
+        {0, 0}}; // each linear's complete route range (filled in build())
     size_t fused_dispatch = 0; // the fused GEMM dispatch index
     WGPUBuffer fused_params =
         nullptr; // the fused params UBO (rewritten by the hook)
