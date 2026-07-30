@@ -533,6 +533,10 @@ class WebGPUGraph {
   }
 
  private:
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  void record_active_route(const std::string& kernel_name);
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
   WebGPUGraphConfig config_;
@@ -654,5 +658,10 @@ class WebGPUGraph {
 
   size_t uniform_buffer_bytes_ = 0;
 };
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+extern uint32_t g_last_route_mask;
+extern uint32_t g_last_route_conflict_count;
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
 } // namespace executorch::backends::webgpu
