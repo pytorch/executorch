@@ -290,6 +290,14 @@ if(NOT _cuda_is_msvc_toolchain AND EXECUTORCH_BUILD_SHARED)
     PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH
                                              "$ORIGIN:$ORIGIN/../backends/cuda"
   )
+  # Force-load for consumers of the EXPORTED target (from-source installs via
+  # ExecuTorchTargets), matching how QNN ships its backend. This library only
+  # has load-time registration side effects and no referenced symbols, so under
+  # an --as-needed-default toolchain a consumer linking the bare target would
+  # otherwise drop it and CudaBackend would never register. The prebuilt
+  # wheel-config imported target carries an equivalent --no-as-needed anchor;
+  # this covers the source-export path.
+  executorch_target_link_options_shared_lib(executorch_cuda_backend)
   install(
     TARGETS executorch_cuda_backend
     EXPORT ExecuTorchTargets

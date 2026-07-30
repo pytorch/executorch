@@ -208,6 +208,19 @@ if(_executorch_shared_LIBRARY)
                    INTERFACE_COMPILE_FEATURES cxx_std_17
                    INTERFACE_LINK_LIBRARIES CUDA::cudart
       )
+    else()
+      # The CUDA delegate libraries are shipped in this wheel, but no CUDA
+      # development toolkit was found, so the executorch::extension_cuda /
+      # executorch::cuda_backend targets are intentionally not defined. Warn so
+      # a consumer that expected them gets a clear reason instead of an opaque
+      # "unknown target executorch::cuda_backend" error later.
+      message(
+        WARNING
+          "ExecuTorch: the CUDA delegate libraries are present in this wheel "
+          "(${_executorch_extension_cuda_LIBRARY}), but find_package(CUDAToolkit) "
+          "failed, so the executorch::extension_cuda and executorch::cuda_backend "
+          "targets are NOT defined. Install the CUDA toolkit to use them."
+      )
     endif()
   endif()
 
