@@ -115,6 +115,18 @@ test_pytest_models_tosa() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_pytest_models_tosa_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest models for TOSA"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k tosa -m xlarge
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 test_run_tosa() {
     echo "${TEST_SUITE_NAME}: Test TOSA delegate examples with run.sh"
 
