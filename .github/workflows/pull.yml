@@ -139,6 +139,39 @@ jobs:
         # shipped libexecutorch.so via find_package(executorch).
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_cpp_sdk_wheel.sh
 
+  test-cpp-sdk-wheel-cuda-linux:
+    name: test-cpp-sdk-wheel-cuda-linux
+    needs: changed-files
+    if: ${{ contains(needs.changed-files.outputs.changed-files, 'backends/cuda') || contains(needs.changed-files.outputs.changed-files, 'setup.py') || contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_cpp_sdk_wheel.sh') || contains(needs.changed-files.outputs.changed-files, 'tools/cmake/executorch-wheel-config.cmake') || contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Build a CUDA wheel and exercise the real libexecutorch_cuda_backend.so.
+        # EXPECT_CUDA=1 fails the job if the delegate .so did not ship (so a
+        # regression cannot stay green on this GPU runner). The .so has a hard
+        # DT_NEEDED on the CUDA runtime libraries, so expose the system toolkit.
+        export EXPECT_CUDA=1
+        export SDK_WHEEL_CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
+        export TORCH_INDEX_URL="https://download.pytorch.org/whl/cu126"
+        export LD_LIBRARY_PATH="/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_cpp_sdk_wheel.sh
+
   test-models-linux-basic:
     name: test-models-linux-basic
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main

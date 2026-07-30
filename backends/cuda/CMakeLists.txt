@@ -261,3 +261,75 @@ if(BUILD_TESTING)
   )
   target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
 endif()
+
+# Loadable CUDA backend shared library for the C++ SDK / pip wheel.
+#
+# aoti_cuda_backend above is a static archive whose static initializer registers
+# the "CudaBackend". Today that archive is only force-linked into
+# _portable_lib.so for Python. To let a standalone C++ program (or a coalesced
+# TensorRT+CUDA .pte) load the CUDA delegate the same way QNN ships
+# libqnn_executorch_backend.so, wrap it in a shared library that whole-archives
+# aoti_cuda_backend so the registration constructor is retained and runs when
+# the .so is loaded. The backend resolves executorch runtime / extension_cuda
+# symbols from the co-shipped libexecutorch.so and libextension_cuda.so at load
+# time, so this stays libtorch-free.
+#
+# Requires EXECUTORCH_BUILD_SHARED: this target links the shared runtime
+# (executorch_shared -> libexecutorch.so), which only exists in a shared build.
+# Gating here (not just in setup.py) keeps ordinary CUDA source/editable builds
+# with the default EXECUTORCH_BUILD_SHARED=OFF working. Not built on MSVC: the
+# wheel C++ SDK is Linux only.
+if(NOT _cuda_is_msvc_toolchain AND EXECUTORCH_BUILD_SHARED)
+  add_library(
+    executorch_cuda_backend SHARED runtime/executorch_cuda_backend_lib.cpp
+  )
+  # All dependencies are PRIVATE: this wrapper exists only to bundle the
+  # whole-archived static backend into one loadable .so. aoti_cuda_backend
+  # already carries a whole-archive INTERFACE link option
+  # (executorch_target_link_options_shared_lib above), so linking it plainly
+  # force-loads its "CudaBackend" registration into THIS .so once. Keeping it
+  # PRIVATE means the static archive is not re-exported to consumers of
+  # executorch_cuda_backend: otherwise a consumer would link the archive again
+  # and run the registration a second time, hitting the duplicate-registration
+  # ET_CHECK. Linking executorch_shared (not static executorch_core) makes the
+  # runtime symbols resolve from the one process-wide libexecutorch.so at load
+  # (DT_NEEDED) rather than embedding a second registry.
+  target_link_libraries(
+    executorch_cuda_backend PRIVATE aoti_cuda_backend executorch_shared
+                                    extension_cuda
+  )
+  # Runtime search path for the SHIPPED library. In the wheel this .so lives in
+  # executorch/lib/ alongside libexecutorch.so and libextension_cuda.so
+  # ($ORIGIN), while its DT_NEEDED libaoti_cuda_shims.so is shipped in
+  # executorch/backends/cuda/ ($ORIGIN/../backends/cuda). CUDA runtime libraries
+  # (libcudart, libcurand) are expected from the environment (system CUDA or the
+  # torch CUDA wheel), so no absolute toolkit path is baked in.
+  #
+  # BUILD_WITH_INSTALL_RPATH makes the built artifact use INSTALL_RPATH directly
+  # and suppresses CMake's automatic absolute build-tree RPATH entries. This is
+  # required because the wheel packages the build-tree .so as-is (it does not
+  # run cmake --install), so without this the shipped .so would carry absolute
+  # /.../pip-out/... paths and fail to relocate to a user machine.
+  set_target_properties(
+    executorch_cuda_backend
+    PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH
+                                             "$ORIGIN:$ORIGIN/../backends/cuda"
+  )
+  # Force-load for consumers of the EXPORTED target. This library has only
+  # load-time registration side effects and no referenced symbols, so under an
+  # --as-needed toolchain it would be dropped and CudaBackend never register.
+  # --whole-archive is a no-op on a .so, so anchor with --no-as-needed like the
+  # wheel-config imported target does.
+  if(NOT APPLE AND NOT WIN32)
+    target_link_options(
+      executorch_cuda_backend
+      INTERFACE
+      "SHELL:LINKER:--push-state,--no-as-needed       $<TARGET_FILE:executorch_cuda_backend> LINKER:--pop-state"
+    )
+  endif()
+  install(
+    TARGETS executorch_cuda_backend
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
+endif()
