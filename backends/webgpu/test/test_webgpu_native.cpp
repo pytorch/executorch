@@ -28,6 +28,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -1462,15 +1463,137 @@ void test_sdpa_incache_decode(
   }
 }
 
-// S1 SymInt round-trip: build a graph directly from a dynamic-input_pos SDPA
-// blob; confirm input_pos deserializes as a live SymInt and set/read
-// round-trips.
+void exercise_symint_host_inputs(
+    WebGPUGraph& graph,
+    int symint_id,
+    int input_tensor_id) {
+  const auto& input_ids = graph.input_ids();
+  std::vector<InputData> inputs(input_ids.size());
+  int64_t host_value = 5;
+  bool found = false;
+  for (size_t i = 0; i < input_ids.size(); i++) {
+    if (input_ids[i] == input_tensor_id) {
+      inputs[i] = {&host_value, sizeof(host_value), true};
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found) << "select_as_symint source is not a graph input";
+
+  const auto update_from_host = [&](int64_t value) {
+    host_value = value;
+    graph.update_symints_from_inputs(inputs);
+    return graph.read_symint(symint_id);
+  };
+  EXPECT_EQ(update_from_host(5), 5);
+  EXPECT_EQ(
+      update_from_host(std::numeric_limits<int32_t>::min()),
+      std::numeric_limits<int32_t>::min());
+  EXPECT_EQ(
+      update_from_host(std::numeric_limits<int32_t>::max()),
+      std::numeric_limits<int32_t>::max());
+
+  const auto expect_out_of_range = [&](int64_t value) {
+    ASSERT_EQ(update_from_host(17), 17);
+    host_value = value;
+    try {
+      graph.update_symints_from_inputs(inputs);
+      ADD_FAILURE() << "accepted out-of-range select_as_symint value " << value;
+    } catch (const std::runtime_error& error) {
+      EXPECT_STREQ(
+          error.what(),
+          "select_as_symint: selected value is outside int32 range");
+    }
+    EXPECT_EQ(graph.read_symint(symint_id), 17)
+        << "rejected value changed the live SymInt";
+  };
+  expect_out_of_range(
+      int64_t{std::numeric_limits<int32_t>::min()} - int64_t{1});
+  expect_out_of_range(
+      int64_t{std::numeric_limits<int32_t>::max()} + int64_t{1});
+  expect_out_of_range(INT64_C(1) << 32);
+}
+
+void test_symint_input_narrowing() {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+  const std::vector<uint32_t> dims = {1u};
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::INT32,
+          &dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::SymInt, vk::CreateSymInt(fbb, 0).Union()));
+  const std::vector<int32_t> args = {0, 1, 2, 3};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(vk::CreateOperatorCallDirect(
+      fbb, 0, "et_vk.select_as_symint.default", &args));
+  const std::vector<uint32_t> input_ids = {0};
+  const std::vector<uint32_t> output_ids = {0};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  ASSERT_NO_THROW(graph.build(fbb.GetBufferPointer(), nullptr, nullptr));
+  ASSERT_EQ(graph.symint_sources().size(), 1u);
+  const auto& source = graph.symint_sources().front();
+  exercise_symint_host_inputs(graph, source.symint_id, source.input_tensor_id);
+}
+
+struct DelegateBlobView {
+  size_t base_offset;
+  WebGPUDelegateHeader header;
+};
+
+std::optional<DelegateBlobView> find_delegate_blob(
+    const std::vector<uint8_t>& blob) {
+  constexpr size_t kHeaderSize = 30;
+  constexpr size_t kMagicOffset = 4;
+  constexpr char kMagic[] = {'V', 'H', '0', '0'};
+  if (blob.size() < kHeaderSize) {
+    return std::nullopt;
+  }
+
+  for (size_t base_offset = 0; base_offset <= blob.size() - kHeaderSize;
+       base_offset++) {
+    const uint8_t* base = blob.data() + base_offset;
+    if (std::memcmp(base + kMagicOffset, kMagic, sizeof(kMagic)) != 0) {
+      continue;
+    }
+    auto header = WebGPUDelegateHeader::parse(base);
+    if (!header.ok()) {
+      continue;
+    }
+
+    const uint64_t available = blob.size() - base_offset;
+    const auto range_is_in_blob = [available](uint64_t offset, uint64_t size) {
+      return offset <= available && size <= available - offset;
+    };
+    if (!range_is_in_blob(header->flatbuffer_offset, header->flatbuffer_size) ||
+        !range_is_in_blob(header->bytes_offset, header->bytes_size)) {
+      continue;
+    }
+    return DelegateBlobView{base_offset, *header};
+  }
+  return std::nullopt;
+}
+
+// S1 SymInt round-trip: confirm a dynamic input_pos stays live.
 void test_symint_roundtrip(const std::string& blob_path) {
   printf("\n--- Test: symint round-trip (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
-  if (!f) {
-    GTEST_SKIP() << blob_path << " not present";
-  }
+  ASSERT_NE(f, nullptr) << blob_path << " not present";
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
@@ -1479,13 +1602,16 @@ void test_symint_roundtrip(const std::string& blob_path) {
   std::fclose(f);
   ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
 
-  auto header = WebGPUDelegateHeader::parse(blob.data());
-  ASSERT_TRUE(header.ok()) << "delegate header parse";
-  const uint8_t* base = blob.data();
+  const auto delegate = find_delegate_blob(blob);
+  ASSERT_TRUE(delegate.has_value())
+      << "no complete VH00 delegate blob found in " << blob_path;
+  const uint8_t* base = blob.data() + delegate->base_offset;
   WebGPUGraph graph;
   try {
     graph.build(
-        base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
+        base + delegate->header.flatbuffer_offset,
+        base + delegate->header.bytes_offset,
+        nullptr);
   } catch (const std::exception& e) {
     FAIL() << "graph build: " << e.what();
   }
@@ -1508,22 +1634,10 @@ void test_symint_roundtrip(const std::string& blob_path) {
   ASSERT_EQ(graph.read_symint(sid), 7)
       << "set/read round-trip (got " << graph.read_symint(sid) << ")";
 
-  // Execute-read: feed a fake input_pos=5 via the recorded select_as_symint
-  // source and confirm update_symints_from_inputs populates the SymInt.
   const auto& srcs = graph.symint_sources();
   ASSERT_FALSE(srcs.empty()) << "no select_as_symint source recorded";
-  const auto& in_ids = graph.input_ids();
-  std::vector<InputData> fake_inputs(in_ids.size());
-  int64_t fake_pos = 5;
-  for (size_t i = 0; i < in_ids.size(); i++) {
-    if (in_ids[i] == srcs[0].input_tensor_id) {
-      fake_inputs[i] = {&fake_pos, sizeof(int64_t), true};
-    }
-  }
-  graph.update_symints_from_inputs(fake_inputs);
-  ASSERT_EQ(graph.read_symint(srcs[0].symint_id), 5)
-      << "execute-read (got " << graph.read_symint(srcs[0].symint_id)
-      << ", want 5)";
+  exercise_symint_host_inputs(
+      graph, srcs[0].symint_id, srcs[0].input_tensor_id);
 
   printf(
       "PASS: symint round-trip (SymInt %d: deserialize, live buffer, "
@@ -1537,9 +1651,7 @@ void test_symint_roundtrip(const std::string& blob_path) {
 void test_resize_hook(const std::string& blob_path) {
   printf("\n--- Test: resize-hook dirty-gating (%s) ---\n", blob_path.c_str());
   FILE* f = std::fopen(blob_path.c_str(), "rb");
-  if (!f) {
-    GTEST_SKIP() << blob_path << " not present";
-  }
+  ASSERT_NE(f, nullptr) << blob_path << " not present";
   std::fseek(f, 0, SEEK_END);
   long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
@@ -1547,13 +1659,16 @@ void test_resize_hook(const std::string& blob_path) {
   size_t rd = std::fread(blob.data(), 1, blob.size(), f);
   std::fclose(f);
   ASSERT_EQ(rd, blob.size()) << "short read of " << blob_path;
-  auto header = WebGPUDelegateHeader::parse(blob.data());
-  ASSERT_TRUE(header.ok()) << "delegate header parse";
-  const uint8_t* base = blob.data();
+  const auto delegate = find_delegate_blob(blob);
+  ASSERT_TRUE(delegate.has_value())
+      << "no complete VH00 delegate blob found in " << blob_path;
+  const uint8_t* base = blob.data() + delegate->base_offset;
   WebGPUGraph graph;
   try {
     graph.build(
-        base + header->flatbuffer_offset, base + header->bytes_offset, nullptr);
+        base + delegate->header.flatbuffer_offset,
+        base + delegate->header.bytes_offset,
+        nullptr);
   } catch (const std::exception& e) {
     FAIL() << "graph build: " << e.what();
   }
@@ -2157,7 +2272,8 @@ TEST(WebGPUNative, SdpaAllFamiliesRanWhenDirSet) {
 
 TEST(WebGPUNative, SymintRoundtrip) {
   if (g_symint_blob.empty()) {
-    GTEST_SKIP() << "WEBGPU_TEST_SYMINT_BLOB not set";
+    test_symint_input_narrowing();
+    return;
   }
   test_symint_roundtrip(g_symint_blob);
 }
