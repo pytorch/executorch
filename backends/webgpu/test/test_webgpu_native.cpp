@@ -1719,8 +1719,9 @@ static bool test_slice_double_start_case(double start_d, int out_len) {
   outputs[0] = {out.data(), out.size() * sizeof(float)};
   try {
     graph.copy_inputs(inputs);
-    graph.execute();
-    graph.copy_outputs(outputs);
+    const WebGPUExecutionPlan plan = graph.make_execution_plan({});
+    graph.execute(plan);
+    graph.copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
     printf("FAIL: slice execute threw: %s\n", e.what());
     return false;
