@@ -1420,6 +1420,33 @@ else()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
 
+# Standalone CPU kernels library for the pip C++ SDK, shipped separately from
+# libexecutorch.so so a fully delegated model links no kernels (mirrors iOS
+# kernels_optimized). PRIVATE executorch_shared so runtime symbols resolve from
+# the one libexecutorch.so at load rather than embedding a second registry.
+if(EXECUTORCH_BUILD_SHARED AND _executorch_kernels)
+  executorch_add_shared_library(executorch_kernels_shared)
+  set_target_properties(
+    executorch_kernels_shared
+    PROPERTIES OUTPUT_NAME executorch_kernels
+               ARCHIVE_OUTPUT_NAME executorch_kernels_shared
+               EXPORT_NAME executorch-kernels-shared
+  )
+  target_include_directories(
+    executorch_kernels_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_definitions(
+    executorch_kernels_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Link the shared threadpool first so its exported get_threadpool()/
+  # parallel_for satisfy the kernels' references, and the static
+  # extension_threadpool archive is not pulled in (which would embed a second
+  # singleton pool). executorch_shared provides the runtime core symbols.
+  target_link_libraries(
+    executorch_kernels_shared PRIVATE executorch_shared ${_executorch_kernels}
+  )
+endif()
+
 install(TARGETS executorch_backends executorch_extensions executorch_kernels
         EXPORT ExecuTorchTargets
 )

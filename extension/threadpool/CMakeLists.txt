@@ -30,10 +30,31 @@ else()
   set(_threadpool_size_flag "EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES")
 endif()
 
-add_library(
-  extension_threadpool threadpool.cpp threadpool_guard.cpp thread_parallel.cpp
-                       cpuinfo_utils.cpp
-)
+# get_threadpool() is a process-wide singleton, so in a shared (pip C++ SDK)
+# build it must live in exactly one shared object that every consumer (the
+# kernels lib, XNNPACK and other backends, _portable_lib) links dynamically.
+# Otherwise each consumer that statically links extension_threadpool embeds its
+# own pool. Build it SHARED for EXECUTORCH_BUILD_SHARED and keep it STATIC
+# everywhere else (iOS/Android/embedded are unaffected). Mirrors iOS's
+# standalone threadpool framework. cpuinfo and pthreadpool are static and
+# bundled in; executorch_core resolves from libexecutorch.so at load.
+if(EXECUTORCH_BUILD_SHARED)
+  add_library(
+    extension_threadpool SHARED threadpool.cpp threadpool_guard.cpp
+                                thread_parallel.cpp cpuinfo_utils.cpp
+  )
+  set_target_properties(
+    extension_threadpool
+    PROPERTIES OUTPUT_NAME executorch_threadpool
+               VERSION "${PROJECT_VERSION}"
+               SOVERSION "${PROJECT_VERSION_MAJOR}"
+  )
+else()
+  add_library(
+    extension_threadpool threadpool.cpp threadpool_guard.cpp
+                         thread_parallel.cpp cpuinfo_utils.cpp
+  )
+endif()
 target_link_libraries(
   extension_threadpool PUBLIC executorch_core cpuinfo pthreadpool
 )
