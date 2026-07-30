@@ -127,6 +127,9 @@ struct CacheConfig {
   std::vector<LayerConfig> layers;
   int initial_capacity = 512;
   std::optional<int> max_write;
+  // ET ScalarType storage precision; a backend that stores K/V may require it
+  // (MLX raises if unset).
+  std::optional<int> kv_dtype;
 };
 
 } // namespace cache

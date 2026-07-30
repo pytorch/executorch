@@ -153,6 +153,17 @@ table SdpaNode {
     causal: bool = false;
 }
 
+table UpdateAndAttendNode {
+    q: Tid (required);
+    k: Tid (required);
+    v: Tid (required);
+    position: Tid (required);
+    out: Tid (required);
+    layer_id: int32;
+    scale: float;
+    out_dtype: int8 = null;  // ET ScalarType; null = keep SDPA's native output
+}
+
 table AddNode {
     a: Tid (required);
     b: Tid (required);
@@ -1170,7 +1181,8 @@ union OpNode {
     BitwiseOrNode,
     BitwiseXorNode,
     IfNode,
-    RandomBitsNode
+    RandomBitsNode,
+    UpdateAndAttendNode
     // BC: Add new op nodes here (append only)
 }
 

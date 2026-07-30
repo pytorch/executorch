@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "MLXCacheImpl.h"
 #include "MLXExecutor.h"
 
 #include <mlx/array.h>
@@ -290,6 +291,50 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
 
   array out = fast::scaled_dot_product_attention(
       Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_update_and_attend(
+    const UpdateAndAttendNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  if (!st.cache) {
+    throw std::runtime_error("update_and_attend: no cache installed");
+  }
+  // The cache does the KV write + read and declares the mask; the handler owns
+  // the query side (q, scale) and calls SDPA.
+  const array& q = st.const_tensor_ref(n.q);
+  // The run's start is position[0]. Read it host-side here -- a tiny
+  // device->host sync -- so the cache stays pure graph + integer bookkeeping.
+  // If position later arrives as a host-side constant, this is the single spot
+  // to change.
+  array pos = astype(st.const_tensor_ref(n.position), int32, s);
+  eval(pos);
+  const int position = pos.data<int32_t>()[0];
+  AttendSpec spec = st.cache->update_and_fetch(
+      n.layer_id,
+      position,
+      st.const_tensor_ref(n.k),
+      st.const_tensor_ref(n.v),
+      s);
+  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
+  // storage precision may differ from the compute dtype).
+  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
+  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
+  std::string mask_mode = spec.kind == AttendSpec::Mask::Causal ? "causal" : "";
+  array out = fast::scaled_dot_product_attention(
+      q,
+      K,
+      V,
+      static_cast<float>(n.scale),
+      mask_mode,
+      spec.mask,
+      std::nullopt,
+      s);
+  // Honor the op's output-dtype contract (unset -> SDPA's native output).
+  if (n.out_dtype) {
+    out = astype(out, resolve_dtype(*n.out_dtype), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -1958,6 +2003,10 @@ class Interpreter {
         break;
       case OpCode::SDPA:
         ops::exec_sdpa(std::get<SdpaNode>(instr.node), st, s);
+        break;
+      case OpCode::UPDATE_AND_ATTEND:
+        ops::exec_update_and_attend(
+            std::get<UpdateAndAttendNode>(instr.node), st, s);
         break;
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);
