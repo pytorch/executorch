@@ -11,29 +11,55 @@ The Neutron delegate supports the following quantization schemes:
     - Following operators are supported at this moment: 
       - `aten.abs.default`
       - `aten.adaptive_avg_pool2d.default`
-      - `aten.addmm.default`
       - `aten.add.Tensor`
+      - `aten.addmm.default`
+      - `aten.amax.default`
+      - `aten.amin.default`
+      - `aten.avg_pool1d.default`
       - `aten.avg_pool2d.default`
+      - `aten.batch_norm.default`
+      - `aten.bmm.default`
       - `aten.cat.default`
-      - `aten.conv1d.default`
+      - `aten.clamp.default`
       - `aten.conv2d.default`
+      - `aten.conv2d.padding`
+      - `aten.conv_transpose2d.input`
       - `aten.dropout.default`
+      - `aten.exp.default`
       - `aten.flatten.using_ints`
       - `aten.hardtanh.default`
       - `aten.hardtanh_.default`
+      - `aten.leaky_relu.default` and `aten.leaky_relu_.default`
       - `aten.linear.default`
+      - `aten.log.default`
+      - `aten.maximum.default`
+      - `aten.max_pool1d.default`
       - `aten.max_pool2d.default`
       - `aten.mean.dim`
+      - `aten.minimum.default`
+      - `aten.mm.default`
       - `aten.mul.Tensor`
+      - `aten.neg.default`
       - `aten.pad.default`
       - `aten.permute.default`
+      - `aten.prelu.default`
       - `aten.relu.default` and `aten.relu_.default`
       - `aten.reshape.default`
-      - `aten.view.default`
-      - `aten.softmax.int`
-      - `aten.tanh.default`,  `aten.tanh_.default`
       - `aten.sigmoid.default`
-      - `aten.slice_copy.Tensor`
+      - `aten.slice.Tensor`
+      - `aten.softmax.int`
+      - `aten.squeeze.default`
+      - `aten.squeeze.dim`
+      - `aten.squeeze.dims`
+      - `aten.sub.Tensor`
+      - `aten.sum.default`
+      - `aten.sum.dim_IntList`
+      - `aten.tanh.default` and `aten.tanh_.default`
+      - `aten.transpose.int`
+      - `aten.unsqueeze.default`
+      - `aten.upsample_bilinear2d.vec`
+      - `aten.upsample_nearest2d.vec`
+      - `aten.view.default`
 
 ### Static 8-bit Quantization Using the PT2E Flow
 
