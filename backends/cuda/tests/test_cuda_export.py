@@ -8,10 +8,7 @@ import unittest
 from typing import Tuple
 
 import torch
-from executorch.backends.cuda.cuda_backend import (
-    CudaBackend,
-    _compile_time_cpu_clones,
-)
+from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones, CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
