@@ -229,6 +229,11 @@ def test_llama_tosa_INT():
         pipeline.run()
 
 
+@pytest.mark.xfail(
+    reason="index_put into a preserved fp32 mutable buffer (torchao pytorch/ao#4466) is "
+    "not delegatable by the INT backend, so the KV-cache round-trip forms a partition "
+    "dependency cycle. Same root cause as the xfailed static-cache tests: MLETORCH-1971."
+)
 def test_llama_tosa_INT_static():
     llama_model, llama_inputs, _ = TestLlama().prepare_model_hf_static()
     if llama_model is None or llama_inputs is None:
