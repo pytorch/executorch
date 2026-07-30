@@ -440,6 +440,18 @@ void record_resize_probe(WebGPUGraph&, const ResizeProbeContext& context) {
   ++*context.calls;
 }
 
+struct ThrowingResizeContext {
+  bool* fail;
+  int* calls;
+};
+
+void maybe_throw_resize(WebGPUGraph&, const ThrowingResizeContext& context) {
+  ++*context.calls;
+  if (*context.fail) {
+    throw std::runtime_error("resize hook failure");
+  }
+}
+
 struct GridPickerContext {
   int tensor_id;
   uint32_t x_bias;
@@ -487,6 +499,25 @@ TEST(WebGPUResizeHooks, TypedRegistrationOwnsContextCopies) {
   int tensor_calls = 0;
   int symint_observed = 0;
   int symint_calls = 0;
+  using ResizeProbeFn = void (*)(WebGPUGraph&, const ResizeProbeContext&);
+  EXPECT_THROW(
+      graph.add_tensor_resize_hook(
+          kResizeQ,
+          static_cast<ResizeProbeFn>(nullptr),
+          ResizeProbeContext{0, &tensor_observed, &tensor_calls}),
+      std::runtime_error);
+  EXPECT_THROW(
+      graph.add_tensor_resize_hook(
+          kResizeSymInt,
+          record_resize_probe,
+          ResizeProbeContext{0, &tensor_observed, &tensor_calls}),
+      std::runtime_error);
+  EXPECT_THROW(
+      graph.add_resize_hook(
+          kResizeQ,
+          record_resize_probe,
+          ResizeProbeContext{0, &symint_observed, &symint_calls}),
+      std::runtime_error);
   {
     ResizeProbeContext tensor_context = {17, &tensor_observed, &tensor_calls};
     ResizeProbeContext symint_context = {23, &symint_observed, &symint_calls};
@@ -508,6 +539,36 @@ TEST(WebGPUResizeHooks, TypedRegistrationOwnsContextCopies) {
   EXPECT_EQ(tensor_calls, 1);
   EXPECT_EQ(symint_observed, 23);
   EXPECT_EQ(symint_calls, 1);
+}
+
+TEST(WebGPUResizeHooks, RestoresDirtyTriggerWhenHookThrows) {
+  WebGPUGraph graph;
+  build_resize_test_graph(graph);
+  bool hook_fails = true;
+  int hook_calls = 0;
+  int picker_calls = 0;
+  graph.add_tensor_resize_hook(
+      kResizeQ,
+      maybe_throw_resize,
+      ThrowingResizeContext{&hook_fails, &hook_calls});
+  const size_t dispatch = graph.add_dynamic_compute_dispatch(
+      make_dynamic_test_descriptor(graph, "dynamic_hook_retry"),
+      kResizeQ,
+      pick_tensor_grid,
+      GridPickerContext{kResizeQ, 1u, 2u, &picker_calls, nullptr});
+  picker_calls = 0;
+
+  graph.resize_input(kResizeQ, {4, 3});
+  EXPECT_THROW(graph.propagate_resize(), std::runtime_error);
+  EXPECT_EQ(hook_calls, 1);
+  EXPECT_EQ(picker_calls, 0);
+  expect_dispatch_grid(graph, dispatch, 9u, 10u);
+
+  hook_fails = false;
+  EXPECT_NO_THROW(graph.propagate_resize());
+  EXPECT_EQ(hook_calls, 2);
+  EXPECT_EQ(picker_calls, 1);
+  expect_dispatch_grid(graph, dispatch, 5u, 5u);
 }
 
 TEST(WebGPUDynamicDispatch, InitializesAndIsolatesTriggeredGrids) {
@@ -615,12 +676,60 @@ TEST(WebGPUDynamicDispatch, HandlesCascadesAndStagesPickerFailures) {
   EXPECT_THROW(graph.propagate_resize(), std::runtime_error);
   expect_dispatch_grid(graph, first, 9u, 10u);
   expect_dispatch_grid(graph, second, 11u, 12u);
+  second_fails = false;
+  EXPECT_NO_THROW(graph.propagate_resize());
+  expect_dispatch_grid(graph, first, 5u, 5u);
+  expect_dispatch_grid(graph, second, 7u, 7u);
 }
 
 TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
   WebGPUGraph graph;
   build_resize_test_graph(graph);
   int calls = 0;
+  const size_t dispatches_before_invalid_trigger = graph.num_dispatches();
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_negative_trigger"),
+          -1,
+          pick_tensor_grid,
+          GridPickerContext{kResizeQ, 0u, 0u, &calls, nullptr}),
+      std::runtime_error);
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_oob_trigger"),
+          graph.num_values(),
+          pick_tensor_grid,
+          GridPickerContext{kResizeQ, 0u, 0u, &calls, nullptr}),
+      std::runtime_error);
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_symint_trigger"),
+          kResizeSymInt,
+          pick_tensor_grid,
+          GridPickerContext{kResizeQ, 0u, 0u, &calls, nullptr}),
+      std::runtime_error);
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(graph.num_dispatches(), dispatches_before_invalid_trigger);
+
+  auto pick_zero_grid = [](const WebGPUGraph&, const WebGPUDispatchGrid& grid) {
+    return grid;
+  };
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_zero_x"),
+          kResizeQ,
+          +pick_zero_grid,
+          WebGPUDispatchGrid{0u, 1u}),
+      std::runtime_error);
+  EXPECT_THROW(
+      graph.add_dynamic_compute_dispatch(
+          make_dynamic_test_descriptor(graph, "dynamic_zero_y"),
+          kResizeQ,
+          +pick_zero_grid,
+          WebGPUDispatchGrid{1u, 0u}),
+      std::runtime_error);
+  EXPECT_EQ(graph.num_dispatches(), dispatches_before_invalid_trigger);
+
   bool initial_fails = true;
   const size_t dispatches_before_failure = graph.num_dispatches();
   EXPECT_THROW(
@@ -654,6 +763,8 @@ TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
   graph.select_dispatch_route(group, 1, {{13u, 17u}});
   expect_dispatch_grid(graph, 1u, 0u, 0u);
   expect_dispatch_grid(graph, 2u, 13u, 17u);
+}
+
 struct InvalidRopeGraphCase {
   const char* name;
   std::vector<uint32_t> xq_dims;

@@ -1,20 +1,3 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-#pragma once
-
-#include <cstdint>
-
-namespace executorch::backends::webgpu {
-
-// @generated from amin.wgsl - DO NOT EDIT.
-// wgsl-sha256: 8cb6035ae4d34eb2a6cc973d93d9847905722e967239c96033fccfe3a1943cb2
-inline constexpr const char* kAminWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
@@ -49,7 +32,7 @@ fn main(
     var acc = input[base];
     var i = lid.x;
     while (i < params.reduce_size) {
-        acc = min(acc, input[base + i]);
+        acc = ${REDUCE_FN}(acc, input[base + i]);
         i = i + wg_size;
     }
     partials[lid.x] = acc;
@@ -59,15 +42,8 @@ fn main(
     if (lid.x == 0u) {
         var m = partials[0];
         for (var t = 1u; t < wg_size; t = t + 1u) {
-            m = min(m, partials[t]);
+            m = ${REDUCE_FN}(m, partials[t]);
         }
         output[row] = m;
     }
 }
-)";
-
-inline constexpr uint32_t kAminWorkgroupSizeX = 256;
-inline constexpr uint32_t kAminWorkgroupSizeY = 1;
-inline constexpr uint32_t kAminWorkgroupSizeZ = 1;
-
-} // namespace executorch::backends::webgpu
