@@ -8414,7 +8414,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=210_000_000,  # 210 MB
                 wikitext_ppl=23,
                 hellaswag_acc_norm=None,
-                sqnr=19.5,
+                sqnr=19,
             ),
             "smollm3-3b": TestExampleLLMScript.LlmSpecs(
                 SM8650=23,

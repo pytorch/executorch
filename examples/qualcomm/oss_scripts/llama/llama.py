@@ -669,7 +669,7 @@ def export_llama(args) -> None:
     if args.decoder_model == "gemma4-e2b" and not args.embedding_quantize:
         raise RuntimeError(
             "gemma4-e2b requires --embedding-quantize: "
-            "per-layer embedding is too large for HTP quantization."
+            "per-layer embedding is too large for HTP client buffer."
         )
     assert (
         args.decoder_model in SUPPORTED_LLM_MODELS
