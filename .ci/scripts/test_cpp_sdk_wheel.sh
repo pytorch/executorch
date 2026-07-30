@@ -128,7 +128,6 @@ cat > main.cpp <<'CPP'
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>

@@ -542,14 +542,14 @@ class BuiltFile(_BaseExtension):
 
 
 class BuiltSharedLib(BuiltFile):
-    """Installs a SONAME-versioned shared library plus its symlink chain.
+    """Installs a SONAME-versioned shared library.
 
-    A normal ``BuiltFile`` copies one file. A shared library like
-    ``libexecutorch.so.1.4.0`` also needs the loader-visible SONAME symlink
-    (``libexecutorch.so.1``) and the developer symlink (``libexecutorch.so``),
-    or a consumer that links ``-lexecutorch`` fails at runtime because the
-    SONAME recorded in dependents cannot be found. This recreates that chain in
-    the wheel, matching a standard ``cmake --install`` layout.
+    A normal ``BuiltFile`` copies one file. For a shared library like
+    ``libexecutorch.so.1.4.0`` the wheel ships only the loader-visible SONAME
+    file (e.g. ``libexecutorch.so.1``), which is what dependents record via
+    DT_NEEDED. pip does not preserve symlinks, so a dev-name link
+    (``libexecutorch.so``) would become a second full copy; consumers link
+    through the CMake package's imported targets (full path), so it is omitted.
     """
 
     def __init__(

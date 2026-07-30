@@ -142,12 +142,16 @@ set(_executorch_sdk_libdir "${_executorch_sdk_root}/lib")
 # against libexecutorch.so at load), then force-loaded so its static-init
 # registration runs.
 set(EXECUTORCH_SDK_FOUND OFF)
-find_library(
-  _executorch_shared_LIBRARY
-  NAMES executorch libexecutorch.so.1
-  PATHS "${_executorch_sdk_libdir}"
-  NO_DEFAULT_PATH
+# Discover the versioned SONAME (libexecutorch.so.<major>) rather than
+# hardcoding a major, so this keeps working across ABI bumps. The wheel ships
+# only the real SONAME file (no dev-name symlink), so find_library(NAMES
+# executorch) alone would miss it.
+file(GLOB _executorch_shared_candidates
+     "${_executorch_sdk_libdir}/libexecutorch.so.*"
 )
+if(_executorch_shared_candidates)
+  list(GET _executorch_shared_candidates 0 _executorch_shared_LIBRARY)
+endif()
 if(_executorch_shared_LIBRARY)
   set(EXECUTORCH_SDK_FOUND ON)
   if(NOT TARGET executorch::runtime)
@@ -184,12 +188,14 @@ if(_executorch_shared_LIBRARY)
   # links executorch::kernels for a full CPU operator set (optimized + portable
   # fallback). Defined only when the kernels .so is present. Loaded purely for
   # its op-registration static initializers, so force it to stay linked.
-  find_library(
-    _executorch_kernels_LIBRARY
-    NAMES executorch_kernels libexecutorch_kernels.so.1
-    PATHS "${_executorch_sdk_libdir}"
-    NO_DEFAULT_PATH
+  # Discover the versioned SONAME rather than hardcoding a major (see the
+  # runtime lookup above).
+  file(GLOB _executorch_kernels_candidates
+       "${_executorch_sdk_libdir}/libexecutorch_kernels.so.*"
   )
+  if(_executorch_kernels_candidates)
+    list(GET _executorch_kernels_candidates 0 _executorch_kernels_LIBRARY)
+  endif()
   if(_executorch_kernels_LIBRARY AND NOT TARGET executorch::kernels)
     add_library(executorch::kernels SHARED IMPORTED)
     set_target_properties(
