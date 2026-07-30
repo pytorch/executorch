@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from __future__ import annotations
+
 import operator
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -430,7 +432,7 @@ class CatPattern(QuantizationPattern):
         cat_inputs = anchor_node.args[0]
         if not isinstance(cat_inputs, (list, tuple)) or not cat_inputs:
             return None
-        inputs_q = []
+        inputs_q: list[fx.Node] = []
         for inp in cat_inputs:
             if not isinstance(inp, fx.Node) or inp.target != DQ_PER_TENSOR:
                 return None
@@ -469,7 +471,9 @@ class Conv1dPattern(QuantizationPattern):
         )
 
         # Keep bias empty if not supplied
-        bias = []
+        bias: list[
+            tuple[fx.Node, int] | tuple[fx.Node, int, DerivedQuantizationSpec]
+        ] = []
         if len(conv1d_node.args) > 2 and conv1d_node.args[2] is not None:
             bias = [(conv1d_node, 2, bias_qspec)]
 
@@ -477,7 +481,6 @@ class Conv1dPattern(QuantizationPattern):
             PartitionAnchors(
                 inputs=[(conv1d_node, 0)],
                 weights=[(conv1d_node, 1)],
-                # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
                 output=[(conv1d_node,)],
             ),
@@ -523,7 +526,9 @@ class Conv2dPattern(QuantizationPattern):
         )
 
         # Keep bias empty if not supplied
-        bias = []
+        bias: list[
+            tuple[fx.Node, int] | tuple[fx.Node, int, DerivedQuantizationSpec]
+        ] = []
         if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:
             bias = [(conv2d_node, 2, bias_qspec)]
 
@@ -531,7 +536,6 @@ class Conv2dPattern(QuantizationPattern):
             PartitionAnchors(
                 inputs=[(conv2d_node, 0)],
                 weights=[(conv2d_node, 1)],
-                # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
                 output=[(conv2d_node,)],
             ),
@@ -670,7 +674,9 @@ class LinearPattern(QuantizationPattern):
         )
 
         # Keep bias empty if not supplied
-        bias = []
+        bias: list[
+            tuple[fx.Node, int] | tuple[fx.Node, int, DerivedQuantizationSpec]
+        ] = []
         if len(linear_node.args) > 2:
             bias = [(linear_node, 2, bias_qspec)]
 
@@ -678,7 +684,6 @@ class LinearPattern(QuantizationPattern):
             PartitionAnchors(
                 inputs=[(linear_node, 0)],
                 weights=[(linear_node, 1)],
-                # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
                 output=[(linear_node,)],
             ),
@@ -973,7 +978,9 @@ class ConvReluBasePattern(QuantizationPattern):
         )
 
         # Keep bias empty if not supplied
-        bias = []
+        bias: list[
+            tuple[fx.Node, int] | tuple[fx.Node, int, DerivedQuantizationSpec]
+        ] = []
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, 2, bias_qspec)]
 
@@ -981,7 +988,6 @@ class ConvReluBasePattern(QuantizationPattern):
             PartitionAnchors(
                 inputs=[(conv_node, 0)],
                 weights=[(conv_node, 1)],
-                # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
                 output=[(relu_node,)],  # Output is from the relu node
             ),
@@ -1087,7 +1093,9 @@ class ConvBNReluBasePattern(QuantizationPattern):
             qscheme=torch.per_tensor_affine,
         )
 
-        bias = []
+        bias: list[
+            tuple[fx.Node, int] | tuple[fx.Node, int, DerivedQuantizationSpec]
+        ] = []
         if len(conv_node.args) > 2 and conv_node.args[2] is not None:
             bias = [(conv_node, 2, bias_qspec)]
 
@@ -1095,7 +1103,6 @@ class ConvBNReluBasePattern(QuantizationPattern):
             PartitionAnchors(
                 inputs=[(conv_node, 0)],
                 weights=[(conv_node, 1)],
-                # pyre-fixme[6]: Incompatible parameter type
                 biases=bias,
                 output=[(relu_node,)],
             ),
@@ -1483,7 +1490,9 @@ class MixedW8A32GruPattern(QuantizationPattern):
             )
 
         class Wrapper:  # noqa: B903
-            def __init__(self, args, meta):
+            def __init__(
+                self, args: tuple[fx.Node, ...], meta: dict[str, fx.node.Argument]
+            ) -> None:
                 self.args = args
                 self.meta = meta
 
