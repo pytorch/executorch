@@ -12,10 +12,12 @@
 
 #include <cstdint>
 #include <functional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/webgpu/runtime/WebGPUDispatchMath.h>
@@ -250,7 +252,28 @@ class WebGPUGraph {
 
   // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
+    if (symint_id < 0 || symint_id >= num_values() ||
+        get_value_type(symint_id) != ValueType::SymInt) {
+      throw std::runtime_error("WebGPU resize: trigger must be a SymInt");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
     resize_hooks_.push_back({symint_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_resize_hook(
+      int symint_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
+    add_resize_hook(
+        symint_id, [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Set a graph input's live dims (<= max) + dirty it; static path stays inert.
@@ -267,7 +290,29 @@ class WebGPUGraph {
   void add_tensor_resize_hook(
       int trigger_tensor_id,
       std::function<void(WebGPUGraph&)> fn) {
+    if (trigger_tensor_id < 0 || trigger_tensor_id >= num_values() ||
+        get_value_type(trigger_tensor_id) != ValueType::Tensor) {
+      throw std::runtime_error("WebGPU resize: trigger must be a Tensor");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
     tensor_resize_hooks_.push_back({trigger_tensor_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_tensor_resize_hook(
+      int trigger_tensor_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
+    add_tensor_resize_hook(
+        trigger_tensor_id,
+        [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Run hooks for changed SymInts and tensors, then clear; call before execute.
@@ -283,6 +328,7 @@ class WebGPUGraph {
 
   size_t register_dispatch_route_group(
       const std::vector<utils::DispatchRange>& ranges) {
+    validate_dynamic_dispatch_route_ranges(ranges);
     return dispatch_routes_.register_group(
         dispatches_.size(), ranges, [&](size_t i) {
           return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
@@ -410,6 +456,23 @@ class WebGPUGraph {
   size_t add_compute_dispatch(
       const WebGPUComputeDispatchDescriptor& descriptor);
 
+  template <typename Context>
+  size_t add_dynamic_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      WebGPUDispatchGrid (*pick_grid)(const WebGPUGraph&, const Context&),
+      Context context) {
+    if (pick_grid == nullptr) {
+      throw std::runtime_error("WebGPU dynamic dispatch: null grid picker");
+    }
+    return add_dynamic_compute_dispatch_impl(
+        descriptor,
+        trigger_tensor_id,
+        [pick_grid, context = std::move(context)](const WebGPUGraph& graph) {
+          return pick_grid(graph, context);
+        });
+  }
+
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
       const char* wgsl_source);
@@ -516,6 +579,29 @@ class WebGPUGraph {
   };
   std::vector<TensorResizeHook> tensor_resize_hooks_;
   std::unordered_set<int> dirty_tensors_;
+
+  // Dynamic grids are stored separately so ordinary dispatches remain compact.
+  // The graph owns each dispatch index and picker; ops only provide typed
+  // context and a named grid function.
+  struct DynamicDispatchGrid {
+    size_t dispatch_index;
+    int trigger_tensor_id;
+    std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid;
+  };
+  std::vector<DynamicDispatchGrid> dynamic_dispatch_grids_;
+
+  struct PendingDynamicDispatchGrid {
+    size_t dispatch_index;
+    WebGPUDispatchGrid grid;
+  };
+  std::vector<PendingDynamicDispatchGrid> pending_dynamic_dispatch_grids_;
+
+  size_t add_dynamic_compute_dispatch_impl(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid);
+  void validate_dynamic_dispatch_route_ranges(
+      const std::vector<utils::DispatchRange>& ranges) const;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
