@@ -1049,10 +1049,12 @@ class CustomBuild(build):
 
         # Build the consolidated shared runtime libexecutorch.so so the wheel can
         # ship a linkable C++ SDK (see the executorch_shared build target and the
-        # packaging step). Only for an actual wheel build: EXECUTORCH_BUILD_SHARED
+        # packaging step). Gate on an actual wheel build: EXECUTORCH_BUILD_SHARED
         # also forces global PIC and changes link behavior, so it must not leak
-        # into editable/develop/install builds that other CI (unittest, arm, etc.)
-        # rely on. Linux only; the SDK is not shipped on Windows/macOS.
+        # into editable/develop builds (pip install -e ., setup.py develop) that
+        # other CI (unittest, arm, etc.) rely on. A non-editable `pip install .`
+        # does go through bdist_wheel (PEP 517) and correctly gets the SDK. Linux
+        # only; the SDK is not shipped on Windows/macOS.
         building_wheel = "bdist_wheel" in self.distribution.commands
         if not minimal_build and sys.platform == "linux" and building_wheel:
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_SHARED=ON"]

@@ -241,14 +241,16 @@ if(_executorch_shared_LIBRARY)
     # registers "CudaBackend". A consumer references no symbol from it, so under
     # -Wl,--as-needed (or -lexecutorch_cuda_backend) the linker would drop it
     # from DT_NEEDED and the registration would never run. Force it to stay
-    # linked with --no-as-needed around this one library on ELF toolchains.
+    # linked on ELF toolchains. Use --push-state/--pop-state so we restore the
+    # consumer's prior --as-needed/--no-as-needed state instead of hardcoding
+    # --as-needed for everything that follows this library on the link line.
     if(NOT APPLE AND NOT WIN32)
       set_property(
         TARGET executorch::cuda_backend
         APPEND
         PROPERTY
           INTERFACE_LINK_OPTIONS
-          "SHELL:-Wl,--no-as-needed,${_executorch_cuda_backend_LIBRARY},--as-needed"
+          "SHELL:-Wl,--push-state,--no-as-needed,${_executorch_cuda_backend_LIBRARY},--pop-state"
       )
     endif()
   endif()
