@@ -414,8 +414,11 @@ class GetItem(GeneralOpDef):
             return
 
         out_act_quantization_spec = quantization_config.output_activation
-        # QNN constraint, topk output_0 requires having the same quant config as input
-        if node.args[0].target == torch.ops.aten.topk.default:
+        # QNN constraint, topk/sort output_0 requires having the same quant config as input
+        if node.args[0].target in (
+            torch.ops.aten.topk.default,
+            torch.ops.aten.sort.default,
+        ):
             out_act_quantization_spec = SharedQuantizationSpec(node.args[0])
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             output_qspec=out_act_quantization_spec,
@@ -478,10 +481,8 @@ class LayerNorm(GeneralOpDef):
     @staticmethod
     def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
         act_node = node.args[0]
-        weight_node = node.args[2]
-        bias_node = None
-        if len(node.args) > 2:
-            bias_node = node.args[3]
+        weight_node = node.args[2] if len(node.args) > 2 else None
+        bias_node = node.args[3] if len(node.args) > 3 else None
 
         if _is_annotated([node]):
             return
@@ -492,20 +493,22 @@ class LayerNorm(GeneralOpDef):
             act_node,
             input_act_qspec,
         )
-        if input_act_qspec.dtype == torch.int32:
-            annotate_input_qspec_map(
-                node,
-                weight_node,
-                get_16a16w_qnn_ptq_config().weight,
-            )
-        else:
-            annotate_input_qspec_map(
-                node,
-                weight_node,
-                input_act_qspec,
-            )
-        nodes_to_mark_annotated = [node, weight_node]
-        if bias_node:
+        nodes_to_mark_annotated = [node]
+        if isinstance(weight_node, Node):
+            if input_act_qspec.dtype == torch.int32:
+                annotate_input_qspec_map(
+                    node,
+                    weight_node,
+                    get_16a16w_qnn_ptq_config().weight,
+                )
+            else:
+                annotate_input_qspec_map(
+                    node,
+                    weight_node,
+                    input_act_qspec,
+                )
+            nodes_to_mark_annotated.append(weight_node)
+        if isinstance(bias_node, Node):
             annotate_input_qspec_map(
                 node,
                 bias_node,
@@ -601,7 +604,11 @@ class MaskedFill(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.bmm.default, torch.ops.aten.matmul.default],
+    [
+        torch.ops.aten.bmm.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.mm.default,
+    ],
     QnnConstants.OpMatMul.op_name,
 )
 class MatMul(GeneralOpDef):
@@ -905,6 +912,30 @@ class ScatterElements(GeneralOpDef):
                 output_qspec=output_act_qspec,
                 _annotated=True,
             )
+
+
+@register_annotator([torch.ops.aten.sort.default], QnnConstants.OpTopK.op_name)
+class Sort(GeneralOpDef):
+    @staticmethod
+    def annotate(node: Node, quantization_config: QuantizationConfig) -> None:
+        if _is_annotated([node]):
+            return
+
+        input_qspec_map = {}
+        input_act_qspec = quantization_config.input_activation
+        out_act_quantization_spec = None
+        if input_act_qspec is not None:
+            if _is_float_tensor(node.args[0]):
+                input_act = node.args[0]
+                assert isinstance(input_act, Node)
+                input_qspec_map[input_act] = input_act_qspec
+                out_act_quantization_spec = SharedQuantizationSpec((input_act, node))
+
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=out_act_quantization_spec,
+            _annotated=True,
+        )
 
 
 @register_annotator(

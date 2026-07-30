@@ -10,16 +10,16 @@
 
 #include <optional>
 
+#include <executorch/runtime/platform/compiler.h>
+
 namespace executorch {
 namespace runtime {
 namespace etensor {
 
-// NOLINTNEXTLINE(misc-unused-using-decls)
-using std::nullopt;
-// NOLINTNEXTLINE(misc-unused-using-decls)
-using std::nullopt_t;
-// NOLINTNEXTLINE(misc-unused-using-decls)
-using std::optional;
+template <typename T>
+using optional ET_DEPRECATED = std::optional<T>;
+using nullopt_t ET_DEPRECATED = std::nullopt_t;
+ET_DEPRECATED inline constexpr std::nullopt_t nullopt{std::nullopt};
 
 } // namespace etensor
 } // namespace runtime
@@ -29,8 +29,9 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::runtime::etensor::nullopt;
-using ::executorch::runtime::etensor::nullopt_t;
-using ::executorch::runtime::etensor::optional;
+template <typename T>
+using optional ET_DEPRECATED = std::optional<T>;
+using nullopt_t ET_DEPRECATED = std::nullopt_t;
+ET_DEPRECATED inline constexpr std::nullopt_t nullopt{std::nullopt};
 } // namespace executor
 } // namespace torch

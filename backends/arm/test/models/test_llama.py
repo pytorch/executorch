@@ -245,12 +245,6 @@ def test_llama_tosa_INT_static():
             use_to_edge_transform_and_lower=True,
             fold_quantize=True,
         )
-        # NOTE: HF StaticCache INT currently keeps two delegated subgraphs
-        # after partitioning on this path, so expect two delegate calls in EXIR.
-        pipeline.change_args(
-            "check_count.exir",
-            {"torch.ops.higher_order.executorch_call_delegate": 2},
-        )
         pipeline.run()
 
 

@@ -100,6 +100,37 @@ class Conv2dModule(torch.nn.Module):
         return self.conv(x)
 
 
+class Conv2dTransposedModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[int, Collection[int]] = 0,
+        output_padding: Union[int, tuple[int, int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        groups: int = 1,
+    ):
+        super().__init__()
+
+        self.conv_transp = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            output_padding=output_padding,
+            dilation=dilation,
+            bias=bias,
+            groups=groups,
+        )
+
+    def forward(self, x):
+        return self.conv_transp(x)
+
+
 class Conv3dModule(torch.nn.Module):
     def __init__(
         self,
@@ -194,9 +225,9 @@ class ConvWithSigmoid(torch.nn.Module):
 
 
 class LinearModule(torch.nn.Module):
-    def __init__(self, bias: bool):
+    def __init__(self, bias: bool, in_features: int = 32, out_features: int = 16):
         super().__init__()
-        self.linear = torch.nn.Linear(32, 16, bias=bias)
+        self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, x):
         return self.linear(x)
@@ -252,24 +283,39 @@ class SliceTensorConvModule(torch.nn.Module):
 
 
 class AddmmModule(torch.nn.Module):
-    def __init__(self, in_channels: int):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int = 7,
+        alpha: float | None = None,
+        beta: float | None = None,
+        bias_shape=None,
+    ):
+        if bias_shape is None:
+            bias_shape = (out_channels,)
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
-        self.bias = torch.nn.Parameter(torch.empty(in_channels))
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, out_channels))
+        self.bias = torch.nn.Parameter(torch.empty(bias_shape))
         torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
         bound = 1 / math.sqrt(fan_in)
         torch.nn.init.uniform_(self.bias, -bound, bound)
         self.eval()
 
+        self.kwargs = {}
+        if alpha is not None:
+            self.kwargs["alpha"] = alpha
+        if beta is not None:
+            self.kwargs["beta"] = beta
+
     def forward(self, x):
-        return torch.addmm(self.bias, x, self.weight)
+        return torch.addmm(self.bias, x, self.weight, **self.kwargs)
 
 
 class MmModule(torch.nn.Module):
-    def __init__(self, in_channels: int):
+    def __init__(self, in_channels: int, out_channels: int = 7):
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, out_channels))
         torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         self.eval()
 
@@ -628,13 +674,15 @@ class MulTensorModule(torch.nn.Module):
         return x * y
 
 
-class MulTensorConvModule(torch.nn.Module):
+class MaxPoolMulTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x * y
 
 
@@ -656,13 +704,15 @@ class AddTensorModule(torch.nn.Module):
         return x + y
 
 
-class AddTensorConvModule(torch.nn.Module):
+class MaxPoolAddTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x + y
 
 
@@ -684,13 +734,15 @@ class SubTensorModule(torch.nn.Module):
         return x - y
 
 
-class SubTensorConvModule(torch.nn.Module):
+class MaxPoolSubTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1)
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
 
     def forward(self, x, y):
-        x = self.conv(x)
+        x = self.max_pool2d(x)
         return x - y
 
 
@@ -881,9 +933,39 @@ class LinearPReLUModule(torch.nn.Module):
 
         self.linear = nn.Linear(in_features=in_features, out_features=out_features)
         self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
 
     def forward(self, x):
         x = self.linear(x)
+        return self.prelu(x)
+
+
+class PReLUModule(torch.nn.Module):
+    def __init__(self, num_parameters=1):
+        super().__init__()
+
+        self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
+
+    def forward(self, x):
+        return self.prelu(x)
+
+
+class ConvPReLUModule(torch.nn.Module):
+    def __init__(self, in_channels, num_parameters=1):
+        super().__init__()
+
+        self.conv = Conv2dModule(
+            in_channels=in_channels, out_channels=in_channels, stride=1, padding=1
+        )
+        self.prelu = torch.nn.PReLU(num_parameters)
+        # Initialize the weight alpha with random values to simulate learned model with non-constant data
+        torch.nn.init.uniform(self.prelu.weight, -1.0, 1.0)
+
+    def forward(self, x):
+        x = self.conv(x)
         return self.prelu(x)
 
 
@@ -946,17 +1028,56 @@ class BatchMatMulModel(torch.nn.Module):
         return torch.bmm(x, y)
 
 
-class BatchMatMulConvModel(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv = Conv1dModule(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            stride=1,
-            padding=1,
-            kernel_size=3,
-        )
+class BatchMatMulMaxPoolModel(torch.nn.Module):
+
+    @staticmethod
+    def noop_max_pool_1d(x):
+        """Call `torch.max_pool1d` that is a NoOp, but it enforces the ChannelsFirst format in the `NodeFormatInference`."""
+        return torch.max_pool1d(x, kernel_size=1)
 
     def forward(self, x, y):
-        x = self.conv(x)
-        return torch.bmm(x, y)
+        x = torch.bmm(x, y)
+        x = self.noop_max_pool_1d(x)
+        return x
+
+
+class MaximumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return torch.maximum(x, y)
+
+
+class MaxPoolMaximumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
+
+    def forward(self, x, y):
+        x = self.max_pool2d(x)
+        return torch.maximum(x, y)
+
+
+class MinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return torch.minimum(x, y)
+
+
+class MaxPoolMinimumModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=1
+        )  # No-op, but it enforces the channels first format.
+
+    def forward(self, x, y):
+        x = self.max_pool2d(x)
+        return torch.minimum(x, y)

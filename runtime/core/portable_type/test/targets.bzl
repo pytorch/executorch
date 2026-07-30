@@ -16,14 +16,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "optional_test",
-        srcs = ["optional_test.cpp"],
-        deps = [
-            "//executorch/runtime/core/portable_type:portable_type",
-        ],
-    )
-
-    runtime.cxx_test(
         name = "tensor_test",
         srcs = ["tensor_test.cpp"],
         deps = [

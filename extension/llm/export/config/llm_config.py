@@ -96,6 +96,9 @@ class LoraConfig:
     lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
+    # Per-adapter quantization/precision: "int8" | "fp16" | "fp32" | None.
+    # Overrides the global --lora_precision flag for this adapter only.
+    adapter_quant: Optional[str] = None
 
 
 @dataclass

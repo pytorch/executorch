@@ -45,7 +45,7 @@ _EXTERNAL_DEPS = {
     "libtorch_python": "//third-party:libtorch_python",
     "log": [], # Intentionally not supporting OSS buck build log
     # Huggingface Tokenizer
-    "nlohmann_json": [], # Intentionally not supporting OSS buck build HF tokenizer.
+    "nlohmann_json": "//extension/llm/tokenizers/third-party:nlohmann_json",
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
     "pcre2": "//extension/llm/tokenizers/third-party:pcre2",

@@ -41,16 +41,16 @@ class AvgPool1DModule(torch.nn.Module):
 
 
 class TestAvgPool2D:
-    def test__basic_nsys_inference(self, mocker):
+    def test__basic_nsys_inference(self, mocker, request):
         input_shape = (2, 4, 6, 7)
         model = AvgPool2dModule(False, 0)
         graph_verifier = DetailedGraphVerifier(
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)
 
-    def test__basic_nsys_inference_qat(self, mocker):
+    def test__basic_nsys_inference_qat(self, mocker, request):
         input_shape = (2, 9, 6, 15)
         model = AvgPool2dModule(False, 0)
         graph_verifier = DetailedGraphVerifier(
@@ -61,10 +61,11 @@ class TestAvgPool2D:
             model,
             input_shape,
             graph_verifier,
+            request,
             use_qat=True,
         )
 
-    def test__kernel_size_limit(self, mocker):
+    def test__kernel_size_limit(self, mocker, request):
         kernel_size = (1, 4096)
         input_shape = (1, 4) + kernel_size
         model = AvgPool2dModule(False, 0, kernel_size)
@@ -72,7 +73,7 @@ class TestAvgPool2D:
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)
 
     def test__kernel_size_limit_exceeded(self):
         kernel_size = (1, 4097)  # Exceeds the kernel size limit.
@@ -87,7 +88,7 @@ class TestAvgPool2D:
         )
         assert graph_contains_any_of_ops(delegated_ep.graph, [AvgPool2D])
 
-    def test__stride_limit(self, mocker):
+    def test__stride_limit(self, mocker, request):
         stride = 4096
         input_shape = (1, 4, 1, 4096)
         model = AvgPool2dModule(False, 0, 1, stride)
@@ -95,7 +96,7 @@ class TestAvgPool2D:
             mocker, expected_delegated_ops={AvgPool2D: 1}, expected_non_delegated_ops={}
         )
 
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)
 
     def test__stride_limit_exceeded(self):
         stride = 4097  # Exceeds the stride limit.
@@ -114,7 +115,7 @@ class TestAvgPool2D:
 class TestAvgPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
-    def test__basic_nsys_inference(self, mocker):
+    def test__basic_nsys_inference(self, mocker, request):
         input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
         model = AvgPool1DModule()
         graph_verifier = DetailedGraphVerifier(
@@ -123,4 +124,4 @@ class TestAvgPool1D:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier)
+        lower_run_compare(model, input_shape, graph_verifier, request)

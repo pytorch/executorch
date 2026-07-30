@@ -22,7 +22,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;

@@ -40,6 +40,7 @@ def _vk_format_component_count(vk_format: str) -> int:
         "VK_FORMAT_R32G32_SFLOAT": 2,
         "VK_FORMAT_R8G8B8A8_UINT": 4,
         "VK_FORMAT_R8G8B8A8_SINT": 4,
+        "VK_FORMAT_R8G8B8A8_SNORM": 4,
         "VK_FORMAT_R16G16B16A16_UINT": 4,
         "VK_FORMAT_R16G16B16A16_SINT": 4,
         "VK_FORMAT_R16G16B16A16_SFLOAT": 4,

@@ -498,11 +498,19 @@ The following PyTorch operators are supported through decomposition or annotatio
 | PyTorch Op | Decomposition Pass |
 |---|---|
 | `aten.acos` | `DecomposeAcos` |
+| `aten.acosh` | `DecomposeHyperbolicVariants` |
+| `aten.addmm` | `DecomposeAddmm` |
 | `aten.adaptive_avg_pool1d`, `aten.avg_pool1d` | `AnnotateAvgPool1D` |
 | `aten.any` | `DecomposeAny` |
+| `aten.asinh` | `DecomposeHyperbolicVariants` |
 | `aten.atan2.default`, `aten.atan2.out` | `DecomposeAtan2` |
+| `aten.atanh` | `DecomposeHyperbolicVariants` |
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
-| `aten.cdist` | `DecomposeCDist` |
+| `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
+| `aten.cosh` | `DecomposeHyperbolicVariants` |
+| `aten.diagonal` | `DecomposeDiagonal` |
+| `aten.div.Tensor_mode` | `DecomposeDivMode` |
+| `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
 | `aten.einsum` | `DecomposeEinsum` |
 | `aten.special_expm1` | `DecomposeExpM1` |
@@ -513,6 +521,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |
 | `aten.max_pool3d` | `DecomposeMaxPool3d` |
 | `aten.min.dim`, `aten.max.dim` | `DecomposeMinMaxDim` |
+| `aten.pdist`, `aten._pdist_forward` | `DecomposePDist` |
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
 | `aten.reflection_pad2d` | `DecomposePad` |
@@ -520,6 +529,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |
 | `aten.silu` | `DecomposeSilu` |
+| `aten.sinh` | `DecomposeHyperbolicVariants` |
 | `aten.tan` | `DecomposeTan` |
 | `aten.threshold` | `DecomposeThreshold` |
 | `aten.triu` | `DecomposeTriu` |

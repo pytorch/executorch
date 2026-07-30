@@ -14,10 +14,10 @@ namespace cadence {
 namespace fused_quant {
 namespace native {
 
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 namespace {
 
@@ -53,19 +53,16 @@ Tensor& bmm_out(
     ScalarType inp_dtype,
     int64_t inp_quant_min,
     int64_t inp_quant_max,
-    optional<int64_t> inp_axis,
     const optional<Tensor>& other_scale,
     const optional<Tensor>& other_zero_point,
     ScalarType other_dtype,
     int64_t other_quant_min,
     int64_t other_quant_max,
-    optional<int64_t> other_axis,
     const optional<Tensor>& out_scale,
     const optional<Tensor>& out_zero_point,
     ScalarType out_dtype,
     int64_t out_quant_min,
     int64_t out_quant_max,
-    optional<int64_t> out_axis,
     Tensor& out) {
   int64_t batch = inp.size(0);
   int64_t M = inp.size(1);
@@ -87,7 +84,7 @@ Tensor& bmm_out(
     }
     inp_buf.resize(inp_numel);
     QParams qp = extract_qparams(
-        inp_scale, inp_zero_point, inp_quant_min, inp_quant_max, inp_axis, inp);
+        inp_scale, inp_zero_point, inp_quant_min, inp_quant_max, inp);
     FUSED_QUANT_DTYPE_SWITCH(
         inp.scalar_type(),
         scalar_t,
@@ -104,12 +101,7 @@ Tensor& bmm_out(
     }
     other_buf.resize(other_numel);
     QParams qp = extract_qparams(
-        other_scale,
-        other_zero_point,
-        other_quant_min,
-        other_quant_max,
-        other_axis,
-        other);
+        other_scale, other_zero_point, other_quant_min, other_quant_max, other);
     FUSED_QUANT_DTYPE_SWITCH(other.scalar_type(),
                              scalar_t,
                              dequantize_buffer(
@@ -126,7 +118,7 @@ Tensor& bmm_out(
     bmm_kernel(inp_float, other_float, result_float.data(), batch, M, K, N);
 
     QParams qp = extract_qparams(
-        out_scale, out_zero_point, out_quant_min, out_quant_max, out_axis, out);
+        out_scale, out_zero_point, out_quant_min, out_quant_max, out);
     FUSED_QUANT_DTYPE_SWITCH(out.scalar_type(),
                              scalar_t,
                              quantize_buffer(

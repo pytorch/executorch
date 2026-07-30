@@ -15,9 +15,9 @@ namespace impl {
 namespace generic {
 namespace native {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 Tensor& fully_connected_out(
     KernelRuntimeContext& ctx,

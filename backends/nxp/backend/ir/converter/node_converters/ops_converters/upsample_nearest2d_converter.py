@@ -6,12 +6,11 @@
 import numpy as np
 import torch
 
-from executorch.backends.nxp.backend.data_format import DataFormat, NXP_NODE_FORMAT
 from executorch.backends.nxp.backend.edge_helper import node_has_well_defined_shape
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.resize_nearest_neighbor_options import (
     ResizeNearestNeighbor,
@@ -26,6 +25,7 @@ WidthScale = float
 
 
 # noinspection SpellCheckingInspection
+@requires_channels_first_format
 class UpsampleNearest2DConverter(NodeConverter):
 
     @classmethod
@@ -38,9 +38,7 @@ class UpsampleNearest2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
     ) -> bool:
         h_scale, w_scale = cls._get_effective_scales(node)
-        is_alone_in_partition = cls.is_node_alone_in_partition(
-            node, partition_list, filter_fn=is_not_qdq_node
-        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
 
         if is_alone_in_partition and h_scale == w_scale == 1:
             # The operator is a no-op, so the Neutron Converter will skip it. If it's the only node in the
@@ -55,14 +53,6 @@ class UpsampleNearest2DConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-
-        if node.meta.get(NXP_NODE_FORMAT, DataFormat.NONE) != DataFormat.CHANNELS_FIRST:
-            # This should never happen.
-            raise NotImplementedError(
-                "NXP backend: `aten.upsample_nearest2d.vec` didn't have correctly identified data"
-                " format. Please report this."
-            )
-
         # The conversion requires the output shape to be known and static.
         if not node_has_well_defined_shape(node):
             return False

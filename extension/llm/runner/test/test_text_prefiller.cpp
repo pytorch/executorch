@@ -80,7 +80,12 @@ class TextPrefillerTest : public Test {
         ::executorch::runtime::Result<uint64_t>,
         prefill_chunk,
         (std::vector<uint64_t>&, int64_t&),
-        ());
+        (override));
+    MOCK_METHOD(
+        ::executorch::runtime::Result<uint64_t>,
+        prefill_chunk,
+        (std::vector<uint64_t>&, int64_t&, float),
+        (override));
   };
 
   // Create a mock TextPrefiller
@@ -112,9 +117,10 @@ TEST_F(TextPrefillerTest, PrefillCallsPrefillChunkOnceWhenPromptFits) {
   int64_t start_pos = 0;
 
   // Expect prefill_chunk to be called exactly once with the entire prompt
-  EXPECT_CALL(*prefiller, prefill_chunk(_, _))
+  constexpr float temperature = 0.7f;
+  EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(temperature)))
       .Times(1)
-      .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+      .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float temp) {
         // Verify the tokens passed to prefill_chunk
         EXPECT_EQ(tokens.size(), prompt_tokens.size());
         for (size_t i = 0; i < tokens.size(); i++) {
@@ -122,15 +128,132 @@ TEST_F(TextPrefillerTest, PrefillCallsPrefillChunkOnceWhenPromptFits) {
         }
         // Verify the position
         EXPECT_EQ(pos, start_pos);
+        EXPECT_EQ(temp, temperature);
         return Result<uint64_t>(42);
       });
 
   // Call prefill
-  auto result = prefiller->prefill(prompt_tokens, start_pos);
+  auto result = prefiller->prefill(prompt_tokens, start_pos, temperature);
 
   // Verify the result
   EXPECT_EQ(result.error(), Error::Ok);
   EXPECT_EQ(result.get(), 42);
+}
+
+TEST_F(TextPrefillerTest, TwoArgumentPrefillUsesGreedyTemperature) {
+  auto prefiller = createMockTextPrefiller(10);
+
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3};
+  int64_t start_pos = 0;
+
+  EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(0.0f)))
+      .Times(1)
+      .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+        return Result<uint64_t>(42);
+      });
+
+  auto result = prefiller->prefill(prompt_tokens, start_pos);
+
+  EXPECT_EQ(result.error(), Error::Ok);
+  EXPECT_EQ(result.get(), 42);
+}
+
+TEST_F(TextPrefillerTest, PrefillAcceptsTemperatureBounds) {
+  auto prefiller = createMockTextPrefiller(10);
+
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3};
+  int64_t start_pos = 0;
+
+  {
+    InSequence seq;
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(0.0f)))
+        .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+          return Result<uint64_t>(41);
+        });
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(1.0f)))
+        .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+          return Result<uint64_t>(42);
+        });
+  }
+
+  auto greedy = prefiller->prefill(prompt_tokens, start_pos, 0.0f);
+  auto max_temp = prefiller->prefill(prompt_tokens, start_pos, 1.0f);
+
+  EXPECT_EQ(greedy.error(), Error::Ok);
+  EXPECT_EQ(greedy.get(), 41);
+  EXPECT_EQ(max_temp.error(), Error::Ok);
+  EXPECT_EQ(max_temp.get(), 42);
+}
+
+TEST_F(TextPrefillerTest, PrefillRejectsTemperatureOutOfRange) {
+  auto prefiller = createMockTextPrefiller(10);
+
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3};
+  int64_t start_pos = 0;
+
+  EXPECT_CALL(*prefiller, prefill_chunk(_, _, _)).Times(0);
+
+  EXPECT_EQ(
+      prefiller->prefill(prompt_tokens, start_pos, -0.1f).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      prefiller->prefill(prompt_tokens, start_pos, 1.1f).error(),
+      Error::InvalidArgument);
+}
+
+TEST_F(TextPrefillerTest, TwoArgumentPrefillChunkOverrideStillDispatches) {
+  class LegacyPrefiller final : public TextPrefiller {
+   public:
+    explicit LegacyPrefiller(TextDecoderRunner* text_decoder_runner)
+        : TextPrefiller(text_decoder_runner, true, true, 10) {}
+
+    Result<uint64_t> prefill_chunk(std::vector<uint64_t>&, int64_t&) override {
+      called = true;
+      return Result<uint64_t>(42);
+    }
+
+    bool called = false;
+  };
+
+  LegacyPrefiller prefiller(&text_decoder_runner_);
+  TextPrefiller* base = &prefiller;
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3};
+  int64_t start_pos = 0;
+
+  auto result = base->prefill_chunk(prompt_tokens, start_pos);
+
+  EXPECT_EQ(result.error(), Error::Ok);
+  EXPECT_EQ(result.get(), 42);
+  EXPECT_TRUE(prefiller.called);
+}
+
+TEST_F(TextPrefillerTest, ChunkedPrefillSamplesOnlyLastChunkWithTemperature) {
+  auto prefiller = createMockTextPrefiller(3);
+
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3, 4, 5, 6, 7, 8};
+  int64_t start_pos = 0;
+  constexpr float temperature = 0.9f;
+
+  {
+    InSequence seq;
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(0.0f)))
+        .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+          return Result<uint64_t>(10);
+        });
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(0.0f)))
+        .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+          return Result<uint64_t>(11);
+        });
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, FloatEq(temperature)))
+        .WillOnce([](std::vector<uint64_t>&, int64_t&, float) {
+          return Result<uint64_t>(12);
+        });
+  }
+
+  auto result = prefiller->prefill(prompt_tokens, start_pos, temperature);
+
+  EXPECT_EQ(result.error(), Error::Ok);
+  EXPECT_EQ(result.get(), 12);
 }
 
 // Test that prefill() calls prefill_chunk() multiple times when prompt tokens >
@@ -217,14 +340,14 @@ TEST_F(TextPrefillerTest, PrefillHandlesPrefillChunkErrorsCorrectly) {
     InSequence seq;
 
     // First chunk: tokens [1, 2, 3] - succeeds
-    EXPECT_CALL(*prefiller, prefill_chunk(_, _))
-        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, _))
+        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
           return Result<uint64_t>(10);
         });
 
     // Second chunk: tokens [4, 5] - fails
-    EXPECT_CALL(*prefiller, prefill_chunk(_, _))
-        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos) {
+    EXPECT_CALL(*prefiller, prefill_chunk(_, _, _))
+        .WillOnce([&](std::vector<uint64_t>& tokens, int64_t& pos, float) {
           return Result<uint64_t>(Error::InvalidArgument);
         });
   }
@@ -234,6 +357,23 @@ TEST_F(TextPrefillerTest, PrefillHandlesPrefillChunkErrorsCorrectly) {
 
   // Verify that the error is propagated
   EXPECT_EQ(result.error(), Error::InvalidArgument);
+}
+
+TEST_F(TextPrefillerTest, PrefillChunkRejectsTemperatureOutOfRange) {
+  auto prefiller = createTextPrefiller(10, true, true);
+
+  std::vector<uint64_t> prompt_tokens = {1, 2, 3};
+  int64_t start_pos = 0;
+
+  EXPECT_CALL(text_decoder_runner_, step(_, _)).Times(0);
+
+  EXPECT_EQ(
+      prefiller->prefill_chunk(prompt_tokens, start_pos, -0.1f).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      prefiller->prefill_chunk(prompt_tokens, start_pos, 1.1f).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(start_pos, 0);
 }
 
 // Test that prefill_chunk() works correctly with parallel prefill enabled

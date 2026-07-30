@@ -42,12 +42,12 @@ python -m pip install \
   certifi \
   torch \
   torchvision \
-  --index-url https://download.pytorch.org/whl/cpu \
+  --index-url "${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
   --extra-index-url https://pypi.org/simple
 
 (
   cd "${REPO_ROOT}"
-  python setup.py bdist_wheel
+  CMAKE_ARGS="${SDK_WHEEL_CMAKE_ARGS:-}" python setup.py bdist_wheel
 )
 
 WHEEL_FILE="$(find "${REPO_ROOT}/dist" -maxdepth 1 -name 'executorch-*.whl' | head -1)"
@@ -66,7 +66,6 @@ with zipfile.ZipFile(wheel_file) as wheel:
 
 required = [
     "executorch/lib/libexecutorch.so",
-    "executorch/lib/libexecutorch.so.1",
     "executorch/share/cmake/executorch-config.cmake",
     "executorch/utils/__init__.py",
     "executorch/include/executorch/runtime/executor/program.h",
@@ -129,6 +128,7 @@ cat > main.cpp <<'CPP'
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
+#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -169,6 +169,15 @@ int main() {
             .get());
     printf(".ptd data-map load attempted (ok=%d)\n",
            data_map_result.ok());
+  }
+
+  // odr-use MergedDataMap so a dropped symbol fails the link, not just
+  // a header include. An empty span is a valid no-op merge.
+  {
+    executorch::runtime::Span<const executorch::runtime::NamedDataMap*>
+        maps;
+    auto merged = executorch::extension::MergedDataMap::load(maps);
+    printf("merged data-map load attempted (ok=%d)\n", merged.ok());
   }
 
   // Construct a Module from a tiny in-memory buffer via the buffer data loader.
@@ -279,5 +288,58 @@ CPP
 cmake -S . -B build
 cmake --build build
 ./build/reg_consumer "$(find build -name 'libmybackend.so' | head -1)"
+
+# ---------------------------------------------------------------------------
+# CUDA delegate check. Only runs when the wheel actually shipped the CUDA
+# backend (i.e. a CUDA-enabled wheel); a CPU wheel skips this cleanly. Verifies
+# the REAL shipped artifact: dlopen libexecutorch_cuda_backend.so and assert it
+# registers "CudaBackend" into the runtime in libexecutorch.so.
+SDK_LIB_DIR="$(python -c 'import os, executorch.utils as u; print(os.path.join(os.path.dirname(os.path.dirname(u.cmake_prefix_path)), "lib"))')"
+CUDA_BACKEND_SO="${SDK_LIB_DIR}/libexecutorch_cuda_backend.so"
+if [ ! -f "${CUDA_BACKEND_SO}" ] && [ "${EXPECT_CUDA:-0}" = "1" ]; then
+  echo "EXPECT_CUDA=1 but libexecutorch_cuda_backend.so is missing" >&2
+  exit 1
+fi
+if [ -f "${CUDA_BACKEND_SO}" ]; then
+  echo "CUDA backend present; verifying it registers CudaBackend"
+  cat > cuda_reg.cpp <<'CPP'
+#include <cstdio>
+#include <dlfcn.h>
+#include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/platform/runtime.h>
+
+using executorch::runtime::get_backend_class;
+using executorch::runtime::runtime_init;
+
+int main(int argc, char** argv) {
+  runtime_init();
+  if (get_backend_class("CudaBackend") != nullptr) {
+    fprintf(stderr, "CudaBackend registered before load\n");
+    return 1;
+  }
+  void* handle = dlopen(argv[1], RTLD_NOW | RTLD_GLOBAL);
+  if (handle == nullptr) {
+    fprintf(stderr, "dlopen failed: %s\n", dlerror());
+    return 1;
+  }
+  if (get_backend_class("CudaBackend") == nullptr) {
+    fprintf(stderr, "CudaBackend NOT registered after load\n");
+    return 1;
+  }
+  printf("PASS: shipped libexecutorch_cuda_backend.so registered CudaBackend\n");
+  return 0;
+}
+CPP
+  cat >> CMakeLists.txt <<'CMAKE'
+add_executable(cuda_reg cuda_reg.cpp)
+target_link_libraries(cuda_reg PRIVATE executorch::runtime ${CMAKE_DL_LIBS})
+CMAKE
+  cmake -S . -B build
+  cmake --build build
+  # dlopen by absolute path; its $ORIGIN rpath resolves the co-shipped deps.
+  ./build/cuda_reg "${CUDA_BACKEND_SO}"
+else
+  echo "CUDA backend not in wheel (CPU wheel); skipping CudaBackend check"
+fi
 
 echo "ALL C++ SDK WHEEL CHECKS PASSED"

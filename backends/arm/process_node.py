@@ -30,7 +30,12 @@ from torch.export.exported_program import ExportedProgram
 
 def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
     tensor = tensor.detach().cpu().contiguous()
-    if tensor.dtype in (torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2):
+    if tensor.dtype in (
+        torch.bfloat16,
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+        torch.float8_e8m0fnu,
+    ):
         try:
             import ml_dtypes  # type: ignore[import-not-found]
         except ImportError as e:
@@ -38,11 +43,11 @@ def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
                 f"ml_dtypes is required to serialize {tensor.dtype} tensors for TOSA. "
                 "Have you run setup.sh?"
             ) from e
-
         ml_dtype_map = {
             torch.bfloat16: (torch.uint16, ml_dtypes.bfloat16),
             torch.float8_e4m3fn: (torch.uint8, ml_dtypes.float8_e4m3fn),
             torch.float8_e5m2: (torch.uint8, ml_dtypes.float8_e5m2),
+            torch.float8_e8m0fnu: (torch.uint8, ml_dtypes.float8_e8m0fnu),
         }
         storage_dtype, ml_dtype = ml_dtype_map[tensor.dtype]
         return tensor.view(storage_dtype).numpy().view(ml_dtype)
@@ -51,12 +56,80 @@ def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
 
 
 def _prepare_const_values_for_tosa_dtype(
-    values: np.ndarray, tosa_dtype: ts.DType
+    values: np.ndarray, tosa_arg: TosaArg
 ) -> np.ndarray:
     """Normalize constant storage to the expected TOSA serializer dtype."""
-    if tosa_dtype == ts.DType.INT48 and values.dtype != np.int64:
+    if tosa_arg.dtype == ts.DType.INT48 and values.dtype != np.int64:
         return values.astype(np.int64)
+    if tosa_arg.dtype in (ts.DType.FP6E2M3, ts.DType.FP6E3M2):
+        if values.dtype == np.uint8:
+            try:
+                import ml_dtypes  # type: ignore[import-not-found]
+            except ImportError as e:
+                raise RuntimeError(
+                    "ml_dtypes is required to serialize FP6 tensors for TOSA. "
+                    "Have you run setup.sh?"
+                ) from e
+            ml_dtype = {
+                ts.DType.FP6E2M3: ml_dtypes.float6_e2m3fn,
+                ts.DType.FP6E3M2: ml_dtypes.float6_e3m2fn,
+            }[tosa_arg.dtype]
+            return values.view(ml_dtype)
     return values
+
+
+def _get_const_shape(values: np.ndarray, tosa_arg: TosaArg) -> list[int]:
+    """Return the TOSA logical shape for a serialized constant."""
+    if tosa_arg.dtype == ts.DType.FP4E2M1:
+        return normalize_symint(tosa_arg.shape)
+    return normalize_symint(values.shape)
+
+
+def _is_packed_fp4_const(values: np.ndarray, tosa_arg: TosaArg) -> bool:
+    """FP4 elements are pairwise in each byte of a uint8 tensor.
+
+    This function checks if the given values and TOSA argument represent a
+    packed FP4 constant.
+
+    """
+
+    return (
+        tosa_arg.dtype == ts.DType.FP4E2M1
+        and values.dtype == np.uint8
+        and values.shape[-1] * 2 == tosa_arg.shape[-1]
+    )
+
+
+def _add_const(
+    tosa_graph: Any,
+    values: np.ndarray,
+    tosa_arg: TosaArg,
+    name: str,
+) -> None:
+    """Add a constant, preserving packed FP4 storage when required."""
+    if _is_packed_fp4_const(values, tosa_arg):
+        # TOSA FP4 tensors have logical FP4 shape, but constants are stored as
+        # packed bytes (two values per byte). Add the raw bytes as INT8 first
+        # then set TOSA dtype and shape correctly on the tensor metadata.
+        tosa_graph.addConst(
+            normalize_symint(values.shape),
+            ts.DType.INT8,
+            values,
+            name=name,
+        )
+        tensor = tosa_graph.currRegion.currBasicBlock.tensors[name]
+        tensor.setDtype(ts.DType.FP4E2M1)
+        for dim, size in enumerate(normalize_symint(tosa_arg.shape)):
+            tensor.SetDimSize(dim, size)
+        return
+
+    prepared_values = _prepare_const_values_for_tosa_dtype(values, tosa_arg)
+    tosa_graph.addConst(
+        _get_const_shape(prepared_values, tosa_arg),
+        tosa_arg.dtype,
+        prepared_values,
+        name=name,
+    )
 
 
 def process_call_function(
@@ -149,16 +222,7 @@ def process_inputs_to_parameters(
             f"{type(parameter_data).__name__}"
         )
     parameter_values = _tensor_to_numpy(parameter_data)
-    parameter_values = _prepare_const_values_for_tosa_dtype(
-        parameter_values, tosa_arg.dtype
-    )
-
-    tosa_graph.addConst(
-        normalize_symint(parameter_values.shape),
-        tosa_arg.dtype,
-        parameter_values,
-        name=tosa_arg.name,
-    )
+    _add_const(tosa_graph, parameter_values, tosa_arg, name=tosa_arg.name)
 
 
 def process_inputs_to_buffers(
@@ -183,14 +247,7 @@ def process_inputs_to_buffers(
             f"{type(buffer_data).__name__}"
         )
     buffer_values = _tensor_to_numpy(buffer_data)
-    buffer_values = _prepare_const_values_for_tosa_dtype(buffer_values, tosa_arg.dtype)
-
-    tosa_graph.addConst(
-        normalize_symint(buffer_values.shape),
-        tosa_arg.dtype,
-        buffer_values,
-        name=tosa_arg.name,
-    )
+    _add_const(tosa_graph, buffer_values, tosa_arg, name=tosa_arg.name)
 
 
 def process_inputs_to_lifted_tensor_constants(
@@ -212,14 +269,7 @@ def process_inputs_to_lifted_tensor_constants(
         f"{type(tensor).__name__}"
     )
     tensor_values = _tensor_to_numpy(tensor)
-    tensor_values = _prepare_const_values_for_tosa_dtype(tensor_values, tosa_arg.dtype)
-
-    tosa_graph.addConst(
-        normalize_symint(tensor_values.shape),
-        tosa_arg.dtype,
-        tensor_values,
-        name=tosa_arg.name,
-    )
+    _add_const(tosa_graph, tensor_values, tosa_arg, name=tosa_arg.name)
 
 
 def _is_submodule_input(

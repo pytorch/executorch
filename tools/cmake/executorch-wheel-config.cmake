@@ -111,8 +111,10 @@ endif()
 # ../../lib). This lets a C++ application link the ExecuTorch runtime and the
 # common runtime extensions without an ExecuTorch source checkout:
 #
-# find_package(executorch REQUIRED) target_link_libraries(app PRIVATE
-# executorch::runtime executorch::extension_module executorch::extension_tensor)
+# find_package(executorch REQUIRED) if(TARGET executorch::runtime)  # only
+# defined by the Linux C++ SDK wheel target_link_libraries(app PRIVATE
+# executorch::runtime) endif() Installed (not build-tree) consumers set
+# LD_LIBRARY_PATH to the wheel lib dir, matching PyTorch's TorchConfig.cmake.
 #
 # The set is intentionally libtorch-free and excludes CPU operator/kernel
 # libraries; delegates (e.g. TensorRT, CUDA) supply their own compute. If your
@@ -142,7 +144,7 @@ set(_executorch_sdk_libdir "${_executorch_sdk_root}/lib")
 set(EXECUTORCH_SDK_FOUND OFF)
 find_library(
   _executorch_shared_LIBRARY
-  NAMES executorch
+  NAMES executorch libexecutorch.so.1
   PATHS "${_executorch_sdk_libdir}"
   NO_DEFAULT_PATH
 )
@@ -175,4 +177,132 @@ if(_executorch_shared_LIBRARY)
       )
     endif()
   endforeach()
+
+  # Optional standalone CPU kernels library. Shipped separately from
+  # libexecutorch.so so a fully delegated model links only executorch::runtime
+  # and carries no kernel weight; a model with non-delegated ops additionally
+  # links executorch::kernels for a full CPU operator set (optimized + portable
+  # fallback). Defined only when the kernels .so is present. Loaded purely for
+  # its op-registration static initializers, so force it to stay linked.
+  find_library(
+    _executorch_kernels_LIBRARY
+    NAMES executorch_kernels libexecutorch_kernels.so.1
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_kernels_LIBRARY AND NOT TARGET executorch::kernels)
+    add_library(executorch::kernels SHARED IMPORTED)
+    set_target_properties(
+      executorch::kernels
+      PROPERTIES IMPORTED_LOCATION "${_executorch_kernels_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+    )
+    set_property(
+      TARGET executorch::kernels
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+    )
+    if(NOT APPLE AND NOT WIN32)
+      set_property(
+        TARGET executorch::kernels
+        APPEND
+        PROPERTY
+          INTERFACE_LINK_OPTIONS
+          "SHELL:-Wl,--push-state,--no-as-needed,${_executorch_kernels_LIBRARY},--pop-state"
+      )
+    endif()
+  endif()
+
+  # CUDA delegate targets. Present only in a CUDA-enabled wheel, so each target
+  # is defined only when its shared library is shipped in executorch/lib/. These
+  # are real separate shared libraries (not aliases of libexecutorch.so):
+  # extension_cuda holds the one process-wide caller-stream TLS, and
+  # cuda_backend whole-archives the CUDA delegate so loading it registers
+  # "CudaBackend" into the runtime.
+  find_library(
+    _executorch_extension_cuda_LIBRARY
+    NAMES extension_cuda
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_extension_cuda_LIBRARY AND NOT TARGET
+                                            executorch::extension_cuda
+  )
+    # caller_stream.h includes <cuda_runtime.h> and the real target links
+    # CUDA::cudart PUBLIC, so reproduce that usage requirement. Use a QUIET,
+    # non-REQUIRED lookup: a consumer that only wants executorch::runtime from a
+    # CUDA-built wheel must still be able to find_package(executorch) on a
+    # machine that has the CUDA runtime but no development toolkit. If the
+    # toolkit is absent we simply skip defining the optional CUDA targets rather
+    # than failing the whole package.
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+      add_library(executorch::extension_cuda SHARED IMPORTED)
+      set_target_properties(
+        executorch::extension_cuda
+        PROPERTIES IMPORTED_LOCATION "${_executorch_extension_cuda_LIBRARY}"
+                   INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                   INTERFACE_COMPILE_FEATURES cxx_std_17
+                   INTERFACE_LINK_LIBRARIES CUDA::cudart
+      )
+    else()
+      # The CUDA delegate libraries are shipped in this wheel, but no CUDA
+      # development toolkit was found, so the executorch::extension_cuda /
+      # executorch::cuda_backend targets are intentionally not defined. Warn so
+      # a consumer that expected them gets a clear reason instead of an opaque
+      # "unknown target executorch::cuda_backend" error later.
+      message(
+        WARNING
+          "ExecuTorch: the CUDA delegate libraries are present in this wheel "
+          "(${_executorch_extension_cuda_LIBRARY}), but find_package(CUDAToolkit) "
+          "failed, so the executorch::extension_cuda and executorch::cuda_backend "
+          "targets are NOT defined. Install the CUDA toolkit to use them."
+      )
+    endif()
+  endif()
+
+  find_library(
+    _executorch_cuda_backend_LIBRARY
+    NAMES executorch_cuda_backend
+    PATHS "${_executorch_sdk_libdir}"
+    NO_DEFAULT_PATH
+  )
+  if(_executorch_cuda_backend_LIBRARY
+     AND TARGET executorch::extension_cuda
+     AND NOT TARGET executorch::cuda_backend
+  )
+    # Requires executorch::extension_cuda (only defined when the CUDA toolkit
+    # was found above), since the backend links it. If the toolkit is
+    # unavailable the optional CUDA targets are simply not defined.
+    add_library(executorch::cuda_backend SHARED IMPORTED)
+    set_target_properties(
+      executorch::cuda_backend
+      PROPERTIES IMPORTED_LOCATION "${_executorch_cuda_backend_LIBRARY}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+    )
+    set_property(
+      TARGET executorch::cuda_backend
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+               executorch::extension_cuda
+    )
+    # This library is loaded purely for its side effect: its static initializer
+    # registers "CudaBackend". A consumer references no symbol from it, so under
+    # -Wl,--as-needed (or -lexecutorch_cuda_backend) the linker would drop it
+    # from DT_NEEDED and the registration would never run. Force it to stay
+    # linked on ELF toolchains. Use --push-state/--pop-state so we restore the
+    # consumer's prior --as-needed/--no-as-needed state instead of hardcoding
+    # --as-needed for everything that follows this library on the link line.
+    if(NOT APPLE AND NOT WIN32)
+      set_property(
+        TARGET executorch::cuda_backend
+        APPEND
+        PROPERTY
+          INTERFACE_LINK_OPTIONS
+          "SHELL:-Wl,--push-state,--no-as-needed,${_executorch_cuda_backend_LIBRARY},--pop-state"
+      )
+    endif()
+  endif()
 endif()

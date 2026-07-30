@@ -7,33 +7,33 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass
 
 
-class CastToInt32Pass(ArmPass):
+class CastToInt32Pass(ArmOpTargetedPass):
     """Casts the input to int32 if it is not already and casts back the output
     to the original input dtype.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    targeted_ops = {
+    target_ops = {
         exir_ops.edge.aten.bitwise_left_shift.Tensor,
         exir_ops.edge.aten.bitwise_right_shift.Tensor,
     }
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def should_run_pass(self, graph_module: torch.fx.GraphModule) -> bool:
         tosa_spec = get_context_spec()
         if not tosa_spec.is_U55_subset:
-            return PassResult(graph_module, False)
-        return super().call(graph_module)
+            return False
+        return super().should_run_pass(graph_module)
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.targeted_ops:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         new_args: list = []

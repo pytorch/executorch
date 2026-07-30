@@ -8,7 +8,7 @@ import math
 import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops._common import validate_nan_mode
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -36,10 +36,8 @@ def _validate_clamp_dtype(dtype: torch.dtype, op: str) -> None:
             )
         return
 
-        _validate_float_dtype(dtype, op)
-        return
-
-    raise TosaValueError(f"Unsupported dtype {dtype} for {op}", op=op)
+    _validate_float_dtype(dtype, op)
+    return
 
 
 def _validate_float_dtype(dtype: torch.dtype, op: str) -> None:
@@ -86,7 +84,7 @@ def _validate_integer_clamp_bounds(
             )
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     'CLAMP(Tensor input, Scalar min_val, Scalar max_val, *, str nan_mode="PROPAGATE") -> Tensor',
     TosaSpecification.all_versions_and_profiles(),
 )
@@ -113,7 +111,7 @@ def CLAMP(
     return torch.empty_like(input, dtype=input.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "ERF(Tensor input) -> Tensor",
     FP_SPECS,
 )
@@ -122,7 +120,7 @@ def ERF(input: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input, dtype=input.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "SIGMOID(Tensor input) -> Tensor",
     FP_SPECS,
 )
@@ -131,7 +129,7 @@ def SIGMOID(input: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(input, dtype=input.dtype)
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "TANH(Tensor input) -> Tensor",
     FP_SPECS,
 )

@@ -44,7 +44,7 @@ using namespace executorch::runtime;
     _tokenizerPath = [tokenizerPath copy];
     _specialTokens = std::make_unique<std::vector<std::string>>();
     for (NSString *token in specialTokens) {
-      _specialTokens->emplace_back(token.UTF8String);
+      _specialTokens->emplace_back(token.UTF8String ?: "");
     }
   }
   return self;
@@ -57,8 +57,8 @@ using namespace executorch::runtime;
 - (BOOL)loadWithError:(NSError**)error {
   if (![self isLoaded]) {
     _runner = llm::create_text_llm_runner(
-      _modelPath.UTF8String,
-      llm::load_tokenizer(_tokenizerPath.UTF8String, std::move(_specialTokens))
+      _modelPath.UTF8String ?: "",
+      llm::load_tokenizer(_tokenizerPath.UTF8String ?: "", std::move(_specialTokens))
     );
     if (!_runner) {
       if (error) {
@@ -89,7 +89,7 @@ using namespace executorch::runtime;
     return NO;
   }
   auto status = _runner->generate(
-    prompt.UTF8String,
+    prompt.UTF8String ?: "",
     config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {

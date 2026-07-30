@@ -48,10 +48,17 @@ ET_INLINE off_t get_mmap_offset(size_t offset) {
  * Hint the kernel to prefetch pages eagerly and to optimize for sequential
  * reads. Intended to reduce page-fault stutter during model initialization
  * when the caller does not want to mlock the pages into RAM.
+ *
+ * MADV_WILLNEED / MADV_SEQUENTIAL are absent on some POSIX libcs (e.g. the
+ * Hexagon DSP toolchain).
  */
 ET_INLINE void madvise_pages_willneed_sequential(void* addr, size_t len) {
+#ifdef MADV_WILLNEED
   ::madvise(addr, len, MADV_WILLNEED);
+#endif
+#ifdef MADV_SEQUENTIAL
   ::madvise(addr, len, MADV_SEQUENTIAL);
+#endif
 }
 
 /**
@@ -74,9 +81,13 @@ ET_INLINE void fcntl_rdadvise_apple(int fd, size_t file_size) {
 
 #else
 
+#ifndef NOMINMAX
 #define NOMINMAX
 #include <windows.h>
 #undef NOMINMAX
+#else
+#include <windows.h>
+#endif
 #include <io.h>
 
 #include <executorch/extension/data_loader/mman_windows.h>

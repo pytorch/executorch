@@ -53,6 +53,7 @@ def get_node_visitors(
     edge_program: torch.export.ExportedProgram,
     enable_tensor_dump=False,
     op_package_infos: List[QnnExecuTorchOpPackageInfo] = None,
+    is_qnn_partitioner=True,
 ) -> Dict[str, NodeVisitor]:
     """Create a new class instance at runtime, and put them in a dict"""
     node_to_external_map = generate_node_to_external_map(edge_program)
@@ -62,7 +63,7 @@ def get_node_visitors(
             visitor
         ), f"Expecting a callable class, but got {visitor} of type {type(visitor)}"
         node_visitors[target] = visitor(
-            node_to_external_map, edge_program, enable_tensor_dump
+            node_to_external_map, edge_program, enable_tensor_dump, is_qnn_partitioner
         )
     if op_package_infos:
         custom_ops = []
@@ -73,6 +74,7 @@ def get_node_visitors(
                     node_to_external_map,
                     edge_program,
                     enable_tensor_dump,
+                    is_qnn_partitioner,
                 )
                 node_visitors[op_package_info.custom_op_name] = custom_op_builder
                 custom_ops.append(op_package_info.custom_op_name)

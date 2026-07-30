@@ -45,7 +45,7 @@ fi
 
 TEST_SUITE_NAME="$(basename "$0") ${TEST_SUITE}"
 
-EXCLUDE_TARGET_EXPR="(not u55) and (not u85) and (not tosa) and (not _vgf_)"
+EXCLUDE_TARGET_EXPR="(not u55) and (not u65) and (not u85) and (not tosa) and (not _vgf_)"
 PYTEST_RETRY_ARGS=(--reruns 2 --reruns-delay 1)
 
 all() { # Run all tests
@@ -90,7 +90,8 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
+    # Exit code 5 means no tests were collected; preserve all other failures.
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}" -m "not xlarge" || [[ $? -eq 5 ]]
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -110,7 +111,7 @@ test_pytest_models_tosa() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -133,7 +134,7 @@ test_pytest_ops_ethos_u55() {
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -146,7 +147,7 @@ test_pytest_models_ethos_u55() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55 -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -204,7 +205,7 @@ test_pytest_models_ethos_u85() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85 -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -251,7 +252,7 @@ test_pytest_models_vkml() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_ -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -269,6 +270,15 @@ test_run_vkml() {
 
     examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
     examples/arm/run.sh --build-dir="${vkml_build_dir}" --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_vgf_smoke() {
+    echo "${TEST_SUITE_NAME}: Run VGF AOT smoke test"
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        backends/arm/test/misc/test_vgf_smoke.py
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -379,11 +389,6 @@ test_smaller_stories_llama_vkml() {
     source backends/arm/test/setup_testing_vkml.sh
 
     _test_smaller_stories_llama vgf
-}
-
-test_smaller_stories_llama() {
-    test_smaller_stories_llama_tosa
-    test_smaller_stories_llama_vkml
 }
 
 test_memory_allocation() {

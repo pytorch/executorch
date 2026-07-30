@@ -69,3 +69,12 @@ class LoRALinear(nn.Module):
             z = self.lora_a(self.dropout(x))
             z = (self.alpha / self.rank) * self.lora_b(z)
         return out + z
+
+
+def lora_call(linear, x_in, lora_blob):
+    if lora_blob is not None:
+        key = getattr(linear, "_lora_key", None)
+        if key is not None and key in lora_blob:
+            a, b = lora_blob[key]
+            return linear(x_in, a, b)
+    return linear(x_in)

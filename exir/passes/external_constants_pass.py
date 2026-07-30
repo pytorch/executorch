@@ -71,7 +71,7 @@ def external_mutable_weights_pass(
     """
     Move all mutable weights to external file.
     """
-    # pass the gm and the ep seperately as the gm is being mutated by a bunch of passes in to_executorch,
+    # pass the gm and the ep separately as the gm is being mutated by a bunch of passes in to_executorch,
     # so the gm in the ep is lagging the graph signature is still correct.
     # This is really tech debt and all the passes should be refactored to just mutate the ep.
     mutated = False

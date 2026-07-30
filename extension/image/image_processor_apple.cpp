@@ -20,6 +20,7 @@
 
 #include <executorch/extension/image/image_processor.h>
 #include <executorch/extension/image/image_processor_apple.h>
+#include <executorch/extension/image/image_processor_simd.h>
 
 #include <algorithm>
 #include <cstring>
@@ -391,85 +392,6 @@ size_t compute_scale_temp_size(
   return temp_size > 0 ? static_cast<size_t>(temp_size) : 0;
 }
 
-// Deinterleave BGRA uint8 → planar RGB float with fused normalization.
-// Handles offset for letterbox padding.
-//
-// Per channel (R, G, B): vDSP_vfltu8 reads the matching byte from BGRA via
-// stride=4 and converts uint8→float, then vDSP_vsmsa applies the fused
-// affine `out = in * (scale_factor / std_dev) + (-mean / std_dev)` in-place.
-Error deinterleave_bgra_to_chw(
-    const uint8_t* bgra_data,
-    int32_t src_w,
-    int32_t src_h,
-    int32_t src_stride,
-    float* output,
-    int32_t final_w,
-    int32_t final_h,
-    int32_t offset_x,
-    int32_t offset_y,
-    const Normalization& norm) {
-  const size_t spatial = static_cast<size_t>(final_w) * final_h;
-
-  // Per-channel affine coefficients for `out = in * a + b`.
-  // BGRA byte layout: byte 0 = B, byte 1 = G, byte 2 = R; norm.{mean,std_dev}
-  // are indexed in RGB order (channel 0 = R, 1 = G, 2 = B).
-  const float a_r = norm.scale_factor / norm.std_dev[0];
-  const float a_g = norm.scale_factor / norm.std_dev[1];
-  const float a_b = norm.scale_factor / norm.std_dev[2];
-  const float b_r = -norm.mean[0] / norm.std_dev[0];
-  const float b_g = -norm.mean[1] / norm.std_dev[1];
-  const float b_b = -norm.mean[2] / norm.std_dev[2];
-
-  // When the bias is zero (e.g. zeroToOne / mean=0), a plain scale (vsmul) is
-  // cheaper than the fused scale+add (vsmsa).
-  const bool no_offset = (b_r == 0.0f && b_g == 0.0f && b_b == 0.0f);
-  auto scale_bias =
-      [no_offset](float* p, const float* a, const float* b, vDSP_Length n) {
-        if (no_offset) {
-          vDSP_vsmul(p, 1, a, p, 1, n);
-        } else {
-          vDSP_vsmsa(p, 1, a, b, p, 1, n);
-        }
-      };
-
-  // Output planes in CHW order: R, G, B. Each plane is final_w × final_h
-  // floats; we write a src_h × src_w region starting at (offset_y, offset_x).
-  float* r_plane = output + 0 * spatial;
-  float* g_plane = output + 1 * spatial;
-  float* b_plane = output + 2 * spatial;
-
-  // Fast path: source is contiguous and destination region is the entire
-  // plane (offsets 0, src dims == final dims).
-  if (src_stride == src_w * 4 && offset_x == 0 && offset_y == 0 &&
-      src_w == final_w && src_h == final_h) {
-    const vDSP_Length n = static_cast<vDSP_Length>(src_w) * src_h;
-    vDSP_vfltu8(bgra_data + 2, 4, r_plane, 1, n);
-    scale_bias(r_plane, &a_r, &b_r, n);
-    vDSP_vfltu8(bgra_data + 1, 4, g_plane, 1, n);
-    scale_bias(g_plane, &a_g, &b_g, n);
-    vDSP_vfltu8(bgra_data + 0, 4, b_plane, 1, n);
-    scale_bias(b_plane, &a_b, &b_b, n);
-    return Error::Ok;
-  }
-
-  // Slow path: row-by-row to handle stride padding and/or letterbox offsets.
-  for (int32_t y = 0; y < src_h; ++y) {
-    const uint8_t* src_row = bgra_data + y * src_stride;
-    const ptrdiff_t dst_off = (y + offset_y) * final_w + offset_x;
-    float* r_dst = r_plane + dst_off;
-    float* g_dst = g_plane + dst_off;
-    float* b_dst = b_plane + dst_off;
-    const vDSP_Length n = static_cast<vDSP_Length>(src_w);
-    vDSP_vfltu8(src_row + 2, 4, r_dst, 1, n);
-    scale_bias(r_dst, &a_r, &b_r, n);
-    vDSP_vfltu8(src_row + 1, 4, g_dst, 1, n);
-    scale_bias(g_dst, &a_g, &b_g, n);
-    vDSP_vfltu8(src_row + 0, 4, b_dst, 1, n);
-    scale_bias(b_dst, &a_b, &b_b, n);
-  }
-  return Error::Ok;
-}
-
 // Rotate an interleaved BGRA (ARGB8888 layout) buffer by `orientation` using
 // vImage's SIMD/cache-aware 90-degree rotation, writing a tightly-packed result
 // into `scratch`. UP is handled by the caller (no rotation). out_data/out_w/
@@ -590,11 +512,16 @@ Error normalize_bgra_into(
     offset_y = offset.second;
   }
 
-  return deinterleave_bgra_to_chw(
+  // BGRA byte layout: B=0, G=1, R=2 (alpha dropped); norm is RGB-indexed.
+  return deinterleave_to_chw(
       bgra_data,
       width,
       height,
       stride,
+      /*in_channels=*/4,
+      /*r_off=*/2,
+      /*g_off=*/1,
+      /*b_off=*/0,
       out,
       final_w,
       final_h,
@@ -1380,6 +1307,7 @@ Error process_pixelbuffer_into(
 
 // Allocate a CHW float tensor sized to the configured target and fill it via
 // process_pixelbuffer_into.
+// cppcheck-suppress unusedFunction
 Result<TensorPtr> process_pixelbuffer(
     const ImageProcessor& processor,
     CVPixelBufferRef pixelBuffer,

@@ -149,7 +149,7 @@ def test_adaptive_avg_pool2d_tosa_FP_fp8(test_module):
         aten_op=[],
         exir_op=exir_op,
         tosa_extensions=[tosa_extension],
-        run_on_tosa_ref_model=False,  # torch.avg_pool2d() has no eager CPU FP8 implementation, so eager reference execution fails.
+        compare_tosa_ref_model_outputs=False,
     )
     pipeline.count_tosa_ops({"AVG_POOL2D": 4})
     pipeline.run()

@@ -17,7 +17,7 @@ using Tensor = executorch::aten::Tensor;
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
+using std::optional;
 
 namespace impl {
 namespace HiFi {

@@ -9,8 +9,10 @@ import stat
 from pathlib import Path
 
 import executorch.backends.arm.vgf.check_env as check_env
+import executorch.backends.arm.vgf.model_converter as model_converter
 
 import pytest
+from executorch.backends.arm.vgf import backend as vgf_backend
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 
 
@@ -119,7 +121,7 @@ def test_is_vgf_runtime_available(monkeypatch):
 
 
 def test_model_converter_check_fails_when_missing(monkeypatch):
-    monkeypatch.setattr(check_env, "find_model_converter_binary", lambda: None)
+    monkeypatch.setattr(model_converter, "find_model_converter_binary", lambda: None)
 
     result = check_env._check_model_converter()
 
@@ -139,7 +141,7 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
         "raise SystemExit(1)\n",
     )
     monkeypatch.setattr(
-        check_env, "find_model_converter_binary", lambda: str(converter)
+        model_converter, "find_model_converter_binary", lambda: str(converter)
     )
 
     result = check_env._check_model_converter()
@@ -172,20 +174,20 @@ def test_find_existing_lib_finds_libvgf(tmp_path):
 
 def test_runtime_backend_check_passes_when_vgf_registered(monkeypatch):
     class BackendRegistry:
-        registered_backend_names = [check_env.VGF_BACKEND_NAME]
+        registered_backend_names = [vgf_backend.VGF_BACKEND_NAME]
 
         def is_available(self, backend_name):
-            return backend_name == check_env.VGF_BACKEND_NAME
+            return backend_name == vgf_backend.VGF_BACKEND_NAME
 
     class Runtime:
         backend_registry = BackendRegistry()
 
-    monkeypatch.setattr(check_env, "_load_runtime", lambda: Runtime())
+    monkeypatch.setattr(vgf_backend, "_load_runtime", lambda: Runtime())
 
     result = check_env._check_runtime_vgf_backend()
 
     assert result.status == check_env.STATUS_OK
-    assert check_env.VGF_BACKEND_NAME in result.detail
+    assert vgf_backend.VGF_BACKEND_NAME in result.detail
 
 
 def test_runtime_backend_check_fails_when_vgf_not_registered(monkeypatch):
@@ -198,12 +200,12 @@ def test_runtime_backend_check_fails_when_vgf_not_registered(monkeypatch):
     class Runtime:
         backend_registry = BackendRegistry()
 
-    monkeypatch.setattr(check_env, "_load_runtime", lambda: Runtime())
+    monkeypatch.setattr(vgf_backend, "_load_runtime", lambda: Runtime())
 
     result = check_env._check_runtime_vgf_backend()
 
     assert result.status == check_env.STATUS_FAIL
-    assert check_env.VGF_BACKEND_NAME in result.detail
+    assert vgf_backend.VGF_BACKEND_NAME in result.detail
     assert "XnnpackBackend" in result.detail
 
 
@@ -221,6 +223,22 @@ def test_cmake_build_flags_pass(tmp_path):
     assert result.status == check_env.STATUS_OK
     assert "EXECUTORCH_BUILD_VGF=ON" in result.detail
     assert "EXECUTORCH_BUILD_VULKAN=TRUE" in result.detail
+
+
+def test_cmake_build_flags_pass_when_vulkan_disabled(tmp_path):
+    (tmp_path / "CMakeCache.txt").write_text(
+        "EXECUTORCH_BUILD_VGF:BOOL=ON\n" "EXECUTORCH_BUILD_VULKAN:BOOL=OFF\n",
+        encoding="utf-8",
+    )
+
+    result = check_env._check_cmake_build_flags(
+        build_dir=tmp_path,
+        require_runtime_build=True,
+    )
+
+    assert result.status == check_env.STATUS_OK
+    assert "EXECUTORCH_BUILD_VGF=ON" in result.detail
+    assert "EXECUTORCH_BUILD_VULKAN=OFF" in result.detail
 
 
 def test_cmake_build_flags_fail_when_vgf_disabled(tmp_path):
@@ -341,3 +359,84 @@ def test_main_source_build_mode(monkeypatch, capsys):
 def test_main_rejects_build_dir_without_source_build():
     with pytest.raises(SystemExit):
         check_env.main(["--build-dir", "cmake-out-vkml"])
+
+
+def test_check_env_model_converter_probe_delegates_to_model_converter_module(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        model_converter,
+        "check_model_converter_environment",
+        lambda: model_converter.ModelConverterEnvironmentCheck(
+            "converter", model_converter.STATUS_OK, "from-owner"
+        ),
+    )
+
+    result = check_env._check_model_converter()
+
+    assert result.status == check_env.STATUS_OK
+    assert result.detail == "from-owner"
+
+
+def test_check_env_model_converter_lib_dir_probe_delegates_to_model_converter_module(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        model_converter,
+        "check_model_converter_lib_dir_environment",
+        lambda: model_converter.ModelConverterEnvironmentCheck(
+            "lib-dir", model_converter.STATUS_OK, "from-owner"
+        ),
+    )
+
+    result = check_env._check_model_converter_lib_dir()
+
+    assert result.status == check_env.STATUS_OK
+    assert result.detail == "from-owner"
+
+
+def test_check_env_runtime_probe_delegates_to_backend_module(monkeypatch):
+    monkeypatch.setattr(
+        vgf_backend,
+        "check_vgf_runtime_backend_environment",
+        lambda: vgf_backend.VgfRuntimeEnvironmentCheck(
+            "runtime", vgf_backend.STATUS_OK, "from-owner"
+        ),
+    )
+
+    result = check_env._check_runtime_vgf_backend()
+
+    assert result.status == check_env.STATUS_OK
+    assert result.detail == "from-owner"
+
+
+def test_model_converter_preflight_and_vgf_compile_share_executable_resolution(
+    monkeypatch,
+    tmp_path,
+):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter integration-test')\n"
+        "    raise SystemExit(0)\n"
+        "\n"
+        "out_index = sys.argv.index('-o') + 1\n"
+        "Path(sys.argv[out_index]).write_bytes(b'compiled-vgf')\n"
+        "raise SystemExit(0)\n",
+    )
+
+    monkeypatch.setenv("MODEL_CONVERTER_PATH", str(converter))
+
+    preflight = check_env._check_model_converter()
+    compiled = vgf_backend.vgf_compile(
+        tosa_flatbuffer=b"fake-tosa-flatbuffer",
+        compile_flags=[],
+    )
+
+    assert preflight.status == check_env.STATUS_OK
+    assert str(converter) in preflight.detail
+    assert compiled == b"compiled-vgf"

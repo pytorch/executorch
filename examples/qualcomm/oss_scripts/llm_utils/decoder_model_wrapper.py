@@ -38,7 +38,10 @@ def save_config_to_constant_methods(
         # Check for cache_config and its attributes
         cache_config = getattr(generation_config, "cache_config", None)
         if cache_config is not None:
-            max_seq_len = getattr(cache_config, "max_cache_len", None)
+            if isinstance(cache_config, dict):
+                max_seq_len = cache_config.get("max_cache_len", None)
+            else:
+                max_seq_len = getattr(cache_config, "max_cache_len", None)
             if max_seq_len is not None:
                 metadata["get_max_seq_len"] = max_seq_len
 
@@ -115,7 +118,7 @@ def _qnn_attention_mask(
 
     # Simplest and most efficient way to obtain a causal mask
     causal_mask = kv_arange <= reshaped_cache_position
-    atten_mask = torch.full((causal_mask.shape[0], kv_length), torch.tensor(-65504.0))
+    atten_mask = torch.full((causal_mask.shape[0], kv_length), -65504.0)
     atten_mask = atten_mask.masked_fill(causal_mask, 0)
     atten_mask = atten_mask[None, None, :, :].expand(batch_size, -1, -1, -1)
 
@@ -133,7 +136,7 @@ class QnnCausalLMExportableModule(torch.nn.Module):
         logging.info(f"Metadata to be recorded in PTE: {self._metadata}")
         self.exportable_module = TorchExportableModuleForDecoderOnlyLM(
             self.model,
-            max_batch_size=1,
+            batch_size=1,
             max_cache_len=self._metadata.get("get_max_seq_len"),
         )
         self._register_attention_mask_for_4_53(self.exportable_module)
@@ -154,7 +157,9 @@ class QnnCausalLMExportableModule(torch.nn.Module):
         return (example_input_ids, example_cache_position)
 
     def forward(self, input_ids: torch.Tensor, cache_position: torch.Tensor):
-        return self.exportable_module(input_ids, cache_position)
+        return self.exportable_module(
+            input_ids=input_ids, cache_position=cache_position
+        )
 
     def get_metadata(self):
         return self._metadata

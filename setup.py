@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
+# Copyright 2024, 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -134,7 +134,9 @@ def _minimal_cmake_flags() -> List[str]:
         "-DEXECUTORCH_BUILD_PYBIND=OFF",
         "-DEXECUTORCH_BUILD_QNN=OFF",
         "-DEXECUTORCH_BUILD_TESTS=OFF",
+        "-DEXECUTORCH_BUILD_VULKAN=OFF",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
+        "-DEXECUTORCH_BUILD_CMSIS_NN_PYBINDS=OFF",
     ]
 
 
@@ -190,9 +192,9 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
+        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
         # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn==1.7.1",
+        "scikit-learn>=1.7.1",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]
@@ -737,15 +739,13 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
-        # For a SONAME-versioned shared library, normalize what ships in the
-        # wheel. pip does not preserve symlinks (it materializes every wheel
-        # entry as a regular file), so a libexecutorch.so -> .so.1 -> .so.1.2.3
-        # chain would become three identical multi-hundred-KB copies. Instead
-        # ship exactly two files: the SONAME (libexecutorch.so.1, what the loader
-        # resolves via DT_NEEDED) as the real library, and the dev name
-        # (libexecutorch.so, what -lexecutorch / find_library(NAMES executorch)
-        # need). On a filesystem the dev name is a relative symlink; if the wheel
-        # packer dereferences it, it becomes at most one extra copy, not two.
+        # For a SONAME-versioned shared library, ship exactly one file: the
+        # SONAME (e.g. libexecutorch.so.1), which the loader resolves via
+        # DT_NEEDED. pip does not preserve symlinks (it materializes every wheel
+        # entry as a regular file), so a dev-name symlink would become a second
+        # full copy and double the shipped size. Consumers link through the
+        # CMake package's imported targets, which reference the SONAME by full
+        # path, so the dev name is not needed.
         if isinstance(ext, BuiltSharedLib):
             self._normalize_shared_lib(src_file, dst_file)
 
@@ -763,15 +763,6 @@ class InstallerBuildExt(build_ext):
             if soname_path.exists() or soname_path.is_symlink():
                 soname_path.unlink()
             os.replace(os.fspath(dst_file), os.fspath(soname_path))
-
-        # Dev name (drop all version suffixes), e.g. libexecutorch.so.
-        dev_name = soname.split(".so")[0] + ".so"
-        if dev_name != soname:
-            dev_path = lib_dir / dev_name
-            if dev_path.exists() or dev_path.is_symlink():
-                dev_path.unlink()
-            # Relative link so the wheel is relocatable on a real filesystem.
-            os.symlink(soname, os.fspath(dev_path))
 
         # Ensure the shipped library is writable (the CMake output may be
         # read-only), so a later rebuild/repack can overwrite it. Mirrors the
@@ -792,6 +783,22 @@ class CustomBuildPy(build_py):
     include or exclude a file in the source tree; they don't have a way to map
     a file to a different relative location under the output package directory.
     """
+
+    def analyze_manifest(self):
+        super().analyze_manifest()
+        # Recent versions of setuptools may include bare directory symlinks from version
+        # control (e.g. src/executorch/{backends,codegen,data,...} ->
+        # ../../<name>) in manifest_files. These exist for editable mode but
+        # break regular installs: build_package_data passes them to copy_file,
+        # which calls os.path.isfile() and gets False for a symlink-to-directory.
+        if not self.editable_mode:
+            _root = os.path.dirname(os.path.abspath(__file__))
+            for _pkg in list(self.manifest_files):
+                self.manifest_files[_pkg] = [
+                    _f
+                    for _f in self.manifest_files[_pkg]
+                    if os.path.isfile(os.path.join(_root, _f))
+                ]
 
     def run(self):
         # Copy python files to the output directory. This set of files is
@@ -884,6 +891,12 @@ class CustomBuildPy(build_py):
                     "extension/named_data_map/merged_data_map.h",
                     "extension/memory_allocator/malloc_memory_allocator.h",
                     "extension/memory_allocator/memory_allocator_utils.h",
+                    # CUDA caller-stream extension headers. Harmless on a CPU
+                    # wheel (headers only); the matching libextension_cuda.so and
+                    # the executorch::extension_cuda / executorch::cuda_backend
+                    # CMake targets are shipped/defined only in a CUDA wheel.
+                    "extension/cuda/caller_stream.h",
+                    "extension/cuda/export.h",
                 ]
                 if sys.platform == "linux"
                 else []
@@ -1013,6 +1026,33 @@ class CustomBuild(build):
         ):
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_CUDA=ON"]
 
+        # Unlike CUDA, Vulkan also needs its third-party submodules, which
+        # aren't in the default checkout, along with glslc. A partial checkout
+        # no-ops here rather than failing in CMake.
+        vulkan_third_party = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "backends",
+            "vulkan",
+            "third-party",
+        )
+        vulkan_submodules_present = all(
+            os.path.exists(os.path.join(vulkan_third_party, *parts))
+            for parts in (
+                ("volk", "volk.c"),
+                ("Vulkan-Headers", "include", "vulkan", "vulkan.h"),
+                ("VulkanMemoryAllocator", "include", "vk_mem_alloc.h"),
+            )
+        )
+        if (
+            not minimal_build
+            and vulkan_submodules_present
+            and install_utils.is_vulkan_available()
+            and install_utils.is_cmake_option_on(
+                cmake_configuration_args, "EXECUTORCH_BUILD_VULKAN", default=True
+            )
+        ):
+            cmake_configuration_args += ["-DEXECUTORCH_BUILD_VULKAN=ON"]
+
         # Check if QNN SDK is available (via QNN_SDK_ROOT env var), and if so,
         # enable building the Qualcomm backend by default.
         qnn_sdk_root = os.environ.get("QNN_SDK_ROOT", "").strip()
@@ -1052,6 +1092,12 @@ class CustomBuild(build):
         building_wheel = "bdist_wheel" in self.distribution.commands
         if not minimal_build and sys.platform == "linux" and building_wheel:
             cmake_configuration_args += ["-DEXECUTORCH_BUILD_SHARED=ON"]
+            # Ship optimized CPU kernels (with portable fallback for uncovered
+            # ops) in the standalone kernels .so, so the SDK can run non- or
+            # partially-delegated models. Mirrors iOS kernels_optimized.
+            cmake_configuration_args += [
+                "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON"
+            ]
 
         with Buck2EnvironmentFixer():
             # Generate the cmake cache from scratch to ensure that the cache state
@@ -1120,6 +1166,13 @@ class CustomBuild(build):
                 "EXECUTORCH_BUILD_SHARED"
             ):
                 cmake_build_args += ["--target", "executorch_shared"]
+                # Standalone CPU kernels library for the C++ SDK, shipped
+                # separately from libexecutorch.so so a fully delegated model
+                # links only the runtime while a partial model links this too.
+                cmake_build_args += [
+                    "--target",
+                    "executorch_kernels_shared",
+                ]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
                 cmake_build_args += ["--target", "portable_lib"]
@@ -1129,9 +1182,20 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
                 cmake_build_args += ["--target", "_llm_runner"]
 
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_VULKAN"):
+                cmake_build_args += ["--target", "vulkan_backend"]
+
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_CMSIS_NN_PYBINDS"):
+                cmake_build_args += ["--target", "cmsis_nn"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
+                # Loadable CUDA delegate + caller-stream shared libs for the C++
+                # SDK, built only for a wheel that also builds the shared runtime.
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                    cmake_build_args += ["--target", "executorch_cuda_backend"]
+                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1242,6 +1306,14 @@ setup(
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
                 BuiltExtension(
+                    src="cmsis_nn.cp*" if _is_windows() else "cmsis_nn.*",
+                    src_dir="backends/cortex_m/cmsis_nn-build/%BUILD_TYPE%/",
+                    modpath="executorch.backends.cortex_m.library._cmsis_nn.cmsis_nn",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_CMSIS_NN_PYBINDS",
+                    ],
+                ),
+                BuiltExtension(
                     src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
                     modpath="executorch.extension.llm.runner._llm_runner",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"],
@@ -1287,8 +1359,12 @@ setup(
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),
                 BuiltExtension(
-                    src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-                    src="PyQnnManagerAdaptor.*",
+                    src_dir="backends/qualcomm/%BUILD_TYPE%/",
+                    src=(
+                        "PyQnnManagerAdaptor*.pyd"
+                        if _is_windows()
+                        else "PyQnnManagerAdaptor.*"
+                    ),
                     modpath="executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
                 ),
@@ -1311,6 +1387,60 @@ setup(
                             dst="executorch/lib/",
                             dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                         )
+                    ]
+                    if sys.platform == "linux"
+                    else []
+                ),
+                # Standalone CPU kernels library, shipped SEPARATELY from
+                # libexecutorch.so so a fully delegated model pays no kernel
+                # weight while a partial model links executorch::kernels.
+                *(
+                    [
+                        BuiltSharedLib(
+                            src_dir="%CMAKE_CACHE_DIR%/",
+                            src_name="executorch_kernels",
+                            dst="executorch/lib/",
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                        )
+                    ]
+                    if sys.platform == "linux"
+                    else []
+                ),
+                # CUDA delegate binaries for the C++ SDK, shipped only in a
+                # CUDA-enabled wheel (PyTorch-style: the default wheel has the core
+                # runtime, the CUDA-index wheel adds these). Co-located with
+                # libexecutorch.so in executorch/lib/ so a C++ consumer, or a
+                # coalesced TensorRT+CUDA .pte, can load and register the CUDA
+                # delegate. executorch_cuda_backend whole-archives the backend so
+                # its "CudaBackend" registration runs on load; extension_cuda
+                # carries the single process-wide caller-stream TLS. Both are
+                # unversioned .so, so a plain dynamic-lib copy is enough. Gated on
+                # BUILD_SHARED as well as BUILD_CUDA: executorch_cuda_backend links
+                # the shared runtime and is only defined/built when SHARED is on,
+                # so packaging must require the same to avoid referencing an
+                # unbuilt artifact.
+                *(
+                    [
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                            src_name="executorch_cuda_backend",
+                            dst="executorch/lib/",
+                            is_dynamic_lib=True,
+                            dependent_cmake_flags=[
+                                "EXECUTORCH_BUILD_CUDA",
+                                "EXECUTORCH_BUILD_SHARED",
+                            ],
+                        ),
+                        BuiltFile(
+                            src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                            src_name="extension_cuda",
+                            dst="executorch/lib/",
+                            is_dynamic_lib=True,
+                            dependent_cmake_flags=[
+                                "EXECUTORCH_BUILD_CUDA",
+                                "EXECUTORCH_BUILD_SHARED",
+                            ],
+                        ),
                     ]
                     if sys.platform == "linux"
                     else []

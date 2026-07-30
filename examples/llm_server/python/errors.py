@@ -1,0 +1,105 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""OpenAI-shaped API errors.
+
+Raising these lets the server return a structured `{"error": {...}}` body with
+the right HTTP status instead of dropping the connection.
+"""
+
+from typing import Optional
+
+
+class APIError(Exception):
+    def __init__(
+        self, status: int, message: str, err_type: str, code: Optional[str] = None
+    ):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+        self.err_type = err_type
+        self.code = code
+
+    def body(self) -> dict:
+        return {
+            "error": {"message": self.message, "type": self.err_type, "code": self.code}
+        }
+
+
+class ContextLengthExceeded(APIError):
+    def __init__(self, num_tokens: int, max_context: int, completion_tokens: int = 0):
+        # completion_tokens > 0: the prompt fits but prompt + requested
+        # max_tokens would run past the window — reject up front rather than
+        # fail (or truncate) mid-generation.
+        if completion_tokens > 0:
+            message = (
+                f"This model's maximum context length is {max_context} tokens. "
+                f"However, you requested {num_tokens + completion_tokens} tokens "
+                f"({num_tokens} in the messages, {completion_tokens} in the "
+                f"completion). Please reduce the length of the messages or "
+                f"completion."
+            )
+        else:
+            message = (
+                f"This model's maximum context length is {max_context} tokens, "
+                f"but the request has {num_tokens} prompt tokens."
+            )
+        super().__init__(
+            status=400,
+            message=message,
+            err_type="invalid_request_error",
+            code="context_length_exceeded",
+        )
+
+
+class GenerationError(APIError):
+    def __init__(self, detail: str):
+        super().__init__(
+            status=500, message=f"Generation failed: {detail}", err_type="server_error"
+        )
+
+
+class ModelNotFound(APIError):
+    def __init__(self, requested: str, served: str):
+        super().__init__(
+            status=404,
+            message=f"Model {requested!r} not found. This server serves {served!r}.",
+            err_type="invalid_request_error",
+            code="model_not_found",
+        )
+
+
+class InvalidSessionId(APIError):
+    def __init__(self, detail: str):
+        super().__init__(
+            status=400,
+            message=f"Invalid session_id: {detail}",
+            err_type="invalid_request_error",
+            code="invalid_session_id",
+        )
+
+
+class SessionCapacity(APIError):
+    """A worker rejected an explicit session_id: the backend hosts no named
+    sessions (unsupported_session -> 400) or all session slots are taken
+    (capacity_exhausted -> 429)."""
+
+    def __init__(self, code: str):
+        if code == "unsupported_session":
+            super().__init__(
+                status=400,
+                message="This server hosts a single session; omit session_id.",
+                err_type="invalid_request_error",
+                code=code,
+            )
+        else:
+            super().__init__(
+                status=429,
+                message="Session capacity exhausted; reuse an existing session_id "
+                "or retry later.",
+                err_type="capacity_error",
+                code="capacity_exhausted",
+            )

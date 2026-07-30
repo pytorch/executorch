@@ -49,17 +49,6 @@ cmake_minimum_required(VERSION 3.24)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Hexagon toolchain with release build complains about code in third party
-# libraries.
-if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
-                                                     STREQUAL "Release"
-)
-  add_compile_options(
-    -Wno-error=format -Wno-error=implicit-int-conversion
-    -Wno-error=unused-variable -Wno-error=unused-function
-  )
-endif()
-
 # --- ExecuTorch Version ---
 # Parse version from version.txt (single source of truth)
 file(READ "${EXECUTORCH_ROOT}/version.txt" ET_VERSION_STRING)
@@ -89,6 +78,22 @@ endif()
 project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
+
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
+
+# Hexagon toolchain with release build complains about code in third party
+# libraries. Must come after project(), which runs the toolchain file that sets
+# CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
+if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "Hexagon" AND "${CMAKE_BUILD_TYPE}"
+                                                     STREQUAL "Release"
+)
+  add_compile_options(
+    -Wno-error=format -Wno-error=implicit-int-conversion
+    -Wno-error=unused-variable -Wno-error=unused-function
+  )
+endif()
 
 message(
   STATUS
@@ -155,6 +160,13 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
+
+# pybind11 >=3.0 uses find_package(Python) which looks for Python_EXECUTABLE,
+# not the legacy PYTHON_EXECUTABLE variable. Bridge the two so pybind11 picks up
+# the interpreter that setup.py (or the user) specified.
+if(PYTHON_EXECUTABLE AND NOT Python_EXECUTABLE)
+  set(Python_EXECUTABLE "${PYTHON_EXECUTABLE}")
+endif()
 
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
@@ -228,6 +240,12 @@ if(EXECUTORCH_BUILD_CUDA)
   add_definitions(-DCUDA_AVAILABLE=1)
 endif()
 
+option(ET_ENABLE_VGF_INPUT_DUMP
+       "Enable Arm/VGF delegate-boundary input dump flags in executor_runner"
+       OFF
+)
+announce_configured_options(ET_ENABLE_VGF_INPUT_DUMP)
+
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
 if(WIN32)
@@ -258,6 +276,27 @@ else()
 endif()
 
 add_subdirectory(third-party)
+
+# On Apple, pybind11 SHARED extension modules must not link libpython directly.
+# When python_add_library creates a SHARED library, it links Python::Python (via
+# pybind11::embed) which pulls in libpython. This conflicts with pybind11
+# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
+# state crash at import time. This function replaces pybind11::embed with
+# pybind11::module (which links Python::Module instead of Python::Python —
+# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
+# symbol resolution. No-op on non-Apple platforms.
+function(strip_python_lib target)
+  if(NOT APPLE)
+    return()
+  endif()
+  get_target_property(_libs ${target} LINK_LIBRARIES)
+  if(_libs)
+    list(REMOVE_ITEM _libs Python::Python pybind11::embed)
+    list(APPEND _libs pybind11::module)
+    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
+  endif()
+  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
 # ExecuTorch's runtime uses Result<T>/Error instead of exceptions, so
@@ -518,7 +557,11 @@ target_link_libraries(executorch_core PRIVATE program_schema)
 if(ANDROID)
   target_link_libraries(executorch_core PUBLIC log)
 endif()
-if(EXECUTORCH_USE_DL)
+# Skip when cross-compiling: find_library() resolves the host libdl even for a
+# bare-metal target (e.g. arm-none-eabi), which then links -ldl into the
+# baremetal runner and fails ("cannot find -ldl"). dladdr() isn't used on those
+# targets anyway. Per-target presets also set EXECUTORCH_USE_DL OFF explicitly.
+if(EXECUTORCH_USE_DL AND NOT CMAKE_CROSSCOMPILING)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
@@ -750,7 +793,7 @@ if(EXECUTORCH_BUILD_XNNPACK)
   list(APPEND _executorch_backends xnnpack_backend)
 endif()
 
-if(EXECUTORCH_BUILD_CORTEX_M)
+if(EXECUTORCH_BUILD_CORTEX_M OR EXECUTORCH_BUILD_CMSIS_NN_PYBINDS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
 endif()
 
@@ -860,6 +903,8 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
   endif()
   list(APPEND _executorch_extensions tokenizers)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
+  list(APPEND _executorch_extensions extension_llm_cache)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -1040,6 +1085,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
+  if(EXECUTORCH_BUILD_VGF)
+    list(APPEND _dep_libs vgf_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_MPS)
     list(APPEND _dep_libs mpsdelegate)
   endif()
@@ -1105,6 +1154,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
+  strip_python_lib(portable_lib)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package. PyTorch requires C++20, so
   # pybindings must be compiled with C++20.
@@ -1146,6 +1196,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
     data_loader SHARED extension/pybindings/pybindings_data_loader.cpp
   )
+  strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
   target_link_libraries(data_loader PRIVATE executorch)
@@ -1369,6 +1420,33 @@ else()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
 
+# Standalone CPU kernels library for the pip C++ SDK, shipped separately from
+# libexecutorch.so so a fully delegated model links no kernels (mirrors iOS
+# kernels_optimized). PRIVATE executorch_shared so runtime symbols resolve from
+# the one libexecutorch.so at load rather than embedding a second registry.
+if(EXECUTORCH_BUILD_SHARED AND _executorch_kernels)
+  executorch_add_shared_library(executorch_kernels_shared)
+  set_target_properties(
+    executorch_kernels_shared
+    PROPERTIES OUTPUT_NAME executorch_kernels
+               ARCHIVE_OUTPUT_NAME executorch_kernels_shared
+               EXPORT_NAME executorch-kernels-shared
+  )
+  target_include_directories(
+    executorch_kernels_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_definitions(
+    executorch_kernels_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  target_link_libraries(
+    executorch_kernels_shared PRIVATE executorch_shared ${_executorch_kernels}
+  )
+  # No EXPORT set: the .so is shipped by setup.py (BuiltSharedLib file copy) and
+  # found via find_library in executorch-wheel-config.cmake, so it must not also
+  # join ExecuTorchTargets (that double-registers the target).
+  install(TARGETS executorch_kernels_shared DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
 install(TARGETS executorch_backends executorch_extensions executorch_kernels
         EXPORT ExecuTorchTargets
 )
@@ -1414,6 +1492,9 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
   target_link_libraries(executor_runner PRIVATE ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+  if(ET_ENABLE_VGF_INPUT_DUMP)
+    target_compile_definitions(executor_runner PRIVATE ET_ENABLE_VGF_INPUT_DUMP)
+  endif()
   if(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
     target_compile_definitions(
       executor_runner PRIVATE EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1

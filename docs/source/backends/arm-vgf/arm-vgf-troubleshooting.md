@@ -30,3 +30,26 @@ For CI logs or bug reports, add `--json`:
 ```bash
 python -m executorch.backends.arm.vgf.check_env --aot --json
 ```
+
+## Testing VGF ahead-of-time lowering
+
+The Arm backend includes a lightweight VGF ahead-of-time smoke test that checks
+that a small PyTorch model can be exported, partitioned for VGF, lowered through
+the shared TOSA pipeline, and converted into an ExecuTorch program.
+
+The test mocks the final VGF `model-converter` invocation, so it does not
+require the ML SDK Model Converter, Vulkan runtime, or VKML host-emulation
+setup. It is intended to catch integration regressions in the Python AOT
+lowering path before running heavier VGF runtime tests.
+
+Run it directly with:
+
+```bash
+pytest -q backends/arm/test/misc/test_vgf_smoke.py
+```
+
+If using the Arm backend test wrapper, run:
+
+```bash
+backends/arm/test/test_arm_backend.sh test_pytest_vgf_smoke
+```

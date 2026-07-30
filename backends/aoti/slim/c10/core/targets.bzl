@@ -1,7 +1,11 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 
 def define_common_targets():
     """Define targets for SlimTensor c10 core module."""
+
+    if not is_fbcode():
+        return
 
     # Header-only library for DeviceType
     runtime.cxx_library(

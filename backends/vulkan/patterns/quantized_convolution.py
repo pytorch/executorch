@@ -183,7 +183,7 @@ def find_quantized_convolution_patterns(
 
 
 @register_pattern_replacement("quantized_convolution")
-def make_q8ta_conv2d_custom_op(
+def make_q8ta_conv2d_custom_op(  # noqa: C901
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedConvolutionMatch,
@@ -249,9 +249,10 @@ def make_q8ta_conv2d_custom_op(
     # Need to make sure that OC dim is a multiple of 4 so that data load/stores are well
     # aligned with texel boundaries. Add padding to align to the next multiple of 4 if
     # needed.
-    utils.align_width_and_update_state_dict(
-        ep, match.weight_node, weight_tensor, force_update=True
-    )
+    if utils.register_param_mutation(ep, match.weight_node, "8 bit conv2d weight"):
+        utils.align_width_and_update_state_dict(
+            ep, match.weight_node, weight_tensor, force_update=True
+        )
     utils.align_width_and_update_state_dict(
         ep, match.weight_scales_node, weight_scales_tensor
     )

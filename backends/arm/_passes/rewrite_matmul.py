@@ -105,11 +105,10 @@ class RewriteMatmulPass(ArmPass):
             elif (
                 x1_fake_tensor.dtype in self._WIDENING_INPUT_DTYPES
                 and x2_fake_tensor.dtype in self._WIDENING_INPUT_DTYPES
-                and output_fake_tensor.dtype not in self._WIDENING_INPUT_DTYPES
+                and output_fake_tensor.dtype != node_output_fake_tensor.dtype
             ):
-                # TOSA BF16/FP16/FP8 MATMUL outputs FP32, while the original
-                # exported node outputs BF16/FP16/FP8. Cast back to preserve
-                # the exported graph dtype.
+                # TOSA BF16/FP16/FP8 MATMUL widens the output. Cast back to
+                # preserve the exported graph dtype.
                 with graph_module.graph.inserting_after(tosa_matmul_node):
                     cast_node = create_node(
                         graph_module.graph,

@@ -544,6 +544,32 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
+    def test_export_pass_preserves_graph_module_meta(self) -> None:
+        """ExportPass should preserve GraphModule-level meta through re-tracing."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        class NullPass(ExportPass):
+            pass
+
+        prog = to_edge(
+            export(Foo(), (torch.ones(3, 2),), strict=True),
+        )
+        # Set custom metadata on the graph module before the pass.
+        prog.exported_program().graph_module.meta["custom"] = {
+            "test_key": "test_value",
+            "nested": {"a": 1},
+        }
+
+        new_prog = prog.transform([NullPass()])
+        new_meta = new_prog.exported_program().graph_module.meta
+
+        self.assertIn("custom", new_meta)
+        self.assertEqual(new_meta["custom"]["test_key"], "test_value")
+        self.assertEqual(new_meta["custom"]["nested"]["a"], 1)
+
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
         graph = torch.fx.Graph()
@@ -867,6 +893,47 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(upper_bound, 20)
         self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
         self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
+
+    def test_eval_upper_bound_int_oo_falls_back_to_hint(self) -> None:
+        """When bound_sympy returns int_oo (no finite upper bound from
+        constraints), eval_upper_bound should fall back to the trace hint
+        for backed symbols rather than returning int_oo."""
+
+        class SimpleModel(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        dim0 = torch.export.Dim("batch", min=1)
+        ep = export(
+            m,
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: dim0}},
+        )
+        edge = to_edge(ep)
+
+        gm = edge.exported_program().graph_module
+        x_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x"
+        )
+        sym_dim = x_node.meta["val"].shape[0]
+        self.assertIsInstance(sym_dim, torch.SymInt)
+
+        try:
+            from torch.utils._sympy.numbers import int_oo
+        except ImportError:
+            self.skipTest("int_oo not available in this torch version")
+        from torch.utils._sympy.value_ranges import bound_sympy
+
+        raw_upper = bound_sympy(
+            sym_dim.node.expr, sym_dim.node.shape_env.var_to_range
+        ).upper
+        self.assertIs(raw_upper, int_oo)
+
+        self.assertEqual(eval_upper_bound(sym_dim), 4)
+
+        et = edge.to_executorch()
+        self.assertIsNotNone(et)
 
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
@@ -1732,9 +1799,7 @@ class TestPasses(unittest.TestCase):
         # lower to edge dialect
         edge_prog = to_edge(
             aten_prog,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _use_edge_ops=True
-            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         edge_prog = edge_prog.to_backend(XnnpackPartitioner())
 

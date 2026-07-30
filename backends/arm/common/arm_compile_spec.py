@@ -28,7 +28,11 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 @dataclass(init=False)
 class ArmCompileSpec(ABC):
+    """Base compile specification for Arm backend targets."""
+
     class DebugMode(Enum):
+        """Debug artifact formats emitted during Arm lowering."""
+
         JSON = 1
         TOSA = 2
 
@@ -37,6 +41,7 @@ class ArmCompileSpec(ABC):
     path_for_intermediates: str | None = None
     tosa_debug_mode: DebugMode | None = None
     preserve_io_quantization: bool = False
+    tosa_dev_mode: bool | None = None
 
     _TOSA_SPEC_KEY = "tosa_spec"
     _COMPILE_FLAGS_KEY = "compile_flags"
@@ -46,6 +51,7 @@ class ArmCompileSpec(ABC):
     _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
     _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
     _PRESERVE_IO_QUANT_KEY = "preserve_io_quantization"
+    _TOSA_DEV_MODE = "tosa_sw_dev_mode"
 
     def _set_compile_specs(
         self,
@@ -56,6 +62,7 @@ class ArmCompileSpec(ABC):
         output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
         preserve_io_quantization: bool = False,
+        tosa_dev_mode: bool | None = None,
     ):
         """Set all values of dataclass directly."""
         self.tosa_spec = tosa_spec
@@ -66,6 +73,7 @@ class ArmCompileSpec(ABC):
         self.output_order_workaround = output_order_workaround
         self.preserve_io_quantization = preserve_io_quantization
         self._warn_if_redundant_preserve_io_quantization()
+        self.tosa_dev_mode = tosa_dev_mode
         if output_order_workaround:
             warnings.warn(
                 "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
@@ -84,6 +92,7 @@ class ArmCompileSpec(ABC):
         output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
         preserve_io_quantization: bool = False
+        tosa_dev_mode: bool | None = None
         unknown_specs: dict[str, str] = {}
         for spec in compile_specs:
             key = spec.key
@@ -136,6 +145,12 @@ class ArmCompileSpec(ABC):
                 pipeline_config = ArmPassPipelineConfig.from_dict(json.loads(val))
             elif key == ArmCompileSpec._PRESERVE_IO_QUANT_KEY:
                 preserve_io_quantization = str(val).lower() in ("1", "true", "yes")
+            elif key == ArmCompileSpec._TOSA_DEV_MODE:
+                if tosa_dev_mode is not None:
+                    raise ValueError(
+                        "More than one tosa_sw_dev_mode entry in compile spec."
+                    )
+                tosa_dev_mode = str(val).lower() in ("1", "true", "yes")
             else:
                 unknown_specs[key] = val
 
@@ -160,6 +175,7 @@ class ArmCompileSpec(ABC):
             output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
             preserve_io_quantization=preserve_io_quantization,
+            tosa_dev_mode=tosa_dev_mode,
         )
         cls._from_list_hook(compile_spec, unknown_specs)
         compile_spec._validate()
@@ -242,6 +258,15 @@ class ArmCompileSpec(ABC):
                 str(bool(self.preserve_io_quantization)).encode(),
             )
         )
+
+        if self.tosa_dev_mode is not None:
+            compile_spec.append(
+                CompileSpec(
+                    ArmCompileSpec._TOSA_DEV_MODE,
+                    str(bool(self.tosa_dev_mode)).encode(),
+                )
+            )
+
         return compile_spec
 
     def _set_preserve_io_quantization(self, enabled: bool) -> "ArmCompileSpec":
@@ -251,8 +276,10 @@ class ArmCompileSpec(ABC):
         return self
 
     def _warn_if_redundant_preserve_io_quantization(self) -> None:
-        """Warn when preserve_io_quantization has no effect for INT-only
-        specs.
+        """Warn when preserve_io_quantization has no effect.
+
+        INT-only specs already preserve IO quantization naturally.
+
         """
         if (
             self.preserve_io_quantization
@@ -266,8 +293,7 @@ class ArmCompileSpec(ABC):
             )
 
     def _get_pass_pipeline_config(self) -> ArmPassPipelineConfig:
-        """Returns configuration that controls how the Arm pass pipeline should
-        behave.
+        """Return the configuration for the Arm pass pipeline.
 
         Subclasses may override to tweak defaults for specific targets.
 
@@ -277,8 +303,7 @@ class ArmCompileSpec(ABC):
         return self._pipeline_config
 
     def set_pass_pipeline_config(self, config: ArmPassPipelineConfig) -> None:
-        """Sets the configuration that controls how the Arm pass pipeline should
-        behave. Subclasses may override to tweak defaults for specific targets.
+        """Set the configuration for the Arm pass pipeline.
 
         Args:
             config: The custom ArmPassPipelineConfig to set.
@@ -296,18 +321,16 @@ class ArmCompileSpec(ABC):
         return config
 
     def _get_intermediate_path(self) -> str | None:
-        """Gets the path used for dumping intermediate results such as tosa and
-        pte.
+        """Get the path used for dumping intermediate results.
 
         Returns:
-            Path where intermediate results are saved.
+            Path where TOSA and PTE intermediate results are saved.
 
         """
         return self.path_for_intermediates
 
     def dump_intermediate_artifacts_to(self, output_path: str | None):
-        """Sets a path for dumping intermediate results during such as tosa and
-        pte.
+        """Set a path for dumping TOSA and PTE intermediate results.
 
         Args:
             output_path: Path to dump intermediate results to.
@@ -324,6 +347,16 @@ class ArmCompileSpec(ABC):
 
         """
         self.tosa_debug_mode = debug_mode
+        return self
+
+    def _set_tosa_dev_mode(self, tosa_dev_mode: bool):
+        """Sets whether to enable TOSA software development mode.
+
+        Args:
+            tosa_dev_mode: Boolean indicating whether to enable TOSA software development mode.
+
+        """
+        self.tosa_dev_mode = tosa_dev_mode
         return self
 
     @deprecated(

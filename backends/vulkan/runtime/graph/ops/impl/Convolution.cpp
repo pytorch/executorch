@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Conv2dGemm.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -296,6 +297,41 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
+// Decide whether a SlidingWindow conv2d should be computed via the
+// im2col + GEMM path (conv2d_gemm_impl) instead of the direct convolution
+// shader. Across 26 configs on Mali-G715 (buffer path) and Adreno SM8650
+// (texture path): FP32 cases were numerically verified against the reference;
+// FP16 cases were routing/dispatch-validated only (the reference is float-only
+// for the large shapes, so FP16 outputs were not numerically checked).
+//
+// Only called for SlidingWindow conv2d (1x1 is routed to conv2d_pw and
+// Depthwise/Transposed are handled before the call site).
+//
+// Preconditions (fall back to direct conv if any fail — the im2col path is
+// either not applicable or not beneficial):
+//   - groups == 1
+//   - dilation == 1 (all dims)
+//
+// Selection rule: use im2col on Mali universally, or once the output channel
+// count is large enough to amortize the fixed ~N*K_total im2col gather cost.
+constexpr int64_t kIm2colMinCOut = 128;
+
+bool should_use_conv2d_im2col(
+    ComputeGraph& graph,
+    const ValueRef weight_data,
+    const int64_t groups_val,
+    const Kernel2dParams& kernel_params) {
+  if (groups_val != 1) {
+    return false;
+  }
+  if (kernel_params.dilation[0] != 1 || kernel_params.dilation[1] != 1) {
+    return false;
+  }
+  const auto weight_sizes = graph.sizes_of(weight_data);
+  const int64_t c_out = weight_sizes.at(0);
+  return graph.device_is_mali() || c_out >= kIm2colMinCOut;
+}
+
 utils::uvec3 create_conv2d_global_wg_size(
     ComputeGraph& graph,
     const Conv2dMethod method,
@@ -425,7 +461,8 @@ void add_conv2d_node(
     const ValueRef out_min,
     const ValueRef out_max,
     const ValueRef out,
-    const bool clamp_out) {
+    const bool clamp_out,
+    const bool force_direct) {
   const bool transposed_val = graph.get_bool(transposed);
 
   float out_min_val = 0.0f;
@@ -473,6 +510,37 @@ void add_conv2d_node(
         out_max_val);
   }
 
+  const Kernel2dParams kernel_params = create_kernel2d_params(
+      graph,
+      weight_data,
+      /*kernel_size_only = */ false,
+      stride,
+      padding,
+      dilation);
+
+  // SlidingWindow conv2d: route to the im2col + GEMM path when the heuristic
+  // indicates it is beneficial, falling back to the direct convolution shader
+  // otherwise. `force_direct` bypasses the heuristic entirely and forces the
+  // direct path (used by tests to exercise the direct shader regardless of
+  // device); the default (false) reproduces the production routing exactly.
+  const bool use_im2col = !force_direct &&
+      method == Conv2dMethod::SlidingWindow &&
+      should_use_conv2d_im2col(graph, weight_data, groups_val, kernel_params);
+  if (use_im2col) {
+    return conv2d_gemm_impl(
+        graph,
+        in,
+        weight_data,
+        bias,
+        stride,
+        padding,
+        dilation,
+        out,
+        clamp_out,
+        out_min_val,
+        out_max_val);
+  }
+
   ValueRef arg_weight = prepack_weights(graph, weight_data, method);
   ValueRef arg_bias = prepack_biases(
       graph,
@@ -489,13 +557,6 @@ void add_conv2d_node(
 
   check_conv_args(graph, in, out);
 
-  Kernel2dParams kernel_params = create_kernel2d_params(
-      graph,
-      weight_data,
-      /*kernel_size_only = */ false,
-      stride,
-      padding,
-      dilation);
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight_data, kernel_params, transposed_val);
 

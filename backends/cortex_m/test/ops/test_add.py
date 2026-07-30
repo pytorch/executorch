@@ -238,14 +238,18 @@ xfails_dialect: dict[str, xfail_type] = xfails_implementation | {
 
 
 @parametrize("test_case", test_cases, xfails=xfails_dialect)
-def test_dialect_add(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_dialect_add(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_dialect(
         test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
     )
 
 
 @parametrize("test_case", test_cases, xfails=xfails_implementation)
-def test_implementation_add(test_case):
-    tester = CortexMTester(test_case.model, test_case.example_inputs)
+def test_implementation_add(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
     tester.test_implementation()

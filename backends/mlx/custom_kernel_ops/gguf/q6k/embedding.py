@@ -53,7 +53,7 @@ _Q6K_EMBED_SOURCE = """
 """
 
 
-def emit_embedding(
+def _emit_embedding_fused(
     P: MLXProgramBuilder,
     head: Node,
     weight_node: Node,
@@ -120,3 +120,32 @@ def emit_embedding(
     )
 
     return out
+
+
+def emit_embedding(
+    P: MLXProgramBuilder,
+    head: Node,
+    weight_node: Node,
+    indices_node: Node,
+    output_dtype: torch.dtype,
+) -> Slot:
+    """Dispatch to the MLX-native repack gather or the fused Metal gather.
+
+    The repack path is only valid when the weight merges to an MLX-supported
+    group size (>= 32); otherwise (and when ``ET_MLX_EMIT_DIRECT_GGUF=1``) the
+    fused gather kernel is used.
+    """
+    from executorch.backends.mlx.custom_kernel_ops.gguf.q6k import emit_direct_gguf
+
+    if not emit_direct_gguf():
+        from executorch.backends.mlx.custom_kernel_ops.gguf.q6k.embedding_mlx_native import (
+            emit_embedding as emit_embedding_mlx_native,
+        )
+
+        out = emit_embedding_mlx_native(
+            P, head, weight_node, indices_node, output_dtype
+        )
+        if out is not None:
+            return out
+
+    return _emit_embedding_fused(P, head, weight_node, indices_node, output_dtype)

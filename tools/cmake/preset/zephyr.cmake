@@ -6,6 +6,8 @@
 
 set_overridable_option(EXECUTORCH_BUILD_COREML OFF)
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER OFF)
+# Bare-metal has no libdl (see CMakeLists.txt EXECUTORCH_USE_DL block).
+set_overridable_option(EXECUTORCH_USE_DL OFF)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM OFF)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM_AOT OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER OFF)

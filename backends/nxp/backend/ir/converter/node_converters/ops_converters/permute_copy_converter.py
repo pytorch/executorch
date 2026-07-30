@@ -27,6 +27,7 @@ from executorch.backends.nxp.backend.neutron_operator_support import (
     transposition_is_supported_on_neutron,
 )
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 Permutation = list[int]
@@ -379,6 +380,26 @@ class PermuteCopyConverter(NodeConverter):
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
+        return True
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+    ) -> bool:
+        has_static_input = node_is_effectively_static_tensor(
+            node.args[0], parameters_mapping
+        )
+        is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
+        if has_static_input and is_alone_in_partition:
+            # Transpose with a static input is a no-op on Neutron. If it was the only operator in the partition,
+            #  Neutron Converter would produce and empty graph, so delegation is prohibited.
             return False
 
         return True
