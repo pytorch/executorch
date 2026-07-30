@@ -65,7 +65,6 @@ with zipfile.ZipFile(wheel_file) as wheel:
     names = set(wheel.namelist())
 
 required = [
-    "executorch/lib/libexecutorch.so",
     "executorch/share/cmake/executorch-config.cmake",
     "executorch/utils/__init__.py",
     "executorch/include/executorch/runtime/executor/program.h",
@@ -75,9 +74,8 @@ missing = [name for name in required if name not in names]
 if missing:
     raise AssertionError(f"{wheel_file} is missing SDK files: {missing}")
 
-# The loader resolves the SONAME (libexecutorch.so.<major>), so a versioned
-# real library must be present in addition to the dev symlink. Without it the
-# wheel links at build time but fails to load at runtime.
+# The loader resolves the SONAME (libexecutorch.so.<major>), which is the only
+# runtime library shipped. Without it the wheel has no linkable runtime.
 versioned = [
     name
     for name in names
@@ -87,7 +85,7 @@ versioned = [
 if not versioned:
     raise AssertionError(
         f"{wheel_file} has no versioned libexecutorch.so.<ver>; the SONAME "
-        "symlink chain is broken and the library will fail to load at runtime."
+        "library is missing and the runtime cannot load."
     )
 
 # Headers whose implementation is not shipped must not be advertised.
