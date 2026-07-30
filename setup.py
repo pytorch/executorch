@@ -800,6 +800,60 @@ class CustomBuildPy(build_py):
                     if os.path.isfile(os.path.join(_root, _f))
                 ]
 
+    def _is_cuda_wheel_build(self) -> bool:
+        # Read EXECUTORCH_BUILD_CUDA from the CMake cache the build command
+        # produced (it runs before build_py copies files). Gates CUDA-only
+        # headers so they ship only in a CUDA wheel.
+        try:
+            build_temp = self.get_finalized_command("build").build_temp
+            cache_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                build_temp,
+                "cmake-out",
+                "CMakeCache.txt",
+            )
+            if not os.path.exists(cache_path):
+                return False
+            return CMakeCache(cache_path=cache_path).is_enabled("EXECUTORCH_BUILD_CUDA")
+        except Exception:
+            return False
+
+    def _sdk_headers(self) -> List[str]:
+        # Delegate-only C++ SDK headers: the Program/Module/Tensor/DataLoader/
+        # .ptd APIs a standalone C++ runner needs to link the prebuilt runtime
+        # without an ExecuTorch source tree. Listed explicitly (not rglob) so we
+        # advertise only APIs whose implementation archive is shipped in
+        # executorch/lib/. Excluded on purpose: bundled_module.h,
+        # flat_tensor/serialize/serialize.h, file_descriptor_data_loader.h, and
+        # cpu_caching_malloc_allocator.h (their impls are not shipped).
+        # flat_tensor_header.h IS shipped: it is the .ptd reader. Linux only.
+        if sys.platform != "linux":
+            return []
+        headers = [
+            "extension/module/module.h",
+            "extension/data_loader/buffer_data_loader.h",
+            "extension/data_loader/file_data_loader.h",
+            "extension/data_loader/mmap_data_loader.h",
+            "extension/data_loader/mman.h",
+            "extension/data_loader/mman_windows.h",
+            "extension/data_loader/shared_ptr_data_loader.h",
+            "extension/flat_tensor/flat_tensor_data_map.h",
+            "extension/flat_tensor/serialize/flat_tensor_header.h",
+            "extension/named_data_map/merged_data_map.h",
+            "extension/memory_allocator/malloc_memory_allocator.h",
+            "extension/memory_allocator/memory_allocator_utils.h",
+        ]
+        # CUDA caller-stream headers ship only in a CUDA wheel, alongside the
+        # matching libextension_cuda.so and the executorch::extension_cuda /
+        # executorch::cuda_backend targets, so a CPU wheel does not advertise
+        # headers whose library and targets it does not contain.
+        if self._is_cuda_wheel_build():
+            headers += [
+                "extension/cuda/caller_stream.h",
+                "extension/cuda/export.h",
+            ]
+        return headers
+
     def run(self):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
@@ -865,43 +919,7 @@ class CustomBuildPy(build_py):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
-            # Delegate-only C++ SDK headers: the Program/Module/Tensor/DataLoader/
-            # .ptd APIs a standalone C++ runner needs, so it can link the prebuilt
-            # runtime without an ExecuTorch source tree. These are listed
-            # explicitly (not rglob) so we only advertise APIs whose implementation
-            # archive is actually shipped in executorch/lib/. Excluded on purpose:
-            # bundled_module.h (needs the separate bundled_module archive),
-            # flat_tensor/serialize/serialize.h (serializer .cpp not shipped),
-            # file_descriptor_data_loader.h (impl not in the shipped archive), and
-            # cpu_caching_malloc_allocator.h (needs a memory_allocator archive we
-            # do not ship). flat_tensor_header.h IS shipped: it is the .ptd reader.
-            # Linux only, matching the SDK archives below; keeps Windows/macOS
-            # wheels unchanged.
-            sdk_headers = (
-                [
-                    "extension/module/module.h",
-                    "extension/data_loader/buffer_data_loader.h",
-                    "extension/data_loader/file_data_loader.h",
-                    "extension/data_loader/mmap_data_loader.h",
-                    "extension/data_loader/mman.h",
-                    "extension/data_loader/mman_windows.h",
-                    "extension/data_loader/shared_ptr_data_loader.h",
-                    "extension/flat_tensor/flat_tensor_data_map.h",
-                    "extension/flat_tensor/serialize/flat_tensor_header.h",
-                    "extension/named_data_map/merged_data_map.h",
-                    "extension/memory_allocator/malloc_memory_allocator.h",
-                    "extension/memory_allocator/memory_allocator_utils.h",
-                    # CUDA caller-stream extension headers. Harmless on a CPU
-                    # wheel (headers only); the matching libextension_cuda.so and
-                    # the executorch::extension_cuda / executorch::cuda_backend
-                    # CMake targets are shipped/defined only in a CUDA wheel.
-                    "extension/cuda/caller_stream.h",
-                    "extension/cuda/export.h",
-                ]
-                if sys.platform == "linux"
-                else []
-            )
-            for src in sdk_headers:
+            for src in self._sdk_headers():
                 src_to_dst.append((src, os.path.join("include/executorch", src)))
         for src, dst in src_to_dst:
             dst = os.path.join(dst_root, dst)
