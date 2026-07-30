@@ -6,8 +6,8 @@
 
 """`aten.pow.Tensor_Tensor` module for the WebGPU op-test framework.
 
-`PowModule` is imported by `cases.py`. Same-shape elementwise `pow(a, b)`; the
-suite uses a POSITIVE base so `pow(neg, frac)` (NaN) is never exercised.
+`PowModule` is imported by `cases.py`. The suite covers same-shape and broadcast
+`pow(a, b)` with POSITIVE bases so `pow(neg, frac)` never produces NaN.
 """
 
 import torch
