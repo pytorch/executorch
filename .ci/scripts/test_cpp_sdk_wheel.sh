@@ -88,6 +88,21 @@ if not versioned:
         "library is missing and the runtime cannot load."
     )
 
+# If the kernels lib is shipped, the standalone threadpool lib must be too:
+# get_threadpool() is a process-wide singleton, so the kernels lib links it
+# dynamically instead of embedding its own pool.
+has_kernels = any(
+    n.startswith("executorch/lib/libexecutorch_kernels.so.") for n in names
+)
+has_threadpool = any(
+    n.startswith("executorch/lib/libexecutorch_threadpool.so.") for n in names
+)
+if has_kernels and not has_threadpool:
+    raise AssertionError(
+        f"{wheel_file} ships the kernels lib but not the standalone "
+        "libexecutorch_threadpool.so; the thread pool would be duplicated."
+    )
+
 # Headers whose implementation is not shipped must not be advertised.
 forbidden = [
     "executorch/include/executorch/extension/module/bundled_module.h",

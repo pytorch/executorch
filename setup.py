@@ -1189,6 +1189,14 @@ class CustomBuild(build):
                     "--target",
                     "executorch_kernels_shared",
                 ]
+                # Standalone threadpool library: get_threadpool() is a
+                # process-wide singleton, so it ships in one .so (extension_
+                # threadpool built SHARED) that kernels and future delegates link
+                # dynamically to share one pool.
+                cmake_build_args += [
+                    "--target",
+                    "extension_threadpool",
+                ]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
                 cmake_build_args += ["--target", "portable_lib"]
@@ -1415,6 +1423,21 @@ setup(
                         BuiltSharedLib(
                             src_dir="%CMAKE_CACHE_DIR%/",
                             src_name="executorch_kernels",
+                            dst="executorch/lib/",
+                            dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                        )
+                    ]
+                    if sys.platform == "linux"
+                    else []
+                ),
+                # Standalone threadpool library: one process-wide get_threadpool
+                # singleton shared by the kernels lib (and future delegates), so
+                # they do not each embed a separate pool.
+                *(
+                    [
+                        BuiltSharedLib(
+                            src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                            src_name="executorch_threadpool",
                             dst="executorch/lib/",
                             dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                         )
