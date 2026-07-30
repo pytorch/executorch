@@ -1,2 +1,2 @@
-TORCH_VERSION = "2.12.0"
+TORCH_VERSION = "2.13.0"
 # NIGHTLY_VERSION = "dev20260318" Temporarily pinning to stable release candidate. Revert https://github.com/pytorch/executorch/pull/18287

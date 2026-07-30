@@ -656,6 +656,35 @@ def parse_dequant_nvfp4_node(
     return qdata, scale, per_tensor_scale, output_dtype
 
 
+def parse_dequant_mx_node(
+    node: Node,
+) -> Optional[Tuple[Node, Node, torch.dtype, int, torch.dtype]]:
+    """Parse a torchao.dequantize_mx node.
+
+    Returns (qdata, scale, elem_dtype, block_size, output_dtype) or None if not a
+    dequantize_mx node or the custom op is not registered. MX has no per-tensor
+    scale and no affine zero-point; the block scale is always E8M0.
+    """
+    target = get_aten_target(node.target)
+    try:
+        import executorch.extension.llm.export.mx  # noqa: F401
+    except ImportError:
+        return None
+
+    if target is not torch.ops.torchao.dequantize_mx.default:
+        return None
+
+    qdata, scale, elem_dtype, block_size = node.args[0:4]
+
+    output_dtype = torch.float32
+    if len(node.args) > 4:
+        output_dtype = node.args[4]
+    elif "output_dtype" in node.kwargs:
+        output_dtype = node.kwargs["output_dtype"]
+
+    return qdata, scale, elem_dtype, int(block_size), output_dtype
+
+
 def parse_dequant_int4_node(
     node: Node,
 ) -> Optional[Tuple[Node, Node, Node, int, Optional[torch.dtype]]]:

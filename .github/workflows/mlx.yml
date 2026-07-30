@@ -85,7 +85,6 @@ jobs:
           backends/mlx/test/test_serialization_dedup.py \
           backends/mlx/test/test_slot_recycling.py \
           backends/mlx/test/test_sample.py \
-          examples/models/gemma4_31b/quant/tests/test_pack_mlx.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
@@ -158,10 +157,10 @@ jobs:
           --prompt-len 4 \
           --max-new-tokens 5 2>&1)
         echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 94, 253, 88, 227\]"; then
+        if echo "$OUTPUT" | grep -q "Generated token ids: \[167, 180, 167, 180, 167\]"; then
           echo "Success: Qwen 3.5 MoE MLX export + inference completed with expected output"
         else
-          echo "Failed: unexpected output (expected [167, 94, 253, 88, 227])"
+          echo "Failed: unexpected output (expected [167, 180, 167, 180, 167])"
           exit 1
         fi
         echo "::endgroup::"

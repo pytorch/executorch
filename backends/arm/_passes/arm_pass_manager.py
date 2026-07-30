@@ -15,6 +15,7 @@ from executorch.backends.arm._passes import (
     AccumulateIndexPutPass,
     BroadcastArgsPass,
     CanonicalizeGatherPass,
+    CanonicalizeViewCopyPermutePass,
     CastInt64BuffersToInt32Pass,
     CastToInt32Pass,
     ComputeConstantOpsAOTPass,
@@ -81,6 +82,7 @@ from executorch.backends.arm._passes import (
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
     DecomposePermuteForU55Pass,
+    DecomposePReLUPass,
     DecomposeQuantNodesPass,
     DecomposeRemainderPass,
     DecomposeRnnPass,
@@ -109,6 +111,7 @@ from executorch.backends.arm._passes import (
     FoldAndAnnotateQParamsPass,
     FoldScalarMulIntoConvPass,
     FuseBatchNorm2dPass,
+    FuseConsecutiveClampsPass,
     FuseConsecutiveConcatShapesPass,
     FuseConsecutiveRescalesPass,
     FuseConsecutiveSlicesPass,
@@ -128,6 +131,7 @@ from executorch.backends.arm._passes import (
     InsertTableOpsPass,
     MatchArgDtypePass,
     MatchArgRanksPass,
+    MoveDataMovementOpsToSmallerDtypePass,
     NormalizeDelegateIOLayoutPass,
     NormalizeIndexPutBoolIndexTensorPass,
     NormalizeIndexPutNoneIndicesPass,
@@ -504,6 +508,12 @@ class ArmPassManager(ExportedProgramPassManager):
         self.add_passes(
             [
                 FoldAndAnnotateQParamsPass(exported_program),
+                # Both hardtanh and relu are normalized to clamp by
+                # ConvertToClampPass; after q/dq folding above, adjacent clamps
+                # (e.g. from HardTanh+ReLU) are directly connected and can be
+                # fused into a single clamp. Runs before QuantizeClampArgumentsPass
+                # so the min/max args are still float scalars.
+                FuseConsecutiveClampsPass(),
                 FuseDuplicateUsersPass(),
                 # TODO: DecomposeLinearPass should run after InsertRescaleInt32Pass or
                 # before FoldAndAnnotateQParamsPass but is unable to at the moment.
@@ -571,6 +581,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 ReplaceScalarWithTensorByProfilePass(),
                 RewriteLeLtToGeGtPass(),
                 DecomposeLeakyReLUPass(),  # Emits full_like so before ConvertFullLikeToFullPass
+                DecomposePReLUPass(),
                 ConvertFullLikeToFullPass(),
                 MatchArgDtypePass(),
                 UnsqueezeScalarPlaceholdersPass(exported_program),
@@ -636,11 +647,16 @@ class ArmPassManager(ExportedProgramPassManager):
                 PropagateViewCopyPermuteUpPass(self.compile_spec, exported_program),
                 # Propagation can leave a binary op with mismatched operand ranks,
                 # which TOSA rejects; re-match ranks before lowering.
+                MoveDataMovementOpsToSmallerDtypePass(),
                 MatchArgRanksPass(exported_program),
                 RewriteHighRankSingletonPermutePass(),
                 DecomposePermuteForU55Pass(),
                 RewriteSlicePass(),
                 FuseConsecutiveSlicesPass(),
+                # Remove rewritten PAD/SLICE no-ops before cleaning up any
+                # permute pairs they expose.
+                RemoveNoopPass(),
+                CanonicalizeViewCopyPermutePass(),
                 InsertConstShapesPass(),
                 InsertDataLayoutCastsPass(),
             ]
@@ -656,9 +672,12 @@ class ArmPassManager(ExportedProgramPassManager):
                 SymbolicToTosaShapesPass(),
                 InsertDynamicPaddingPass(),
                 FuseConsecutiveConcatShapesPass(),
-                EnsureUniqueOutputNodesPass(),
                 RemoveNoopPass(),
+                # Fuse duplicates exposed by late rewrites before inserting rescales;
+                # fusing generated RESCALE users can corrupt distinct quantized paths.
+                FuseDuplicateUsersPass(),
                 InsertRescalePass(),
+                EnsureUniqueOutputNodesPass(),
             ]
         )
 
@@ -722,6 +741,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeMeanDimPass(graph_module, self.tosa_spec, tfa_pass=True),
                     DecomposeAdaptiveAvgPool2dPass(tfa_pass=True),
                     DecomposeAvgPool2dPass(tfa_pass=True),
+                    DecomposePReLUPass(tfa_pass=True),
                 ]
             )
 
