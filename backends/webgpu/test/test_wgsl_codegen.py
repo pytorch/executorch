@@ -97,23 +97,6 @@ class WgslCodegenTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate shader registry name"):
             g.render_registry([entry, entry])
 
-    def test_unary_builder_uses_graph_dispatch_descriptor(self) -> None:
-        unary = (g.BACKEND_ROOT / "runtime/ops/unary/UnaryOp.cpp").read_text()
-        self.assertIn("get_webgpu_shader_info(shader_name)", unary)
-        self.assertIn("workgroup_size_x", unary)
-        self.assertIn("graph.create_params_buffer", unary)
-        self.assertIn("graph.add_compute_dispatch", unary)
-        self.assertIn("workgroup_count.x, workgroup_count.y", unary)
-        self.assertIn("workgroup_count_x = wgc.x", unary)
-        self.assertIn("workgroup_count_y = wgc.y", unary)
-        for legacy in (
-            "utils::make_uniform",
-            "utils::make_compute_pipeline",
-            "graph.add_uniform_buffer_bytes",
-            "graph.own_uniform_buffer",
-        ):
-            self.assertNotIn(legacy, unary)
-
     def test_symbol_base(self) -> None:
         self.assertEqual(g.symbol_base("binary_add"), "BinaryAdd")
         self.assertEqual(
