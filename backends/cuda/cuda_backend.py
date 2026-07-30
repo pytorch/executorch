@@ -122,6 +122,10 @@ def _compile_time_cpu_clones(target_device: torch.device):
             if _is_emptied(x):
                 return _full_zeros_preserving_strides(x, "cpu")
             return orig_clone(x).cpu()
+        if _is_emptied(x):
+            # Autotuning needs device-backed inputs. Rehydrate the zero-filled
+            # KV buffer temporarily instead of cloning its freed storage.
+            return _full_zeros_preserving_strides(x, x.device)
         return orig_clone(x)
 
     def _get_const_synthesize_zeros(self, name):
