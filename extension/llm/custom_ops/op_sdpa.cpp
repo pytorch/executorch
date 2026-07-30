@@ -12,6 +12,7 @@
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <c10/util/irange.h>
@@ -1176,12 +1177,41 @@ void channelwise_gated_delta_rule_chunked(
 // output. Detect that so callers can route to the recurrence, which handles
 // decay <= 0 exactly. NaN is treated as non-positive so NaN decay also takes
 // the faithful path instead of contaminating every output element.
-bool channelwise_gated_delta_rule_decay_all_positive(const Tensor& decay) {
+// The chunked prefill kernel resets gc = cumsum(log decay) every CHUNK_SIZE
+// tokens and forms eg_inv = exp(-gc). For tiny positive decay the within-chunk
+// cumulative -log(decay) can exceed the float expf overflow limit (~88.7),
+// producing +inf that turns eg * eg_inv into 0 * inf = NaN and poisons the
+// whole head's output. A non-positive decay is likewise undefined (std::log).
+// Detect both so callers can route to the exact recurrence, which is stable for
+// tiny decay and handles decay <= 0. NaN decay is treated as unsafe as well.
+bool channelwise_gated_delta_rule_chunked_is_safe(const Tensor& decay) {
+  // Margin below the float32 expf overflow threshold (std::exp overflows around
+  // 88.7); 80 leaves headroom for the downstream eg * eg_inv product.
+  constexpr float kMaxNegLogSum = 80.0f;
   const auto* decay_data = decay.const_data_ptr<float>();
-  const auto numel = decay.numel();
-  for (int64_t idx = 0; idx < numel; ++idx) {
-    if (!(decay_data[idx] > 0.0f)) {
-      return false;
+  const auto batch_heads = decay.size(0) * decay.size(1);
+  const auto sequence_length = decay.size(2);
+  const auto k_head_dim = decay.size(3);
+  const auto head_stride = sequence_length * k_head_dim;
+  for (int64_t bh = 0; bh < batch_heads; ++bh) {
+    const float* decay_head = decay_data + bh * head_stride;
+    for (int64_t base = 0; base < sequence_length; base += CHUNK_SIZE) {
+      const int64_t cur = std::min<int64_t>(CHUNK_SIZE, sequence_length - base);
+      // gc resets per chunk, so overflow is bounded by the within-chunk
+      // cumulative -log(decay) per channel.
+      for (int64_t k = 0; k < k_head_dim; ++k) {
+        float neg_log_sum = 0.0f;
+        for (int64_t r = 0; r < cur; ++r) {
+          const float val = decay_head[(base + r) * k_head_dim + k];
+          if (!(val > 0.0f)) {
+            return false; // decay <= 0 or NaN: log undefined -> recurrence
+          }
+          neg_log_sum -= std::log(val);
+          if (neg_log_sum > kMaxNegLogSum) {
+            return false; // exp(-gc) would overflow -> recurrence
+          }
+        }
+      }
     }
   }
   return true;
@@ -1244,9 +1274,11 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
       "Failed to resize channelwise_gated_delta_rule final_state tensor.");
 
   // Route on sequence length: T == 1 is autoregressive decode (token-by-token
-  // recurrence), T != 1 is prefill (chunkwise WY kernel). Prefill with any
-  // non-positive decay falls back to the recurrence, which is exact for
-  // decay <= 0 (the chunked kernel takes log(decay) and would produce NaN).
+  // recurrence), T != 1 is prefill (chunkwise WY kernel). Prefill falls back to
+  // the exact recurrence whenever the chunked kernel would be numerically
+  // unsafe
+  // -- non-positive decay (log undefined) or tiny positive decay whose
+  // within-chunk cumulative -log(decay) would overflow exp(-gc) to inf -> NaN.
   if (query.size(2) == 1) {
     channelwise_gated_delta_rule_decode(
         ctx,
@@ -1258,7 +1290,7 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
         initial_state,
         out,
         final_state_out);
-  } else if (channelwise_gated_delta_rule_decay_all_positive(decay)) {
+  } else if (channelwise_gated_delta_rule_chunked_is_safe(decay)) {
     channelwise_gated_delta_rule_chunked(
         ctx,
         query,
@@ -1308,6 +1340,10 @@ namespace {
 void channelwise_gated_delta_rule_out_boxed(
     executorch::runtime::KernelRuntimeContext& ctx,
     executorch::runtime::Span<executorch::runtime::EValue*> stack) {
+  executorch::runtime::internal::EventTracerProfileOpScope
+      event_tracer_op_scope(
+          ctx.internal_event_tracer(),
+          "native_call_llama::channelwise_gated_delta_rule.out");
   // Multi-output out variants get a trailing TensorList aggregating the two
   // outputs appended by the emitter, so the boxed stack has 9 entries: 6 inputs
   // + out + final_state_out + [out, final_state_out]. The aggregate (stack[8])
