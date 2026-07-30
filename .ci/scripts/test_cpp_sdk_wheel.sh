@@ -128,12 +128,15 @@ cat > main.cpp <<'CPP'
 #include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using executorch::extension::from_blob;
+using executorch::extension::FlatTensorDataMap;
 using executorch::extension::Module;
 using executorch::extension::TensorPtr;
 using executorch::runtime::get_backend_class;
@@ -154,6 +157,19 @@ int main() {
   std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
   TensorPtr tensor = from_blob(data.data(), {2, 2});
   printf("tensor numel: %zu\n", tensor->numel());
+
+  // Exercise the .ptd data-map surface (FlatTensorDataMap) so those advertised
+  // headers/symbols are compiled and linked from libexecutorch.so. Loading a
+  // bogus buffer is expected to fail; we only need the symbol to resolve.
+  {
+    const uint8_t bogus_ptd[8] = {0};
+    auto data_map_result = FlatTensorDataMap::load(
+        std::make_unique<executorch::extension::BufferDataLoader>(
+            bogus_ptd, sizeof(bogus_ptd))
+            .get());
+    printf(".ptd data-map load attempted (ok=%d)\n",
+           data_map_result.ok());
+  }
 
   // Construct a Module from a tiny in-memory buffer via the buffer data loader.
   // Loading is expected to fail (not a real .pte); we only need this to
