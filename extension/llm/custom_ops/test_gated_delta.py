@@ -294,6 +294,48 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                     torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
                 )
 
+    def test_channelwise_gated_delta_rule_prefill_tiny_decay_is_finite(self):
+        # Regression test for the chunked-prefill overflow NaN in op_sdpa.cpp.
+        # The prefill kernel forms eg_inv = exp(-cumsum(log decay)) per
+        # CHUNK_SIZE (32) tokens; for tiny positive decay the within-chunk
+        # cumulative -log(decay) exceeds the float expf overflow limit (~88.7),
+        # so eg_inv overflows to +inf and eg * eg_inv becomes 0 * inf = NaN,
+        # poisoning the whole head's output. The
+        # channelwise_gated_delta_rule_chunked_is_safe guard must route such
+        # inputs to the exact recurrence, which stays finite (and correct) for
+        # tiny decay; without it the isfinite assertions below fail.
+        torch.manual_seed(0)
+
+        # seq_len > CHUNK_SIZE (32) so the prefill route runs the internal chunk
+        # loop; a single chunk of tiny decay overflows the unguarded kernel.
+        query, key, value, decay, beta, initial_state = self._make_inputs(seq_len=64)
+        # decay.min ~6.5e-12 was observed in a real GDN2 checkpoint;
+        # -log(1e-12) ~27.6 per token, so a few tokens blow past the ~80 safe
+        # bound and exp(-gc) would overflow to +inf -> NaN.
+        decay = torch.full_like(decay, 1e-12)
+
+        expected_output, expected_state = self._reference_channelwise_gated_delta_rule(
+            query, key, value, decay, beta, initial_state
+        )
+        actual_output, actual_state = torch.ops.llama.channelwise_gated_delta_rule(
+            query, key, value, decay, beta, initial_state
+        )
+
+        self.assertTrue(
+            torch.isfinite(actual_output).all(),
+            "prefill output has NaN/inf for tiny decay",
+        )
+        self.assertTrue(
+            torch.isfinite(actual_state).all(),
+            "prefill final_state has NaN/inf for tiny decay",
+        )
+        self.assertTrue(
+            torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
+        )
+        self.assertTrue(
+            torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
+        )
+
     def test_channelwise_gated_delta_rule_exports(self):
         class Module(torch.nn.Module):
             def forward(self, query, key, value, decay, beta, initial_state):

@@ -50,7 +50,7 @@ void CacheBuilderRegistry::register_builder(
     const std::string& kind,
     CacheBuilder builder) {
   std::lock_guard<std::mutex> lock(mu_);
-  builders_[backend_id + ":" + kind] = std::move(builder);
+  builders_[{backend_id, kind}] = std::move(builder);
 }
 
 Result<std::shared_ptr<CacheBase>> CacheBuilderRegistry::build(
@@ -60,7 +60,7 @@ Result<std::shared_ptr<CacheBase>> CacheBuilderRegistry::build(
   CacheBuilder builder;
   {
     std::lock_guard<std::mutex> lock(mu_);
-    const auto it = builders_.find(backend_id + ":" + kind);
+    const auto it = builders_.find({backend_id, kind});
     ET_CHECK_OR_RETURN_ERROR(
         it != builders_.end(),
         NotFound,
