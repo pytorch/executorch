@@ -139,6 +139,34 @@ jobs:
         # shipped libexecutorch.so via find_package(executorch).
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_cpp_sdk_wheel.sh
 
+  test-cpp-sdk-wheel-cuda-linux:
+    name: test-cpp-sdk-wheel-cuda-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      # GPU runner so nvcc is present: the wheel build auto-detects CUDA and
+      # ships the CUDA delegate, and test_cpp_sdk_wheel.sh then exercises the
+      # real libexecutorch_cuda_backend.so (dlopen + CudaBackend registration).
+      # On the CPU job above this same script cleanly skips the CUDA check.
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: "12.6"
+      use-custom-docker-registry: false
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_cpp_sdk_wheel.sh
+
   test-models-linux-basic:
     name: test-models-linux-basic
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
