@@ -21,7 +21,6 @@
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -402,16 +401,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       use_steel,
       use_shmem_gemm);
 
-  WGPUBufferDescriptor uniform_desc = {};
-  uniform_desc.size = sizeof(Q4gswParams);
-  uniform_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  uniform_desc.mappedAtCreation = true;
-  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device, &uniform_desc);
-  void* mapped =
-      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(Q4gswParams));
-  std::memcpy(mapped, &initial_state.params, sizeof(Q4gswParams));
-  wgpuBufferUnmap(uniform_buffer);
-  graph.add_uniform_buffer_bytes(sizeof(Q4gswParams));
+  WGPUBuffer params_buffer = graph.create_params_buffer(initial_state.params);
 
   const std::vector<utils::BindingSpec> bindings = {
       {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
@@ -419,7 +409,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       {2, WGPUBufferBindingType_ReadOnlyStorage, weight.buffer, weight.nbytes},
       {3, WGPUBufferBindingType_ReadOnlyStorage, scales.buffer, scales.nbytes},
       {4, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
-      {5, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(Q4gswParams)},
+      {5, WGPUBufferBindingType_Uniform, params_buffer, sizeof(Q4gswParams)},
   };
   auto make_bundle =
       [&](const char* source, bool fixed_wg, uint32_t override_wg_size) {
@@ -503,7 +493,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
        use_shmem_gemm,
        dispatch_idx,
        route_group,
-       uniform_buffer](WebGPUGraph& g) {
+       params_buffer](WebGPUGraph& g) {
         const auto& d = g.cur_dims(in_id);
         const Q4gswExecutionState state = make_q4gsw_execution_state(
             g.device(),
@@ -521,7 +511,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
             use_steel,
             use_shmem_gemm);
         wgpuQueueWriteBuffer(
-            g.queue(), uniform_buffer, 0, &state.params, sizeof(state.params));
+            g.queue(), params_buffer, 0, &state.params, sizeof(state.params));
         if (use_dual_route) {
           g.select_dispatch_route(
               route_group, state.active_route, {state.active_grid});
@@ -532,9 +522,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         }
         g.set_cur_dims(out_id, state.output_dims);
       });
-
-  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace
