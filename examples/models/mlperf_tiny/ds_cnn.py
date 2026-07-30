@@ -84,7 +84,5 @@ class DSCNNKWSModel(EagerModelBase):
 
     def get_example_inputs(self):
         return (
-            (torch.rand(1, 1, 49, 10) * 2 - 1).to(
-                memory_format=torch.channels_last
-            ),
+            (torch.rand(1, 1, 49, 10) * 2 - 1).to(memory_format=torch.channels_last),
         )
