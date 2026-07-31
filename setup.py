@@ -1114,6 +1114,20 @@ setup(
                     dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
+                # Install the shared thread pool next to it. It is a separate
+                # library so that a process has one pool rather than one per
+                # component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_name=(
+                        "libexecutorch_threadpool.so." f"{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_threadpool.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
