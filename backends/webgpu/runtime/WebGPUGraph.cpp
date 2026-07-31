@@ -16,9 +16,10 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/passes/QkvBk64.h>
+#include <executorch/backends/webgpu/runtime/passes/SwiGLU.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -164,351 +165,6 @@ std::vector<WebGPUSpecializationConstant> canonical_constants(
 constexpr const char* kPrepackOpName = "et_vk.prepack.default";
 constexpr const char* kQ4gswLinearOpName = "et_vk.linear_q4gsw.default";
 constexpr size_t kQ4gswOutputArg = 5;
-constexpr const char* kSigmoidOpName = "aten.sigmoid.default";
-constexpr const char* kMulOpName = "aten.mul.Tensor";
-
-struct SiluMulParams {
-  uint32_t num_elements;
-  uint32_t _pad[3];
-};
-
-struct SwiGluFusion {
-  int common_input_id;
-  int gate_id;
-  int up_id;
-  int sigmoid_id;
-  int silu_id;
-  int out_id;
-  unsigned gate_op;
-  unsigned sigmoid_op;
-  unsigned mul1_op;
-  unsigned mul2_op;
-};
-
-struct QkvBk64Params {
-  uint32_t M;
-  uint32_t N;
-  uint32_t K;
-  uint32_t K_packed;
-  uint32_t group_size;
-  uint32_t padded_N;
-  uint32_t has_bias;
-  uint32_t _pad;
-};
-static_assert(sizeof(QkvBk64Params) == 32);
-
-struct QkvBk64Fusion {
-  int input_id = -1;
-  int output_ids[3] = {-1, -1, -1};
-  int weight_ids[3] = {-1, -1, -1};
-  int scale_ids[3] = {-1, -1, -1};
-  unsigned op_indices[3] = {0, 0, 0};
-  size_t separate_begin[3] = {0, 0, 0};
-  size_t separate_end[3] = {0, 0, 0};
-  size_t fused_dispatch = SIZE_MAX;
-  WGPUBuffer params_buffer = nullptr;
-  uint32_t max_m = 0;
-};
-
-constexpr uint32_t kQkvQWidth = 2048u;
-constexpr uint32_t kQkvKvWidth = 512u;
-constexpr uint32_t kQkvFusedWidth = 3072u;
-constexpr uint32_t kQkvK = 2048u;
-constexpr uint32_t kQkvKPacked = 1024u;
-constexpr uint32_t kQkvGroupSize = 64u;
-constexpr uint32_t kQkvNumGroups = 32u;
-constexpr uint32_t kQkvTile = 64u;
-
-bool qkv_bk64_device_supported(WGPUDevice device) {
-  WGPULimits limits = {};
-  const WebGPUContext* context = get_default_webgpu_context();
-  return context != nullptr && context->shader_f16_supported &&
-      wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-      limits.maxComputeInvocationsPerWorkgroup >= 256u &&
-      limits.maxComputeWorkgroupSizeX >= 16u &&
-      limits.maxComputeWorkgroupSizeY >= 16u &&
-      limits.maxComputeWorkgroupStorageSize >= 16384u &&
-      limits.maxComputeWorkgroupsPerDimension >= 384u;
-}
-
-bool is_qkv_bk64_live_m(uint32_t m) {
-  return m == 128u || m == 508u || m == 512u;
-}
-
-bool is_fp32_tensor(const WebGPUTensor& tensor) {
-  if (tensor.is_int || tensor.elem_size != sizeof(float) ||
-      tensor.buffer == nullptr) {
-    return false;
-  }
-  const uint64_t numel = utils::numel_of(tensor.dims);
-  return numel <= std::numeric_limits<size_t>::max() / sizeof(float) &&
-      tensor.nbytes == static_cast<size_t>(numel) * sizeof(float);
-}
-
-uint32_t checked_silu_mul_numel(const std::vector<int64_t>& dims) {
-  const uint64_t numel = utils::numel_of(dims);
-  if (numel == 0 || numel > std::numeric_limits<uint32_t>::max()) {
-    throw std::runtime_error("silu_mul_fused: element count out of range");
-  }
-  return static_cast<uint32_t>(numel);
-}
-
-void resize_silu_mul_fused(
-    WebGPUGraph& graph,
-    int gate_id,
-    int up_id,
-    int out_id,
-    uint32_t wg_size,
-    size_t dispatch_idx,
-    WGPUBuffer params_buffer) {
-  const auto& gate_dims = graph.cur_dims(gate_id);
-  const auto& up_dims = graph.cur_dims(up_id);
-  if (gate_dims != up_dims) {
-    throw std::runtime_error("silu_mul_fused(resize): gate/up shape mismatch");
-  }
-  const uint32_t live_numel = checked_silu_mul_numel(gate_dims);
-  const size_t live_nbytes = static_cast<size_t>(live_numel) * sizeof(float);
-  if (graph.get_tensor(gate_id).cur_nbytes != live_nbytes ||
-      graph.get_tensor(up_id).cur_nbytes != live_nbytes) {
-    throw std::runtime_error(
-        "silu_mul_fused(resize): gate/up byte-size mismatch");
-  }
-  graph.set_cur_dims(out_id, gate_dims);
-  const SiluMulParams params = {live_numel, {0u, 0u, 0u}};
-  wgpuQueueWriteBuffer(
-      graph.queue(), params_buffer, 0, &params, sizeof(params));
-  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      graph.device(), live_numel, wg_size, "silu_mul_fused(resize)");
-  auto& dispatch = graph.dispatch_at(dispatch_idx);
-  dispatch.workgroup_count_x = workgroup_count.x;
-  dispatch.workgroup_count_y = workgroup_count.y;
-}
-
-void add_silu_mul_fused_dispatch(
-    WebGPUGraph& graph,
-    int common_input_id,
-    int gate_id,
-    int up_id,
-    int out_id) {
-  const auto& gate = graph.get_tensor(gate_id);
-  const auto& up = graph.get_tensor(up_id);
-  const auto& out = graph.get_tensor(out_id);
-  const uint32_t num_elements = checked_silu_mul_numel(gate.dims);
-  const uint32_t wg_size = utils::clamp_workgroup_size(
-      graph.device(),
-      get_webgpu_shader_info("silu_mul_fused").workgroup_size_x);
-  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      graph.device(), num_elements, wg_size, "silu_mul_fused");
-
-  const SiluMulParams params = {num_elements, {0u, 0u, 0u}};
-  WGPUBuffer params_buffer = graph.create_params_buffer(params);
-  WebGPUComputeDispatchDescriptor descriptor;
-  descriptor.shader_name = "silu_mul_fused";
-  descriptor.bindings = {
-      {gate.buffer, 0u, gate.nbytes},
-      {up.buffer, 0u, up.nbytes},
-      {out.buffer, 0u, out.nbytes},
-      {params_buffer, 0u, sizeof(SiluMulParams)}};
-  descriptor.constants = {{"wg_size", static_cast<double>(wg_size)}};
-  descriptor.grid = {workgroup_count.x, workgroup_count.y};
-  const size_t dispatch_idx = graph.add_compute_dispatch(descriptor);
-
-  graph.add_tensor_resize_hook(
-      common_input_id,
-      [gate_id, up_id, out_id, wg_size, dispatch_idx, params_buffer](
-          WebGPUGraph& g) {
-        resize_silu_mul_fused(
-            g, gate_id, up_id, out_id, wg_size, dispatch_idx, params_buffer);
-      });
-}
-
-void add_qkv_bk64_dispatch(WebGPUGraph& graph, QkvBk64Fusion& fusion) {
-  const auto& input = graph.get_tensor(fusion.input_id);
-  const auto& output_q = graph.get_tensor(fusion.output_ids[0]);
-  const auto& output_k = graph.get_tensor(fusion.output_ids[1]);
-  const auto& output_v = graph.get_tensor(fusion.output_ids[2]);
-  const auto& weight_q = graph.get_tensor(fusion.weight_ids[0]);
-  const auto& weight_k = graph.get_tensor(fusion.weight_ids[1]);
-  const auto& weight_v = graph.get_tensor(fusion.weight_ids[2]);
-  const auto& scale_q = graph.get_tensor(fusion.scale_ids[0]);
-  const auto& scale_k = graph.get_tensor(fusion.scale_ids[1]);
-  const auto& scale_v = graph.get_tensor(fusion.scale_ids[2]);
-
-  const size_t weight_row_bytes = kQkvKPacked;
-  WGPUBuffer fused_weight = graph.create_scratch_buffer(
-      static_cast<size_t>(kQkvFusedWidth) * weight_row_bytes);
-  WGPUBuffer fused_scales = graph.create_scratch_buffer(
-      static_cast<size_t>(kQkvNumGroups) * kQkvFusedWidth * sizeof(float));
-
-  WGPUCommandEncoder encoder =
-      wgpuDeviceCreateCommandEncoder(graph.device(), nullptr);
-  wgpuCommandEncoderCopyBufferToBuffer(
-      encoder,
-      weight_q.buffer,
-      0,
-      fused_weight,
-      0,
-      static_cast<uint64_t>(kQkvQWidth) * weight_row_bytes);
-  wgpuCommandEncoderCopyBufferToBuffer(
-      encoder,
-      weight_k.buffer,
-      0,
-      fused_weight,
-      static_cast<uint64_t>(kQkvQWidth) * weight_row_bytes,
-      static_cast<uint64_t>(kQkvKvWidth) * weight_row_bytes);
-  wgpuCommandEncoderCopyBufferToBuffer(
-      encoder,
-      weight_v.buffer,
-      0,
-      fused_weight,
-      static_cast<uint64_t>(kQkvQWidth + kQkvKvWidth) * weight_row_bytes,
-      static_cast<uint64_t>(kQkvKvWidth) * weight_row_bytes);
-  for (uint32_t group = 0; group < kQkvNumGroups; group++) {
-    const uint64_t destination =
-        static_cast<uint64_t>(group) * kQkvFusedWidth * sizeof(float);
-    wgpuCommandEncoderCopyBufferToBuffer(
-        encoder,
-        scale_q.buffer,
-        static_cast<uint64_t>(group) * kQkvQWidth * sizeof(float),
-        fused_scales,
-        destination,
-        static_cast<uint64_t>(kQkvQWidth) * sizeof(float));
-    wgpuCommandEncoderCopyBufferToBuffer(
-        encoder,
-        scale_k.buffer,
-        static_cast<uint64_t>(group) * kQkvKvWidth * sizeof(float),
-        fused_scales,
-        destination + static_cast<uint64_t>(kQkvQWidth) * sizeof(float),
-        static_cast<uint64_t>(kQkvKvWidth) * sizeof(float));
-    wgpuCommandEncoderCopyBufferToBuffer(
-        encoder,
-        scale_v.buffer,
-        static_cast<uint64_t>(group) * kQkvKvWidth * sizeof(float),
-        fused_scales,
-        destination +
-            static_cast<uint64_t>(kQkvQWidth + kQkvKvWidth) * sizeof(float),
-        static_cast<uint64_t>(kQkvKvWidth) * sizeof(float));
-  }
-  WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, nullptr);
-  wgpuQueueSubmit(graph.queue(), 1, &command);
-  wgpuCommandBufferRelease(command);
-  wgpuCommandEncoderRelease(encoder);
-
-  const QkvBk64Params params = {
-      fusion.max_m,
-      kQkvFusedWidth,
-      kQkvK,
-      kQkvKPacked,
-      kQkvGroupSize,
-      kQkvFusedWidth,
-      0u,
-      0u};
-  WGPUBuffer params_buffer = graph.create_params_buffer(params);
-  WGPUBuffer bias_dummy = graph.create_scratch_buffer(4);
-
-  const bool initially_active = is_qkv_bk64_live_m(fusion.max_m);
-  const uint32_t workgroups =
-      ((fusion.max_m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile);
-  WebGPUComputeDispatchDescriptor descriptor;
-  descriptor.shader_name = "q4gsw_qkv_bk64";
-  descriptor.kernel_name = "linear_q4gsw_bk64_qkv";
-  descriptor.bindings = {
-      {output_q.buffer, 0u, output_q.nbytes},
-      {output_k.buffer, 0u, output_k.nbytes},
-      {output_v.buffer, 0u, output_v.nbytes},
-      {input.buffer, 0u, input.nbytes},
-      {fused_weight,
-       0u,
-       static_cast<uint64_t>(kQkvFusedWidth) * weight_row_bytes},
-      {fused_scales,
-       0u,
-       static_cast<uint64_t>(kQkvNumGroups) * kQkvFusedWidth * sizeof(float)},
-      {bias_dummy, 0u, 4u},
-      {params_buffer, 0u, sizeof(QkvBk64Params)}};
-  descriptor.grid = {
-      initially_active ? workgroups : 0u, initially_active ? 1u : 0u};
-  fusion.fused_dispatch = graph.add_compute_dispatch(descriptor);
-  fusion.params_buffer = params_buffer;
-}
-
-struct QkvBk64ResizeContext {
-  int input_id;
-  std::array<int, 3> output_ids;
-  std::array<size_t, 3> separate_begin;
-  std::array<size_t, 3> separate_end;
-  size_t fused_dispatch;
-  uint32_t max_m;
-  WGPUBuffer params_buffer;
-};
-
-void resize_qkv_bk64(WebGPUGraph& graph, const QkvBk64ResizeContext& context) {
-  const auto& input_dims = graph.cur_dims(context.input_id);
-  const uint64_t input_numel = utils::numel_of(input_dims);
-  if (input_dims.empty() || input_numel % kQkvK != 0u) {
-    throw std::runtime_error(
-        "linear_q4gsw_bk64_qkv(resize): malformed input shape");
-  }
-  const uint64_t live_m = input_numel / kQkvK;
-  if (live_m == 0u || live_m > context.max_m) {
-    throw std::runtime_error(
-        "linear_q4gsw_bk64_qkv(resize): live M out of range");
-  }
-  const uint32_t m = static_cast<uint32_t>(live_m);
-  const uint32_t widths[3] = {kQkvQWidth, kQkvKvWidth, kQkvKvWidth};
-  for (size_t i = 0; i < context.output_ids.size(); i++) {
-    std::vector<int64_t> output_dims = input_dims;
-    output_dims.back() = widths[i];
-    graph.set_cur_dims(context.output_ids[i], output_dims);
-  }
-
-  const QkvBk64Params params = {
-      m,
-      kQkvFusedWidth,
-      kQkvK,
-      kQkvKPacked,
-      kQkvGroupSize,
-      kQkvFusedWidth,
-      0u,
-      0u};
-  wgpuQueueWriteBuffer(
-      graph.queue(), context.params_buffer, 0, &params, sizeof(params));
-
-  const bool use_fused = is_qkv_bk64_live_m(m);
-  auto& fused = graph.dispatch_at(context.fused_dispatch);
-  fused.workgroup_count_x = use_fused
-      ? ((m + kQkvTile - 1u) / kQkvTile) * (kQkvFusedWidth / kQkvTile)
-      : 0u;
-  fused.workgroup_count_y = use_fused ? 1u : 0u;
-  // The separate projection hooks run first and restore their live grids.
-  if (use_fused) {
-    for (size_t member = 0; member < context.separate_begin.size(); member++) {
-      for (size_t i = context.separate_begin[member];
-           i < context.separate_end[member];
-           i++) {
-        auto& dispatch = graph.dispatch_at(i);
-        dispatch.workgroup_count_x = 0u;
-        dispatch.workgroup_count_y = 0u;
-      }
-    }
-  }
-}
-
-void add_qkv_bk64_resize_hook(WebGPUGraph& graph, const QkvBk64Fusion& fusion) {
-  const QkvBk64ResizeContext context = {
-      fusion.input_id,
-      {fusion.output_ids[0], fusion.output_ids[1], fusion.output_ids[2]},
-      {fusion.separate_begin[0],
-       fusion.separate_begin[1],
-       fusion.separate_begin[2]},
-      {fusion.separate_end[0], fusion.separate_end[1], fusion.separate_end[2]},
-      fusion.fused_dispatch,
-      fusion.max_m,
-      fusion.params_buffer};
-  resize_qkv_bk64(graph, context);
-  graph.add_tensor_resize_hook(fusion.input_id, [context](WebGPUGraph& g) {
-    resize_qkv_bk64(g, context);
-  });
-}
 
 size_t vk_datatype_size(vkgraph::VkDataType dtype) {
   switch (dtype) {
@@ -1395,386 +1051,43 @@ void WebGPUGraph::build(
          tensors_[oid].nbytes});
   }
 
-  std::vector<SwiGluFusion> swiglu_fusions;
+  std::vector<passes::SwiGluFusion> swiglu_fusions;
   std::unordered_map<unsigned, size_t> swiglu_gate_producers;
   std::unordered_map<unsigned, size_t> swiglu_anchors;
   std::unordered_set<unsigned> swiglu_skipped_ops;
   std::unordered_set<unsigned> claimed_fusion_ops;
 
-  std::vector<QkvBk64Fusion> qkv_fusions;
+  std::vector<passes::QkvBk64Fusion> qkv_fusions;
   std::unordered_map<unsigned, size_t> qkv_first_ops;
   std::unordered_map<unsigned, size_t> qkv_last_ops;
   std::unordered_map<unsigned, size_t> qkv_member_ops;
 
   const auto* chain = graph->chain();
-  if (chain && qkv_bk64_device_supported(device_)) {
-    std::unordered_map<int, std::vector<unsigned>> q4_ops_by_input;
-    std::vector<int> input_order;
-    for (unsigned i = 0; i < chain->size(); i++) {
-      const auto* op = chain->Get(i);
-      const auto* args = op->args();
-      if (op->name()->str() != kQ4gswLinearOpName || !args ||
-          args->size() != 6) {
-        continue;
-      }
-      const int input_id = static_cast<int>(args->Get(0));
-      if (q4_ops_by_input.count(input_id) == 0) {
-        input_order.push_back(input_id);
-      }
-      q4_ops_by_input[input_id].push_back(i);
-    }
-
-    auto op_arg = [&](unsigned op_index, unsigned arg_index) {
-      return static_cast<int>(chain->Get(op_index)->args()->Get(arg_index));
-    };
-    auto is_graph_output = [&](int id) {
-      return std::find(output_ids_.begin(), output_ids_.end(), id) !=
-          output_ids_.end();
-    };
-    for (int input_id : input_order) {
-      const auto& ops = q4_ops_by_input.at(input_id);
-      if (ops.size() != 3 || input_id < 0 || input_id >= num_vals ||
-          value_types_[input_id] != ValueType::Tensor) {
-        continue;
-      }
-
-      QkvBk64Fusion fusion;
-      fusion.input_id = input_id;
-      bool exact_args = true;
-      for (size_t member = 0; member < 3; member++) {
-        fusion.op_indices[member] = ops[member];
-        fusion.weight_ids[member] = op_arg(ops[member], 1);
-        fusion.scale_ids[member] = op_arg(ops[member], 2);
-        fusion.output_ids[member] = op_arg(ops[member], 5);
-        const int group_size_id = op_arg(ops[member], 3);
-        const int bias_id = op_arg(ops[member], 4);
-        exact_args = exact_args && group_size_id >= 0 &&
-            group_size_id < num_vals &&
-            value_types_[group_size_id] == ValueType::Int &&
-            ints_[group_size_id] == kQkvGroupSize && bias_id >= 0 &&
-            bias_id < num_vals && value_types_[bias_id] == ValueType::Null;
-      }
-      if (!exact_args) {
-        continue;
-      }
-
-      const std::array<int, 6> constant_ids = {
-          fusion.weight_ids[0],
-          fusion.weight_ids[1],
-          fusion.weight_ids[2],
-          fusion.scale_ids[0],
-          fusion.scale_ids[1],
-          fusion.scale_ids[2]};
-      const std::unordered_set<int> distinct_constants(
-          constant_ids.begin(), constant_ids.end());
-      bool direct_constants = distinct_constants.size() == constant_ids.size();
-      for (int id : constant_ids) {
-        direct_constants = direct_constants && id >= 0 && id < num_vals &&
-            value_types_[id] == ValueType::Tensor &&
-            constant_sources_.count(id) != 0 && tensors_[id].buffer != nullptr;
-      }
-      if (!direct_constants) {
-        continue;
-      }
-
-      const std::unordered_set<int> distinct_outputs = {
-          fusion.output_ids[0], fusion.output_ids[1], fusion.output_ids[2]};
-      bool outputs_ok = distinct_outputs.size() == 3;
-      for (int id : fusion.output_ids) {
-        outputs_ok = outputs_ok && id >= 0 && id < num_vals &&
-            value_types_[id] == ValueType::Tensor &&
-            tensor_mem_obj_ids_[id] >= 0 && !is_graph_output(id) &&
-            is_fp32_tensor(tensors_[id]);
-      }
-      if (!outputs_ok) {
-        continue;
-      }
-
-      const auto& input = tensors_[input_id];
-      if (!is_fp32_tensor(input) || input.dims.empty() ||
-          input.dims.back() != kQkvK) {
-        continue;
-      }
-      const uint64_t input_numel = utils::numel_of(input.dims);
-      if (input_numel % kQkvK != 0u || input_numel / kQkvK < 128u ||
-          input_numel / kQkvK > UINT32_MAX) {
-        continue;
-      }
-      fusion.max_m = static_cast<uint32_t>(input_numel / kQkvK);
-
-      const uint32_t widths[3] = {kQkvQWidth, kQkvKvWidth, kQkvKvWidth};
-      bool exact_geometry = true;
-      for (size_t member = 0; member < 3; member++) {
-        const auto& weight = tensors_[fusion.weight_ids[member]];
-        const auto& scale = tensors_[fusion.scale_ids[member]];
-        const auto& output = tensors_[fusion.output_ids[member]];
-        exact_geometry = exact_geometry && weight.dims.size() == 2 &&
-            weight.dims[0] == widths[member] && weight.dims[1] == kQkvKPacked &&
-            weight.nbytes ==
-                static_cast<size_t>(widths[member]) * kQkvKPacked &&
-            scale.dims.size() == 2 && scale.dims[0] == kQkvNumGroups &&
-            scale.dims[1] == widths[member] && is_fp32_tensor(scale) &&
-            output.dims.size() == input.dims.size() &&
-            std::equal(input.dims.begin(),
-                       input.dims.end() - 1,
-                       output.dims.begin()) &&
-            output.dims.back() == widths[member] &&
-            utils::numel_of(output.dims) ==
-                static_cast<uint64_t>(fusion.max_m) * widths[member];
-      }
-      if (!exact_geometry) {
-        continue;
-      }
-
-      const size_t fusion_index = qkv_fusions.size();
-      qkv_fusions.push_back(fusion);
-      qkv_first_ops[ops[0]] = fusion_index;
-      qkv_last_ops[ops[2]] = fusion_index;
-      for (unsigned op : ops) {
-        qkv_member_ops[op] = fusion_index;
-      }
-    }
-  }
-
-  // Detect only the exact q4 gate/up MLP pattern. Full-chain occurrence and
-  // definition counts make every folded intermediate private to the pattern.
-  if (chain) {
-    struct ExactUnary {
-      unsigned op;
-      int input;
-    };
-    struct ExactBinary {
-      unsigned op;
-      int lhs;
-      int rhs;
-    };
-    std::vector<size_t> occurrences(num_vals, 0);
-    std::vector<size_t> definitions(num_vals, 0);
-    std::vector<int> producer(num_vals, -1);
-    std::unordered_map<int, unsigned> q4_by_output;
-    std::unordered_map<int, ExactUnary> sigmoid_by_output;
-    std::unordered_map<int, ExactBinary> mul_by_output;
-
-    auto count_occurrence = [&](int id) {
-      if (id < 0 || id >= num_vals) {
-        return;
-      }
-      occurrences[id]++;
-      if (value_types_[id] == ValueType::ValueList) {
-        for (int member : value_lists_[id]) {
-          if (member >= 0 && member < num_vals) {
-            occurrences[member]++;
-          }
-        }
-      }
-    };
-
-    for (unsigned i = 0; i < chain->size(); i++) {
-      const auto* op = chain->Get(i);
-      const auto* args = op->args();
-      if (!args || args->size() == 0) {
-        continue;
-      }
-      for (unsigned j = 0; j < args->size(); j++) {
-        count_occurrence(static_cast<int>(args->Get(j)));
-      }
-      const std::string name = op->name()->str();
-      int output = -1;
-      if (name == kQ4gswLinearOpName && args->size() == 6) {
-        output = static_cast<int>(args->Get(5));
-        q4_by_output[output] = i;
-      } else if (name == kSigmoidOpName && args->size() == 2) {
-        output = static_cast<int>(args->Get(1));
-        sigmoid_by_output[output] = {i, static_cast<int>(args->Get(0))};
-      } else if (name == kMulOpName && args->size() == 3) {
-        output = static_cast<int>(args->Get(2));
-        mul_by_output[output] = {
-            i, static_cast<int>(args->Get(0)), static_cast<int>(args->Get(1))};
-      }
-      if (output >= 0 && output < num_vals) {
-        definitions[output]++;
-        producer[output] = static_cast<int>(i);
-      }
-    }
-
-    auto is_graph_output = [&](int id) {
-      return std::find(output_ids_.begin(), output_ids_.end(), id) !=
-          output_ids_.end();
-    };
-    for (unsigned mul2_op = 0; mul2_op < chain->size(); mul2_op++) {
-      const auto* mul2_call = chain->Get(mul2_op);
-      const auto* mul2_args = mul2_call->args();
-      if (mul2_call->name()->str() != kMulOpName || !mul2_args ||
-          mul2_args->size() != 3) {
-        continue;
-      }
-
-      std::vector<SwiGluFusion> candidates;
-      auto try_orientation = [&](int silu_id, int up_id) {
-        const auto mul1_it = mul_by_output.find(silu_id);
-        if (mul1_it == mul_by_output.end()) {
-          return;
-        }
-        const ExactBinary& mul1 = mul1_it->second;
-        int gate_id = -1;
-        int sigmoid_id = -1;
-        unsigned sigmoid_op = 0;
-        const auto lhs_sig = sigmoid_by_output.find(mul1.lhs);
-        const auto rhs_sig = sigmoid_by_output.find(mul1.rhs);
-        if (lhs_sig != sigmoid_by_output.end() &&
-            lhs_sig->second.input == mul1.rhs) {
-          gate_id = mul1.rhs;
-          sigmoid_id = mul1.lhs;
-          sigmoid_op = lhs_sig->second.op;
-        } else if (
-            rhs_sig != sigmoid_by_output.end() &&
-            rhs_sig->second.input == mul1.lhs) {
-          gate_id = mul1.lhs;
-          sigmoid_id = mul1.rhs;
-          sigmoid_op = rhs_sig->second.op;
-        } else {
-          return;
-        }
-
-        const auto gate_q4 = q4_by_output.find(gate_id);
-        const auto up_q4 = q4_by_output.find(up_id);
-        if (gate_q4 == q4_by_output.end() || up_q4 == q4_by_output.end() ||
-            gate_q4->second == up_q4->second) {
-          return;
-        }
-        const auto* gate_args = chain->Get(gate_q4->second)->args();
-        const auto* up_args = chain->Get(up_q4->second)->args();
-        if (!gate_args || !up_args || gate_args->size() != 6 ||
-            up_args->size() != 6 || gate_args->Get(0) != up_args->Get(0) ||
-            static_cast<int>(gate_args->Get(5)) != gate_id ||
-            static_cast<int>(up_args->Get(5)) != up_id) {
-          return;
-        }
-        const int common_input_id = static_cast<int>(gate_args->Get(0));
-        const int out_id = static_cast<int>(mul2_args->Get(2));
-        const int ids[] = {gate_id, up_id, sigmoid_id, silu_id, out_id};
-        std::unordered_set<int> distinct_ids(std::begin(ids), std::end(ids));
-        if (distinct_ids.size() != 5 || common_input_id < 0 ||
-            common_input_id >= num_vals) {
-          return;
-        }
-        for (int id : ids) {
-          if (id < 0 || id >= num_vals ||
-              value_types_[id] != ValueType::Tensor || definitions[id] != 1) {
-            return;
-          }
-        }
-        if (producer[gate_id] != static_cast<int>(gate_q4->second) ||
-            producer[up_id] != static_cast<int>(up_q4->second) ||
-            producer[sigmoid_id] != static_cast<int>(sigmoid_op) ||
-            producer[silu_id] != static_cast<int>(mul1.op) ||
-            producer[out_id] != static_cast<int>(mul2_op) ||
-            occurrences[gate_id] != 3 || occurrences[up_id] != 2 ||
-            occurrences[sigmoid_id] != 2 || occurrences[silu_id] != 2) {
-          return;
-        }
-        if (!(gate_q4->second < sigmoid_op && sigmoid_op < mul1.op &&
-              mul1.op < mul2_op && up_q4->second < mul2_op)) {
-          return;
-        }
-        if (is_graph_output(gate_id) || is_graph_output(sigmoid_id) ||
-            is_graph_output(silu_id) || tensor_mem_obj_ids_[gate_id] < 0) {
-          return;
-        }
-
-        const auto& gate = tensors_[gate_id];
-        const auto& up = tensors_[up_id];
-        const auto& sigmoid = tensors_[sigmoid_id];
-        const auto& silu = tensors_[silu_id];
-        const auto& out = tensors_[out_id];
-        if (!is_fp32_tensor(gate) || !is_fp32_tensor(up) ||
-            !is_fp32_tensor(sigmoid) || !is_fp32_tensor(silu) ||
-            !is_fp32_tensor(out) || gate.dims != up.dims ||
-            gate.dims != sigmoid.dims || gate.dims != silu.dims ||
-            gate.dims != out.dims || gate.nbytes != up.nbytes ||
-            gate.nbytes != sigmoid.nbytes || gate.nbytes != silu.nbytes ||
-            gate.nbytes != out.nbytes || up.buffer == out.buffer) {
-          return;
-        }
-        candidates.push_back(
-            {common_input_id,
-             gate_id,
-             up_id,
-             sigmoid_id,
-             silu_id,
-             out_id,
-             gate_q4->second,
-             sigmoid_op,
-             mul1.op,
-             mul2_op});
-      };
-
-      try_orientation(
-          static_cast<int>(mul2_args->Get(0)),
-          static_cast<int>(mul2_args->Get(1)));
-      try_orientation(
-          static_cast<int>(mul2_args->Get(1)),
-          static_cast<int>(mul2_args->Get(0)));
-      if (candidates.size() != 1) {
-        continue;
-      }
-      const SwiGluFusion& fusion = candidates.front();
-      const unsigned pattern_ops[] = {
-          fusion.gate_op,
-          q4_by_output.at(fusion.up_id),
-          fusion.sigmoid_op,
-          fusion.mul1_op,
-          fusion.mul2_op};
-      bool overlaps = false;
-      for (unsigned op : pattern_ops) {
-        overlaps = overlaps || claimed_fusion_ops.count(op) != 0;
-      }
-      if (overlaps) {
-        continue;
-      }
-      const size_t fusion_idx = swiglu_fusions.size();
-      swiglu_fusions.push_back(fusion);
-      swiglu_gate_producers[fusion.gate_op] = fusion_idx;
-      swiglu_anchors[fusion.mul2_op] = fusion_idx;
-      swiglu_skipped_ops.insert(fusion.sigmoid_op);
-      swiglu_skipped_ops.insert(fusion.mul1_op);
-      // mul2_op is the fusion anchor: its Phase-3 branch emits the fused
-      // dispatch and continues before the skipped-ops check, so it needs no
-      // swiglu_skipped_ops entry.
-      for (unsigned op : pattern_ops) {
-        claimed_fusion_ops.insert(op);
-      }
-    }
-  }
+  passes::detect_qkv_bk64_fusions(
+      *this,
+      graph,
+      num_vals,
+      qkv_fusions,
+      qkv_first_ops,
+      qkv_last_ops,
+      qkv_member_ops);
+  passes::detect_swiglu_fusions(
+      *this,
+      graph,
+      num_vals,
+      swiglu_fusions,
+      swiglu_gate_producers,
+      swiglu_anchors,
+      swiglu_skipped_ops,
+      claimed_fusion_ops);
 
   // SwiGLU keeps precedence when the exact QKV geometry is also formed by a
   // q projection plus gate/up projections. QKV detection runs first because it
   // validates constant geometry, but it has no side effects until Phase 3; now
   // discard candidates claimed by the completed SwiGLU pass and rebuild the
   // index maps for the retained groups.
-  std::vector<QkvBk64Fusion> retained_qkv_fusions;
-  qkv_first_ops.clear();
-  qkv_last_ops.clear();
-  qkv_member_ops.clear();
-  for (QkvBk64Fusion& fusion : qkv_fusions) {
-    bool overlaps = false;
-    for (unsigned op : fusion.op_indices) {
-      overlaps = overlaps || claimed_fusion_ops.count(op) != 0;
-    }
-    if (overlaps) {
-      continue;
-    }
-    const size_t fusion_index = retained_qkv_fusions.size();
-    retained_qkv_fusions.push_back(std::move(fusion));
-    const QkvBk64Fusion& retained = retained_qkv_fusions.back();
-    qkv_first_ops[retained.op_indices[0]] = fusion_index;
-    qkv_last_ops[retained.op_indices[2]] = fusion_index;
-    for (unsigned op : retained.op_indices) {
-      qkv_member_ops[op] = fusion_index;
-      claimed_fusion_ops.insert(op);
-    }
-  }
-  qkv_fusions = std::move(retained_qkv_fusions);
+  passes::retain_unclaimed_qkv_fusions(
+      qkv_fusions, qkv_first_ops, qkv_last_ops, qkv_member_ops, claimed_fusion_ops);
 
   // Phase 3: Build operator dispatch chain
   if (chain) {
@@ -1801,8 +1114,8 @@ void WebGPUGraph::build(
       }
       const auto anchor_it = swiglu_anchors.find(i);
       if (anchor_it != swiglu_anchors.end()) {
-        const SwiGluFusion& fusion = swiglu_fusions[anchor_it->second];
-        add_silu_mul_fused_dispatch(
+        const passes::SwiGluFusion& fusion = swiglu_fusions[anchor_it->second];
+        passes::add_silu_mul_fused_dispatch(
             *this,
             fusion.common_input_id,
             fusion.gate_id,
@@ -1817,7 +1130,7 @@ void WebGPUGraph::build(
 
       const auto qkv_first = qkv_first_ops.find(i);
       if (qkv_first != qkv_first_ops.end()) {
-        QkvBk64Fusion& fusion = qkv_fusions[qkv_first->second];
+        passes::QkvBk64Fusion& fusion = qkv_fusions[qkv_first->second];
         for (int output_id : fusion.output_ids) {
           tensors_[output_id].buffer =
               create_scratch_buffer(tensors_[output_id].nbytes);
@@ -1830,7 +1143,7 @@ void WebGPUGraph::build(
 
       const auto qkv_member = qkv_member_ops.find(i);
       if (qkv_member != qkv_member_ops.end()) {
-        QkvBk64Fusion& fusion = qkv_fusions[qkv_member->second];
+        passes::QkvBk64Fusion& fusion = qkv_fusions[qkv_member->second];
         size_t member = 0;
         while (member < 3 && fusion.op_indices[member] != i) {
           member++;
@@ -1842,12 +1155,12 @@ void WebGPUGraph::build(
         fusion.separate_begin[member] = dispatch_begin;
         fusion.separate_end[member] = dispatch_end;
         if (member == 0) {
-          add_qkv_bk64_dispatch(*this, fusion);
+          passes::add_qkv_bk64_dispatch(*this, fusion);
         }
       }
       const auto qkv_last = qkv_last_ops.find(i);
       if (qkv_last != qkv_last_ops.end()) {
-        add_qkv_bk64_resize_hook(*this, qkv_fusions[qkv_last->second]);
+        passes::add_qkv_bk64_resize_hook(*this, qkv_fusions[qkv_last->second]);
       }
 
       if (i + 1 == chain->size() && op_name == kQ4gswLinearOpName &&
