@@ -404,7 +404,7 @@ void build_resize_test_graph(WebGPUGraph& graph) {
   vk::FinishVkGraphBuffer(fbb, root);
 
   graph.set_device(g_device);
-  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+  graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
 }
 
 WebGPUComputeDispatchDescriptor make_dynamic_test_descriptor(
