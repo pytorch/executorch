@@ -1289,7 +1289,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
+  # Naming the runtime as a dependency keeps this an ordinary C++ link (standard
+  # library, include directories, compile definitions); the helper below only
+  # fixes where the runtime lands on the link line.
   if(EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(data_loader PRIVATE executorch_shared)
     if(NOT APPLE)
       set_target_properties(
         data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"

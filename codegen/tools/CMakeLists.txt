@@ -47,7 +47,9 @@ if(EXECUTORCH_BUILD_SHARED)
   # The runtime comes from libexecutorch.so instead of the static core. This
   # module lands in <site-packages>/executorch/codegen/tools, two levels below
   # the wheel's lib/ directory.
-  target_link_libraries(selective_build PRIVATE program_schema)
+  target_link_libraries(
+    selective_build PRIVATE executorch_shared program_schema
+  )
   if(NOT APPLE)
     set_target_properties(
       selective_build PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
