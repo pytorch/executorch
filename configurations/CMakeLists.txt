@@ -50,7 +50,15 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   else()
     set(_optimized_native_cpu_ops_lib_portable_kernels_lib portable_kernels)
   endif()
+  # Ship this as a shared library in the wheel so the kernels are registered
+  # once per process instead of once per component that links them.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_merged_cpu_ops_shared SHARED)
+  else()
+    set(_merged_cpu_ops_shared "")
+  endif()
   gen_operators_lib(
+    ${_merged_cpu_ops_shared}
     LIB_NAME
     "optimized_native_cpu_ops_lib"
     KERNEL_LIBS

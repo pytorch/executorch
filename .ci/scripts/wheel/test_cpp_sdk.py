@@ -40,6 +40,10 @@ _REGISTRY_SYMBOLS = (
 # oversubscribes the CPU because each pool sizes itself to all cores.
 _THREADPOOL_SYMBOLS = ("executorch::extension::threadpool::get_threadpool",)
 
+# A representative operator from the merged CPU kernels. A second definer means
+# the operators are registered twice, which aborts at startup.
+_KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
+
 # `nm -DC` prints "<hexaddr> <kind> <name>" for a definition and
 # "                 U <name>" for an undefined reference.
 _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
@@ -132,6 +136,11 @@ def test_single_threadpool() -> None:
     _assert_single_definer(_THREADPOOL_SYMBOLS, "thread pool")
 
 
+def test_single_kernel_registration() -> None:
+    """Exactly one shipped library may define the merged CPU kernels."""
+    _assert_single_definer(_KERNEL_SYMBOLS, "set of CPU kernels")
+
+
 def test_cpp_consumer(work_dir: Path) -> None:
     """A standalone C++ app builds and runs against the installed wheel."""
     assert shutil.which("cmake") is not None, "cmake is required to build a consumer"
@@ -187,4 +196,5 @@ def test_cpp_consumer(work_dir: Path) -> None:
 def run_tests(work_dir: Path) -> None:
     test_single_backend_registry()
     test_single_threadpool()
+    test_single_kernel_registration()
     test_cpp_consumer(work_dir)
