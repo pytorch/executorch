@@ -160,7 +160,8 @@ table UpdateAndAttendNode {
     position: Tid (required);
     out: Tid (required);
     layer_id: int32;
-    scale: float;
+    scale: float = null;  // required in practice; null so an omitted scale
+                          // fails loudly instead of defaulting to 0
     out_dtype: int8 = null;  // ET ScalarType; null = keep SDPA's native output
 }
 

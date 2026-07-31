@@ -37,6 +37,11 @@ class Pool {
 
   // Place `update` at the run's physical start, casting to the storage dtype if
   // it differs.
+  //
+  // Each write chains a lazy slice_update onto the previous buf_. That stays
+  // bounded only because the caller eval()s the step's output, which
+  // transitively materializes buf_; a caller that never eval()s would grow the
+  // graph without limit.
   void write(const cache::Run& run, const Tensor& update, StreamOrDevice s) {
     const int H = static_cast<int>(buf_.shape(1));
     const int D = static_cast<int>(buf_.shape(3));

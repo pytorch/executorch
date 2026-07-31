@@ -301,13 +301,17 @@ inline void exec_update_and_attend(
   if (!st.cache) {
     throw std::runtime_error("update_and_attend: no cache installed");
   }
+  if (!n.scale) {
+    throw std::runtime_error("update_and_attend: scale is not set");
+  }
   // The cache does the KV write + read and declares the mask; the handler owns
   // the query side (q, scale) and calls SDPA.
   const array& q = st.const_tensor_ref(n.q);
-  // The run's start is position[0]. Read it host-side here -- a tiny
-  // device->host sync -- so the cache stays pure graph + integer bookkeeping.
-  // If position later arrives as a host-side constant, this is the single spot
-  // to change.
+  // The run's start is position[0], read host-side so the cache stays pure
+  // graph + integer bookkeeping. This is a device->host sync per node, i.e.
+  // n_layers stalls per step -- not one -- even though every layer of a step
+  // sees the same position. The fix is for position to arrive as a host-side
+  // constant instead of a graph tensor; this is the single spot to change.
   array pos = astype(st.const_tensor_ref(n.position), int32, s);
   eval(pos);
   const int position = pos.data<int32_t>()[0];
@@ -321,12 +325,29 @@ inline void exec_update_and_attend(
   // storage precision may differ from the compute dtype).
   array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
   array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
-  std::string mask_mode = spec.kind == AttendSpec::Mask::Causal ? "causal" : "";
+  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
+  // than test for Causal: None and Explicit both map to "" and are told apart
+  // only by spec.mask, so an Explicit with no mask would silently attend
+  // unmasked.
+  std::string mask_mode;
+  switch (spec.kind) {
+    case AttendSpec::Mask::None:
+      break;
+    case AttendSpec::Mask::Causal:
+      mask_mode = "causal";
+      break;
+    case AttendSpec::Mask::Explicit:
+      if (!spec.mask) {
+        throw std::runtime_error(
+            "update_and_attend: Explicit mask kind with no mask tensor");
+      }
+      break;
+  }
   array out = fast::scaled_dot_product_attention(
       q,
       K,
       V,
-      static_cast<float>(n.scale),
+      static_cast<float>(*n.scale),
       mask_mode,
       spec.mask,
       std::nullopt,
