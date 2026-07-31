@@ -43,11 +43,7 @@ void resize_embedding_q4gsw(
     WebGPUGraph& g,
     int indices_id,
     int out_id,
-    uint32_t embed_dim,
-    uint32_t blocks_per_row,
-    uint32_t gs_u,
-    uint32_t groups_per_row,
-    uint32_t bytes_per_row,
+    EmbeddingParams params,
     uint32_t wg_size,
     size_t dispatch_idx,
     WGPUBuffer params_buf) {
@@ -56,23 +52,17 @@ void resize_embedding_q4gsw(
   if (ni == 0) {
     throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
   }
-  const uint64_t total_blocks = ni * blocks_per_row;
+  const uint64_t total_blocks = ni * params.blocks_per_row;
   if (total_blocks > UINT32_MAX) {
     throw std::runtime_error(
         "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
   }
   std::vector<int64_t> od = id;
-  od.push_back(static_cast<int64_t>(embed_dim));
+  od.push_back(static_cast<int64_t>(params.embed_dim));
   g.set_cur_dims(out_id, od);
-  EmbeddingParams p = {};
-  p.embed_dim = embed_dim;
-  p.blocks_per_row = blocks_per_row;
-  p.num_indices = static_cast<uint32_t>(ni);
-  p.group_size = gs_u;
-  p.groups_per_row = groups_per_row;
-  p.bytes_per_row = bytes_per_row;
-  p.total_blocks = static_cast<uint32_t>(total_blocks);
-  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+  params.num_indices = static_cast<uint32_t>(ni);
+  params.total_blocks = static_cast<uint32_t>(total_blocks);
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &params, sizeof(params));
   g.dispatch_at(dispatch_idx).workgroup_count_x =
       utils::compute_1d_workgroup_count(
           g.device(),
@@ -230,32 +220,13 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       {bundle.pipeline, bundle.bind_group, workgroup_count, "embedding_q4gsw"});
 
   // Dynamic shapes: recompute counts/dispatch; out = indices + [embed_dim].
-  const uint32_t gs_u = static_cast<uint32_t>(group_size);
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       indices_id,
-      [indices_id,
-       out_id,
-       embed_dim,
-       blocks_per_row,
-       gs_u,
-       groups_per_row,
-       bytes_per_row,
-       wg_size,
-       dispatch_idx,
-       params_buf](WebGPUGraph& g) {
+      [indices_id, out_id, params, wg_size, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
         resize_embedding_q4gsw(
-            g,
-            indices_id,
-            out_id,
-            embed_dim,
-            blocks_per_row,
-            gs_u,
-            groups_per_row,
-            bytes_per_row,
-            wg_size,
-            dispatch_idx,
-            params_buf);
+            g, indices_id, out_id, params, wg_size, dispatch_idx, params_buf);
       });
 
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
