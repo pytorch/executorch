@@ -216,6 +216,7 @@ supported_ops = {
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.convolution.out: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.exp.default: ExpConverter,  # noqa F405
+    exir_ops.edge.aten.hardswish.default: HardswishConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
     exir_ops.edge.aten.log.default: LogConverter,  # noqa F405
@@ -229,6 +230,7 @@ supported_ops = {
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.rsqrt.default: RsqrtConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
     exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
@@ -345,6 +347,8 @@ class NeutronPartitioner(Partitioner):
                                               `edge_program` only contains fake tensors without any data. In this case,
                                               this state dict is used instead (if provided). Notice: It may potentially
                                               contain outdated data,
+        :param preserve_ops: List of aten operators to not decompose during the lowering.
+        :param check_op_support: Optional callable to check if an operator is supported.
         """
         super().__init__()
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)

@@ -46,6 +46,12 @@ except:
     torchao_installed = False
 
 
+def is_fbcode() -> bool:
+    # torch.version.git_version is only set in OSS PyTorch; the internal
+    # Buck-built torch omits it.
+    return not hasattr(torch.version, "git_version")
+
+
 # Pytorch Modules Used for Testing
 class BaseLinear(torch.nn.Module):
     def __init__(
@@ -64,7 +70,11 @@ class BaseLinear(torch.nn.Module):
         self.ic = input_channels
         self.oc = output_channels
 
-        assert dtype in [torch.float, torch.half], "Unsupported op dtype"
+        assert dtype in [
+            torch.float,
+            torch.half,
+            torch.bfloat16,
+        ], "Unsupported op dtype"
         self.op_dtype = dtype
         self.in_size = in_size
 
@@ -388,6 +398,7 @@ class TestLinear(unittest.TestCase):
         num_linears: int = 1,
         atol: float = 5e-3,  # TODO(T212995726): Investigate right atol for rand[n] inputs
         rtol: float = 5e-3,  # TODO(T212995726): Investigate right rtol for rand[n] inputs
+        enable_bf16: bool = False,
     ):
         """
         Helper function to test groupwise dynamic quantized linear op with different configurations.
@@ -404,6 +415,7 @@ class TestLinear(unittest.TestCase):
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
             per_op_mode=True,
+            enable_bf16=enable_bf16,
         )
         tester = (
             Tester(mod, inputs)
@@ -706,11 +718,22 @@ class TestLinear(unittest.TestCase):
                     # Mean: 0.2373046875, 0.237060546875
                     # Max: 1.0078125, 1.0078125
                     # Min: -0.08465576171875, -0.08441162109375
-                    atol = (
-                        1e-2 if dtype == torch.half else 5e-3
-                    )  # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    # bf16 has ~8x coarser mantissa than fp16, so it needs a
+                    # looser atol.
+                    # TODO(T212995726): Investigate right atol for rand[n] inputs
+                    if dtype == torch.bfloat16:
+                        atol = 8e-2
+                    elif dtype == torch.half:
+                        atol = 1e-2
+                    else:
+                        atol = 5e-3
                     self._test_groupwise_dq_linear(
-                        lin_mod, inputs, group_size=bl, use_bias=use_bias, atol=atol
+                        lin_mod,
+                        inputs,
+                        group_size=bl,
+                        use_bias=use_bias,
+                        atol=atol,
+                        enable_bf16=dtype == torch.bfloat16,
                     )
 
     def test_fp16_linear(self):
@@ -838,6 +861,17 @@ class TestLinear(unittest.TestCase):
     )
     def test_linear_qd8_f32_per_token_weight_per_channel_group_int4(self):
         self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.float)
+
+    # Tests for q[dp]8-bf16-qb4w
+    @unittest.skipIf(
+        not torchao_installed, "Per Channel Group Quantization Required TorchAO"
+    )
+    @unittest.skipIf(
+        is_fbcode(),
+        "wait for XNNPACK pin bump to enable",
+    )
+    def test_linear_qd8_bf16_per_token_weight_per_channel_group_int4(self):
+        self._test_qd8_per_token_weight_per_channel_group_int4(dtype=torch.bfloat16)
 
     @unittest.skipIf(
         not torchao_installed, "Per Channel Group Quantization Required TorchAO"
