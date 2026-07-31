@@ -20,6 +20,7 @@ By default the fixed input shape is 768x384.
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import importlib
 import json
@@ -134,6 +135,17 @@ def load_rife_model(model_root: Path, checkpoint: Path | None) -> torch.nn.Modul
             f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
         )
     return RIFEWrapper(flownet).eval()
+
+
+def clone_model(
+    model: torch.nn.Module,
+    *,
+    channels_last: bool = False,
+) -> torch.nn.Module:
+    cloned_model = copy.deepcopy(model).eval()
+    if channels_last:
+        cast(Any, cloned_model).to(memory_format=torch.channels_last)
+    return cloned_model
 
 
 def resolve_path(path_text: str, base_dir: Path) -> Path:
@@ -309,9 +321,15 @@ def load_triple_tensors(
     if triple.synthetic:
         index_text = triple.name.rsplit("_", maxsplit=1)[-1]
         generator = torch.Generator().manual_seed(random_seed + int(index_text))
-        input0 = torch.rand((1, 3, height, width), generator=generator)
-        input1 = torch.rand((1, 3, height, width), generator=generator)
-        target = torch.rand((1, 3, height, width), generator=generator)
+        input0 = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
+        input1 = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
+        target = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
         return (input0, input1), target
 
     if triple.input0 is None or triple.input1 is None or triple.target is None:
@@ -326,7 +344,10 @@ def load_triple_tensors(
         )
         for path in (triple.input0, triple.input1, triple.target)
     ]
-    input0, input1, target = [frame.unsqueeze(0) for frame in frames]
+    input0, input1, target = [
+        frame.unsqueeze(0).contiguous(memory_format=torch.channels_last)
+        for frame in frames
+    ]
     return (input0, input1), target
 
 
@@ -494,10 +515,13 @@ def run_model(
     inputs: tuple[torch.Tensor, torch.Tensor],
 ) -> torch.Tensor:
     with torch.no_grad():
-        output = model(*inputs)
+        output = model(
+            inputs[0].contiguous(memory_format=torch.channels_last),
+            inputs[1].contiguous(memory_format=torch.channels_last),
+        )
     if not isinstance(output, torch.Tensor):
         raise TypeError(f"Expected tensor output, got {type(output)}")
-    return output
+    return output.contiguous(memory_format=torch.channels_last)
 
 
 def target_name(target: Any) -> str:
@@ -654,11 +678,21 @@ def build_ptq_model(
     *,
     io_quantization: str,
 ) -> QuantizedModel:
+    model = clone_model(model, channels_last=True)
+    calibration_inputs = [
+        (
+            inputs[0].contiguous(memory_format=torch.channels_last),
+            inputs[1].contiguous(memory_format=torch.channels_last),
+        )
+        for inputs in calibration_inputs
+    ]
     exported_model = export(model, calibration_inputs[0], strict=True).module(
         check_guards=False
     )
+    cast(Any, exported_model).to(memory_format=torch.channels_last)
     quantizer = make_quantizer(is_qat=False, io_quantization=io_quantization)
     prepared_model = prepare_pt2e(exported_model, quantizer)
+    cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_eval(prepared_model)
 
     with torch.no_grad():
@@ -666,6 +700,7 @@ def build_ptq_model(
             prepared_model(*inputs)
 
     converted_model = convert_pt2e(prepared_model)
+    cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
         model=converted_model,
         coverage=quantization_coverage(converted_model),
@@ -680,19 +715,37 @@ def build_qat_model(
     lr: float,
     io_quantization: str,
 ) -> QuantizedModel:
+    model = clone_model(model, channels_last=True)
+    training_samples = [
+        (
+            (
+                inputs[0].contiguous(memory_format=torch.channels_last),
+                inputs[1].contiguous(memory_format=torch.channels_last),
+            ),
+            target.contiguous(memory_format=torch.channels_last),
+        )
+        for inputs, target in training_samples
+    ]
     exported_model = export(model, training_samples[0][0], strict=True).module(
         check_guards=False
     )
+    cast(Any, exported_model).to(memory_format=torch.channels_last)
     quantizer = make_quantizer(is_qat=True, io_quantization=io_quantization)
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+    cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
     optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
 
     for step in range(steps):
         total_loss = 0.0
         for inputs, target in training_samples:
-            prediction = prepared_model(*inputs)
-            loss = F.mse_loss(prediction, target)
+            prediction = prepared_model(*inputs).contiguous(
+                memory_format=torch.channels_last
+            )
+            loss = F.mse_loss(
+                prediction,
+                target.contiguous(memory_format=torch.channels_last),
+            )
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -704,6 +757,7 @@ def build_qat_model(
 
     prepared_model = move_exported_model_to_eval(prepared_model)
     converted_model = convert_pt2e(prepared_model)
+    cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
         model=converted_model,
         coverage=quantization_coverage(converted_model),
@@ -722,6 +776,11 @@ def export_vgf_artifact(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     compile_spec = make_vgf_compile_spec(artifact_dir)
     partitioner = VgfPartitioner(compile_spec)
+    cast(Any, model).to(memory_format=torch.channels_last)
+    inputs = (
+        inputs[0].contiguous(memory_format=torch.channels_last),
+        inputs[1].contiguous(memory_format=torch.channels_last),
+    )
 
     print(f"[vgf] exporting {name} model to {artifact_dir} ...")
     aten_dialect = export(model, args=inputs, strict=True)
@@ -777,6 +836,10 @@ def write_markdown_report(
     for key, label in (
         ("eager_psnr", "Eager PSNR"),
         ("eager_ssim", "Eager SSIM"),
+        ("eager_channels_last_psnr", "Eager Channels-Last PSNR"),
+        ("eager_channels_last_ssim", "Eager Channels-Last SSIM"),
+        ("eager_channels_last_vs_eager_mae", "Eager Channels-Last vs eager MAE"),
+        ("eager_channels_last_vs_eager_sqnr", "Eager Channels-Last vs eager SQNR"),
         ("ptq_psnr", "PTQ PSNR"),
         ("ptq_ssim", "PTQ SSIM"),
         ("ptq_vs_eager_mae", "PTQ vs eager MAE"),
@@ -1171,6 +1234,8 @@ def print_progress(index: int, total: int, row: dict[str, Any]) -> None:
     progress = f"{index + 1}/{total} {row['name']}"
     if "eager_psnr" in row:
         progress += f" eager_psnr={row['eager_psnr']:.3f}"
+    if "eager_channels_last_psnr" in row:
+        progress += f" eager_cl_psnr={row['eager_channels_last_psnr']:.3f}"
     if "ptq_psnr" in row:
         progress += f" ptq_psnr={row['ptq_psnr']:.3f}"
     if "qat_psnr" in row:
@@ -1181,7 +1246,8 @@ def print_progress(index: int, total: int, row: dict[str, Any]) -> None:
 def evaluate_triples(
     args: argparse.Namespace,
     triples: list[FrameTriple],
-    model: torch.nn.Module,
+    eager_model: torch.nn.Module,
+    eager_channels_last_model: torch.nn.Module | None,
     ptq_model: torch.nn.Module | None,
     qat_model: torch.nn.Module | None,
 ) -> list[dict[str, Any]]:
@@ -1205,13 +1271,29 @@ def evaluate_triples(
         }
         eager_output = None
         if run_eager:
-            eager_output = run_model(model, inputs)
+            eager_output = run_model(eager_model, inputs)
             update_row_with_prediction_metrics(
                 row,
                 prefix="eager",
                 prediction=eager_output,
                 target=target,
             )
+            if eager_channels_last_model is not None:
+                eager_channels_last_output = run_model(
+                    eager_channels_last_model, inputs
+                )
+                update_row_with_prediction_metrics(
+                    row,
+                    prefix="eager_channels_last",
+                    prediction=eager_channels_last_output,
+                    target=target,
+                )
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="eager_channels_last_vs_eager",
+                    prediction=eager_channels_last_output,
+                    reference=eager_output,
+                )
 
         if ptq_model is not None:
             ptq_output = run_model(ptq_model, inputs)
@@ -1222,7 +1304,7 @@ def evaluate_triples(
                 target=target,
             )
             if eager_output is None:
-                eager_output = run_model(model, inputs)
+                eager_output = run_model(eager_model, inputs)
             update_row_with_delta_metrics(
                 row,
                 prefix="ptq_vs_eager",
@@ -1239,7 +1321,7 @@ def evaluate_triples(
                 target=target,
             )
             if eager_output is None:
-                eager_output = run_model(model, inputs)
+                eager_output = run_model(eager_model, inputs)
             update_row_with_delta_metrics(
                 row,
                 prefix="qat_vs_eager",
@@ -1254,7 +1336,8 @@ def evaluate_triples(
 
 
 def build_aggregate(
-    args: argparse.Namespace, rows: list[dict[str, Any]]
+    args: argparse.Namespace,
+    rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     aggregate: dict[str, Any] = {
         "triple_count": len(rows),
@@ -1266,7 +1349,15 @@ def build_aggregate(
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
         "random_seed": args.random_seed,
     }
-    for prefix in ("eager", "ptq", "ptq_vs_eager", "qat", "qat_vs_eager"):
+    for prefix in (
+        "eager",
+        "eager_channels_last",
+        "eager_channels_last_vs_eager",
+        "ptq",
+        "ptq_vs_eager",
+        "qat",
+        "qat_vs_eager",
+    ):
         aggregate.update(aggregate_metrics(rows, prefix))
     return aggregate
 
@@ -1303,6 +1394,32 @@ def write_outputs(
     print(f"Wrote {args.output_dir / 'report.md'}")
 
 
+def print_summary(aggregate: dict[str, Any]) -> None:
+    print("")
+    print("== Summary ==")
+    for prefix, label in (
+        ("eager", "eager"),
+        ("eager_channels_last", "eager_channels_last"),
+        ("ptq", "ptq"),
+        ("qat", "qat"),
+    ):
+        if f"{prefix}_psnr_mean" not in aggregate:
+            continue
+        summary = (
+            f"{label}: "
+            f"psnr={format_metric(aggregate.get(f'{prefix}_psnr_mean'))} "
+            f"ssim={format_metric(aggregate.get(f'{prefix}_ssim_mean'))}"
+        )
+        mae_key = f"{prefix}_vs_eager_mae_mean"
+        sqnr_key = f"{prefix}_vs_eager_sqnr_mean"
+        if mae_key in aggregate:
+            summary += (
+                f" vs_eager_mae={format_metric(aggregate.get(mae_key))}"
+                f" vs_eager_sqnr={format_metric(aggregate.get(sqnr_key))}"
+            )
+        print(summary)
+
+
 def main() -> int:
     args = parse_args()
     validate_args(args)
@@ -1319,13 +1436,28 @@ def main() -> int:
     print(f"Data source: {source}")
 
     model = load_rife_model(args.model_root, args.checkpoint)
+    eager_channels_last_model = clone_model(model, channels_last=True)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
         args,
         model,
         triples,
     )
-    rows = evaluate_triples(args, triples, model, ptq_model, qat_model)
-    write_outputs(args, build_aggregate(args, rows), rows, quantization_reports)
+    rows = evaluate_triples(
+        args,
+        triples,
+        model,
+        eager_channels_last_model,
+        ptq_model,
+        qat_model,
+    )
+    aggregate = build_aggregate(args, rows)
+    write_outputs(
+        args,
+        aggregate,
+        rows,
+        quantization_reports,
+    )
+    print_summary(aggregate)
     export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
     return 0
 

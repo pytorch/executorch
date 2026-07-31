@@ -22,14 +22,17 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         seq_len: int = 4,
         k_head_dim: int = 5,
         v_head_dim: int = 6,
+        num_state_heads: int | None = None,
     ):
+        if num_state_heads is None:
+            num_state_heads = num_heads
         query = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
-        key = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
-        value = torch.randn(batch_size, num_heads, seq_len, v_head_dim)
+        key = torch.randn(batch_size, num_state_heads, seq_len, k_head_dim)
+        value = torch.randn(batch_size, num_state_heads, seq_len, v_head_dim)
         # Per-key-channel decay, passed already exponentiated (in (0, 1)).
-        decay = torch.rand(batch_size, num_heads, seq_len, k_head_dim)
-        beta = torch.sigmoid(torch.randn(batch_size, num_heads, seq_len))
-        initial_state = torch.randn(batch_size, num_heads, k_head_dim, v_head_dim)
+        decay = torch.rand(batch_size, num_state_heads, seq_len, k_head_dim)
+        beta = torch.sigmoid(torch.randn(batch_size, num_state_heads, seq_len))
+        initial_state = torch.randn(batch_size, num_state_heads, k_head_dim, v_head_dim)
         return query, key, value, decay, beta, initial_state
 
     def _reference_channelwise_gated_delta_rule(
@@ -42,7 +45,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         initial_state: torch.Tensor,
     ):
         state = initial_state.clone()
-        output = torch.zeros_like(value)
+        output = value.new_zeros(
+            query.size(0), query.size(1), query.size(2), value.size(3)
+        )
+        heads_per_state = query.size(1) // key.size(1)
 
         for token in range(query.size(2)):
             # Per-key-channel decay: [B, H, K, 1], already exponentiated.
@@ -56,9 +62,40 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             v_pred = (state * k_t.unsqueeze(-1)).sum(dim=-2)
             delta = (v_t - v_pred) * beta_t
             state = state + k_t.unsqueeze(-1) * delta.unsqueeze(-2)
-            output[:, :, token] = (state * q_t.unsqueeze(-1)).sum(dim=-2)
+            query_state = state.repeat_interleave(heads_per_state, dim=1)
+            output[:, :, token] = (query_state * q_t.unsqueeze(-1)).sum(dim=-2)
 
         return output, state
+
+    def test_channelwise_gated_delta_rule_grouped_matches_reference(self):
+        torch.manual_seed(0)
+
+        for seq_len in (1, 35):
+            with self.subTest(seq_len=seq_len):
+                inputs = self._make_inputs(
+                    batch_size=2,
+                    num_heads=4,
+                    num_state_heads=2,
+                    seq_len=seq_len,
+                )
+                expected_output, expected_state = (
+                    self._reference_channelwise_gated_delta_rule(*inputs)
+                )
+                actual_output, actual_state = (
+                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
+                )
+
+                self.assertTrue(
+                    torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
+                )
+                self.assertTrue(
+                    torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
+                )
+
+    def test_channelwise_gated_delta_rule_rejects_uneven_groups(self):
+        inputs = self._make_inputs(num_heads=3, num_state_heads=2)
+        with self.assertRaises(RuntimeError):
+            torch.ops.llama.channelwise_gated_delta_rule(*inputs)
 
     def test_channelwise_gated_delta_rule_matches_reference(self):
         torch.manual_seed(0)
@@ -293,6 +330,48 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 self.assertTrue(
                     torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
                 )
+
+    def test_channelwise_gated_delta_rule_prefill_tiny_decay_is_finite(self):
+        # Regression test for the chunked-prefill overflow NaN in op_sdpa.cpp.
+        # The prefill kernel forms eg_inv = exp(-cumsum(log decay)) per
+        # CHUNK_SIZE (32) tokens; for tiny positive decay the within-chunk
+        # cumulative -log(decay) exceeds the float expf overflow limit (~88.7),
+        # so eg_inv overflows to +inf and eg * eg_inv becomes 0 * inf = NaN,
+        # poisoning the whole head's output. The
+        # channelwise_gated_delta_rule_chunked_is_safe guard must route such
+        # inputs to the exact recurrence, which stays finite (and correct) for
+        # tiny decay; without it the isfinite assertions below fail.
+        torch.manual_seed(0)
+
+        # seq_len > CHUNK_SIZE (32) so the prefill route runs the internal chunk
+        # loop; a single chunk of tiny decay overflows the unguarded kernel.
+        query, key, value, decay, beta, initial_state = self._make_inputs(seq_len=64)
+        # decay.min ~6.5e-12 was observed in a real GDN2 checkpoint;
+        # -log(1e-12) ~27.6 per token, so a few tokens blow past the ~80 safe
+        # bound and exp(-gc) would overflow to +inf -> NaN.
+        decay = torch.full_like(decay, 1e-12)
+
+        expected_output, expected_state = self._reference_channelwise_gated_delta_rule(
+            query, key, value, decay, beta, initial_state
+        )
+        actual_output, actual_state = torch.ops.llama.channelwise_gated_delta_rule(
+            query, key, value, decay, beta, initial_state
+        )
+
+        self.assertTrue(
+            torch.isfinite(actual_output).all(),
+            "prefill output has NaN/inf for tiny decay",
+        )
+        self.assertTrue(
+            torch.isfinite(actual_state).all(),
+            "prefill final_state has NaN/inf for tiny decay",
+        )
+        self.assertTrue(
+            torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
+        )
+        self.assertTrue(
+            torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
+        )
 
     def test_channelwise_gated_delta_rule_exports(self):
         class Module(torch.nn.Module):
