@@ -2250,3 +2250,42 @@ def get_eq_scalar_inputs():
     test_suite.dtypes = ["at::kInt", "at::kFloat"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
+
+
+def _get_compare_scalar_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M2, M1), 2.5),
+            ((S1, M1, M2), 1000),
+        ]
+    )
+    test_suite.storage_types = ["utils::kBuffer", "utils::kTexture3D"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+@register_test_suite("aten.ne.Scalar")
+def get_ne_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.lt.Scalar")
+def get_lt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.le.Scalar")
+def get_le_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.gt.Scalar")
+def get_gt_scalar_inputs():
+    return _get_compare_scalar_inputs()
+
+
+@register_test_suite("aten.ge.Scalar")
+def get_ge_scalar_inputs():
+    return _get_compare_scalar_inputs()
