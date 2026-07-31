@@ -2027,8 +2027,9 @@ static bool test_select_double_scalar_case(
       {out.data(), out.size() * sizeof(float)}};
   try {
     graph.copy_inputs(inputs);
-    graph.execute();
-    graph.copy_outputs(outputs);
+    const WebGPUExecutionPlan plan = graph.make_execution_plan({});
+    graph.execute(plan);
+    graph.copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
     printf("FAIL: select execute threw: %s\n", e.what());
     return false;
