@@ -516,6 +516,13 @@ class WebGPUGraph {
     return value_types_[id];
   }
 
+  // Memory-aliasing group id for the tensor's shared buffer, or -1 if it has
+  // none; fusion passes use this to reject candidates aliased with something
+  // the planner may reuse outside the fusion's control.
+  int mem_obj_id(int id) const {
+    return tensor_mem_obj_ids_[id];
+  }
+
  public:
   // True when the sdpa K/V cache is stored f16-packed (runtime opt-in).
   bool kv_f16() const {
