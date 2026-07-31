@@ -620,6 +620,158 @@ class TestPartitioner(unittest.TestCase):
         ]
         self.assertEqual(len(copy_node), 1)
 
+    def test_delegate_consumes_mutable_buffer(self) -> None:
+        """The case anticipated by test_not_delegate_mutable_buffers: a delegate
+        both reads AND updates a mutable buffer, so the buffer's only user is the
+        already-fused call_delegate and its mutation is produced by a getitem off
+        that delegate (as when a backend embeds a pre-compiled engine before
+        partitioning). tag_constant_data must keep the buffer owned above the
+        delegate -- it recognizes it because its FQN is a buffers_to_mutate
+        target, not because a direct user is the mutation producer (the direct
+        user is the call_delegate, whose name is not a mutation key).
+        """
+
+        class DelegatedMutableModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("my_state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.my_state
+                self.my_state.add_(x)
+                return y
+
+        edge = exir.to_edge(
+            torch.export.export(
+                DelegatedMutableModule(), (torch.zeros(1),), strict=True
+            )
+        )
+        self.assertGreater(
+            len(edge.exported_program().graph_signature.buffers_to_mutate), 0
+        )
+
+        # Fuse both adds (buffer read + mutation producer) into ONE call_delegate,
+        # WITHOUT tagging constant data yet -- so afterwards my_state feeds the
+        # fused call_delegate and its mutation is a getitem off it.
+        class FuseAddsPartitioner(Partitioner):
+            def __init__(self):
+                super().__init__()
+                self.delegation_spec = DelegationSpec(
+                    ExecutorBackend.__name__,
+                    [CompileSpec(key, value) for key, value in self.spec.items()],
+                )
+
+            def partition(
+                self, edge_exported_program: ExportedProgram
+            ) -> PartitionResult:
+                partition_tags = {}
+                for node in edge_exported_program.graph.nodes:
+                    if node.op == "call_function" and node.target in [
+                        exir_ops.edge.aten.add.Tensor
+                    ]:
+                        node.meta["delegation_tag"] = "tag0"
+                        partition_tags["tag0"] = self.delegation_spec
+                return PartitionResult(
+                    tagged_exported_program=edge_exported_program,
+                    partition_tags=partition_tags,
+                )
+
+        lowered = edge.to_backend(FuseAddsPartitioner())
+        lowered_ep = lowered.exported_program()
+
+        # Sanity: my_state now feeds a call_delegate whose getitem is the mutation.
+        gs = lowered_ep.graph_signature
+        self.assertIn("my_state", set(gs.buffers_to_mutate.values()))
+        mutate_producers = [
+            name for name, buf in gs.buffers_to_mutate.items() if buf == "my_state"
+        ]
+        self.assertEqual(len(mutate_producers), 1)
+        self.assertTrue(mutate_producers[0].startswith("getitem"))
+
+        # A backend that embeds a pre-compiled multi-output engine tags the
+        # delegate node itself, so the mutable buffer feeds a *tagged* delegate
+        # whose getitem is the mutation. tag_constant_data's freeze loop would
+        # pull such a buffer into the delegate unless it recognizes it as a
+        # mutation target.
+        for node in lowered_ep.graph.nodes:
+            if node.op == "call_function" and "call_delegate" in str(node.target):
+                node.meta["delegation_tag"] = "tag0"
+
+        tag_constant_data(lowered_ep)
+        for node in lowered_ep.graph.nodes:
+            if (
+                node.op == "placeholder"
+                and gs.inputs_to_buffers.get(node.name) == "my_state"
+            ):
+                self.assertIsNone(
+                    node.meta.get("delegation_tag"),
+                    "mutable buffer consumed by a delegate must stay above it, "
+                    "not be frozen into the delegate as constant data",
+                )
+
+    def test_delegate_consumes_buffer_keeps_only_mutated_above(self) -> None:
+        """Companion to test_delegate_consumes_mutable_buffer: a delegate that
+        consumes both a mutated and a non-mutated buffer must keep only the
+        *mutated* one above the delegate; the non-mutated buffer is still frozen
+        into the delegate as constant data. Guards that the mutation-target check
+        in tag_constant_data is surgical and leaves plain constants untouched.
+        """
+
+        class MixedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("my_state", torch.zeros(2))
+                self.register_buffer("frozen_w", torch.ones(2))
+
+            def forward(self, x):
+                y = x + self.my_state + self.frozen_w
+                self.my_state.add_(x)
+                return y
+
+        edge = exir.to_edge(
+            torch.export.export(MixedModule(), (torch.zeros(2),), strict=True)
+        )
+
+        class FuseAddsPartitioner(Partitioner):
+            def __init__(self):
+                super().__init__()
+                self.delegation_spec = DelegationSpec(
+                    ExecutorBackend.__name__,
+                    [CompileSpec(key, value) for key, value in self.spec.items()],
+                )
+
+            def partition(
+                self, edge_exported_program: ExportedProgram
+            ) -> PartitionResult:
+                partition_tags = {}
+                for node in edge_exported_program.graph.nodes:
+                    if node.op == "call_function" and node.target in [
+                        exir_ops.edge.aten.add.Tensor
+                    ]:
+                        node.meta["delegation_tag"] = "tag0"
+                        partition_tags["tag0"] = self.delegation_spec
+                return PartitionResult(
+                    tagged_exported_program=edge_exported_program,
+                    partition_tags=partition_tags,
+                )
+
+        lowered_ep = edge.to_backend(FuseAddsPartitioner()).exported_program()
+        for node in lowered_ep.graph.nodes:
+            if node.op == "call_function" and "call_delegate" in str(node.target):
+                node.meta["delegation_tag"] = "tag0"
+        tag_constant_data(lowered_ep)
+
+        gs = lowered_ep.graph_signature
+        tag_by_buffer = {}
+        for node in lowered_ep.graph.nodes:
+            if node.op == "placeholder" and node.name in gs.inputs_to_buffers:
+                tag_by_buffer[gs.inputs_to_buffers[node.name]] = node.meta.get(
+                    "delegation_tag"
+                )
+        # mutated buffer stays above the delegate; non-mutated buffer is frozen in.
+        self.assertIsNone(tag_by_buffer.get("my_state"))
+        self.assertEqual(tag_by_buffer.get("frozen_w"), "tag0")
+
     def test_buffer_mutation1(self):
         class TestModule(torch.nn.Module):
             def __init__(self):

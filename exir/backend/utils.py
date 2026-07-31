@@ -342,6 +342,37 @@ def format_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
     return graph_format_str
 
 
+def _find_mutated_buffers(
+    edge_program: ExportedProgram,
+    params_map: Dict[str, str],
+    buffers_map: Dict[str, str],
+    constants_map: Dict[str, str],
+    buffers_to_mutate: Dict[str, str],
+) -> Set[torch.fx.Node]:
+    """Return the const/param/buffer placeholder nodes that are mutated (and so
+    must not be frozen into a delegate as constant data).
+
+    A buffer is mutated when a direct user produces a graph-signature buffer
+    mutation, or when its FQN is a mutation target -- the latter covers a buffer
+    mutated inside a delegate, whose mutation is produced by a getitem off the
+    call_delegate rather than by a direct user of the buffer placeholder.
+    """
+    mutated_buffer_targets = set(buffers_to_mutate.values())
+    mutated_buffer: Set[torch.fx.Node] = set()
+    for node in edge_program.graph.nodes:
+        if node.op != "placeholder" or not (
+            node.name in params_map
+            or node.name in buffers_map
+            or node.name in constants_map
+        ):
+            continue
+        if any(user.name in buffers_to_mutate for user in node.users) or (
+            buffers_map.get(node.name) in mutated_buffer_targets
+        ):
+            mutated_buffer.add(node)
+    return mutated_buffer
+
+
 def tag_constant_data(edge_program: ExportedProgram) -> None:
     """
     Util function for partitioners. This function tags the const/param/buffers nodes
@@ -357,19 +388,9 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     constants_map = sig.inputs_to_lifted_tensor_constants
     buffers_to_mutate = sig.buffers_to_mutate
 
-    mutated_buffer = set()
-    for node in edge_program.graph.nodes:
-        if node.op == "placeholder" and (
-            node.name in params_map
-            or node.name in buffers_map
-            or node.name in constants_map
-        ):
-            for node_user in node.users:
-                if node_user.name in buffers_to_mutate:
-                    logging.info(
-                        "The buffer node is a mutated buffer node, which is not constant."
-                    )
-                    mutated_buffer.add(node)
+    mutated_buffer = _find_mutated_buffers(
+        edge_program, params_map, buffers_map, constants_map, buffers_to_mutate
+    )
 
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
