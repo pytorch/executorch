@@ -6,7 +6,7 @@
 Download the Qwen2.5-1.5B checkpoint from HuggingFace:
 
 ```bash
-huggingface-cli download Qwen/Qwen2.5-1.5B --local-dir <path/to/model/folder>
+hf download Qwen/Qwen2.5-1.5B --local-dir <path/to/model/folder>
 ```
 
 Then convert the HuggingFace safetensors checkpoint to Meta format:
@@ -23,6 +23,8 @@ Follow the [instructions](../../../backends/openvino/README.md) of **Prerequisit
 
 Execute the commands below from `<executorch_root>`. Update the model file paths to match the location where your model is downloaded. Replace device with the target hardware you want to compile the model for (`CPU`). The exported model will be generated in the current directory with the filename `qwen2_5_1_5b_ov.pte`. To modify the output name, change `output_name` in `examples/openvino/qwen2_5/qwen2_5_1_5b_ov_4wo.yaml` under `export`.
 
+On Linux/macOS:
+
 ```bash
 QWEN_CHECKPOINT=<path/to/consolidated.00.pth>
 
@@ -31,6 +33,19 @@ python -m executorch.extension.llm.export.export_llm \
   +backend.openvino.device="CPU" \
   +base.model_class="qwen2_5_1_5b" \
   +base.checkpoint="${QWEN_CHECKPOINT:?}" \
+  +base.params="examples/models/qwen2_5/config/1_5b_config.json"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:QWEN_CHECKPOINT = "<path\to\consolidated.00.pth>"
+
+python -m executorch.extension.llm.export.export_llm `
+  --config examples/openvino/qwen2_5/qwen2_5_1_5b_ov_4wo.yaml `
+  +backend.openvino.device="CPU" `
+  +base.model_class="qwen2_5_1_5b" `
+  +base.checkpoint="$env:QWEN_CHECKPOINT" `
   +base.params="examples/models/qwen2_5/config/1_5b_config.json"
 ```
 
@@ -46,7 +61,32 @@ First, build the backend libraries with llm extension by executing the script be
 ./openvino_build.sh --cpp_runtime_llm
 ```
 
+On Windows PowerShell, `openvino_build.sh` is not used. Run the equivalent commands below from `<executorch_root>` after completing the Windows setup in `backends/openvino/README.md`:
+
+```powershell
+if (Test-Path cmake-out) { Remove-Item -Recurse -Force cmake-out }
+
+cmake -DCMAKE_BUILD_TYPE=Release `
+  -DEXECUTORCH_BUILD_OPENVINO=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON `
+  -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON `
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_LLM=ON `
+  -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON `
+  -DCMAKE_INSTALL_PREFIX=cmake-out `
+  -B cmake-out
+
+cmake --build cmake-out --target install --config Release -j $env:NUMBER_OF_PROCESSORS
+```
+
 Then, build the llama runner by executing commands below in `<executorch_root>` folder:
+
+On Linux/macOS:
 
 ```bash
 # Configure the project with CMake
@@ -58,15 +98,37 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
 cmake --build cmake-out/examples/models/llama -j$(nproc) --config Release
 ```
 
-The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/llama_main`
+On Windows PowerShell:
+
+```powershell
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out `
+  -DCMAKE_BUILD_TYPE=Release `
+  -B cmake-out/examples/models/llama `
+  examples/models/llama
+
+cmake --build cmake-out/examples/models/llama --config Release -j $env:NUMBER_OF_PROCESSORS
+```
+
+The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/llama_main` on Linux/macOS and `<executorch_root>/cmake-out/examples/models/llama/Release/llama_main.exe` on Windows.
 
 ## Execute Inference Using Llama Runner
 
 Qwen2.5 uses a HuggingFace tokenizer. Update the tokenizer path to match the location where your model is downloaded and replace the prompt.
 
+On Linux/macOS:
+
 ```bash
 ./cmake-out/examples/models/llama/llama_main \
   --model_path=<executorch_root>/examples/openvino/qwen2_5/qwen2_5_1_5b_ov.pte \
   --tokenizer_path=<path/to/model/folder>/tokenizer.json \
+  --prompt="Your custom prompt"
+```
+
+On Windows PowerShell:
+
+```powershell
+.\cmake-out\examples\models\llama\Release\llama_main.exe `
+  --model_path=<executorch_root>\examples\openvino\qwen2_5\qwen2_5_1_5b_ov.pte `
+  --tokenizer_path=<path\to\model\folder>\tokenizer.json `
   --prompt="Your custom prompt"
 ```
