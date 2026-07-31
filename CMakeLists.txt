@@ -968,12 +968,7 @@ if(EXECUTORCH_BUILD_SHARED)
     endif()
   endforeach()
   foreach(_whole_target ${_executorch_shared_whole_archive})
-    target_link_options(
-      executorch_shared
-      PRIVATE
-      "SHELL:LINKER:--whole-archive $<TARGET_FILE:${_whole_target}> LINKER:--no-whole-archive"
-    )
-    add_dependencies(executorch_shared ${_whole_target})
+    executorch_target_whole_archive(executorch_shared ${_whole_target})
   endforeach()
   configure_file(
     tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc

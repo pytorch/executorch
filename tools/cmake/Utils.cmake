@@ -47,6 +47,27 @@ function(executorch_msvc_kernel_link_options target_name)
   )
 endfunction()
 
+# Add a whole-archive reference to a static library on a consumer's link line.
+#
+# This is deliberately a link option rather than a link library: CMake refuses
+# to mix the WHOLE_ARCHIVE link feature with the plain references other targets
+# make to the same archive, and link options are also emitted before the ordered
+# link libraries, which is what keeps a bundled archive ahead of anything that
+# would otherwise satisfy the same symbols.
+function(executorch_target_whole_archive target_name archive_target)
+  if(APPLE)
+    set(_flags "SHELL:LINKER:-force_load,$<TARGET_FILE:${archive_target}>")
+  elseif(MSVC)
+    set(_flags "SHELL:LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${archive_target}>")
+  else()
+    set(_flags
+        "SHELL:LINKER:--whole-archive $<TARGET_FILE:${archive_target}> LINKER:--no-whole-archive"
+    )
+  endif()
+  target_link_options(${target_name} PRIVATE "${_flags}")
+  add_dependencies(${target_name} ${archive_target})
+endfunction()
+
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
 function(executorch_target_link_options_shared_lib target_name)
@@ -221,13 +242,20 @@ endfunction()
 # of the backend registry. Link options come before the ordered libraries, so
 # naming the runtime there leaves the archive with nothing left to resolve.
 #
-# --no-as-needed is needed around it because a shared library with no
-# already-referenced symbol at the point it appears can be dropped, and the
-# static archive further along the line would then supply the registry after
-# all.
+# On ELF platforms --no-as-needed is needed around it, because a shared library
+# with no already-referenced symbol at the point it appears can be dropped, and
+# the static archive further along the line would then supply the registry after
+# all. Other linkers keep the reference without it.
 function(executorch_target_link_shared_runtime target_name)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
+  endif()
+  if(APPLE OR MSVC)
+    set(_runtime_flags "SHELL:$<TARGET_FILE:executorch_shared>")
+  else()
+    set(_runtime_flags
+        "SHELL:LINKER:--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--as-needed"
+    )
   endif()
   # The generator expression alone does not make the runtime get built first, so
   # state the build-order dependency explicitly.
@@ -235,9 +263,7 @@ function(executorch_target_link_shared_runtime target_name)
   set_property(
     TARGET ${target_name}
     APPEND
-    PROPERTY
-      LINK_OPTIONS
-      "SHELL:LINKER:--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--as-needed"
+    PROPERTY LINK_OPTIONS "${_runtime_flags}"
   )
 endfunction()
 
