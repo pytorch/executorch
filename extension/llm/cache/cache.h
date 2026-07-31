@@ -136,7 +136,9 @@ struct CacheConfig {
 // list that is neither size 1 nor n_layers reads past the end. Reported as a
 // bool rather than thrown, so each backend picks its own failure mode.
 inline bool valid(const CacheConfig& cfg) {
-  return cfg.capacity > 0 && cfg.n_layers > 0 &&
+  // initial_capacity may be 0 (allocate nothing up front) but not negative, and
+  // may exceed capacity -- the byte layer clamps it.
+  return cfg.capacity > 0 && cfg.n_layers > 0 && cfg.initial_capacity >= 0 &&
       (cfg.layers.size() == 1 ||
        cfg.layers.size() == static_cast<size_t>(cfg.n_layers));
 }

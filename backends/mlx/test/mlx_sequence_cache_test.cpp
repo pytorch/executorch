@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <vector>
 
 using namespace ::executorch::backends::mlx;
@@ -46,7 +47,8 @@ cache::CacheConfig flat_config(
     int n_layers,
     int n_kv_heads,
     int head_dim,
-    int kv_dtype) {
+    int kv_dtype,
+    std::optional<int> initial_capacity = std::nullopt) {
   cache::CacheConfig cfg;
   cfg.capacity = capacity;
   cfg.n_layers = n_layers;
@@ -55,6 +57,9 @@ cache::CacheConfig flat_config(
       n_kv_heads,
       head_dim}};
   cfg.kv_dtype = kv_dtype;
+  if (initial_capacity) {
+    cfg.initial_capacity = *initial_capacity;
+  }
   return cfg;
 }
 
@@ -151,7 +156,7 @@ TEST_F(MLXSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
 // mid-pool, and dropping the start would silently return the wrong cells.
 TEST_F(MLXSequenceCacheTest, PoolHonorsRunStart) {
   using namespace ::mlx::core;
-  Pool p(/*slots=*/8, H, D, float16);
+  Pool p(/*initial_slots=*/8, /*max_slots=*/8, H, D, float16);
   array x = randn(3, float16);
   p.write(cache::Run{/*start=*/2, /*len=*/3}, x, s);
 
@@ -170,6 +175,101 @@ TEST_F(MLXSequenceCacheTest, PartialLayerListThrows) {
       D,
       static_cast<int>(ScalarType::Half));
   cfg.layers.push_back(cfg.layers.front()); // size 2, neither 1 nor n_layers
+  EXPECT_ANY_THROW(MLXSequenceCache{cfg});
+}
+
+// A step past the allocated slots grows the pool instead of failing, and the
+// result is the same window a fully-allocated pool would have returned.
+TEST_F(MLXSequenceCacheTest, GrowsPastInitialCapacity) {
+  using namespace ::mlx::core;
+  MLXSequenceCache c(flat_config(
+      /*capacity=*/32,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/2));
+
+  const int T0 = 5; // > initial_capacity
+  array k0 = randn(T0, float16);
+  array v0 = randn(T0, float16);
+  AttendSpec spec0 = c.update_and_fetch(0, /*position=*/0, k0, v0, s);
+  EXPECT_EQ(spec0.K.shape(2), T0);
+  EXPECT_TRUE(allclose(spec0.K, k0, 0.0f));
+  EXPECT_TRUE(allclose(spec0.V, v0, 0.0f));
+}
+
+// Growth preserves cells already written: a decode crossing the allocated
+// boundary must still read back the full history.
+TEST_F(MLXSequenceCacheTest, GrowthPreservesExistingCells) {
+  using namespace ::mlx::core;
+  MLXSequenceCache c(flat_config(
+      /*capacity=*/32,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/2));
+
+  array k0 = randn(2, float16); // exactly fills the initial allocation
+  array v0 = randn(2, float16);
+  c.update_and_fetch(0, /*position=*/0, k0, v0, s);
+
+  array k1 = randn(1, float16); // crosses the boundary -> grows
+  array v1 = randn(1, float16);
+  AttendSpec spec1 = c.update_and_fetch(0, /*position=*/2, k1, v1, s);
+  EXPECT_EQ(spec1.K.shape(2), 3);
+  EXPECT_TRUE(
+      allclose(spec1.K, concatenate(std::vector<array>{k0, k1}, 2, s), 0.0f));
+  EXPECT_TRUE(
+      allclose(spec1.V, concatenate(std::vector<array>{v0, v1}, 2, s), 0.0f));
+}
+
+// Growth doubles until the run fits, and never allocates past max_slots --
+// including when the last doubling would overshoot it.
+TEST_F(MLXSequenceCacheTest, PoolDoublesAndClampsToMaxSlots) {
+  using namespace ::mlx::core;
+  Pool p(/*initial_slots=*/2, /*max_slots=*/32, H, D, float16);
+  EXPECT_EQ(p.slots(), 2);
+  p.write(cache::Run{0, 5}, randn(5, float16), s); // 2 -> 4 -> 8
+  EXPECT_EQ(p.slots(), 8);
+
+  // 16 -> 32 overshoots a cap of 20, so it clamps.
+  Pool q(/*initial_slots=*/16, /*max_slots=*/20, H, D, float16);
+  q.write(cache::Run{0, 17}, randn(17, float16), s);
+  EXPECT_EQ(q.slots(), 20);
+
+  // initial_slots above the cap is clamped at construction.
+  Pool r(/*initial_slots=*/512, /*max_slots=*/4, H, D, float16);
+  EXPECT_EQ(r.slots(), 4);
+}
+
+// A pool that starts empty is allowed, and grows on the first write.
+TEST_F(MLXSequenceCacheTest, ZeroInitialCapacityGrowsOnFirstWrite) {
+  using namespace ::mlx::core;
+  MLXSequenceCache c(flat_config(
+      /*capacity=*/32,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/0));
+  array k0 = randn(3, float16);
+  array v0 = randn(3, float16);
+  AttendSpec spec0 = c.update_and_fetch(0, /*position=*/0, k0, v0, s);
+  EXPECT_TRUE(allclose(spec0.K, k0, 0.0f));
+}
+
+// A negative initial_capacity is rejected rather than reaching MLX as a
+// negative dimension.
+TEST_F(MLXSequenceCacheTest, NegativeInitialCapacityThrows) {
+  cache::CacheConfig cfg = flat_config(
+      /*capacity=*/32,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half),
+      /*initial_capacity=*/-1);
   EXPECT_ANY_THROW(MLXSequenceCache{cfg});
 }
 

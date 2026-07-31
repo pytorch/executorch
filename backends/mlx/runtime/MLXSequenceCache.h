@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -31,16 +32,21 @@ namespace cache = ::executorch::extension::llm::cache;
 // layer asks for and how many runs a step produces.
 class Pool {
  public:
-  Pool(int slots, int H, int D, ::mlx::core::Dtype dtype)
+  // initial_slots above max_slots is clamped, not rejected: the config default
+  // exceeds the cap of any smaller cache, so this is the normal path.
+  Pool(int initial_slots, int max_slots, int H, int D, ::mlx::core::Dtype dtype)
       : dtype_(dtype),
-        buf_(::mlx::core::zeros(::mlx::core::Shape{1, H, slots, D}, dtype)) {}
+        max_slots_(max_slots),
+        buf_(::mlx::core::zeros(
+            ::mlx::core::Shape{1, H, std::min(initial_slots, max_slots), D},
+            dtype)) {}
 
   // Place `update` at the run's physical start, casting to the storage dtype if
   // it differs.
   void write(const cache::Run& run, const Tensor& update, StreamOrDevice s) {
     const int H = static_cast<int>(buf_.shape(1));
     const int D = static_cast<int>(buf_.shape(3));
-    if (run.start < 0 || run.start + run.len > slots()) {
+    if (run.start < 0 || run.start + run.len > max_slots_) {
       throw std::runtime_error("Pool::write: run out of bounds");
     }
     if (static_cast<int>(update.shape(2)) != run.len) {
@@ -50,6 +56,7 @@ class Pool {
         static_cast<int>(update.shape(3)) != D) {
       throw std::runtime_error("Pool::write: K/V heads/dim mismatch");
     }
+    maybe_grow(run.start + run.len, s);
     const Tensor u = update.dtype() == dtype_
         ? update
         : ::mlx::core::astype(update, dtype_, s);
@@ -77,12 +84,36 @@ class Pool {
         s);
   }
 
+  // Slots currently allocated; grows toward max_slots on demand.
   int slots() const {
     return static_cast<int>(buf_.shape(2));
   }
 
  private:
+  // Make room for `needed` slots, growing only if the pool is short: double
+  // until it fits, never past max_slots_. Cells keep their index, so growth is
+  // a zero-pad on the cell axis.
+  void maybe_grow(int needed, StreamOrDevice s) {
+    const int cur = slots();
+    if (needed <= cur) {
+      return;
+    }
+    int next = std::max(cur, 1); // an empty pool has nothing to double
+    while (next < needed) {
+      next *= 2;
+    }
+    // The last doubling can overshoot; write() already bounds `needed` by
+    // max_slots_, so clamping here cannot undershoot it.
+    next = std::min(next, max_slots_);
+    const int H = static_cast<int>(buf_.shape(1));
+    const int D = static_cast<int>(buf_.shape(3));
+    Tensor pad =
+        ::mlx::core::zeros(::mlx::core::Shape{1, H, next - cur, D}, dtype_);
+    buf_ = ::mlx::core::concatenate(std::vector<Tensor>{buf_, pad}, 2, s);
+  }
+
   ::mlx::core::Dtype dtype_;
+  int max_slots_;
   Tensor buf_;
 };
 
@@ -111,11 +142,13 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
         throw std::runtime_error(
             "MLXSequenceCache: only Flat layers are supported so far");
       }
-      // Flat retains all history, so the layer's pool is the full cap. A ring
-      // layer will instead ask for window + max_write - 1 slots.
-      const int slots = cfg.capacity;
-      kpool_.emplace_back(slots, lc.n_kv_heads, lc.head_dim, dt);
-      vpool_.emplace_back(slots, lc.n_kv_heads, lc.head_dim, dt);
+      // Flat retains all history, so the layer's pool may reach the full cap. A
+      // ring layer will instead cap at window + max_write - 1 slots.
+      const int max_slots = cfg.capacity;
+      kpool_.emplace_back(
+          cfg.initial_capacity, max_slots, lc.n_kv_heads, lc.head_dim, dt);
+      vpool_.emplace_back(
+          cfg.initial_capacity, max_slots, lc.n_kv_heads, lc.head_dim, dt);
     }
   }
 
