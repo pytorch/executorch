@@ -1190,7 +1190,11 @@ void WebGPUGraph::build(
   // discard candidates claimed by the completed SwiGLU pass and rebuild the
   // index maps for the retained groups.
   passes::retain_unclaimed_qkv_fusions(
-      qkv_fusions, qkv_first_ops, qkv_last_ops, qkv_member_ops, claimed_fusion_ops);
+      qkv_fusions,
+      qkv_first_ops,
+      qkv_last_ops,
+      qkv_member_ops,
+      claimed_fusion_ops);
 
   // Phase 3: Build operator dispatch chain
   if (chain) {
@@ -1861,6 +1865,7 @@ void WebGPUGraph::copy_outputs(
       // Cancel the outstanding request, then drain its WaitAny-only callback
       // when possible. The callback owns a shared reference, so even a failed
       // drain cannot leave it pointing at stack-owned storage.
+      // An undrained callback may still fire; leaking beats a use-after-free.
       wgpuBufferUnmap(output_staging_buffers_[i]);
       const WGPUWaitStatus drain_status = webgpu_wait(instance_, map_future);
       if (drain_status != WGPUWaitStatus_Success) {
