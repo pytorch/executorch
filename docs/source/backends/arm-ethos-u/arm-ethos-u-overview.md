@@ -121,6 +121,11 @@ how to run `model_export/export_deit.py`, build the sample firmware, and convert
 test images into C arrays so the workflow described in this guide can be tried
 end to end.
 
+[`examples/arm/mobilesam_prompt_segmentation_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/mobilesam_prompt_segmentation_example_ethos_u)
+contains a complete MobileSAM prompt segmentation workflow for Ethos-U85,
+including fixed-prompt export, PT2E quantization, transformer lowering, debug
+masks and overlays, a bare-metal Corstone-320 runtime app, and FVP execution.
+
 ### Ethos-U memory modes
 
 The Ethos-U NPU provides two distinct memory interfaces:

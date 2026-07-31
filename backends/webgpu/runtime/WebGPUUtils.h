@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -29,6 +30,18 @@ namespace executorch::backends::webgpu::utils {
 // to numel (single impl; keeps the negative-dim guard, no caller churn).
 inline uint64_t numel_of(const std::vector<int64_t>& dims) {
   return numel(dims);
+}
+
+// fp32, non-null-buffer tensor with byte size matching its element count;
+// the dtype/aliasing precondition fusion passes require of every operand.
+inline bool is_fp32_tensor(const WebGPUTensor& tensor) {
+  if (tensor.is_int || tensor.elem_size != sizeof(float) ||
+      tensor.buffer == nullptr) {
+    return false;
+  }
+  const uint64_t elems = numel_of(tensor.dims);
+  return elems <= std::numeric_limits<size_t>::max() / sizeof(float) &&
+      tensor.nbytes == static_cast<size_t>(elems) * sizeof(float);
 }
 
 // Clamp workgroup size to device limit (SwiftShader caps at 128).
