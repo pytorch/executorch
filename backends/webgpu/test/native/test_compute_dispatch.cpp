@@ -407,7 +407,7 @@ void build_resize_test_graph(WebGPUGraph& graph) {
   vk::FinishVkGraphBuffer(fbb, root);
 
   graph.set_device(g_device);
-  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+  graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
 }
 
 WebGPUComputeDispatchDescriptor make_dynamic_test_descriptor(
@@ -654,6 +654,8 @@ TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
   graph.select_dispatch_route(group, 1, {{13u, 17u}});
   expect_dispatch_grid(graph, 1u, 0u, 0u);
   expect_dispatch_grid(graph, 2u, 13u, 17u);
+}
+
 struct InvalidRopeGraphCase {
   const char* name;
   std::vector<uint32_t> xq_dims;
@@ -705,7 +707,7 @@ void expect_invalid_rope_graph(const InvalidRopeGraphCase& test_case) {
   WebGPUGraph graph;
   std::string error;
   try {
-    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
   } catch (const std::exception& exception) {
     error = exception.what();
   }
