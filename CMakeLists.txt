@@ -1263,6 +1263,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
+  # The delegates register themselves from a static initializer, so nothing here
+  # references their symbols and some linkers drop them from DT_NEEDED, leaving
+  # the backend unregistered at runtime.
+  foreach(_retained_backend xnnpack_backend aoti_cuda_backend)
+    if(TARGET ${_retained_backend})
+      executorch_target_retain_shared_library(portable_lib ${_retained_backend})
+    endif()
+  endforeach()
 
   # Set RPATH to find PyTorch and backend libraries relative to the installation
   # location. This goes from executorch/extension/pybindings up to
