@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -245,6 +246,13 @@ class EdgeTransformAndLowerStage(Stage):
         # Use PassManager directly if found, otherwise use dict
         final_passes = pass_manager if pass_manager else transform_passes
 
+        if (
+            hasattr(er := artifact.context.get("export_recipe"), "lowering_recipe")
+            and er.lowering_recipe is not None
+            and (callback := er.lowering_recipe.pre_partitioning_callback) is not None
+        ):
+            callback(self._partitioners, artifact.data)
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
@@ -254,6 +262,16 @@ class EdgeTransformAndLowerStage(Stage):
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
             )
+
+        # Apply post-partitioning transforms if specified in the lowering recipe. These are used for graph transforms
+        #  that require the fully partitioned graph or for side effect operations.
+        if (
+            hasattr(er := artifact.context.get("export_recipe"), "lowering_recipe")
+            and er.lowering_recipe is not None
+            and (transforms := er.lowering_recipe.post_partitioning_transforms)
+        ):
+            for transform in transforms:
+                edge_program_manager = transform(edge_program_manager)
 
         delegation_info = get_delegation_info(
             edge_program_manager.exported_program().graph_module
@@ -424,9 +442,12 @@ class QuantizeStage(Stage):
             raise ValueError("No quantizers detected")
 
     def run(self, artifact: PipelineArtifact) -> None:
-        if not self._quantization_recipe or not self._quantization_recipe.quantizers:
+        if not self._quantization_recipe or (
+            not self._quantization_recipe.quantizers
+            and self._quantization_recipe.quantize_fn is None
+        ):
             logging.info(
-                "Quantization recipe is invalid to run QunatizeStage, returning original model"
+                "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
             self._artifact = artifact
             return
@@ -444,18 +465,33 @@ class QuantizeStage(Stage):
                     f"Example inputs for method {method_name} not found or empty."
                 )
 
+            if isinstance(model, torch.nn.Module):
+                model.eval()
+
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers  # pyre-ignore
-            )
-            prepared_model = prepare_pt2e(captured_graph, quantizer)
+            if (quantize_fn := self._quantization_recipe.quantize_fn) is not None:
+                # Use the backend-supplied quantization function directly. This allows backends to use non-standard
+                #  quantization sequences (e.g. QAT with ordered BN-fusion passes around training and calibration)
+                #  without exposing multiple ordered hook points in QuantizationRecipe.
+                quantized_model = quantize_fn(captured_graph)
+            else:
+                quantizer = self._get_quantizer_for_prepare_pt2e(
+                    self._quantization_recipe.quantizers  # pyre-ignore
+                )
+                # PTQ flow: prepare_pt2e -> calibrate -> convert_pt2e.
+                # Use calibration_inputs_fn when provided, or fall back to the example_inputs.
+                m = prepare_pt2e(captured_graph, quantizer)
+                calibration_inputs = (
+                    self._quantization_recipe.calibration_inputs_fn()
+                    if self._quantization_recipe.calibration_inputs_fn is not None
+                    else example_inputs[method_name]
+                )
+                for calibration_input in calibration_inputs:
+                    m(*calibration_input)
+                quantized_model = convert_pt2e(m)
 
-            for calibration_input in example_inputs[method_name]:
-                prepared_model(*calibration_input)
-
-            quantized_model = convert_pt2e(prepared_model)
             quantized_models[method_name] = quantized_model
 
         self._artifact = artifact.copy_with_new_data(quantized_models)

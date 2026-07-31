@@ -1,14 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, List, Optional
+from typing import Callable, Iterable, List, Optional
 
 import torch
 from executorch.exir import EdgeProgramManager, ExportedProgram
@@ -94,10 +96,22 @@ class QuantizationRecipe:
         quantizers: Optional list of quantizers for model quantization
         ao_quantization_configs: Optional list of AOQuantizationConfig objects that pair
                                  AOBaseConfig with optional filter functions
+        calibration_inputs_fn: Optional zero-argument callable that returns an iterable of
+                               calibration input tuples. When None the example_inputs passed
+                               to the export session are used directly.
+                               Ignored when quantize_fn is set.
+        quantize_fn: Optional callable that replaces the default prepare/calibrate/convert flow
+                     in QuantizeStage. Use this when the built-in flow does not support the
+                     required quantization sequence. Recipes that set this field cannot be
+                     combined with other recipes via ExportRecipe.combine().
     """
 
     quantizers: Optional[List[Quantizer]] = None
     ao_quantization_configs: Optional[List[AOQuantizationConfig]] = None
+    calibration_inputs_fn: Optional[
+        Callable[[], "Iterable[tuple[torch.Tensor, ...]]"]
+    ] = None
+    quantize_fn: Optional[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
@@ -124,6 +138,13 @@ class LoweringRecipe:
         edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
                                         and return passes to be applied. Applied sequentially after TO_EDGE stage.
         edge_compile_config: Optional edge compilation configuration
+        pre_partitioning_callback: Optional callable invoked just before partitioning with
+                                   `(partitioners, programs)` arguments.
+        post_partitioning_transforms: Optional list of callables each with signature
+                                      `(EdgeProgramManager) -> EdgeProgramManager`, applied in
+                                      order after partitioning. Use this for graph transforms that
+                                      require the fully partitioned graph, or for side-effect
+                                      operations that must run after delegation.
     """
 
     partitioners: Optional[List[Partitioner]] = None
@@ -136,6 +157,12 @@ class LoweringRecipe:
     ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
+    pre_partitioning_callback: Optional[
+        Callable[[Optional[list[Partitioner]], dict[str, ExportedProgram]], None]
+    ] = None
+    post_partitioning_transforms: Optional[
+        List[Callable[["EdgeProgramManager"], "EdgeProgramManager"]]
+    ] = None
 
 
 @experimental(
@@ -249,12 +276,25 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
+        for recipe in backend_recipes:
+            if (
+                recipe.quantization_recipe is not None
+                and recipe.quantization_recipe.quantize_fn is not None
+            ):
+                raise ValueError(
+                    f"Recipe '{recipe.name}' uses a custom quantize_fn and cannot be "
+                    "combined with other recipes. quantize_fn calls convert_pt2e internally "
+                    "and the resulting quantized graph cannot be merged with other recipes."
+                )
+
         # Extract components from individual recipes
         all_partitioners = []
         all_quantizers = []
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
         all_transform_passes = []
+        all_pre_partitioning_callbacks = []
+        all_post_partitioning_passes = []
         combined_backend_config = None
 
         for recipe in backend_recipes:
@@ -270,6 +310,24 @@ class ExportRecipe:
             if recipe.lowering_recipe and recipe.lowering_recipe.edge_transform_passes:
                 all_transform_passes.extend(
                     recipe.lowering_recipe.edge_transform_passes
+                )
+
+            # Collect pre-partitioning callbacks - all will be chained
+            if (
+                recipe.lowering_recipe
+                and recipe.lowering_recipe.pre_partitioning_callback
+            ):
+                all_pre_partitioning_callbacks.append(
+                    recipe.lowering_recipe.pre_partitioning_callback
+                )
+
+            # Collect post-partitioning transforms
+            if (
+                recipe.lowering_recipe
+                and recipe.lowering_recipe.post_partitioning_transforms
+            ):
+                all_post_partitioning_passes.extend(
+                    recipe.lowering_recipe.post_partitioning_transforms
                 )
 
             # Collect for quantize stage
@@ -300,9 +358,25 @@ class ExportRecipe:
                 ),
             )
 
+        # Chain all pre-partitioning callbacks into a single one that calls each in order
+        combined_pre_partitioning_callback = None
+        if all_pre_partitioning_callbacks:
+            _cbs = all_pre_partitioning_callbacks
+
+            def _chained_pre_partitioning_callback(partitioners, programs):
+                for cb in _cbs:
+                    cb(partitioners, programs)
+
+            combined_pre_partitioning_callback = _chained_pre_partitioning_callback
+
         # Create combined lowering recipe
         combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
+        if (
+            all_partitioners
+            or all_transform_passes
+            or combined_pre_partitioning_callback
+            or all_post_partitioning_passes
+        ):
             edge_compile_config = None
             for recipe in backend_recipes:
                 if (
@@ -318,6 +392,8 @@ class ExportRecipe:
                     all_transform_passes if all_transform_passes else None
                 ),
                 edge_compile_config=edge_compile_config or EdgeCompileConfig(),
+                pre_partitioning_callback=combined_pre_partitioning_callback,
+                post_partitioning_transforms=all_post_partitioning_passes or None,
             )
 
         recipe_name = recipe_name or "_".join(
