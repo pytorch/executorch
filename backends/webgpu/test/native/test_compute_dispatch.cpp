@@ -654,6 +654,8 @@ TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
   graph.select_dispatch_route(group, 1, {{13u, 17u}});
   expect_dispatch_grid(graph, 1u, 0u, 0u);
   expect_dispatch_grid(graph, 2u, 13u, 17u);
+}
+
 struct InvalidRopeGraphCase {
   const char* name;
   std::vector<uint32_t> xq_dims;

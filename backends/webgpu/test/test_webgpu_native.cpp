@@ -2718,7 +2718,7 @@ static bool test_select_double_scalar_case(
 
   WebGPUGraph graph;
   try {
-    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
   } catch (const std::exception& e) {
     printf("FAIL: graph build threw: %s\n", e.what());
     return false;
@@ -2728,12 +2728,13 @@ static bool test_select_double_scalar_case(
   std::vector<InputData> inputs = {
       {in.data(), in.size() * sizeof(float), false}};
   std::vector<float> out(expected.size(), -1.0f);
-  std::vector<std::pair<void*, size_t>> outputs = {
-      {out.data(), out.size() * sizeof(float)}};
+  std::vector<OutputData> outputs = {
+      {out.data(), out.size() * sizeof(float), true}};
   try {
     graph.copy_inputs(inputs);
-    graph.execute();
-    graph.copy_outputs(outputs);
+    const WebGPUExecutionPlan plan = graph.make_execution_plan({});
+    graph.execute(plan);
+    graph.copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
     printf("FAIL: select execute threw: %s\n", e.what());
     return false;
@@ -2757,7 +2758,7 @@ static bool test_select_scalar_build_error(
 
   WebGPUGraph graph;
   try {
-    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
   } catch (const std::exception& e) {
     const std::string error = e.what();
     if (error.find(expected_error) != std::string::npos) {
