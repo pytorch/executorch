@@ -2075,6 +2075,7 @@ void WebGPUGraph::copy_outputs(
       // Cancel the outstanding request, then drain its WaitAny-only callback
       // when possible. The callback owns a shared reference, so even a failed
       // drain cannot leave it pointing at stack-owned storage.
+      // An undrained callback may still fire; leaking beats a use-after-free.
       wgpuBufferUnmap(output_staging_buffers_[i]);
       const WGPUWaitStatus drain_status = webgpu_wait(instance_, map_future);
       if (drain_status != WGPUWaitStatus_Success) {
