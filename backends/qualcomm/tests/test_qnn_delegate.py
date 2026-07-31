@@ -477,6 +477,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_channel_shuffle(self):
         module = ChannelShuffle(2)  # noqa: F405
         sample_input = (torch.randn(1, 4, 3, 3),)
@@ -2358,6 +2368,43 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort_and_index(self):
+        test_comb = [
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(3, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(3, 10),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(2, 4, 8), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(2, 4, 8),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(1, 4, 8, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 4, 8, 10),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -3351,6 +3398,18 @@ class TestQNNQuantizedOperator(TestQNN):
             torch.randn(1, 125, 256),
             torch.randn(1, 2048, 256),
         )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -5496,6 +5555,17 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
