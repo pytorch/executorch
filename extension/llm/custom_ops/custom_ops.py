@@ -425,26 +425,19 @@ def _validate_channelwise_gated_delta_rule_params(
             tensor.dtype == torch.float32
         ), f"Expected {name} to be float32 but got {tensor.dtype}"
 
-    assert (
-        query.shape == key.shape
-    ), f"Expected query and key to have matching shapes but got {query.shape} and {key.shape}"
-    assert (
-        query.shape == decay.shape
-    ), f"Expected query and decay to have matching shapes but got {query.shape} and {decay.shape}"
-    assert (
-        query.shape[:3] == value.shape[:3]
-    ), f"Expected query and value to match in batch/head/sequence dims but got {query.shape} and {value.shape}"
-    assert (
-        beta.shape == query.shape[:3]
-    ), f"Expected beta to match query batch/head/sequence dims but got {beta.shape} and {query.shape}"
+    assert query.size(0) == key.size(0) and query.shape[2:] == key.shape[2:]
+    assert key.shape == decay.shape
+    assert key.shape[:3] == value.shape[:3]
+    assert beta.shape == key.shape[:3]
+    assert query.size(1) % key.size(1) == 0
     assert initial_state.shape == (
-        query.size(0),
-        query.size(1),
+        key.size(0),
+        key.size(1),
         query.size(3),
         value.size(3),
     ), (
         "Expected initial_state to have shape "
-        f"{(query.size(0), query.size(1), query.size(3), value.size(3))} "
+        f"{(key.size(0), key.size(1), query.size(3), value.size(3))} "
         f"but got {initial_state.shape}"
     )
 
@@ -466,7 +459,8 @@ def channelwise_gated_delta_rule_meta(
         beta,
         initial_state,
     )
-    return torch.empty_like(value), torch.empty_like(initial_state)
+    output_shape = (*query.shape[:3], value.size(3))
+    return query.new_empty(output_shape), torch.empty_like(initial_state)
 
 
 def _validate_quantized_sdpa_params(

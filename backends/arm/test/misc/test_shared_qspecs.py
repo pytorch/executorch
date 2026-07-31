@@ -567,6 +567,33 @@ class MixedMaximumInt8Int16(torch.nn.Module):
         return torch.maximum(self.int16(x), self.int8(x))
 
 
+class NonSharedQspecSilu(torch.nn.Module):
+    """SiLU's output range is always narrower than its input's, so reusing the
+    input scale misaligns the quantization bins with the output distribution and
+    wastes resolution.
+    """
+
+    qspecs = {
+        "quantized_decomposed.quantize_per_tensor.default": {None: 2},
+        "quantized_decomposed.dequantize_per_tensor.default": {None: 2},
+    }
+    input_qspecs = {_INT8_QSPEC: 1}
+    output_qspecs = {_INT8_QSPEC: 1}
+    quant_params = {
+        "quantized_decomposed.quantize_per_tensor.default": {
+            (0.03919654, 76, -128, 127, torch.int8): 1,
+            (0.007980779, -94, -128, 127, torch.int8): 1,
+        },
+        "quantized_decomposed.dequantize_per_tensor.default": {
+            (0.03919654, 76, -128, 127, torch.int8): 1,
+            (0.007980779, -94, -128, 127, torch.int8): 1,
+        },
+    }
+
+    def forward(self, x):
+        return torch.nn.functional.silu(x)
+
+
 test_cases = {
     "multiple_clusters": McuTestCase(
         SharedQspecMulipleClusters(),
@@ -681,6 +708,26 @@ def test_maximum_mixed_int8_int16_inputs():
         model,
         inputs,
         quantizer=quantizer,
+        qspecs=model.qspecs,
+        input_qspecs=model.input_qspecs,
+        output_qspecs=model.output_qspecs,
+    )
+    pipeline.run()
+    _check_quant_params(pipeline, model.quant_params)
+
+
+def test_silu_does_not_share_input_qspec():
+    """Sharing saves nothing in return for that lost resolution: SiLU runs as a
+    lookup table whose entries are precomputed from both the input and the output
+    qparams, so a distinct output scale costs nothing at runtime.
+    """
+    model = NonSharedQspecSilu()
+    inputs = (ramp_tensor(-8, 2, (2, 3, 4)),)
+
+    pipeline = QuantizationPipeline(
+        model,
+        inputs,
+        quantizer=_get_quantizer(),
         qspecs=model.qspecs,
         input_qspecs=model.input_qspecs,
         output_qspecs=model.output_qspecs,

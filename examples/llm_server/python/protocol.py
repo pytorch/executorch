@@ -38,6 +38,11 @@ class ChatMessage(BaseModel):
     role: str
     content: Optional[Union[str, list[dict[str, Any]]]] = None
     name: Optional[str] = None
+    # Optional prior-turn reasoning (chain-of-thought). Mirrors
+    # ResponseMessage.reasoning_content so a multi-turn client can echo an assistant
+    # turn's reasoning back into the request; a chat template that renders prior
+    # reasoning needs it here, and without the field it is dropped at parse.
+    reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
     tool_call_id: Optional[str] = None
 
