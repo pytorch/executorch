@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import NHWC_ORDER
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
     VgfQuantizer,
@@ -49,6 +50,25 @@ class GridSampler2d(torch.nn.Module):
 
     def forward(self, x, grid):
         mode = ("bilinear", "nearest", "bicubic")[self.interpolation_mode_]
+        return F.grid_sample(
+            x,
+            grid,
+            mode=mode,
+            padding_mode="zeros" if self.padding_mode_ == 0 else "border",
+            align_corners=self.align_corners_,
+        )
+
+
+class GridSampler2dWithNchwGrid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.interpolation_mode_ = 0
+        self.padding_mode_ = 0
+        self.align_corners_ = False
+
+    def forward(self, x, grid_nchw):
+        mode = ("bilinear", "nearest", "bicubic")[self.interpolation_mode_]
+        grid = torch.permute(grid_nchw, NHWC_ORDER)
         return F.grid_sample(
             x,
             grid,
@@ -453,3 +473,182 @@ def test_rewrite_grid_sampler_to_tosa_custom_buffer_dispatch_rounds_up_output():
     assert payload["output_0_type"] == "Tensor"
     assert payload["input_1_vkdescriptortype"] == "VK_DESCRIPTOR_TYPE_TENSOR_ARM"
     assert payload["workgroup_sizes"] == [2, 3, 1]
+
+
+def _call_function_nodes(graph_module: torch.fx.GraphModule) -> list[torch.fx.Node]:
+    return [node for node in graph_module.graph.nodes if node.op == "call_function"]
+
+
+def _count_call_function_target(
+    graph_module: torch.fx.GraphModule, target: object
+) -> int:
+    return sum(
+        1 for node in _call_function_nodes(graph_module) if node.target == target
+    )
+
+
+def _custom_node(graph_module: torch.fx.GraphModule) -> torch.fx.Node:
+    return next(
+        node
+        for node in graph_module.graph.nodes
+        if node.target == exir_ops.backend.tosa.CUSTOM.default
+    )
+
+
+def test_rewrite_grid_sampler_to_tosa_custom_introduces_one_input_permute_for_standard_grid():
+    model = GridSampler2d()
+    example_inputs = (
+        torch.randn(1, 4, 8, 8),
+        torch.randn(1, 4, 4, 2),
+    )
+
+    edge_model = to_edge(export(model, example_inputs))
+    original_graph_module = edge_model.exported_program().graph_module
+    assert (
+        _count_call_function_target(
+            original_graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 0
+    )
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        edge_model = edge_model.transform([RewriteGridSamplerToTosaCustomPass()])
+    graph_module = edge_model.exported_program().graph_module
+    custom_node = _custom_node(graph_module)
+    custom_input, custom_grid = custom_node.args[0][:2]
+
+    assert tuple(custom_input.meta["val"].shape) == (1, 8, 8, 4)
+    assert custom_input.target == exir_ops.edge.aten.permute_copy.default
+    assert custom_input.args[1] == list(NHWC_ORDER)
+    assert custom_grid.op == "placeholder"
+    assert tuple(custom_grid.meta["val"].shape) == (1, 4, 4, 2)
+    assert custom_grid.target == "grid"
+    assert (
+        _count_call_function_target(
+            graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 2
+    )
+
+
+def test_rewrite_grid_sampler_to_tosa_custom_preserves_existing_grid_permute():
+    model = GridSampler2dWithNchwGrid()
+    example_inputs = (
+        torch.randn(1, 4, 8, 8),
+        torch.randn(1, 2, 4, 4),
+    )
+
+    edge_model = to_edge(export(model, example_inputs))
+    original_graph_module = edge_model.exported_program().graph_module
+    grid_sampler_node = next(
+        node
+        for node in original_graph_module.graph.nodes
+        if node.target == exir_ops.edge.aten.grid_sampler_2d.default
+    )
+    original_grid = grid_sampler_node.args[1]
+
+    assert isinstance(original_grid, torch.fx.Node)
+    assert original_grid.target == exir_ops.edge.aten.permute_copy.default
+    assert original_grid.args[1] == list(NHWC_ORDER)
+    assert (
+        _count_call_function_target(
+            original_graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 1
+    )
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        edge_model = edge_model.transform([RewriteGridSamplerToTosaCustomPass()])
+    graph_module = edge_model.exported_program().graph_module
+    custom_node = _custom_node(graph_module)
+    custom_input, custom_grid = custom_node.args[0][:2]
+
+    assert tuple(custom_input.meta["val"].shape) == (1, 8, 8, 4)
+    assert custom_input.target == exir_ops.edge.aten.permute_copy.default
+    assert custom_input.args[1] == list(NHWC_ORDER)
+    assert custom_grid.target == exir_ops.edge.aten.permute_copy.default
+    assert custom_grid.args[1] == list(NHWC_ORDER)
+    assert tuple(custom_grid.meta["val"].shape) == (1, 4, 4, 2)
+    assert (
+        _count_call_function_target(
+            graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 3
+    )
+
+
+def test_rewrite_grid_sampler_to_tosa_custom_keeps_clean_graph_for_c3_sampler_path():
+    model = GridSampler2d()
+    example_inputs = (
+        torch.randn(1, 3, 8, 8),
+        torch.randn(1, 4, 4, 2),
+    )
+
+    edge_model = to_edge(export(model, example_inputs))
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        edge_model = edge_model.transform([RewriteGridSamplerToTosaCustomPass()])
+    graph_module = edge_model.exported_program().graph_module
+    custom_node = _custom_node(graph_module)
+    custom_input, custom_grid = custom_node.args[0][:2]
+
+    assert tuple(custom_input.meta["val"].shape) == (1, 8, 8, 4)
+    assert custom_input.target == exir_ops.edge.aten.permute_copy.default
+    assert custom_grid.op == "placeholder"
+    assert custom_grid.target == "grid"
+    assert tuple(custom_grid.meta["val"].shape) == (1, 4, 4, 2)
+    assert (
+        _count_call_function_target(
+            graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 2
+    )
+    assert (
+        _count_call_function_target(graph_module, exir_ops.edge.aten.cat.default) == 1
+    )
+    assert (
+        _count_call_function_target(graph_module, exir_ops.edge.aten.slice_copy.Tensor)
+        >= 2
+    )
+
+
+def test_rewrite_grid_sampler_to_tosa_custom_keeps_clean_graph_for_quantized_sampler_path():
+    model = GridSampler2d().eval()
+    example_inputs = (
+        torch.randn(1, 4, 8, 8),
+        torch.rand(1, 4, 4, 2),
+    )
+    quantizer = VgfQuantizer(VgfCompileSpec("TOSA-1.0+INT"))
+    quantizer.set_global(get_symmetric_quantization_config(is_per_channel=False))
+
+    exported = export(model, example_inputs, strict=True)
+    prepared = prepare_pt2e(exported.module(), quantizer)
+    prepared(*example_inputs)
+    converted = convert_pt2e(prepared)
+
+    edge_model = to_edge(export(converted, example_inputs, strict=True))
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP+INT")):
+        edge_model = edge_model.transform(
+            [
+                FoldAndAnnotateQParamsPass(),
+                InsertGridSamplerGridDequantPass(),
+                _RewriteGridSamplerToTosaCustomExportPass(),
+            ]
+        )
+    graph_module = edge_model.exported_program().graph_module
+    custom_node = _custom_node(graph_module)
+    custom_input, custom_grid = custom_node.args[0][:2]
+
+    assert tuple(custom_input.meta["val"].shape) == (1, 8, 8, 4)
+    assert custom_input.target == exir_ops.edge.aten.permute_copy.default
+    assert custom_grid.meta["val"].dtype == torch.int8
+    assert custom_grid.target not in (
+        exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    )
+    assert (
+        _count_call_function_target(
+            graph_module, exir_ops.edge.aten.permute_copy.default
+        )
+        == 2
+    )
