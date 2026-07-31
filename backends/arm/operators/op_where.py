@@ -23,7 +23,7 @@ from torch.fx import Node
 
 @register_node_visitor
 class WhereVisitor(NodeVisitor):
-    target = "aten.where.self"
+    target = "tosa.SELECT.default"
 
     def __init__(self, *args):
         super().__init__(*args)
