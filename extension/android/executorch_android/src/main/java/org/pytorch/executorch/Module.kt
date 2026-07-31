@@ -22,8 +22,13 @@ import org.pytorch.executorch.annotations.Experimental
  * Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-open class Module private constructor(moduleAbsolutePath: String, loadMode: Int, numThreads: Int) :
-    Closeable {
+open class Module
+private constructor(
+    moduleAbsolutePath: String,
+    loadMode: Int,
+    numThreads: Int,
+    backendOptions: BackendOptionsMap?,
+) : Closeable {
 
   private val mHybridData: HybridData
   private val mMethodMetadata: Map<String, MethodMetadata>
@@ -33,7 +38,20 @@ open class Module private constructor(moduleAbsolutePath: String, loadMode: Int,
 
   init {
     ExecuTorchRuntime.getRuntime()
-    mHybridData = initHybrid(moduleAbsolutePath, loadMode, numThreads)
+    mHybridData =
+        if (backendOptions == null || backendOptions.isEmpty()) {
+          initHybrid(moduleAbsolutePath, loadMode, numThreads)
+        } else {
+          val (backendNames, optionKeys, optionValues) = backendOptions.toJniArrays()
+          initHybridWithOptions(
+              moduleAbsolutePath,
+              loadMode,
+              numThreads,
+              backendNames,
+              optionKeys,
+              optionValues,
+          )
+        }
     mMethodMetadata = populateMethodMeta()
   }
 
@@ -252,7 +270,33 @@ open class Module private constructor(moduleAbsolutePath: String, loadMode: Int,
     @JvmOverloads
     fun load(modelPath: String?, loadMode: Int = LOAD_MODE_FILE, numThreads: Int = 0): Module {
       ExecuTorchRuntime.validateFilePath(modelPath, "model path")
-      return Module(modelPath!!, loadMode, numThreads)
+      return Module(modelPath!!, loadMode, numThreads, null)
+    }
+
+    /**
+     * Loads a serialized ExecuTorch module and applies per-backend options at delegate-init (load)
+     * time. Prefer this over a process-global setter: the options travel with the load, so there is
+     * no ordering or thread-safety hazard to manage.
+     *
+     * @param modelPath path to file that contains the serialized ExecuTorch module.
+     * @param options backend options to apply at load, e.g.
+     *   `BackendOptionsMap().setInt("XnnpackBackend", "workspace_sharing_mode", 2)`.
+     * @param loadMode load mode for the module. See constants in [Module].
+     * @param numThreads the number of threads to use for inference. A value of 0 defaults to a
+     *   hardware-specific default.
+     * @return new [Module] object which owns the model module.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun load(
+        modelPath: String?,
+        options: BackendOptionsMap,
+        loadMode: Int = LOAD_MODE_FILE,
+        numThreads: Int = 0,
+    ): Module {
+      ExecuTorchRuntime.validateFilePath(modelPath, "model path")
+      // Non-null already guaranteed by validateFilePath above.
+      return Module(checkNotNull(modelPath), loadMode, numThreads, options)
     }
 
     @DoNotStrip
@@ -261,6 +305,17 @@ open class Module private constructor(moduleAbsolutePath: String, loadMode: Int,
         moduleAbsolutePath: String,
         loadMode: Int,
         numThreads: Int,
+    ): HybridData
+
+    @DoNotStrip
+    @JvmStatic
+    private external fun initHybridWithOptions(
+        moduleAbsolutePath: String,
+        loadMode: Int,
+        numThreads: Int,
+        backendNames: Array<String>,
+        optionKeys: Array<String>,
+        optionValues: IntArray,
     ): HybridData
 
     @DoNotStrip @JvmStatic fun readLogBufferStatic(): Array<String>? = readLogBufferStaticNative()

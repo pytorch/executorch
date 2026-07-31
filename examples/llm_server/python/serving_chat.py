@@ -189,6 +189,11 @@ class ServingChat:
 
     def _extract_response(self, req: ChatCompletionRequest, text: str):
         """Return tool calls, optional reasoning, and user-visible content."""
+        # Split the reasoning channel out BEFORE tool parsing so the detector only
+        # sees the visible (non-reasoning) text. Parsing the full raw output would let
+        # a tool-call marker the model emitted inside its private reasoning become a
+        # phantom tool call (and drop the real answer).
+        reasoning, text = self._split_reasoning(text)
         tool_calls = None
         if self._tools_active(req):
             parsed = self._tool_detector_cls().detect_and_parse(
@@ -197,7 +202,6 @@ class ServingChat:
             if parsed.calls:
                 tool_calls = [self._to_openai_tool_call(c) for c in parsed.calls]
             text = parsed.normal_text
-        reasoning, text = self._split_reasoning(text)
         if not self._return_reasoning(req):
             reasoning = None
         return tool_calls, reasoning, self._visible_content(text) or None
