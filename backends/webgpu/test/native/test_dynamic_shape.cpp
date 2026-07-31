@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -616,7 +617,9 @@ void run_k16_sdpa(
   constexpr float kMaxError = 3e-3f;
   EXPECT_LT(max_err(got, golden), kMaxError)
       << prefix << " S=" << s << " full output";
-  for (int token : {0, std::min(15, s - 1), std::min(16, s - 1), s - 1}) {
+  const std::set<int> tokens = {
+      0, std::min(15, s - 1), std::min(16, s - 1), s - 1};
+  for (int token : tokens) {
     float token_error = 0.0f;
     const size_t begin = static_cast<size_t>(token) * token_width;
     for (size_t i = begin; i < begin + token_width; ++i) {
@@ -649,18 +652,20 @@ void expect_sdpa_route(
           names.begin(),
           names.end(),
           "sdpa_streaming_attention_k16_causal_bound"),
-      expect_k16);
-  EXPECT_EQ(std::count(names.begin(), names.end(), "fd_split"), expect_fd);
-  EXPECT_EQ(std::count(names.begin(), names.end(), "fd_reduce"), expect_fd);
+      expect_k16 ? 1 : 0);
+  EXPECT_EQ(
+      std::count(names.begin(), names.end(), "fd_split"), expect_fd ? 1 : 0);
+  EXPECT_EQ(
+      std::count(names.begin(), names.end(), "fd_reduce"), expect_fd ? 1 : 0);
   EXPECT_EQ(
       std::count(names.begin(), names.end(), "sdpa_compute_attn_weights"),
-      expect_materialized);
+      expect_materialized ? 1 : 0);
   EXPECT_EQ(
       std::count(names.begin(), names.end(), "sdpa_softmax"),
-      expect_materialized);
+      expect_materialized ? 1 : 0);
   EXPECT_EQ(
       std::count(names.begin(), names.end(), "sdpa_compute_out"),
-      expect_materialized);
+      expect_materialized ? 1 : 0);
   EXPECT_EQ(
       names.size(),
       static_cast<size_t>(2 + (expect_k16 ? 1 : (expect_fd ? 2 : 3))));
