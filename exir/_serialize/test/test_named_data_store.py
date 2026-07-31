@@ -6,7 +6,10 @@
 
 # pyre-strict
 
+import copy
+import hashlib
 import unittest
+from typing import Any, cast
 
 import torch
 
@@ -16,7 +19,157 @@ from executorch.exir.scalar_type import ScalarType
 from executorch.exir.tensor_layout import TensorLayout
 
 
+class _SizedBuffer:
+    def __init__(self, size: int) -> None:
+        self.size = size
+
+    def __len__(self) -> int:
+        return self.size
+
+
 class TestNamedDataStore(unittest.TestCase):
+    def test_externalize_pte_data_counts_aliased_buffer_once(self) -> None:
+        store = NamedDataStore()
+        layout = TensorLayout(ScalarType.FLOAT, [1], [0])
+        store.add_named_data("key_a", b"aaaaaa", 16, None, layout)
+        store.add_named_data("key_a_alias", b"aaaaaa", 32, None, layout)
+        store.add_named_data("key_b", b"bbbb", 16, None, layout)
+        expected_buffers = list(store.buffers)
+        expected_entries = copy.deepcopy(store.pte_data)
+
+        store.externalize_pte_data(10, "test_constants")
+        output = store.get_named_data_store_output()
+
+        self.assertEqual(output.buffers, expected_buffers)
+        self.assertEqual(output.pte_data, {})
+        self.assertEqual(len(output.external_data), 1)
+        self.assertEqual(next(iter(output.external_data.values())), expected_entries)
+
+    def test_externalize_pte_data_rollover_is_insertion_order_independent(
+        self,
+    ) -> None:
+        def externalize(
+            order: list[str],
+        ) -> dict[str, list[tuple[str, bytes, int, TensorLayout | None]]]:
+            data = {
+                "key_a": (b"a" * 6, 16),
+                "key_a_alias": (b"a" * 6, 32),
+                "key_b": (b"b" * 4, 32),
+                "key_c": (b"c" * 5, 64),
+            }
+            store = NamedDataStore()
+            for key in order:
+                payload, alignment = data[key]
+                store.add_named_data(key, payload, alignment)
+            store.externalize_pte_data(10, "test_constants")
+            output = store.get_named_data_store_output()
+            return {
+                tag: [
+                    (
+                        key,
+                        output.buffers[entry.buffer_index],
+                        entry.alignment,
+                        entry.tensor_layout,
+                    )
+                    for key, entry in entries.items()
+                ]
+                for tag, entries in output.external_data.items()
+            }
+
+        forward = externalize(["key_a", "key_a_alias", "key_b", "key_c"])
+        reverse = externalize(["key_c", "key_b", "key_a_alias", "key_a"])
+
+        self.assertEqual(len(forward), 2)
+        self.assertEqual(forward, reverse)
+
+    def test_externalize_pte_data_rejects_oversized_buffer_atomically(self) -> None:
+        store = NamedDataStore()
+        store.add_named_data("external", b"ext", 8, "existing")
+        store.add_named_data("key_a", b"aaaa", 16)
+        store.add_named_data("key_z", b"z" * 11, 32)
+        before = (
+            list(store.buffers),
+            copy.deepcopy(store.pte_data),
+            copy.deepcopy(store.external_data),
+            dict(store.key_to_buffer_idx),
+        )
+
+        with self.assertRaisesRegex(ValueError, "exceeds external data shard cap"):
+            store.externalize_pte_data(10, "test_constants")
+
+        after = (
+            list(store.buffers),
+            store.pte_data,
+            store.external_data,
+            store.key_to_buffer_idx,
+        )
+        self.assertEqual(after, before)
+
+    def test_externalize_pte_data_accepts_production_max_buffer_metadata(
+        self,
+    ) -> None:
+        store = NamedDataStore()
+        store.buffers = [cast(bytes, _SizedBuffer(1_174_405_120))]
+        store.pte_data = {"largest": DataEntry(0, 16, None)}
+        store.key_to_buffer_idx = {"largest": 0}
+
+        store.externalize_pte_data(1_500_000_000, "vulkan_constants")
+
+        output = store.get_named_data_store_output()
+        self.assertEqual(output.pte_data, {})
+        self.assertEqual(
+            [list(entries) for entries in output.external_data.values()],
+            [["largest"]],
+        )
+
+    def test_externalize_pte_data_rejects_invalid_arguments(self) -> None:
+        store = NamedDataStore()
+        invalid_caps: list[Any] = [True, 0, -1, 1.5, "10"]
+        for cap in invalid_caps:
+            with self.subTest(cap=cap), self.assertRaisesRegex(
+                ValueError, "positive integer"
+            ):
+                store.externalize_pte_data(cap, "test_constants")
+
+        with self.assertRaisesRegex(ValueError, "prefix must be nonempty"):
+            store.externalize_pte_data(10, "")
+
+    def test_externalize_pte_data_rejects_tag_collision_atomically(self) -> None:
+        store = NamedDataStore()
+        key = "inline"
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        tag = f"test_constants_{digest}"
+        store.add_named_data("external", b"ext", 8, tag)
+        store.add_named_data(key, b"inline", 16)
+        before = (
+            list(store.buffers),
+            copy.deepcopy(store.pte_data),
+            copy.deepcopy(store.external_data),
+        )
+
+        with self.assertRaisesRegex(ValueError, "external data tag collision"):
+            store.externalize_pte_data(10, "test_constants")
+
+        self.assertEqual(
+            (list(store.buffers), store.pte_data, store.external_data), before
+        )
+
+    def test_externalize_pte_data_preserves_existing_external_data_and_is_idempotent(
+        self,
+    ) -> None:
+        store = NamedDataStore()
+        store.add_named_data("external", b"ext", 8, "existing")
+        store.add_named_data("inline", b"inline", 16)
+
+        store.externalize_pte_data(10, "test_constants")
+        first = copy.deepcopy(store.get_named_data_store_output())
+        store.externalize_pte_data(10, "test_constants")
+        second = store.get_named_data_store_output()
+
+        self.assertEqual(first, second)
+        self.assertEqual(list(second.external_data["existing"]), ["external"])
+        self.assertEqual(len(second.external_data), 2)
+
     def test_add(self) -> None:
         store = NamedDataStore()
         store.add_named_data("key1", b"data1", None, None)

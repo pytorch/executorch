@@ -94,9 +94,7 @@ fbcode_target(
     srcs = [
         "cuda_backend.py",
     ],
-    visibility = [
-        "//executorch/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         ":cuda_passes",
         ":triton_replacement_pass",
@@ -115,9 +113,7 @@ fbcode_target(
     srcs = [
         "cuda_partitioner.py",
     ],
-    visibility = [
-        "//executorch/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/aoti:aoti_partitioner",
