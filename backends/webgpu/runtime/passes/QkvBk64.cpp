@@ -160,8 +160,7 @@ void detect_qkv_bk64_fusions(
   for (unsigned i = 0; i < chain->size(); i++) {
     const auto* op = chain->Get(i);
     const auto* args = op->args();
-    if (op->name()->str() != kQ4gswLinearOpName || !args ||
-        args->size() != 6) {
+    if (op->name()->str() != kQ4gswLinearOpName || !args || args->size() != 6) {
       continue;
     }
     const int input_id = static_cast<int>(args->Get(0));
@@ -198,8 +197,7 @@ void detect_qkv_bk64_fusions(
       const int bias_id = op_arg(ops[member], 4);
       exact_args = exact_args && group_size_id >= 0 &&
           group_size_id < num_vals &&
-          graph.get_value_type(group_size_id) ==
-              WebGPUGraph::ValueType::Int &&
+          graph.get_value_type(group_size_id) == WebGPUGraph::ValueType::Int &&
           graph.get_int(group_size_id) == kQkvGroupSize && bias_id >= 0 &&
           bias_id < num_vals &&
           graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Null;
@@ -259,16 +257,15 @@ void detect_qkv_bk64_fusions(
       const auto& weight = graph.get_tensor(fusion.weight_ids[member]);
       const auto& scale = graph.get_tensor(fusion.scale_ids[member]);
       const auto& output = graph.get_tensor(fusion.output_ids[member]);
-      exact_geometry = exact_geometry && weight.dims.size() == 2 &&
+      exact_geometry =
+          exact_geometry && weight.dims.size() == 2 &&
           weight.dims[0] == widths[member] && weight.dims[1] == kQkvKPacked &&
-          weight.nbytes ==
-              static_cast<size_t>(widths[member]) * kQkvKPacked &&
+          weight.nbytes == static_cast<size_t>(widths[member]) * kQkvKPacked &&
           scale.dims.size() == 2 && scale.dims[0] == kQkvNumGroups &&
           scale.dims[1] == widths[member] && utils::is_fp32_tensor(scale) &&
           output.dims.size() == input.dims.size() &&
-          std::equal(input.dims.begin(),
-                     input.dims.end() - 1,
-                     output.dims.begin()) &&
+          std::equal(
+              input.dims.begin(), input.dims.end() - 1, output.dims.begin()) &&
           output.dims.back() == widths[member] &&
           utils::numel_of(output.dims) ==
               static_cast<uint64_t>(fusion.max_m) * widths[member];
