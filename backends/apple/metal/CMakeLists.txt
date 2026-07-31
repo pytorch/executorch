@@ -43,6 +43,7 @@ set(_aoti_metal_sources
     runtime/shims/tensor_attribute.cpp
     runtime/shims/utils.cpp
     runtime/ops/common.mm
+    runtime/ops/op_addmm.mm
     runtime/ops/op_bmm.mm
     runtime/ops/op_convolution.mm
     runtime/ops/op_gather_qmv.mm
