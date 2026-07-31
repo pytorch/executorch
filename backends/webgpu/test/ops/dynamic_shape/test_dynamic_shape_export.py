@@ -322,8 +322,53 @@ EMB_GROUP = 32
 EMB_MAXN = 16
 
 
+class _LinearPackedEmbedding(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        packed = torch.arange(EMB_VOCAB * (EMB_DIM // 2), dtype=torch.int64).reshape(
+            EMB_VOCAB, EMB_DIM // 2
+        )
+        self.register_buffer("weight", (packed % 256).to(torch.uint8))
+        self.register_buffer("scales", torch.ones(EMB_VOCAB, EMB_DIM // EMB_GROUP))
+
+    def forward(self, indices: torch.Tensor) -> torch.Tensor:
+        return torch.ops.et_vk.embedding_q4gsw.default(
+            self.weight, self.scales, EMB_GROUP, indices, True
+        )
+
+
+def _write_embedding_goldens(
+    out_dir: str,
+    prefix: str,
+    weight: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+    is_linear: bool,
+) -> None:
+    for n in [EMB_MAXN, 8, 1]:
+        idx = (torch.arange(n, dtype=torch.long) * 7) % EMB_VOCAB
+        golden = torch.ops.et_vk.embedding_q4gsw.default(
+            weight, scales, group_size, idx, is_linear
+        )
+        if is_linear:
+            nonlinear_golden = torch.ops.et_vk.embedding_q4gsw.default(
+                weight, scales, group_size, idx, False
+            )
+            if torch.equal(golden, nonlinear_golden):
+                raise RuntimeError(
+                    "emb_dyn_linear fixture does not distinguish nibble packing"
+                )
+        idx.detach().numpy().astype("<i8").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.idx.bin")
+        )
+        golden.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.golden.bin")
+        )
+        print(f"  golden {prefix} N={n} (shape {tuple(golden.shape)})")
+
+
 def _export_dynamic_embedding(out_dir: str) -> None:
-    from executorch.backends.webgpu.test.ops.embedding_q4gsw.test_embedding_q4gsw import (
+    from executorch.backends.webgpu.test.ops.test_embedding_q4gsw import (
         _make_quantized_model,
         _quant_params,
         Shape,
@@ -346,18 +391,23 @@ def _export_dynamic_embedding(out_dir: str) -> None:
         f.write(et.buffer)
     print("Exported emb_dyn.pte")
     weight, scales, group_size = _quant_params(qm)
-    for n in [EMB_MAXN, 8, 1]:
-        idx = (torch.arange(n, dtype=torch.long) * 7) % EMB_VOCAB
-        g = torch.ops.et_vk.embedding_q4gsw.default(
-            weight, scales, group_size, idx, False
-        )
-        idx.detach().numpy().astype("<i8").tofile(
-            os.path.join(out_dir, f"emb_dyn.S{n}.idx.bin")
-        )
-        g.detach().numpy().astype("<f4").tofile(
-            os.path.join(out_dir, f"emb_dyn.S{n}.golden.bin")
-        )
-        print(f"  golden emb_dyn N={n} (shape {tuple(g.shape)})")
+    _write_embedding_goldens(out_dir, "emb_dyn", weight, scales, group_size, False)
+
+    linear_model = _LinearPackedEmbedding().eval()
+    _export(
+        linear_model,
+        (idx_max,),
+        ({0: n_dim},),
+        os.path.join(out_dir, "emb_dyn_linear.pte"),
+    )
+    _write_embedding_goldens(
+        out_dir,
+        "emb_dyn_linear",
+        linear_model.weight,
+        linear_model.scales,
+        EMB_GROUP,
+        True,
+    )
 
 
 # Dynamic RoPE: xq/xk + freqs all share a dynamic seq-len S.

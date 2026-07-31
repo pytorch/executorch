@@ -11,6 +11,7 @@ from executorch.backends.cortex_m.quantizer.pattern_checkers import (
     CortexMBmmCheck,
     CortexMConv2DCheck,
     CortexMConvTranspose2DCheck,
+    CortexMDivCheck,
     CortexMLinearCheck,
     CortexMMaxPool2DCheck,
     CortexMSoftmaxCheck,
@@ -29,6 +30,8 @@ BINARY_OP_PATTERNS = {
     (torch.ops.aten.mul_.Tensor,): CortexMAddMulCheck,
     (torch.ops.aten.hardswish.default,): CortexMAddMulCheck,  # lowers to mul
     (torch.ops.aten.hardswish_.default,): CortexMAddMulCheck,  # lowers to mul
+    (torch.ops.aten.div.Tensor,): CortexMDivCheck,
+    (torch.ops.aten.div_.Tensor,): CortexMDivCheck,
 }
 
 LINEAR_OP_PATTERNS = {
