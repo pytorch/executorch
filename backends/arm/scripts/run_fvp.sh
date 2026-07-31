@@ -24,6 +24,8 @@ target="ethos-u55-128"
 timeout="600"
 etrecord_file=""
 trace_file=""
+semihosting_cwd=""
+ethosu_fast=0
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -35,6 +37,8 @@ help() {
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
     echo "  --trace_file=<FILE>      File to write PMU trace output to"
+    echo "  --semihosting-cwd=<DIR>  Enable target semihosting with this host working directory"
+    echo "  --fast                   Use fast Ethos-U model simulation for Ethos-U targets"
     exit 0
 }
 
@@ -48,6 +52,8 @@ for arg in "$@"; do
       --timeout=*) timeout="${arg#*=}";;
       --etrecord=*) etrecord_file="${arg#*=}";;
       --trace_file=*) trace_file="${arg#*=}";;
+      --semihosting-cwd=*) semihosting_cwd="${arg#*=}";;
+      --fast) ethosu_fast=1;;
       *)
       ;;
     esac
@@ -104,9 +110,34 @@ log_file=$(mktemp)
 extra_args_u55=()
 extra_args_u85=()
 
+ethosu_extra_args=()
+if [[ "${ethosu_fast}" == 1 ]]; then
+    ethosu_extra_args+=("--fast")
+fi
 if [[ -n "${trace_file}" ]]; then
-    extra_args_u55+=(-C "ethosu.extra_args=--pmu-trace ${trace_file}")
-    extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=--pmu-trace ${trace_file}")
+    ethosu_extra_args+=("--pmu-trace" "${trace_file}")
+fi
+if [[ ${#ethosu_extra_args[@]} -gt 0 ]]; then
+    extra_args_u55+=(-C "ethosu.extra_args=${ethosu_extra_args[*]}")
+    extra_args_u85+=(-C "mps4_board.subsystem.ethosu.extra_args=${ethosu_extra_args[*]}")
+fi
+
+semihosting_args_u55=()
+semihosting_args_u85=()
+if [[ -n "${semihosting_cwd}" ]]; then
+    semihosting_cwd=$(realpath "${semihosting_cwd}")
+    semihosting_args_u55+=(
+        -C cpu0.semihosting-enable=1
+        -C cpu0.semihosting-stack_base=0
+        -C cpu0.semihosting-heap_limit=0
+        -C "cpu0.semihosting-cwd=${semihosting_cwd}"
+    )
+    semihosting_args_u85+=(
+        -C mps4_board.subsystem.cpu0.semihosting-enable=1
+        -C mps4_board.subsystem.cpu0.semihosting-stack_base=0
+        -C mps4_board.subsystem.cpu0.semihosting-heap_limit=0
+        -C "mps4_board.subsystem.cpu0.semihosting-cwd=${semihosting_cwd}"
+    )
 fi
 
 if [[ ${target} == cortex-m* ]]; then
@@ -154,6 +185,7 @@ elif [[ ${target} == *"ethos-u55"* || ${target} == *"ethos-u65"* ]]; then
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
         ${extra_args_u55[@]+"${extra_args_u55[@]}"}         \
+        ${semihosting_args_u55[@]+"${semihosting_args_u55[@]}"} \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
@@ -165,8 +197,10 @@ elif [[ ${target} == *"ethos-u85"*  ]]; then
         -C vis_hdlcd.disable_visualisation=1                \
         -C mps4_board.telnetterminal0.start_telnet=0        \
         -C mps4_board.uart0.out_file='-'                    \
+        -C mps4_board.uart0.unbuffered_output=1             \
         -C mps4_board.uart0.shutdown_on_eot=1               \
         ${extra_args_u85[@]+"${extra_args_u85[@]}"}         \
+        ${semihosting_args_u85[@]+"${semihosting_args_u85[@]}"} \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
         --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
@@ -200,11 +234,21 @@ if [ $? != 0 ]; then
 fi
 
 echo "Checking for problems in log:"
-! grep -E "^(F|E|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" ${log_file}
-if [ $? != 0 ]; then
+problem_log=$(mktemp)
+grep -E "^(F|E|\\[critical\\]|Hard fault.|Info: Simulation is stopping. Reason: CPU time has been exceeded.).*$" "${log_file}" > "${problem_log}" || true
+if [[ "${ethosu_fast}" == 1 ]]; then
+    filtered_problem_log=$(mktemp)
+    timing_adapter_fast_mode_regex="Failed to initialize timing-adapter #[0-9]+|Timing adapter has no effect if option --fast/-F is enabled"
+    grep -Ev "${timing_adapter_fast_mode_regex}" "${problem_log}" > "${filtered_problem_log}" || true
+    mv "${filtered_problem_log}" "${problem_log}"
+fi
+if [[ -s "${problem_log}" ]]; then
+    cat "${problem_log}"
     echo "Found ERROR"
+    rm "${problem_log}"
     rm "${log_file}"
     exit 1
 fi
 echo "No problems found!"
+rm "${problem_log}"
 rm "${log_file}"
