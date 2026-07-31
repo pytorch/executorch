@@ -31,6 +31,7 @@ ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
 Exp = exir_ops.edge.aten.exp.default
 GetItem = operator.getitem
 GtScalar = exir_ops.edge.aten.gt.Scalar
+Hardswish = exir_ops.edge.aten.hardswish.default
 HardTanh = exir_ops.edge.aten.hardtanh.default
 HardTanh_ = exir_ops.edge.aten.hardtanh_.default
 LeakyRelu = exir_ops.edge.aten.leaky_relu.default

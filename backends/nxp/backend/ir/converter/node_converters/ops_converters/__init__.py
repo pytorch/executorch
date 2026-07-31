@@ -43,6 +43,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardswish_converter import (
+    HardswishConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
 )
@@ -137,6 +140,7 @@ __all__ = [
     "ConvolutionConverter",
     "ExpConverter",
     "GetItemConverter",
+    "HardswishConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
     "LogConverter",

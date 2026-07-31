@@ -43,6 +43,7 @@ functions_converters = {
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.convolution.out: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.exp.default: ExpConverter,  # noqa F405
+    exir_ops.edge.aten.hardswish.default: HardswishConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
     exir_ops.edge.aten.log.default: LogConverter,  # noqa F405
