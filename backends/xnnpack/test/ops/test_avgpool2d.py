@@ -78,6 +78,48 @@ class TestAvgPool2d(unittest.TestCase):
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
+    class AvgPool2dSingleElementKernel(torch.nn.Module):
+        def __init__(self, divisor_override=None):
+            super().__init__()
+            self.avgPool = torch.nn.AvgPool2d(
+                kernel_size=[3],
+                count_include_pad=False,
+                divisor_override=divisor_override,
+            )
+
+        def forward(self, x):
+            return self.avgPool(x)
+
+    def test_fp32_avgpool2d_single_element_kernel_size(self):
+        """
+        int[2] arguments accept a 1-element list, which broadcasts to both dims.
+        """
+        inputs = (torch.randn(1, 1, 10, 10),)
+        (
+            Tester(self.AvgPool2dSingleElementKernel(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_fp32_avgpool2d_single_element_kernel_size_divisor_override(self):
+        """
+        A broadcast kernel_size must still produce a real pooling region to compare
+        against divisor_override. Here the region is 3 * 3, so 5 is unsupported.
+        """
+        inputs = (torch.randn(1, 1, 10, 10),)
+        (
+            Tester(self.AvgPool2dSingleElementKernel(divisor_override=5), inputs)
+            .export()
+            .check_count({"torch.ops.aten.avg_pool2d.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        )
+
     def test_fp32_avgpool2d_divisor_override(self):
         """
         The XNNPACK backend does not support divisor overrides not equal to the pooling region.

@@ -2272,9 +2272,13 @@ def _getitem_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "operator.getitem")
     a, idx = args
     out = P.make_or_get_slot(n)
+    # When the multi-output parent is left outside the partition, the partitioner
+    # feeds this getitem the already-selected element as a single boundary-input
+    # Slot (not the source tuple). In that case forward it directly.
+    src = a[idx] if isinstance(a, (tuple, list)) else a
     P.emit(
         IdCopyNode(
-            x=P.slot_to_tid(a[idx]),
+            x=P.slot_to_tid(src),
             out=P.slot_to_tid(out),
         )
     )
