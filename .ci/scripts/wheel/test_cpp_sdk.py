@@ -50,6 +50,10 @@ _XNNPACK_SYMBOLS = (
     "executorch::backends::xnnpack::XnnpackBackendOptions::workspace_manager",
 )
 
+# A representative symbol from the CUDA delegate's shim layer. The delegate's own
+# methods are weak symbols, so this checks a strong one instead.
+_CUDA_SYMBOLS = ("executorch::backends::cuda::clearCurrentCUDAStream",)
+
 # `nm -DC` prints "<hexaddr> <kind> <name>" for a definition and
 # "                 U <name>" for an undefined reference.
 _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
@@ -113,8 +117,12 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
-def _assert_single_definer(symbols, what: str) -> None:
-    """Exactly one shipped library may define each of `symbols`."""
+def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
+    """Exactly one shipped library may define each of `symbols`.
+
+    `optional` allows a component that is only present in some wheel flavors,
+    such as an accelerator delegate, to be absent without failing.
+    """
     assert shutil.which("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
@@ -124,6 +132,9 @@ def _assert_single_definer(symbols, what: str) -> None:
     for symbol in symbols:
         definers = [lib for lib in libraries if _defines_symbol(lib, symbol)]
         pretty = [str(lib.relative_to(package_dir)) for lib in definers]
+        if optional and not definers:
+            print(f"- no {what} in this wheel, skipping")
+            return
         assert len(definers) == 1, (
             f"expected exactly one library to define {symbol}, found "
             f"{len(definers)}: {pretty}. More than one definition means the "
@@ -150,6 +161,11 @@ def test_single_kernel_registration() -> None:
 def test_single_xnnpack_delegate() -> None:
     """Exactly one shipped library may define the XNNPACK delegate."""
     _assert_single_definer(_XNNPACK_SYMBOLS, "XNNPACK delegate")
+
+
+def test_single_cuda_delegate() -> None:
+    """Exactly one shipped library may define the CUDA delegate, if present."""
+    _assert_single_definer(_CUDA_SYMBOLS, "CUDA delegate", optional=True)
 
 
 def test_cpp_consumer(work_dir: Path) -> None:
@@ -209,4 +225,5 @@ def run_tests(work_dir: Path) -> None:
     test_single_threadpool()
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
+    test_single_cuda_delegate()
     test_cpp_consumer(work_dir)
