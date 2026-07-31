@@ -1813,6 +1813,7 @@ def get_var_inputs():
         "aten.hardswish.default",
         "aten.hardsigmoid.default",
         "aten.leaky_relu.default",
+        "aten.log10.default",
         "aten.round.default",
         "aten.tan.default",
         "aten.relu6.default",
