@@ -1289,11 +1289,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  # Bisection experiment: link this module the way it was before the shared
-  # runtime landed, to isolate whether that edit is what breaks the manylinux
-  # link. Everything else in this change is untouched. If the wheel builds go
-  # green, this target is the culprit; the shared-runtime wiring is then
-  # reintroduced here with the real cause addressed.
+  # This module only exposes a pybind type; it calls into no runtime symbols, so
+  # it links the static core as before and does not need the shared runtime. The
+  # RPATH entry is still useful because sibling extensions in this directory do
+  # resolve libexecutorch.so from ../../lib.
   target_link_libraries(data_loader PRIVATE executorch)
   if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
     set_target_properties(

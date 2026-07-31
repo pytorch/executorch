@@ -253,8 +253,14 @@ function(executorch_target_link_shared_runtime target_name)
   if(APPLE OR MSVC)
     set(_runtime_flags "SHELL:$<TARGET_FILE:executorch_shared>")
   else()
+    # --no-as-needed keeps the runtime in DT_NEEDED even though no symbol has
+    # been referenced yet at this point on the link line. It is wrapped in
+    # push-state/pop-state rather than closed with an explicit --as-needed so
+    # that whatever policy was in effect before is restored: closing with
+    # --as-needed would leave that in force for everything that follows, and
+    # would drop shared backends whose only purpose is static-init registration.
     set(_runtime_flags
-        "SHELL:LINKER:--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--as-needed"
+        "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--pop-state"
     )
   endif()
   # The generator expression alone does not make the runtime get built first, so
