@@ -45,6 +45,14 @@ core_aten_ops_exception_list = [
     torch.ops.aten.prelu.default,
 ]
 
+# Aten operators that must be preserved (not decomposed) during lowering to the edge dialect, because the Neutron
+# backend can handle them natively.
+default_preserve_ops = [
+    torch.ops.aten.hardswish.default,
+    torch.ops.aten.pad.default,
+    torch.ops.aten.prelu.default,
+]
+
 
 class NeutronCompileSpecBuilder:
     config: NeutronTargetSpec
