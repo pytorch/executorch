@@ -21,6 +21,9 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, final, Iterator, List, Optional, Tuple
 
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
+from executorch.backends.apple.coreai.compiler.enumerated_shapes import (
+    apply_enumerated_shapes,
+)
 from executorch.backends.apple.coreai.compiler.io_compat import assert_io_compatible
 from executorch.backends.apple.coreai.passes.replace_copy_ops import (
     ReplaceCopyOpsWithFunctionalPass,
@@ -57,6 +60,14 @@ class COMPILE_SPEC_KEYS(Enum):
     # .aimodel (save_asset(minimum_os=...)) that ALSO feeds coreai-build, so it
     # applies to every delivery path, AOT or not.  Numeric string, e.g. "27.0".
     MIN_DEPLOYMENT_VERSION = "coreai_min_deployment_version"
+
+    # Enumerated input shapes for this delegate, derived by the partitioner from
+    # ET-input enumerations and propagated to this subgraph via torch.export
+    # symbols.  General (applies to every delivery mode, AOT or not).  JSON:
+    #   {symbol_name: [value, ...]}   # e.g. {"s31": [4, 16, 32]}
+    # Preprocess substitutes these into each user-input placeholder's symbolic
+    # shape and attaches the results via AIProgram.set_static_shape_config.
+    INPUT_ENUMERATIONS = "coreai_input_enumerations"
 
     # Ahead-of-time compilation (xcrun coreai-build).
     # Presence implies compiling the .aimodel to per-architecture .aimodelc
@@ -550,6 +561,13 @@ class CoreAIBackend(BackendDetails):
         program = _convert_to_aiprogram(edge_program)
         # Fail fast if the .aimodel boundary I/O won't match what ET feeds/reads.
         assert_io_compatible(program, edge_program)
+        raw_enum = _get_compile_spec(
+            compile_specs, COMPILE_SPEC_KEYS.INPUT_ENUMERATIONS
+        )
+        if raw_enum:
+            apply_enumerated_shapes(
+                program, edge_program, json.loads(raw_enum.decode())
+            )
 
         # min-deployment-version is a single knob applied to whichever artifact
         # ships: for aot-compiled delivery the .aimodelc (via coreai-build
