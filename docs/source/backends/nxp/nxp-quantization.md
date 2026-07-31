@@ -11,29 +11,55 @@ The Neutron delegate supports the following quantization schemes:
     - Following operators are supported at this moment: 
       - `aten.abs.default`
       - `aten.adaptive_avg_pool2d.default`
-      - `aten.addmm.default`
       - `aten.add.Tensor`
+      - `aten.addmm.default`
+      - `aten.amax.default`
+      - `aten.amin.default`
+      - `aten.avg_pool1d.default`
       - `aten.avg_pool2d.default`
+      - `aten.batch_norm.default`
+      - `aten.bmm.default`
       - `aten.cat.default`
-      - `aten.conv1d.default`
+      - `aten.clamp.default`
       - `aten.conv2d.default`
+      - `aten.conv2d.padding`
+      - `aten.conv_transpose2d.input`
       - `aten.dropout.default`
+      - `aten.exp.default`
       - `aten.flatten.using_ints`
       - `aten.hardtanh.default`
       - `aten.hardtanh_.default`
+      - `aten.leaky_relu.default` and `aten.leaky_relu_.default`
       - `aten.linear.default`
+      - `aten.log.default`
+      - `aten.maximum.default`
+      - `aten.max_pool1d.default`
       - `aten.max_pool2d.default`
       - `aten.mean.dim`
+      - `aten.minimum.default`
+      - `aten.mm.default`
       - `aten.mul.Tensor`
+      - `aten.neg.default`
       - `aten.pad.default`
       - `aten.permute.default`
+      - `aten.prelu.default`
       - `aten.relu.default` and `aten.relu_.default`
       - `aten.reshape.default`
-      - `aten.view.default`
-      - `aten.softmax.int`
-      - `aten.tanh.default`,  `aten.tanh_.default`
       - `aten.sigmoid.default`
-      - `aten.slice_copy.Tensor`
+      - `aten.slice.Tensor`
+      - `aten.softmax.int`
+      - `aten.squeeze.default`
+      - `aten.squeeze.dim`
+      - `aten.squeeze.dims`
+      - `aten.sub.Tensor`
+      - `aten.sum.default`
+      - `aten.sum.dim_IntList`
+      - `aten.tanh.default` and `aten.tanh_.default`
+      - `aten.transpose.int`
+      - `aten.unsqueeze.default`
+      - `aten.upsample_bilinear2d.vec`
+      - `aten.upsample_nearest2d.vec`
+      - `aten.view.default`
 
 ### Static 8-bit Quantization Using the PT2E Flow
 
@@ -54,11 +80,18 @@ To quantize the model, you can use the PT2E workflow:
 import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.exir import to_edge_transform_and_lower
+
+# Imported for side effects: registers the quantized out-variant kernels
+# so `to_executorch()` can find them.
+import executorch.extension.pybindings.portable_lib  # noqa: F401
+import executorch.kernels.quantized  # noqa: F401
+
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
@@ -82,7 +115,10 @@ compile_spec = generate_neutron_compile_spec(
 
 et_program = to_edge_transform_and_lower( # (6)
     torch.export.export(quantized_model, sample_inputs),
-    partitioner=[NeutronPartitioner(compile_spec=compile_spec)],
+    partitioner=[NeutronPartitioner(
+        compile_spec=compile_spec,
+        neutron_target_spec=neutron_target_spec
+    )],
 ).to_executorch()
 ```
 
@@ -102,7 +138,7 @@ quantized_graph_module = calibrate_and_quantize(
 )
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/stable/pt2e_quantization/pt2e_quant_ptq.html) for more information.
 
 ### Quantization Aware Training
 
@@ -138,6 +174,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.models as models
 import torchvision.datasets as datasets
+import torchvision.transforms as transforms
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
@@ -164,10 +201,22 @@ prepared_model = move_exported_model_to_train(prepared_model) # (4)
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(prepared_model.parameters(), lr=1e-2, momentum=0.9)
 
-train_data = datasets.ImageNet("./", split="train", transform=...)
+transform = transforms.Compose(
+    [
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        ),
+    ]
+)
+
+train_data = datasets.ImageNet("./", split="train", transform=transform)
 train_loader = DataLoader(train_data, batch_size=5)
 
 # Training replaces calibration in QAT
+num_epochs = 5
 for epoch in range(num_epochs):
     for imgs, labels in train_loader:
         optimizer.zero_grad()
@@ -184,11 +233,6 @@ for epoch in range(num_epochs):
 
 prepared_model = move_exported_model_to_eval(prepared_model) # (6)
 quantized_model = convert_pt2e(prepared_model) # (7)
-
-# Optional step - fixes biasless convolution (see Known Limitations of QAT)
-quantized_model = QuantizeFusedConvBnBiasAtenPass(
-    default_zero_bias=True
-)(quantized_model).graph_module
 
 ...
 ```
