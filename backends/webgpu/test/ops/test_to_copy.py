@@ -20,6 +20,7 @@ import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 
 class ToCopyIntToFloatModule(torch.nn.Module):
@@ -88,8 +89,6 @@ def _prepartition_cast_dtypes(ep) -> list[torch.dtype]:
 
 
 def _delegated_cast_dtypes(edge) -> list[torch.dtype]:
-    from executorch.exir.lowered_backend_module import get_lowered_submodules
-
     graph_module = edge.exported_program().graph_module
     if any(
         "_to_dim_order_copy" in str(getattr(node, "target", ""))

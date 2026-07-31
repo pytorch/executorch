@@ -200,7 +200,8 @@ static StreamingAttentionK16Params make_streaming_attention_k16_params(
 static bool streaming_attention_k16_device_supported(WGPUDevice device) {
   WGPULimits limits = {};
   const WebGPUContext* context = get_default_webgpu_context();
-  return context != nullptr && context->shader_f16_supported &&
+  return context != nullptr && context->device == device &&
+      context->shader_f16_supported &&
       wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
       limits.maxComputeInvocationsPerWorkgroup >= 128u &&
       limits.maxComputeWorkgroupSizeX >= 32u &&
@@ -257,7 +258,8 @@ static_assert(
 bool qwen3_q16_k16_device_supported(WGPUDevice device) {
   WGPULimits limits = {};
   const WebGPUContext* context = get_default_webgpu_context();
-  return context != nullptr && context->shader_f16_supported &&
+  return context != nullptr && context->device == device &&
+      context->shader_f16_supported &&
       wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
       limits.maxComputeWorkgroupSizeX >= 16u &&
       limits.maxComputeWorkgroupSizeY >= 8u &&
@@ -269,7 +271,8 @@ bool qwen3_q16_k16_device_supported(WGPUDevice device) {
 bool qwen3_q32_k16_device_supported(WGPUDevice device) {
   WGPULimits limits = {};
   const WebGPUContext* context = get_default_webgpu_context();
-  return context != nullptr && context->shader_f16_supported &&
+  return context != nullptr && context->device == device &&
+      context->shader_f16_supported &&
       wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
       limits.maxComputeWorkgroupSizeX >= 32u &&
       limits.maxComputeWorkgroupSizeY >= 8u &&
