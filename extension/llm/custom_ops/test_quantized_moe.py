@@ -212,9 +212,9 @@ class TestQuantizedMoeFfnOp(unittest.TestCase):
             qmodel.num_activated_experts = moe.num_activated_experts
             qmodel.score_func = moe.score_func
             qmodel.route_scale = moe.route_scale
-            qmodel.use_expert_bias = moe.use_expert_bias
-            if moe.use_expert_bias:
-                qmodel.expert_bias = moe.expert_bias
+            # `MOEFeedForward` always registers `expert_bias` (None when
+            # disabled); the transform reads the buffer, so mirror that here.
+            qmodel.expert_bias = moe.expert_bias if moe.use_expert_bias else None
 
             wrapper = torch.nn.Module()
             wrapper.block_sparse_moe = qmodel
