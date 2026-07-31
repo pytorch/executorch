@@ -792,6 +792,32 @@ Error defineConvertNode(
   return Error::Ok;
 };
 /*
+Look up a serialized tensor value (plain or quantized wrapper) by its
+output id. Returns nullptr if not found.
+*/
+const fb_xnnpack::XNNTensorValue* getSerializedTensorValue(
+    const fb_xnnpack::XNNGraph* graph,
+    uint32_t id) noexcept {
+  if (graph == nullptr || graph->xvalues() == nullptr) {
+    return nullptr;
+  }
+  for (auto value : *graph->xvalues()) {
+    const fb_xnnpack::XNNTensorValue* tv = nullptr;
+    if (value->xvalue_union_type() == fb_xnnpack::XValueUnion::XNNTensorValue) {
+      tv = value->xvalue_union_as_XNNTensorValue();
+    } else if (
+        value->xvalue_union_type() ==
+        fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
+      tv = value->xvalue_union_as_XNNQuantizedTensorValue()->tensor_value();
+    }
+    if (tv != nullptr && tv->id_out() == id) {
+      return tv;
+    }
+  }
+  return nullptr;
+}
+
+/*
 Define serialized linear(fully-connected) node into the subgraph using
 the remapped ids to map the serialized ids, to the new ids generated
 when defining the tensor values
@@ -810,6 +836,44 @@ Error defineFullyConnectedNode(
   REMAP_ID(remapped_ids, graph_node->bias_id(), fc_bias);
   REMAP_ID(remapped_ids, graph_node->output_id(), fc_output);
 
+  // XNNPACK only provides a bf16 fully-connected of type bf16_bf16_f32:
+  // bf16 activation x bf16 weight -> fp32 output. When the serialized graph
+  // asks for a bf16 output (e.g. a fully bf16 model), define the FC with an
+  // fp32 intermediate output and append a convert (fp32 -> bf16) so the
+  // delegate boundary stays bf16.
+  const auto* in_tv = getSerializedTensorValue(graph, graph_node->input1_id());
+  const auto* filt_tv =
+      getSerializedTensorValue(graph, graph_node->filter_id());
+  const auto* out_tv = getSerializedTensorValue(graph, graph_node->output_id());
+  const bool needs_bf16_output_convert = in_tv != nullptr &&
+      filt_tv != nullptr && out_tv != nullptr &&
+      in_tv->datatype() == DataType::xnn_datatype_bf16 &&
+      filt_tv->datatype() == DataType::xnn_datatype_bf16 &&
+      out_tv->datatype() == DataType::xnn_datatype_bf16;
+
+  uint32_t fc_compute_output = fc_output;
+  if (needs_bf16_output_convert) {
+    std::vector<size_t> out_dims =
+        flatbufferDimsToVector<size_t>(out_tv->dims());
+    uint32_t intermediate_id = XNN_INVALID_VALUE_ID;
+    xnn_status ts = xnn_define_tensor_value(
+        subgraph_ptr,
+        xnn_datatype_fp32,
+        out_dims.size(),
+        out_dims.data(),
+        /*data=*/nullptr,
+        /*external_id=*/XNN_INVALID_VALUE_ID,
+        /*flags=*/0,
+        &intermediate_id);
+    ET_CHECK_OR_RETURN_ERROR(
+        ts == xnn_status_success,
+        Internal,
+        "Failed to define fp32 intermediate for bf16 linear node %i: %s",
+        node->debug_handle(),
+        xnn_status_to_string(ts));
+    fc_compute_output = intermediate_id;
+  }
+
   xnn_status status = xnn_define_fully_connected(
       subgraph_ptr,
       min_max.first,
@@ -817,7 +881,7 @@ Error defineFullyConnectedNode(
       fc_input1,
       fc_filter,
       fc_bias,
-      fc_output,
+      fc_compute_output,
       graph_node->flags());
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
@@ -825,6 +889,17 @@ Error defineFullyConnectedNode(
       "Failed to create linear node %i, with code: %s",
       node->debug_handle(),
       xnn_status_to_string(status));
+
+  if (needs_bf16_output_convert) {
+    xnn_status cs = xnn_define_convert(
+        subgraph_ptr, fc_compute_output, fc_output, /*flags=*/0);
+    ET_CHECK_OR_RETURN_ERROR(
+        cs == xnn_status_success,
+        Internal,
+        "Failed to define bf16 output convert for linear node %i: %s",
+        node->debug_handle(),
+        xnn_status_to_string(cs));
+  }
 
   return Error::Ok;
 };

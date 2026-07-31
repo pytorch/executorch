@@ -106,6 +106,7 @@ if(EXECUTORCH_BUILD_CORTEX_M)
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_batch_matmul.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_conv2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_depthwise_conv2d.cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_div.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_max_pool2d.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_mul.cpp

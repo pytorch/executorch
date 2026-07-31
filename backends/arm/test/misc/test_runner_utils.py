@@ -155,8 +155,28 @@ def test_numpy_to_torch_tensor_converts_dynamic_nhwc_output(monkeypatch) -> None
     result = runner_utils.numpy_to_torch_tensor(array, cast(Any, object()))
 
     assert result.shape == (1, 3, 4, 5)
-    assert result.is_contiguous(memory_format=torch.channels_last)
+    assert result.is_contiguous()
     torch.testing.assert_close(result, torch.from_numpy(array).permute(0, 3, 1, 2))
+
+
+def test_numpy_to_torch_tensor_converts_concrete_nhwc_output_to_contiguous(
+    monkeypatch,
+) -> None:
+    output_tensor = SimpleNamespace(
+        shape=(1, 3, 4, 5),
+        dtype=torch.int8,
+        dim_order=lambda: runner_utils.NHWC_ORDER,
+    )
+    monkeypatch.setattr(
+        runner_utils, "get_first_fake_tensor", lambda output_node: output_tensor
+    )
+    array = np.arange(60, dtype=np.int8).reshape(1, 4, 5, 3)
+
+    result = runner_utils.numpy_to_torch_tensor(array, cast(Any, object()))
+    expected = torch.from_numpy(array).permute(0, 3, 1, 2).contiguous()
+
+    assert result.is_contiguous()
+    torch.testing.assert_close(result, expected)
 
 
 def test_numpy_to_torch_tensor_converts_dynamic_nnhwc_output(monkeypatch) -> None:
@@ -174,7 +194,7 @@ def test_numpy_to_torch_tensor_converts_dynamic_nnhwc_output(monkeypatch) -> Non
     result = runner_utils.numpy_to_torch_tensor(array, cast(Any, object()))
 
     assert result.shape == (1, 2, 3, 4, 5)
-    assert result.dim_order() == runner_utils.NNHWC_ORDER
+    assert result.is_contiguous()
     torch.testing.assert_close(result, torch.from_numpy(array).permute(0, 1, 4, 2, 3))
 
 

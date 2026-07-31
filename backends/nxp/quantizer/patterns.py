@@ -763,6 +763,24 @@ class FlattenPattern(SharedSpecPattern):
         return [torch.ops.aten.flatten.using_ints]
 
 
+class HardSwishPattern(SingleInputBasicPattern):
+    """
+    Quantizer for HardSwish operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardswish.default]
+
+
+class HardSwishInPlacePattern(SingleInputBasicPattern):
+    """
+    Quantizer for HardSwish operator with param inplace=True.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardswish_.default]
+
+
 class HardTanhPattern(SingleInputBasicPattern):
     """
     Quantizer for HardTanh operator.
@@ -1087,6 +1105,13 @@ class ReshapePattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.reshape.default]
+
+
+class RsqrtPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.rsqrt.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.rsqrt.default]
 
 
 class ViewPattern(SharedSpecPattern):
