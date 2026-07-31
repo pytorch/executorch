@@ -17,15 +17,19 @@ namespace backends {
 namespace mlx {
 
 // The K/V window to attend over + how to mask it; the cache owns the semantic.
-// `kind` mirrors MLX SDPA's mask forms (no mask / "causal" / explicit tensor).
-// Will be added: a `window` on Causal (sliding-window -- the
-// mask_mod axis) and a `softcap`/bias field (ALiBi, softcap -- the score_mod
-// axis).
+// `kind` mirrors MLX SDPA's mask forms (no mask / "causal" / explicit tensor),
+// with `window` as the declarative sliding-window modifier (the mask_mod axis).
+// The cache states the semantic; the handler materializes whatever the backend
+// cannot express natively. Will be added: a `softcap`/bias field (ALiBi,
+// softcap -- the score_mod axis).
 struct AttendSpec {
   Tensor K;
   Tensor V;
   enum class Mask { None, Causal, Explicit } kind;
   std::optional<Tensor> mask; // Explicit only
+  // Causal only: each query attends at most this many keys (itself included).
+  // Unset = unbounded history.
+  std::optional<int> window;
 };
 
 // Tensor-typed op face of the off-graph KV cache, kept separate from the
