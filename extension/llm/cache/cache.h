@@ -116,20 +116,19 @@ struct LayerConfig {
 };
 
 // Model facts + runtime policy the byte layer sizes its pools from. capacity is
-// the logical cap; initial_capacity tunes the byte layer's lazy-doubling pool;
-// max_write is the max tokens written per step (a ring layer sizes its slots to
-// window + max_write - 1 so a multi-token step fits); unset means each ring
-// layer uses its own window. `layers` is per-layer: size 1 == uniform across
-// all layers, else == n_layers.
+// the logical cap; kv_dtype is the ET ScalarType the byte layer stores K/V in;
+// initial_capacity tunes the byte layer's lazy-doubling pool; max_write is the
+// max tokens written per step (a ring layer sizes its slots to window +
+// max_write - 1 so a multi-token step fits); unset means each ring layer uses
+// its own window. `layers` is per-layer: size 1 == uniform across all layers,
+// else == n_layers.
 struct CacheConfig {
   int capacity;
   int n_layers;
   std::vector<LayerConfig> layers;
+  int kv_dtype;
   int initial_capacity = 512;
   std::optional<int> max_write;
-  // ET ScalarType storage precision; a backend that stores K/V may require it
-  // (MLX raises if unset).
-  std::optional<int> kv_dtype;
 };
 
 } // namespace cache

@@ -28,11 +28,14 @@ struct AttendSpec {
   std::optional<Tensor> mask; // Explicit only
 };
 
-// Op face of the off-graph KV cache; ExecutionState holds one (cross-cast from
-// the registry's CacheBase*). Separate from CacheBase to avoid a diamond.
-class MLXCacheImpl {
+// Tensor-typed op face of the off-graph KV cache, kept separate from the
+// neutral CacheBase (which is tensor-free) so a cache can expose both without a
+// diamond. ExecutionState holds one; nothing assigns it yet -- the registry
+// that owns the cache and hands this pointer to the executor lands in a
+// follow-up, until which exec_update_and_attend is unreachable.
+class MLXCache {
  public:
-  virtual ~MLXCacheImpl() = default;
+  virtual ~MLXCache() = default;
 
   // Write this step's K/V for `layer` at `position` (the run's logical start);
   // return the window + mask kind. k/v are BHSD. `position` is a host int --

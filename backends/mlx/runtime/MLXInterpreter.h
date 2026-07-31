@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "MLXCacheImpl.h"
+#include "MLXCache.h"
 #include "MLXExecutor.h"
 
 #include <mlx/array.h>

@@ -6,26 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Op-level test for the off-graph flat KV cache (MLXFlatCache / FlatPool).
+// Op-level test for the off-graph KV cache (MLXSequenceCache / Pool).
 //
-// Drives MLXFlatCache::update_and_fetch directly (no interpreter / .pte), then
-// attends the returned AttendSpec exactly as the op handler does, and checks
-// the result against MLX SDPA over the full K/V history the cache should have
-// assembled -- verifying the plan/write/read window and mask kind across
-// prefill (Causal) and decode (None), plus the capacity-reject, storage-dtype,
-// and required-dtype paths.
+// Drives MLXSequenceCache::update_and_fetch directly (no interpreter / .pte)
+// and checks the AttendSpec it returns against the K/V history the cache should
+// have assembled -- verifying the plan/write/read window and the mask kind
+// across prefill (Causal) and decode (None), plus the capacity-reject and
+// storage-dtype paths. The window is compared directly rather than through
+// SDPA: attending both sides would only test equality through a lossy kernel.
 //
-// Must run on Apple Silicon: MLX SDPA needs the Metal backend.
+// Must run on Apple Silicon: MLX needs the Metal backend.
 
-#include "MLXFlatCache.h"
+#include "MLXSequenceCache.h"
 
 #include <mlx/mlx.h>
 
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <optional>
-#include <string>
 #include <vector>
 
 using namespace ::executorch::backends::mlx;
@@ -49,7 +46,7 @@ cache::CacheConfig flat_config(
     int n_layers,
     int n_kv_heads,
     int head_dim,
-    std::optional<int> kv_dtype = std::nullopt) {
+    int kv_dtype) {
   cache::CacheConfig cfg;
   cfg.capacity = capacity;
   cfg.n_layers = n_layers;
@@ -61,11 +58,10 @@ cache::CacheConfig flat_config(
   return cfg;
 }
 
-class MLXFlatCacheTest : public ::testing::Test {
+class MLXSequenceCacheTest : public ::testing::Test {
  protected:
   const int H = 2;
   const int D = 8;
-  const float scale = 1.0f / std::sqrt(static_cast<float>(D));
   ::mlx::core::StreamOrDevice s = {};
 
   array randn(int T, ::mlx::core::Dtype dt) {
@@ -75,41 +71,29 @@ class MLXFlatCacheTest : public ::testing::Test {
 };
 
 // Prefill: T=4 at position 0 -> Causal (lower-right aligned).
-TEST_F(MLXFlatCacheTest, PrefillIsCausal) {
+TEST_F(MLXSequenceCacheTest, PrefillIsCausal) {
   using namespace ::mlx::core;
-  MLXFlatCache c(flat_config(
+  MLXSequenceCache c(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
       D,
       static_cast<int>(ScalarType::Half)));
   const int T0 = 4;
-  array q0 = randn(T0, float16);
   array k0 = randn(T0, float16);
   array v0 = randn(T0, float16);
 
   AttendSpec spec0 = c.update_and_fetch(0, /*position=*/0, k0, v0, s);
   EXPECT_EQ(spec0.kind, AttendSpec::Mask::Causal);
-
-  array cand0 = fast::scaled_dot_product_attention(
-      q0,
-      spec0.K,
-      spec0.V,
-      scale,
-      std::string("causal"),
-      std::nullopt,
-      std::nullopt,
-      s);
-  array ref0 = fast::scaled_dot_product_attention(
-      q0, k0, v0, scale, std::string("causal"), std::nullopt, std::nullopt, s);
-  EXPECT_TRUE(allclose(cand0, ref0, 1e-2f));
+  EXPECT_TRUE(allclose(spec0.K, k0, 0.0f));
+  EXPECT_TRUE(allclose(spec0.V, v0, 0.0f));
 }
 
-// Decode: after a T=4 prefill, a single query at position 4 -> None and must
-// attend the full assembled history.
-TEST_F(MLXFlatCacheTest, DecodeAttendsFullHistory) {
+// Decode: after a T=4 prefill, a single token at position 4 -> None, and the
+// window is the full assembled history (prefill ++ the new token).
+TEST_F(MLXSequenceCacheTest, DecodeReadsFullHistory) {
   using namespace ::mlx::core;
-  MLXFlatCache c(flat_config(
+  MLXSequenceCache c(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -120,32 +104,20 @@ TEST_F(MLXFlatCacheTest, DecodeAttendsFullHistory) {
   array v0 = randn(T0, float16);
   c.update_and_fetch(0, /*position=*/0, k0, v0, s); // prefill
 
-  array q1 = randn(1, float16);
   array k1 = randn(1, float16);
   array v1 = randn(1, float16);
   AttendSpec spec1 = c.update_and_fetch(0, /*position=*/T0, k1, v1, s);
   EXPECT_EQ(spec1.kind, AttendSpec::Mask::None);
-
-  array cand1 = fast::scaled_dot_product_attention(
-      q1,
-      spec1.K,
-      spec1.V,
-      scale,
-      std::string(""),
-      std::nullopt,
-      std::nullopt,
-      s);
-  array Khist = concatenate(std::vector<array>{k0, k1}, 2, s);
-  array Vhist = concatenate(std::vector<array>{v0, v1}, 2, s);
-  array ref1 = fast::scaled_dot_product_attention(
-      q1, Khist, Vhist, scale, std::string(""), std::nullopt, std::nullopt, s);
-  EXPECT_TRUE(allclose(cand1, ref1, 1e-2f));
+  EXPECT_TRUE(
+      allclose(spec1.K, concatenate(std::vector<array>{k0, k1}, 2, s), 0.0f));
+  EXPECT_TRUE(
+      allclose(spec1.V, concatenate(std::vector<array>{v0, v1}, 2, s), 0.0f));
 }
 
 // A step past capacity is rejected (plan returns nullopt).
-TEST_F(MLXFlatCacheTest, StepPastCapacityThrows) {
+TEST_F(MLXSequenceCacheTest, StepPastCapacityThrows) {
   using namespace ::mlx::core;
-  MLXFlatCache c(flat_config(
+  MLXSequenceCache c(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -157,9 +129,9 @@ TEST_F(MLXFlatCacheTest, StepPastCapacityThrows) {
 
 // Storage dtype != compute: fp32 input, fp16 storage. The cache casts on write,
 // so the read-back K/V are exactly the fp16 of the input.
-TEST_F(MLXFlatCacheTest, StorageDtypeDiffersCastsOnWrite) {
+TEST_F(MLXSequenceCacheTest, StorageDtypeDiffersCastsOnWrite) {
   using namespace ::mlx::core;
-  MLXFlatCache c16(flat_config(
+  MLXSequenceCache c16(flat_config(
       /*capacity=*/32,
       /*n_layers=*/1,
       H,
@@ -175,10 +147,19 @@ TEST_F(MLXFlatCacheTest, StorageDtypeDiffersCastsOnWrite) {
   EXPECT_TRUE(allclose(spec2.V, astype(v2, float16, s), 0.0f));
 }
 
-// The MLX cache requires an explicit storage dtype.
-TEST_F(MLXFlatCacheTest, UnsetKvDtypeThrows) {
-  cache::CacheConfig cfg = flat_config(/*capacity=*/32, /*n_layers=*/1, H, D);
-  EXPECT_ANY_THROW(MLXFlatCache{cfg});
+// A run is placed and fetched at its own physical start. Flat runs always start
+// at 0, so this is driven on Pool directly -- a ring layer's read starts
+// mid-pool, and dropping the start would silently return the wrong cells.
+TEST_F(MLXSequenceCacheTest, PoolHonorsRunStart) {
+  using namespace ::mlx::core;
+  Pool p(/*slots=*/8, H, D, float16);
+  array x = randn(3, float16);
+  p.write(cache::Run{/*start=*/2, /*len=*/3}, x, s);
+
+  EXPECT_TRUE(allclose(p.read(cache::Run{2, 3}, s), x, 0.0f));
+  // The cells before the run are untouched, so reading from 0 is not the same
+  // window -- the regression this guards against.
+  EXPECT_FALSE(allclose(p.read(cache::Run{0, 3}, s), x, 0.0f));
 }
 
 } // namespace

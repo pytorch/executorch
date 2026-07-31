@@ -148,14 +148,13 @@ struct MutableBufferData {
   }
 };
 
-class MLXCacheImpl; // off-graph KV cache op face (MLXCacheImpl.h)
+class MLXCache; // off-graph KV cache op face (MLXCache.h)
 
 struct ExecutionState {
   const MLXProgram* program{nullptr};
   const ConstantData* constants{nullptr}; // Shared, read-only
   MutableBufferData* mutable_buffers{nullptr}; // Per-handle, persistent
-  MLXCacheImpl* cache{
-      nullptr}; // Per-session off-graph KV cache; survives reset()
+  MLXCache* cache{nullptr}; // Per-session off-graph KV cache; survives reset()
 
   // Per-execution tensors: inputs, outputs, temps (NOT constants or mutable
   // buffers)
