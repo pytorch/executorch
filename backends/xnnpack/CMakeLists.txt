@@ -101,11 +101,41 @@ set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
 include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_backend ${_xnnpack_backend__srcs})
+# Build the delegate as a shared library for the wheel so a process has one copy
+# of it, and keep it static everywhere else so no other build changes.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_xnnpack_backend_library_type SHARED)
+else()
+  set(_xnnpack_backend_library_type STATIC)
+endif()
+add_library(
+  xnnpack_backend ${_xnnpack_backend_library_type} ${_xnnpack_backend__srcs}
+)
 target_link_libraries(
-  xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
+  xnnpack_backend PUBLIC ${xnnpack_third_party} xnnpack_schema
                          extension_threadpool
 )
+if(EXECUTORCH_BUILD_SHARED)
+  set_target_properties(
+    xnnpack_backend
+    PROPERTIES OUTPUT_NAME executorch_xnnpack_backend
+               VERSION "${PROJECT_VERSION}"
+               SOVERSION "${PROJECT_VERSION_MAJOR}"
+  )
+  # XNNPACK and its microkernels are forced static, so bundle them inside this
+  # library instead of making every consumer supply them.
+  executorch_target_whole_archive(xnnpack_backend XNNPACK)
+  executorch_target_whole_archive(xnnpack_backend xnnpack-microkernels-prod)
+  target_link_libraries(xnnpack_backend PUBLIC executorch_shared)
+  if(NOT APPLE)
+    # Ships beside the runtime in the wheel's lib/ directory.
+    set_target_properties(
+      xnnpack_backend PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
+    )
+  endif()
+else()
+  target_link_libraries(xnnpack_backend PUBLIC executorch_core)
+endif()
 target_include_directories(
   xnnpack_backend PUBLIC ${_common_include_directories}
 )
