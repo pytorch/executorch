@@ -49,11 +49,15 @@ add_library(
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.h
 )
-target_link_libraries(
-  etdump
-  PUBLIC flatccrt
-  PRIVATE executorch
-)
+target_link_libraries(etdump PUBLIC flatccrt)
+# As with bundled_program, avoid the whole-archive of the `executorch` target so
+# the primitive operator registrations are not duplicated alongside the copy
+# already inside libexecutorch.so.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(etdump PRIVATE executorch_shared)
+else()
+  target_link_libraries(etdump PRIVATE executorch)
+endif()
 target_include_directories(
   etdump
   PUBLIC ${DEVTOOLS_INCLUDE_DIR}

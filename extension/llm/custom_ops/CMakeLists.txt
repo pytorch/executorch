@@ -116,19 +116,32 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     set(RPATH "@loader_path/../../pybindings")
   else()
     set(RPATH "$ORIGIN/../../pybindings")
+    if(EXECUTORCH_BUILD_SHARED)
+      # This library lands in
+      # <site-packages>/executorch/extension/llm/custom_ops, three levels below
+      # the wheel's lib/ directory.
+      string(APPEND RPATH ":$ORIGIN/../../../lib")
+    endif()
   endif()
-  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
+  # The wheel copies this library straight out of the build tree, so the runtime
+  # search path has to be set on the built artifact and not only on install.
+  set_target_properties(
+    custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH ${RPATH}
+  )
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind
     target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
-  else()
+  elseif(NOT EXECUTORCH_BUILD_SHARED)
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
     target_link_libraries(
       custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
     )
+  else()
+    target_link_libraries(custom_ops_aot_lib PUBLIC kernels_util_all_deps)
   endif()
+  executorch_target_link_shared_runtime(custom_ops_aot_lib)
 
   target_link_libraries(
     custom_ops_aot_lib PUBLIC cpublas torch extension_tensor

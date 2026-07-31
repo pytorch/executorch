@@ -8,7 +8,8 @@
 # for this file and find ExecuTorch package if it is installed. Typical usage
 # is:
 #
-# find_package(executorch REQUIRED)
+# find_package(executorch REQUIRED) target_link_libraries(my_app PRIVATE
+# executorch::runtime)
 # -------
 #
 # Finds the ExecuTorch library
@@ -19,10 +20,71 @@
 # EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
 # EXECUTORCH_LIBRARIES    -- Libraries to link against
 #
+# and, when the prebuilt shared runtime is present, the imported target:
+#
+# executorch::runtime     -- The prebuilt C++ runtime (libexecutorch.so)
+#
 cmake_minimum_required(VERSION 3.19)
 
-# Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This file should be installed
-# under <site-packages>/executorch/share/cmake
+# This file is installed to <site-packages>/executorch/share/cmake, so the
+# package root is two levels up. Everything is resolved relative to this file so
+# the wheel stays relocatable: no absolute path from the machine that built it
+# is baked in here.
+get_filename_component(
+  _executorch_package_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
+)
+
+set(EXECUTORCH_INCLUDE_DIRS
+    "${_executorch_package_root}/include"
+    "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
+)
+
+set(EXECUTORCH_LIBRARIES)
+set(EXECUTORCH_FOUND OFF)
+
+# The prebuilt runtime. Match the versioned file rather than a hardcoded major
+# so the config keeps working across releases.
+file(GLOB _executorch_runtime_candidates
+     "${_executorch_package_root}/lib/libexecutorch.so"
+     "${_executorch_package_root}/lib/libexecutorch.so.*"
+)
+# An unversioned libexecutorch.so sorts before any libexecutorch.so.<major>, so
+# a development symlink wins over the versioned file when both are present.
+list(SORT _executorch_runtime_candidates)
+list(LENGTH _executorch_runtime_candidates _executorch_runtime_count)
+if(_executorch_runtime_count GREATER 0)
+  list(GET _executorch_runtime_candidates 0 _executorch_runtime_library)
+
+  set(EXECUTORCH_FOUND ON)
+  message(STATUS "ExecuTorch runtime found at ${_executorch_runtime_library}")
+
+  add_library(executorch::runtime SHARED IMPORTED)
+  set_target_properties(
+    executorch::runtime
+    PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
+               INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+               INTERFACE_COMPILE_FEATURES cxx_std_17
+               INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Consumers get the wheel's lib/ directory in their RUNPATH automatically,
+  # because CMake adds the imported library's directory. Also record
+  # $ORIGIN-relative entries so an application that is deployed next to a copy
+  # of the runtime keeps working without relinking or LD_LIBRARY_PATH. $ORIGIN
+  # is a loader token, so it belongs only in RUNPATH, never in
+  # IMPORTED_LOCATION.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_property(
+      TARGET executorch::runtime
+      APPEND
+      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,$ORIGIN"
+               "LINKER:-rpath,$ORIGIN/../lib"
+    )
+  endif()
+endif()
+
+# Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
+# to build custom-op extensions against the Python module, and is kept working
+# independently of the runtime target above.
 
 # Find python
 if(DEFINED ENV{CONDA_DEFAULT_ENV} AND NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL
@@ -55,11 +117,9 @@ endif()
 find_library(
   _portable_lib_LIBRARY
   NAMES _portable_lib${EXT_SUFFIX}
-  PATHS "${CMAKE_CURRENT_LIST_DIR}/../../extension/pybindings/"
+  PATHS "${_executorch_package_root}/extension/pybindings/"
 )
 
-set(EXECUTORCH_LIBRARIES)
-set(EXECUTORCH_FOUND OFF)
 if(_portable_lib_LIBRARY)
   set(EXECUTORCH_FOUND ON)
   message(
@@ -67,7 +127,6 @@ if(_portable_lib_LIBRARY)
   )
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   add_library(_portable_lib STATIC IMPORTED)
-  set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../../include)
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
     _portable_lib

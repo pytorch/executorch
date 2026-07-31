@@ -261,9 +261,10 @@ function(gen_custom_ops_aot_lib)
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
-  else()
+  elseif(NOT EXECUTORCH_BUILD_SHARED)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_core)
   endif()
+  executorch_target_link_shared_runtime(${GEN_LIB_NAME})
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch

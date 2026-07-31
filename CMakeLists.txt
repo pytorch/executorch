@@ -932,6 +932,58 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_CPUINFO)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
 endif()
 
+# Consolidated shared library: bundles executorch_core plus commonly used
+# extensions into a single libexecutorch.so. Defined before the pybind and
+# kernel targets below so they can link this one runtime instead of embedding a
+# private copy of the core, which would give the process a second backend
+# registry.
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_add_shared_library(executorch_shared)
+  set_target_properties(
+    executorch_shared
+    PROPERTIES OUTPUT_NAME executorch
+               ARCHIVE_OUTPUT_NAME executorch_shared
+               EXPORT_NAME executorch-shared
+  )
+  target_include_directories(
+    executorch_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_definitions(
+    executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
+  # (from executorch_target_link_options_shared_lib) already force
+  # whole-archive. Everything else is pulled in through link options rather than
+  # the WHOLE_ARCHIVE link feature, because these archives also reference each
+  # other plainly and CMake before 3.29 refuses to mix a feature with a plain
+  # reference to the same item.
+  target_link_libraries(executorch_shared PRIVATE executorch)
+  set(_executorch_shared_whole_archive executorch_core)
+  foreach(_ext_target
+          extension_data_loader extension_flat_tensor extension_named_data_map
+          extension_module_static extension_tensor
+  )
+    if(TARGET ${_ext_target})
+      list(APPEND _executorch_shared_whole_archive ${_ext_target})
+    endif()
+  endforeach()
+  foreach(_whole_target ${_executorch_shared_whole_archive})
+    target_link_options(
+      executorch_shared
+      PRIVATE
+      "SHELL:LINKER:--whole-archive $<TARGET_FILE:${_whole_target}> LINKER:--no-whole-archive"
+    )
+    add_dependencies(executorch_shared ${_whole_target})
+  endforeach()
+  configure_file(
+    tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+    @ONLY
+  )
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
+          DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+  )
+endif()
+
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   if(NOT TARGET cpuinfo)
     message(
@@ -1016,10 +1068,19 @@ if(EXECUTORCH_BUILD_PYBIND)
     # Ensure bundled_module waits for bundled_program's generated headers
     add_dependencies(bundled_module bundled_program)
 
-    target_link_libraries(bundled_module PRIVATE extension_data_loader)
-    target_link_libraries(
-      bundled_module PUBLIC extension_module_static bundled_program
-    )
+    # extension_module_static and the data loader are bundled into
+    # libexecutorch.so, so link that instead of pulling private static copies in
+    # through this target's PUBLIC interface.
+    if(EXECUTORCH_BUILD_SHARED)
+      target_link_libraries(
+        bundled_module PUBLIC executorch_shared bundled_program
+      )
+    else()
+      target_link_libraries(bundled_module PRIVATE extension_data_loader)
+      target_link_libraries(
+        bundled_module PUBLIC extension_module_static bundled_program
+      )
+    endif()
 
     target_include_directories(
       bundled_module PUBLIC ${_common_include_directories}
@@ -1038,16 +1099,36 @@ if(EXECUTORCH_BUILD_PYBIND)
     TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
   )
 
-  set(_dep_libs
-      ${TORCH_PYTHON_LIBRARY}
-      bundled_program
-      etdump
-      flatccrt
-      executorch
-      extension_data_loader
-      util
-      torch
-  )
+  # When the consolidated shared runtime is built, the pybind extension links it
+  # instead of whole-archiving the static core, so Python and C++ consumers
+  # share one backend registry. `executorch` and the extensions bundled into
+  # libexecutorch.so must stay off this list: their INTERFACE link options force
+  # whole-archive, which would give this module a private second registry.
+  # executorch_shared is named here for its include directories and compile
+  # definitions; executorch_target_link_shared_runtime below is what fixes its
+  # position on the link line.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_dep_libs
+        ${TORCH_PYTHON_LIBRARY}
+        bundled_program
+        etdump
+        flatccrt
+        executorch_shared
+        util
+        torch
+    )
+  else()
+    set(_dep_libs
+        ${TORCH_PYTHON_LIBRARY}
+        bundled_program
+        etdump
+        flatccrt
+        executorch
+        extension_data_loader
+        util
+        torch
+    )
+  endif()
 
   # Build common AOTI functionality if needed by CUDA or Metal backends
   if(EXECUTORCH_BUILD_CUDA)
@@ -1058,13 +1139,22 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs aoti_common)
   endif()
 
-  # RPATH for _portable_lib.so
+  # RPATH for _portable_lib.so. It sits in
+  # <site-packages>/executorch/extension/pybindings, so torch is three levels up
+  # and the wheel's own lib/ directory is two.
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+  if(EXECUTORCH_BUILD_SHARED)
+    string(APPEND _portable_lib_rpath ":$ORIGIN/../../lib")
+  endif()
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
-    # Always use static linking for pybindings to avoid runtime symbol
-    # resolution issues
-    list(APPEND _dep_libs extension_module_static)
+    # extension_module_static is already bundled into libexecutorch.so; linking
+    # it again here would whole-archive a second copy.
+    if(NOT EXECUTORCH_BUILD_SHARED)
+      # Always use static linking for pybindings to avoid runtime symbol
+      # resolution issues
+      list(APPEND _dep_libs extension_module_static)
+    endif()
     # Add bundled_module if available
     if(TARGET bundled_module)
       list(APPEND _dep_libs bundled_module)
@@ -1150,7 +1240,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_definitions(util PUBLIC C10_USING_CUSTOM_GENERATED_MACROS)
 
   target_compile_options(util PUBLIC ${_pybind_compile_options})
-  target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+  if(EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(util PRIVATE torch c10 executorch_shared)
+  else()
+    target_link_libraries(util PRIVATE torch c10 executorch extension_tensor)
+  endif()
 
   # pybind portable_lib
   pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
@@ -1167,6 +1261,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
+  executorch_target_link_shared_runtime(portable_lib)
 
   # Set RPATH to find PyTorch and backend libraries relative to the installation
   # location. This goes from executorch/extension/pybindings up to
@@ -1199,7 +1294,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  target_link_libraries(data_loader PRIVATE executorch)
+  if(EXECUTORCH_BUILD_SHARED)
+    if(NOT APPLE)
+      set_target_properties(
+        data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                               INSTALL_RPATH "$ORIGIN/../../lib"
+      )
+    endif()
+  else()
+    target_link_libraries(data_loader PRIVATE executorch)
+  endif()
+  executorch_target_link_shared_runtime(data_loader)
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
@@ -1244,49 +1349,6 @@ if(EXECUTORCH_BUILD_KERNELS_LLM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops)
   list(APPEND _executorch_kernels custom_ops_aot_lib)
-endif()
-
-# Consolidated shared library: bundles executorch_core plus commonly used
-# extensions into a single libexecutorch.so.
-if(EXECUTORCH_BUILD_SHARED)
-  executorch_add_shared_library(executorch_shared)
-  set_target_properties(
-    executorch_shared
-    PROPERTIES OUTPUT_NAME executorch
-               ARCHIVE_OUTPUT_NAME executorch_shared
-               EXPORT_NAME executorch-shared
-  )
-  target_include_directories(
-    executorch_shared PUBLIC ${_common_include_directories}
-  )
-  target_compile_definitions(
-    executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
-  )
-  # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
-  # (from executorch_target_link_options_shared_lib) already force
-  # whole-archive. Link executorch_core explicitly since executorch only has a
-  # PRIVATE dep on it (symbols wouldn't propagate otherwise).
-  target_link_libraries(
-    executorch_shared PRIVATE executorch
-                              $<LINK_LIBRARY:WHOLE_ARCHIVE,executorch_core>
-  )
-  foreach(_ext_target
-          extension_data_loader extension_flat_tensor extension_named_data_map
-          extension_module_static extension_tensor
-  )
-    if(TARGET ${_ext_target})
-      target_link_libraries(
-        executorch_shared PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,${_ext_target}>
-      )
-    endif()
-  endforeach()
-  configure_file(
-    tools/cmake/executorch.pc.in ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
-    @ONLY
-  )
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
-          DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-  )
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)

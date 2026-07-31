@@ -49,10 +49,18 @@ target_link_libraries(
 target_compile_options(train_xor PUBLIC ${_common_compile_options})
 
 if(EXECUTORCH_BUILD_PYBIND)
-  # Pybind library.
-  set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch util
-                                torch extension_training
-  )
+  # Pybind library. When the consolidated shared runtime is built, the runtime
+  # is resolved from it rather than from the whole-archive-forcing static
+  # `executorch` target, so this module shares the one backend registry.
+  if(EXECUTORCH_BUILD_SHARED)
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump util torch
+                                  extension_training
+    )
+  else()
+    set(_pybind_training_dep_libs ${TORCH_PYTHON_LIBRARY} etdump executorch
+                                  util torch extension_training
+    )
+  endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
@@ -81,6 +89,17 @@ if(EXECUTORCH_BUILD_PYBIND)
            -fexceptions>
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+  executorch_target_link_shared_runtime(_training_lib)
+
+  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
+    # This module lands in
+    # <site-packages>/executorch/extension/training/pybindings, three levels
+    # below the wheel's lib/ directory.
+    set_target_properties(
+      _training_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../lib"
+                               INSTALL_RPATH "$ORIGIN/../../../lib"
+    )
+  endif()
 
   install(TARGETS _training_lib
           LIBRARY DESTINATION executorch/extension/training/pybindings

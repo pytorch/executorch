@@ -322,6 +322,18 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
+def get_runtime_soname_major() -> str:
+    """The major version in the shared runtime's SONAME.
+
+    CMake derives SOVERSION from version.txt, so read the major from the same
+    place. Version.string() is not usable here because BUILD_VERSION can
+    override it without changing what the linker recorded.
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(root, "version.txt")) as f:
+        return f.read().strip().split(".")[0]
+
+
 def get_executable_name(name: str) -> str:
     if _is_windows():
         return name + ".exe"
@@ -758,7 +770,11 @@ class CustomBuildPy(build_py):
                 "runtime/kernel/",
                 "runtime/backend/",
                 "runtime/platform/",
+                "extension/data_loader/",
+                "extension/flat_tensor/",
                 "extension/kernel_util/",
+                "extension/module/",
+                "extension/named_data_map/",
                 "extension/tensor/",
                 "extension/threadpool/",
             ]:
@@ -1089,6 +1105,15 @@ setup(
             []
             if _is_minimal_build()
             else [
+                # Install the shared C++ runtime so a standalone application can
+                # link executorch::runtime from the wheel. Shipped under its
+                # SONAME so the DT_NEEDED a consumer records resolves at runtime.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name=f"libexecutorch.so.{get_runtime_soname_major()}.*",
+                    dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.

@@ -212,6 +212,35 @@ function(executorch_target_copy_mlx_metallib target)
   endif()
 endfunction()
 
+# Make a target resolve the ExecuTorch runtime from libexecutorch.so.
+#
+# Naming the shared runtime as an ordinary dependency is not enough. CMake
+# orders link libraries so that an archive precedes what it depends on, which
+# puts libexecutorch_core.a ahead of libexecutorch.so; the archive then
+# satisfies the runtime symbols first and the target ends up with a private copy
+# of the backend registry. Link options come before the ordered libraries, so
+# naming the runtime there leaves the archive with nothing left to resolve.
+#
+# --no-as-needed is needed around it because a shared library with no
+# already-referenced symbol at the point it appears can be dropped, and the
+# static archive further along the line would then supply the registry after
+# all.
+function(executorch_target_link_shared_runtime target_name)
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    return()
+  endif()
+  # The generator expression alone does not make the runtime get built first, so
+  # state the build-order dependency explicitly.
+  add_dependencies(${target_name} executorch_shared)
+  set_property(
+    TARGET ${target_name}
+    APPEND
+    PROPERTY
+      LINK_OPTIONS
+      "SHELL:LINKER:--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--as-needed"
+  )
+endfunction()
+
 # Create and install a shared library composed from dependency libraries. The
 # target links the provided dependencies and carries VERSION/SOVERSION.
 function(executorch_add_shared_library target_name)

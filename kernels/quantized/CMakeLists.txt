@@ -131,6 +131,11 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         set(RPATH "@loader_path/../../extensions/pybindings")
       else()
         set(RPATH "$ORIGIN/../../extensions/pybindings")
+        if(EXECUTORCH_BUILD_SHARED)
+          # This library lands in <site-packages>/executorch/kernels/quantized,
+          # two levels below the wheel's lib/ directory.
+          string(APPEND RPATH ":$ORIGIN/../../lib")
+        endif()
       endif()
       set_target_properties(
         quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH

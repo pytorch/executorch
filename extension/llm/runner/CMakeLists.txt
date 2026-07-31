@@ -123,6 +123,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
                         portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
+  executorch_target_link_shared_runtime(_llm_runner)
 
   set_target_properties(
     _llm_runner
@@ -137,6 +138,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   else()
     set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
+    if(EXECUTORCH_BUILD_SHARED)
+      # This module lands in <site-packages>/executorch/extension/llm/runner,
+      # three levels below the wheel's lib/ directory.
+      string(APPEND RPATH ":$ORIGIN/../../../lib")
+    endif()
   endif()
   set_target_properties(
     _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
