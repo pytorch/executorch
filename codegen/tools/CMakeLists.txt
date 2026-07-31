@@ -44,12 +44,11 @@ if(TARGET bundled_program)
   target_link_libraries(selective_build PRIVATE bundled_program)
 endif()
 if(EXECUTORCH_BUILD_SHARED)
-  # The runtime comes from libexecutorch.so instead of the static core. This
+  # Bisection experiment: keep the pre-change link shape here too, so the only
+  # variable under test is how these pybind modules reach the runtime. This
   # module lands in <site-packages>/executorch/codegen/tools, two levels below
   # the wheel's lib/ directory.
-  target_link_libraries(
-    selective_build PRIVATE executorch_shared program_schema
-  )
+  target_link_libraries(selective_build PRIVATE executorch_core program_schema)
   if(NOT APPLE)
     set_target_properties(
       selective_build PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
@@ -59,7 +58,6 @@ if(EXECUTORCH_BUILD_SHARED)
 else()
   target_link_libraries(selective_build PRIVATE executorch_core program_schema)
 endif()
-executorch_target_link_shared_runtime(selective_build)
 
 # Install the module
 install(TARGETS selective_build LIBRARY DESTINATION executorch/codegen/tools)

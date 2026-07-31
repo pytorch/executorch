@@ -1289,21 +1289,18 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  # Naming the runtime as a dependency keeps this an ordinary C++ link (standard
-  # library, include directories, compile definitions); the helper below only
-  # fixes where the runtime lands on the link line.
-  if(EXECUTORCH_BUILD_SHARED)
-    target_link_libraries(data_loader PRIVATE executorch_shared)
-    if(NOT APPLE)
-      set_target_properties(
-        data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
-                               INSTALL_RPATH "$ORIGIN/../../lib"
-      )
-    endif()
-  else()
-    target_link_libraries(data_loader PRIVATE executorch)
+  # Bisection experiment: link this module the way it was before the shared
+  # runtime landed, to isolate whether that edit is what breaks the manylinux
+  # link. Everything else in this change is untouched. If the wheel builds go
+  # green, this target is the culprit; the shared-runtime wiring is then
+  # reintroduced here with the real cause addressed.
+  target_link_libraries(data_loader PRIVATE executorch)
+  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
+    set_target_properties(
+      data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                             INSTALL_RPATH "$ORIGIN/../../lib"
+    )
   endif()
-  executorch_target_link_shared_runtime(data_loader)
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
