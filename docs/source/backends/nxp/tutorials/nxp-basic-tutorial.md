@@ -9,7 +9,7 @@ This tutorial demonstrates the use of the eIQ Neutron backend with the Neutron b
 ### Software
 First you need to have Python 3.10 - 3.12 installed. 
 
-You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch [Setting Up ExecuTorch](../../../getting-started-setup.rst)
+You need to install the ExecuTorch. Please follow the tutorial to install the ExecuTorch [Getting Started with ExecuTorch](https://docs.pytorch.org/executorch/main/getting-started.html)
 
 
 In addition to this, you will need to install the eIQ Neutron Simulator, called NSYS,
@@ -31,7 +31,7 @@ format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutr
 
 ### Step 1: Environment Setup
 
-This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see [Getting Started with ExecuTorch](/getting-started).
+This tutorial is intended to be run from a Linux and uses Conda or Virtual Env for Python environment management. For full setup details and system requirements, see [Getting Started with ExecuTorch](https://docs.pytorch.org/executorch/main/getting-started.html).
 
 Create a Conda environment and install the ExecuTorch Python package.
 ```bash

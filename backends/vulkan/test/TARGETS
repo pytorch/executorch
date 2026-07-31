@@ -51,6 +51,20 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_vulkan_compile_options",
+    srcs = [
+        "test_vulkan_compile_options.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
     name = "test_serialization",
     srcs = [
         "test_serialization.py",

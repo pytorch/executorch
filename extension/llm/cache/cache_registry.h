@@ -12,15 +12,17 @@
 // is opaque to the host, so the runner (which knows the cache kind) creates the
 // cache and binds it to the delegate through a process-global registry; the two
 // sides rendezvous on a cache_key passed as a runtime backend-load option.
-// Caches are owned as CacheBase*, keeping the registry agnostic to the concrete
-// cache type. This layer is delegate-specific and may use ExecuTorch
-// Error/Result directly; the cache handle (cache.h) stays ET-free.
+// Caches are owned as CacheBase* and the faces are recovered via
+// as_control()/as_planner() (no RTTI). This layer is delegate-specific and may
+// use ExecuTorch Error/Result directly; the cache core (cache.h) stays ET-free.
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <executorch/extension/llm/cache/cache.h>
 #include <executorch/runtime/core/error.h>
@@ -76,8 +78,8 @@ class CacheBuilderRegistry {
   CacheBuilderRegistry() = default;
 
   mutable std::mutex mu_;
-  std::unordered_map<std::string, CacheBuilder>
-      builders_; // backend_id + ":" + kind
+  std::map<std::pair<std::string, std::string>, CacheBuilder>
+      builders_; // keyed by (backend_id, kind)
 };
 
 // Process-global atomic counter -> "cache-N"; centralizes key generation so
@@ -86,7 +88,7 @@ std::string make_unique_key();
 
 // RAII: installs the cache into the global registry under a unique key on
 // construction and erases it on destruction (no leak on any exit path). Holds
-// the runner's shared_ptr for the lifetime of the generation loop.
+// the runner's shared_ptr and exposes the control face for the generation loop.
 class CacheSession {
  public:
   CacheSession(std::string key, std::shared_ptr<CacheBase> cache)
@@ -100,8 +102,8 @@ class CacheSession {
   CacheSession(const CacheSession&) = delete;
   CacheSession& operator=(const CacheSession&) = delete;
 
-  const std::shared_ptr<CacheBase>& cache() const {
-    return cache_;
+  SequenceControl* control() const {
+    return cache_->as_control();
   }
   const std::string& key() const {
     return key_;

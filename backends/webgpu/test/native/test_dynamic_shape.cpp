@@ -193,31 +193,31 @@ void check_sdpa(int s) {
 constexpr int kEmbDim = 64;
 // Run emb_dyn at N tokens on an already-loaded module (so it can be reused
 // across N), and compare to the golden.
-void run_embedding(Module& m, int n) {
-  const std::string b = g_dir + "/emb_dyn.S" + std::to_string(n) + ".";
+void run_embedding(Module& m, int n, const char* prefix = "emb_dyn") {
+  const std::string b = g_dir + "/" + prefix + ".S" + std::to_string(n) + ".";
   std::ifstream f(b + "idx.bin", std::ios::binary | std::ios::ate);
-  ASSERT_TRUE(f.good()) << "missing emb_dyn.S" << n;
+  ASSERT_TRUE(f.good()) << "missing " << prefix << ".S" << n;
   const std::streamsize nb = f.tellg();
-  ASSERT_GE(nb, 0) << "missing emb_dyn.S" << n;
+  ASSERT_GE(nb, 0) << "missing " << prefix << ".S" << n;
   f.seekg(0);
   std::vector<int64_t> idx(static_cast<size_t>(nb) / sizeof(int64_t));
   f.read(reinterpret_cast<char*>(idx.data()), nb);
   ASSERT_EQ(idx.size(), static_cast<size_t>(n))
-      << "wrong emb_dyn idx size S" << n;
+      << "wrong " << prefix << " idx size S" << n;
   auto golden = read_bin(b + "golden.bin");
   auto t = make_tensor_ptr({n}, std::move(idx)); // int64 (Long) host input
   auto r = m.forward({EValue(t)});
   ASSERT_TRUE(r.ok() && !r.get().empty() && r.get()[0].isTensor())
-      << "emb N=" << n
+      << prefix << " N=" << n
       << " forward failed (err=" << (r.ok() ? 0 : (int)r.error()) << ")";
   const auto& out = r.get()[0].toTensor();
   const size_t numel = static_cast<size_t>(n) * kEmbDim;
   ASSERT_EQ(static_cast<size_t>(out.numel()), numel)
-      << "emb N=" << n << " output numel mismatch";
+      << prefix << " N=" << n << " output numel mismatch";
   std::vector<float> got(
       out.const_data_ptr<float>(), out.const_data_ptr<float>() + numel);
   const float e = max_err(got, golden);
-  EXPECT_LT(e, 5e-3f) << "emb_dyn N=" << n << " max_err=" << e;
+  EXPECT_LT(e, 5e-3f) << prefix << " N=" << n << " max_err=" << e;
 }
 
 void check_embedding(int n) {
@@ -456,6 +456,15 @@ TEST(DynamicShape, EmbeddingReusedGraph) {
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn.pte";
   for (int n : {16, 8, 1, 16}) {
     run_embedding(m, n);
+  }
+}
+
+// K3: linear-packed reuse must preserve nibble order across resizes.
+TEST(DynamicShape, LinearPackedEmbeddingReusedGraph) {
+  Module m(g_dir + "/emb_dyn_linear.pte");
+  ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn_linear.pte";
+  for (int n : {16, 8, 1, 16}) {
+    run_embedding(m, n, "emb_dyn_linear");
   }
 }
 
