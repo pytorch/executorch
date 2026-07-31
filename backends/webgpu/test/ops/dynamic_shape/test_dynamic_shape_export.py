@@ -1353,6 +1353,28 @@ EMB_GROUP = 32
 EMB_MAXN = 16
 
 
+def _write_embedding_goldens(
+    out_dir: str,
+    prefix: str,
+    weight: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+    is_linear: bool,
+) -> None:
+    for n in [EMB_MAXN, 8, 1]:
+        idx = (torch.arange(n, dtype=torch.long) * 7) % EMB_VOCAB
+        golden = torch.ops.et_vk.embedding_q4gsw.default(
+            weight, scales, group_size, idx, is_linear
+        )
+        idx.detach().numpy().astype("<i8").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.idx.bin")
+        )
+        golden.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.golden.bin")
+        )
+        print(f"  golden {prefix} N={n} (shape {tuple(golden.shape)})")
+
+
 class _PackedEmbedding(torch.nn.Module):
     def __init__(self, is_linear_weight: bool) -> None:
         super().__init__()
@@ -1405,18 +1427,7 @@ def export_dynamic_embedding_cases(out_dir: str) -> None:
         f.write(et.buffer)
     print("Exported emb_dyn.pte")
     weight, scales, group_size = _quant_params(qm)
-    for n in [EMB_MAXN, 8, 1]:
-        idx = (torch.arange(n, dtype=torch.long) * 7) % EMB_VOCAB
-        g = torch.ops.et_vk.embedding_q4gsw.default(
-            weight, scales, group_size, idx, False
-        )
-        idx.detach().numpy().astype("<i8").tofile(
-            os.path.join(out_dir, f"emb_dyn.S{n}.idx.bin")
-        )
-        g.detach().numpy().astype("<f4").tofile(
-            os.path.join(out_dir, f"emb_dyn.S{n}.golden.bin")
-        )
-        print(f"  golden emb_dyn N={n} (shape {tuple(g.shape)})")
+    _write_embedding_goldens(out_dir, "emb_dyn", weight, scales, group_size, False)
 
     packed_models = {
         "emb_dyn_linear": _PackedEmbedding(True).eval(),

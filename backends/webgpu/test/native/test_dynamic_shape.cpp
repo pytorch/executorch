@@ -1690,6 +1690,7 @@ TEST(DynamicShape, EmbeddingReusedGraph) {
   }
 }
 
+// K3: linear/nonlinear-packed reuse must preserve nibble order across resizes.
 TEST(DynamicShape, EmbeddingLayoutsReusedGraph) {
   for (const char* prefix : {"emb_dyn_linear", "emb_dyn_nonlinear"}) {
     Module m(g_dir + "/" + prefix + ".pte");
