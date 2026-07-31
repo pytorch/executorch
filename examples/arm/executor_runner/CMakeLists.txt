@@ -320,17 +320,11 @@ list(
   quantized_ops_lib
   cortex_m_ops_lib
   executorch_delegate_ethos_u
+  -Wl,--no-whole-archive
   quantized_kernels
   cortex_m_kernels
   portable_kernels
-  executorch_core
   cmsis-nn
-  ethosu_core_driver
-  timing_adapter
-  ethosu_mhu_dummy
-  ethosu_mailbox
-  ethosu_uart_cmsdk_apb
-  -Wl,--no-whole-archive
   kernels_util_all_deps
   -Wl,--end-group
   -Xlinker
@@ -479,20 +473,7 @@ endif()
 # before this target's objects and before the runner's dependency closure, which
 # breaks bare-metal archive resolution for the runner.
 set(_arm_runner_whole_archive_targets
-    executorch
-    quantized_ops_lib
-    cortex_m_ops_lib
-    executorch_delegate_ethos_u
-    quantized_kernels
-    cortex_m_kernels
-    portable_kernels
-    executorch_core
-    cmsis-nn
-    ethosu_core_driver
-    timing_adapter
-    ethosu_mhu_dummy
-    ethosu_mailbox
-    ethosu_uart_cmsdk_apb
+    executorch quantized_ops_lib cortex_m_ops_lib executorch_delegate_ethos_u
 )
 if(TARGET arm_portable_ops_lib)
   list(APPEND _arm_runner_whole_archive_targets arm_portable_ops_lib)

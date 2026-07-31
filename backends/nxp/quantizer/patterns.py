@@ -1089,6 +1089,13 @@ class ReshapePattern(SharedSpecPattern):
         return [torch.ops.aten.reshape.default]
 
 
+class RsqrtPattern(SingleInputBasicPattern):
+    """Quantizer for the `aten.rsqrt.default` operator."""
+
+    def partition_types(self):
+        return [torch.ops.aten.rsqrt.default]
+
+
 class ViewPattern(SharedSpecPattern):
     """
     Quantizer for View operator.
