@@ -371,6 +371,7 @@ def test_deepseek_r1_distill_qwen_tosa_FP_bf16(
         pipeline.run()
 
 
+@pytest.mark.xlarge
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_case",
@@ -395,6 +396,7 @@ def test_deepseek_r1_distill_qwen_vgf_no_quant(
         pipeline.run()
 
 
+@pytest.mark.xlarge
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_case",
