@@ -65,8 +65,7 @@ class MLXSequenceCacheTest : public ::testing::Test {
   ::mlx::core::StreamOrDevice s = {};
 
   array randn(int T, ::mlx::core::Dtype dt) {
-    return ::mlx::core::random::normal(
-        to_shape(std::vector<int>{1, H, T, D}), dt);
+    return ::mlx::core::random::normal(::mlx::core::Shape{1, H, T, D}, dt);
   }
 };
 
@@ -160,6 +159,18 @@ TEST_F(MLXSequenceCacheTest, PoolHonorsRunStart) {
   // The cells before the run are untouched, so reading from 0 is not the same
   // window -- the regression this guards against.
   EXPECT_FALSE(allclose(p.read(cache::Run{0, 3}, s), x, 0.0f));
+}
+
+// A partial per-layer list is rejected instead of indexing past the end.
+TEST_F(MLXSequenceCacheTest, PartialLayerListThrows) {
+  cache::CacheConfig cfg = flat_config(
+      /*capacity=*/32,
+      /*n_layers=*/4,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half));
+  cfg.layers.push_back(cfg.layers.front()); // size 2, neither 1 nor n_layers
+  EXPECT_ANY_THROW(MLXSequenceCache{cfg});
 }
 
 } // namespace

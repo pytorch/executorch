@@ -37,11 +37,6 @@ class Pool {
 
   // Place `update` at the run's physical start, casting to the storage dtype if
   // it differs.
-  //
-  // Each write chains a lazy slice_update onto the previous buf_. That stays
-  // bounded only because the caller eval()s the step's output, which
-  // transitively materializes buf_; a caller that never eval()s would grow the
-  // graph without limit.
   void write(const cache::Run& run, const Tensor& update, StreamOrDevice s) {
     const int H = static_cast<int>(buf_.shape(1));
     const int D = static_cast<int>(buf_.shape(3));
@@ -103,7 +98,7 @@ class Pool {
 class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
  public:
   explicit MLXSequenceCache(const cache::CacheConfig& cfg)
-      : cache::SequenceCache(cfg) {
+      : cache::SequenceCache(checked(cfg)) {
     const ::mlx::core::Dtype dt =
         resolve_dtype(static_cast<int8_t>(cfg.kv_dtype));
     kpool_.reserve(static_cast<size_t>(cfg.n_layers));
@@ -161,6 +156,16 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
   }
 
  private:
+  // Enforce the neutral contract as an exception, the failure mode this layer
+  // already uses. Runs as the base initializer's argument because
+  // SequenceCache's own ctor indexes `layers` before this class's body does.
+  static const cache::CacheConfig& checked(const cache::CacheConfig& cfg) {
+    if (!cache::valid(cfg)) {
+      throw std::runtime_error("MLXSequenceCache: invalid CacheConfig");
+    }
+    return cfg;
+  }
+
   std::vector<Pool> kpool_;
   std::vector<Pool> vpool_;
 };

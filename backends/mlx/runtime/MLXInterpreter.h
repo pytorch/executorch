@@ -301,6 +301,9 @@ inline void exec_update_and_attend(
   if (!st.cache) {
     throw std::runtime_error("update_and_attend: no cache installed");
   }
+  if (!n.layer_id) {
+    throw std::runtime_error("update_and_attend: layer_id is not set");
+  }
   if (!n.scale) {
     throw std::runtime_error("update_and_attend: scale is not set");
   }
@@ -316,7 +319,7 @@ inline void exec_update_and_attend(
   eval(pos);
   const int position = pos.data<int32_t>()[0];
   AttendSpec spec = st.cache->update_and_fetch(
-      n.layer_id,
+      *n.layer_id,
       position,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),

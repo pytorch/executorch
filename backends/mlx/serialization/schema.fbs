@@ -159,9 +159,10 @@ table UpdateAndAttendNode {
     v: Tid (required);
     position: Tid (required);
     out: Tid (required);
-    layer_id: int32;
-    scale: float = null;  // required in practice; null so an omitted scale
-                          // fails loudly instead of defaulting to 0
+    // Required, but FlatBuffers cannot mark a scalar (required): null-defaulted
+    // so an omitted field is distinguishable from 0 and the handler rejects it.
+    layer_id: int32 = null;
+    scale: float = null;
     out_dtype: int8 = null;  // ET ScalarType; null = keep SDPA's native output
 }
 
