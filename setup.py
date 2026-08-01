@@ -677,24 +677,6 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
-        # A versioned library ships as libfoo.so.<major> with no plain libfoo.so.
-        # CMake's find_library only matches the unversioned name, so a C++
-        # application looking for a shipped component would not find it. Add the
-        # usual development symlink next to the real file.
-        name = dst_file.name
-        if ".so." in name:
-            unversioned = dst_file.with_name(name.split(".so.")[0] + ".so")
-            # exists() follows symlinks, so a stale link left by an earlier build
-            # looks absent and then symlink() fails. Replace it outright. A
-            # failure here must not break packaging, since the real library is
-            # already in place and only the convenience alias would be missing.
-            try:
-                if unversioned.is_symlink() or unversioned.exists():
-                    unversioned.unlink()
-                os.symlink(name, unversioned)
-            except OSError:
-                pass
-
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
         # but that would clobber the X bit on any executables. TODO(dbort): This
