@@ -463,3 +463,33 @@ def define_common_targets():
             ":replace_nop_transpose_or_permute_with_view",
         ],
     )
+
+    runtime.python_library(
+        name = "replace_ops_with_channels_last_variants",
+        srcs = [
+            "replace_ops_with_channels_last_variants.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_ops_with_channels_last_variants",
+        srcs = [
+            "test/test_replace_ops_with_channels_last_variants.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            ":replace_ops_with_channels_last_variants",
+            "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
