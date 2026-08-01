@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Convert a .pte into a C header an Arduino sketch can include.
+
+    python pte_to_header.py -p model.pte -o model.h
+
+examples/arm/executor_runner/pte_to_header.py places the array in a
+network_model_sec section for the Ethos-U linker script. No Arduino core
+defines that section, so this emits a plain rodata array instead.
+"""
+
+import argparse
+
+BANNER = """\
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+// Generated from {source} by pte_to_header.py. Do not edit.
+"""
+
+
+def to_header(buffer: bytes, name: str, source: str) -> str:
+    out = [BANNER.format(source=source)]
+    out.append("#pragma once")
+    out.append("#include <cstddef>")
+    out.append("#include <cstdint>")
+    out.append("")
+    out.append(f"alignas(16) static const uint8_t {name}[] = {{")
+    for i in range(0, len(buffer), 16):
+        out.append("    " + ",".join(f"0x{b:02x}" for b in buffer[i : i + 16]) + ",")
+    out.append("};")
+    out.append(f"static const size_t {name}_size = {len(buffer)};")
+    return "\n".join(out) + "\n"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-p", "--pte", required=True, help="Input .pte file")
+    parser.add_argument("-o", "--output", required=True, help="Output .h file")
+    parser.add_argument("-n", "--name", default="model_pte", help="C array name")
+    args = parser.parse_args()
+
+    with open(args.pte, "rb") as f:
+        buffer = f.read()
+
+    with open(args.output, "w") as f:
+        f.write(to_header(buffer, args.name, args.pte.split("/")[-1]))
+
+    print(f"{args.output}: {len(buffer)} bytes ({len(buffer) / 1024:.1f} KB)")
+
+
+if __name__ == "__main__":
+    main()
