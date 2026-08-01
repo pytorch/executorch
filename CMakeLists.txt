@@ -1136,9 +1136,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # RPATH for _portable_lib.so. It sits in
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-  # and the wheel's own lib/ directory is two.
+  # and the wheel's own lib/ directory is two. The second entry is
+  # wheel-specific: a normal install puts the runtime in CMAKE_INSTALL_LIBDIR
+  # instead, where this relative path would not reach it.
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
-  if(EXECUTORCH_BUILD_SHARED)
+  if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     string(APPEND _portable_lib_rpath ":$ORIGIN/../../lib")
   endif()
 
