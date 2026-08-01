@@ -70,6 +70,11 @@ cp "$SCRIPT_DIR/ExecuTorchArduino.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
 
+# The README tells users to run pte_to_header.py, which lives in the Arm
+# example and is not reachable once the library is installed on its own.
+mkdir -p "$OUT_DIR/extras/tools"
+cp "$ET_ROOT/examples/arm/executor_runner/pte_to_header.py" "$OUT_DIR/extras/tools/"
+
 echo "[1/7] Metadata and examples copied"
 
 # ─────────────────────────────────────────────────────────
