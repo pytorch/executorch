@@ -162,35 +162,47 @@ def report_wheel_composition() -> None:
 
 
 def test_shipped_libraries_load() -> None:
-    """Every shipped library must be able to resolve its dependencies.
+    """Every shipped library must depend only on things that exist.
 
     The symbol checks prove each component is defined exactly once, but a library
-    can still be unloadable if the loader cannot find something it needs, which is
-    a packaging bug rather than a duplication bug.
+    can still be unloadable if it needs something nothing provides, which is a
+    packaging bug rather than a duplication bug.
+
+    A dependency the wheel ships elsewhere is fine even when `ldd` cannot resolve
+    it: some extensions are loaded after `import torch` has already brought their
+    dependencies into the process, so they intentionally carry no path to them.
+    Only a name nothing in the wheel provides is a real problem.
     """
     if shutil.which("ldd") is None:
         print("- ldd not available, skipping the load check")
         return
 
     package_dir = _installed_package_dir()
+    libraries = _shipped_shared_objects(package_dir)
+    shipped = {library.name for library in libraries}
+
     broken = {}
-    for library in _shipped_shared_objects(package_dir):
+    for library in libraries:
         resolved = subprocess.run(
             ["ldd", str(library)], capture_output=True, text=True, check=False
         ).stdout
         missing = [
-            line.split("=>")[0].strip()
-            for line in resolved.splitlines()
-            if "not found" in line
+            name
+            for name in (
+                line.split("=>")[0].strip()
+                for line in resolved.splitlines()
+                if "not found" in line
+            )
+            if name not in shipped
         ]
         if missing:
             broken[str(library.relative_to(package_dir))] = missing
 
     assert not broken, (
-        "shipped libraries cannot resolve their dependencies, so they will fail "
-        f"to load: {broken}"
+        "shipped libraries need dependencies that nothing provides, so they will "
+        f"fail to load: {broken}"
     )
-    print("✓ every shipped library resolves its dependencies")
+    print("✓ every shipped library depends only on things that exist")
 
 
 def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
