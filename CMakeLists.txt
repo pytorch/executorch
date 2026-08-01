@@ -1312,10 +1312,15 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  # This module only exposes a pybind type and calls into no runtime symbols, so
-  # it links the static core as before and needs nothing from the shared
-  # runtime.
-  target_link_libraries(data_loader PRIVATE executorch)
+  # This module only exposes a pybind type and calls into no runtime symbols.
+  # The static target force-links every registration object, which would give
+  # this module its own operator registry alongside the one in the shared
+  # runtime, so resolve against the shared runtime instead when there is one.
+  if(TARGET executorch_shared)
+    target_link_libraries(data_loader PRIVATE executorch_shared)
+  else()
+    target_link_libraries(data_loader PRIVATE executorch)
+  endif()
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
