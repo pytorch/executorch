@@ -24,7 +24,7 @@
 //   2. Convert to header: python examples/arm/executor_runner/pte_to_header.py \
 //        -p add.pte -o model.h
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #if __has_include("model.h")
 #include "model.h"
 #else

@@ -15,7 +15,7 @@
 #   ./build_arduino_library.sh --bump minor   # 0.1.0 → 0.2.0
 #   ./build_arduino_library.sh --bump major   # 0.1.0 → 1.0.0
 #
-# Output: arduino_lib/ExecuTorchArduino/ (self-contained, installable)
+# Output: arduino_lib/ExecuTorch/ (self-contained, installable)
 #
 # NOTE: This script is coupled to the ExecuTorch source tree layout.
 # Long-term, we should use cmake query APIs to deduce required sources
@@ -28,7 +28,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ET_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-OUT_DIR="$SCRIPT_DIR/arduino_lib/ExecuTorchArduino"
+OUT_DIR="$SCRIPT_DIR/arduino_lib/ExecuTorch"
 PROPS="$SCRIPT_DIR/library.properties"
 
 if [ "${1:-}" = "--clean" ]; then
@@ -66,7 +66,7 @@ mkdir -p "$OUT_DIR/src" "$OUT_DIR/examples"
 # 1. Copy library metadata, wrapper header, and stubs
 # ─────────────────────────────────────────────────────────
 cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
-cp "$SCRIPT_DIR/ExecuTorchArduino.h" "$OUT_DIR/src/"
+cp "$SCRIPT_DIR/ExecuTorch.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
 

@@ -26,7 +26,7 @@
 //   mfcc_yes.h, mfcc_no.h, mfcc_up.h, mfcc_down.h, mfcc_left.h,
 //   mfcc_right.h, mfcc_on.h, mfcc_off.h, mfcc_stop.h, mfcc_go.h
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #include <cstring>
 #include <utility>
 #if __has_include("model.h")

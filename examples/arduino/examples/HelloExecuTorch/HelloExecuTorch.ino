@@ -12,7 +12,7 @@
 // ET library (portable ops only, no hardware-specific backends).
 // Use this to verify the library works on your board.
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #if __has_include("model.h")
 #include "model.h"
 #else
