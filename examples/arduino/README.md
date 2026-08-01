@@ -343,9 +343,9 @@ against 786,432 bytes of flash and 131,072 bytes of RAM:
 
 | Build | Flash (static) | RAM | Dynamic reported | On hardware |
 |-------|---------------|-----|------------------|-------------|
-| HelloExecuTorch | 472,492 (60%) | 26,612 (20%) | 27% | loads |
+| HelloExecuTorch | 472,492 (60%) | 26,612 (20%) | 27% | not yet run |
 | AddModel | 507,628 (64%) | 34,804 (26%) | 30% | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
-| KeywordSpotting (CMSIS-NN) | 559,620 (71%) | 57,332 (43%) | 30% | see below |
+| KeywordSpotting (CMSIS-NN) | 559,620 (71%) | 57,332 (43%) | 30% | fails, see below |
 
 All CMSIS-NN sources are compiled, but the linker's
 `--gc-sections` discards unused functions from the final binary.
