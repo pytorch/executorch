@@ -188,28 +188,50 @@ def test_shipped_libraries_load() -> None:
     libraries = _shipped_shared_objects(package_dir)
     shipped = {library.name for library in libraries}
 
+    # A dependency is only excusable when the wheel ships it AND the loader can
+    # actually reach it from the library that needs it. Loaded-later extensions
+    # such as the Torch libraries are the real exception: they resolve once the
+    # Python package that owns them is imported. Anything the wheel itself ships
+    # must resolve here, because a RUNPATH applies to the library carrying it and
+    # is not inherited on behalf of a dependency's own dependencies.
     broken = {}
+    unreachable = {}
     for library in libraries:
         resolved = subprocess.run(
-            ["ldd", str(library)], capture_output=True, text=True, check=False
+            ["ldd", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+            # Any LD_LIBRARY_PATH in the build environment would paper over a
+            # RUNPATH the shipped library is actually missing.
+            env={
+                key: value
+                for key, value in os.environ.items()
+                if key != "LD_LIBRARY_PATH"
+            },
         ).stdout
         missing = [
-            name
-            for name in (
-                line.split("=>")[0].strip()
-                for line in resolved.splitlines()
-                if "not found" in line
-            )
-            if name not in shipped
+            line.split("=>")[0].strip()
+            for line in resolved.splitlines()
+            if "not found" in line
         ]
-        if missing:
-            broken[str(library.relative_to(package_dir))] = missing
+        absent = [name for name in missing if name not in shipped]
+        present_but_unreachable = [name for name in missing if name in shipped]
+        if absent:
+            broken[str(library.relative_to(package_dir))] = absent
+        if present_but_unreachable:
+            unreachable[str(library.relative_to(package_dir))] = present_but_unreachable
 
     assert not broken, (
         "shipped libraries need dependencies that nothing provides, so they will "
         f"fail to load: {broken}"
     )
-    print("✓ every shipped library depends only on things that exist")
+    assert not unreachable, (
+        "shipped libraries need dependencies the wheel ships but the loader "
+        "cannot reach from them, which usually means a missing RUNPATH entry: "
+        f"{unreachable}"
+    )
+    print("✓ every shipped library resolves every dependency it needs")
 
 
 def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:

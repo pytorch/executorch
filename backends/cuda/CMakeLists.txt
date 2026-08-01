@@ -231,6 +231,18 @@ if(EXECUTORCH_BUILD_SHARED)
       aoti_cuda_backend PROPERTIES BUILD_RPATH "${_cuda_backend_rpath}"
                                    INSTALL_RPATH "${_cuda_backend_rpath}"
     )
+    # The shim needs its own entry rather than relying on the backend's. A
+    # RUNPATH applies to the library that carries it, not to what its own
+    # dependencies need, so loading the shim first, or on its own, would fail to
+    # find the extension library it links. The shim ships under backends/cuda
+    # while that library ships in the wheel's lib/ directory.
+    if(TARGET aoti_cuda_shims)
+      set(_cuda_shims_rpath "$ORIGIN:$ORIGIN/../../lib")
+      set_target_properties(
+        aoti_cuda_shims PROPERTIES BUILD_RPATH "${_cuda_shims_rpath}"
+                                   INSTALL_RPATH "${_cuda_shims_rpath}"
+      )
+    endif()
   endif()
 endif()
 
