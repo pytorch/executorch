@@ -71,6 +71,20 @@ endfunction()
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
 function(executorch_target_link_options_shared_lib target_name)
+  # A shared library cannot be retained with --whole-archive: that flag only
+  # governs how an archive's members are pulled in, so the library is still
+  # subject to --as-needed and gets dropped along with its registration
+  # constructor. Export scoped --no-as-needed retention instead, which is what
+  # actually keeps a registration-only shared library on the link line.
+  get_target_property(_target_type ${target_name} TYPE)
+  if(_target_type STREQUAL "SHARED_LIBRARY" AND NOT (APPLE OR MSVC))
+    target_link_options(
+      ${target_name}
+      INTERFACE
+      "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:${target_name}> LINKER:--pop-state"
+    )
+    return()
+  endif()
   if(APPLE)
     executorch_macos_kernel_link_options(${target_name})
   elseif(MSVC)
