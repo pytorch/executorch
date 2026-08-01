@@ -60,6 +60,11 @@ if(_executorch_runtime_count GREATER 0)
   set(EXECUTORCH_FOUND ON)
   message(STATUS "ExecuTorch runtime found at ${_executorch_runtime_library}")
 
+  # The documented contract is that a consumer can link ${EXECUTORCH_LIBRARIES}.
+  # Leaving it empty here would make find_package succeed while offering nothing
+  # linkable to anyone who has not moved to the imported target.
+  list(APPEND EXECUTORCH_LIBRARIES executorch::runtime)
+
   # This file can be processed more than once in a single configure, for example
   # when several subprojects each call find_package(executorch). Creating the
   # target twice is an error, so only define it once and set the properties
