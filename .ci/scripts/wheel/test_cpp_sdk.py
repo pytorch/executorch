@@ -498,6 +498,7 @@ def _assert_runs_relocated(consumer, package_dir, work_dir, environment) -> None
 def run_tests(work_dir: Path) -> None:
     report_wheel_composition()
     test_shipped_libraries_load()
+    test_shipped_libraries_resolve_without_build_tree()
     test_single_backend_registry()
     test_single_threadpool()
     test_single_kernel_registration()
