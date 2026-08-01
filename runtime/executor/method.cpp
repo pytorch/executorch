@@ -211,10 +211,11 @@ class BackendDelegate final {
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
         const char* backend_id = delegate.id()->c_str();
-        return program->LoadSegment(DataLoader::SegmentInfo(
-            DataLoader::SegmentInfo::Type::Backend,
-            processed->index(),
-            backend_id));
+        return program->LoadSegment(
+            DataLoader::SegmentInfo(
+                DataLoader::SegmentInfo::Type::Backend,
+                processed->index(),
+                backend_id));
       }
       default:
         ET_LOG(
@@ -493,9 +494,9 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
             static_cast<const executorch_flatbuffer::Int*>(val)->int_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Double: {
-        new (&values_[i])
-            EValue(static_cast<const executorch_flatbuffer::Double*>(val)
-                       ->double_val());
+        new (&values_[i]) EValue(
+            static_cast<const executorch_flatbuffer::Double*>(val)
+                ->double_val());
       } break;
       case executorch_flatbuffer::KernelTypes::Bool: {
         new (&values_[i]) EValue(
@@ -1588,6 +1589,16 @@ Error Method::execute_instruction() {
         err = t.error();
         break;
       }
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+      {
+        auto* impl = t.get().unsafeGetTensorImpl();
+        if (impl->dynamic_allocator() != nullptr &&
+            impl->mutable_data() != nullptr) {
+          impl->dynamic_allocator()->free(impl->mutable_data());
+          impl->set_capacity_bytes(0);
+        }
+      }
+#endif
       internal::reset_data_ptr(t.get());
     } break;
     default:
@@ -1878,6 +1889,22 @@ EventTracer* Method::get_event_tracer() {
 }
 
 Method::~Method() {
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  // Free any dynamically allocated tensor memory (DYNAMIC_UNBOUND).
+  if (values_ != nullptr) {
+    for (size_t i = 0; i < n_value_; ++i) {
+      if (values_[i].isTensor()) {
+        auto* impl = values_[i].toTensor().unsafeGetTensorImpl();
+        if (impl->dynamic_allocator() != nullptr &&
+            impl->mutable_data() != nullptr) {
+          impl->dynamic_allocator()->free(impl->mutable_data());
+          impl->set_data(nullptr);
+          impl->set_capacity_bytes(0);
+        }
+      }
+    }
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
   // Destroy the values. It's necessary in ATen mode, where the refcount of
   // Tensors needs to be decremented properly.
   if (values_ != nullptr) {

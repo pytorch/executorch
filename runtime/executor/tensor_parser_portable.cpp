@@ -8,6 +8,8 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <cstring>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -51,12 +53,23 @@ Result<Tensor> parseTensor(
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
-  // TODO(T175194371): Remove this check once fully dynamic shapes are
-  // supported.
-  ET_CHECK_OR_RETURN_ERROR(
-      dynamism != TensorShapeDynamism::DYNAMIC_UNBOUND,
-      NotSupported,
-      "Fully dynamic tensor shapes not yet supported: T175194371");
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    ET_CHECK_OR_RETURN_ERROR(
+        memory_manager->dynamic_allocator() != nullptr,
+        NotSupported,
+        "Model contains DYNAMIC_UNBOUND tensors but no DynamicAllocator was "
+        "provided. Pass a DynamicAllocator to MemoryManager.");
+  }
+#else
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    ET_CHECK_OR_RETURN_ERROR(
+        false,
+        NotSupported,
+        "Model contains DYNAMIC_UNBOUND tensors but the runtime was built "
+        "without EXECUTORCH_ENABLE_DYNAMIC_ALLOCATOR=ON");
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
@@ -193,6 +206,24 @@ Result<Tensor> parseTensor(
     return data_ptr.error();
   }
   tensor_impl->set_data(data_ptr.get());
+
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  // For DYNAMIC_UNBOUND tensors, wire up the dynamic allocator. Memory is
+  // managed by the DynamicAllocator rather than the memory planner, making it
+  // freeable via FreeCall and growable via resize.
+  if (dynamism == TensorShapeDynamism::DYNAMIC_UNBOUND) {
+    auto* dyn_alloc = memory_manager->dynamic_allocator();
+    tensor_impl->set_dynamic_allocator(dyn_alloc);
+    // Start with zero capacity. Reset sizes to zero so the runtime knows
+    // no memory is allocated — the first resize_tensor call from the model
+    // will allocate via DynamicAllocator.
+    tensor_impl->set_capacity_bytes(0);
+    // Keep exported sizes as-is — they represent the upper bound.
+    // Data pointer is already nullptr from construction. The first op that
+    // accesses this tensor must call resize_tensor which will trigger
+    // DynamicAllocator to allocate the full buffer.
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
   return Tensor(tensor_impl);
 }

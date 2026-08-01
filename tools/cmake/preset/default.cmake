@@ -47,6 +47,11 @@ define_overridable_option(
   "Build with ET_ENABLE_PROGRAM_VERIFICATION" BOOL ${_is_build_type_debug}
 )
 define_overridable_option(
+  EXECUTORCH_ENABLE_DYNAMIC_ALLOCATOR
+  "Build with ET_DYNAMIC_ALLOCATOR_ENABLED for DYNAMIC_UNBOUND tensor support"
+  BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED" BOOL OFF
 )
 define_overridable_option(

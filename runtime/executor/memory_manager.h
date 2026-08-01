@@ -12,6 +12,9 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/portable_type/device.h>
 #include <executorch/runtime/core/span.h>
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+#include <executorch/runtime/executor/dynamic_allocator.h>
+#endif
 
 namespace executorch {
 namespace runtime {
@@ -55,10 +58,20 @@ class MemoryManager final {
   explicit MemoryManager(
       MemoryAllocator* method_allocator,
       HierarchicalAllocator* planned_memory = nullptr,
-      MemoryAllocator* temp_allocator = nullptr)
+      MemoryAllocator* temp_allocator = nullptr
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+      ,
+      DynamicAllocator* dynamic_allocator = nullptr
+#endif
+      )
       : method_allocator_(method_allocator),
         planned_memory_(planned_memory),
-        temp_allocator_(temp_allocator) {
+        temp_allocator_(temp_allocator)
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+        ,
+        dynamic_allocator_(dynamic_allocator)
+#endif
+  {
     ET_CHECK_MSG(
         method_allocator != temp_allocator,
         "method allocator cannot be the same as temp allocator");
@@ -130,11 +143,25 @@ class MemoryManager final {
   bool has_device_memory() const {
     return planned_buffer_devices().size() > 0;
   }
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  /**
+   * Returns the allocator to use for DYNAMIC_UNBOUND tensor data.
+   * May be nullptr if the program does not use DYNAMIC_UNBOUND tensors.
+   */
+  DynamicAllocator* dynamic_allocator() const {
+    return dynamic_allocator_;
+  }
+#endif // ET_DYNAMIC_ALLOCATOR_ENABLED
 
  private:
   MemoryAllocator* method_allocator_;
   HierarchicalAllocator* planned_memory_;
   MemoryAllocator* temp_allocator_;
+  // WARNING: This field changes sizeof(MemoryManager). All translation units
+  // and pre-compiled libraries MUST agree on ET_DYNAMIC_ALLOCATOR_ENABLED.
+#ifdef ET_DYNAMIC_ALLOCATOR_ENABLED
+  DynamicAllocator* dynamic_allocator_;
+#endif
 };
 
 } // namespace runtime
