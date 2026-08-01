@@ -174,3 +174,15 @@ if(_portable_lib_LIBRARY)
                INTERFACE_COMPILE_FEATURES cxx_std_20
   )
 endif()
+
+# find_package checks <package name>_FOUND, which is case-sensitive and does not
+# match the EXECUTORCH_FOUND spelling this file documents. Without this, a
+# REQUIRED find_package would succeed even when nothing usable was located.
+set(executorch_FOUND ${EXECUTORCH_FOUND})
+if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
+  message(
+    FATAL_ERROR
+      "Found the ExecuTorch package but neither the shared runtime nor the Python "
+      "extension could be located inside it."
+  )
+endif()
