@@ -8,8 +8,10 @@
 # for this file and find ExecuTorch package if it is installed. Typical usage
 # is:
 #
-# find_package(executorch REQUIRED) target_link_libraries(my_app PRIVATE
-# executorch::runtime)
+# ~~~
+# find_package(executorch REQUIRED)
+# target_link_libraries(my_app PRIVATE executorch::runtime)
+# ~~~
 # -------
 #
 # Finds the ExecuTorch library
