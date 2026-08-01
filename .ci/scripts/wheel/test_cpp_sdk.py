@@ -224,12 +224,18 @@ def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
     libraries = _shipped_shared_objects(package_dir)
     assert libraries, f"no shared libraries found under {package_dir}"
 
-    for symbol in symbols:
-        definers = [lib for lib in libraries if _defines_symbol(lib, symbol)]
+    # Resolve every symbol first, so a component that is only half present is
+    # reported rather than being mistaken for one that is absent entirely.
+    found = {
+        symbol: [lib for lib in libraries if _defines_symbol(lib, symbol)]
+        for symbol in symbols
+    }
+    if optional and not any(found.values()):
+        print(f"- no {what} in this wheel, skipping")
+        return
+
+    for symbol, definers in found.items():
         pretty = [str(lib.relative_to(package_dir)) for lib in definers]
-        if optional and not definers:
-            print(f"- no {what} in this wheel, skipping")
-            return
         assert len(definers) == 1, (
             f"expected exactly one library to define {symbol}, found "
             f"{len(definers)}: {pretty}. More than one definition means the "

@@ -677,6 +677,16 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
+        # A versioned library ships as libfoo.so.<major> with no plain libfoo.so.
+        # CMake's find_library only matches the unversioned name, so a C++
+        # application looking for a shipped component would not find it. Add the
+        # usual development symlink next to the real file.
+        name = dst_file.name
+        if ".so." in name:
+            unversioned = dst_file.with_name(name.split(".so.")[0] + ".so")
+            if not unversioned.exists():
+                os.symlink(name, unversioned)
+
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
         # but that would clobber the X bit on any executables. TODO(dbort): This
@@ -1172,6 +1182,19 @@ setup(
                         "executorch/lib/libexecutorch_cuda_backend.so."
                         f"{get_runtime_soname_major()}"
                     ),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
+                ),
+                # The CUDA delegate calls into this for stream handling, so an
+                # application that links the delegate from the wheel cannot
+                # resolve it unless this ships too. It carries no SONAME version,
+                # so the name is used as built.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                    src_name="libextension_cuda.so",
+                    dst="executorch/lib/libextension_cuda.so",
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_CUDA",
