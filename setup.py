@@ -684,8 +684,16 @@ class InstallerBuildExt(build_ext):
         name = dst_file.name
         if ".so." in name:
             unversioned = dst_file.with_name(name.split(".so.")[0] + ".so")
-            if not unversioned.exists():
+            # exists() follows symlinks, so a stale link left by an earlier build
+            # looks absent and then symlink() fails. Replace it outright. A
+            # failure here must not break packaging, since the real library is
+            # already in place and only the convenience alias would be missing.
+            try:
+                if unversioned.is_symlink() or unversioned.exists():
+                    unversioned.unlink()
                 os.symlink(name, unversioned)
+            except OSError:
+                pass
 
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
