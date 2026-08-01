@@ -24,6 +24,7 @@ using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 
+static bool g_loaded = false;
 
 void setup() {
   Serial.begin(115200);
@@ -43,12 +44,17 @@ void setup() {
     Serial.println(" bytes");
     Serial.print("  Methods: ");
     Serial.println(program->num_methods());
+    g_loaded = true;
   } else {
-    Serial.println("ERROR: Model load failed");
+    Serial.print("ERROR: Model load failed 0x");
+    Serial.println((int)program.error(), HEX);
   }
 }
 
 void loop() {
-  Serial.println("ExecuTorch ready");
+  // Report the real state. Printing a fixed string here would look identical
+  // whether or not the model loaded, and setup() has already scrolled away by
+  // the time a serial monitor attaches.
+  Serial.println(g_loaded ? "ExecuTorch ready" : "ExecuTorch FAILED to load");
   delay(5000);
 }
