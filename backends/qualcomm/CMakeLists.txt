@@ -262,8 +262,10 @@ target_link_libraries(
 if(EXECUTORCH_BUILD_SHARED)
   target_link_libraries(qnn_executorch_backend PRIVATE executorch_shared)
   executorch_target_link_shared_runtime(qnn_executorch_backend)
-  if(NOT APPLE)
-    # Ships in executorch/backends/qualcomm, two levels below the wheel's lib/.
+  if(NOT APPLE AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    # Wheel-specific: ships in executorch/backends/qualcomm, two levels below
+    # the wheel's lib/. A normal install puts the runtime in
+    # CMAKE_INSTALL_LIBDIR, which this relative path would not reach.
     set_target_properties(
       qnn_executorch_backend PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
                                         INSTALL_RPATH "$ORIGIN/../../lib"
@@ -384,8 +386,9 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
   if(EXECUTORCH_BUILD_SHARED)
     target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch_shared)
     executorch_target_link_shared_runtime(PyQnnManagerAdaptor)
-    if(NOT APPLE)
-      # Ships in executorch/backends/qualcomm/python, three levels below lib/.
+    if(NOT APPLE AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+      # Wheel-specific: ships in executorch/backends/qualcomm/python, three
+      # levels below the wheel's lib/.
       set_target_properties(
         PyQnnManagerAdaptor PROPERTIES BUILD_RPATH "$ORIGIN/../../../lib"
                                        INSTALL_RPATH "$ORIGIN/../../../lib"

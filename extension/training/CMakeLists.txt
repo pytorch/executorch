@@ -91,10 +91,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
   executorch_target_link_shared_runtime(_training_lib)
 
-  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
-    # This module lands in
+  if(EXECUTORCH_BUILD_SHARED
+     AND NOT APPLE
+     AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+  )
+    # Wheel-specific: this module lands in
     # <site-packages>/executorch/extension/training/pybindings, three levels
-    # below the wheel's lib/ directory.
+    # below the wheel's lib/. A normal install puts the runtime in
+    # CMAKE_INSTALL_LIBDIR, which this relative path would not reach.
     set_target_properties(
       _training_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../lib"
                                INSTALL_RPATH "$ORIGIN/../../../lib"

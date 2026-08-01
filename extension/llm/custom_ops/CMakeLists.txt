@@ -116,10 +116,11 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     set(RPATH "@loader_path/../../pybindings")
   else()
     set(RPATH "$ORIGIN/../../pybindings")
-    if(EXECUTORCH_BUILD_SHARED)
-      # This library lands in
+    if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+      # Wheel-specific: this library lands in
       # <site-packages>/executorch/extension/llm/custom_ops, three levels below
-      # the wheel's lib/ directory.
+      # the wheel's lib/. A normal install puts the runtime in
+      # CMAKE_INSTALL_LIBDIR, which this relative path would not reach.
       string(APPEND RPATH ":$ORIGIN/../../../lib")
     endif()
   endif()
