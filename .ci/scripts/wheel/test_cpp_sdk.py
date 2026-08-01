@@ -100,6 +100,13 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     result = subprocess.run(
         ["nm", "-DC", str(library)], capture_output=True, text=True, check=False
     )
+    # A library nm cannot read would otherwise look like one that simply defines
+    # nothing, letting the single-definer checks pass without having actually
+    # inspected every shipped library.
+    assert result.returncode == 0, (
+        f"nm could not read {library}, so the symbol checks cannot be trusted: "
+        f"{result.stderr.strip()}"
+    )
     for line in result.stdout.splitlines():
         if symbol not in line:
             continue
