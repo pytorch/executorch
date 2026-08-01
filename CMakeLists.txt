@@ -1303,17 +1303,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  # This module only exposes a pybind type; it calls into no runtime symbols, so
-  # it links the static core as before and does not need the shared runtime. The
-  # RPATH entry is still useful because sibling extensions in this directory do
-  # resolve libexecutorch.so from ../../lib.
+  # This module only exposes a pybind type and calls into no runtime symbols, so
+  # it links the static core as before and needs nothing from the shared
+  # runtime.
   target_link_libraries(data_loader PRIVATE executorch)
-  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
-    set_target_properties(
-      data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
-                             INSTALL_RPATH "$ORIGIN/../../lib"
-    )
-  endif()
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )

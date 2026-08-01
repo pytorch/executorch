@@ -261,7 +261,9 @@ function(executorch_target_retain_shared_library target_name library_target)
     return()
   endif()
   if(APPLE OR MSVC)
-    set(_retain_flags "SHELL:$<TARGET_FILE:${library_target}>")
+    # TARGET_LINKER_FILE rather than TARGET_FILE: on Windows the linker needs
+    # the import library, not the DLL itself.
+    set(_retain_flags "SHELL:$<TARGET_LINKER_FILE:${library_target}>")
   else()
     # push-state/pop-state rather than closing with an explicit --as-needed:
     # that would leave --as-needed in force for everything after it on the line
