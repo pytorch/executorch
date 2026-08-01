@@ -251,7 +251,9 @@ function(executorch_target_link_shared_runtime target_name)
     return()
   endif()
   if(APPLE OR MSVC)
-    set(_runtime_flags "SHELL:$<TARGET_FILE:executorch_shared>")
+    # TARGET_LINKER_FILE rather than TARGET_FILE: on Windows the linker needs
+    # the import library, not the DLL itself.
+    set(_runtime_flags "SHELL:$<TARGET_LINKER_FILE:executorch_shared>")
   else()
     # --no-as-needed keeps the runtime in DT_NEEDED even though no symbol has
     # been referenced yet at this point on the link line. It is wrapped in

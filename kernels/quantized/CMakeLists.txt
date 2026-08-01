@@ -86,6 +86,16 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+    if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
+      # The generated library resolves the runtime from libexecutorch.so, so it
+      # needs the path to it whether or not pybindings are also being built.
+      # This library lands in <site-packages>/executorch/kernels/quantized, two
+      # levels below the wheel's lib/ directory.
+      set_target_properties(
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                                         INSTALL_RPATH "$ORIGIN/../../lib"
+      )
+    endif()
 
     # Register quantized ops to portable_lib, so that they're available via
     # pybindings.
