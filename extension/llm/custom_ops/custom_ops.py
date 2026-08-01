@@ -168,8 +168,7 @@ def _validate_quantized_moe_ffn_params(
     x,
     gate_weight,
     expert_bias,
-    packed_w1,
-    packed_w3,
+    packed_w13,
     packed_w2,
     num_activated_experts,
     num_experts,
@@ -202,8 +201,7 @@ def _validate_quantized_moe_ffn_params(
         ), f"expert_bias must be float32, got {expert_bias.dtype}"
 
     for name, t in (
-        ("packed_w1", packed_w1),
-        ("packed_w3", packed_w3),
+        ("packed_w13", packed_w13),
         ("packed_w2", packed_w2),
     ):
         assert (
@@ -211,9 +209,6 @@ def _validate_quantized_moe_ffn_params(
         ), f"{name} must be [E={num_experts}, packed_bytes], got {list(t.size())}"
         assert t.dtype == torch.uint8, f"{name} must be uint8, got {t.dtype}"
 
-    assert packed_w1.size(1) == packed_w3.size(
-        1
-    ), "packed_w1 and packed_w3 per-expert blob sizes must match"
     assert (
         0 < num_activated_experts <= num_experts
     ), f"num_activated_experts ({num_activated_experts}) out of range [1, {num_experts}]"
@@ -241,8 +236,7 @@ def quantized_moe_ffn_meta(
     x,
     gate_weight,
     expert_bias,
-    packed_w1,
-    packed_w3,
+    packed_w13,
     packed_w2,
     num_activated_experts,
     num_experts,
@@ -257,8 +251,7 @@ def quantized_moe_ffn_meta(
         x,
         gate_weight,
         expert_bias,
-        packed_w1,
-        packed_w3,
+        packed_w13,
         packed_w2,
         num_activated_experts,
         num_experts,
