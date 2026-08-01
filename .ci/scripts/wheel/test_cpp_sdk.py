@@ -142,32 +142,6 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
-def _report_definers(symbols, what: str, limit: int) -> None:
-    """Print which shipped libraries define each symbol and hold a ceiling.
-
-    Used where the desired invariant is one owner but the wheel does not reach it
-    yet for reasons outside this change. Printing alone would let a regression
-    from a few definers to many stay green, so the count is also capped at the
-    number that exists today. The cap is meant to be lowered, never raised.
-    """
-    package_dir = _installed_package_dir()
-    libraries = _shipped_shared_objects(package_dir)
-    for symbol in symbols:
-        definers = [
-            str(library.relative_to(package_dir))
-            for library in libraries
-            if _defines_symbol(library, symbol)
-        ]
-        print(f"- {what}: {symbol.split('::')[-1]} defined by {len(definers)}")
-        for definer in definers:
-            print(f"    {definer}")
-        assert len(definers) <= limit, (
-            f"{what}: {symbol} is defined by {len(definers)} shipped libraries, "
-            f"more than the {limit} that existed when this check was added, so a "
-            f"new duplicate crept in: {definers}"
-        )
-
-
 def report_wheel_composition() -> None:
     """Print what the wheel ships and what each library needs.
 
@@ -416,7 +390,7 @@ def test_single_kernel_registration() -> None:
     # static core and carry their own copy, which predates this split: a released
     # wheel has five definers where this one has three. Asserting here would fail
     # on those pre-existing copies rather than on anything this change introduced.
-    _report_definers(_KERNEL_REGISTRY_SYMBOLS, "operator registry", limit=2)
+    _assert_single_definer(_KERNEL_REGISTRY_SYMBOLS, "operator registry")
 
 
 def test_single_xnnpack_delegate() -> None:
