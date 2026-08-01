@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 # Registry entry points. A second definer of any of these means a second
@@ -261,6 +262,77 @@ def test_shipped_libraries_load() -> None:
         f"{unreachable}"
     )
     print("✓ every shipped library resolves every dependency it needs")
+
+
+def test_shipped_libraries_resolve_without_build_tree() -> None:
+    """A shipped library must resolve using only its relative runtime paths.
+
+    Packaging copies binaries out of the build directory, so they still carry the
+    absolute paths they were linked with. On the machine that produced the wheel
+    those paths exist, which means a library whose relative path is wrong can still
+    resolve and look correct. Anywhere else it would fail.
+
+    Copy each library and its wheel-provided dependencies into a fresh tree that
+    mirrors the wheel layout, drop every absolute runtime path, and check what is
+    left is enough.
+    """
+    if shutil.which("ldd") is None or shutil.which("patchelf") is None:
+        print("- ldd or patchelf unavailable, skipping the relocated load check")
+        return
+
+    package_dir = _installed_package_dir()
+    libraries = _shipped_shared_objects(package_dir)
+    environment = {
+        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
+    }
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        root = Path(work_dir) / package_dir.name
+        # Mirror the layout so a relative path such as $ORIGIN/../../lib still
+        # points where it would in a real install.
+        for library in libraries:
+            target = root / library.relative_to(package_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(library, target)
+
+        broken = {}
+        for library in libraries:
+            target = root / library.relative_to(package_dir)
+            current = subprocess.run(
+                ["patchelf", "--print-rpath", str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            relative = [
+                entry for entry in current.split(":") if entry.startswith("$ORIGIN")
+            ]
+            subprocess.run(
+                ["patchelf", "--set-rpath", ":".join(relative), str(target)],
+                check=False,
+            )
+            resolved = subprocess.run(
+                ["ldd", str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            ).stdout
+            shipped = {item.name for item in libraries}
+            missing = [
+                line.split("=>")[0].strip()
+                for line in resolved.splitlines()
+                if "not found" in line and line.split("=>")[0].strip() in shipped
+            ]
+            if missing:
+                broken[str(library.relative_to(package_dir))] = missing
+
+        assert not broken, (
+            "shipped libraries only resolve their wheel-provided dependencies "
+            "through absolute build paths, so they would fail on any other "
+            f"machine: {broken}"
+        )
+    print("✓ every shipped library resolves without the build tree")
 
 
 def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
