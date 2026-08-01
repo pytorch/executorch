@@ -138,9 +138,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   else()
     set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
-    if(EXECUTORCH_BUILD_SHARED)
-      # This module lands in <site-packages>/executorch/extension/llm/runner,
-      # three levels below the wheel's lib/ directory.
+    if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+      # Wheel-specific: this module lands in
+      # <site-packages>/executorch/extension/llm/runner, three levels below the
+      # wheel's lib/. A normal install puts the runtime in CMAKE_INSTALL_LIBDIR,
+      # which this relative path would not reach.
       string(APPEND RPATH ":$ORIGIN/../../../lib")
     endif()
   endif()

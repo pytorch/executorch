@@ -51,7 +51,9 @@ if(EXECUTORCH_BUILD_SHARED)
   target_link_libraries(
     selective_build PRIVATE executorch_shared program_schema
   )
-  if(NOT APPLE)
+  if(NOT APPLE AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    # Wheel-specific: the runtime ships two levels up under lib/. A normal
+    # install puts it in CMAKE_INSTALL_LIBDIR, which this would not reach.
     set_target_properties(
       selective_build PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
                                  INSTALL_RPATH "$ORIGIN/../../lib"
