@@ -1257,6 +1257,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
+  # The operators register themselves from a static initializer, so nothing here
+  # references a symbol from the kernels library and some linkers drop it, which
+  # surfaces at runtime as a missing kernel rather than a link error.
+  if(TARGET optimized_native_cpu_ops_lib)
+    executorch_target_retain_shared_library(
+      portable_lib optimized_native_cpu_ops_lib
+    )
+  endif()
 
   # Set RPATH to find PyTorch and backend libraries relative to the installation
   # location. This goes from executorch/extension/pybindings up to
