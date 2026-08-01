@@ -86,9 +86,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+    # Only when the pybind extension is absent. When it is present, the block
+    # below sets the full runtime path for this target in one place, and setting
+    # it here as well would leave two independent copies of the same logic where
+    # the later one wins.
     if(EXECUTORCH_BUILD_SHARED
        AND NOT APPLE
        AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+       AND NOT TARGET portable_lib
     )
       # Wheel-specific: the generated library lands in
       # <site-packages>/executorch/kernels/quantized, two levels below the
