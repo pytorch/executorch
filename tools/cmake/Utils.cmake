@@ -253,9 +253,10 @@ endfunction()
 # Put a shared library on a consumer's link line and keep it there.
 #
 # A library whose only purpose is to run a static initializer, such as a backend
-# that registers itself, has no symbol the consumer references directly, so the
-# linker is free to drop it from DT_NEEDED. Some linkers do exactly that, and
-# the initializer then never runs. This forces the reference to be recorded.
+# or an operator registration library, has no symbol the consumer references
+# directly, so the linker is free to drop it from DT_NEEDED. Some linkers do
+# exactly that and the initializer never runs, which shows up at runtime as a
+# backend or kernel that is missing rather than as a link error.
 function(executorch_target_retain_shared_library target_name library_target)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
