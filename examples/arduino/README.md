@@ -196,8 +196,8 @@ Arduino-specific abstractions.
 ### 5. Compile and upload
 
 ```bash
-arduino-cli compile --fqbn arduino:zephyr:unoq MySketch
-arduino-cli upload  --fqbn arduino:zephyr:unoq -p /dev/cu.usbmodem* MySketch
+arduino-cli compile --fqbn arduino:zephyr:unoq:link_mode=static MySketch
+arduino-cli upload  --fqbn arduino:zephyr:unoq:link_mode=static -p /dev/cu.usbmodem* MySketch
 arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 ```
 
@@ -252,8 +252,8 @@ After modifying ExecuTorch sources, regenerate the library:
 ### Testing
 
 ```bash
-arduino-cli compile --fqbn arduino:zephyr:unoq examples/HelloExecuTorch
-arduino-cli upload  --fqbn arduino:zephyr:unoq -p /dev/cu.usbmodem* examples/HelloExecuTorch
+arduino-cli compile --fqbn arduino:zephyr:unoq:link_mode=static examples/HelloExecuTorch
+arduino-cli upload  --fqbn arduino:zephyr:unoq:link_mode=static -p /dev/cu.usbmodem* examples/HelloExecuTorch
 arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 ```
 
@@ -329,16 +329,31 @@ The DS-CNN KWS benchmark uses 12 output classes (silence, unknown, plus
 10 keywords).  The Arduino export script trains the 10 keyword classes:
 yes, no, up, down, left, right, on, off, stop, go.
 
-## LLEXT Memory Budget
+## Link Mode and Memory Budget
 
-The Arduino Uno Q loads sketches as LLEXT (Loadable Extensions).
-Sizes reported by `arduino-cli compile` (Zephyr board core 0.55.2):
+The Uno Q defaults to Dynamic link mode, which builds the sketch as a Zephyr
+loadable extension. Sketches this size never start that way: no serial output
+at all, so the board looks dead and offers nothing to diagnose. Build with
+`link_mode=static`. A 2 KB sketch runs fine under Dynamic, so the ceiling sits
+somewhere between that and these builds; it has not been pinned down.
 
-| Build | Code | Data | Total | Status |
-|-------|------|------|-------|--------|
-| HelloExecuTorch (portable ops) | 62 KB | 27 KB | 89 KB | ✅ |
-| Add model (portable ops) | 88 KB | 35 KB | 123 KB | ✅ |
-| DS-CNN (selective CMSIS-NN) | 87 KB | 57 KB | 144 KB | ✅ |
+Dynamic also reports only the extension's own size, which reads far lower than
+what the board actually holds. Measured on an Arduino Uno Q, board core 0.55.2,
+against 786,432 bytes of flash and 131,072 bytes of RAM:
+
+| Build | Flash (static) | RAM | Dynamic reported | On hardware |
+|-------|---------------|-----|------------------|-------------|
+| HelloExecuTorch | 472,492 (60%) | 26,612 (20%) | 27% | loads |
+| AddModel | 507,628 (64%) | 34,804 (26%) | 30% | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
+| KeywordSpotting (CMSIS-NN) | 559,620 (71%) | 57,332 (43%) | 30% | see below |
 
 All CMSIS-NN sources are compiled, but the linker's
 `--gc-sections` discards unused functions from the final binary.
+
+RAM is the binding constraint, not flash. Zephyr reserves 32 KB of main stack
+and a 32 KB heap out of 128 KB before the sketch gets any, and the arena the
+sketch hands to `MemoryManager` comes out of what remains. KeywordSpotting's
+DS-CNN plans 16 KB of buffers but needs considerably more for the method's own
+structures: a 28 KB arena fails `load_method` with `MemoryAllocationFailed`
+(0x21), and a 64 KB one loads but then fails `execute` with `InvalidProgram`
+(0x23), which is memory being overrun rather than a malformed program.
