@@ -268,9 +268,7 @@ def test_shipped_libraries_load() -> None:
             if "not found" in line
         ]
         undefined = [
-            line.strip()
-            for line in combined.splitlines()
-            if "undefined symbol" in line
+            line.strip() for line in combined.splitlines() if "undefined symbol" in line
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
