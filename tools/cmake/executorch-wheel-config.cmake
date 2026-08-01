@@ -60,7 +60,13 @@ if(_executorch_runtime_count GREATER 0)
   set(EXECUTORCH_FOUND ON)
   message(STATUS "ExecuTorch runtime found at ${_executorch_runtime_library}")
 
-  add_library(executorch::runtime SHARED IMPORTED)
+  # This file can be processed more than once in a single configure, for example
+  # when several subprojects each call find_package(executorch). Creating the
+  # target twice is an error, so only define it once and set the properties
+  # either way.
+  if(NOT TARGET executorch::runtime)
+    add_library(executorch::runtime SHARED IMPORTED)
+  endif()
   set_target_properties(
     executorch::runtime
     PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
@@ -109,6 +115,16 @@ execute_process(
 
 if(SYSCONFIG_RESULT EQUAL 0)
   message(STATUS "Sysconfig extension suffix: ${EXT_SUFFIX}")
+elseif(TARGET executorch::runtime)
+  # A C++ application linking only the shared runtime does not need Python at
+  # all, so a missing interpreter must not fail its configure. Skip locating the
+  # Python extension instead; the legacy _portable_lib target is simply not
+  # offered in that case.
+  message(
+    STATUS
+      "Python not usable, skipping the Python extension: ${SYSCONFIG_ERROR}"
+  )
+  set(EXT_SUFFIX "")
 else()
   message(
     FATAL_ERROR
@@ -116,11 +132,16 @@ else()
   )
 endif()
 
-find_library(
-  _portable_lib_LIBRARY
-  NAMES _portable_lib${EXT_SUFFIX}
-  PATHS "${_executorch_package_root}/extension/pybindings/"
-)
+if(EXT_SUFFIX)
+  find_library(
+    _portable_lib_LIBRARY
+    NAMES _portable_lib${EXT_SUFFIX}
+    PATHS "${_executorch_package_root}/extension/pybindings/"
+    # This config binds to the wheel it ships in, so a same-named library
+    # elsewhere on the system must not be picked up instead.
+    NO_DEFAULT_PATH
+  )
+endif()
 
 if(_portable_lib_LIBRARY)
   set(EXECUTORCH_FOUND ON)
@@ -128,7 +149,9 @@ if(_portable_lib_LIBRARY)
     STATUS "ExecuTorch portable library is found at ${_portable_lib_LIBRARY}"
   )
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
-  add_library(_portable_lib STATIC IMPORTED)
+  if(NOT TARGET _portable_lib)
+    add_library(_portable_lib STATIC IMPORTED)
+  endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
     _portable_lib
