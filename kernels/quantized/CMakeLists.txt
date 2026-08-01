@@ -138,9 +138,9 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # installed location of our _portable_lib.so file. To see these LC_*
       # values, run `otool -l libquantized_ops_lib.dylib`.
       if(APPLE)
-        set(RPATH "@loader_path/../../extensions/pybindings")
+        set(RPATH "@loader_path/../../extension/pybindings")
       else()
-        set(RPATH "$ORIGIN/../../extensions/pybindings")
+        set(RPATH "$ORIGIN/../../extension/pybindings")
         if(EXECUTORCH_BUILD_SHARED)
           # This library lands in <site-packages>/executorch/kernels/quantized,
           # two levels below the wheel's lib/ directory.
