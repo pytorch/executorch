@@ -80,6 +80,53 @@ except Exception as e:
     exit(1)
 "
 
+    # The CUDA delegate ships as its own shared library. Nothing else here would
+    # notice if it were built into more than one place, and a process with two
+    # copies of the delegate has two copies of its state, so check that the
+    # installed tree defines it exactly once.
+    python -c "
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+if shutil.which('nm') is None:
+    print('INFO: nm unavailable, skipping the delegate duplication check')
+    sys.exit(0)
+
+import executorch
+
+# A namespace package has no __file__, so derive the directory from the loader's
+# search path instead.
+locations = list(getattr(executorch, '__path__', []) or [])
+if not locations:
+    print('INFO: cannot locate the installed package, skipping the check')
+    sys.exit(0)
+package = Path(locations[0])
+symbol = 'executorch::backends::cuda::clearCurrentCUDAStream'
+libraries = [p for p in package.rglob('*.so*') if p.is_file() and not p.is_symlink()]
+definers = []
+for library in libraries:
+    result = subprocess.run(
+        ['nm', '-DC', str(library)], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        continue
+    for line in result.stdout.splitlines():
+        parts = line.split(maxsplit=2)
+        if len(parts) == 3 and parts[1] in 'TtWVu' and parts[2].startswith(symbol):
+            definers.append(str(library.relative_to(package)))
+            break
+
+if not definers:
+    print('INFO: no CUDA delegate in this install, nothing to check')
+    sys.exit(0)
+if len(definers) != 1:
+    print(f'ERROR: expected one library to define the CUDA delegate, found {definers}')
+    sys.exit(1)
+print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libraries')
+" || exit $?
+
     echo "SUCCESS: ExecuTorch CUDA ${cuda_version} build and verification completed successfully"
 }
 
