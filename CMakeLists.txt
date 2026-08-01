@@ -778,11 +778,6 @@ if(EXECUTORCH_BUILD_OPENVINO)
   list(APPEND _executorch_backends openvino_backend)
 endif()
 
-if(EXECUTORCH_BUILD_QNN)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
-  list(APPEND _executorch_backends qnn_executorch_backend)
-endif()
-
 if(EXECUTORCH_BUILD_ENN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
   list(APPEND _executorch_backends enn_backend)
@@ -977,6 +972,15 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+endif()
+
+# Added after the shared runtime rather than with the other backends: this
+# backend resolves the runtime from executorch_shared, and naming a target that
+# does not exist yet makes the link fail because the library has not been built
+# at that point on the line.
+if(EXECUTORCH_BUILD_QNN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
+  list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)

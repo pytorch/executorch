@@ -1126,7 +1126,15 @@ setup(
                         "executorch/lib/libexecutorch_threadpool.so."
                         f"{get_runtime_soname_major()}"
                     ),
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                    # The target only exists when both of its dependencies are
+                    # enabled, so packaging has to require them too or a shared
+                    # build with either turned off looks for a file that was
+                    # never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_PTHREADPOOL",
+                        "EXECUTORCH_BUILD_CPUINFO",
+                    ],
                 ),
                 # Install the merged CPU kernels beside them, so the operators are
                 # registered once per process rather than once per component.
@@ -1141,7 +1149,13 @@ setup(
                         "libexecutorch_optimized_native_cpu_ops_lib.so."
                         f"{get_runtime_soname_major()}"
                     ),
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                    # The target is only created when the optimized kernels are
+                    # enabled, so packaging has to require that too rather than
+                    # looking for a file a shared build may never have produced.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
                 ),
                 # Install the XNNPACK delegate beside them, so a process has one
                 # copy of it instead of one per component that uses it.
