@@ -104,6 +104,7 @@ cp "$ET_ROOT/extension/runner_util/"*.h "$ET_SRC/extension/runner_util/" 2>/dev/
 # Schema headers (generated — need a prior cmake build)
 mkdir -p "$ET_SRC/schema"
 cp "$ET_ROOT/schema/"*.h "$ET_SRC/schema/" 2>/dev/null || true
+cp "$ET_ROOT/schema/"*.cpp "$ET_SRC/schema/" 2>/dev/null || true
 # Look for generated headers in common build dirs
 for build_dir in "$ET_ROOT/cmake-out" "$ET_ROOT/cmake-out-mac" \
                  "$ET_ROOT/outputs/build_uno_q"; do
@@ -136,6 +137,68 @@ cp "$ET_ROOT/kernels/portable/cpu/pattern/"*.h "$ET_SRC/kernels/portable/cpu/pat
 cp "$ET_ROOT/kernels/portable/cpu/pattern/"*.cpp "$ET_SRC/kernels/portable/cpu/pattern/" 2>/dev/null || true
 
 echo "[3/7] Portable kernels copied"
+
+# ─────────────────────────────────────────────────────────
+# 3b. Generate the kernel registration translation unit.
+#
+# Kernels register through codegen, not through self-registering static
+# initializers. Without this the ops compile but never reach the operator
+# registry, and every Method::load fails with OperatorMissing.
+# ─────────────────────────────────────────────────────────
+#
+# The op set is a size decision, not a detail. Registering every portable op
+# costs 1.58 MB of text — twice the Uno Q's 786 KB flash. The default below is
+# the Cortex-M op set plus the portable ops a quantized CNN still needs.
+# Override with ROOT_OPS="aten::foo.out,..." or ALL_OPS=1 when the target has
+# room to spare.
+PYTHON="${PYTHON:-python3}"
+TORCHGEN=$("$PYTHON" -c "import torchgen, os; print(os.path.dirname(torchgen.__file__))")
+CODEGEN_OUT="$ET_SRC/codegen"
+CORTEX_M_YAML="$ET_ROOT/backends/cortex_m/ops/operators.yaml"
+mkdir -p "$CODEGEN_OUT"
+
+DEFAULT_ROOT_OPS="aten::add.out,aten::mul.out,aten::sub.out,aten::div.out,\
+aten::view_copy.out,aten::permute_copy.out,aten::clone.out,aten::cat.out,\
+aten::slice_copy.Tensor_out,aten::_softmax.out,aten::mean.out,aten::relu.out"
+ROOT_OPS="${ROOT_OPS:-$DEFAULT_ROOT_OPS}"
+
+if [ "${ALL_OPS:-0}" = "1" ]; then
+  OPLIST_SELECTION=(--include_all_operators)
+  echo "  Op set: ALL portable ops (large — verify it fits your target)"
+else
+  OPLIST_SELECTION=(--root_ops="$ROOT_OPS")
+fi
+
+( cd "$ET_ROOT" && \
+  "$PYTHON" -m codegen.tools.gen_oplist \
+    --output_path="$CODEGEN_OUT/selected_operators.yaml" \
+    --ops_schema_yaml_path="$CORTEX_M_YAML" \
+    "${OPLIST_SELECTION[@]}" && \
+  "$PYTHON" -m codegen.gen \
+    --source-path="$ET_ROOT/codegen" \
+    --install-dir="$CODEGEN_OUT" \
+    --tags-path="$TORCHGEN/packaged/ATen/native/tags.yaml" \
+    --aten-yaml-path="$TORCHGEN/packaged/ATen/native/native_functions.yaml" \
+    --op-selection-yaml-path="$CODEGEN_OUT/selected_operators.yaml" \
+    --functions-yaml-path="$ET_ROOT/kernels/portable/functions.yaml" \
+    --custom-ops-yaml-path="$CORTEX_M_YAML" )
+
+# gen writes the same content to both names; keeping both is a duplicate-symbol error.
+rm -f "$CODEGEN_OUT/RegisterCodegenUnboxedKernels_0.cpp"
+rm -f "$CODEGEN_OUT/selected_operators.yaml"
+# These register custom ops into PyTorch, not into the ET runtime. They pull in
+# <torch/library.h> and <ATen/Tensor.h>, which do not exist on device.
+rm -f "$CODEGEN_OUT/RegisterCPUCustomOps.cpp" \
+      "$CODEGEN_OUT/RegisterCPUStub.cpp" \
+      "$CODEGEN_OUT/RegisterSchema.cpp" \
+      "$CODEGEN_OUT/CustomOpsNativeFunctions.h"
+
+if [ ! -f "$CODEGEN_OUT/RegisterCodegenUnboxedKernelsEverything.cpp" ]; then
+  echo "ERROR: kernel registration codegen produced no output."
+  exit 1
+fi
+
+echo "[3b/7] Kernel registration generated"
 
 # ─────────────────────────────────────────────────────────
 # 4. Vendor Cortex-M backend ops
@@ -189,6 +252,15 @@ done
 if [ -n "$CMSIS_NN" ]; then
   mkdir -p "$OUT_DIR/src/cmsis-nn"
   cp -r "$CMSIS_NN/Source" "$OUT_DIR/src/cmsis-nn/"
+  # Bindings are pybind11 host code and cannot be cross-compiled.
+  rm -rf "$OUT_DIR/src/cmsis-nn/Source/Bindings"
+  find "$OUT_DIR/src/cmsis-nn" -name "CMakeLists.txt" -delete
+  # Arduino compiles every source under src/ with no way to pass per-library
+  # defines, so drop the float extensions that ARM_NN_ENABLE_F32/F16 gate off
+  # by default. They need CMSIS-DSP types the Cortex-M backend never uses.
+  find "$OUT_DIR/src/cmsis-nn/Source" \
+    \( -name "*_f16.c" -o -name "*_f32.c" -o -name "*_flt.c" \) -delete
+  cp "$CMSIS_NN/LICENSE" "$OUT_DIR/src/cmsis-nn/"
   cp "$CMSIS_NN/Include/"*.h "$OUT_DIR/src/" 2>/dev/null || true
   if [ -d "$CMSIS_NN/Include/Internal" ]; then
     mkdir -p "$OUT_DIR/src/Internal"
@@ -221,7 +293,8 @@ find "$OUT_DIR/src/executorch" -name "*.h" -print0 | \
 
 # Remove test files, ATen-specific files, non-Zephyr platform backends
 find "$OUT_DIR" -path "*testing*" -delete 2>/dev/null || true
-find "$OUT_DIR" -name "*_aten.cpp" -delete 2>/dev/null || true
+# ATen-mode sources only. *_exec_aten.cpp is portable-mode and required.
+find "$OUT_DIR" -name "*_aten.cpp" ! -name "*_exec_aten.cpp" -delete 2>/dev/null || true
 find "$OUT_DIR" -path "*test*" -name "*.cpp" -delete 2>/dev/null || true
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/android.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/posix.cpp"
