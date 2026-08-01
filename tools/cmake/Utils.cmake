@@ -247,29 +247,37 @@ endfunction()
 # the static archive further along the line would then supply the registry after
 # all. Other linkers keep the reference without it.
 function(executorch_target_link_shared_runtime target_name)
+  executorch_target_retain_shared_library(${target_name} executorch_shared)
+endfunction()
+
+# Put a shared library on a consumer's link line and keep it there.
+#
+# A library whose only purpose is to run a static initializer, such as a backend
+# that registers itself, has no symbol the consumer references directly, so the
+# linker is free to drop it from DT_NEEDED. Some linkers do exactly that, and
+# the initializer then never runs. This forces the reference to be recorded.
+function(executorch_target_retain_shared_library target_name library_target)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
   endif()
   if(APPLE OR MSVC)
-    set(_runtime_flags "SHELL:$<TARGET_FILE:executorch_shared>")
+    # TARGET_LINKER_FILE rather than TARGET_FILE: on Windows the linker needs
+    # the import library, not the DLL itself.
+    set(_retain_flags "SHELL:$<TARGET_LINKER_FILE:${library_target}>")
   else()
-    # --no-as-needed keeps the runtime in DT_NEEDED even though no symbol has
-    # been referenced yet at this point on the link line. It is wrapped in
-    # push-state/pop-state rather than closed with an explicit --as-needed so
-    # that whatever policy was in effect before is restored: closing with
-    # --as-needed would leave that in force for everything that follows, and
-    # would drop shared backends whose only purpose is static-init registration.
-    set(_runtime_flags
-        "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:executorch_shared> LINKER:--pop-state"
+    # push-state/pop-state rather than closing with an explicit --as-needed:
+    # that would leave --as-needed in force for everything after it on the line
+    # and drop the next library that only exists for static-init registration.
+    set(_retain_flags
+        "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:${library_target}> LINKER:--pop-state"
     )
   endif()
-  # The generator expression alone does not make the runtime get built first, so
-  # state the build-order dependency explicitly.
-  add_dependencies(${target_name} executorch_shared)
+  # The generator expression alone does not order the build, so say it outright.
+  add_dependencies(${target_name} ${library_target})
   set_property(
     TARGET ${target_name}
     APPEND
-    PROPERTY LINK_OPTIONS "${_runtime_flags}"
+    PROPERTY LINK_OPTIONS "${_retain_flags}"
   )
 endfunction()
 

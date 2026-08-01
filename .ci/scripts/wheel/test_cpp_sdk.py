@@ -204,6 +204,8 @@ def test_cpp_consumer(work_dir: Path) -> None:
     subprocess.run([str(consumer)], check=True, env=environment)
     print("✓ C++ consumer builds and runs against the installed wheel")
 
+    _assert_runs_relocated(consumer, package_dir, work_dir, environment)
+
     assert shutil.which("readelf") is not None, "readelf is required to check the ELF"
 
     dynamic = subprocess.run(
@@ -218,6 +220,49 @@ def test_cpp_consumer(work_dir: Path) -> None:
         f"relocatable; dynamic section was:\n{dynamic}"
     )
     print("✓ consumer depends on the shipped runtime with a relocatable RUNPATH")
+
+
+def _assert_runs_relocated(consumer, package_dir, work_dir, environment) -> None:
+    """The app still runs after being moved away from the wheel.
+
+    Building in place leaves an absolute path to the wheel's lib directory in the
+    binary's RUNPATH, which resolves the runtime no matter what `$ORIGIN` says.
+    Copying the app next to a copy of the runtime, with that absolute entry
+    removed, is what actually proves the package is relocatable.
+
+    The layout mirrors what the package config supports: the app in `bin/` with
+    the libraries in a sibling `lib/`, which is what `$ORIGIN/../lib` resolves.
+    """
+    if shutil.which("patchelf") is None:
+        print("- patchelf not available, skipping the relocated run")
+        return
+
+    deploy = work_dir / "deployed"
+    (deploy / "bin").mkdir(parents=True, exist_ok=True)
+    (deploy / "lib").mkdir(parents=True, exist_ok=True)
+    moved = deploy / "bin" / consumer.name
+    shutil.copy2(consumer, moved)
+    for library in (package_dir / "lib").glob("*.so*"):
+        shutil.copy2(library, deploy / "lib" / library.name)
+
+    # Keep only the $ORIGIN-relative entries, so nothing absolute can help.
+    current = subprocess.run(
+        ["patchelf", "--print-rpath", str(moved)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    relative = [entry for entry in current.split(":") if entry.startswith("$ORIGIN")]
+    assert relative, (
+        "the consumer has no $ORIGIN-relative RUNPATH entry, so it cannot be "
+        f"relocated; RUNPATH was: {current}"
+    )
+    subprocess.run(
+        ["patchelf", "--set-rpath", ":".join(relative), str(moved)], check=True
+    )
+
+    subprocess.run([str(moved)], check=True, env=environment, cwd=str(deploy))
+    print("✓ consumer still runs when deployed beside a copy of the runtime")
 
 
 def run_tests(work_dir: Path) -> None:

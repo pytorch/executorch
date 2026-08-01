@@ -1263,6 +1263,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
+  # The delegates register themselves from a static initializer, so nothing here
+  # references their symbols and some linkers drop them from DT_NEEDED, leaving
+  # the backend unregistered at runtime.
+  foreach(_retained_backend xnnpack_backend aoti_cuda_backend)
+    if(TARGET ${_retained_backend})
+      executorch_target_retain_shared_library(portable_lib ${_retained_backend})
+    endif()
+  endforeach()
 
   # Set RPATH to find PyTorch and backend libraries relative to the installation
   # location. This goes from executorch/extension/pybindings up to
@@ -1295,17 +1303,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   strip_python_lib(data_loader)
   target_include_directories(data_loader PRIVATE ${_common_include_directories})
   target_compile_options(data_loader PUBLIC ${_pybind_compile_options})
-  # This module only exposes a pybind type; it calls into no runtime symbols, so
-  # it links the static core as before and does not need the shared runtime. The
-  # RPATH entry is still useful because sibling extensions in this directory do
-  # resolve libexecutorch.so from ../../lib.
+  # This module only exposes a pybind type and calls into no runtime symbols, so
+  # it links the static core as before and needs nothing from the shared
+  # runtime.
   target_link_libraries(data_loader PRIVATE executorch)
-  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
-    set_target_properties(
-      data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
-                             INSTALL_RPATH "$ORIGIN/../../lib"
-    )
-  endif()
   install(TARGETS data_loader
           LIBRARY DESTINATION executorch/extension/pybindings
   )
