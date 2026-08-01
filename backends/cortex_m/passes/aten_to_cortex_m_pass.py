@@ -18,6 +18,8 @@ from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
+    is_dequant_node,
+    is_quant_node,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -29,6 +31,7 @@ from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
     CMSIS_SOFTMAX_ZERO_POINT,
+    LSTM_BOUNDARY_META_KEY,
 )
 from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
@@ -73,17 +76,17 @@ class AtenToCortexMPass(AtenToDialectPass):
             result.graph_module
         )
 
-        # The LSTM substitution rewires getitem(0)'s users onto a new
-        # single-output op, leaving getitem(0) dead and the tuple-returning
-        # aten.lstm.input with only that dead getitem as a user. DCE drops the
-        # dead getitem, but fx treats lstm.input as impure and won't remove it
-        # even once user-less, so erase it explicitly, then DCE its now-dead
-        # inputs (initial hidden/cell) and recompile.
+        # The LSTM substitution rewires the output quantize's users onto a new
+        # single-output op; DCE then drops that quantize and getitem(0). fx
+        # treats lstm.input as impure and won't remove it even once user-less,
+        # so erase it explicitly and DCE its now-dead inputs.
         graph = result.graph_module.graph
         graph.eliminate_dead_code()
+        lstm_fused = False
         for n in list(graph.nodes):
             if n.target == exir_ops.edge.aten.lstm.input and len(n.users) == 0:
                 graph.erase_node(n)
+                lstm_fused = True
         graph.eliminate_dead_code()
 
         # A preserved aten.lstm.input that is still live was not fused (an
@@ -101,7 +104,9 @@ class AtenToCortexMPass(AtenToDialectPass):
         for node in result.graph_module.graph.nodes:
             self._initialize_alloc_node_size(node)
 
-        return PassResult(result.graph_module, result.modified or max_pool_modified)
+        return PassResult(
+            result.graph_module, result.modified or max_pool_modified or lstm_fused
+        )
 
     def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
         """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
@@ -211,13 +216,6 @@ def _restore_max_pool2d_with_indices_fallback(
 
 _SOFTMAX_INPUT_INTEGER_BITS = 5
 
-# Power-of-two cell-state scale exponent used when lowering the fused LSTM.
-# The cell state is internal (never observed), so its scale cannot be
-# calibrated here; -12 gives an int16 range of +/-8, ample for typical cell
-# magnitudes. Values beyond the range saturate at cell_clip rather than wrap.
-# TODO: derive from calibration statistics (project_cortex_m_lstm R3).
-_DEFAULT_CELL_SCALE_POWER = -12
-
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.lstm.input)
 def _get_lstm_replacement(
@@ -225,36 +223,43 @@ def _get_lstm_replacement(
 ) -> DialectNodeSpec | None:
     """Fuse a preserved, boundary-quantized aten.lstm.input into a single
     cortex_m.quantized_lstm. Gate weights are quantized per-gate ahead of time
-    from the float params; boundary scales come from the input DQ (folded onto
-    this node) and the output Q (folded onto getitem(0)).
+    from the float params; the boundary scales come from the dequantize feeding
+    the node and the quantize consuming getitem(0), which LstmBoundaryQuantizer
+    deliberately leaves unfolded.
 
-    The op is single-output, so this rewires getitem(0)'s consumers directly and
-    returns None; the surrounding pass DCEs the now-dead tuple op.
+    The op is single-output, so this rewires the output quantize's consumers
+    directly and returns None; the surrounding pass DCEs the now-dead tuple op.
     """
     from executorch.backends.cortex_m.passes.lstm_params import (
+        cell_scale_power_for_time_steps,
         derive_lstm_params,
         flatten_lstm_params,
     )
 
-    input_qparams = node.meta.get("input_qparams")
-    if not input_qparams or 0 not in input_qparams:
-        # Not boundary-annotated (unsupported config); leave it for call() to
-        # flag as an un-fused, unlowerable LSTM.
+    if not node.meta.get("custom", {}).get(LSTM_BOUNDARY_META_KEY):
+        # Not accepted by LstmBoundaryQuantizer (unsupported config); leave it
+        # for call() to flag as an un-fused, unlowerable LSTM.
+        return None
+
+    input_dq = node.args[0]
+    if not isinstance(input_dq, Node) or not is_dequant_node(input_dq):
         return None
 
     getitem0 = next(
         (u for u in node.users if u.target == operator.getitem and u.args[1] == 0),
         None,
     )
-    if getitem0 is None:
+    if getitem0 is None or len(getitem0.users) != 1:
         return None
-    output_qparams = getitem0.meta.get("output_qparams")
-    if not output_qparams or 0 not in output_qparams:
+    output_q = next(iter(getitem0.users))
+    if not is_quant_node(output_q):
         return None
 
     exported_program = dialect_pass.exported_program
-    in_qp = input_qparams[0]
-    out_qp = output_qparams[0]
+    input_scale = cast(float, input_dq.args[1])
+    input_zp = cast(int, input_dq.args[2])
+    output_scale = cast(float, output_q.args[1])
+    output_zp = cast(int, output_q.args[2])
 
     params = cast(list[Node], node.args[2])
     weight_ih = cast(torch.Tensor, get_param_tensor(exported_program, params[0]))
@@ -263,15 +268,19 @@ def _get_lstm_replacement(
         torch.Tensor, get_param_tensor(exported_program, params[3])
     )
 
+    time_major = not bool(node.args[8])
+    input_shape = get_first_fake_tensor(input_dq).shape
+    time_steps = int(input_shape[0] if time_major else input_shape[1])
+
     lstm_params = derive_lstm_params(
         weight_ih,
         weight_hh,
         bias,
-        float(in_qp.scale),
-        int(in_qp.zp),
-        float(out_qp.scale),
-        int(out_qp.zp),
-        _DEFAULT_CELL_SCALE_POWER,
+        input_scale,
+        input_zp,
+        output_scale,
+        output_zp,
+        cell_scale_power_for_time_steps(time_steps),
     )
     iw, hw, ieb, heb, in_mult, in_shift, hid_mult, hid_shift = flatten_lstm_params(
         lstm_params
@@ -315,9 +324,8 @@ def _get_lstm_replacement(
     temp2 = _create_uninitialized_alloc_node(node, exported_program)
     cell_state = _create_uninitialized_alloc_node(node, exported_program)
 
-    time_major = not bool(node.args[8])
     op_args = (
-        node.args[0],
+        input_dq.args[0],
         iw_c,
         hw_c,
         ieb_c,
@@ -347,9 +355,8 @@ def _get_lstm_replacement(
             target=exir_ops.edge.cortex_m.quantized_lstm.default,
             args=op_args,
         )
-    op_node.meta = dict(getitem0.meta)
-    op_node.meta["val"] = getitem0.meta["val"].to(torch.int8)
-    getitem0.replace_all_uses_with(op_node)
+    op_node.meta = dict(output_q.meta)
+    output_q.replace_all_uses_with(op_node)
     return None
 
 

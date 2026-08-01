@@ -155,7 +155,9 @@ Tensor& quantized_lstm_out(
   params.cell_gate = gates[kCellGateIdx];
   params.output_gate = gates[3];
 
-  cmsis_nn_lstm_context buffers;
+  // Zero-initialized: a null hidden_state is what tells CMSIS to zero the cell
+  // state and skip the recurrent term on the first step.
+  cmsis_nn_lstm_context buffers = {};
   buffers.temp1 = reinterpret_cast<int16_t*>(temp1.mutable_data_ptr<int8_t>());
   buffers.temp2 = reinterpret_cast<int16_t*>(temp2.mutable_data_ptr<int8_t>());
   buffers.cell_state =

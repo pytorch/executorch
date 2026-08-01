@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.passes.lstm_params import (
+    cell_scale_power_for_time_steps,
     choose_cell_scale_power,
     derive_lstm_params,
     quantized_lstm_reference,
@@ -101,3 +102,48 @@ def test_reference_tracks_float_lstm(shape: tuple[int, int, int]) -> None:
     )
 
     assert _sqnr_db(y_float, y_ref) > 30.0
+
+
+def test_cell_scale_survives_saturating_sequence() -> None:
+    """A cell that ramps well past a fixed +/-8 range and then decays back
+    through the tanh-sensitive region. Saturation alone is invisible because
+    tanh flattens, but a clipped cell then decays along the wrong trajectory."""
+    ramp_steps, decay_steps = 20, 12
+    lstm = nn.LSTM(2, 1).eval()
+    with torch.no_grad():
+        # Saturated input/forget/output gates; feature 0 ramps the cell up and
+        # feature 1 both decays it and pushes it negative.
+        w_ih, w_hh, _ = _lstm_weights(lstm)
+        w_ih.copy_(torch.tensor([[0.0, 0.0], [0.0, -7.0], [3.0, -3.0], [0.0, 0.0]]))
+        w_hh.zero_()
+        cast(torch.Tensor, lstm.bias_ih_l0).copy_(torch.tensor([6.0, 6.0, 0.0, 6.0]))
+        cast(torch.Tensor, lstm.bias_hh_l0).zero_()
+
+    x = torch.cat(
+        [
+            torch.tensor([[[1.0, 0.0]]]).repeat(ramp_steps, 1, 1),
+            torch.tensor([[[0.0, 1.0]]]).repeat(decay_steps, 1, 1),
+        ]
+    )
+    with torch.no_grad():
+        y_float, _ = lstm(x)
+    assert _float_cell_max_abs(x, lstm) > 8.0
+
+    input_scale, input_zp = _affine_int8_qparams(x)
+    output_scale, output_zp = _affine_int8_qparams(y_float)
+    weight_ih, weight_hh, bias = _lstm_weights(lstm)
+    params = derive_lstm_params(
+        weight_ih.detach(),
+        weight_hh.detach(),
+        bias.detach(),
+        input_scale,
+        input_zp,
+        output_scale,
+        output_zp,
+        cell_scale_power_for_time_steps(ramp_steps + decay_steps),
+    )
+    y_ref = quantized_lstm_reference(
+        x, params, input_scale, output_scale, dequantize=True
+    )
+
+    assert float((y_ref - y_float).abs().max()) < 0.05

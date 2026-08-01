@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -64,6 +65,12 @@ test_cases = {
         model=CortexMLSTM(),
         example_inputs=(ramp_tensor(-1, 1, (2, 2, 4)),),
     ),
+    # The only case where CMSIS strides input and hidden state by batch_offset
+    # rather than walking them contiguously.
+    "lstm_batch_first_batched": McuTestCase(
+        model=CortexMLSTM(batch_first=True),
+        example_inputs=(ramp_tensor(-1, 1, (2, 3, 4)),),
+    ),
 }
 
 
@@ -125,5 +132,7 @@ def test_unsupported_lstm_fails_clearly(model_cls, cortex_m_target) -> None:
     tester = CortexMTester(
         model_cls(), (ramp_tensor(-1, 1, (2, 1, 4)),), target_config=cortex_m_target
     )
-    with pytest.raises(Exception, match="AtenToCortexMPass"):
+    with pytest.raises(Exception) as excinfo:
         tester.quantize().export().to_edge().run_passes()
+    # The pass manager wraps the failure; the message is on the chained cause.
+    assert "survived lowering unfused" in str(excinfo.getrepr())

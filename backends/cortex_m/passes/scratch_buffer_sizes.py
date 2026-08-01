@@ -289,9 +289,9 @@ def cmsis_nn_lstm_buffer_size(
 
 _target_to_buffer_sizes_registry: dict[Any, BufferSizeFunction] = {
     exir_ops.edge.cortex_m.quantized_conv2d.default: cmsis_nn_conv_buffer_size,
-    exir_ops.edge.cortex_m.quantized_lstm.default: cmsis_nn_lstm_buffer_size,
     exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default: cmsis_nn_depthwise_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_batch_matmul.default: cmsis_nn_batch_matmul_buffer_size,
+    exir_ops.edge.cortex_m.quantized_lstm.default: cmsis_nn_lstm_buffer_size,
     exir_ops.edge.cortex_m.quantized_transpose_conv2d.default: cmsis_nn_transpose_conv_buffer_size,
     exir_ops.edge.cortex_m.quantized_avg_pool2d.default: cmsis_nn_avgpool_buffer_size,
 }

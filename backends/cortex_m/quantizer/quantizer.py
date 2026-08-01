@@ -25,6 +25,7 @@ from executorch.backends.cortex_m.quantizer.quantization_configs import (
     INT8_ACTIVATION_PER_TENSOR_QSPEC,
     INT8_PER_CHANNEL_CONFIG,
     INT8_PER_TENSOR_CONFIG,
+    LSTM_BOUNDARY_META_KEY,
 )
 from executorch.backends.cortex_m.quantizer.quantizer_support import (
     __name__ as cortex_m_quantizer_support_module,
@@ -40,6 +41,14 @@ from executorch.backends.cortex_m.quantizer_reporter import (
 from torch._ops import OpOverload
 from torch.fx import GraphModule
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
+
+
+def _sequence_output(node) -> Optional[torch.fx.Node]:
+    """The getitem(0) user carrying the LSTM's sequence output, if any."""
+    return next(
+        (u for u in node.users if u.target == operator.getitem and u.args[1] == 0),
+        None,
+    )
 
 
 def _is_zero_init(node) -> bool:
@@ -112,6 +121,13 @@ class LstmBoundaryQuantizer(Quantizer, QuantizerReporterUser):
                 and len(user.users) > 0
             ):
                 return "h_n / c_n outputs are not supported"
+        # Fusion needs both boundaries; annotating only the input would leave an
+        # LSTM that can neither be fused nor fall back.
+        getitem0 = _sequence_output(node)
+        if getitem0 is None:
+            return "the sequence output must be consumed as getitem(0)"
+        if is_annotated(getitem0):
+            return "the sequence output is already annotated"
         return None
 
     def annotate(self, model: GraphModule) -> None:  # type: ignore[override]
@@ -122,21 +138,25 @@ class LstmBoundaryQuantizer(Quantizer, QuantizerReporterUser):
             if reason is not None:
                 self.report_reject([node], f"cortex_m LSTM: {reason}.")
                 continue
+            # _rejection_reason has established that this exists.
+            getitem0 = cast(torch.fx.Node, _sequence_output(node))
+            # is_quantized=False keeps FoldAndAnnotateQParamsPass from folding
+            # the q/dq into these nodes: that pass retraces, and retracing a
+            # CompositeImplicit aten.lstm.input on int8 runs the LSTM
+            # decomposition on int8. The lowering pass reads the surviving q/dq.
             _mark_node_as_quantized(
                 node,
                 {node.args[0]: INT8_ACTIVATION_PER_TENSOR_QSPEC},
                 None,
-                is_quantized=True,
+                is_quantized=False,
             )
-            for user in node.users:
-                if (
-                    user.target == operator.getitem
-                    and user.args[1] == 0
-                    and not is_annotated(user)
-                ):
-                    _mark_node_as_quantized(
-                        user, {}, INT8_ACTIVATION_PER_TENSOR_QSPEC, is_quantized=True
-                    )
+            _mark_node_as_quantized(
+                getitem0,
+                {},
+                INT8_ACTIVATION_PER_TENSOR_QSPEC,
+                is_quantized=False,
+            )
+            node.meta.setdefault("custom", {})[LSTM_BOUNDARY_META_KEY] = True
             self.report_accept([node])
 
     def validate(self, model: GraphModule) -> bool:  # type: ignore[override]

@@ -42,6 +42,7 @@ _Q15_MIN = -32768
 _Q15_MAX = 32767
 _INT8_MIN = -128
 _INT8_MAX = 127
+_INT32_MAX = 2**31 - 1
 
 # PyTorch weight_ih/weight_hh row order within the 4*H stack.
 _IFGO = ("input", "forget", "cell", "output")
@@ -93,8 +94,21 @@ def choose_cell_scale_power(max_abs_cell: float, headroom_bits: int = 2) -> int:
     return math.ceil(math.log2(max_abs_cell / _Q15_MAX)) + headroom_bits
 
 
+def cell_scale_power_for_time_steps(time_steps: int) -> int:
+    """Smallest cell-state exponent that cannot clip a sequence of this length.
+
+    ``c_t = f_t * c_{t-1} + i_t * g_t`` with ``f, i`` in (0, 1) and ``g`` in
+    (-1, 1), so from a zero initial state ``|c_t| <= |c_{t-1}| + 1 <= t``.
+    Sizing the int16 range to ``time_steps`` is therefore clip-free for any
+    weights without calibration, and finer than a fixed exponent for short
+    sequences.
+    """
+    return choose_cell_scale_power(float(time_steps), headroom_bits=0)
+
+
 def _quantize_weight_per_tensor(w: torch.Tensor) -> tuple[torch.Tensor, float]:
     """Symmetric per-tensor int8 quantization of a weight block."""
+    w = w.detach()
     max_abs = float(w.abs().max())
     scale = max_abs / _INT8_MAX if max_abs > 0 else 1.0
     q = torch.clamp(torch.round(w / scale), _INT8_MIN, _INT8_MAX).to(torch.int8)
@@ -147,7 +161,14 @@ def derive_lstm_params(
         if bias is not None:
             # Bias lives in the input-path accumulator domain.
             bias_acc_scale = input_scale * w_ih_scale
-            bias_q = torch.round(bias[rows] / bias_acc_scale).to(torch.int32)
+            bias_real = torch.round(bias[rows].detach() / bias_acc_scale)
+            if float(bias_real.abs().max()) > _INT32_MAX:
+                # .to(int32) would wrap rather than saturate, inverting gates.
+                raise ValueError(
+                    f"{name} gate bias overflows the int32 accumulator at "
+                    f"scale {bias_acc_scale:g}"
+                )
+            bias_q = bias_real.to(torch.int32)
 
         in_mult, in_shift = quantize_multiplier_aot(
             input_scale * w_ih_scale / _GATE_ACC_SCALE
