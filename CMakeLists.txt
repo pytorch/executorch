@@ -1267,9 +1267,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # initializer, so nothing here references a symbol from them and some linkers
   # drop them from DT_NEEDED. That surfaces at runtime as a missing kernel or an
   # unregistered backend rather than as a link error.
-  foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
-                              aoti_cuda_backend
-  )
+  foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend)
     if(TARGET ${_retained_component})
       executorch_target_retain_shared_library(
         portable_lib ${_retained_component}
