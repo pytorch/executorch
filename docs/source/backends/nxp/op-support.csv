@@ -16,6 +16,7 @@ aten.convolution.default,int8,static int8,"1D or 2D convolution, constant weight
 aten.dim_order_ops._clone_dim_order.default,,, "See aten.clone.default"
 aten.div.Tensor,int8,static int8,"divisor - static tensor or scalar value, one dimension must satisfy %8 = 0 or scalar division (all dims = 1)"
 aten.exp.default,int8,static int8,
+aten.hardswish.default,int8,static int8,
 aten.hardtanh.default,int8,static int8,"Bounds = (-1, 1) or (0, 1) or (0, 6) or (0, None)"
 aten.leaky_relu.default,int8,static int8,
 aten.log.default,int8,static int8,

@@ -167,11 +167,11 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
     __nv_bfloat16* __restrict__ out,
     int32_t N,
     int32_t K,
+    int32_t M,
     int32_t gs_shift,
     int32_t n_groups,
     int32_t n_super) {
   const int32_t n = blockIdx.x * MV5_NWARPS + threadIdx.y;
-  const int32_t m = blockIdx.y;
   if (n >= N)
     return;
 
@@ -191,7 +191,6 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
   // below), so the dp4a dot products stay bit-identical to the scale-only
   // kernel. zero = zero_code * zero_point_step[super-block].
   const __half* zero_point_step_row = w_zero_point_step + static_cast<int64_t>(n) * n_super;
-  const Q8Block_i5* q8_row = q8 + static_cast<int64_t>(m) * n_q8_blocks;
 
   // Vectorized loads: one uint4 of ql (32 weights) + one uint (the 4 high-bit
   // bytes for the same 32-weight chunk) per iteration.
@@ -199,7 +198,7 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
   const uint32_t* qhrow4 = reinterpret_cast<const uint32_t*>(qhrow);
   const int32_t K_half_16 = K_half / 16;
 
-  float sum = 0.0f;
+  float sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
   // z_pack: within a warp iteration the 32 lanes cover uint4 indices it..it+31
   // = up to 4 consecutive super-blocks, split into 8-lane subgroups (lanes
@@ -259,13 +258,6 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
     // One uint4 (32 weights) maps to exactly one Q8 activation block (32
     // activations), i.e. q8_block_idx == i. Load the whole block with two
     // vectorized uint4 loads (+ one scale/zero load).
-    const Q8Block_i5* qb = &q8_row[i];
-    uint4 ae = *reinterpret_cast<const uint4*>(qb->qs_even);
-    uint4 ao = *reinterpret_cast<const uint4*>(qb->qs_odd);
-    float a_scale = qb->d;
-    const uint32_t a_even[4] = {ae.x, ae.y, ae.z, ae.w};
-    const uint32_t a_odd[4] = {ao.x, ao.y, ao.z, ao.w};
-
 #pragma unroll
     for (int32_t w = 0; w < 4; w++) {
       uint32_t packed = words[w];
@@ -286,24 +278,381 @@ __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_kernel(
       int32_t vfull_odd =
           vi_hi | static_cast<int32_t>(spread1_i5(hi_odd_nib) << 4);
 
-      int32_t dp = __dp4a(vfull_even, static_cast<int32_t>(a_even[w]), 0);
-      dp = __dp4a(vfull_odd, static_cast<int32_t>(a_odd[w]), dp);
-
-      int32_t a_sum = __dp4a(0x01010101, static_cast<int32_t>(a_even[w]), 0);
-      a_sum = __dp4a(0x01010101, static_cast<int32_t>(a_odd[w]), a_sum);
-
-      // Asymmetric: w = scale * (u - zero), so the per-group zero point is
-      // subtracted from the dp4a sum (weighted by the activation sum).
-      sum += ws * a_scale *
-          (static_cast<float>(dp) - wz * static_cast<float>(a_sum));
+      for (int32_t m = 0; m < M; ++m) {
+        const Q8Block_i5* qb =
+            &q8[static_cast<int64_t>(m) * n_q8_blocks + i];
+        const uint4 ae = *reinterpret_cast<const uint4*>(qb->qs_even);
+        const uint4 ao = *reinterpret_cast<const uint4*>(qb->qs_odd);
+        const uint32_t a_even[4] = {ae.x, ae.y, ae.z, ae.w};
+        const uint32_t a_odd[4] = {ao.x, ao.y, ao.z, ao.w};
+        int32_t dp =
+            __dp4a(vfull_even, static_cast<int32_t>(a_even[w]), 0);
+        dp = __dp4a(vfull_odd, static_cast<int32_t>(a_odd[w]), dp);
+        int32_t a_sum =
+            __dp4a(0x01010101, static_cast<int32_t>(a_even[w]), 0);
+        a_sum = __dp4a(
+            0x01010101, static_cast<int32_t>(a_odd[w]), a_sum);
+        sum[m] += ws * qb->d *
+            (static_cast<float>(dp) - wz * static_cast<float>(a_sum));
+      }
     }
   }
 
-  for (int offset = MV5_WARP_SIZE / 2; offset > 0; offset >>= 1)
-    sum += __shfl_xor_sync(0xffffffff, sum, offset);
+  for (int32_t m = 0; m < M; ++m) {
+    for (int offset = MV5_WARP_SIZE / 2; offset > 0; offset >>= 1) {
+      sum[m] += __shfl_xor_sync(0xffffffff, sum[m], offset);
+    }
+    if (lane_id == 0) {
+      out[static_cast<int64_t>(m) * N + n] = __float2bfloat16(sum[m]);
+    }
+  }
+}
 
-  if (lane_id == 0)
-    out[static_cast<int64_t>(m) * N + n] = __float2bfloat16(sum);
+
+
+__device__ __forceinline__ void accum_i5_gs32_word(
+    int32_t vfull_even,
+    int32_t vfull_odd,
+    uint32_t a_even,
+    uint32_t a_odd,
+    float ws,
+    float wz,
+    float a_scale,
+    float& sum) {
+  int32_t dp = __dp4a(vfull_even, static_cast<int32_t>(a_even), 0);
+  dp = __dp4a(vfull_odd, static_cast<int32_t>(a_odd), dp);
+  int32_t a_sum = __dp4a(0x01010101, static_cast<int32_t>(a_even), 0);
+  a_sum = __dp4a(0x01010101, static_cast<int32_t>(a_odd), a_sum);
+  sum += ws * a_scale *
+      (static_cast<float>(dp) - wz * static_cast<float>(a_sum));
+}
+
+__device__ __forceinline__ void accum_i5_gs32_row(
+    int32_t v_even0,
+    int32_t v_odd0,
+    int32_t v_even1,
+    int32_t v_odd1,
+    int32_t v_even2,
+    int32_t v_odd2,
+    int32_t v_even3,
+    int32_t v_odd3,
+    uint4 ae,
+    uint4 ao,
+    float ws,
+    float wz,
+    float a_scale,
+    float& sum) {
+  accum_i5_gs32_word(v_even0, v_odd0, ae.x, ao.x, ws, wz, a_scale, sum);
+  accum_i5_gs32_word(v_even1, v_odd1, ae.y, ao.y, ws, wz, a_scale, sum);
+  accum_i5_gs32_word(v_even2, v_odd2, ae.z, ao.z, ws, wz, a_scale, sum);
+  accum_i5_gs32_word(v_even3, v_odd3, ae.w, ao.w, ws, wz, a_scale, sum);
+}
+
+template <int32_t ROWS>
+__device__ __forceinline__ void int5_w5a8_matvec_gs32_body(
+    const uint8_t* __restrict__ ql,
+    const uint8_t* __restrict__ qh,
+    const uint8_t* __restrict__ w_scale,
+    const __half* __restrict__ w_scale_step,
+    const uint8_t* __restrict__ w_zero,
+    const __half* __restrict__ w_zero_point_step,
+    const Q8Block_i5* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t n,
+    int32_t N,
+    int32_t K,
+    int32_t n_groups,
+    int32_t n_super) {
+  const int32_t K_half = K / 2;
+  const int32_t K_eighth = K / 8;
+  const int32_t lane_id = threadIdx.x;
+  const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE_I5;
+
+  const uint8_t* qlrow = ql + static_cast<int64_t>(n) * K_half;
+  const uint8_t* qhrow = qh + static_cast<int64_t>(n) * K_eighth;
+  const uint8_t* scale_row = w_scale + static_cast<int64_t>(n) * n_groups;
+  const __half* scale_step_row =
+      w_scale_step + static_cast<int64_t>(n) * n_super;
+  const uint8_t* zero_row = w_zero + static_cast<int64_t>(n) * n_groups;
+  const __half* zero_point_step_row =
+      w_zero_point_step + static_cast<int64_t>(n) * n_super;
+
+  const uint4* qlrow16 = reinterpret_cast<const uint4*>(qlrow);
+  const uint32_t* qhrow4 = reinterpret_cast<const uint32_t*>(qhrow);
+  const int32_t K_half_16 = K_half / 16;
+
+  float sums[ROWS] = {};
+  const int32_t leader = lane_id & ~7;
+  const int32_t n_iters =
+      ((K_half_16 + MV5_WARP_SIZE - 1) / MV5_WARP_SIZE) * MV5_WARP_SIZE;
+
+  for (int32_t it = 0; it < n_iters; it += MV5_WARP_SIZE) {
+    const int32_t i = it + lane_id;
+    const bool active = i < K_half_16;
+    const int32_t i_safe = active ? i : 0;
+
+    const uint4 packed16 = __ldg(&qlrow16[i_safe]);
+    const uint32_t qh_word = __ldg(&qhrow4[i_safe]);
+
+    uint32_t steps_packed = 0;
+    if (lane_id == leader) {
+      const int32_t sb = i_safe >> 3;
+      const unsigned short s_bits = __half_as_ushort(__ldg(&scale_step_row[sb]));
+      const unsigned short z_bits =
+          __half_as_ushort(__ldg(&zero_point_step_row[sb]));
+      steps_packed =
+          static_cast<uint32_t>(s_bits) | (static_cast<uint32_t>(z_bits) << 16);
+    }
+    steps_packed = __shfl_sync(0xffffffff, steps_packed, leader);
+    if (!active) {
+      continue;
+    }
+
+    const float scale_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed & 0xFFFF)));
+    const float zero_point_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed >> 16)));
+    const float ws = static_cast<float>(__ldg(&scale_row[i])) * scale_step;
+    const float wz = static_cast<float>(__ldg(&zero_row[i])) * zero_point_step;
+
+    const uint32_t hi_byte0 = qh_word & 0xFF;
+    const uint32_t hi_byte1 = (qh_word >> 8) & 0xFF;
+    const uint32_t hi_byte2 = (qh_word >> 16) & 0xFF;
+    const uint32_t hi_byte3 = (qh_word >> 24) & 0xFF;
+    const int32_t v_even0 = static_cast<int32_t>(packed16.x & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte0 & 0xF) << 4);
+    const int32_t v_odd0 = static_cast<int32_t>((packed16.x >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte0 >> 4) << 4);
+    const int32_t v_even1 = static_cast<int32_t>(packed16.y & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte1 & 0xF) << 4);
+    const int32_t v_odd1 = static_cast<int32_t>((packed16.y >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte1 >> 4) << 4);
+    const int32_t v_even2 = static_cast<int32_t>(packed16.z & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte2 & 0xF) << 4);
+    const int32_t v_odd2 = static_cast<int32_t>((packed16.z >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte2 >> 4) << 4);
+    const int32_t v_even3 = static_cast<int32_t>(packed16.w & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte3 & 0xF) << 4);
+    const int32_t v_odd3 = static_cast<int32_t>((packed16.w >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte3 >> 4) << 4);
+
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      const Q8Block_i5* qb =
+          &q8[static_cast<int64_t>(row) * n_q8_blocks + i];
+      const uint4 ae = *reinterpret_cast<const uint4*>(qb->qs_even);
+      const uint4 ao = *reinterpret_cast<const uint4*>(qb->qs_odd);
+      accum_i5_gs32_row(
+          v_even0,
+          v_odd0,
+          v_even1,
+          v_odd1,
+          v_even2,
+          v_odd2,
+          v_even3,
+          v_odd3,
+          ae,
+          ao,
+          ws,
+          wz,
+          qb->d,
+          sums[row]);
+    }
+  }
+
+  for (int offset = MV5_WARP_SIZE / 2; offset > 0; offset >>= 1) {
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      sums[row] += __shfl_xor_sync(0xffffffff, sums[row], offset);
+    }
+  }
+  if (lane_id == 0) {
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      out[static_cast<int64_t>(row) * N + n] = __float2bfloat16(sums[row]);
+    }
+  }
+}
+
+__global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_m1_gs32_kernel(
+    const uint8_t* __restrict__ ql, // [N, K/2]
+    const uint8_t* __restrict__ qh, // [N, K/8]
+    const uint8_t* __restrict__ w_scale, // [N, K/32] uint8 codes
+    const __half* __restrict__ w_scale_step, // [N, K/256] fp16
+    const uint8_t* __restrict__ w_zero, // [N, K/32] uint8 codes
+    const __half* __restrict__ w_zero_point_step, // [N, K/256] fp16
+    const Q8Block_i5* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t N,
+    int32_t K,
+    int32_t n_groups,
+    int32_t n_super) {
+  const int32_t n = blockIdx.x * MV5_NWARPS + threadIdx.y;
+  if (n >= N) {
+    return;
+  }
+  int5_w5a8_matvec_gs32_body<1>(
+      ql,
+      qh,
+      w_scale,
+      w_scale_step,
+      w_zero,
+      w_zero_point_step,
+      q8,
+      out,
+      n,
+      N,
+      K,
+      n_groups,
+      n_super);
+}
+
+__global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_m4_gs32_kernel(
+    const uint8_t* __restrict__ ql, // [N, K/2]
+    const uint8_t* __restrict__ qh, // [N, K/8]
+    const uint8_t* __restrict__ w_scale, // [N, K/32] uint8 codes
+    const __half* __restrict__ w_scale_step, // [N, K/256] fp16
+    const uint8_t* __restrict__ w_zero, // [N, K/32] uint8 codes
+    const __half* __restrict__ w_zero_point_step, // [N, K/256] fp16
+    const Q8Block_i5* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t N,
+    int32_t K,
+    int32_t n_groups,
+    int32_t n_super) {
+  const int32_t n = blockIdx.x * MV5_NWARPS + threadIdx.y;
+  if (n >= N) {
+    return;
+  }
+
+  const int32_t K_half = K / 2;
+  const int32_t K_eighth = K / 8;
+  const int32_t lane_id = threadIdx.x;
+  const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE_I5;
+
+  const uint8_t* qlrow = ql + static_cast<int64_t>(n) * K_half;
+  const uint8_t* qhrow = qh + static_cast<int64_t>(n) * K_eighth;
+  const uint8_t* scale_row = w_scale + static_cast<int64_t>(n) * n_groups;
+  const __half* scale_step_row =
+      w_scale_step + static_cast<int64_t>(n) * n_super;
+  const uint8_t* zero_row = w_zero + static_cast<int64_t>(n) * n_groups;
+  const __half* zero_point_step_row =
+      w_zero_point_step + static_cast<int64_t>(n) * n_super;
+
+  const uint4* qlrow16 = reinterpret_cast<const uint4*>(qlrow);
+  const uint32_t* qhrow4 = reinterpret_cast<const uint32_t*>(qhrow);
+  const int32_t K_half_16 = K_half / 16;
+
+  float sum0 = 0.0f;
+  float sum1 = 0.0f;
+  float sum2 = 0.0f;
+  float sum3 = 0.0f;
+  const int32_t leader = lane_id & ~7;
+  const int32_t n_iters =
+      ((K_half_16 + MV5_WARP_SIZE - 1) / MV5_WARP_SIZE) * MV5_WARP_SIZE;
+
+  for (int32_t it = 0; it < n_iters; it += MV5_WARP_SIZE) {
+    const int32_t i = it + lane_id;
+    const bool active = i < K_half_16;
+    const int32_t i_safe = active ? i : 0;
+
+    const uint4 packed16 = __ldg(&qlrow16[i_safe]);
+    const uint32_t qh_word = __ldg(&qhrow4[i_safe]);
+
+    uint32_t steps_packed = 0;
+    if (lane_id == leader) {
+      const int32_t sb = i_safe >> 3; // gs=32: 8 groups per 256-weight super-block.
+      const unsigned short s_bits = __half_as_ushort(__ldg(&scale_step_row[sb]));
+      const unsigned short z_bits =
+          __half_as_ushort(__ldg(&zero_point_step_row[sb]));
+      steps_packed =
+          static_cast<uint32_t>(s_bits) | (static_cast<uint32_t>(z_bits) << 16);
+    }
+    steps_packed = __shfl_sync(0xffffffff, steps_packed, leader);
+    if (!active) {
+      continue;
+    }
+
+    const float scale_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed & 0xFFFF)));
+    const float zero_point_step = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps_packed >> 16)));
+    const float ws = static_cast<float>(__ldg(&scale_row[i])) * scale_step;
+    const float wz = static_cast<float>(__ldg(&zero_row[i])) * zero_point_step;
+
+    const uint32_t hi_byte0 = qh_word & 0xFF;
+    const uint32_t hi_byte1 = (qh_word >> 8) & 0xFF;
+    const uint32_t hi_byte2 = (qh_word >> 16) & 0xFF;
+    const uint32_t hi_byte3 = (qh_word >> 24) & 0xFF;
+    const int32_t v_even0 = static_cast<int32_t>(packed16.x & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte0 & 0xF) << 4);
+    const int32_t v_odd0 = static_cast<int32_t>((packed16.x >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte0 >> 4) << 4);
+    const int32_t v_even1 = static_cast<int32_t>(packed16.y & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte1 & 0xF) << 4);
+    const int32_t v_odd1 = static_cast<int32_t>((packed16.y >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte1 >> 4) << 4);
+    const int32_t v_even2 = static_cast<int32_t>(packed16.z & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte2 & 0xF) << 4);
+    const int32_t v_odd2 = static_cast<int32_t>((packed16.z >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte2 >> 4) << 4);
+    const int32_t v_even3 = static_cast<int32_t>(packed16.w & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte3 & 0xF) << 4);
+    const int32_t v_odd3 = static_cast<int32_t>((packed16.w >> 4) & 0x0F0F0F0F) |
+        static_cast<int32_t>(spread1_i5(hi_byte3 >> 4) << 4);
+
+#define ACCUM_INT5_M4_ROW(row_, sum_)                                           \
+    do {                                                                        \
+      const Q8Block_i5* qb =                                                    \
+          &q8[static_cast<int64_t>(row_) * n_q8_blocks + i];                    \
+      const uint4 ae = *reinterpret_cast<const uint4*>(qb->qs_even);            \
+      const uint4 ao = *reinterpret_cast<const uint4*>(qb->qs_odd);             \
+      const float a_scale = qb->d;                                              \
+      int32_t dp = __dp4a(v_even0, static_cast<int32_t>(ae.x), 0);              \
+      dp = __dp4a(v_odd0, static_cast<int32_t>(ao.x), dp);                      \
+      int32_t a_sum = __dp4a(0x01010101, static_cast<int32_t>(ae.x), 0);        \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ao.x), a_sum);           \
+      (sum_) += ws * a_scale *                                                  \
+          (static_cast<float>(dp) - wz * static_cast<float>(a_sum));            \
+      dp = __dp4a(v_even1, static_cast<int32_t>(ae.y), 0);                      \
+      dp = __dp4a(v_odd1, static_cast<int32_t>(ao.y), dp);                      \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ae.y), 0);                \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ao.y), a_sum);           \
+      (sum_) += ws * a_scale *                                                  \
+          (static_cast<float>(dp) - wz * static_cast<float>(a_sum));            \
+      dp = __dp4a(v_even2, static_cast<int32_t>(ae.z), 0);                      \
+      dp = __dp4a(v_odd2, static_cast<int32_t>(ao.z), dp);                      \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ae.z), 0);                \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ao.z), a_sum);           \
+      (sum_) += ws * a_scale *                                                  \
+          (static_cast<float>(dp) - wz * static_cast<float>(a_sum));            \
+      dp = __dp4a(v_even3, static_cast<int32_t>(ae.w), 0);                      \
+      dp = __dp4a(v_odd3, static_cast<int32_t>(ao.w), dp);                      \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ae.w), 0);                \
+      a_sum = __dp4a(0x01010101, static_cast<int32_t>(ao.w), a_sum);           \
+      (sum_) += ws * a_scale *                                                  \
+          (static_cast<float>(dp) - wz * static_cast<float>(a_sum));            \
+    } while (0)
+
+    ACCUM_INT5_M4_ROW(0, sum0);
+    ACCUM_INT5_M4_ROW(1, sum1);
+    ACCUM_INT5_M4_ROW(2, sum2);
+    ACCUM_INT5_M4_ROW(3, sum3);
+#undef ACCUM_INT5_M4_ROW
+  }
+
+  for (int offset = MV5_WARP_SIZE / 2; offset > 0; offset >>= 1) {
+    sum0 += __shfl_xor_sync(0xffffffff, sum0, offset);
+    sum1 += __shfl_xor_sync(0xffffffff, sum1, offset);
+    sum2 += __shfl_xor_sync(0xffffffff, sum2, offset);
+    sum3 += __shfl_xor_sync(0xffffffff, sum3, offset);
+  }
+  if (lane_id == 0) {
+    out[n] = __float2bfloat16(sum0);
+    out[static_cast<int64_t>(N) + n] = __float2bfloat16(sum1);
+    out[static_cast<int64_t>(2) * N + n] = __float2bfloat16(sum2);
+    out[static_cast<int64_t>(3) * N + n] = __float2bfloat16(sum3);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +712,7 @@ inline void _int5_plain_mm_cuda(
   int32_t N = ql.size(0);
 
   ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
+  ET_CHECK_MSG(M >= 1 && M <= 4, "int5 short-query M=%d must be in [1, 4]", M);
   ET_CHECK(
       ql.dtype() == c10::ScalarType::Byte ||
       ql.dtype() == c10::ScalarType::Char);
@@ -431,11 +781,44 @@ inline void _int5_plain_mm_cuda(
       reinterpret_cast<const __nv_bfloat16*>(A.data_ptr()), q8_buf, K);
 
   // dp4a matvec
-  dim3 grid((N + MV5_NWARPS - 1) / MV5_NWARPS, M);
+  dim3 grid((N + MV5_NWARPS - 1) / MV5_NWARPS);
   dim3 block(MV5_WARP_SIZE, MV5_NWARPS);
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(scale_step.size(1));
+  if (M == 1 && gs == 32) {
+    int5_w5a8_matvec_m1_gs32_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+        reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+        reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(scale_step.data_ptr()),
+        reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+        reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N,
+        K,
+        n_groups,
+        n_super);
+    return;
+  }
+  if (M == 4 && gs == 32) {
+    int5_w5a8_matvec_m4_gs32_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+        reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+        reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(scale_step.data_ptr()),
+        reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+        reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N,
+        K,
+        n_groups,
+        n_super);
+    return;
+  }
+
   int5_w5a8_matvec_kernel<<<grid, block, 0, stream>>>(
       reinterpret_cast<const uint8_t*>(ql.data_ptr()),
       reinterpret_cast<const uint8_t*>(qh.data_ptr()),
@@ -447,6 +830,7 @@ inline void _int5_plain_mm_cuda(
       reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
       N,
       K,
+      M,
       gs_shift,
       n_groups,
       n_super);

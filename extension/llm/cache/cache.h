@@ -116,18 +116,32 @@ struct LayerConfig {
 };
 
 // Model facts + runtime policy the byte layer sizes its pools from. capacity is
-// the logical cap; initial_capacity tunes the byte layer's lazy-doubling pool;
-// max_write is the max tokens written per step (a ring layer sizes its slots to
-// window + max_write - 1 so a multi-token step fits); unset means each ring
-// layer uses its own window. `layers` is per-layer: size 1 == uniform across
-// all layers, else == n_layers.
+// the logical cap; kv_dtype is the ET ScalarType the byte layer stores K/V in;
+// initial_capacity tunes the byte layer's lazy-doubling pool; max_write is the
+// max tokens written per step (a ring layer sizes its slots to window +
+// max_write - 1 so a multi-token step fits); unset means each ring layer uses
+// its own window. `layers` is per-layer: size 1 == uniform across all layers,
+// else == n_layers.
 struct CacheConfig {
   int capacity;
   int n_layers;
   std::vector<LayerConfig> layers;
+  int kv_dtype;
   int initial_capacity = 512;
   std::optional<int> max_write;
 };
+
+// Whether `cfg` satisfies the contract above. Callers must check this before
+// constructing a cache: the `layers` broadcast rule is indexed directly, so a
+// list that is neither size 1 nor n_layers reads past the end. Reported as a
+// bool rather than thrown, so each backend picks its own failure mode.
+inline bool valid(const CacheConfig& cfg) {
+  // initial_capacity may be 0 (allocate nothing up front) but not negative, and
+  // may exceed capacity -- the byte layer clamps it.
+  return cfg.capacity > 0 && cfg.n_layers > 0 && cfg.initial_capacity >= 0 &&
+      (cfg.layers.size() == 1 ||
+       cfg.layers.size() == static_cast<size_t>(cfg.n_layers));
+}
 
 } // namespace cache
 } // namespace llm
