@@ -223,11 +223,13 @@ if(EXECUTORCH_BUILD_SHARED)
                SOVERSION "${PROJECT_VERSION_MAJOR}"
   )
   if(NOT APPLE)
-    # Ships beside the runtime in the wheel's lib/ directory. libcudart and
-    # friends come from the environment, so they are not bundled here.
+    # Ships in the wheel's lib/ directory, but the CUDA shim library it links
+    # lives under backends/cuda, so both locations have to be searchable. The
+    # CUDA runtime itself comes from the environment and is not bundled.
+    set(_cuda_backend_rpath "$ORIGIN:$ORIGIN/../backends/cuda")
     set_target_properties(
-      aoti_cuda_backend PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH
-                                                         "$ORIGIN"
+      aoti_cuda_backend PROPERTIES BUILD_RPATH "${_cuda_backend_rpath}"
+                                   INSTALL_RPATH "${_cuda_backend_rpath}"
     )
   endif()
 endif()

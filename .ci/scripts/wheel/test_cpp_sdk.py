@@ -117,6 +117,82 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
+def report_wheel_composition() -> None:
+    """Print what the wheel ships and what each library needs.
+
+    Not an assertion. A size jump or an unexpected external dependency is the
+    first visible sign that a component got statically duplicated again, so the
+    numbers are worth having in the log of every run.
+    """
+    package_dir = _installed_package_dir()
+    libraries = _shipped_shared_objects(package_dir)
+
+    print("shipped libraries:")
+    total = 0
+    for library in sorted(libraries, key=lambda path: path.name):
+        size = library.stat().st_size
+        total += size
+        print(f"  {size / 1024:9.1f} KiB  {library.relative_to(package_dir)}")
+    print(f"  {total / 1024:9.1f} KiB  total")
+
+    if shutil.which("readelf") is None:
+        return
+    # Anything the libraries need that the wheel does not itself ship has to be
+    # present on the user's machine, so it belongs in the report. Compare against
+    # the shipped file names rather than guessing from name prefixes.
+    shipped = {library.name for library in libraries}
+    external = set()
+    for library in libraries:
+        dynamic = subprocess.run(
+            ["readelf", "-d", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        for line in dynamic.splitlines():
+            if "(NEEDED)" not in line or "[" not in line:
+                continue
+            name = line.split("[", 1)[1].rstrip("]").strip()
+            if name not in shipped:
+                external.add(name)
+    if external:
+        print("external dependencies expected from the environment:")
+        for name in sorted(external):
+            print(f"  {name}")
+
+
+def test_shipped_libraries_load() -> None:
+    """Every shipped library must be able to resolve its dependencies.
+
+    The symbol checks prove each component is defined exactly once, but a library
+    can still be unloadable if the loader cannot find something it needs, which is
+    a packaging bug rather than a duplication bug.
+    """
+    if shutil.which("ldd") is None:
+        print("- ldd not available, skipping the load check")
+        return
+
+    package_dir = _installed_package_dir()
+    broken = {}
+    for library in _shipped_shared_objects(package_dir):
+        resolved = subprocess.run(
+            ["ldd", str(library)], capture_output=True, text=True, check=False
+        ).stdout
+        missing = [
+            line.split("=>")[0].strip()
+            for line in resolved.splitlines()
+            if "not found" in line
+        ]
+        if missing:
+            broken[str(library.relative_to(package_dir))] = missing
+
+    assert not broken, (
+        "shipped libraries cannot resolve their dependencies, so they will fail "
+        f"to load: {broken}"
+    )
+    print("✓ every shipped library resolves its dependencies")
+
+
 def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
     """Exactly one shipped library may define each of `symbols`.
 
@@ -266,6 +342,8 @@ def _assert_runs_relocated(consumer, package_dir, work_dir, environment) -> None
 
 
 def run_tests(work_dir: Path) -> None:
+    report_wheel_composition()
+    test_shipped_libraries_load()
     test_single_backend_registry()
     test_single_threadpool()
     test_single_kernel_registration()
