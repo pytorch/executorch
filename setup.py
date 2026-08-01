@@ -1126,7 +1126,15 @@ setup(
                         "executorch/lib/libexecutorch_threadpool.so."
                         f"{get_runtime_soname_major()}"
                     ),
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                    # The target only exists when both of its dependencies are
+                    # enabled, so packaging has to require them too or a shared
+                    # build with either turned off looks for a file that was
+                    # never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_PTHREADPOOL",
+                        "EXECUTORCH_BUILD_CPUINFO",
+                    ],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
