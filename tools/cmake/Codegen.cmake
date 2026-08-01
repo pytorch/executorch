@@ -314,6 +314,13 @@ function(gen_operators_lib)
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  if(GEN_SHARED)
+    # Resolve the runtime from the shared library rather than from the static
+    # core in GEN_DEPS. Linking the static core gives this library its own copy
+    # of the operator table, so its static initializer registers into a table
+    # nothing else reads and the operators appear missing at run time.
+    executorch_target_link_shared_runtime(${GEN_LIB_NAME})
+  endif()
   set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
 

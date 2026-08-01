@@ -72,6 +72,7 @@ _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
 _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
 _CONSUMER_SOURCE = """\
+#include <executorch/extension/module/module.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
@@ -79,9 +80,16 @@ _CONSUMER_SOURCE = """\
 
 int main() {
   executorch::runtime::runtime_init();
+  // Printed rather than asserted on purpose. This consumer links only the
+  // runtime, exactly as the documented two-line example does, and the runtime
+  // alone registers no backend. Requiring a nonzero count here would be
+  // asserting that the runtime does something it is not supposed to do.
   std::printf(
       "registered backends: %zu\\n",
       (size_t)executorch::runtime::get_num_registered_backends());
+  // Compile against the Module header too. It is shipped and advertised as the
+  // way to load a program, so a consumer must be able to include it.
+  (void)sizeof(executorch::extension::Module);
   return 0;
 }
 """
@@ -134,12 +142,13 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
-def _report_definers(symbols, what: str) -> None:
-    """Print which shipped libraries define each symbol, without asserting.
+def _report_definers(symbols, what: str, limit: int) -> None:
+    """Print which shipped libraries define each symbol and hold a ceiling.
 
     Used where the desired invariant is one owner but the wheel does not reach it
-    yet for reasons outside this change. Printing keeps the number visible in CI so
-    a regression is noticeable, without failing on a pre-existing condition.
+    yet for reasons outside this change. Printing alone would let a regression
+    from a few definers to many stay green, so the count is also capped at the
+    number that exists today. The cap is meant to be lowered, never raised.
     """
     package_dir = _installed_package_dir()
     libraries = _shipped_shared_objects(package_dir)
@@ -152,6 +161,11 @@ def _report_definers(symbols, what: str) -> None:
         print(f"- {what}: {symbol.split('::')[-1]} defined by {len(definers)}")
         for definer in definers:
             print(f"    {definer}")
+        assert len(definers) <= limit, (
+            f"{what}: {symbol} is defined by {len(definers)} shipped libraries, "
+            f"more than the {limit} that existed when this check was added, so a "
+            f"new duplicate crept in: {definers}"
+        )
 
 
 def report_wheel_composition() -> None:
@@ -226,9 +240,14 @@ def test_shipped_libraries_load() -> None:
     # is not inherited on behalf of a dependency's own dependencies.
     broken = {}
     unreachable = {}
+    unresolved = {}
     for library in libraries:
         resolved = subprocess.run(
-            ["ldd", str(library)],
+            # -r resolves data and function symbols too, not just the NEEDED
+            # entries. A SHARED link does not error on undefined symbols, so
+            # without this an under-linked library passes here and fails at first
+            # use instead.
+            ["ldd", "-r", str(library)],
             capture_output=True,
             text=True,
             check=False,
@@ -239,12 +258,22 @@ def test_shipped_libraries_load() -> None:
                 for key, value in os.environ.items()
                 if key != "LD_LIBRARY_PATH"
             },
-        ).stdout
+        )
+        # ldd reports missing libraries on stdout but undefined symbols on stderr,
+        # so both streams matter.
+        combined = resolved.stdout + resolved.stderr
         missing = [
             line.split("=>")[0].strip()
-            for line in resolved.splitlines()
+            for line in combined.splitlines()
             if "not found" in line
         ]
+        undefined = [
+            line.strip()
+            for line in combined.splitlines()
+            if "undefined symbol" in line
+        ]
+        if undefined:
+            unresolved[str(library.relative_to(package_dir))] = undefined[:5]
         absent = [name for name in missing if name not in shipped]
         present_but_unreachable = [name for name in missing if name in shipped]
         if absent:
@@ -260,6 +289,10 @@ def test_shipped_libraries_load() -> None:
         "shipped libraries need dependencies the wheel ships but the loader "
         "cannot reach from them, which usually means a missing RUNPATH entry: "
         f"{unreachable}"
+    )
+    assert not unresolved, (
+        "shipped libraries reference symbols nothing provides, so they will fail "
+        f"at first use rather than at load: {unresolved}"
     )
     print("✓ every shipped library resolves every dependency it needs")
 
@@ -385,7 +418,7 @@ def test_single_kernel_registration() -> None:
     # static core and carry their own copy, which predates this split: a released
     # wheel has five definers where this one has three. Asserting here would fail
     # on those pre-existing copies rather than on anything this change introduced.
-    _report_definers(_KERNEL_REGISTRY_SYMBOLS, "operator registry")
+    _report_definers(_KERNEL_REGISTRY_SYMBOLS, "operator registry", limit=2)
 
 
 def test_single_xnnpack_delegate() -> None:
@@ -394,8 +427,17 @@ def test_single_xnnpack_delegate() -> None:
 
 
 def test_single_cuda_delegate() -> None:
-    """Exactly one shipped library may define the CUDA delegate, if present."""
-    _assert_single_definer(_CUDA_SYMBOLS, "CUDA delegate", optional=True)
+    """Exactly one shipped library may define the CUDA delegate, if present.
+
+    Presence is decided from the shipped library file, not from whether the symbol
+    resolves. Inferring absence from a missing symbol means a rename on a CUDA
+    wheel would skip the check instead of failing it.
+    """
+    package_dir = _installed_package_dir()
+    if not list(package_dir.rglob("libexecutorch_cuda_backend.so*")):
+        print("- no CUDA delegate in this wheel, skipping")
+        return
+    _assert_single_definer(_CUDA_SYMBOLS, "CUDA delegate")
 
 
 def test_cpp_consumer(work_dir: Path) -> None:
