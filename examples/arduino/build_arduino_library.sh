@@ -162,9 +162,12 @@ CODEGEN_OUT="$ET_SRC/codegen"
 CORTEX_M_YAML="$ET_ROOT/backends/cortex_m/ops/operators.yaml"
 mkdir -p "$CODEGEN_OUT"
 
+# dim_order_ops are not optional: the Cortex-M lowering emits
+# _clone_dim_order in place of aten::clone for channels-last models.
 DEFAULT_ROOT_OPS="aten::add.out,aten::mul.out,aten::sub.out,aten::div.out,\
 aten::view_copy.out,aten::permute_copy.out,aten::clone.out,aten::cat.out,\
-aten::slice_copy.Tensor_out,aten::_softmax.out,aten::mean.out,aten::relu.out"
+aten::slice_copy.Tensor_out,aten::_softmax.out,aten::mean.out,aten::relu.out,\
+dim_order_ops::_clone_dim_order.out,dim_order_ops::_to_dim_order_copy.out"
 ROOT_OPS="${ROOT_OPS:-$DEFAULT_ROOT_OPS}"
 
 if [ "${ALL_OPS:-0}" = "1" ]; then
