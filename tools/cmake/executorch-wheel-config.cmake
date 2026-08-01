@@ -130,6 +130,10 @@ elseif(TARGET executorch::runtime)
       "Python not usable, skipping the Python extension: ${SYSCONFIG_ERROR}"
   )
   set(EXT_SUFFIX "")
+  # find_library caches its result, so a value left by an earlier configure
+  # would survive and the extension would still be offered despite being skipped
+  # here.
+  unset(_portable_lib_LIBRARY CACHE)
 else()
   message(
     FATAL_ERROR
@@ -162,6 +166,11 @@ if(_portable_lib_LIBRARY)
     _portable_lib
     PROPERTIES IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
                INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               CXX_STANDARD 20
+               # An interface requirement rather than CXX_STANDARD: an imported
+               # target compiles nothing itself, and CXX_STANDARD does not reach
+               # consumers, so a custom-op build linking this could still
+               # compile
+               # as C++17 and fail against headers that need C++20.
+               INTERFACE_COMPILE_FEATURES cxx_std_20
   )
 endif()
