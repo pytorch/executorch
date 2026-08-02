@@ -142,6 +142,39 @@ if len(definers) != 1:
 print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libraries')
 " || exit $?
 
+    # Loading it is what the symbol scan above cannot prove. A broken runtime
+    # path, an undefined symbol, or a mismatched CUDA dependency all pass a name
+    # check and fail here.
+    ${CONDA_RUN} python -c "
+import ctypes, os, sys
+from pathlib import Path
+
+import executorch
+
+package = Path(getattr(executorch, '__path__', [None])[0])
+delegates = [
+    p for p in package.rglob('libexecutorch_cuda_backend.so*')
+    if p.is_file() and not p.is_symlink()
+]
+if len(delegates) != 1:
+    print(f'ERROR: expected one shipped CUDA delegate, found {delegates}')
+    sys.exit(1)
+
+# Strip LD_LIBRARY_PATH so the library has to resolve through its own runtime
+# path, the way it would on a user's machine.
+os.environ.pop('LD_LIBRARY_PATH', None)
+for library in [delegates[0]] + sorted(package.rglob('libaoti_cuda_shims.so*')):
+    if not library.is_file() or library.is_symlink():
+        continue
+    try:
+        ctypes.CDLL(str(library), mode=ctypes.RTLD_GLOBAL)
+    except OSError as error:
+        print(f'ERROR: {library.relative_to(package)} does not load: {error}')
+        sys.exit(1)
+    print(f'loaded {library.relative_to(package)}')
+print('SUCCESS: the CUDA delegate and its shim load from the installed package')
+" || exit $?
+
     echo "SUCCESS: ExecuTorch CUDA ${cuda_version} build and verification completed successfully"
 }
 
