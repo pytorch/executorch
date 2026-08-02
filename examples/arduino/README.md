@@ -88,11 +88,11 @@ arduino-cli lib install --zip-path arduino_lib/ExecuTorch.zip
 ### 3. Export a model
 
 Each sketch needs a `model.h` file — a `.pte` model converted to a C
-byte array.  Use `pte_to_header.py` from the Arm examples to convert
+byte array.  Use `pte_to_header.py` to convert
 any `.pte` file:
 
 ```bash
-python examples/arm/executor_runner/pte_to_header.py \
+python examples/arduino/pte_to_header.py \
     -p model.pte -d examples/arduino/examples/AddModel -o model.h
 ```
 
@@ -108,7 +108,7 @@ class Add(torch.nn.Module):
 et = to_edge(export(Add().eval(), (torch.tensor([1.,2.,3.]),))).to_executorch()
 with open('add.pte','wb') as f: f.write(bytes(et.buffer))"
 
-python examples/arm/executor_runner/pte_to_header.py \
+python examples/arduino/pte_to_header.py \
     -p add.pte -d examples/arduino/examples/AddModel -o model.h
 ```
 

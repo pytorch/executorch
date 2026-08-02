@@ -15,6 +15,7 @@ defines that section, so this emits a plain rodata array instead.
 """
 
 import argparse
+import os
 
 BANNER = """\
 /*
@@ -29,7 +30,7 @@ BANNER = """\
 """
 
 
-def to_header(buffer: bytes, name: str, source: str) -> str:
+def to_header(buffer: bytes, name: str = "model_pte", source: str = "a .pte") -> str:
     out = [BANNER.format(source=source)]
     out.append("#pragma once")
     out.append("#include <cstddef>")
@@ -47,16 +48,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-p", "--pte", required=True, help="Input .pte file")
     parser.add_argument("-o", "--output", required=True, help="Output .h file")
+    parser.add_argument("-d", "--outdir", default="", help="Directory for --output")
     parser.add_argument("-n", "--name", default="model_pte", help="C array name")
     args = parser.parse_args()
+
+    out = os.path.join(args.outdir, args.output) if args.outdir else args.output
 
     with open(args.pte, "rb") as f:
         buffer = f.read()
 
-    with open(args.output, "w") as f:
-        f.write(to_header(buffer, args.name, args.pte.split("/")[-1]))
+    with open(out, "w") as f:
+        f.write(to_header(buffer, args.name, os.path.basename(args.pte)))
 
-    print(f"{args.output}: {len(buffer)} bytes ({len(buffer) / 1024:.1f} KB)")
+    print(f"{out}: {len(buffer)} bytes ({len(buffer) / 1024:.1f} KB)")
 
 
 if __name__ == "__main__":
