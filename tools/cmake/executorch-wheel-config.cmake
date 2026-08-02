@@ -44,12 +44,17 @@
 # fails once it is deployed somewhere else.
 cmake_minimum_required(VERSION 3.28)
 
-# This file is installed to <site-packages>/executorch/share/cmake, so the
-# package root is two levels up. Everything is resolved relative to this file so
-# the wheel stays relocatable: no absolute path from the machine that built it
-# is baked in here.
-get_filename_component(
-  _executorch_package_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
+# Everything is resolved relative to this file so the wheel stays relocatable:
+# no absolute path from the machine that built it is baked in here. The file is
+# installed both under share/cmake, which the historical contract uses, and
+# under lib/cmake/executorch, which a plain CMAKE_PREFIX_PATH pointed at the
+# package root can discover, so the root is located by a marker rather than a
+# fixed depth.
+find_path(
+  _executorch_package_root include/executorch
+  PATHS "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../.."
+        "${CMAKE_CURRENT_LIST_DIR}/../../.."
+  NO_DEFAULT_PATH
 )
 
 set(EXECUTORCH_INCLUDE_DIRS
