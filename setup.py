@@ -323,6 +323,10 @@ def get_build_type(is_debug=None) -> str:
 _UNSUPPORTED_WHEEL_HEADERS = frozenset(
     {
         "bundled_module.h",
+        # These two include a third-party header the wheel does not ship, so they
+        # cannot compile from an installed package no matter what is linked.
+        "cpuinfo_utils.h",
+        "threadpool.h",
         "file_descriptor_data_loader.h",
         "serialize.h",
     }
