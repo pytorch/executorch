@@ -1309,6 +1309,15 @@ if(EXECUTORCH_BUILD_PYBIND)
   # runtime, so resolve against the shared runtime instead when there is one.
   if(TARGET executorch_shared)
     target_link_libraries(data_loader PRIVATE executorch_shared)
+    if(NOT APPLE AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+      # Wheel-specific: this installs beside the other pybind extensions, two
+      # levels below the wheel's lib/ directory, so it needs the same relative
+      # path they use to reach the shared runtime.
+      set_target_properties(
+        data_loader PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                               INSTALL_RPATH "$ORIGIN/../../lib"
+      )
+    endif()
   else()
     target_link_libraries(data_loader PRIVATE executorch)
   endif()
