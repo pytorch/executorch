@@ -353,6 +353,48 @@ find "$OUT_DIR" -path "*test*" -name "*.cpp" -delete 2>/dev/null || true
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/android.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/posix.cpp"
 rm -f "$OUT_DIR/src/executorch/runtime/platform/default/windows.cpp"
+# minimal.cpp and zephyr.cpp both define the et_pal_* backend, so shipping both
+# leaves the choice to link order. minimal's logger is an empty body and its
+# et_pal_allocate returns nullptr, which silently discards every ET_LOG.
+rm -f "$OUT_DIR/src/executorch/runtime/platform/default/minimal.cpp"
+
+# zephyr.cpp logs through fprintf, and platform_stubs.c stubs fprintf out to
+# nothing, so runtime diagnostics never reach the user. Route them to a weak
+# hook a sketch can implement -- see the examples for a Serial implementation.
+ZEPHYR_PAL="$OUT_DIR/src/executorch/runtime/platform/default/zephyr.cpp"
+"$PYTHON" - "$ZEPHYR_PAL" << 'PATCH'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """  fprintf(
+      stderr,
+      "%c [executorch:%s:%zu %s()] %s\\n",
+      level,
+      filename,
+      line,
+      function,
+      message);"""
+new = """  char et_log_buf[256];
+  snprintf(
+      et_log_buf,
+      sizeof(et_log_buf),
+      "%c [ET:%s:%zu] %s",
+      (char)level,
+      filename,
+      line,
+      message);
+  et_arduino_log(et_log_buf);"""
+if old not in s:
+    sys.exit("ERROR: zephyr.cpp log call not found; the PAL changed upstream.")
+s = s.replace(old, new)
+s = s.replace(
+    "void et_pal_emit_log_message(",
+    'extern "C" __attribute__((weak)) void et_arduino_log(const char*) {}\n\n'
+    "void et_pal_emit_log_message(",
+    1,
+)
+open(p, "w").write(s)
+PATCH
 
 # Regenerate schema headers if flatc is available
 FLATC=""

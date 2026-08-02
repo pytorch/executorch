@@ -26,6 +26,14 @@ using executorch::runtime::Result;
 
 static bool g_loaded = false;
 
+// ExecuTorch logs go to a weak hook so the library does not depend on Serial.
+// Without this the runtime's own diagnostics -- allocation failures, operator
+// mismatches -- are discarded, and errors surface only as bare hex codes.
+extern "C" void et_arduino_log(const char* msg) {
+  Serial.print("ET| ");
+  Serial.println(msg);
+}
+
 void setup() {
   Serial.begin(115200);
   delay(2000);
