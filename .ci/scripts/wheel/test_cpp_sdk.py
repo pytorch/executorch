@@ -161,50 +161,6 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
-def report_wheel_composition() -> None:
-    """Print what the wheel ships and what each library needs.
-
-    Not an assertion. A size jump or an unexpected external dependency is the
-    first visible sign that a component got statically duplicated again, so the
-    numbers are worth having in the log of every run.
-    """
-    package_dir = _installed_package_dir()
-    libraries = _shipped_shared_objects(package_dir)
-
-    print("shipped libraries:")
-    total = 0
-    for library in sorted(libraries, key=lambda path: path.name):
-        size = library.stat().st_size
-        total += size
-        print(f"  {size / 1024:9.1f} KiB  {library.relative_to(package_dir)}")
-    print(f"  {total / 1024:9.1f} KiB  total")
-
-    if shutil.which("readelf") is None:
-        return
-    # Anything the libraries need that the wheel does not itself ship has to be
-    # present on the user's machine, so it belongs in the report. Compare against
-    # the shipped file names rather than guessing from name prefixes.
-    shipped = {library.name for library in libraries}
-    external = set()
-    for library in libraries:
-        dynamic = subprocess.run(
-            ["readelf", "-d", str(library)],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        for line in dynamic.splitlines():
-            if "(NEEDED)" not in line or "[" not in line:
-                continue
-            name = line.split("[", 1)[1].rstrip("]").strip()
-            if name not in shipped:
-                external.add(name)
-    if external:
-        print("external dependencies expected from the environment:")
-        for name in sorted(external):
-            print(f"  {name}")
-
-
 def test_shipped_libraries_load() -> None:
     """Every shipped library must depend only on things that exist.
 
@@ -598,7 +554,6 @@ def test_python_extensions_import() -> None:
 
 
 def run_tests(work_dir: Path) -> None:
-    report_wheel_composition()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_single_backend_registry()
