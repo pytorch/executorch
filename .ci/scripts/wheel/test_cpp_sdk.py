@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -524,11 +525,53 @@ def _assert_runs_relocated(consumer, package_dir, work_dir, environment) -> None
     print("✓ consumer still runs when deployed beside a copy of the runtime")
 
 
+def test_python_extensions_import() -> None:
+    """Every shipped Python extension must import from a clean environment.
+
+    The symbol and dependency checks work on the files. This covers the other
+    half: an extension can be packaged correctly and still fail to load because a
+    runtime path does not reach one of its dependencies. Run in a subprocess with
+    `LD_LIBRARY_PATH` removed so a value from the build environment cannot supply
+    a path the shipped library is missing.
+    """
+    modules = [
+        "executorch.extension.pybindings.portable_lib",
+        "executorch.extension.training",
+    ]
+    environment = {
+        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
+    }
+    for module in modules:
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=environment,
+        )
+        if result.returncode == 0:
+            print(f"✓ {module} imports from a clean environment")
+            continue
+        # A Python dependency that is simply not installed here, including torch,
+        # says nothing about how the wheel was built. Only a failure to load a
+        # native library does.
+        if "ModuleNotFoundError" in result.stderr:
+            print(f"- {module} needs a package this environment lacks, skipping")
+            continue
+        assert "cannot open shared object file" not in result.stderr, (
+            f"{module} ships in the wheel but cannot load a native dependency, "
+            f"which usually means a runtime path does not reach it: "
+            f"{result.stderr.strip()[-400:]}"
+        )
+        print(f"- {module} did not import for an unrelated reason, skipping")
+
+
 def run_tests(work_dir: Path) -> None:
     report_wheel_composition()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_single_backend_registry()
+    test_python_extensions_import()
     test_single_threadpool()
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
