@@ -260,22 +260,18 @@ def test_shipped_libraries_load() -> None:
             for line in combined.splitlines()
             if "not found" in line
         ]
-        # A Python extension module resolves the interpreter's symbols only once
-        # the interpreter loads it, so unresolved symbols are normal there and say
-        # nothing about packaging. Whether those modules import at all is covered
-        # separately. The missing-library checks below still apply to them.
-        is_python_extension = ".cpython-" in library.name or library.name.endswith(
-            (".pyd", ".abi3.so")
-        )
-        undefined = (
-            []
-            if is_python_extension
-            else [
-                line.strip()
-                for line in combined.splitlines()
-                if "undefined symbol" in line
-            ]
-        )
+        # Interpreter symbols are excluded rather than whole files. A library that
+        # is loaded by Python, whether a extension module or an ahead-of-time
+        # plugin, resolves those only once an interpreter is running, so ldd can
+        # never resolve them and their absence says nothing about packaging.
+        # Filtering the symbols rather than guessing from the file name keeps the
+        # check active for everything else those libraries need.
+        undefined = [
+            line.strip()
+            for line in combined.splitlines()
+            if "undefined symbol" in line
+            and not re.search(r"undefined symbol:\s+_?Py", line)
+        ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
         absent = [name for name in missing if name not in shipped]
