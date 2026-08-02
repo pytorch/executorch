@@ -280,7 +280,7 @@ def test_shipped_libraries_load() -> None:
         "shipped libraries reference symbols nothing provides, so they will fail "
         f"at first use rather than at load: {unresolved}"
     )
-    print("✓ every shipped library resolves every dependency it needs")
+    print("✓ every shipped library resolves in an environment with torch present")
 
 
 def test_shipped_libraries_resolve_without_build_tree() -> None:
@@ -341,11 +341,22 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
                 env=environment,
             ).stdout
             shipped = {item.name for item in libraries}
-            missing = [
+            all_missing = [
                 line.split("=>")[0].strip()
                 for line in resolved.splitlines()
-                if "not found" in line and line.split("=>")[0].strip() in shipped
+                if "not found" in line
             ]
+            # Only wheel-provided dependencies are asserted on, because an external
+            # one is expected to come from the environment. They are still reported,
+            # since silently dropping them would hide a library that resolves only
+            # through an absolute build path.
+            missing = [name for name in all_missing if name in shipped]
+            external = [name for name in all_missing if name not in shipped]
+            if external:
+                print(
+                    f"- {library.relative_to(package_dir)} also needs "
+                    f"{external} from the environment"
+                )
             if missing:
                 broken[str(library.relative_to(package_dir))] = missing
 
