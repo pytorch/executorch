@@ -301,15 +301,21 @@ def test_python_extensions_import() -> None:
         # A Python dependency that is simply not installed here, including torch,
         # says nothing about how the wheel was built. Only a failure to load a
         # native library does.
-        if "ModuleNotFoundError" in result.stderr:
+        # A Python package this environment simply does not have says nothing
+        # about how the wheel was built. Match only that shape, so a native load
+        # failure reported as ModuleNotFoundError is still caught below.
+        missing_python_package = re.search(
+            r"ModuleNotFoundError: No module named '(?!executorch)", result.stderr
+        )
+        if missing_python_package:
             print(f"- {module} needs a package this environment lacks, skipping")
             continue
-        assert "cannot open shared object file" not in result.stderr, (
-            f"{module} ships in the wheel but cannot load a native dependency, "
-            f"which usually means a runtime path does not reach it: "
-            f"{result.stderr.strip()[-400:]}"
+        # Anything else is a real failure to load what the wheel ships: a missing
+        # native library, an unresolved symbol, or an ABI mismatch.
+        raise AssertionError(
+            f"{module} ships in the wheel but does not import: "
+            f"{result.stderr.strip()[-500:]}"
         )
-        print(f"- {module} did not import for an unrelated reason, skipping")
 
 
 def run_tests(work_dir: Path) -> None:
