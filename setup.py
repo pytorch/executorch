@@ -313,6 +313,17 @@ def get_build_type(is_debug=None) -> str:
     return "Debug" if debug else "Release"
 
 
+# Headers whose implementations are built as separate targets and are not part of
+# the runtime the wheel ships. Copying them would let an application compile
+# against an API it then cannot link.
+_UNSUPPORTED_WHEEL_HEADERS = frozenset(
+    {
+        "file_descriptor_data_loader.h",
+        "serialize.h",
+    }
+)
+
+
 def get_dynamic_lib_name(name: str) -> str:
     if _is_windows():
         return f"{name}.dll"
@@ -780,6 +791,8 @@ class CustomBuildPy(build_py):
             ]:
                 src_list = Path(include_dir).rglob("*.h")
                 for src in src_list:
+                    if src.name in _UNSUPPORTED_WHEEL_HEADERS:
+                        continue
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
