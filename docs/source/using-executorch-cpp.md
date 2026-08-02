@@ -66,7 +66,7 @@ Point CMake at the installed package when you configure:
 
 ```
 cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
+  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]))')"
 cmake --build build
 ```
 
