@@ -376,11 +376,15 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
             qnn_schema
             qnn_manager
             qnn_executorch_header
-            extension_tensor
             qnn_backend_options
             wrappers
             qnn_executorch_logging
   )
+  # extension_tensor is bundled into the shared runtime, so naming it again here
+  # would give this module a second copy of what that library already provides.
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE extension_tensor)
+  endif()
   # Same reasoning as the delegate above: take the runtime from the shared
   # library when there is one, rather than embedding a second registry.
   if(EXECUTORCH_BUILD_SHARED)
