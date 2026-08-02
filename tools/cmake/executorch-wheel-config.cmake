@@ -155,14 +155,15 @@ function(executorch_define_component _suffix _library_name)
       PROPERTY INTERFACE_LINK_OPTIONS
                "LINKER:-rpath,$ORIGIN"
                "LINKER:-rpath,$ORIGIN/../lib"
-               # Three separate options rather than one SHELL: string: SHELL
-               # splits on spaces, so a library path containing one would reach
-               # the linker as two broken arguments. Kept scoped because leaving
-               # --no-as-needed in force would also retain everything later on
-               # the line.
-               "LINKER:--push-state,--no-as-needed"
-               "${_library}"
-               "LINKER:--pop-state"
+               # One option per component rather than a shared push-state pair:
+               # CMake removes duplicate link options, so repeating the same
+               # push-state text for a second component silently drops its
+               # scoping and the library goes back to being --as-needed. Naming
+               # the library inside the same option keeps each one distinct.
+               #
+               # --no-as-needed applies only to what follows within the pushed
+               # state, so the pop restores whatever the consumer had.
+               "LINKER:--push-state,--no-as-needed,${_library},--pop-state"
     )
   elseif(APPLE)
     set_property(
