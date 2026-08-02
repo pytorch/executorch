@@ -974,10 +974,9 @@ if(EXECUTORCH_BUILD_SHARED)
   )
 endif()
 
-# Added after the shared runtime rather than with the other backends: this
-# backend resolves the runtime from executorch_shared, and naming a target that
-# does not exist yet makes the link fail because the library has not been built
-# at that point on the line.
+# Added after the shared runtime for readability, so the dependency reads in the
+# order it exists. CMake resolves target names at generate time, so a reference
+# from an earlier subdirectory would work too, as several other backends here do.
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
   list(APPEND _executorch_backends qnn_executorch_backend)
