@@ -150,7 +150,7 @@ print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libra
     # loader reads that variable once at process start, so clearing it later would
     # not change what the library is allowed to find. Without this the check could
     # pass on a machine whose environment happens to cover the dependencies.
-    env -u LD_LIBRARY_PATH ${CONDA_RUN} python -c "
+    env -u LD_LIBRARY_PATH python -c "
 import ctypes, os, sys
 from pathlib import Path
 
