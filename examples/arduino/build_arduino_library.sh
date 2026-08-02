@@ -70,6 +70,9 @@ cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
 cp "$SCRIPT_DIR/ExecuTorch.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
+# Training checkpoints are how a model is regenerated, not something the
+# library needs at runtime.
+find "$OUT_DIR/examples" -name "*.pth" -delete
 
 # Tooling the README points users at. None of it is reachable once the library
 # is installed on its own, so it travels with the library under extras/, which
