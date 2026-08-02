@@ -98,10 +98,16 @@ if(EXECUTORCH_BUILD_PYBIND)
     # Wheel-specific: this module lands in
     # <site-packages>/executorch/extension/training/pybindings, three levels
     # below the wheel's lib/. A normal install puts the runtime in
-    # CMAKE_INSTALL_LIBDIR, which this relative path would not reach.
+    # CMAKE_INSTALL_LIBDIR, which this relative path would not reach. The Torch
+    # path is listed too: this module links Torch directly, and the only other
+    # entry reaching it is the absolute build directory CMake adds, which does
+    # not exist anywhere else.
+    set(_training_lib_rpath
+        "$ORIGIN/../../../lib:$ORIGIN/../../../../torch/lib"
+    )
     set_target_properties(
-      _training_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../lib"
-                               INSTALL_RPATH "$ORIGIN/../../../lib"
+      _training_lib PROPERTIES BUILD_RPATH "${_training_lib_rpath}"
+                               INSTALL_RPATH "${_training_lib_rpath}"
     )
   endif()
 
