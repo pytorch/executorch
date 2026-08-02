@@ -45,28 +45,17 @@
 cmake_minimum_required(VERSION 3.28)
 
 # Everything is resolved relative to this file so the wheel stays relocatable:
-# no absolute path from the machine that built it is baked in here.
-#
-# The package root is found by walking up until the shipped layout appears,
-# rather than by a fixed number of levels. The file is installed both under
-# share/cmake, which the historical contract uses, and under the standard
-# lib/cmake/<package name> directory that a plain CMAKE_PREFIX_PATH pointed at
-# the package root can discover. Those sit at different depths.
-set(_executorch_package_root "")
-foreach(_up "/../.." "/../../.." "/..")
-  get_filename_component(
-    _executorch_candidate_root "${CMAKE_CURRENT_LIST_DIR}${_up}" ABSOLUTE
-  )
-  if(EXISTS "${_executorch_candidate_root}/include/executorch")
-    set(_executorch_package_root "${_executorch_candidate_root}")
-    break()
-  endif()
-endforeach()
-if(NOT _executorch_package_root)
-  get_filename_component(
-    _executorch_package_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
-  )
-endif()
+# no absolute path from the machine that built it is baked in here. The file is
+# installed both under share/cmake, which the historical contract uses, and
+# under lib/cmake/executorch, which a plain CMAKE_PREFIX_PATH pointed at the
+# package root can discover, so the root is located by a marker rather than a
+# fixed depth.
+find_path(
+  _executorch_package_root include/executorch
+  PATHS "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../.."
+        "${CMAKE_CURRENT_LIST_DIR}/../../.."
+  NO_DEFAULT_PATH
+)
 
 set(EXECUTORCH_INCLUDE_DIRS
     "${_executorch_package_root}/include"
