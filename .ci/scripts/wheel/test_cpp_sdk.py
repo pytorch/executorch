@@ -241,8 +241,14 @@ def test_shipped_libraries_load() -> None:
             for line in combined.splitlines()
             if "not found" in line
         ]
+        # A Python extension module deliberately leaves the interpreter's own
+        # symbols undefined, because the interpreter provides them once it loads
+        # the module. Those are expected and must not be reported.
         undefined = [
-            line.strip() for line in combined.splitlines() if "undefined symbol" in line
+            line.strip()
+            for line in combined.splitlines()
+            if "undefined symbol" in line
+            and not re.search(r"undefined symbol:\s+_?Py", line)
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
