@@ -70,6 +70,34 @@ cmake -S . -B build \
 cmake --build build
 ```
 
+The application uses the same `Module` and `TensorPtr` APIs described above, and
+nothing else changes because the runtime came from a package rather than a source
+build:
+
+```cpp
+// main.cpp
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
+
+using executorch::extension::make_tensor_ptr;
+using executorch::extension::module::Module;
+
+int main() {
+  Module module("model.pte");
+
+  std::vector<float> data(2 * 8, 1.0f);
+  auto input = make_tensor_ptr({2, 8}, data.data());
+
+  const auto result = module.forward(input);
+  if (!result.ok()) {
+    return 1;
+  }
+  const auto output = result->at(0).toTensor();
+  std::printf("produced %zu values\n", (size_t)output.numel());
+  return 0;
+}
+```
+
 `executorch::runtime` gives you the core runtime, which can load and run a `.pte`
 file. Anything a model needs beyond that comes from a separate component target, and
 each one is defined only when the installed wheel actually ships it:
