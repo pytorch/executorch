@@ -159,7 +159,11 @@ if(_portable_lib_LIBRARY)
   )
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   if(NOT TARGET _portable_lib)
-    add_library(_portable_lib STATIC IMPORTED)
+    # SHARED, not STATIC: this resolves to the Python extension module, which is
+    # a shared object. Declaring it static makes CMake treat it as an archive,
+    # which changes how it is placed on a link line and how runtime paths are
+    # handled.
+    add_library(_portable_lib SHARED IMPORTED)
   endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
