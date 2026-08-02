@@ -241,15 +241,22 @@ def test_shipped_libraries_load() -> None:
             for line in combined.splitlines()
             if "not found" in line
         ]
-        # A Python extension module deliberately leaves the interpreter's own
-        # symbols undefined, because the interpreter provides them once it loads
-        # the module. Those are expected and must not be reported.
-        undefined = [
-            line.strip()
-            for line in combined.splitlines()
-            if "undefined symbol" in line
-            and not re.search(r"undefined symbol:\s+_?Py", line)
-        ]
+        # A Python extension module resolves the interpreter's symbols only once
+        # the interpreter loads it, so unresolved symbols are normal there and say
+        # nothing about packaging. Whether those modules import at all is covered
+        # separately. The missing-library checks below still apply to them.
+        is_python_extension = ".cpython-" in library.name or library.name.endswith(
+            (".pyd", ".abi3.so")
+        )
+        undefined = (
+            []
+            if is_python_extension
+            else [
+                line.strip()
+                for line in combined.splitlines()
+                if "undefined symbol" in line
+            ]
+        )
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
         absent = [name for name in missing if name not in shipped]
@@ -320,7 +327,10 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
             ]
             subprocess.run(
                 ["patchelf", "--set-rpath", ":".join(relative), str(target)],
-                check=False,
+                # A failure here would leave the original absolute build paths in
+                # place, and the check below would then pass by resolving through
+                # them, which is exactly what this test exists to rule out.
+                check=True,
             )
             resolved = subprocess.run(
                 ["ldd", str(target)],

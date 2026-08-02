@@ -1198,7 +1198,7 @@ setup(
                 # whenever CUDA is on, so gating on the shared runtime as well
                 # would drop it from a CUDA wheel built with a static runtime.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
                     src_name="extension_cuda",
                     dst="executorch/lib/",
                     is_dynamic_lib=True,
