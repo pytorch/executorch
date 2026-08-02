@@ -315,9 +315,14 @@ def get_build_type(is_debug=None) -> str:
 
 # Headers whose implementations are built as separate targets and are not part of
 # the runtime the wheel ships. Copying them would let an application compile
-# against an API it then cannot link.
+# against an API it then cannot link. This is a list rather than a rule because
+# the wheel copies header trees by directory while the runtime's sources are
+# chosen per target, so there is nothing to derive the answer from. A supported
+# header set expressed alongside the runtime's own source list would remove the
+# need for it.
 _UNSUPPORTED_WHEEL_HEADERS = frozenset(
     {
+        "bundled_module.h",
         "file_descriptor_data_loader.h",
         "serialize.h",
     }
