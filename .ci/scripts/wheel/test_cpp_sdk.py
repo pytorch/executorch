@@ -77,10 +77,12 @@ _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
 _CONSUMER_SOURCE = """\
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <cstdio>
+#include <vector>
 
 int main() {
   executorch::runtime::runtime_init();
@@ -91,9 +93,21 @@ int main() {
   std::printf(
       "registered backends: %zu\\n",
       (size_t)executorch::runtime::get_num_registered_backends());
-  // Compile against the Module header too. It is shipped and advertised as the
-  // way to load a program, so a consumer must be able to include it.
-  (void)sizeof(executorch::extension::Module);
+
+  // Use the Module and tensor APIs, which are how an application is expected to
+  // load and run a program. Constructing them proves the shipped headers and the
+  // shipped library agree, which taking sizeof alone would not: a declaration is
+  // enough for that, while these need real definitions at link time.
+  executorch::extension::module::Module module("nonexistent.pte");
+  std::vector<float> data(4, 1.0f);
+  auto input = executorch::extension::make_tensor_ptr({2, 2}, data.data());
+  std::printf("tensor holds %zu values\\n", (size_t)input->numel());
+
+  // A load failure is expected here, since no program is shipped for this check.
+  // What matters is that the call links and returns an error rather than failing
+  // to resolve a symbol.
+  const auto error = module.load();
+  std::printf("module load returned 0x%x as expected\\n", (unsigned)error);
   return 0;
 }
 """
