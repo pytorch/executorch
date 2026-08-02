@@ -26,6 +26,14 @@
 #
 # executorch::runtime     -- The prebuilt C++ runtime (libexecutorch.so)
 #
+# Component targets are defined only when the wheel ships that component. Each
+# one already carries the runtime dependency and, for a registration-only
+# library, the link options that keep it from being dropped:
+#
+# executorch::threadpool       -- The shared thread pool executorch::kernels --
+# The CPU operator kernels executorch::xnnpack_backend  -- The XNNPACK delegate
+# executorch::cuda_backend     -- The CUDA delegate, CUDA wheels only
+#
 cmake_minimum_required(VERSION 3.19)
 
 # This file is installed to <site-packages>/executorch/share/cmake, so the
@@ -94,6 +102,80 @@ if(_executorch_runtime_count GREATER 0)
     )
   endif()
 endif()
+
+# Define an imported target for one shipped component library.
+#
+# A component is a prebuilt shared library next to the runtime, such as the CPU
+# kernels or a delegate backend. Without a target for each one, a consumer has
+# to find the file itself and decide how to keep it on the link line, which
+# means depending on the wheel's private layout. The retention part matters
+# most: a registration-only library has no symbol the application references, so
+# a normal link drops it and its registration never runs.
+#
+# Call as: executorch_define_component(<target suffix> <library base name>)
+function(executorch_define_component _suffix _library_name)
+  file(GLOB _candidates
+       "${_executorch_package_root}/lib/lib${_library_name}.so"
+       "${_executorch_package_root}/lib/lib${_library_name}.so.*"
+  )
+  if(NOT _candidates)
+    return()
+  endif()
+  # An unversioned name sorts first, so a development symlink wins over the
+  # versioned file when both are present.
+  list(SORT _candidates)
+  list(GET _candidates 0 _library)
+
+  set(_target "executorch::${_suffix}")
+  if(NOT TARGET ${_target})
+    add_library(${_target} SHARED IMPORTED)
+  endif()
+  set_target_properties(
+    ${_target}
+    PROPERTIES IMPORTED_LOCATION "${_library}"
+               INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+               INTERFACE_COMPILE_FEATURES cxx_std_17
+               INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
+  )
+  # Every component resolves the runtime from the same shared library, so record
+  # that rather than leaving a consumer to link both by hand.
+  if(TARGET executorch::runtime)
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
+    )
+  endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY
+        INTERFACE_LINK_OPTIONS
+        "LINKER:-rpath,$ORIGIN"
+        "LINKER:-rpath,$ORIGIN/../lib"
+        # Scoped rather than a bare --no-as-needed: leaving it in force would
+        # also retain everything later on the line.
+        "SHELL:LINKER:--push-state,--no-as-needed ${_library} LINKER:--pop-state"
+    )
+  elseif(APPLE)
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY INTERFACE_LINK_OPTIONS "SHELL:-force_load ${_library}"
+    )
+  endif()
+  set(EXECUTORCH_LIBRARIES
+      ${EXECUTORCH_LIBRARIES} ${_target}
+      PARENT_SCOPE
+  )
+endfunction()
+
+executorch_define_component(threadpool executorch_threadpool)
+
+executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
+
+executorch_define_component(xnnpack_backend executorch_xnnpack_backend)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
