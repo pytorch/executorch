@@ -119,8 +119,11 @@ for library in libraries:
             break
 
 if not definers:
-    print('INFO: no CUDA delegate in this install, nothing to check')
-    sys.exit(0)
+    # This runs inside a job that just built with CUDA enabled, so a missing
+    # delegate means the build or the packaging stopped producing it. Treating
+    # that as nothing to check would let the regression through.
+    print('ERROR: CUDA was enabled but no shipped library defines the delegate')
+    sys.exit(1)
 if len(definers) != 1:
     print(f'ERROR: expected one library to define the CUDA delegate, found {definers}')
     sys.exit(1)

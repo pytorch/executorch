@@ -385,11 +385,10 @@ def test_single_threadpool() -> None:
 def test_single_kernel_registration() -> None:
     """Exactly one shipped library may define the merged CPU kernels."""
     _assert_single_definer(_KERNEL_SYMBOLS, "set of CPU kernels")
-    # Ownership of the operator table, not just of a kernel implementation. This is
-    # reported rather than asserted because two extension modules still link the
-    # static core and carry their own copy, which predates this split: a released
-    # wheel has five definers where this one has three. Asserting here would fail
-    # on those pre-existing copies rather than on anything this change introduced.
+    # Ownership of the operator table, not just of a kernel implementation. A
+    # second copy means a second table, and a static initializer registering into
+    # a table nothing else reads shows up as an operator that is missing at run
+    # time rather than as a link error.
     _assert_single_definer(_KERNEL_REGISTRY_SYMBOLS, "operator registry")
 
 

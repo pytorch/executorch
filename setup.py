@@ -1199,8 +1199,9 @@ setup(
                 # would drop it from a CUDA wheel built with a static runtime.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
-                    src_name="libextension_cuda.so",
-                    dst="executorch/lib/libextension_cuda.so",
+                    src_name="extension_cuda",
+                    dst="executorch/lib/",
+                    is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
