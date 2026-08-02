@@ -26,13 +26,15 @@
 #
 # executorch::runtime     -- The prebuilt C++ runtime (libexecutorch.so)
 #
-# Component targets are defined only when the wheel ships that component. Each
-# one already carries the runtime dependency and, for a registration-only
-# library, the link options that keep it from being dropped:
+# Component targets are defined only when the wheel ships that component, so the
+# set depends on which wheel is installed. Each one carries the runtime
+# dependency and, for a registration-only library, the link options that keep it
+# from being dropped. The names, when present, are:
 #
-# executorch::threadpool       -- The shared thread pool executorch::kernels --
-# The CPU operator kernels executorch::xnnpack_backend  -- The XNNPACK delegate
-# executorch::cuda_backend     -- The CUDA delegate, CUDA wheels only
+# executorch::threadpool executorch::kernels executorch::xnnpack_backend
+# executorch::cuda_backend
+#
+# Check with if(TARGET executorch::<name>) rather than assuming one exists.
 #
 cmake_minimum_required(VERSION 3.19)
 
@@ -150,13 +152,17 @@ function(executorch_define_component _suffix _library_name)
     set_property(
       TARGET ${_target}
       APPEND
-      PROPERTY
-        INTERFACE_LINK_OPTIONS
-        "LINKER:-rpath,$ORIGIN"
-        "LINKER:-rpath,$ORIGIN/../lib"
-        # Scoped rather than a bare --no-as-needed: leaving it in force would
-        # also retain everything later on the line.
-        "SHELL:LINKER:--push-state,--no-as-needed ${_library} LINKER:--pop-state"
+      PROPERTY INTERFACE_LINK_OPTIONS
+               "LINKER:-rpath,$ORIGIN"
+               "LINKER:-rpath,$ORIGIN/../lib"
+               # Three separate options rather than one SHELL: string: SHELL
+               # splits on spaces, so a library path containing one would reach
+               # the linker as two broken arguments. Kept scoped because leaving
+               # --no-as-needed in force would also retain everything later on
+               # the line.
+               "LINKER:--push-state,--no-as-needed"
+               "${_library}"
+               "LINKER:--pop-state"
     )
   elseif(APPLE)
     set_property(

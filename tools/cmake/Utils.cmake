@@ -81,7 +81,11 @@ function(executorch_target_link_options_shared_lib target_name)
     target_link_options(
       ${target_name}
       INTERFACE
-      "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:${target_name}> LINKER:--pop-state"
+      # Separate options rather than one SHELL: string, which splits on spaces
+      # and would break a library path containing one.
+      "LINKER:--push-state,--no-as-needed"
+      "$<TARGET_FILE:${target_name}>"
+      "LINKER:--pop-state"
     )
     return()
   endif()
@@ -285,8 +289,10 @@ function(executorch_target_retain_shared_library target_name library_target)
     # push-state/pop-state rather than closing with an explicit --as-needed:
     # that would leave --as-needed in force for everything after it on the line
     # and drop the next library that only exists for static-init registration.
-    set(_retain_flags
-        "SHELL:LINKER:--push-state,--no-as-needed $<TARGET_FILE:${library_target}> LINKER:--pop-state"
+    # Separate options rather than one SHELL: string, which splits on spaces and
+    # would break a library path containing one.
+    set(_retain_flags "LINKER:--push-state,--no-as-needed"
+                      "$<TARGET_FILE:${library_target}>" "LINKER:--pop-state"
     )
   endif()
   # The generator expression alone does not order the build, so say it outright.
