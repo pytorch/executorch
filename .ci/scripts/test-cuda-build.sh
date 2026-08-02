@@ -118,6 +118,18 @@ for library in libraries:
             definers.append(str(library.relative_to(package)))
             break
 
+# The symbol above belongs to the shim layer, so it stays resolvable even if the
+# delegate library itself stops being packaged. Check for the delegate file too,
+# otherwise losing it entirely would go unnoticed here.
+delegates = [
+    p for p in package.rglob('libexecutorch_cuda_backend.so*')
+    if p.is_file() and not p.is_symlink()
+]
+if len(delegates) != 1:
+    print(f'ERROR: expected one shipped CUDA delegate library, found {delegates}')
+    sys.exit(1)
+print(f'SUCCESS: one CUDA delegate library at {delegates[0].relative_to(package)}')
+
 if not definers:
     # This runs inside a job that just built with CUDA enabled, so a missing
     # delegate means the build or the packaging stopped producing it. Treating
