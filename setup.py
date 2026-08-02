@@ -777,6 +777,15 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "share/cmake/executorch-config.cmake",
                 ),
+                # Also at the standard location, so a consumer can point
+                # CMAKE_PREFIX_PATH at the installed package root. CMake only
+                # searches lib/cmake/<package name> and a few similar directories
+                # for a named package, not a bare share/cmake, so without this a
+                # consumer has to know the exact leaf holding the file.
+                (
+                    "tools/cmake/executorch-wheel-config.cmake",
+                    "lib/cmake/executorch/executorch-config.cmake",
+                ),
             ]
             # Copy all the necessary headers into include/executorch/ so that they can
             # be found in the pip package. This is the subset of headers that are
