@@ -81,11 +81,11 @@ function(executorch_target_link_options_shared_lib target_name)
     target_link_options(
       ${target_name}
       INTERFACE
-      # Separate options rather than one SHELL: string, which splits on spaces
-      # and would break a library path containing one.
-      "LINKER:--push-state,--no-as-needed"
-      "$<TARGET_FILE:${target_name}>"
-      "LINKER:--pop-state"
+      # One option with the library inside it, for two reasons. A SHELL: string
+      # would split on spaces and break a path containing one, and separate
+      # options repeat identical text that CMake de-duplicates, which silently
+      # leaves every library after the first outside any --no-as-needed scope.
+      "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${target_name}>,--pop-state"
     )
     return()
   endif()
@@ -289,10 +289,11 @@ function(executorch_target_retain_shared_library target_name library_target)
     # push-state/pop-state rather than closing with an explicit --as-needed:
     # that would leave --as-needed in force for everything after it on the line
     # and drop the next library that only exists for static-init registration.
-    # Separate options rather than one SHELL: string, which splits on spaces and
-    # would break a library path containing one.
-    set(_retain_flags "LINKER:--push-state,--no-as-needed"
-                      "$<TARGET_FILE:${library_target}>" "LINKER:--pop-state"
+    # The library goes inside the single option: a SHELL: string would split on
+    # spaces, and separate options repeat identical text that CMake
+    # de-duplicates, which would leave every library after the first unscoped.
+    set(_retain_flags
+        "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${library_target}>,--pop-state"
     )
   endif()
   # The generator expression alone does not order the build, so say it outright.
