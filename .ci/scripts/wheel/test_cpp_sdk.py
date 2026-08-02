@@ -69,7 +69,10 @@ _CUDA_SYMBOLS = ("executorch::backends::cuda::clearCurrentCUDAStream",)
 # "                 U <name>" for an undefined reference.
 _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
 
-# Symbol kinds that mean the object owns the code or storage.
+# Symbol kinds that mean the object owns the code or storage. Weak and unique
+# kinds are included because a definition is still a definition, but every
+# symbol probed here is a strong one, which is what makes a second definer a
+# real second copy rather than ordinary vague linkage.
 _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
 _CONSUMER_SOURCE = """\
@@ -134,11 +137,12 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
         if symbol not in line:
             continue
         match = _DEFINED.match(line)
-        if (
-            match
-            and match.group("name").startswith(symbol)
-            and match.group("kind") in _OWNING_KINDS
-        ):
+        if not match or match.group("kind") not in _OWNING_KINDS:
+            continue
+        # Exact, or followed by the argument list that nm -C prints. A plain prefix
+        # test would also match a longer name that merely starts the same way.
+        name = match.group("name")
+        if name == symbol or name.startswith(symbol + "("):
             return True
     return False
 

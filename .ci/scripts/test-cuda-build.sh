@@ -145,7 +145,12 @@ print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libra
     # Loading it is what the symbol scan above cannot prove. A broken runtime
     # path, an undefined symbol, or a mismatched CUDA dependency all pass a name
     # check and fail here.
-    ${CONDA_RUN} python -c "
+    #
+    # LD_LIBRARY_PATH is removed before the interpreter starts, not inside it: the
+    # loader reads that variable once at process start, so clearing it later would
+    # not change what the library is allowed to find. Without this the check could
+    # pass on a machine whose environment happens to cover the dependencies.
+    env -u LD_LIBRARY_PATH ${CONDA_RUN} python -c "
 import ctypes, os, sys
 from pathlib import Path
 
@@ -160,9 +165,6 @@ if len(delegates) != 1:
     print(f'ERROR: expected one shipped CUDA delegate, found {delegates}')
     sys.exit(1)
 
-# Strip LD_LIBRARY_PATH so the library has to resolve through its own runtime
-# path, the way it would on a user's machine.
-os.environ.pop('LD_LIBRARY_PATH', None)
 for library in [delegates[0]] + sorted(package.rglob('libaoti_cuda_shims.so*')):
     if not library.is_file() or library.is_symlink():
         continue
