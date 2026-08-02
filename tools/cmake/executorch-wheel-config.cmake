@@ -134,6 +134,10 @@ elseif(TARGET executorch::runtime)
   # would survive and the extension would still be offered despite being skipped
   # here.
   unset(_portable_lib_LIBRARY CACHE)
+  # Also clear any normal-scope value, since find_library writes the cache entry
+  # while a plain variable of the same name can shadow it and still look like a
+  # successful discovery.
+  unset(_portable_lib_LIBRARY)
 else()
   message(
     FATAL_ERROR
@@ -176,6 +180,10 @@ if(_portable_lib_LIBRARY)
                # compile
                # as C++17 and fail against headers that need C++20.
                INTERFACE_COMPILE_FEATURES cxx_std_20
+               # The same definition the runtime target carries. A custom-op
+               # build that links only this target still compiles against the
+               # same headers and needs it too.
+               INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
   )
 endif()
 
