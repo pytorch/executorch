@@ -63,11 +63,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
-    # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
-    list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK
-         xnnpack-microkernels-prod
-    )
+    if(EXECUTORCH_BUILD_SHARED)
+      # The delegate bundles XNNPACK and its microkernels, so naming them again
+      # here would ask for a second copy of what that library already provides.
+      list(APPEND _pybind_training_dep_libs xnnpack_backend)
+    else()
+      # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
+      # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
+      list(APPEND _pybind_training_dep_libs xnnpack_backend XNNPACK
+           xnnpack-microkernels-prod
+      )
+    endif()
   endif()
 
   pybind11_add_module(
