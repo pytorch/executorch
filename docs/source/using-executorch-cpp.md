@@ -40,6 +40,59 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
+There are two ways to get the C++ runtime. Linking the prebuilt libraries from the
+pip package needs no source checkout and is the quicker option. Building from source
+gives you every option the project has, and is what you need for a platform the wheel
+does not cover.
+
+### Using the prebuilt libraries from the pip package
+
+On Linux, `pip install executorch` includes prebuilt shared libraries, the public
+headers, and a CMake package, so a C++ application can link the runtime without
+building ExecuTorch itself:
+
+```
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.28)
+project(my_app CXX)
+
+find_package(executorch REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE executorch::runtime)
+```
+
+Point CMake at the installed package when you configure:
+
+```
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
+cmake --build build
+```
+
+`executorch::runtime` gives you the core runtime, which can load and run a `.pte`
+file. Anything a model needs beyond that comes from a separate component target, and
+each one is defined only when the installed wheel actually ships it:
+
+| Target | What it provides |
+| --- | --- |
+| `executorch::runtime` | The core runtime. Always present. |
+| `executorch::threadpool` | The shared thread pool the kernels and backends use. |
+| `executorch::kernels` | CPU operator kernels, for any operator not taken by a backend. |
+| `executorch::xnnpack_backend` | The XNNPACK backend, for optimized CPU execution. |
+| `executorch::cuda_backend` | The CUDA backend. Only in a CUDA wheel. |
+
+Each target already carries what it needs: the runtime dependency, the include
+directories, the runtime search paths, and the linker options that keep a
+registration-only library from being dropped. You do not need to name library files
+or add link flags yourself.
+
+CMake 3.28 or newer is required. Older versions write the `$ORIGIN` token in the
+runtime search path incorrectly, which makes an application fail to find the
+libraries once it is copied somewhere else.
+
+### Building from source
+
 ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_backends`, `executorch_extensions`, and `extension_kernels`, to link all configured backends, extensions, and kernels.
 
 ```
