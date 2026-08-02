@@ -36,7 +36,13 @@
 #
 # Check with if(TARGET executorch::<name>) rather than assuming one exists.
 #
-cmake_minimum_required(VERSION 3.19)
+# 3.28 rather than something older: the imported targets below export
+# "$ORIGIN"-relative runtime paths as link options, and CMake writes that token
+# incorrectly before 3.28. Versions 3.24 through 3.27 emit a doubled dollar with
+# the Makefile generator and a bare dollar with Ninja, so a consumer builds and
+# runs in place, because the absolute package directory is also recorded, then
+# fails once it is deployed somewhere else.
+cmake_minimum_required(VERSION 3.28)
 
 # This file is installed to <site-packages>/executorch/share/cmake, so the
 # package root is two levels up. Everything is resolved relative to this file so
