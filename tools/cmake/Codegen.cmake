@@ -261,7 +261,13 @@ function(gen_custom_ops_aot_lib)
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
-  elseif(NOT EXECUTORCH_BUILD_SHARED)
+  elseif(TARGET executorch_shared)
+    # Linked as a library rather than only retained, so this target also picks
+    # up the runtime's include directories and compile definitions. The
+    # retention helper below adds link options alone, which would leave a shared
+    # build without the pybind extension compiling against no runtime headers.
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_shared)
+  else()
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_core)
   endif()
   executorch_target_link_shared_runtime(${GEN_LIB_NAME})
