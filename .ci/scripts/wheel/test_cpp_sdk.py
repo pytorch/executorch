@@ -177,6 +177,13 @@ def test_shipped_libraries_load() -> None:
     if shutil.which("ldd") is None:
         print("- ldd not available, skipping the load check")
         return
+    # Torch has to be installed for this to mean anything: several shipped
+    # libraries depend on it and resolve once it is imported. Without it every one
+    # of them looks broken, which would report a packaging fault that does not
+    # exist.
+    if importlib.util.find_spec("torch") is None:
+        print("- torch is not installed, skipping the load check")
+        return
 
     package_dir = _installed_package_dir()
     libraries = _shipped_shared_objects(package_dir)
@@ -231,7 +238,20 @@ def test_shipped_libraries_load() -> None:
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
-        absent = [name for name in missing if name not in shipped]
+        # Torch and the interpreter are excluded rather than treated as packaging
+        # faults. Both arrive from outside the wheel: torch libraries resolve once
+        # the torch package is imported, and libpython comes from the running
+        # interpreter. Neither is reachable from an ldd process, and a wheel must
+        # not carry an absolute path to a build machine's copy just to satisfy this
+        # check. Anything the wheel itself ships still has to resolve below.
+        def _provided_externally(name: str) -> bool:
+            return name.startswith(("libpython", "libtorch", "libc10"))
+
+        absent = [
+            name
+            for name in missing
+            if name not in shipped and not _provided_externally(name)
+        ]
         present_but_unreachable = [name for name in missing if name in shipped]
         if absent:
             broken[str(library.relative_to(package_dir))] = absent
@@ -515,11 +535,26 @@ def test_python_extensions_import() -> None:
     runtime path does not reach one of its dependencies. Run in a subprocess with
     `LD_LIBRARY_PATH` removed so a value from the build environment cannot supply
     a path the shipped library is missing.
+
+    A CUDA wheel is the documented exception. Its libraries need the CUDA runtime,
+    which the wheel deliberately does not bundle, so the environment has to provide
+    it and removing the search path would fail for a reason that is by design.
     """
     modules = [
         "executorch.extension.pybindings.portable_lib",
         "executorch.extension.training",
     ]
+    package_dir = _installed_package_dir()
+    needs_cuda_runtime = any(
+        "libcudart" in subprocess.run(
+            ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
+        ).stdout
+        for library in _shipped_shared_objects(package_dir)
+    )
+    if needs_cuda_runtime and shutil.which("readelf") is not None:
+        print("- a CUDA wheel needs the CUDA runtime from the environment, so the "
+              "clean-environment import check does not apply")
+        return
     environment = {
         key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
     }
@@ -698,6 +733,48 @@ def test_wheel_platform_tag() -> None:
     print(f"✓ the wheel contents match its declared platform tag {match.group(1)}")
 
 
+def test_no_absolute_runtime_paths() -> None:
+    """No shipped library may carry an absolute runtime search path.
+
+    Packaging copies libraries out of the build tree rather than installing them,
+    so anything CMake recorded at build time ships as-is. An absolute entry both
+    names the build machine and points somewhere that will not exist for a user.
+
+    The check reads the shipped file directly, with nothing stripped, which is what
+    a user actually receives.
+    """
+    if shutil.which("patchelf") is None:
+        print("- patchelf unavailable, skipping the runtime path check")
+        return
+
+    package_dir = _installed_package_dir()
+    offenders = {}
+    for library in sorted(package_dir.rglob("*.so*")):
+        if not library.is_file() or library.is_symlink():
+            continue
+        result = subprocess.run(
+            ["patchelf", "--print-rpath", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            continue
+        absolute = [
+            entry
+            for entry in result.stdout.strip().split(":")
+            if entry.startswith("/")
+        ]
+        if absolute:
+            offenders[str(library.relative_to(package_dir))] = absolute
+
+    assert not offenders, (
+        "shipped libraries carry absolute runtime search paths, so they are not "
+        f"relocatable and name the build machine: {offenders}"
+    )
+    print("✓ no shipped library carries an absolute runtime search path")
+
+
 def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
@@ -705,6 +782,7 @@ def run_tests(work_dir: Path) -> None:
     test_python_extensions_import()
     test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
+    test_no_absolute_runtime_paths()
     test_single_threadpool()
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
