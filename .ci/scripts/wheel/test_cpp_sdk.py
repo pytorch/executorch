@@ -130,20 +130,56 @@ target_link_libraries(consumer PRIVATE executorch::runtime)
 # environment or the separate nvidia packages. None is reachable from an ldd process,
 # and a wheel must not carry an absolute path to a build machine's copy just to
 # satisfy a check. Anything the wheel itself ships still has to resolve.
-_EXTERNAL_LIBRARY_PREFIXES = (
-    "libpython",
-    "libtorch",
-    "libc10",
-    "libcuda",
-    "libcurand",
-    "libcublas",
-    "libnvinfer",
+# Base names of the libraries the wheel expects from outside itself: the interpreter,
+# PyTorch, and the CUDA runtime. Matched as whole names rather than as prefixes, because a
+# prefix test also excuses unrelated libraries that merely start the same way, such as
+# libtorchcodec_core.so or libcudagraph_helper.so.
+_EXTERNAL_LIBRARY_NAMES = frozenset(
+    {
+        "libpython3",
+        "libtorch",
+        "libtorch_cpu",
+        "libtorch_cuda",
+        "libtorch_python",
+        "libtorch_global_deps",
+        "libc10",
+        "libc10_cuda",
+        "libcuda",
+        "libcudart",
+        "libcurand",
+        "libcublas",
+        "libcublasLt",
+        "libcudnn",
+        "libcufft",
+        "libcusparse",
+        "libcusolver",
+        "libnvinfer",
+        "libnvinfer_plugin",
+        "libnvrtc",
+        "libnccl",
+    }
 )
+
+# The CUDA entry points, spelled the way the CUDA APIs are: a known family followed by an
+# uppercase letter. A bare "cu" prefix would also suppress ordinary names such as
+# custom_double_out, so a library genuinely missing one would pass unnoticed.
+_CUDA_SYMBOL = re.compile(
+    r"undefined symbol:\s+_*(?:"
+    r"cuda[A-Z]|cu[A-Z]|curand[A-Z]|cublas[A-Z]|cudnn[A-Z]"
+    r"|cusparse[A-Z]|cusolver[A-Z]|cufft[A-Z]|nvrtc[A-Z]|nccl[A-Z]"
+    r")"
+)
+
+_SONAME_SUFFIX = re.compile(r"\.so(?:\.\d+)*$")
 
 
 def _provided_externally(name: str) -> bool:
     """Whether a shared library is expected to come from outside the wheel."""
-    return name.startswith(_EXTERNAL_LIBRARY_PREFIXES)
+    base = _SONAME_SUFFIX.sub("", name)
+    if base in _EXTERNAL_LIBRARY_NAMES:
+        return True
+    # Version-suffixed interpreter names such as libpython3.12.
+    return bool(re.fullmatch(r"libpython3(?:\.\d+)?", base))
 
 
 # The component library each target is expected to expose. Keyed by the library base
@@ -317,9 +353,7 @@ def test_shipped_libraries_load() -> None:
             # __cudaRegisterFatBinary for every compiled .cu file.
             and not (
                 skip_undefined
-                and re.search(
-                    r"undefined symbol:\s+_*(cu|cuda|curand|cublas|cudnn)", line
-                )
+                and re.search(_CUDA_SYMBOL, line)
             )
         ]
         if undefined:

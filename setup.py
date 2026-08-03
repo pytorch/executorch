@@ -1310,11 +1310,19 @@ setup(
                 # whenever CUDA is on, so gating on the shared runtime as well
                 # would drop it from a CUDA wheel built with a static runtime.
                 BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
-                    src_name="extension_cuda",
-                    dst="executorch/lib/",
-                    is_dynamic_lib=True,
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                    src_name=(
+                        "libexecutorch_extension_cuda.so."
+                        f"{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_extension_cuda.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
