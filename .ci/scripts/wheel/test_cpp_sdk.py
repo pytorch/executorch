@@ -27,8 +27,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
+import sys
 from pathlib import Path
 
 # Registry entry points. A second definer of any of these means a second
@@ -582,6 +582,7 @@ executorch::aten::Tensor& custom_double_out(
 EXECUTORCH_LIBRARY(wheel_check, "custom_double.out", custom_double_out);
 """
 
+
 _CUSTOM_OP_CMAKE = """\
 cmake_minimum_required(VERSION 3.28)
 project(custom_op_check CXX)
@@ -702,10 +703,10 @@ def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_resolve_without_build_tree()
     test_single_backend_registry()
     test_python_extensions_import()
+    test_wheel_platform_tag()
+    test_custom_op_compiles(work_dir)
     test_single_threadpool()
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
     test_single_cuda_delegate()
-    test_wheel_platform_tag()
-    test_custom_op_compiles(work_dir)
     test_cpp_consumer(work_dir)
