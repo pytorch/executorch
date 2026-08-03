@@ -1106,11 +1106,55 @@ def test_documented_example_compiles(work_dir: Path) -> None:
     print("\u2713 the C++ example in the documentation compiles and links")
 
 
+def test_python_extension_links_shared_runtime() -> None:
+    """The Python extension must depend on the shipped runtime library.
+
+    Checking that one library defines the registry does not prove the extension uses it.
+    An extension that kept its own copy, or linked nothing, would satisfy that count and
+    still give a process two registries. Its dependency list settles it.
+    """
+    if shutil.which("readelf") is None:
+        print("- readelf is not available, skipping the extension dependency check")
+        return
+
+    package_dir = _installed_package_dir()
+    extensions = sorted(
+        (package_dir / "extension" / "pybindings").glob("_portable_lib*.so")
+    )
+    if not extensions:
+        print("- no Python extension in this wheel, skipping the dependency check")
+        return
+
+    for extension in extensions:
+        result = subprocess.run(
+            ["readelf", "-d", str(extension)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, (
+            f"readelf could not read {extension.name}, so the dependency check cannot "
+            "be trusted"
+        )
+        needed = re.findall(r"Shared library: \[([^\]]+)\]", result.stdout)
+        runtime = [name for name in needed if name.startswith("libexecutorch.so")]
+        assert runtime, (
+            f"{extension.relative_to(package_dir)} does not depend on the shipped "
+            f"runtime, so it cannot be using the same registry as a C++ application; "
+            f"it needs {needed}"
+        )
+        print(
+            f"\u2713 {extension.relative_to(package_dir)} resolves the registry through "
+            f"{runtime[0]}"
+        )
+
+
 def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_single_backend_registry()
     test_python_extensions_import()
+    test_python_extension_links_shared_runtime()
     test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
     test_no_absolute_runtime_paths()
