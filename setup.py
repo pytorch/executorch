@@ -342,6 +342,46 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
+def _write_cmake_version_file(destination: str) -> None:
+    """Generate the CMake package version file next to the package config.
+
+    Read from version.txt so the version CMake reports is the same one the wheel and
+    the runtime SONAME use. Written by hand rather than with
+    write_basic_package_version_file because that helper needs a CMake run, and this
+    file is produced while assembling the wheel.
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(root, "version.txt")) as handle:
+        version = handle.read().strip()
+    # A pre-release suffix is not a CMake version component, so keep the numeric
+    # prefix and let compatibility be decided on the major.
+    numeric = re.match(r"\d+(?:\.\d+){0,2}", version)
+    numeric = numeric.group(0) if numeric else "0.0.0"
+    major = numeric.split(".")[0]
+
+    contents = f"""\
+set(PACKAGE_VERSION "{numeric}")
+
+if(NOT PACKAGE_FIND_VERSION)
+  # No version requested, so any version satisfies it.
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+elseif(PACKAGE_FIND_VERSION_MAJOR STREQUAL "{major}")
+  # SameMajorVersion, matching the runtime's SONAME: a consumer asking for {major}.x
+  # gets any {major}.y, and a request for a different major is refused because the
+  # shared runtime it would link is not the one it asked for.
+  set(PACKAGE_VERSION_COMPATIBLE TRUE)
+  if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
+    set(PACKAGE_VERSION_EXACT TRUE)
+  endif()
+else()
+  set(PACKAGE_VERSION_UNSUITABLE TRUE)
+endif()
+"""
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    with open(destination, "w") as handle:
+        handle.write(contents)
+
+
 def get_runtime_soname_major() -> str:
     """The major version in the shared runtime's SONAME.
 
@@ -734,6 +774,18 @@ class CustomBuildPy(build_py):
                     if os.path.isfile(os.path.join(_root, _f))
                 ]
 
+    @staticmethod
+    def _write_cmake_version_files(dst_root: str) -> None:
+        """Put a CMake version file beside each copy of the package config.
+
+        Without one, CMake rejects any versioned find_package because it cannot tell
+        what version the package is, even when the package is usable.
+        """
+        for config_dir in ("share/cmake", "lib/cmake/executorch"):
+            _write_cmake_version_file(
+                os.path.join(dst_root, config_dir, "executorch-config-version.cmake")
+            )
+
     def run(self):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
@@ -827,6 +879,8 @@ class CustomBuildPy(build_py):
             # the mode. This ensures that the output file is read/write even if
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
+
+        self._write_cmake_version_files(dst_root)
 
         # Copy CMake-generated Python directories that setuptools missed.
         # Setuptools discovers packages at configuration time, before CMake
