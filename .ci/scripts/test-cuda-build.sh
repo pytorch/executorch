@@ -176,6 +176,15 @@ print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libra
 import ctypes, os, sys
 from pathlib import Path
 
+# Imported before anything is loaded by hand. When CUDA comes from torch's bundled
+# nvidia wheels rather than a system install, importing torch is what puts those
+# libraries in reach; without it the loads below fail for a reason that is not a
+# packaging defect.
+try:
+    import torch  # noqa: F401
+except ImportError:
+    pass
+
 import executorch
 
 package = Path(getattr(executorch, '__path__', [None])[0])
