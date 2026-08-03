@@ -21,7 +21,7 @@
 //            def forward(self, x): return x + 1.0
 //        et = to_edge(export(Add().eval(), (torch.tensor([1.,2.,3.]),))).to_executorch()
 //        with open('add.pte','wb') as f: f.write(bytes(et.buffer))"
-//   2. Convert to header: python examples/arm/executor_runner/pte_to_header.py \
+//   2. Convert to header: python examples/arduino/pte_to_header.py \
 //        -p add.pte -o model.h
 
 #include <ExecuTorch.h>
