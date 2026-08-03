@@ -144,6 +144,27 @@ def _provided_externally(name: str) -> bool:
     return name.startswith(_EXTERNAL_LIBRARY_PREFIXES)
 
 
+# The component library each target is expected to expose. Keyed by the library base
+# name as shipped, so the test can start from what is in the wheel and require a target
+# for it, rather than only inspecting targets that happen to exist.
+_COMPONENT_LIBRARIES = {
+    "libexecutorch_threadpool": "threadpool",
+    "libexecutorch_optimized_native_cpu_ops_lib": "kernels",
+    "libexecutorch_xnnpack_backend": "xnnpack_backend",
+    "libexecutorch_cuda_backend": "cuda_backend",
+}
+
+
+def _shipped_components(package_dir: Path) -> set:
+    """Component names the wheel ships a library for."""
+    found = set()
+    for library in _shipped_shared_objects(package_dir):
+        for base, component in _COMPONENT_LIBRARIES.items():
+            if library.name.startswith(base):
+                found.add(component)
+    return found
+
+
 def _needs_external_cuda_runtime(package_dir: Path) -> bool:
     """Whether the wheel's libraries depend on a CUDA runtime it does not bundle.
 
@@ -891,8 +912,15 @@ def test_component_targets_link(work_dir: Path) -> None:
         match.split(":", 1)
         for match in re.findall(r"LINKED_COMPONENT=(\S+)", configure.stdout)
     )
-    # A wheel that ships only the runtime has nothing to check here, which is a valid
-    # configuration rather than a fault.
+    # Compare against the libraries the wheel actually ships. Checking only the targets
+    # that exist would pass a component whose target silently failed to be created,
+    # which is the failure mode a glob-based definition has.
+    expected = _shipped_components(package_dir)
+    absent = sorted(expected - set(linked))
+    assert not absent, (
+        f"the wheel ships libraries for {absent} but the package config defines no "
+        "target for them, so a consumer cannot link them"
+    )
     if not linked:
         print("- this wheel offers no component targets, skipping the component check")
         return
@@ -921,7 +949,20 @@ def test_component_targets_link(work_dir: Path) -> None:
         f"components {dropped} were linked but do not appear in the consumer's "
         "DT_NEEDED, so their registration would never run"
     )
-    print(f"✓ every offered component links and is retained: {sorted(linked)}")
+
+    # Run it, so the check covers a registration constructor actually firing rather than
+    # only the library being named in DT_NEEDED.
+    environment = {
+        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
+    }
+    run = subprocess.run(
+        [str(consumer)], capture_output=True, text=True, check=False, env=environment
+    )
+    assert run.returncode == 0, (
+        "the consumer links every component but does not run: "
+        f"{(run.stderr or run.stdout).strip()[-400:]}"
+    )
+    print(f"✓ every offered component links, is retained, and runs: {sorted(linked)}")
 
 
 def run_tests(work_dir: Path) -> None:
