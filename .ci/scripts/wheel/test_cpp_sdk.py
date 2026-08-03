@@ -62,9 +62,11 @@ _XNNPACK_SYMBOLS = (
     "executorch::backends::xnnpack::XnnpackBackendOptions::workspace_manager",
 )
 
-# A representative symbol from the CUDA delegate's shim layer. The delegate's own
-# methods are weak symbols, so this checks a strong one instead.
-_CUDA_SYMBOLS = ("executorch::backends::cuda::clearCurrentCUDAStream",)
+# A symbol the CUDA delegate itself defines. The shim layer's symbols stay resolvable even
+# if the delegate stops being packaged, so probing one of those would prove the shim is
+# present rather than that delegate code exists exactly once. It is a weak definition,
+# which _OWNING_KINDS already counts as owning.
+_CUDA_SYMBOLS = ("executorch::backends::cuda::CudaBackend::execute",)
 
 # `nm -DC` prints "<hexaddr> <kind> <name>" for a definition and
 # "                 U <name>" for an undefined reference.
@@ -469,12 +471,8 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
     print("✓ every shipped library resolves without the build tree")
 
 
-def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
-    """Exactly one shipped library may define each of `symbols`.
-
-    `optional` allows a component that is only present in some wheel flavors,
-    such as an accelerator delegate, to be absent without failing.
-    """
+def _assert_single_definer(symbols, what: str) -> None:
+    """Exactly one shipped library may define each of `symbols`."""
     assert shutil.which("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
@@ -487,9 +485,6 @@ def _assert_single_definer(symbols, what: str, optional: bool = False) -> None:
         symbol: [lib for lib in libraries if _defines_symbol(lib, symbol)]
         for symbol in symbols
     }
-    if optional and not any(found.values()):
-        print(f"- no {what} in this wheel, skipping")
-        return
 
     for symbol, definers in found.items():
         pretty = [str(lib.relative_to(package_dir)) for lib in definers]

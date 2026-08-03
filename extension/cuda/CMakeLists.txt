@@ -32,19 +32,20 @@ target_compile_definitions(
   extension_cuda PRIVATE EXECUTORCH_EXTENSION_CUDA_BUILDING
 )
 
-if(EXECUTORCH_BUILD_SHARED)
-  # A namespaced, versioned name, matching the other libraries the wheel ships. The CUDA
-  # delegate carries a real symbol reference to this library, so its DT_NEEDED entry
-  # survives even under --as-needed. A generic name like libextension_cuda.so could be
-  # satisfied by an unrelated library that happens to be loaded first, which would bind a
-  # different caller-stream implementation into the delegate.
-  set_target_properties(
-    extension_cuda
-    PROPERTIES OUTPUT_NAME executorch_extension_cuda
-               VERSION "${PROJECT_VERSION}"
-               SOVERSION "${PROJECT_VERSION_MAJOR}"
-  )
-endif()
+# A namespaced, versioned name, matching the other libraries the wheel ships. The CUDA
+# delegate carries a real symbol reference to this library, so its DT_NEEDED entry survives
+# even under --as-needed. A generic name like libextension_cuda.so could be satisfied by an
+# unrelated library that happens to be loaded first, which would bind a different
+# caller-stream implementation into the delegate.
+#
+# Not gated on the shared runtime: the target above is always SHARED, so gating the name
+# would produce a different file name in a static-runtime build than packaging looks for.
+set_target_properties(
+  extension_cuda
+  PROPERTIES OUTPUT_NAME executorch_extension_cuda
+             VERSION "${PROJECT_VERSION}"
+             SOVERSION "${PROJECT_VERSION_MAJOR}"
+)
 
 install(
   TARGETS extension_cuda
