@@ -95,6 +95,16 @@ if(EXECUTORCH_BUILD_PYBIND)
            -fexceptions>
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
+
+  if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_XNNPACK AND TARGET
+                                                              xnnpack_backend
+  )
+    # The delegate registers itself from a static initializer, so nothing in this
+    # extension references a symbol from it and a normal link can drop it. Keeping
+    # it named on the link line is what makes an XNNPACK-delegated program usable
+    # from here.
+    executorch_target_retain_shared_library(_training_lib xnnpack_backend)
+  endif()
   executorch_target_link_shared_runtime(_training_lib)
 
   if(EXECUTORCH_BUILD_SHARED
