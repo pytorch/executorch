@@ -2045,7 +2045,7 @@ document.write(`
 XNNPACK, <code class="docutils literal notranslate"><span class="pre">get_transform_passes()</span></code> is recommended in general because it runs
 pre-partition graph transforms that expose supported patterns to the
 partitioner.</p>
-<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
+<p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </section>
 <section id="llm-quantization-with-quantize">
 <h2>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Link to this heading">#</a></h2>
@@ -2054,7 +2054,7 @@ partitioner.</p>
 <li><p>Quantize embeddings with <code class="docutils literal notranslate"><span class="pre">IntxWeightOnlyConfig</span></code> (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)</p></li>
 <li><p>Quantize linear layers with 4 bit weight and 8bit dynamic activation, use <code class="docutils literal notranslate"><span class="pre">Int8DynamicActivationIntxWeightConfig</span></code> (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)</p></li>
 </ul>
-<p>Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the <a class="reference external" href="https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch">torchao documentation</a>.</p>
+<p>Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the <a class="reference external" href="https://docs.pytorch.org/ao/main/eager_tutorials/serving.html#mobile-deployment-with-executorch">torchao documentation</a>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>

@@ -1994,8 +1994,8 @@ document.write(`
 <h2>Quantization<a class="headerlink" href="#quantization" title="Link to this heading">#</a></h2>
 <p>Quantization options are defined by <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L283"><code class="docutils literal notranslate"><span class="pre">QuantizationConfig</span></code></a>. ExecuTorch does quantization in two ways:</p>
 <ol class="arabic simple">
-<li><p>TorchAO <a class="reference external" href="https://docs.pytorch.org/ao/stable/generated/torchao.quantization.quantize_.html"><code class="docutils literal notranslate"><span class="pre">quantize_</span></code></a> API</p></li>
-<li><p><a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">pt2e quantization</a></p></li>
+<li><p>TorchAO <a class="reference external" href="https://docs.pytorch.org/ao/stable/api_reference/generated/torchao.quantization.quantize_.html"><code class="docutils literal notranslate"><span class="pre">quantize_</span></code></a> API</p></li>
+<li><p><a class="reference external" href="https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html">pt2e quantization</a></p></li>
 </ol>
 <section id="torchao-xnnpack">
 <h3>TorchAO (XNNPACK)<a class="headerlink" href="#torchao-xnnpack" title="Link to this heading">#</a></h3>
@@ -2040,7 +2040,7 @@ The quantization modes are defined <a class="reference external" href="https://g
 <h3>pt2e (QNN, CoreML, and Vulkan)<a class="headerlink" href="#pt2e-qnn-coreml-and-vulkan" title="Link to this heading">#</a></h3>
 <p>pt2e quantizes at the post-export graph level, swapping nodes and injecting quant/dequant nodes.
 <strong>To quantize on non-CPU backends (QNN, CoreML, Vulkan), this is the quantization path to follow.</strong>
-Read more about pt2e <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">here</a>, and how ExecuTorch uses pt2e <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/source/quantization-overview.md">here</a>.</p>
+Read more about pt2e <a class="reference external" href="https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html">here</a>, and how ExecuTorch uses pt2e <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/source/quantization-overview.md">here</a>.</p>
 <p><em>CoreML and Vulkan support for export_llm is currently experimental and limited. To read more about QNN export, please read <a class="reference internal" href="build-run-llama3-qualcomm-ai-engine-direct-backend.html"><span class="std std-doc">Running on Android (Qualcomm)</span></a>.</em></p>
 </section>
 </section>
