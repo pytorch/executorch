@@ -55,6 +55,10 @@ find_path(
   PATHS "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../.."
         "${CMAKE_CURRENT_LIST_DIR}/../../.."
   NO_DEFAULT_PATH
+  # NO_CACHE so the search runs on every configure. A cached result would survive
+  # the package being upgraded or relocated in place and keep naming a directory
+  # that has moved, which is worse than reporting it as not found.
+  NO_CACHE
 )
 
 set(EXECUTORCH_INCLUDE_DIRS
