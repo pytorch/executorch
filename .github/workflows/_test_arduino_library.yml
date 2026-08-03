@@ -1,0 +1,79 @@
+name: Test Arduino library
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      timeout:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 90
+
+jobs:
+  run:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      job-name: arduino-library
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: ${{ inputs.timeout }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Schema headers come from a cmake build; the library build script
+        # refuses to run without them.
+        cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
+        cmake --build cmake-out --target program_schema -j$(nproc)
+
+        cd examples/arduino
+        ./build_arduino_library.sh
+
+        # A model exported against a different ExecuTorch commit than the one
+        # that built the library loads fine, resolves every operator, and then
+        # fails inside Method::execute. Catch that here rather than on a board.
+        python verify_models.py arduino_lib/ExecuTorch
+
+        # arduino-cli, the Uno Q core, and the Serial dependency the core
+        # hard-errors without.
+        export ARDUINO_DIRECTORIES_USER="${RUNNER_TEMP}/arduino"
+        mkdir -p "${ARDUINO_DIRECTORIES_USER}"
+        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
+          | BINDIR="${RUNNER_TEMP}/bin" sh
+        export PATH="${RUNNER_TEMP}/bin:${PATH}"
+        arduino-cli core update-index
+        arduino-cli core install arduino:zephyr
+        arduino-cli lib install Arduino_RouterBridge
+
+        # link_mode=static is not optional. The board defaults to Dynamic,
+        # which builds the sketch as a Zephyr loadable extension; a library
+        # this size never starts that way and prints nothing at all.
+        FQBN="arduino:zephyr:unoq:link_mode=static"
+        for sketch in arduino_lib/ExecuTorch/examples/*/; do
+          echo "::group::compile $(basename "${sketch}")"
+          arduino-cli compile --fqbn "${FQBN}" \
+            --libraries arduino_lib "${sketch}"
+          echo "::endgroup::"
+        done
+
+        # The library is published through the Arduino Library Manager, which
+        # applies these rules at submission time.
+        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-lint/main/etc/install.sh \
+          | BINDIR="${RUNNER_TEMP}/bin" sh
+        cp ../../LICENSE arduino_lib/ExecuTorch/LICENSE
+        cp README.md arduino_lib/ExecuTorch/README.md
+        (cd arduino_lib/ExecuTorch && arduino-lint \
+          --project-type library --library-manager submit --compliance strict)
