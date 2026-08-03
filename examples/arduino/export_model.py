@@ -24,7 +24,6 @@ import os
 import numpy as np
 import soundfile as sf
 import torch
-from pte_to_header import to_header
 
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
@@ -34,6 +33,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 )
 from executorch.examples.models.mlperf_tiny.ds_cnn import DSCNNKWS
 from executorch.exir import EdgeCompileConfig, to_edge
+from pte_to_header import to_header
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
