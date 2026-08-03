@@ -607,6 +607,48 @@ def test_wheel_platform_tag() -> None:
     print(f"✓ the wheel contents match its declared platform tag {match.group(1)}")
 
 
+def test_no_absolute_runtime_paths() -> None:
+    """No shipped library may carry an absolute runtime search path.
+
+    Packaging copies libraries out of the build tree rather than installing them,
+    so anything CMake recorded at build time ships as-is. An absolute entry both
+    names the build machine and points somewhere that will not exist for a user.
+
+    The check reads the shipped file directly, with nothing stripped, which is what
+    a user actually receives.
+    """
+    if shutil.which("patchelf") is None:
+        print("- patchelf unavailable, skipping the runtime path check")
+        return
+
+    package_dir = _installed_package_dir()
+    offenders = {}
+    for library in sorted(package_dir.rglob("*.so*")):
+        if not library.is_file() or library.is_symlink():
+            continue
+        result = subprocess.run(
+            ["patchelf", "--print-rpath", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            continue
+        absolute = [
+            entry
+            for entry in result.stdout.strip().split(":")
+            if entry.startswith("/")
+        ]
+        if absolute:
+            offenders[str(library.relative_to(package_dir))] = absolute
+
+    assert not offenders, (
+        "shipped libraries carry absolute runtime search paths, so they are not "
+        f"relocatable and name the build machine: {offenders}"
+    )
+    print("✓ no shipped library carries an absolute runtime search path")
+
+
 def run_tests(work_dir: Path) -> None:
     test_single_backend_registry()
     test_python_extensions_import()
@@ -614,5 +656,6 @@ def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_resolve_without_build_tree()
     test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
+    test_no_absolute_runtime_paths()
     test_single_threadpool()
     test_cpp_consumer(work_dir)
