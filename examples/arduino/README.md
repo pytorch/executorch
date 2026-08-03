@@ -456,8 +456,13 @@ yes, no, up, down, left, right, on, off, stop, go.
 
 ## Link Mode and Memory Budget
 
-The Uno Q defaults to Dynamic link mode, which builds the sketch as a Zephyr
-loadable extension. Sketches this size never start that way: no serial output
+This applies to the Zephyr board core, which is the only core the library
+currently supports (`architectures=zephyr`). Other Arduino cores do not run
+Zephyr and have no link mode setting; they need a platform abstraction layer
+port before they can compile at all, and their memory behaviour is untested.
+
+On the Zephyr core, the Uno Q defaults to Dynamic link mode, which builds the
+sketch as a Zephyr loadable extension. Sketches this size never start that way: no serial output
 at all, so the board looks dead and offers nothing to diagnose. Build with
 `link_mode=static`. A 2 KB sketch runs fine under Dynamic, so the ceiling sits
 somewhere between that and these builds; it has not been pinned down.
@@ -468,9 +473,9 @@ against 786,432 bytes of flash and 131,072 bytes of RAM:
 
 | Build | Flash (static) | RAM | Dynamic reported | On hardware |
 |-------|---------------|-----|------------------|-------------|
-| HelloExecuTorch | 472,492 (60%) | 26,612 (20%) | 27% | `Model loaded OK!`, 1 method |
-| AddModel | 507,628 (64%) | 34,804 (26%) | 30% | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
-| KeywordSpotting (CMSIS-NN) | 559,620 (71%) | 57,332 (43%) | 30% | fails, see below |
+| HelloExecuTorch | 472,728 (60%) | 3,060 (2%) | 27% | `Model loaded OK!`, 1 method |
+| AddModel | 507,664 (64%) | 11,252 (8%) | 30% | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
+| KeywordSpotting (CMSIS-NN) | 557,520 (70%) | 46,068 (35%) | 30% | 10/10 keywords correct |
 
 All CMSIS-NN sources are compiled, but the linker's
 `--gc-sections` discards unused functions from the final binary.

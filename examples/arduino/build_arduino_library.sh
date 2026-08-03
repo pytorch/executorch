@@ -209,6 +209,14 @@ fi
     --functions-yaml-path="$ET_ROOT/kernels/portable/functions.yaml" \
     --custom-ops-yaml-path="$CORTEX_M_YAML" ) > /dev/null
 
+# Right-size the operator registry. Without this header it falls back to a
+# fixed MAX_KERNEL_NUM sized for a much larger build, which costs RAM the board
+# does not have to spare.
+( cd "$ET_ROOT" && "$PYTHON" -m codegen.tools.gen_max_kernel_num \
+  --oplist-yaml="$CODEGEN_OUT/selected_operators.yaml" \
+  --prim-ops-source="$ET_ROOT/kernels/prim_ops/register_prim_ops.cpp" \
+  --output-path="$ET_SRC/runtime/kernel/selected_max_kernel_num.h" )
+
 # gen writes the same content to both names; keeping both is a duplicate-symbol error.
 rm -f "$CODEGEN_OUT/RegisterCodegenUnboxedKernels_0.cpp"
 rm -f "$CODEGEN_OUT/selected_operators.yaml"
