@@ -65,10 +65,18 @@ find_path(
   NO_CACHE
 )
 
-set(EXECUTORCH_INCLUDE_DIRS
-    "${_executorch_package_root}/include"
-    "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
+set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include")
+# Added only when present. The C10 compatibility headers ship in every wheel that has
+# the runtime, but listing a directory that does not exist makes CMake fail at generate
+# time with a message about a non-existent path, which hides whatever the real problem
+# was.
+if(EXISTS
+   "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
 )
+  list(APPEND EXECUTORCH_INCLUDE_DIRS
+       "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
+  )
+endif()
 
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_FOUND OFF)
