@@ -92,7 +92,7 @@ class TestBatchNormFusion(unittest.TestCase):
     def test_fp32_conv_batch_norm_fusion_top_level_sequential(self):
         """
         A top-level nn.Sequential yields digit-leading fused placeholder names,
-        which torch.fx renames. The pass must survive the rename (#14055).
+        which torch.fx renames. The pass must survive the rename.
         """
         model = torch.nn.Sequential(
             torch.nn.Conv2d(2, 2, (2, 2)),

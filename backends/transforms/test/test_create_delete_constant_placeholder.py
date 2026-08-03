@@ -159,7 +159,7 @@ def test_create_same_name_returns_existing_node():
     Requesting the same name twice must return the existing node instead of
     creating a duplicate, including when torch.fx renamed the placeholder.
     """
-    # "block1-0_weight" mirrors the hyphenated module names in #14055
+    # "block1-0_weight" mirrors torchvision regnet's hyphenated module names
     for requested_name in ("test_node", "0_test_node", "block1-0_weight"):
         module = EmptyNetwork()
         exported_program = export(module, args=module.test_data, strict=True)
