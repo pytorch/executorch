@@ -119,7 +119,7 @@ TextPrefiller::TextPrefiller(
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
-        Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
+        Info, "Prefill token result numel(): %zd", outputs_res.get().numel());
 
     start_pos += num_prompt_tokens;
     cur_token =

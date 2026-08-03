@@ -108,7 +108,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   ET_CHECK_OR_RETURN_ERROR(
       static_cast<ssize_t>(new_sizes.size()) == dim_,
       NotSupported,
-      "Attempted to change the tensor rank which is immutable: old=%zu, new=%zu",
+      "Attempted to change the tensor rank which is immutable: old=%zd, new=%zu",
       dim_,
       new_sizes.size());
 
@@ -156,7 +156,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       ET_CHECK_OR_RETURN_ERROR(
           static_cast<size_t>(new_numel) <= numel_bound_,
           NotSupported,
-          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zu elements.",
+          "Attempted to resize a bounded tensor with a maximum capacity of %zu elements to %zd elements.",
           numel_bound_,
           new_numel);
 

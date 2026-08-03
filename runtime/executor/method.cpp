@@ -1217,7 +1217,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
           !overflow,
           InvalidArgument,
           "Input %" ET_PRIsize_t
-          ": numel overflowed at dimension %zd with size %zd",
+          ": numel overflowed at dimension %zu with size %zu",
           input_idx,
           (size_t)i,
           (size_t)t_src.size(i));

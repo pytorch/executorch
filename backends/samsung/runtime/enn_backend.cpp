@@ -63,7 +63,7 @@ class EnnBackend final : public PyTorchBackendInterface {
       ET_CHECK_OR_RETURN_ERROR(
           args[index]->isTensor(),
           InvalidArgument,
-          "Expected argument to delegate at index %u to be a Tensor, but got %" PRIu32,
+          "Expected argument to delegate at index %d to be a Tensor, but got %" PRIu32,
           index,
           static_cast<uint32_t>(args[index]->tag));
       Tensor* tensor = &args[index]->toTensor();

@@ -174,7 +174,7 @@ inline void print_report(const Stats& stats) {
 
   ET_LOG(
       Info,
-      "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
+      "\tPrompt Tokens: %" PRId64 "    Generated Tokens: %" PRId64,
       stats.num_prompt_tokens,
       stats.num_generated_tokens);
 
@@ -206,7 +206,7 @@ inline void print_report(const Stats& stats) {
       (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
   ET_LOG(
       Info,
-      "\t\tGenerated %" PRIu64
+      "\t\tGenerated %" PRId64
       " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
       stats.num_generated_tokens,
       eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
@@ -224,7 +224,7 @@ inline void print_report(const Stats& stats) {
 
   ET_LOG(
       Info,
-      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
+      "\tSampling time over %" PRId64 " tokens:\t%f (seconds)",
       stats.num_prompt_tokens + stats.num_generated_tokens,
       (double)stats.aggregate_sampling_time_ms /
           stats.SCALING_FACTOR_UNITS_PER_SECOND);

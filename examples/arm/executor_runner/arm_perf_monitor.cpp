@@ -209,7 +209,7 @@ void StopMeasurements(int num_inferences) {
   ET_LOG(Info, "Ethos-U PMU report:");
   ET_LOG(
       Info,
-      "ethosu_pmu_cycle_cntr : % " PRIu64 " (%.2f per inference)",
+      "ethosu_pmu_cycle_cntr : %" PRIu64 " (%.2f per inference)",
       ethosu_pmuCycleCount,
       (double)ethosu_pmuCycleCount / num_inferences);
 
@@ -235,8 +235,10 @@ void StopMeasurements(int num_inferences) {
 }
 
 #else
+// cppcheck-suppress unusedFunction
 void StartMeasurements() {}
 
+// cppcheck-suppress unusedFunction
 void StopMeasurements(int num_inferences) {
   (void)num_inferences;
 }

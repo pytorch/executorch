@@ -35,7 +35,7 @@ Result<FreeableBuffer> PteDataMap::get_data(std::string_view key) const {
         "Searching for key %.*s: NamedData at index %d is null",
         static_cast<int>(key.size()),
         key.data(),
-        i);
+        static_cast<int>(i));
     const auto* named_data_key = named_data_item->key();
     if (named_data_key->size() == key.size() &&
         memcmp(named_data_key->data(), key.data(), key.size()) == 0) {
@@ -50,7 +50,7 @@ Result<FreeableBuffer> PteDataMap::get_data(std::string_view key) const {
           segment_index,
           static_cast<int>(key.size()),
           key.data(),
-          segments_->size());
+          static_cast<unsigned>(segments_->size()));
       size_t segment_offset = segments_->Get(segment_index)->offset();
       size_t segment_size = segments_->Get(segment_index)->size();
       return loader_->load(
@@ -71,15 +71,15 @@ ET_NODISCARD Result<const char*> PteDataMap::get_key(uint32_t index) const {
       index < named_data_->size(),
       InvalidArgument,
       "Index out of range: named_data size is %u, received index %u",
-      named_data_->size(),
-      index);
+      static_cast<unsigned>(named_data_->size()),
+      static_cast<unsigned>(index));
 
   const auto* item = named_data_->Get(index);
   ET_CHECK_OR_RETURN_ERROR(
       item != nullptr && item->key() != nullptr,
       InvalidArgument,
       "NamedData at index %u is null",
-      index);
+      static_cast<unsigned>(index));
   return item->key()->c_str();
 }
 

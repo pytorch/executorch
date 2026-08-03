@@ -50,7 +50,7 @@ Result<Tensor> EncoderRunner::encode(TensorPtr& image_tensor) {
   ET_CHECK_MSG(is_method_loaded(), "Encoder method not loaded");
 
   auto tensor_ptr = image_tensor.get();
-  ET_LOG(Info, "Encoding tensor with numel: %zu", tensor_ptr->numel());
+  ET_LOG(Info, "Encoding tensor with numel: %zd", tensor_ptr->numel());
 
   std::vector<executorch::runtime::EValue> encoder_inputs;
   encoder_inputs.emplace_back(*tensor_ptr);

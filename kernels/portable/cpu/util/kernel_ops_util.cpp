@@ -249,7 +249,7 @@ void calculate_kernel_output_sizes(
 bool check_arange_args(double start, double end, double step, Tensor& out) {
   ET_CHECK_OR_RETURN_FALSE(
       out.dim() == 1,
-      "out should be a 1-d tensor, but got a %zu-d tensor",
+      "out should be a 1-d tensor, but got a %zd-d tensor",
       out.dim());
 
   ET_CHECK_OR_RETURN_FALSE(
