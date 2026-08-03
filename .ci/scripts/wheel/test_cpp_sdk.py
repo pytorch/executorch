@@ -816,7 +816,9 @@ def test_wheel_platform_tag() -> None:
         )
         importlib.invalidate_caches()
         if installed.returncode != 0 or importlib.util.find_spec("auditwheel") is None:
-            print("- auditwheel could not be installed, skipping the platform tag check")
+            print(
+                "- auditwheel could not be installed, skipping the platform tag check"
+            )
             return
 
     wheels = _find_wheel_files()
