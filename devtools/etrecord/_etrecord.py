@@ -8,8 +8,9 @@
 
 import io
 import json
+import logging
 import os
-from typing import BinaryIO, Dict, IO, List, Optional, Union
+from typing import Any, BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
 import torch
@@ -26,6 +27,8 @@ from executorch.exir import (
     ExportedProgram,
 )
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
+from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
@@ -55,6 +58,10 @@ class ETRecordReservedFileNames(StrEnum):
     INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME = "instruction_id_to_num_outs_map"
     REFERENCE_OUTPUTS = "reference_outputs"
     REPRESENTATIVE_INPUTS = "representative_inputs"
+    # Single JSON blob mapping each lowered module's key to the JSON-able value the
+    # backend attached via PreprocessResult._delegate_info_meta. Key format:
+    # f"{method}/{lowered_name}" (e.g. "forward/lowered_module_0").
+    DELEGATE_INFO = "delegate_info"
 
 
 class ETRecord:
@@ -75,6 +82,7 @@ class ETRecord:
         ] = None,
         _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None,
         _representative_inputs: Optional[List[ProgramInput]] = None,
+        delegate_info: Optional[Dict[str, Any]] = None,
     ):
         """
         Please do not construct an ETRecord object directly.
@@ -126,6 +134,11 @@ class ETRecord:
         self._instruction_id_to_num_outs_map = _instruction_id_to_num_outs_map
         self._reference_outputs = _reference_outputs
         self._representative_inputs = _representative_inputs
+        # JSON-able delegate info collected from lowered modules'
+        # meta["_delegate_info_meta"]. Keyed by f"{method}/{lowered_name}"
+        # (e.g. "forward/lowered_module_0"); each value is whatever JSON-able
+        # object the backend attached (string, int, dict, ...).
+        self.delegate_info = delegate_info
 
     @property
     def _debug_handle_map(self):
@@ -170,6 +183,7 @@ class ETRecord:
             self._write_identifier(etrecord_zip)
             self._save_programs(etrecord_zip)
             self._save_graph_map(etrecord_zip)
+            self._save_delegate_info(etrecord_zip)
             self._save_metadata(etrecord_zip)
         finally:
             etrecord_zip.close()
@@ -206,6 +220,20 @@ class ETRecord:
                     self._save_exported_program(
                         etrecord_zip, module_name, "forward", export_module
                     )
+
+    def _save_delegate_info(self, etrecord_zip: ZipFile) -> None:
+        """Save the delegate info map as a single JSON blob.
+
+        ``delegate_info`` maps ``f"{method}/{lowered_name}"`` to whatever JSON-able
+        value the backend attached via ``PreprocessResult._delegate_info_meta``.
+        """
+        if not self.delegate_info:
+            return
+
+        etrecord_zip.writestr(
+            ETRecordReservedFileNames.DELEGATE_INFO,
+            json.dumps(self.delegate_info),
+        )
 
     def _save_metadata(self, etrecord_zip: ZipFile) -> None:
         """Save debug maps, reference outputs, and other metadata."""
@@ -265,6 +293,7 @@ class ETRecord:
             export_graph_id=self.export_graph_id,
             edge_dialect_program=self.edge_dialect_program,
             graph_map=self.graph_map,
+            delegate_info=self.delegate_info,
             # Explicitly exclude executorch-specific fields for clean separation
             _debug_handle_map=None,
             _delegate_map=None,
@@ -272,6 +301,91 @@ class ETRecord:
             _reference_outputs=None,
             _representative_inputs=None,
         )
+
+    def _maybe_extract_delegate_info(
+        self,
+        exported_programs: Optional[Dict[str, ExportedProgram]],
+    ) -> None:
+        """
+        Extract delegate info from the lowered modules of the given exported
+        programs into this ETRecord, if it has not been extracted already.
+
+        All programs recorded in an ETRecord correspond to the same model, so the
+        delegate info only needs to be captured once. This method is a no-op when
+        (a) this ETRecord already has ``delegate_info``, or (b) none of the given
+        programs carry any delegate info. It is called from the ``add_*`` methods
+        so extraction happens wherever the delegated graph first becomes available
+        (``add_edge_dialect_program`` for the ``to_edge_transform_and_lower`` flow,
+        ``add_executorch_program`` for the ``to_edge(...).to_backend(...)`` flow).
+
+        Backends may attach an arbitrary JSON-able value to a lowered module via
+        ``PreprocessResult._delegate_info_meta`` (see
+        ``exir/backend/backend_details.py``). Every lowered submodule is walked
+        (recursing through control-flow submodules) and its value recorded under
+        the key ``f"{method}/{lowered_name}"`` (e.g. ``forward/lowered_module_0``)
+        so it can be serialized as JSON and reloaded from the ETRecord. Values
+        that are not JSON-serializable are skipped (with a warning) so a backend
+        attaching a non-JSON object cannot break ETRecord saving.
+
+        Args:
+            exported_programs: Mapping of method name to the ``ExportedProgram``
+                whose graph module may still carry the ``LoweredBackendModule``s.
+        """
+        # (a) Already captured: nothing to do (all programs are one model).
+        if self.delegate_info is not None:
+            return
+        if not exported_programs:
+            return
+
+        delegate_info: Dict[str, Any] = {}
+        for method_name, exported_program in exported_programs.items():
+            self._collect_delegate_info(
+                exported_program.graph_module, method_name, "", delegate_info
+            )
+
+        # (b) None of the graphs carried delegate info: leave it unset so a later
+        # add_* call (with the delegated graph) can still capture it.
+        if delegate_info:
+            self.delegate_info = delegate_info
+
+    def _collect_delegate_info(
+        self,
+        graph_module: torch.fx.GraphModule,
+        method_name: str,
+        name_prefix: str,
+        delegate_info: Dict[str, Any],
+    ) -> None:
+        """Recursively collect ``_delegate_info_meta`` values from lowered submodules."""
+        for lowered_name, lowered_module, _ in get_lowered_submodules(graph_module):
+            meta = getattr(lowered_module, "meta", None)
+            if not isinstance(meta, dict) or "_delegate_info_meta" not in meta:
+                continue
+            value = meta["_delegate_info_meta"]
+            # Guard: only keep JSON-serializable values so ETRecord.save() (which
+            # json.dumps the whole delegate_info map) cannot fail.
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError):
+                logging.warning(
+                    "Skipping non-JSON-serializable _delegate_info_meta on lowered "
+                    "module %s%s (method %s).",
+                    name_prefix,
+                    lowered_name,
+                    method_name,
+                )
+                continue
+            key = f"{method_name}/{name_prefix}{lowered_name}"
+            delegate_info[key] = value
+
+        # Recurse into control-flow submodules (cond/map/scan), prefixing the
+        # submodule name so nested lowered-module names cannot collide.
+        for submodule_name, submodule, _ in get_control_flow_submodules(graph_module):
+            self._collect_delegate_info(
+                submodule,
+                method_name,
+                f"{name_prefix}{submodule_name}/",
+                delegate_info,
+            )
 
     def _save_exported_program(
         self,
@@ -398,6 +512,13 @@ class ETRecord:
         self._reference_outputs = reference_outputs
         self._representative_inputs = representative_inputs
 
+        # For the to_edge(...).to_backend(...) flow the delegated graph is not
+        # available until here, so capture any delegate info from the executorch
+        # program's graphs (no-op if already captured at the edge stage).
+        self._maybe_extract_delegate_info(
+            _get_exported_programs_from_executorch_program(executorch_program)
+        )
+
     def add_exported_program(
         self,
         exported_program: Optional[Union[ExportedProgram, Dict[str, ExportedProgram]]],
@@ -466,6 +587,12 @@ class ETRecord:
 
         # Set the extracted data
         self.edge_dialect_program = processed_edge_dialect_program
+
+        # If this edge program is already delegated (e.g. the
+        # to_edge_transform_and_lower flow), capture any delegate info now.
+        self._maybe_extract_delegate_info(
+            _as_exported_program_dict(processed_edge_dialect_program)
+        )
 
     def update_representative_inputs(
         self,
@@ -668,6 +795,48 @@ def _add_module_to_graph_map(
         raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
 
 
+def _as_exported_program_dict(
+    program: Union[ExportedProgram, Dict[str, ExportedProgram], None]
+) -> Optional[Dict[str, ExportedProgram]]:
+    """Normalize a single ExportedProgram or a method->EP dict to a dict.
+
+    A bare ExportedProgram is treated as the "forward" method.
+    """
+    if program is None:
+        return None
+    if isinstance(program, ExportedProgram):
+        return {"forward": program}
+    return program
+
+
+def _get_exported_programs_from_executorch_program(
+    executorch_program: Union[
+        ExecutorchProgram, ExecutorchProgramManager, BundledProgram
+    ]
+) -> Optional[Dict[str, ExportedProgram]]:
+    """Return the method->ExportedProgram map backing an executorch program.
+
+    These graphs still carry the ``LoweredBackendModule``s (and their ``.meta``),
+    so they are what delegate-info extraction walks. Supports the manager, the
+    single-program, and the bundled-program forms; returns None if the graphs
+    cannot be reached.
+    """
+    if isinstance(executorch_program, BundledProgram):
+        return _get_exported_programs_from_executorch_program(
+            executorch_program.executorch_program
+        )
+    if isinstance(executorch_program, ExecutorchProgramManager):
+        return {
+            method: executorch_program.exported_program(method)
+            for method in executorch_program.methods
+        }
+    # ExecutorchProgram exposes a single (forward) exported program.
+    exported_program = getattr(executorch_program, "exported_program", None)
+    if isinstance(exported_program, ExportedProgram):
+        return {"forward": exported_program}
+    return None
+
+
 def _process_edge_dialect_program(
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram]
 ) -> Union[ExportedProgram, Dict[str, ExportedProgram]]:
@@ -788,6 +957,8 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     serialized_constants_files = set()
     serialized_example_inputs_files = set()
 
+    delegate_info: Optional[Dict[str, Any]] = None
+
     edge_dialect_prefix = f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}/"
 
     for entry in file_list:
@@ -823,6 +994,10 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         ):
             # New format: edge_dialect_exported_program/method_name
             serialized_edge_dialect_program_files.add(entry)
+        elif entry == ETRecordReservedFileNames.DELEGATE_INFO:
+            delegate_info = json.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_INFO)
+            )
         elif entry == ETRecordReservedFileNames.EXPORTED_PROGRAM:
             serialized_artifact = SerializedArtifact(
                 etrecord_zip.read(ETRecordReservedFileNames.EXPORTED_PROGRAM),
@@ -920,6 +1095,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
         exported_program=exported_program,
         edge_dialect_program=edge_dialect_program,
         graph_map=graph_map,
+        delegate_info=delegate_info,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
         _instruction_id_to_num_outs_map=instruction_id_to_num_outs_map,
