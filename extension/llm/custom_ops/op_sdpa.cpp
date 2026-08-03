@@ -219,27 +219,30 @@ bool validate_channelwise_gated_delta_rule_args(
       "initial_state must be float32");
 
   ET_CHECK_OR_RETURN_FALSE(
-      query.size(0) == key.size(0) && query.size(1) == key.size(1) &&
-          query.size(2) == key.size(2) && query.size(3) == key.size(3),
-      "query and key must have matching shapes");
+      query.size(0) == key.size(0) && query.size(2) == key.size(2) &&
+          query.size(3) == key.size(3),
+      "query and key must match in batch/sequence/head-dim");
   ET_CHECK_OR_RETURN_FALSE(
-      query.size(0) == decay.size(0) && query.size(1) == decay.size(1) &&
-          query.size(2) == decay.size(2) && query.size(3) == decay.size(3),
-      "query and decay must have matching shapes");
+      key.size(0) == decay.size(0) && key.size(1) == decay.size(1) &&
+          key.size(2) == decay.size(2) && key.size(3) == decay.size(3),
+      "key and decay must have matching shapes");
   ET_CHECK_OR_RETURN_FALSE(
-      query.size(0) == value.size(0) && query.size(1) == value.size(1) &&
-          query.size(2) == value.size(2),
-      "query and value must match in batch/head/sequence dims");
+      key.size(0) == value.size(0) && key.size(1) == value.size(1) &&
+          key.size(2) == value.size(2),
+      "key and value must match in batch/head/sequence dims");
   ET_CHECK_OR_RETURN_FALSE(
-      beta.size(0) == query.size(0) && beta.size(1) == query.size(1) &&
-          beta.size(2) == query.size(2),
-      "beta must match query batch/head/sequence dims");
+      beta.size(0) == key.size(0) && beta.size(1) == key.size(1) &&
+          beta.size(2) == key.size(2),
+      "beta must match key batch/head/sequence dims");
   ET_CHECK_OR_RETURN_FALSE(
-      initial_state.size(0) == query.size(0) &&
-          initial_state.size(1) == query.size(1) &&
+      key.size(1) > 0 && query.size(1) % key.size(1) == 0,
+      "query heads must be divisible by key/value heads");
+  ET_CHECK_OR_RETURN_FALSE(
+      initial_state.size(0) == key.size(0) &&
+          initial_state.size(1) == key.size(1) &&
           initial_state.size(2) == query.size(3) &&
           initial_state.size(3) == value.size(3),
-      "initial_state shape must match [B, H, K, V]");
+      "initial_state shape must match [B, Hkv, K, V]");
 
   for (const Tensor* tensor :
        {&query, &key, &value, &decay, &beta, &initial_state}) {
@@ -710,23 +713,29 @@ void channelwise_gated_delta_rule_recurrence(
     Tensor& out,
     Tensor& final_state_out) {
   const auto batch_size = query.size(0);
-  const auto num_heads = query.size(1);
+  const auto num_query_heads = query.size(1);
+  const auto num_kv_heads = key.size(1);
+  const auto query_heads_per_kv = num_query_heads / num_kv_heads;
   const auto sequence_length = query.size(2);
   const auto k_head_dim = query.size(3);
   const auto v_head_dim = value.size(3);
 
-  const auto qk_batch_stride = num_heads * sequence_length * k_head_dim;
+  const auto query_batch_stride =
+      num_query_heads * sequence_length * k_head_dim;
+  const auto kv_batch_stride = num_kv_heads * sequence_length * k_head_dim;
   const auto qk_head_stride = sequence_length * k_head_dim;
   const auto qk_seq_stride = k_head_dim;
 
-  const auto value_batch_stride = num_heads * sequence_length * v_head_dim;
+  const auto value_batch_stride = num_kv_heads * sequence_length * v_head_dim;
+  const auto output_batch_stride =
+      num_query_heads * sequence_length * v_head_dim;
   const auto value_head_stride = sequence_length * v_head_dim;
   const auto value_seq_stride = v_head_dim;
 
-  const auto beta_batch_stride = num_heads * sequence_length;
+  const auto beta_batch_stride = num_kv_heads * sequence_length;
   const auto beta_head_stride = sequence_length;
 
-  const auto state_batch_stride = num_heads * k_head_dim * v_head_dim;
+  const auto state_batch_stride = num_kv_heads * k_head_dim * v_head_dim;
   const auto state_head_stride = k_head_dim * v_head_dim;
 
   const auto* query_data = query.const_data_ptr<float>();
@@ -756,23 +765,23 @@ void channelwise_gated_delta_rule_recurrence(
   float* delta = scratch_data + v_head_dim;
 
   for (int64_t batch = 0; batch < batch_size; ++batch) {
-    for (int64_t head = 0; head < num_heads; ++head) {
-      const auto qk_offset = batch * qk_batch_stride + head * qk_head_stride;
+    for (int64_t kv_head = 0; kv_head < num_kv_heads; ++kv_head) {
+      const auto kv_offset = batch * kv_batch_stride + kv_head * qk_head_stride;
       const auto value_offset =
-          batch * value_batch_stride + head * value_head_stride;
+          batch * value_batch_stride + kv_head * value_head_stride;
       const auto beta_offset =
-          batch * beta_batch_stride + head * beta_head_stride;
+          batch * beta_batch_stride + kv_head * beta_head_stride;
       const auto state_offset =
-          batch * state_batch_stride + head * state_head_stride;
+          batch * state_batch_stride + kv_head * state_head_stride;
 
-      const auto* q_head = query_data + qk_offset;
-      const auto* k_head = key_data + qk_offset;
-      const auto* decay_head = decay_data + qk_offset;
+      const auto* k_head = key_data + kv_offset;
+      const auto* decay_head = decay_data + kv_offset;
       const auto* value_head = value_data + value_offset;
       const auto* beta_head = beta_data + beta_offset;
       const auto* initial_state_head = initial_state_data + state_offset;
       auto* state_head = state_data + state_offset;
-      auto* output_head = output_data + value_offset;
+      auto* output_group = output_data + batch * output_batch_stride +
+          kv_head * query_heads_per_kv * value_head_stride;
 
       // Functional: seed the running state from initial_state without mutating
       // the (read-only) input.
@@ -781,12 +790,10 @@ void channelwise_gated_delta_rule_recurrence(
       }
 
       for (int64_t token = 0; token < sequence_length; ++token) {
-        const auto* q_t = q_head + token * qk_seq_stride;
         const auto* k_t = k_head + token * qk_seq_stride;
         const auto* decay_t = decay_head + token * qk_seq_stride;
         const auto* v_t = value_head + token * value_seq_stride;
         const float beta_t = beta_head[token];
-        auto* output_t = output_head + token * value_seq_stride;
 
         // The recurrence needs only two passes over the K x V state S:
         //   pass 1 (read-only): v_pred = (Diag(decay) S)^T k
@@ -813,19 +820,50 @@ void channelwise_gated_delta_rule_recurrence(
           delta[v_idx] = (v_t[v_idx] - v_pred[v_idx]) * beta_t;
         }
 
-        // Pass 2: apply decay + rank-1 write in place, and read back the
-        // updated row for the output projection in the same sweep.
-        std::fill(output_t, output_t + v_head_dim, 0.0f);
+        if (query_heads_per_kv == 1) {
+          const auto* q_t = query_data + batch * query_batch_stride +
+              kv_head * qk_head_stride + token * qk_seq_stride;
+          auto* output_t = output_group + token * value_seq_stride;
+          std::fill(output_t, output_t + v_head_dim, 0.0f);
+          for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+            const float updated_decay = decay_t[k_idx];
+            const float key_value = k_t[k_idx];
+            const float query_value = q_t[k_idx];
+            auto* state_row = state_head + k_idx * v_head_dim;
+            for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+              const float updated =
+                  state_row[v_idx] * updated_decay + key_value * delta[v_idx];
+              state_row[v_idx] = updated;
+              output_t[v_idx] += updated * query_value;
+            }
+          }
+          continue;
+        }
+
         for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
           const float decay_value = decay_t[k_idx];
           const float key_value = k_t[k_idx];
-          const float query_value = q_t[k_idx];
           auto* state_row = state_head + k_idx * v_head_dim;
           for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            const float updated =
+            state_row[v_idx] =
                 state_row[v_idx] * decay_value + key_value * delta[v_idx];
-            state_row[v_idx] = updated;
-            output_t[v_idx] += updated * query_value;
+          }
+        }
+
+        for (int64_t group_head = 0; group_head < query_heads_per_kv;
+             ++group_head) {
+          const auto query_head = kv_head * query_heads_per_kv + group_head;
+          const auto* q_t = query_data + batch * query_batch_stride +
+              query_head * qk_head_stride + token * qk_seq_stride;
+          auto* output_t = output_group + group_head * value_head_stride +
+              token * value_seq_stride;
+          std::fill(output_t, output_t + v_head_dim, 0.0f);
+          for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
+            const float query_value = q_t[k_idx];
+            const auto* state_row = state_head + k_idx * v_head_dim;
+            for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
+              output_t[v_idx] += state_row[v_idx] * query_value;
+            }
           }
         }
       }
@@ -918,7 +956,9 @@ void channelwise_gated_delta_rule_chunked(
     Tensor& out,
     Tensor& final_state_out) {
   const auto batch_size = query.size(0);
-  const auto num_heads = query.size(1);
+  const auto num_query_heads = query.size(1);
+  const auto num_kv_heads = key.size(1);
+  const auto query_heads_per_kv = num_query_heads / num_kv_heads;
   const auto sequence_length = query.size(2);
   const auto k_head_dim = query.size(3);
   const auto v_head_dim = value.size(3);
@@ -933,7 +973,7 @@ void channelwise_gated_delta_rule_chunked(
   auto* state_data = final_state_out.mutable_data_ptr<float>();
   auto* output_data = out.mutable_data_ptr<float>();
 
-  // Per (b, h) strides. q/k/decay are [.., T, K]; v/out are [.., T, V].
+  // Per-head strides. q/k/decay are [.., T, K]; v/out are [.., T, V].
   const auto qk_head_stride = sequence_length * k_head_dim;
   const auto v_head_stride = sequence_length * v_head_dim;
   const auto beta_head_stride = sequence_length;
@@ -974,18 +1014,20 @@ void channelwise_gated_delta_rule_chunked(
   }
   ET_KERNEL_CHECK(ctx, arena != nullptr, MemoryAllocationFailed, );
 
-  // Heads are independent, so parallelize over (b, h); each worker gets its own
-  // scratch slab (via get_thread_num()) and writes disjoint output/state.
+  // KV heads are independent. Each worker updates one state and writes all
+  // query heads assigned to it.
   torch::executor::parallel_for(
       0,
-      batch_size * num_heads,
+      batch_size * num_kv_heads,
       /*grain_size=*/1,
       [&](int64_t bh_begin, int64_t bh_end) {
         for (int64_t bh = bh_begin; bh < bh_end; ++bh) {
+          const int64_t batch = bh / num_kv_heads;
+          const int64_t kv_head = bh % num_kv_heads;
+          const int64_t query_head_begin = kv_head * query_heads_per_kv;
           const int64_t tid = torch::executor::get_thread_num();
           const ChunkScratch sc = ChunkScratch::view(
               arena + tid * size_per_thread, k_head_dim, v_head_dim);
-          const auto* __restrict__ q_head = query_data + bh * qk_head_stride;
           const auto* __restrict__ k_head = key_data + bh * qk_head_stride;
           const auto* __restrict__ v_head = value_data + bh * v_head_stride;
           const auto* __restrict__ d_head = decay_data + bh * qk_head_stride;
@@ -994,7 +1036,6 @@ void channelwise_gated_delta_rule_chunked(
           const auto* __restrict__ init_head =
               initial_state_data + bh * state_head_stride;
           auto* __restrict__ S = state_data + bh * state_head_stride;
-          auto* __restrict__ o_head = output_data + bh * v_head_stride;
 
           // Seed the running state from the (read-only) initial_state.
           for (const auto idx : c10::irange(state_head_stride)) {
@@ -1007,12 +1048,22 @@ void channelwise_gated_delta_rule_chunked(
             // tokens.
             const int64_t cur =
                 std::min<int64_t>(CHUNK_SIZE, sequence_length - base);
-            const auto* __restrict__ q_c = q_head + base * k_head_dim;
             const auto* __restrict__ k_c = k_head + base * k_head_dim;
             const auto* __restrict__ v_c = v_head + base * v_head_dim;
             const auto* __restrict__ d_c = d_head + base * k_head_dim;
             const auto* __restrict__ beta_c = beta_head + base;
-            auto* __restrict__ o_c = o_head + base * v_head_dim;
+            const auto* __restrict__ single_q_c = query_heads_per_kv == 1
+                ? query_data +
+                    (batch * num_query_heads + query_head_begin) *
+                        qk_head_stride +
+                    base * k_head_dim
+                : nullptr;
+            auto* __restrict__ single_o_c = query_heads_per_kv == 1
+                ? output_data +
+                    (batch * num_query_heads + query_head_begin) *
+                        v_head_stride +
+                    base * v_head_dim
+                : nullptr;
 
             // 1. gc = cumsum_r(log decay) (per channel; resets each chunk).
             // Reordered so the inner loop runs contiguously over k; the running
@@ -1033,8 +1084,7 @@ void channelwise_gated_delta_rule_chunked(
               }
             }
 
-            // 2. Aqk (causal, incl diag, no beta) and A = -beta_r *
-            // strictlower(Akk).
+            // 2. A = -beta_r * strictlower(Akk).
             //    ratio = exp(gc[r,k] - gc[j,k]) = eg[r,k] * eg_inv[j,k],
             //    factored so the exp is hoisted out of the O(BT^2) pair loop.
             //    Safe because BT is small enough that exp(-gc) does not
@@ -1046,17 +1096,18 @@ void channelwise_gated_delta_rule_chunked(
                 for (const auto k_idx : c10::irange(k_head_dim)) {
                   const float ratio = sc.eg[r * k_head_dim + k_idx] *
                       sc.eg_inv[j * k_head_dim + k_idx];
-                  aqk += q_c[r * k_head_dim + k_idx] *
-                      k_c[j * k_head_dim + k_idx] * ratio;
+                  if (query_heads_per_kv == 1) {
+                    aqk += single_q_c[r * k_head_dim + k_idx] *
+                        k_c[j * k_head_dim + k_idx] * ratio;
+                  }
                   if (j < r) {
                     akk += k_c[r * k_head_dim + k_idx] *
                         k_c[j * k_head_dim + k_idx] * ratio;
                   }
                 }
-                // Causal: only j <= r is written, and step 5 reads only j <= r.
-                // The upper triangle is left uninitialized (arena is not
-                // zeroed).
-                sc.Aqk[r * CHUNK_SIZE + j] = aqk;
+                if (query_heads_per_kv == 1) {
+                  sc.Aqk[r * CHUNK_SIZE + j] = aqk;
+                }
                 sc.A[r * CHUNK_SIZE + j] = (j < r) ? -beta_r * akk : 0.0f;
               }
             }
@@ -1106,25 +1157,30 @@ void channelwise_gated_delta_rule_chunked(
               }
             }
 
-            // 5. pv = u - w @ S_old ; o = (q ⊙ exp gc) @ S_old. Reordered so
-            // the inner loop runs contiguously over v; pv/o_c accumulate the
-            // k-sum, then pv is finalized as u - (w@S) with a single
-            // subtraction (bit-identical to the k-then-subtract form).
+            // 5. pv = u - w @ S_old.
             for (const auto r : c10::irange(cur)) {
               float* __restrict__ pv_row = sc.pv + r * v_head_dim;
-              float* __restrict__ o_row = o_c + r * v_head_dim;
+              float* __restrict__ o_row = query_heads_per_kv == 1
+                  ? single_o_c + r * v_head_dim
+                  : nullptr;
               for (const auto v_idx : c10::irange(v_head_dim)) {
                 pv_row[v_idx] = 0.0f;
-                o_row[v_idx] = 0.0f;
+                if (query_heads_per_kv == 1) {
+                  o_row[v_idx] = 0.0f;
+                }
               }
               for (const auto k_idx : c10::irange(k_head_dim)) {
                 const float wrk = sc.w[r * k_head_dim + k_idx];
-                const float qrk =
-                    q_c[r * k_head_dim + k_idx] * sc.eg[r * k_head_dim + k_idx];
                 const float* __restrict__ s_row = S + k_idx * v_head_dim;
+                const float qrk = query_heads_per_kv == 1
+                    ? single_q_c[r * k_head_dim + k_idx] *
+                        sc.eg[r * k_head_dim + k_idx]
+                    : 0.0f;
                 for (const auto v_idx : c10::irange(v_head_dim)) {
                   pv_row[v_idx] += wrk * s_row[v_idx];
-                  o_row[v_idx] += qrk * s_row[v_idx];
+                  if (query_heads_per_kv == 1) {
+                    o_row[v_idx] += qrk * s_row[v_idx];
+                  }
                 }
               }
               const float* __restrict__ u_row = sc.u + r * v_head_dim;
@@ -1132,14 +1188,65 @@ void channelwise_gated_delta_rule_chunked(
                 pv_row[v_idx] = u_row[v_idx] - pv_row[v_idx];
               }
             }
-            // 5b. o += Aqk @ pv  (AXPY over the contiguous v).
-            for (const auto r : c10::irange(cur)) {
-              float* __restrict__ o_row = o_c + r * v_head_dim;
-              for (const auto j : c10::irange(r + 1)) {
-                const float a = sc.Aqk[r * CHUNK_SIZE + j];
-                const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
+
+            if (query_heads_per_kv == 1) {
+              for (const auto r : c10::irange(cur)) {
+                float* __restrict__ o_row = single_o_c + r * v_head_dim;
+                for (const auto j : c10::irange(r + 1)) {
+                  const float a = sc.Aqk[r * CHUNK_SIZE + j];
+                  const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
+                  for (const auto v_idx : c10::irange(v_head_dim)) {
+                    o_row[v_idx] += a * pv_row[v_idx];
+                  }
+                }
+              }
+            }
+
+            // Each query head reads the shared state and pseudo-values. Aqk is
+            // query-specific, so its scratch is reused across the group.
+            for (const auto group_head : c10::irange(
+                     query_heads_per_kv == 1 ? int64_t{0}
+                                             : query_heads_per_kv)) {
+              const int64_t query_head = query_head_begin + group_head;
+              const auto* __restrict__ q_c = query_data +
+                  (batch * num_query_heads + query_head) * qk_head_stride +
+                  base * k_head_dim;
+              auto* __restrict__ o_c = output_data +
+                  (batch * num_query_heads + query_head) * v_head_stride +
+                  base * v_head_dim;
+
+              for (const auto r : c10::irange(cur)) {
+                for (const auto j : c10::irange(r + 1)) {
+                  float aqk = 0.0f;
+                  for (const auto k_idx : c10::irange(k_head_dim)) {
+                    const float ratio = sc.eg[r * k_head_dim + k_idx] *
+                        sc.eg_inv[j * k_head_dim + k_idx];
+                    aqk += q_c[r * k_head_dim + k_idx] *
+                        k_c[j * k_head_dim + k_idx] * ratio;
+                  }
+                  sc.Aqk[r * CHUNK_SIZE + j] = aqk;
+                }
+              }
+
+              for (const auto r : c10::irange(cur)) {
+                float* __restrict__ o_row = o_c + r * v_head_dim;
                 for (const auto v_idx : c10::irange(v_head_dim)) {
-                  o_row[v_idx] += a * pv_row[v_idx];
+                  o_row[v_idx] = 0.0f;
+                }
+                for (const auto k_idx : c10::irange(k_head_dim)) {
+                  const float qrk = q_c[r * k_head_dim + k_idx] *
+                      sc.eg[r * k_head_dim + k_idx];
+                  const float* __restrict__ s_row = S + k_idx * v_head_dim;
+                  for (const auto v_idx : c10::irange(v_head_dim)) {
+                    o_row[v_idx] += qrk * s_row[v_idx];
+                  }
+                }
+                for (const auto j : c10::irange(r + 1)) {
+                  const float a = sc.Aqk[r * CHUNK_SIZE + j];
+                  const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
+                  for (const auto v_idx : c10::irange(v_head_dim)) {
+                    o_row[v_idx] += a * pv_row[v_idx];
+                  }
                 }
               }
             }
@@ -1177,12 +1284,41 @@ void channelwise_gated_delta_rule_chunked(
 // output. Detect that so callers can route to the recurrence, which handles
 // decay <= 0 exactly. NaN is treated as non-positive so NaN decay also takes
 // the faithful path instead of contaminating every output element.
-bool channelwise_gated_delta_rule_decay_all_positive(const Tensor& decay) {
+// The chunked prefill kernel resets gc = cumsum(log decay) every CHUNK_SIZE
+// tokens and forms eg_inv = exp(-gc). For tiny positive decay the within-chunk
+// cumulative -log(decay) can exceed the float expf overflow limit (~88.7),
+// producing +inf that turns eg * eg_inv into 0 * inf = NaN and poisons the
+// whole head's output. A non-positive decay is likewise undefined (std::log).
+// Detect both so callers can route to the exact recurrence, which is stable for
+// tiny decay and handles decay <= 0. NaN decay is treated as unsafe as well.
+bool channelwise_gated_delta_rule_chunked_is_safe(const Tensor& decay) {
+  // Margin below the float32 expf overflow threshold (std::exp overflows around
+  // 88.7); 80 leaves headroom for the downstream eg * eg_inv product.
+  constexpr float kMaxNegLogSum = 80.0f;
   const auto* decay_data = decay.const_data_ptr<float>();
-  const auto numel = decay.numel();
-  for (int64_t idx = 0; idx < numel; ++idx) {
-    if (!(decay_data[idx] > 0.0f)) {
-      return false;
+  const auto batch_heads = decay.size(0) * decay.size(1);
+  const auto sequence_length = decay.size(2);
+  const auto k_head_dim = decay.size(3);
+  const auto head_stride = sequence_length * k_head_dim;
+  for (int64_t bh = 0; bh < batch_heads; ++bh) {
+    const float* decay_head = decay_data + bh * head_stride;
+    for (int64_t base = 0; base < sequence_length; base += CHUNK_SIZE) {
+      const int64_t cur = std::min<int64_t>(CHUNK_SIZE, sequence_length - base);
+      // gc resets per chunk, so overflow is bounded by the within-chunk
+      // cumulative -log(decay) per channel.
+      for (int64_t k = 0; k < k_head_dim; ++k) {
+        float neg_log_sum = 0.0f;
+        for (int64_t r = 0; r < cur; ++r) {
+          const float val = decay_head[(base + r) * k_head_dim + k];
+          if (!(val > 0.0f)) {
+            return false; // decay <= 0 or NaN: log undefined -> recurrence
+          }
+          neg_log_sum -= std::log(val);
+          if (neg_log_sum > kMaxNegLogSum) {
+            return false; // exp(-gc) would overflow -> recurrence
+          }
+        }
+      }
     }
   }
   return true;
@@ -1231,9 +1367,17 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
           final_state_out.dim_order().data(), final_state_out.dim()),
       InvalidArgument,
       ret);
+  const ::executorch::aten::SizesType output_sizes[] = {
+      static_cast<::executorch::aten::SizesType>(query.size(0)),
+      static_cast<::executorch::aten::SizesType>(query.size(1)),
+      static_cast<::executorch::aten::SizesType>(query.size(2)),
+      static_cast<::executorch::aten::SizesType>(value.size(3))};
   ET_KERNEL_CHECK_MSG(
       ctx,
-      resize_tensor(out, value.sizes()) == Error::Ok,
+      resize_tensor(
+          out,
+          ::executorch::aten::ArrayRef<::executorch::aten::SizesType>(
+              output_sizes, 4)) == Error::Ok,
       InvalidArgument,
       ret,
       "Failed to resize channelwise_gated_delta_rule output tensor.");
@@ -1245,9 +1389,11 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
       "Failed to resize channelwise_gated_delta_rule final_state tensor.");
 
   // Route on sequence length: T == 1 is autoregressive decode (token-by-token
-  // recurrence), T != 1 is prefill (chunkwise WY kernel). Prefill with any
-  // non-positive decay falls back to the recurrence, which is exact for
-  // decay <= 0 (the chunked kernel takes log(decay) and would produce NaN).
+  // recurrence), T != 1 is prefill (chunkwise WY kernel). Prefill falls back to
+  // the exact recurrence whenever the chunked kernel would be numerically
+  // unsafe
+  // -- non-positive decay (log undefined) or tiny positive decay whose
+  // within-chunk cumulative -log(decay) would overflow exp(-gc) to inf -> NaN.
   if (query.size(2) == 1) {
     channelwise_gated_delta_rule_decode(
         ctx,
@@ -1259,7 +1405,7 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
         initial_state,
         out,
         final_state_out);
-  } else if (channelwise_gated_delta_rule_decay_all_positive(decay)) {
+  } else if (channelwise_gated_delta_rule_chunked_is_safe(decay)) {
     channelwise_gated_delta_rule_chunked(
         ctx,
         query,
