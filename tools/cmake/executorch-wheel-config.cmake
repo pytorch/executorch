@@ -65,11 +65,22 @@ find_path(
   NO_CACHE
 )
 
+# A package with no include directory cannot be used, so this is reported here rather
+# than left to fail later as a confusing "non-existent path" at generate time or a
+# missing header at compile time.
+if(NOT EXISTS "${_executorch_package_root}/include")
+  message(
+    FATAL_ERROR
+      "The ExecuTorch package at ${_executorch_package_root} has no include "
+      "directory, so nothing can compile against it."
+  )
+endif()
 set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include")
 # Added only when present. The C10 compatibility headers ship in every wheel that has
 # the runtime, but listing a directory that does not exist makes CMake fail at generate
 # time with a message about a non-existent path, which hides whatever the real problem
-# was.
+# was. A wheel without them can still compile anything that does not reach for a C10
+# header, so this is a missing directory rather than an unusable package.
 if(EXISTS
    "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
 )
