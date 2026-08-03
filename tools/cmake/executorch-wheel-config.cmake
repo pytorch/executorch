@@ -98,19 +98,41 @@ endforeach()
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_FOUND OFF)
 
-# The prebuilt runtime. Match the versioned file rather than a hardcoded major
-# so the config keeps working across releases.
-file(GLOB _executorch_runtime_candidates
-     "${_executorch_package_root}/lib/libexecutorch.so"
-     "${_executorch_package_root}/lib/libexecutorch.so.*"
-)
-# An unversioned libexecutorch.so sorts before any libexecutorch.so.<major>, so
-# a development symlink wins over the versioned file when both are present.
-list(SORT _executorch_runtime_candidates)
-list(LENGTH _executorch_runtime_candidates _executorch_runtime_count)
-if(_executorch_runtime_count GREATER 0)
-  list(GET _executorch_runtime_candidates 0 _executorch_runtime_library)
+# Locate one shipped library by base name.
+#
+# A wheel ships a single file per library, named for its SONAME, so the major is
+# read from the shipped names rather than hardcoded here. Sets <output> to the
+# full path, or to an empty string when the wheel does not carry that library.
+function(_executorch_find_library _output _base_name)
+  set(${_output}
+      ""
+      PARENT_SCOPE
+  )
+  file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
+       "${_executorch_package_root}/lib/${_base_name}.so.[0-9]"
+       "${_executorch_package_root}/lib/${_base_name}.so.[0-9][0-9]"
+  )
+  list(LENGTH _matches _count)
+  if(_count EQUAL 0)
+    return()
+  endif()
+  # Highest major wins, so a package that somehow carries two does not silently
+  # select by string order. Natural ordering keeps .2 below .10.
+  list(
+    SORT _matches
+    COMPARE NATURAL
+    ORDER DESCENDING
+  )
+  list(GET _matches 0 _selected)
+  set(${_output}
+      "${_selected}"
+      PARENT_SCOPE
+  )
+endfunction()
 
+# The prebuilt runtime.
+_executorch_find_library(_executorch_runtime_library libexecutorch)
+if(_executorch_runtime_library)
   set(EXECUTORCH_FOUND ON)
   message(STATUS "ExecuTorch runtime found at ${_executorch_runtime_library}")
 
@@ -160,17 +182,10 @@ endif()
 #
 # Call as: executorch_define_component(<target suffix> <library base name>)
 function(executorch_define_component _suffix _library_name)
-  file(GLOB _candidates
-       "${_executorch_package_root}/lib/lib${_library_name}.so"
-       "${_executorch_package_root}/lib/lib${_library_name}.so.*"
-  )
-  if(NOT _candidates)
+  _executorch_find_library(_library "lib${_library_name}")
+  if(NOT _library)
     return()
   endif()
-  # An unversioned name sorts first, so a development symlink wins over the
-  # versioned file when both are present.
-  list(SORT _candidates)
-  list(GET _candidates 0 _library)
 
   set(_target "executorch::${_suffix}")
   if(NOT TARGET ${_target})
