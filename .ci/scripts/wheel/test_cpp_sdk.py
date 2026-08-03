@@ -51,16 +51,34 @@ _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
 _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
 _CONSUMER_SOURCE = """\
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <cstdio>
+#include <vector>
+
+using namespace executorch::extension;
 
 int main() {
   executorch::runtime::runtime_init();
   std::printf(
       "registered backends: %zu\\n",
       (size_t)executorch::runtime::get_num_registered_backends());
+
+  // The documented entry points, not just the lower-level runtime. Constructing these
+  // needs real definitions at link time, so it checks that the shipped headers and the
+  // shipped library agree rather than only that the headers parse.
+  module::Module module("nonexistent.pte");
+  std::vector<float> data(4, 1.0f);
+  auto input = make_tensor_ptr({2, 2}, data.data());
+  std::printf("tensor holds %zu values\\n", (size_t)input->numel());
+
+  // A missing file is the expected outcome here. What matters is that the call resolves
+  // and returns an error rather than failing to link.
+  const auto error = module.load();
+  std::printf("module load returned 0x%x as expected\\n", (unsigned)error);
   return 0;
 }
 """
@@ -759,6 +777,62 @@ def test_component_targets_link(work_dir: Path) -> None:
     print(f"✓ every offered component links and is retained: {sorted(linked)}")
 
 
+def test_documented_example_compiles(work_dir: Path) -> None:
+    """The C++ example in the documentation must compile against the installed wheel.
+
+    Extracted from the documentation rather than copied here, so the two cannot drift. A
+    reader who follows the documentation gets code that builds, and a dangling include or a
+    renamed entry point fails this check instead of shipping.
+    """
+    # Guarded the same way the wheel lookup is: a copy of this file can live outside the
+    # repository layout, where indexing past the available parents raises.
+    here = Path(__file__).resolve()
+    root = here.parents[3] if len(here.parents) > 3 else here.parent
+    documentation = root / "docs" / "source" / "using-executorch-cpp.md"
+    if not documentation.is_file():
+        print("- the documentation file is not present, skipping the example check")
+        return
+
+    match = re.search(
+        r"```cpp\n// main\.cpp\n(.*?)```", documentation.read_text(), re.S
+    )
+    assert match, (
+        f"could not find the C++ example in {documentation.name}; the check needs it to "
+        "verify what the documentation tells a reader to write"
+    )
+
+    source_dir = work_dir / "documented"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "main.cpp").write_text("// main.cpp\n" + match.group(1))
+    (source_dir / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.28)\n"
+        "project(documented_example CXX)\n"
+        "find_package(executorch REQUIRED)\n"
+        "add_executable(documented_example main.cpp)\n"
+        "target_link_libraries(documented_example PRIVATE executorch::runtime)\n"
+    )
+
+    build_dir = work_dir / "documented-build"
+    configure = subprocess.run(
+        ["cmake", "-S", str(source_dir), "-B", str(build_dir),
+         f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}"],
+        capture_output=True, text=True, check=False,
+    )
+    assert configure.returncode == 0, (
+        "the documented example does not configure against the installed wheel: "
+        f"{(configure.stderr or configure.stdout).strip()[-500:]}"
+    )
+    build = subprocess.run(
+        ["cmake", "--build", str(build_dir)],
+        capture_output=True, text=True, check=False,
+    )
+    assert build.returncode == 0, (
+        "the documented example does not compile against the installed wheel: "
+        f"{(build.stderr or build.stdout).strip()[-500:]}"
+    )
+    print("\u2713 the C++ example in the documentation compiles and links")
+
+
 def run_tests(work_dir: Path) -> None:
     test_single_backend_registry()
     test_python_extensions_import()
@@ -769,4 +843,5 @@ def run_tests(work_dir: Path) -> None:
     test_no_absolute_runtime_paths()
     test_single_threadpool()
     test_cpp_consumer(work_dir)
+    test_documented_example_compiles(work_dir)
     test_component_targets_link(work_dir)
