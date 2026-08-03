@@ -623,6 +623,42 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     print("✓ a custom operator compiles against the shipped Python extension")
 
 
+def _find_wheel_files() -> list:
+    """The built wheel files, searched where a build actually leaves them.
+
+    WHEEL_DIR is honoured when set, but it is not set in the wheel-build job, so the
+    usual output directories are searched too. Without this the check has nothing to
+    inspect and skips.
+    """
+    candidates = []
+    configured = os.environ.get("WHEEL_DIR")
+    if configured:
+        candidates.append(Path(configured))
+    # The build leaves the wheel in dist/ at the repository root, and this file sits at a
+    # fixed depth below that root, so the location follows from __file__ rather than from
+    # the current directory. The release job runs the smoke test from the workspace above
+    # the repository, where a cwd-relative guess finds nothing.
+    #
+    # Guarded because a copy of this file can live outside that layout, where indexing
+    # past the available parents would raise instead of falling through to the other
+    # candidates.
+    here = Path(__file__).resolve()
+    repository_root = here.parents[3] if len(here.parents) > 3 else here.parent
+    candidates += [
+        repository_root / "dist",
+        Path.cwd() / "dist",
+        Path.cwd(),
+        repository_root / "wheelhouse",
+    ]
+    for directory in candidates:
+        try:
+            found = sorted(directory.glob("executorch-*.whl"))
+        except OSError:
+            continue
+        if found:
+            return found
+    return []
+
 def test_wheel_platform_tag() -> None:
     """The wheel's declared platform tag must match what its libraries need.
 
@@ -639,7 +675,7 @@ def test_wheel_platform_tag() -> None:
         print("- auditwheel unavailable, skipping the platform tag check")
         return
 
-    wheels = sorted(Path(os.environ.get("WHEEL_DIR", ".")).glob("executorch-*.whl"))
+    wheels = _find_wheel_files()
     if not wheels:
         print("- no wheel file to inspect, skipping the platform tag check")
         return
