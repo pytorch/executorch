@@ -238,6 +238,12 @@ def test_python_extensions_import() -> None:
         "executorch.extension.pybindings.portable_lib",
         "executorch.extension.training",
     ]
+    # Torch has to be installed, the same as for the dependency check: these
+    # extensions link it, so without it they cannot import for a reason that says
+    # nothing about packaging.
+    if importlib.util.find_spec("torch") is None:
+        print("- torch is not installed, skipping the extension import check")
+        return
     environment = {
         key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
     }
@@ -328,6 +334,12 @@ def test_shipped_libraries_load() -> None:
     """
     if shutil.which("ldd") is None:
         print("- ldd not available, skipping the load check")
+        return
+    # Torch has to be installed for this to mean anything: several shipped libraries
+    # depend on it and resolve once it is imported. Without it every one of them looks
+    # broken, which would report a packaging fault that does not exist.
+    if importlib.util.find_spec("torch") is None:
+        print("- torch is not installed, skipping the load check")
         return
 
     package_dir = _installed_package_dir()
