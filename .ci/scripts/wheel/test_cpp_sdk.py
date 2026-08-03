@@ -27,8 +27,8 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 
 # Registry entry points. A second definer of any of these means a second
@@ -238,6 +238,7 @@ def test_shipped_libraries_load() -> None:
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
+
         # Torch, the interpreter, and the CUDA runtime are excluded rather than
         # treated as packaging faults. All three arrive from outside the wheel: torch
         # libraries resolve once the torch package is imported, libpython comes from
@@ -558,14 +559,17 @@ def test_python_extensions_import() -> None:
     ]
     package_dir = _installed_package_dir()
     needs_cuda_runtime = any(
-        "libcudart" in subprocess.run(
+        "libcudart"
+        in subprocess.run(
             ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
         ).stdout
         for library in _shipped_shared_objects(package_dir)
     )
     if needs_cuda_runtime and shutil.which("readelf") is not None:
-        print("- a CUDA wheel needs the CUDA runtime from the environment, so the "
-              "clean-environment import check does not apply")
+        print(
+            "- a CUDA wheel needs the CUDA runtime from the environment, so the "
+            "clean-environment import check does not apply"
+        )
         return
     environment = {
         key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
@@ -773,9 +777,7 @@ def test_no_absolute_runtime_paths() -> None:
         if result.returncode != 0:
             continue
         absolute = [
-            entry
-            for entry in result.stdout.strip().split(":")
-            if entry.startswith("/")
+            entry for entry in result.stdout.strip().split(":") if entry.startswith("/")
         ]
         if absolute:
             offenders[str(library.relative_to(package_dir))] = absolute
