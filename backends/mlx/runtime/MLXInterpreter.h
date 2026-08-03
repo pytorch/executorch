@@ -294,24 +294,6 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
   st.set_tensor(n.out, std::move(out));
 }
 
-// Bool mask [1, 1, T, S] for T queries over a span of S keys, where each query
-// attends at most `window` keys ending at itself. The span is right-aligned
-// (the newest key belongs to the last query), so query i spans keys
-// j - i <= S - T -- the same bound MLX's "causal" applies -- and the window
-// adds the lower bound j - i > S - T - window.
-inline array window_causal_mask(int T, int S, int window, StreamOrDevice s) {
-  array diff = subtract(
-      reshape(arange(S, int32, s), Shape{1, S}, s),
-      reshape(arange(T, int32, s), Shape{T, 1}, s),
-      s);
-  const int hi = S - T;
-  array band = logical_and(
-      less_equal(diff, array(hi), s),
-      greater_equal(diff, array(hi - window + 1), s),
-      s);
-  return reshape(band, Shape{1, 1, T, S}, s);
-}
-
 inline void exec_update_and_attend(
     const UpdateAndAttendNode& n,
     ExecutionState& st,
@@ -350,23 +332,17 @@ inline void exec_update_and_attend(
   // than test for Causal: None and Explicit both map to "" and are told apart
   // only by spec.mask, so an Explicit with no mask would silently attend
   // unmasked.
+  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
+  // than test for Causal: None and Explicit both map to "" and are told apart
+  // only by spec.mask, so an Explicit with no mask would silently attend
+  // unmasked.
   std::string mask_mode;
-  std::optional<array> mask = spec.mask;
   switch (spec.kind) {
     case AttendSpec::Mask::None:
       break;
-    case AttendSpec::Mask::Causal: {
-      const int T = static_cast<int>(q.shape(2));
-      const int S = static_cast<int>(K.shape(2));
-      // MLX has no sliding-window mode, so a window that actually bites has to
-      // be materialized. It never bites when it covers the whole span.
-      if (spec.window && *spec.window < S) {
-        mask = window_causal_mask(T, S, *spec.window, s);
-      } else {
-        mask_mode = "causal";
-      }
+    case AttendSpec::Mask::Causal:
+      mask_mode = "causal";
       break;
-    }
     case AttendSpec::Mask::Explicit:
       if (!spec.mask) {
         throw std::runtime_error(
@@ -375,7 +351,14 @@ inline void exec_update_and_attend(
       break;
   }
   array out = fast::scaled_dot_product_attention(
-      q, K, V, static_cast<float>(*n.scale), mask_mode, mask, std::nullopt, s);
+      q,
+      K,
+      V,
+      static_cast<float>(*n.scale),
+      mask_mode,
+      spec.mask,
+      std::nullopt,
+      s);
   // Honor the op's output-dtype contract (unset -> SDPA's native output).
   if (n.out_dtype) {
     out = astype(out, resolve_dtype(*n.out_dtype), s);

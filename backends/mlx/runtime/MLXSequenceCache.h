@@ -117,6 +117,25 @@ class Pool {
   Tensor buf_;
 };
 
+// Bool mask [1, 1, T, S] for T queries over a span of S keys, where each query
+// attends at most `window` keys ending at itself. The span is right-aligned
+// (the newest key belongs to the last query), so query i spans keys
+// j - i <= S - T -- the same bound MLX's "causal" applies -- and the window
+// adds the lower bound j - i > S - T - window.
+inline Tensor window_causal_mask(int T, int S, int window, StreamOrDevice s) {
+  using namespace ::mlx::core;
+  Tensor diff = subtract(
+      reshape(arange(S, int32, s), Shape{1, S}, s),
+      reshape(arange(T, int32, s), Shape{T, 1}, s),
+      s);
+  const int hi = S - T;
+  Tensor band = logical_and(
+      less_equal(diff, array(hi), s),
+      greater_equal(diff, array(hi - window + 1), s),
+      s);
+  return reshape(band, Shape{1, 1, T, S}, s);
+}
+
 // The MLX byte layer behind the neutral SequenceCache: one Pool per layer for K
 // and one for V, sized from that layer's own policy. update_and_fetch plans the
 // step (integer runs), writes the new K/V, reads the retained window, and
@@ -174,21 +193,26 @@ class MLXSequenceCache : public cache::SequenceCache, public MLXCache {
     Tensor V = read_runs(vpool_[l], p->read, p->n_read, s);
     this->commit(*p);
 
-    // A multi-token chain is Causal (MLX "causal" is lower-right aligned, so
-    // fresh and chunked prefill are both correct with new tokens at the tail);
-    // a single decode token needs no mask -- its span is exactly what it may
-    // attend, on a ring layer as much as a flat one. A ring layer additionally
-    // bounds each query to its own window; the handler materializes that only
-    // when the window is narrower than the span.
+    // A single decode token needs no mask -- its span is exactly what it may
+    // attend, on a ring layer as much as a flat one.
     if (T == 1) {
+      return AttendSpec{K, V, AttendSpec::Mask::None, std::nullopt};
+    }
+    // A ring layer bounds each query to its own window. That only bites when
+    // the window is narrower than the span (a multi-token step reads the union
+    // of its queries' windows, window + T - 1 cells); otherwise plain causal is
+    // exact and MLX applies it fused, with no mask tensor.
+    const int S = static_cast<int>(K.shape(2));
+    if (window_[l] > 0 && window_[l] < S) {
       return AttendSpec{
-          K, V, AttendSpec::Mask::None, std::nullopt, std::nullopt};
+          K,
+          V,
+          AttendSpec::Mask::Explicit,
+          window_causal_mask(T, S, window_[l], s)};
     }
-    std::optional<int> window;
-    if (window_[l] > 0) {
-      window = window_[l];
-    }
-    return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt, window};
+    // MLX "causal" is lower-right aligned, so fresh and chunked prefill are
+    // both correct with the new tokens at the tail.
+    return AttendSpec{K, V, AttendSpec::Mask::Causal, std::nullopt};
   }
 
  private:
