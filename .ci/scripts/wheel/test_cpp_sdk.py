@@ -776,11 +776,21 @@ def _find_wheel_files() -> list:
     configured = os.environ.get("WHEEL_DIR")
     if configured:
         candidates.append(Path(configured))
+    # The build leaves the wheel in dist/ at the repository root, and this file sits at a
+    # fixed depth below that root, so the location follows from __file__ rather than from
+    # the current directory. The release job runs the smoke test from the workspace above
+    # the repository, where a cwd-relative guess finds nothing.
+    #
+    # Guarded because a copy of this file can live outside that layout, where indexing
+    # past the available parents would raise instead of falling through to the other
+    # candidates.
+    here = Path(__file__).resolve()
+    repository_root = here.parents[3] if len(here.parents) > 3 else here.parent
     candidates += [
-        Path.cwd(),
+        repository_root / "dist",
         Path.cwd() / "dist",
-        Path.cwd() / "wheelhouse",
-        Path("/artifacts"),
+        Path.cwd(),
+        repository_root / "wheelhouse",
     ]
     for directory in candidates:
         try:
@@ -804,22 +814,12 @@ def test_wheel_platform_tag() -> None:
     ships in the wheel can legitimately require a newer baseline than the tag
     implies.
     """
-    # Installed on demand rather than assumed. The wheel-build environment does not
-    # carry auditwheel, so without this the check skipped there and the skip read as
-    # coverage.
+    # Not installed here on purpose. A release check should not need the network or
+    # change the environment it is verifying, so auditwheel is provisioned by the wheel
+    # build script alongside the other prerequisites.
     if importlib.util.find_spec("auditwheel") is None:
-        installed = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "auditwheel"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        importlib.invalidate_caches()
-        if installed.returncode != 0 or importlib.util.find_spec("auditwheel") is None:
-            print(
-                "- auditwheel could not be installed, skipping the platform tag check"
-            )
-            return
+        print("- auditwheel is not installed, skipping the platform tag check")
+        return
 
     wheels = _find_wheel_files()
     if not wheels:

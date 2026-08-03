@@ -127,3 +127,11 @@ else
   export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_VULKAN=OFF"
   echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
 fi
+
+# The wheel smoke test compares the wheel's contents against its declared platform tag,
+# which needs auditwheel. Installed here rather than by the test, so a release check does
+# not depend on the network or change the environment it is verifying. Linux only, since
+# auditwheel inspects ELF files.
+if [[ "$(uname -s)" == "Linux" ]]; then
+  pip install auditwheel
+fi
