@@ -763,6 +763,33 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     print("✓ a custom operator compiles against the shipped Python extension")
 
 
+def _find_wheel_files() -> list:
+    """The built wheel files, searched where a build actually leaves them.
+
+    WHEEL_DIR is honoured when set, but it is not set in the wheel-build job, so the
+    usual output directories are searched too. Without this the check has nothing to
+    inspect and skips.
+    """
+    candidates = []
+    configured = os.environ.get("WHEEL_DIR")
+    if configured:
+        candidates.append(Path(configured))
+    candidates += [
+        Path.cwd(),
+        Path.cwd() / "dist",
+        Path.cwd() / "wheelhouse",
+        Path("/artifacts"),
+    ]
+    for directory in candidates:
+        try:
+            found = sorted(directory.glob("executorch-*.whl"))
+        except OSError:
+            continue
+        if found:
+            return found
+    return []
+
+
 def test_wheel_platform_tag() -> None:
     """The wheel's declared platform tag must match what its libraries need.
 
@@ -775,11 +802,22 @@ def test_wheel_platform_tag() -> None:
     ships in the wheel can legitimately require a newer baseline than the tag
     implies.
     """
+    # Installed on demand rather than assumed. The wheel-build environment does not
+    # carry auditwheel, so without this the check skipped there and the skip read as
+    # coverage.
     if importlib.util.find_spec("auditwheel") is None:
-        print("- auditwheel unavailable, skipping the platform tag check")
-        return
+        installed = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "auditwheel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        importlib.invalidate_caches()
+        if installed.returncode != 0 or importlib.util.find_spec("auditwheel") is None:
+            print("- auditwheel could not be installed, skipping the platform tag check")
+            return
 
-    wheels = sorted(Path(os.environ.get("WHEEL_DIR", ".")).glob("executorch-*.whl"))
+    wheels = _find_wheel_files()
     if not wheels:
         print("- no wheel file to inspect, skipping the platform tag check")
         return

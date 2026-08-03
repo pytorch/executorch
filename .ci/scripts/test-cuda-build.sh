@@ -103,7 +103,10 @@ if not locations:
     print('INFO: cannot locate the installed package, skipping the check')
     sys.exit(0)
 package = Path(locations[0])
-symbol = 'executorch::backends::cuda::clearCurrentCUDAStream'
+# A symbol the delegate itself defines. The shim layer's symbols stay resolvable
+# even if the delegate stops being packaged, so probing one of those would prove
+# the shim is present rather than that delegate code exists exactly once.
+symbol = 'executorch::backends::cuda::CudaBackend::execute'
 libraries = [p for p in package.rglob('*.so*') if p.is_file() and not p.is_symlink()]
 definers = []
 for library in libraries:
@@ -118,9 +121,8 @@ for library in libraries:
             definers.append(str(library.relative_to(package)))
             break
 
-# The symbol above belongs to the shim layer, so it stays resolvable even if the
-# delegate library itself stops being packaged. Check for the delegate file too,
-# otherwise losing it entirely would go unnoticed here.
+# The file is checked as well as the symbol. A missing delegate would already fail the
+# symbol count above, but naming the file gives a clearer message about what is wrong.
 delegates = [
     p for p in package.rglob('libexecutorch_cuda_backend.so*')
     if p.is_file() and not p.is_symlink()
