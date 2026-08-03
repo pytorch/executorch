@@ -122,6 +122,47 @@ target_link_libraries(consumer PRIVATE executorch::runtime)
 """
 
 
+# Dependencies that come from outside the wheel. Torch libraries resolve once the
+# torch package is imported, libpython comes from the running interpreter, and the
+# CUDA and TensorRT runtimes are deliberately not bundled, so they come from the
+# environment or the separate nvidia packages. None is reachable from an ldd process,
+# and a wheel must not carry an absolute path to a build machine's copy just to
+# satisfy a check. Anything the wheel itself ships still has to resolve.
+_EXTERNAL_LIBRARY_PREFIXES = (
+    "libpython",
+    "libtorch",
+    "libc10",
+    "libcuda",
+    "libcurand",
+    "libcublas",
+    "libnvinfer",
+)
+
+
+def _provided_externally(name: str) -> bool:
+    """Whether a shared library is expected to come from outside the wheel."""
+    return name.startswith(_EXTERNAL_LIBRARY_PREFIXES)
+
+
+def _needs_external_cuda_runtime(package_dir: Path) -> bool:
+    """Whether the wheel's libraries depend on a CUDA runtime it does not bundle.
+
+    Used to skip checks that assume every dependency is either shipped or reachable
+    without help. The CUDA runtime is deliberately not bundled, so on a machine where
+    it comes from the separate nvidia packages those checks would report a fault that
+    is by design.
+    """
+    if shutil.which("readelf") is None:
+        return False
+    return any(
+        "libcudart"
+        in subprocess.run(
+            ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
+        ).stdout
+        for library in _shipped_shared_objects(package_dir)
+    )
+
+
 def _installed_package_dir() -> Path:
     """The installed executorch package, never the source checkout."""
     import executorch
@@ -189,6 +230,19 @@ def test_shipped_libraries_load() -> None:
     libraries = _shipped_shared_objects(package_dir)
     shipped = {library.name for library in libraries}
 
+    # For a CUDA wheel the undefined-symbol half of this check cannot be sound. When
+    # the CUDA runtime is reachable only through LD_LIBRARY_PATH, which is how the
+    # separate nvidia packages provide it, every CUDA entry point is reported
+    # unresolved. Matching those by library name is not possible either, because ldd
+    # names the library that references a symbol, not the one that would provide it.
+    # The missing-library half below still runs.
+    skip_undefined = _needs_external_cuda_runtime(package_dir)
+    if skip_undefined:
+        print(
+            "- a CUDA wheel gets its CUDA runtime from the environment, so undefined "
+            "symbol reporting is skipped for it"
+        )
+
     # A dependency is only excusable when the wheel ships it AND the loader can
     # actually reach it from the library that needs it. Loaded-later extensions
     # such as the Torch libraries are the real exception: they resolve once the
@@ -230,35 +284,18 @@ def test_shipped_libraries_load() -> None:
         # never resolve them and their absence says nothing about packaging.
         # Filtering the symbols rather than guessing from the file name keeps the
         # check active for everything else those libraries need.
-        undefined = [
-            line.strip()
-            for line in combined.splitlines()
-            if "undefined symbol" in line
-            and not re.search(r"undefined symbol:\s+_?Py", line)
-        ]
+        undefined = (
+            []
+            if skip_undefined
+            else [
+                line.strip()
+                for line in combined.splitlines()
+                if "undefined symbol" in line
+                and not re.search(r"undefined symbol:\s+_?Py", line)
+            ]
+        )
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
-
-        # Torch, the interpreter, and the CUDA runtime are excluded rather than
-        # treated as packaging faults. All three arrive from outside the wheel: torch
-        # libraries resolve once the torch package is imported, libpython comes from
-        # the running interpreter, and the CUDA runtime is deliberately not bundled,
-        # so it comes from the environment or the separate nvidia packages. None is
-        # reachable from an ldd process, and a wheel must not carry an absolute path
-        # to a build machine's copy just to satisfy this check. Anything the wheel
-        # itself ships still has to resolve below.
-        def _provided_externally(name: str) -> bool:
-            return name.startswith(
-                (
-                    "libpython",
-                    "libtorch",
-                    "libc10",
-                    "libcuda",
-                    "libcurand",
-                    "libcublas",
-                    "libnvinfer",
-                )
-            )
 
         absent = [
             name
@@ -558,14 +595,7 @@ def test_python_extensions_import() -> None:
         "executorch.extension.training",
     ]
     package_dir = _installed_package_dir()
-    needs_cuda_runtime = any(
-        "libcudart"
-        in subprocess.run(
-            ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
-        ).stdout
-        for library in _shipped_shared_objects(package_dir)
-    )
-    if needs_cuda_runtime and shutil.which("readelf") is not None:
+    if _needs_external_cuda_runtime(package_dir):
         print(
             "- a CUDA wheel needs the CUDA runtime from the environment, so the "
             "clean-environment import check does not apply"
