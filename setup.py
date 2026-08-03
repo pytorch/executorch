@@ -384,6 +384,24 @@ set(PACKAGE_VERSION "{numeric}")
 if(NOT PACKAGE_FIND_VERSION)
   # No version requested, so any version satisfies it.
   set(PACKAGE_VERSION_COMPATIBLE TRUE)
+elseif(PACKAGE_FIND_VERSION_RANGE)
+  # A range request such as 1.0...1.2 sets its own variables, and checking only
+  # PACKAGE_FIND_VERSION would compare against the lower bound alone and accept a package
+  # the range excludes.
+  if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION_MIN)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  elseif(PACKAGE_FIND_VERSION_RANGE_MAX STREQUAL "INCLUDE"
+         AND PACKAGE_VERSION VERSION_GREATER PACKAGE_FIND_VERSION_MAX)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  elseif(PACKAGE_FIND_VERSION_RANGE_MAX STREQUAL "EXCLUDE"
+         AND NOT PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION_MAX)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  elseif(NOT PACKAGE_FIND_VERSION_MIN_MAJOR STREQUAL "{major}")
+    # Same major rule as below: a different major means a different shared runtime.
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  else()
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+  endif()
 elseif(PACKAGE_FIND_VERSION_MAJOR STREQUAL "{major}")
   # SameMajorVersion, matching the runtime's SONAME: a consumer asking for {major}.x
   # gets any {major}.y, and a request for a different major is refused because the
