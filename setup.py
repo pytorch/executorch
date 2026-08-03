@@ -388,9 +388,17 @@ elseif(PACKAGE_FIND_VERSION_MAJOR STREQUAL "{major}")
   # SameMajorVersion, matching the runtime's SONAME: a consumer asking for {major}.x
   # gets any {major}.y, and a request for a different major is refused because the
   # shared runtime it would link is not the one it asked for.
-  set(PACKAGE_VERSION_COMPATIBLE TRUE)
-  if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
-    set(PACKAGE_VERSION_EXACT TRUE)
+  #
+  # A request above this version is refused too. Matching only the major would let a
+  # package satisfy a request for a release it predates, so a consumer needing something
+  # added later would link this runtime instead of being told it is not here.
+  if(PACKAGE_VERSION VERSION_LESS PACKAGE_FIND_VERSION)
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  else()
+    set(PACKAGE_VERSION_COMPATIBLE TRUE)
+    if(PACKAGE_FIND_VERSION STREQUAL PACKAGE_VERSION)
+      set(PACKAGE_VERSION_EXACT TRUE)
+    endif()
   endif()
 else()
   set(PACKAGE_VERSION_UNSUITABLE TRUE)
