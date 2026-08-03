@@ -652,9 +652,9 @@ class BuiltExtension(_BaseExtension):
             modpath: The dotted path of the python module that maps to the
                 extension.
         """
-        assert (
-            "/" not in modpath
-        ), f"modpath must be a dotted python module path: saw '{modpath}'"
+        assert "/" not in modpath, (
+            f"modpath must be a dotted python module path: saw '{modpath}'"
+        )
         full_src = src
         if src_dir is None and _is_windows():
             src_dir = "%BUILD_TYPE%/"
@@ -1311,8 +1311,7 @@ setup(
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
                     src_name=(
-                        "libexecutorch_cuda_backend.so."
-                        f"{get_runtime_soname_major()}.*"
+                        f"libexecutorch_cuda_backend.so.{get_runtime_soname_major()}.*"
                     ),
                     dst=(
                         "executorch/lib/libexecutorch_cuda_backend.so."
