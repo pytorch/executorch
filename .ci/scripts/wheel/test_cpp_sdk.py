@@ -661,6 +661,104 @@ def test_no_absolute_runtime_paths() -> None:
     print("✓ no shipped library carries an absolute runtime search path")
 
 
+_COMPONENT_CONSUMER_CMAKE = """\
+cmake_minimum_required(VERSION 3.28)
+project(component_consumer CXX)
+
+find_package(executorch REQUIRED)
+
+add_executable(component_consumer consumer.cpp)
+target_link_libraries(component_consumer PRIVATE executorch::runtime)
+
+# Link every component this wheel offers, and report which ones those are so the test
+# can check the result. Guarded individually because the set depends on the wheel.
+foreach(_component threadpool kernels xnnpack_backend cuda_backend)
+  if(TARGET executorch::${_component})
+    target_link_libraries(component_consumer PRIVATE executorch::${_component})
+    # Report the library file, not just the target name: the two differ, and the test
+    # needs the file name to look for in the built binary.
+    get_target_property(_location executorch::${_component} IMPORTED_LOCATION)
+    get_filename_component(_file "${_location}" NAME)
+    message(STATUS "LINKED_COMPONENT=${_component}:${_file}")
+  endif()
+endforeach()
+"""
+
+
+def test_component_targets_link(work_dir: Path) -> None:
+    """Every component target the wheel offers must link and be retained.
+
+    A component library exists to register something, so nothing in the application
+    references a symbol from it. That is exactly the case a normal link drops, which is
+    why the targets carry retention options. This checks the options do their job
+    instead of trusting them.
+    """
+    assert shutil.which("cmake") is not None, "cmake is required to build a consumer"
+    if shutil.which("readelf") is None:
+        print("- readelf unavailable, skipping the component link check")
+        return
+
+    package_dir = _installed_package_dir()
+    source_dir = work_dir / "components"
+    build_dir = work_dir / "components-build"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "consumer.cpp").write_text(_CONSUMER_SOURCE)
+    (source_dir / "CMakeLists.txt").write_text(_COMPONENT_CONSUMER_CMAKE)
+
+    configure = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={package_dir}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert configure.returncode == 0, (
+        "a consumer linking the component targets cannot configure: "
+        f"{(configure.stderr or configure.stdout).strip()[-500:]}"
+    )
+    linked = dict(
+        match.split(":", 1)
+        for match in re.findall(r"LINKED_COMPONENT=(\S+)", configure.stdout)
+    )
+    # A wheel that ships only the runtime has nothing to check here, which is a valid
+    # configuration rather than a fault.
+    if not linked:
+        print("- this wheel offers no component targets, skipping the component check")
+        return
+
+    built = subprocess.run(
+        ["cmake", "--build", str(build_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, (
+        "a consumer linking the component targets does not build: "
+        f"{(built.stderr or built.stdout).strip()[-700:]}"
+    )
+
+    consumer = build_dir / "component_consumer"
+    needed = subprocess.run(
+        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=True
+    ).stdout
+    # Each component has to appear in DT_NEEDED. Absent means the retention options did
+    # not hold and whatever the library registers would never happen at runtime.
+    dropped = [
+        component for component, library in linked.items() if library not in needed
+    ]
+    assert not dropped, (
+        f"components {dropped} were linked but do not appear in the consumer's "
+        "DT_NEEDED, so their registration would never run"
+    )
+    print(f"✓ every offered component links and is retained: {sorted(linked)}")
+
+
 def run_tests(work_dir: Path) -> None:
     test_single_backend_registry()
     test_python_extensions_import()
@@ -671,3 +769,4 @@ def run_tests(work_dir: Path) -> None:
     test_no_absolute_runtime_paths()
     test_single_threadpool()
     test_cpp_consumer(work_dir)
+    test_component_targets_link(work_dir)
