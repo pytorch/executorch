@@ -332,6 +332,25 @@ _UNSUPPORTED_WHEEL_HEADERS = frozenset(
     }
 )
 
+# Headers excluded by path rather than by name, because the same file name is also used
+# by a header that does compile. Each of these includes something the wheel does not
+# ship, so it cannot build from an installed package.
+_UNSUPPORTED_WHEEL_HEADER_PATHS = (
+    # Includes a generated schema header that is not part of the shipped tree.
+    "runtime/executor/tensor_parser.h",
+    # GoogleTest and GoogleMock helpers, which a runtime package has no reason to ship.
+    "runtime/core/exec_aten/testing_util/tensor_util.h",
+    "runtime/core/testing_util/error_matchers.h",
+)
+
+
+def _is_unsupported_wheel_header(source: Path) -> bool:
+    """Whether a header cannot compile from an installed package."""
+    if source.name in _UNSUPPORTED_WHEEL_HEADERS:
+        return True
+    posix = source.as_posix()
+    return any(posix.endswith(suffix) for suffix in _UNSUPPORTED_WHEEL_HEADER_PATHS)
+
 
 def get_dynamic_lib_name(name: str) -> str:
     if _is_windows():
@@ -861,7 +880,7 @@ class CustomBuildPy(build_py):
             ]:
                 src_list = Path(include_dir).rglob("*.h")
                 for src in src_list:
-                    if src.name in _UNSUPPORTED_WHEEL_HEADERS:
+                    if _is_unsupported_wheel_header(src):
                         continue
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
