@@ -55,8 +55,8 @@ using executorch::runtime::EventTracer;
 using executorch::runtime::EventTracerEntry;
 #endif
 
-// We use the platform and runtime environment provided by the Vulkan delegate
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+// Volk meta-loader provides Vulkan function pointers (ARM tensor extensions, etc.)
+#include <volk.h>
 
 // Dependencies for processing VGF files into Vulkan calls
 #include <vgf/decoder.hpp>
