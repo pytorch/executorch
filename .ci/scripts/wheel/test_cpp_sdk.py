@@ -22,6 +22,7 @@ Two properties are verified:
    on the shipped runtime with a relocatable RUNPATH.
 """
 
+import importlib.util
 import os
 import re
 import shutil
@@ -553,6 +554,52 @@ def test_python_extensions_import() -> None:
         )
 
 
+def test_wheel_platform_tag() -> None:
+    """The wheel's declared platform tag must match what its libraries need.
+
+    A library that quietly picks up a newer dependency, or a newer minimum glibc,
+    makes the wheel unusable on machines the tag says it supports. auditwheel is
+    the tool that decides this, so ask it rather than guessing.
+
+    Only a contradiction between the tag and the contents fails here. Reports about
+    instruction set extensions are left to the caller, because a prebuilt tool that
+    ships in the wheel can legitimately require a newer baseline than the tag
+    implies.
+    """
+    if importlib.util.find_spec("auditwheel") is None:
+        print("- auditwheel unavailable, skipping the platform tag check")
+        return
+
+    wheels = sorted(Path(os.environ.get("WHEEL_DIR", ".")).glob("executorch-*.whl"))
+    if not wheels:
+        print("- no wheel file to inspect, skipping the platform tag check")
+        return
+
+    result = subprocess.run(
+        [sys.executable, "-m", "auditwheel", "show", str(wheels[-1])],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    # auditwheel wraps its verdict across lines, so compare on collapsed
+    # whitespace rather than the literal output.
+    combined = " ".join((result.stdout + result.stderr).split())
+    match = re.search(r'consistent with the following platform tag: "([^"]+)"', combined)
+    assert match, (
+        "auditwheel reported no platform tag for the wheel, so its contents could "
+        f"not be checked against what it claims: {combined[-400:]}"
+    )
+    # The tag auditwheel derives from the contents has to be the one the file name
+    # claims. A wheel that names a stricter tag than its libraries support installs
+    # on machines it cannot actually run on.
+    claimed = wheels[-1].name.split("-")[-1].removesuffix(".whl")
+    assert match.group(1) in claimed, (
+        f"the wheel claims platform tag {claimed} but its contents only support "
+        f"{match.group(1)}"
+    )
+    print(f"✓ the wheel contents match its declared platform tag {match.group(1)}")
+
+
 def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
@@ -562,4 +609,5 @@ def run_tests(work_dir: Path) -> None:
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
     test_single_cuda_delegate()
+    test_wheel_platform_tag()
     test_cpp_consumer(work_dir)
