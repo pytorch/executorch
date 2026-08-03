@@ -122,7 +122,7 @@ class TestInt8QAT:
             )
 
     def test__recipe_structure(self):
-        """INT8_QAT_NEUTRON recipe has quantize_fn populated (QAT uses non-standard sequence)."""
+        """INT8_QAT_NEUTRON recipe: is_qat=True, train_fn forwarded, pass hooks populated."""
 
         def dummy_train(m):
             pass
@@ -132,10 +132,13 @@ class TestInt8QAT:
             NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc
         )
         qr = recipe.quantization_recipe
-        assert qr.quantize_fn is not None
-        assert (
-            qr.calibration_inputs_fn is None
-        )  # QAT uses quantize_fn, not calibration_inputs_fn
+        assert qr.is_qat is True
+        assert qr.train_fn is dummy_train
+        assert qr.calibration_inputs_fn is not None
+        assert qr.post_prepare_passes is not None
+        assert qr.post_train_passes is not None
+        assert qr.post_calibration_passes is not None
+        assert qr.post_convert_passes is not None
 
 
 class TestNeutronRecipeConfigFlags:
@@ -292,16 +295,18 @@ class TestErrorHandling:
 class TestRecipeStructureValidation:
 
     def test_ptq_neutron_recipe_structure(self):
-        """INT8_PTQ_NEUTRON recipe: correct quantizer, partitioner, no quantize_fn."""
+        """INT8_PTQ_NEUTRON recipe: correct quantizer, partitioner, no QAT pass hooks."""
         rc = NeutronRecipeConfig(INPUT_SHAPE)
         recipe = NXPRecipeProvider().create_recipe(
             NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
         )
         assert recipe.quantization_recipe is not None
         assert len(recipe.quantization_recipe.quantizers) == 1
-        # PTQ must NOT use quantize_fn so that multiple PTQ recipes can be combined.
-        assert recipe.quantization_recipe.quantize_fn is None
+        assert recipe.quantization_recipe.is_qat is False
         assert recipe.quantization_recipe.calibration_inputs_fn is not None
+        # PTQ does not use QAT pass hooks.
+        assert recipe.quantization_recipe.post_prepare_passes is None
+        assert recipe.quantization_recipe.post_convert_passes is None
         assert recipe.lowering_recipe.partitioners is not None
         assert len(recipe.lowering_recipe.partitioners) == 1
 
@@ -325,29 +330,62 @@ class TestRecipeCombination:
             NXPRecipeType.INT8_PTQ_NEUTRON,
             neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
         )
+        # Share the same calibration_inputs_fn so the single-owner guard does not raise.
+        shared_fn = recipe1.quantization_recipe.calibration_inputs_fn
+        recipe2.quantization_recipe.calibration_inputs_fn = shared_fn
+
         combined = ExportRecipe.combine([recipe1, recipe2])
         assert combined.lowering_recipe.pre_partitioning_callback is not None
         # Calling the combined callback should not raise.
         combined.lowering_recipe.pre_partitioning_callback(None, {})
 
-    def test__combine_raises_for_qat_recipe(self):
-        """ExportRecipe.combine() raises ValueError when any recipe has quantize_fn set."""
+    def test__combine_merges_qat_pass_lists(self):
+        """Combining two QAT recipes concatenates all four quantization pass lists.
+
+        Two recipes are built sharing the same train_fn and calibration_inputs_fn so
+        that _combine_recipes does not raise the single-owner guards.  The pass counts
+        from both recipes must be present in the combined recipe.
+        """
 
         def dummy_train(m):
             pass
 
-        qat_recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_QAT_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(
-                INPUT_SHAPE, train_fn=dummy_train
-            ),
+        def shared_calibration_fn():
+            return [(torch.randn(INPUT_SHAPE),)]
+
+        rc1 = NeutronRecipeConfig(INPUT_SHAPE, train_fn=dummy_train)
+        rc2 = NeutronRecipeConfig(INPUT_SHAPE, train_fn=dummy_train)
+        qat_recipe1 = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc1
         )
-        ptq_recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_PTQ_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
+        qat_recipe2 = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc2
         )
-        with pytest.raises(ValueError, match="quantize_fn"):
-            ExportRecipe.combine([ptq_recipe, qat_recipe])
+
+        # Override calibration_inputs_fn to be the same object on both recipes
+        # so the single-owner guard does not raise.
+        qat_recipe1.quantization_recipe.calibration_inputs_fn = shared_calibration_fn
+        qat_recipe2.quantization_recipe.calibration_inputs_fn = shared_calibration_fn
+
+        qr1 = qat_recipe1.quantization_recipe
+        qr2 = qat_recipe2.quantization_recipe
+
+        combined = ExportRecipe.combine([qat_recipe1, qat_recipe2])
+        cqr = combined.quantization_recipe
+
+        assert cqr.is_qat is True
+        assert len(cqr.post_prepare_passes) == len(qr1.post_prepare_passes) + len(
+            qr2.post_prepare_passes
+        )
+        assert len(cqr.post_train_passes) == len(qr1.post_train_passes) + len(
+            qr2.post_train_passes
+        )
+        assert len(cqr.post_calibration_passes) == len(
+            qr1.post_calibration_passes
+        ) + len(qr2.post_calibration_passes)
+        assert len(cqr.post_convert_passes) == len(qr1.post_convert_passes) + len(
+            qr2.post_convert_passes
+        )
 
     def test__collects_post_partitioning_transforms(self):
         """Combining two NXP recipes collects post_partitioning_transforms from both."""
@@ -359,6 +397,10 @@ class TestRecipeCombination:
             NXPRecipeType.INT8_PTQ_NEUTRON,
             neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
         )
+        # Share the same calibration_inputs_fn so the single-owner guard does not raise.
+        shared_fn = recipe1.quantization_recipe.calibration_inputs_fn
+        recipe2.quantization_recipe.calibration_inputs_fn = shared_fn
+
         n1 = len(recipe1.lowering_recipe.post_partitioning_transforms)
         n2 = len(recipe2.lowering_recipe.post_partitioning_transforms)
         combined = ExportRecipe.combine([recipe1, recipe2])

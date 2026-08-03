@@ -10,6 +10,13 @@ from typing import Any, Callable, cast, Iterable, Optional, Sequence
 
 import torch
 
+from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
+    FuseBatchNormWithLinearPass,
+)
+from executorch.backends.nxp.aten_passes.simulated_linear_bn_fusion_passes import (
+    AddSimulatedLinearBatchNormFusionQATPass,
+    RemoveSimulatedLinearBatchNormFusionQATPass,
+)
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
@@ -29,7 +36,6 @@ from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
     generate_neutron_compile_spec,
 )
-from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
 from executorch.backends.nxp.tests.executorch_pipeline import (
     _get_default_quantizer,
@@ -38,6 +44,9 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
     handle_kernel_selection,
     ModelInputSpec,
     to_model_input_spec,
+)
+from executorch.backends.transforms.quantize_fused_convbn_bias_pass import (
+    QuantizeFusedConvBnBiasAtenPass,
 )
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 
@@ -200,45 +209,57 @@ def _build_quantization_recipe(
 ) -> QuantizationRecipe:
     """Build the QuantizationRecipe for PTQ or QAT.
 
-    PTQ uses the standard QuantizeStage flow (prepare_pt2e -> calibrate -> convert_pt2e)
-    driven by calibration_inputs_fn.  quantize_fn is intentionally left None so that
-    multiple PTQ recipes can be combined with ExportRecipe.combine().
+    PTQ uses the standard QuantizeStage default flow (prepare_pt2e -> calibrate ->
+    convert_pt2e) with calibration_inputs_fn supplying the calibration samples.
 
-    QAT requires a non-standard sequence (BN-fusion passes interleaved with training),
-    so it delegates to calibrate_and_quantize() via quantize_fn.  A recipe with
-    quantize_fn set cannot be combined with other recipes.
+    QAT uses the same QuantizeStage flow with is_qat=True (prepare_qat_pt2e) and
+    the NXP-specific BN-fusion passes distributed across the four pass-list hooks:
+      - post_prepare_passes:     AddSimulatedLinearBatchNormFusionQATPass
+      - post_train_passes:       RemoveSimulatedLinearBatchNormFusionQATPass,
+                                 FuseBatchNormWithLinearPass
+      - post_calibration_passes: RemoveSimulatedLinearBatchNormFusionQATPass,
+                                 FuseBatchNormWithLinearPass  (applied again after
+                                 observer-only calibration when train_fn is None)
+      - post_convert_passes:     QuantizeFusedConvBnBiasAtenPass
     """
     _input_spec = rc.input_spec
     _calibration_fn = rc.get_calibration_inputs_fn or get_random_calibration_inputs
     _quantizer = rc.get_quantizer_fn()
 
-    if is_qat:
-        _train_fn = rc.train_fn
+    def _calibration_inputs_fn() -> Iterable:
+        return _calibration_fn(_input_spec)
 
-        def _quantize_fn(  # noqa: E306
-            graph_module: torch.fx.GraphModule,
-        ) -> torch.fx.GraphModule:
-            return calibrate_and_quantize(
-                model=graph_module,
-                calibration_inputs=_calibration_fn(_input_spec),
-                quantizer=_quantizer,
-                is_qat=True,
-                train_fn=_train_fn,
-            )
-
-        return QuantizationRecipe(
-            quantizers=[_quantizer],
-            quantize_fn=_quantize_fn,
-        )
-    else:
-
-        def _calibration_inputs_fn() -> Iterable:
-            return _calibration_fn(_input_spec)
-
+    if not is_qat:
         return QuantizationRecipe(
             quantizers=[_quantizer],
             calibration_inputs_fn=_calibration_inputs_fn,
         )
+
+    # QAT pass hooks -- keep NXP-specific pass classes out of shared modules
+    def _post_prepare(m: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        return AddSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+
+    def _remove_simulated_bn_and_fuse(m: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        m = RemoveSimulatedLinearBatchNormFusionQATPass()(m).graph_module
+        return FuseBatchNormWithLinearPass()(m).graph_module
+
+    def _post_convert(m: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        return QuantizeFusedConvBnBiasAtenPass(
+            default_zero_bias=False, symmetric_quant=True
+        )(m).graph_module
+
+    return QuantizationRecipe(
+        quantizers=[_quantizer],
+        calibration_inputs_fn=_calibration_inputs_fn,
+        is_qat=True,
+        train_fn=rc.train_fn,
+        post_prepare_passes=[_post_prepare],
+        # Applied after training (or after prepare when no train_fn).
+        post_train_passes=[_remove_simulated_bn_and_fuse],
+        # Applied after calibration (only reached when train_fn is None).
+        post_calibration_passes=[_remove_simulated_bn_and_fuse],
+        post_convert_passes=[_post_convert],
+    )
 
 
 def _build_lowering_recipe(

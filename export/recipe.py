@@ -91,19 +91,39 @@ class QuantizationRecipe:
     Configuration recipe for quantization.
 
     This class holds the configuration parameters for quantizing a model.
+    The quantization sequence executed by QuantizeStage is:
+
+        prepare_qat_pt2e / prepare_pt2e
+            -> post_prepare_passes
+            -> [train_fn]
+            -> post_train_passes
+            -> [calibration loop]  (skipped when train_fn is provided)
+            -> post_calibration_passes
+            -> convert_pt2e
+            -> post_convert_passes
+
+    For standard PTQ, all pass lists can be left None. For QAT or other
+    non-standard sequences, backends supply the appropriate passes via the
+    four pass-list fields.
 
     Attributes:
-        quantizers: Optional list of quantizers for model quantization
+        quantizers: Optional list of quantizers for model quantization.
         ao_quantization_configs: Optional list of AOQuantizationConfig objects that pair
-                                 AOBaseConfig with optional filter functions
+                                 AOBaseConfig with optional filter functions.
         calibration_inputs_fn: Optional zero-argument callable that returns an iterable of
                                calibration input tuples. When None the example_inputs passed
-                               to the export session are used directly.
-                               Ignored when quantize_fn is set.
-        quantize_fn: Optional callable that replaces the default prepare/calibrate/convert flow
-                     in QuantizeStage. Use this when the built-in flow does not support the
-                     required quantization sequence. Recipes that set this field cannot be
-                     combined with other recipes via ExportRecipe.combine().
+                               to the export session are used directly as calibration inputs.
+        is_qat: When True, QuantizeStage uses prepare_qat_pt2e instead of prepare_pt2e.
+        train_fn: Optional training callback invoked between post_prepare_passes and
+                  post_train_passes. When provided the calibration loop is skipped.
+        post_prepare_passes: Optional list of GraphModule transforms applied after
+                             prepare_pt2e / prepare_qat_pt2e.
+        post_train_passes: Optional list of GraphModule transforms applied after train_fn
+                           (or after prepare, when no train_fn is provided).
+        post_calibration_passes: Optional list of GraphModule transforms applied after
+                                 the calibration loop.
+        post_convert_passes: Optional list of GraphModule transforms applied after
+                             convert_pt2e.
     """
 
     quantizers: Optional[List[Quantizer]] = None
@@ -111,7 +131,20 @@ class QuantizationRecipe:
     calibration_inputs_fn: Optional[
         Callable[[], "Iterable[tuple[torch.Tensor, ...]]"]
     ] = None
-    quantize_fn: Optional[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]] = None
+    is_qat: bool = False
+    train_fn: Optional[Callable[[torch.fx.GraphModule], None]] = None
+    post_prepare_passes: Optional[
+        List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]
+    ] = None
+    post_train_passes: Optional[
+        List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]
+    ] = None
+    post_calibration_passes: Optional[
+        List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]
+    ] = None
+    post_convert_passes: Optional[
+        List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]
+    ] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
@@ -272,26 +305,25 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
-        for recipe in backend_recipes:
-            if (
-                recipe.quantization_recipe is not None
-                and recipe.quantization_recipe.quantize_fn is not None
-            ):
-                raise ValueError(
-                    f"Recipe '{recipe.name}' uses a custom quantize_fn and cannot be "
-                    "combined with other recipes. quantize_fn calls convert_pt2e internally "
-                    "and the resulting quantized graph cannot be merged with other recipes."
-                )
-
         # Extract components from individual recipes
         all_partitioners = []
         all_quantizers = []
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
         all_transform_passes = []
+        all_edge_manager_transform_passes = []
         all_pre_partitioning_callbacks = []
         all_post_partitioning_passes = []
         combined_backend_config = None
+
+        # Quantization pass lists accumulated across all recipes
+        all_post_prepare_passes = []
+        all_post_train_passes = []
+        all_post_calibration_passes = []
+        all_post_convert_passes = []
+        combined_is_qat = False
+        combined_train_fn = None
+        combined_calibration_inputs_fn = None
 
         for recipe in backend_recipes:
             # Collect pre-edge transform passes
@@ -302,10 +334,19 @@ class ExportRecipe:
             if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
                 all_partitioners.extend(recipe.lowering_recipe.partitioners)
 
-            # Collect transform passes from lowering recipes
+            # Collect edge transform passes from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.edge_transform_passes:
                 all_transform_passes.extend(
                     recipe.lowering_recipe.edge_transform_passes
+                )
+
+            # Collect edge manager transform passes from lowering recipes
+            if (
+                recipe.lowering_recipe
+                and recipe.lowering_recipe.edge_manager_transform_passes
+            ):
+                all_edge_manager_transform_passes.extend(
+                    recipe.lowering_recipe.edge_manager_transform_passes
                 )
 
             # Collect pre-partitioning callbacks - all will be chained
@@ -327,16 +368,43 @@ class ExportRecipe:
                 )
 
             # Collect for quantize stage
-            if quantization_recipe := recipe.quantization_recipe:
-                # Collect PT2E quantizers
-                if quantization_recipe.quantizers:
-                    all_quantizers.extend(quantization_recipe.quantizers)
-
-                # Collect source transform configs
-                if quantization_recipe.ao_quantization_configs:
-                    all_ao_quantization_configs.extend(
-                        quantization_recipe.ao_quantization_configs
-                    )
+            if qr := recipe.quantization_recipe:
+                if qr.quantizers:
+                    all_quantizers.extend(qr.quantizers)
+                if qr.ao_quantization_configs:
+                    all_ao_quantization_configs.extend(qr.ao_quantization_configs)
+                if qr.is_qat:
+                    combined_is_qat = True
+                if qr.train_fn is not None:
+                    if (
+                        combined_train_fn is not None
+                        and combined_train_fn is not qr.train_fn
+                    ):
+                        raise ValueError(
+                            f"Recipe '{recipe.name}' sets train_fn but another recipe already "
+                            "provides one. Only one train_fn is allowed when combining recipes."
+                        )
+                    combined_train_fn = qr.train_fn
+                if qr.calibration_inputs_fn is not None:
+                    if (
+                        combined_calibration_inputs_fn is not None
+                        and combined_calibration_inputs_fn
+                        is not qr.calibration_inputs_fn
+                    ):
+                        raise ValueError(
+                            f"Recipe '{recipe.name}' sets calibration_inputs_fn but another "
+                            "recipe already provides one. Only one calibration_inputs_fn is "
+                            "allowed when combining recipes."
+                        )
+                    combined_calibration_inputs_fn = qr.calibration_inputs_fn
+                if qr.post_prepare_passes:
+                    all_post_prepare_passes.extend(qr.post_prepare_passes)
+                if qr.post_train_passes:
+                    all_post_train_passes.extend(qr.post_train_passes)
+                if qr.post_calibration_passes:
+                    all_post_calibration_passes.extend(qr.post_calibration_passes)
+                if qr.post_convert_passes:
+                    all_post_convert_passes.extend(qr.post_convert_passes)
 
             # Use the first backend config as base
             if combined_backend_config is None and recipe.executorch_backend_config:
@@ -346,12 +414,27 @@ class ExportRecipe:
 
         # Create combined quantization recipe
         combined_quantization_recipe = None
-        if all_quantizers or all_ao_quantization_configs:
+        if (
+            all_quantizers
+            or all_ao_quantization_configs
+            or combined_is_qat
+            or all_post_prepare_passes
+            or all_post_train_passes
+            or all_post_calibration_passes
+            or all_post_convert_passes
+        ):
             combined_quantization_recipe = QuantizationRecipe(
                 quantizers=all_quantizers if all_quantizers else None,
                 ao_quantization_configs=(
                     all_ao_quantization_configs if all_ao_quantization_configs else None
                 ),
+                calibration_inputs_fn=combined_calibration_inputs_fn,
+                is_qat=combined_is_qat,
+                train_fn=combined_train_fn,
+                post_prepare_passes=all_post_prepare_passes or None,
+                post_train_passes=all_post_train_passes or None,
+                post_calibration_passes=all_post_calibration_passes or None,
+                post_convert_passes=all_post_convert_passes or None,
             )
 
         # Chain all pre-partitioning callbacks into a single one that calls each in order
@@ -370,6 +453,7 @@ class ExportRecipe:
         if (
             all_partitioners
             or all_transform_passes
+            or all_edge_manager_transform_passes
             or combined_pre_partitioning_callback
             or all_post_partitioning_passes
         ):
@@ -386,6 +470,11 @@ class ExportRecipe:
                 partitioners=all_partitioners if all_partitioners else None,
                 edge_transform_passes=(
                     all_transform_passes if all_transform_passes else None
+                ),
+                edge_manager_transform_passes=(
+                    all_edge_manager_transform_passes
+                    if all_edge_manager_transform_passes
+                    else None
                 ),
                 edge_compile_config=edge_compile_config or EdgeCompileConfig(),
                 pre_partitioning_callback=combined_pre_partitioning_callback,

@@ -23,7 +23,15 @@ from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
 from torchao.quantization import quantize_
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     Quantizer as TorchAOPT2EQuantizer,
@@ -428,11 +436,18 @@ class QuantizeStage(Stage):
         else:
             raise ValueError("No quantizers detected")
 
+    @staticmethod
+    def _apply_passes(
+        m: torch.fx.GraphModule,
+        passes: Optional[List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]],
+    ) -> torch.fx.GraphModule:
+        """Apply a list of GraphModule -> GraphModule transforms in order."""
+        for p in passes or []:
+            m = p(m)
+        return m
+
     def run(self, artifact: PipelineArtifact) -> None:
-        if not self._quantization_recipe or (
-            not self._quantization_recipe.quantizers
-            and self._quantization_recipe.quantize_fn is None
-        ):
+        if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
                 "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
@@ -441,6 +456,7 @@ class QuantizeStage(Stage):
 
         assert isinstance(artifact.data, dict)
 
+        qr = self._quantization_recipe
         models = artifact.data
         example_inputs = artifact.get_context("example_inputs")
 
@@ -458,28 +474,49 @@ class QuantizeStage(Stage):
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            if (quantize_fn := self._quantization_recipe.quantize_fn) is not None:
-                # Use the backend-supplied quantization function directly. This allows backends to use non-standard
-                #  quantization sequences (e.g. QAT with ordered BN-fusion passes around training and calibration)
-                #  without exposing multiple ordered hook points in QuantizationRecipe.
-                quantized_model = quantize_fn(captured_graph)
+            quantizer = self._get_quantizer_for_prepare_pt2e(
+                qr.quantizers  # pyre-ignore
+            )
+
+            # Phase 1: prepare
+            if qr.is_qat:
+                m = prepare_qat_pt2e(captured_graph, quantizer)
             else:
-                quantizer = self._get_quantizer_for_prepare_pt2e(
-                    self._quantization_recipe.quantizers  # pyre-ignore
-                )
-                # PTQ flow: prepare_pt2e -> calibrate -> convert_pt2e.
-                # Use calibration_inputs_fn when provided, or fall back to the example_inputs.
                 m = prepare_pt2e(captured_graph, quantizer)
+
+            m = self._apply_passes(m, qr.post_prepare_passes)
+
+            # Phase 2: optional training.
+            # In QAT mode the model is in training mode after prepare_qat_pt2e, so
+            # move_exported_model_to_eval is always called (with or without a train_fn)
+            # to ensure eval mode before the subsequent passes and calibration.
+            if qr.train_fn is not None:
+                m = move_exported_model_to_train(m)
+                qr.train_fn(m)
+
+            if qr.is_qat:
+                m = move_exported_model_to_eval(m)
+
+            m = self._apply_passes(m, qr.post_train_passes)
+
+            # Phase 3: calibration (skipped when a train_fn was provided)
+            if qr.train_fn is None:
                 calibration_inputs = (
-                    self._quantization_recipe.calibration_inputs_fn()
-                    if self._quantization_recipe.calibration_inputs_fn is not None
+                    qr.calibration_inputs_fn()
+                    if qr.calibration_inputs_fn is not None
                     else example_inputs[method_name]
                 )
                 for calibration_input in calibration_inputs:
                     m(*calibration_input)
-                quantized_model = convert_pt2e(m)
 
-            quantized_models[method_name] = quantized_model
+            m = self._apply_passes(m, qr.post_calibration_passes)
+
+            # Phase 4: convert
+            m = convert_pt2e(m)
+
+            m = self._apply_passes(m, qr.post_convert_passes)
+
+            quantized_models[method_name] = m
 
         self._artifact = artifact.copy_with_new_data(quantized_models)
 
