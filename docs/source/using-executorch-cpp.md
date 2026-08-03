@@ -79,8 +79,7 @@ build:
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
-using executorch::extension::make_tensor_ptr;
-using executorch::extension::module::Module;
+using namespace executorch::extension;
 
 int main() {
   Module module("model.pte");

@@ -85,6 +85,8 @@ _CONSUMER_SOURCE = """\
 #include <cstdio>
 #include <vector>
 
+using namespace executorch::extension;
+
 int main() {
   executorch::runtime::runtime_init();
   // Printed rather than asserted on purpose. This consumer links only the
@@ -99,9 +101,9 @@ int main() {
   // load and run a program. Constructing them proves the shipped headers and the
   // shipped library agree, which taking sizeof alone would not: a declaration is
   // enough for that, while these need real definitions at link time.
-  executorch::extension::module::Module module("nonexistent.pte");
+  module::Module module("nonexistent.pte");
   std::vector<float> data(4, 1.0f);
-  auto input = executorch::extension::make_tensor_ptr({2, 2}, data.data());
+  auto input = make_tensor_ptr({2, 2}, data.data());
   std::printf("tensor holds %zu values\\n", (size_t)input->numel());
 
   // A load failure is expected here, since no program is shipped for this check.
