@@ -155,9 +155,19 @@ print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libra
     cuda_search_path=""
     IFS=':' read -ra _search_entries <<< "${LD_LIBRARY_PATH:-}"
     for _entry in "${_search_entries[@]}"; do
-      if [ -n "${_entry}" ] && compgen -G "${_entry}/libcudart.so*" > /dev/null; then
-        cuda_search_path="${cuda_search_path:+${cuda_search_path}:}${_entry}"
+      # Any CUDA library, not just the runtime: the nvidia pip packages put each one in
+      # its own directory, so matching only libcudart would drop the directory holding
+      # libcurand and the load would still fail. Patterns are looped over rather than
+      # brace-expanded, which compgen does not apply.
+      if [ -z "${_entry}" ]; then
+        continue
       fi
+      for _pattern in libcudart libcurand libcublas libcudnn; do
+        if compgen -G "${_entry}/${_pattern}*.so*" > /dev/null; then
+          cuda_search_path="${cuda_search_path:+${cuda_search_path}:}${_entry}"
+          break
+        fi
+      done
     done
 
     LD_LIBRARY_PATH="${cuda_search_path}" python -c "

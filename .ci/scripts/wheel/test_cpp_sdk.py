@@ -151,15 +151,13 @@ def _needs_external_cuda_runtime(package_dir: Path) -> bool:
     without help. The CUDA runtime is deliberately not bundled, so on a machine where
     it comes from the separate nvidia packages those checks would report a fault that
     is by design.
+
+    Decided from the shipped file names rather than by reading each ELF, so the answer
+    does not depend on a tool being installed. Getting this wrong in the absent-tool
+    direction would treat a CUDA wheel as a CPU one and fail the checks it should skip.
     """
-    if shutil.which("readelf") is None:
-        return False
     return any(
-        "libcudart"
-        in subprocess.run(
-            ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
-        ).stdout
-        for library in _shipped_shared_objects(package_dir)
+        "cuda" in library.name for library in _shipped_shared_objects(package_dir)
     )
 
 
@@ -284,16 +282,19 @@ def test_shipped_libraries_load() -> None:
         # never resolve them and their absence says nothing about packaging.
         # Filtering the symbols rather than guessing from the file name keeps the
         # check active for everything else those libraries need.
-        undefined = (
-            []
-            if skip_undefined
-            else [
-                line.strip()
-                for line in combined.splitlines()
-                if "undefined symbol" in line
-                and not re.search(r"undefined symbol:\s+_?Py", line)
-            ]
-        )
+        undefined = [
+            line.strip()
+            for line in combined.splitlines()
+            if "undefined symbol" in line
+            and not re.search(r"undefined symbol:\s+_?Py", line)
+            # On a CUDA wheel the CUDA entry points are unresolved because the runtime
+            # comes from the environment, so only those are excused. Blanking the whole
+            # list instead would hide a genuinely under-linked symbol on the same wheel.
+            and not (
+                skip_undefined
+                and re.search(r"undefined symbol:\s+(cu|cuda|curand|cublas)", line)
+            )
+        ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
 
