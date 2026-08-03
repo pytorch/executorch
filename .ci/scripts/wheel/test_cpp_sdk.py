@@ -594,6 +594,12 @@ def test_python_extensions_import() -> None:
         "executorch.extension.pybindings.portable_lib",
         "executorch.extension.training",
     ]
+    # Torch has to be installed, the same as for the dependency check: these
+    # extensions link it, so without it they cannot import for a reason that says
+    # nothing about packaging.
+    if importlib.util.find_spec("torch") is None:
+        print("- torch is not installed, skipping the extension import check")
+        return
     package_dir = _installed_package_dir()
     if _needs_external_cuda_runtime(package_dir):
         print(
