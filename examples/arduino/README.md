@@ -15,6 +15,15 @@ Arduino library. A build script vendors the runtime sources from this
 repository into a self-contained library that Arduino users install
 through the Library Manager or by copying into their libraries folder.
 
+> **Who this is for.** This README is for maintainers of the packaging.
+> `build_arduino_library.sh` is a release tool, not something an Arduino
+> developer ever runs. Users install a prebuilt library from the Library
+> Manager and never see this directory; their documentation lives in
+> [meta-pytorch/executorch-arduino](https://github.com/meta-pytorch/executorch-arduino).
+>
+> If you are here to change ExecuTorch and want to know whether you broke
+> the Arduino library, read [Keeping this working](#keeping-this-working).
+
 ## How It Works
 
 ```
@@ -201,6 +210,69 @@ arduino-cli upload  --fqbn arduino:zephyr:unoq:link_mode=static -p /dev/cu.usbmo
 arduino-cli monitor -p /dev/cu.usbmodem* --config baudrate=115200
 ```
 
+## Keeping this working
+
+The library is a *generated artifact*. Everything under the generated
+`src/` is copied out of this repository, and the example models are
+exported by this repository's Python. That gives one failure mode, and it
+has cost multiple days:
+
+**The model and the library must come from the same ExecuTorch commit.**
+
+Cortex-M operator schemas change. `scratch` was added to the conv operators
+on 2026-06-09 and to `avg_pool2d` later still. A `.pte` exported before a
+schema change passes `Program::load`, resolves every operator, and then
+fails inside `Method::execute` with `InvalidProgram (0x23)`, because the
+generated kernel wrapper expects one more argument than the model supplies.
+Nothing about that error names the real cause.
+
+This bites hardest when the Python package and the C++ sources come from
+different places. `pip install executorch` gives a release wheel that can be
+months behind this checkout; the library you build here is current. Check
+which one you are exporting with:
+
+```bash
+python -c "import executorch.backends.cortex_m.ops.operators as o; print(o.__file__)"
+```
+
+If that prints a `site-packages` path rather than your checkout, run
+`./install_executorch.sh` first. Note that ExecuTorch refuses to build from a
+directory not named exactly `executorch` (pytorch/executorch#6475), which is
+a common reason people end up on a stale wheel without realising.
+
+To check a model against a library without a board, decode the `.pte` and
+compare each `KernelCall`'s argument count against the `stack.size() == N`
+in the generated `src/executorch/codegen/RegisterCodegenUnboxedKernels*.cpp`.
+A mismatch there is the bug, found in seconds instead of hours.
+
+### Things that are not obvious
+
+- **`link_mode=static` is mandatory.** The Uno Q defaults to Dynamic, which
+  builds the sketch as a Zephyr loadable extension. A library this size never
+  starts that way: no serial output at all, so the board looks dead and offers
+  nothing to diagnose. Dynamic also reports only the extension's size, roughly
+  half the real figure.
+- **`ET_LOG` has to be routed somewhere.** `zephyr.cpp` logs through `fprintf`,
+  and `platform_stubs.c` stubs `fprintf` out. The build script rewrites the
+  logger to call a weak `et_arduino_log` hook, which the examples implement
+  against `Serial`. Without it every runtime failure is a bare hex code.
+- **Only one platform backend may ship.** `minimal.cpp` and `zephyr.cpp` both
+  define `et_pal_*`; shipping both leaves the choice to link order, and
+  `minimal`'s logger is empty and its allocator returns `nullptr`.
+- **Compiling proves very little.** Every failure worth finding here compiled
+  cleanly first. Flash a board.
+
+### Error codes seen in practice
+
+| Symptom | Cause |
+|---|---|
+| No serial output at all | Built in Dynamic link mode, or `Arduino_RouterBridge` missing |
+| `Program::load` -> `0x23` | Model header put the array in a section the linker discards; use `pte_to_header.py` from this directory, not the Ethos-U one |
+| `load_method` -> `0x14` | Operator not in the registered set; regenerate with `ROOT_OPS=` |
+| `load_method` -> `0x21` | `method_pool` too small; the log line gives the exact shortfall |
+| `execute` -> `0x23` | Model and library built from different ExecuTorch commits |
+
+
 ## What is inside the library
 
 The `build_arduino_library.sh` script assembles these components from
@@ -242,12 +314,47 @@ Arduino's build system:
 
 ### Updating the library
 
-After modifying ExecuTorch sources, regenerate the library:
+```bash
+./build_arduino_library.sh          # rebuild
+./build_arduino_library.sh --clean  # remove generated output
+ROOT_OPS="aten::add.out,..." ./build_arduino_library.sh   # pick the op set
+ALL_OPS=1 ./build_arduino_library.sh                      # every portable op
+```
+
+The op set is a size decision. Registering every portable kernel costs about
+1.6 MB of text, twice the Uno Q's flash, because portable kernels are
+dtype-templated. The default registers the Cortex-M operators plus a small
+portable set, which lands around a quarter of flash.
+
+### Re-exporting the example models
+
+Each example ships a `model.pte` that the build script converts to the
+`model.h` its sketch includes. Regenerate them whenever an operator schema
+changes, or the models will fail at `execute` against the new runtime:
 
 ```bash
-./build_arduino_library.sh        # rebuild
-./build_arduino_library.sh --clean  # remove generated output
+# keyword spotting, from the checked-in checkpoint (no retraining)
+python export_model.py --checkpoint examples/KeywordSpotting/model.pth \
+    --output /tmp/kws.h
 ```
+
+### Bumping the pin in executorch-arduino
+
+The published library records the commit it was generated from in
+`extras/PROVENANCE.txt`, and pins that commit in `executorch_pin.txt`
+alongside it — the same one-SHA-per-file convention ExecuTorch uses in
+`.ci/docker/ci_commit_pins/`. To move it forward:
+
+1. Update `executorch_pin.txt` to the new ExecuTorch commit
+2. Regenerate the library from a checkout at that commit
+3. Re-export the example models from the same checkout
+4. Confirm each model's `KernelCall` argument counts match the regenerated
+   `RegisterCodegenUnboxedKernels*.cpp`
+5. Compile every example at `link_mode=static`, and flash at least one
+
+Steps 2 and 3 have to happen together. Bumping the library without
+re-exporting the models is the mismatch described in
+[Keeping this working](#keeping-this-working).
 
 ### Testing
 
@@ -324,6 +431,24 @@ Training and test audio from [Google Speech Commands v2](https://arxiv.org/abs/1
 — 65,000 one-second recordings of 35 words spoken by thousands of
 people.  Standard dataset used by the MLPerf Tiny benchmark.  Download
 via `torchaudio.datasets.SPEECHCOMMANDS` (2.3 GB).
+
+The dataset is © Google, released under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), which asks for
+attribution.  The keyword spotting weights checked in here
+(`examples/KeywordSpotting/model.pth` and the `.pte` generated from it) are
+trained on it and carry the same attribution.
+
+Only the ten keyword classes are needed, so the full archive never has to
+land on disk:
+
+```bash
+mkdir -p outputs/speech_commands/SpeechCommands/speech_commands_v0.02
+cd outputs/speech_commands/SpeechCommands/speech_commands_v0.02
+curl -sL http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz \
+  | tar xz ./yes ./no ./up ./down ./left ./right ./on ./off ./stop ./go
+```
+
+That is 1.2 GB extracted instead of 2.3 GB downloaded plus 2.4 GB unpacked.
 
 The DS-CNN KWS benchmark uses 12 output classes (silence, unknown, plus
 10 keywords).  The Arduino export script trains the 10 keyword classes:
