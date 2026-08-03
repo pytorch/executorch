@@ -304,3 +304,28 @@ if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
       "extension could be located inside it."
   )
 endif()
+
+# Component requests are answered from the targets that were actually defined above,
+# so a consumer asking for a component this wheel does not ship gets told at
+# configure time rather than at link or load time. Without this a REQUIRED request
+# for a missing component, or for a name that does not exist at all, would configure
+# and then fail much later.
+#
+# The check is written out rather than using check_required_components, which comes
+# from a module a package config cannot assume is already included.
+foreach(_component ${executorch_FIND_COMPONENTS})
+  if(TARGET executorch::${_component})
+    set(executorch_${_component}_FOUND TRUE)
+  else()
+    set(executorch_${_component}_FOUND FALSE)
+    if(executorch_FIND_REQUIRED_${_component})
+      set(executorch_FOUND FALSE)
+      set(executorch_NOT_FOUND_MESSAGE
+          "this ExecuTorch package does not provide the required component '${_component}'"
+      )
+    endif()
+  endif()
+endforeach()
+if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
+  message(FATAL_ERROR "${executorch_NOT_FOUND_MESSAGE}")
+endif()
