@@ -109,10 +109,8 @@ def create_constant_placeholder(
     decide where to insert the node, at an insertion point before the first input node.
     """
 
-    # If this helper already created a placeholder for this name, return it to
-    # avoid duplicate parameter names in the generated function signature which
-    # would cause a SyntaxError on recompile. This can happen when multiple
-    # pattern replacements independently create placeholders for a shared weight.
+    # Multiple pattern replacements may request the same shared weight; return
+    # the existing node to avoid duplicate parameter names on recompile.
     for n in graph.nodes:
         if n.op == "placeholder" and n.meta.get("requested_name") == name:
             return n
