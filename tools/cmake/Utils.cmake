@@ -55,13 +55,16 @@ endfunction()
 # link libraries, which is what keeps a bundled archive ahead of anything that
 # would otherwise satisfy the same symbols.
 function(executorch_target_whole_archive target_name archive_target)
+  # Comma-separated inside one LINKER: option rather than a SHELL: string with
+  # spaces. SHELL: splits on spaces, so an archive path containing one reaches
+  # the linker as two broken arguments and the link fails.
   if(APPLE)
-    set(_flags "SHELL:LINKER:-force_load,$<TARGET_FILE:${archive_target}>")
+    set(_flags "LINKER:-force_load,$<TARGET_FILE:${archive_target}>")
   elseif(MSVC)
-    set(_flags "SHELL:LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${archive_target}>")
+    set(_flags "LINKER:/WHOLEARCHIVE:$<TARGET_FILE:${archive_target}>")
   else()
     set(_flags
-        "SHELL:LINKER:--whole-archive $<TARGET_FILE:${archive_target}> LINKER:--no-whole-archive"
+        "LINKER:--whole-archive,$<TARGET_FILE:${archive_target}>,--no-whole-archive"
     )
   endif()
   target_link_options(${target_name} PRIVATE "${_flags}")
