@@ -36,6 +36,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       job-name: build
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12

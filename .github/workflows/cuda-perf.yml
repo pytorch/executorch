@@ -133,6 +133,7 @@ jobs:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
@@ -214,6 +215,7 @@ jobs:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda

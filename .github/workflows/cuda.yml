@@ -69,6 +69,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -128,6 +129,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -172,6 +174,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -229,6 +232,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -376,6 +380,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 150
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
@@ -542,6 +547,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
@@ -603,6 +609,7 @@ jobs:
             quantize: "--quantize"
             artifact: "Qwen-Qwen3-0.6B-cuda-quantized-int4-tile-packed"
     with:
+      test-infra-ref: release/2.13
       timeout: 120
       secrets-env: EXECUTORCH_HF_TOKEN
       download-artifact: ${{ matrix.artifact }}

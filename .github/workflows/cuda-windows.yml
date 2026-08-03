@@ -87,6 +87,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -190,6 +191,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda

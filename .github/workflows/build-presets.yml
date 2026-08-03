@@ -20,6 +20,7 @@ jobs:
       matrix:
         preset: [macos, ios, ios-simulator, pybind, profiling, llm]
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -40,6 +41,7 @@ jobs:
       matrix:
         preset: [zephyr]
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.2xlarge
@@ -89,6 +91,7 @@ jobs:
           - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: ${{ matrix.runner }}
@@ -112,6 +115,7 @@ jobs:
       matrix:
         preset: [pybind, windows]
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90

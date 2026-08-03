@@ -25,6 +25,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -95,6 +96,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'

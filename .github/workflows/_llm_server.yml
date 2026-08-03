@@ -16,6 +16,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
       submodules: recursive

@@ -63,6 +63,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -93,6 +94,7 @@ jobs:
           - { readme: zephyr/samples/mv2-ethosu/README.md, target: ethos-u85 }
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
       submodules: 'recursive'
@@ -150,6 +152,7 @@ jobs:
             runner: linux.arm64.2xlarge
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'recursive'
@@ -181,6 +184,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -208,6 +212,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -235,6 +240,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -272,6 +278,7 @@ jobs:
           - test_arm_backend: test_deit_e2e_ethos_u
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -316,6 +323,7 @@ jobs:
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -356,6 +364,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
@@ -386,6 +395,7 @@ jobs:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -413,6 +423,7 @@ jobs:
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -466,6 +477,7 @@ jobs:
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -515,6 +527,7 @@ jobs:
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -569,6 +582,7 @@ jobs:
             backend: torchao
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -608,6 +622,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
@@ -648,6 +663,7 @@ jobs:
         model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, conv_former]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -674,6 +690,7 @@ jobs:
         model: [cvt, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -705,6 +722,7 @@ jobs:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -757,6 +775,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -800,6 +819,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
@@ -909,6 +929,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
@@ -955,6 +976,7 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1034,6 +1056,7 @@ jobs:
         model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
         backend: [portable, xnnpack-q8]
     with:
+      test-infra-ref: release/2.13
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |

@@ -50,6 +50,7 @@ jobs:
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -75,6 +76,7 @@ jobs:
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -108,6 +110,7 @@ jobs:
       needs.run-decision.outputs.is-full-run == 'true'
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -244,6 +247,7 @@ jobs:
               name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -329,6 +333,7 @@ jobs:
               name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'

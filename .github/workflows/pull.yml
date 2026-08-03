@@ -45,6 +45,7 @@ jobs:
       matrix:
         python-version: [ "3.10", "3.11", "3.12", "3.13" ]
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -80,6 +81,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -100,6 +102,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
@@ -142,6 +145,7 @@ jobs:
             build-tool: buck2
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -195,6 +199,7 @@ jobs:
             runner: linux.4xlarge.memory
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -222,6 +227,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -255,6 +261,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -310,6 +317,7 @@ jobs:
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -342,6 +350,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
@@ -367,6 +376,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -391,6 +401,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -419,6 +430,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
+      test-infra-ref: release/2.13
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.24xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
@@ -454,6 +466,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -486,6 +499,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -509,6 +523,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc9-nopytorch
       submodules: 'recursive'
@@ -552,6 +567,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -598,6 +614,7 @@ jobs:
         os: [bare_metal, zephyr-preset]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -687,6 +704,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -756,6 +774,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -796,6 +815,7 @@ jobs:
           - test_arm_backend: test_run_tosa
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -823,6 +843,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -856,6 +877,7 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -893,6 +915,7 @@ jobs:
         task: [stories_110m, stories_260k_bc]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -927,6 +950,7 @@ jobs:
         task: [smollm2_135m]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -961,6 +985,7 @@ jobs:
         model: [mv2, mv3, dl3]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -982,6 +1007,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1017,6 +1043,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1051,6 +1078,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1089,6 +1117,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1119,6 +1148,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1167,6 +1197,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1222,6 +1253,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1249,6 +1281,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1276,6 +1309,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1303,6 +1337,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-mediatek-sdk
       submodules: 'recursive'
@@ -1330,6 +1365,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11
       submodules: 'recursive'
@@ -1352,6 +1388,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1382,6 +1419,7 @@ jobs:
         enable-etdump: ['', '--enable-etdump']
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1423,6 +1461,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1471,6 +1510,7 @@ jobs:
       contents: read
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       secrets-env: SAMSUNG_AI_LITECORE_KEY
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
@@ -1509,6 +1549,7 @@ jobs:
       contents: read
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       secrets-env: SAMSUNG_AI_LITECORE_KEY
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
@@ -1546,6 +1587,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1587,6 +1629,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -1651,6 +1694,7 @@ jobs:
         runner: [macos-m1-stable, macos-m2-stable]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: ${{ matrix.runner }}
       submodules: 'recursive'
@@ -1679,6 +1723,7 @@ jobs:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
