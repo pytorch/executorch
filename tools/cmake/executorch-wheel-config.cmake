@@ -188,7 +188,10 @@ function(executorch_define_component _suffix _library_name)
     set_property(
       TARGET ${_target}
       APPEND
-      PROPERTY INTERFACE_LINK_OPTIONS "SHELL:-force_load ${_library}"
+      # One LINKER: option with a comma rather than a SHELL: string with a space:
+      # SHELL splits on spaces, so a library path containing one would reach the
+      # linker as two broken arguments.
+      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-force_load,${_library}"
     )
   endif()
   set(EXECUTORCH_LIBRARIES
