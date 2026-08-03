@@ -52,42 +52,48 @@ cmake_minimum_required(VERSION 3.28)
 # fixed depth.
 find_path(
   _executorch_package_root
-  # share/cmake identifies the package root and only exists there. A generic marker
-  # such as include/executorch can also appear one level down, in which case the
-  # search from lib/cmake/executorch would stop at lib/ and resolve the wrong root.
+  # share/cmake identifies the package root and only exists there. A generic
+  # marker such as include/executorch can also appear one level down, in which
+  # case the search from lib/cmake/executorch would stop at lib/ and resolve the
+  # wrong root.
   NAMES share/cmake/executorch-config.cmake
   PATHS "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../.."
         "${CMAKE_CURRENT_LIST_DIR}/../../.."
   NO_DEFAULT_PATH
-  # NO_CACHE so the search runs on every configure. A cached result would survive
-  # the package being upgraded or relocated in place and keep naming a directory
-  # that has moved, which is worse than reporting it as not found.
+  # NO_CACHE so the search runs on every configure. A cached result would
+  # survive the package being upgraded or relocated in place and keep naming a
+  # directory that has moved, which is worse than reporting it as not found.
   NO_CACHE
 )
 
-# A package with no include directory cannot be used, so this is reported here rather
-# than left to fail later as a confusing "non-existent path" at generate time or a
-# missing header at compile time.
-if(NOT EXISTS "${_executorch_package_root}/include")
-  message(
-    FATAL_ERROR
-      "The ExecuTorch package at ${_executorch_package_root} has no include "
-      "directory, so nothing can compile against it."
-  )
-endif()
-set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include")
-# Added only when present. The C10 compatibility headers ship in every wheel that has
-# the runtime, but listing a directory that does not exist makes CMake fail at generate
-# time with a message about a non-existent path, which hides whatever the real problem
-# was. A wheel without them can still compile anything that does not reach for a C10
-# header, so this is a missing directory rather than an unusable package.
-if(EXISTS
-   "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
+# Both directories are needed for a usable package. The C10 compatibility
+# headers are not optional: core headers such as runtime/core/array_ref.h
+# include c10 unconditionally, so a package missing them cannot compile anything
+# that touches the runtime API.
+#
+# A missing directory is reported as not-found rather than raised here, so an
+# optional find_package gets a FALSE answer instead of a dead build. The
+# REQUIRED handling at the bottom of this file turns it into an error when the
+# caller asked for one.
+set(_executorch_c10_include
+    "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
 )
-  list(APPEND EXECUTORCH_INCLUDE_DIRS
-       "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
-  )
-endif()
+set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
+                            "${_executorch_c10_include}"
+)
+foreach(_required_include ${EXECUTORCH_INCLUDE_DIRS})
+  if(NOT EXISTS "${_required_include}")
+    message(
+      STATUS "ExecuTorch package at ${_executorch_package_root} is missing "
+             "${_required_include}, so nothing can compile against it."
+    )
+    set(EXECUTORCH_INCLUDE_DIRS)
+    set(EXECUTORCH_LIBRARIES)
+    set(EXECUTORCH_FOUND OFF)
+    set(executorch_FOUND FALSE)
+    return()
+  endif()
+endforeach()
 
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_FOUND OFF)
@@ -207,9 +213,9 @@ function(executorch_define_component _suffix _library_name)
     set_property(
       TARGET ${_target}
       APPEND
-      # One LINKER: option with a comma rather than a SHELL: string with a space:
-      # SHELL splits on spaces, so a library path containing one would reach the
-      # linker as two broken arguments.
+      # One LINKER: option with a comma rather than a SHELL: string with a
+      # space: SHELL splits on spaces, so a library path containing one would
+      # reach the linker as two broken arguments.
       PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-force_load,${_library}"
     )
   endif()
@@ -281,9 +287,10 @@ if(EXT_SUFFIX)
     # This config binds to the wheel it ships in, so a same-named library
     # elsewhere on the system must not be picked up instead.
     NO_DEFAULT_PATH
-    # NO_CACHE for the same reason as the package root above: a cached result would
-    # survive the package being upgraded or relocated in the same build directory and
-    # keep naming the previous copy, or a file that no longer exists.
+    # NO_CACHE for the same reason as the package root above: a cached result
+    # would survive the package being upgraded or relocated in the same build
+    # directory and keep naming the previous copy, or a file that no longer
+    # exists.
     NO_CACHE
   )
 endif()
@@ -331,14 +338,14 @@ if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
   )
 endif()
 
-# Component requests are answered from the targets that were actually defined above,
-# so a consumer asking for a component this wheel does not ship gets told at
-# configure time rather than at link or load time. Without this a REQUIRED request
-# for a missing component, or for a name that does not exist at all, would configure
-# and then fail much later.
+# Component requests are answered from the targets that were actually defined
+# above, so a consumer asking for a component this wheel does not ship gets told
+# at configure time rather than at link or load time. Without this a REQUIRED
+# request for a missing component, or for a name that does not exist at all,
+# would configure and then fail much later.
 #
-# The check is written out rather than using check_required_components, which comes
-# from a module a package config cannot assume is already included.
+# The check is written out rather than using check_required_components, which
+# comes from a module a package config cannot assume is already included.
 foreach(_component ${executorch_FIND_COMPONENTS})
   if(TARGET executorch::${_component})
     set(executorch_${_component}_FOUND TRUE)
