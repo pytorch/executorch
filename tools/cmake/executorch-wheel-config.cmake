@@ -51,7 +51,11 @@ cmake_minimum_required(VERSION 3.28)
 # package root can discover, so the root is located by a marker rather than a
 # fixed depth.
 find_path(
-  _executorch_package_root include/executorch
+  _executorch_package_root
+  # share/cmake identifies the package root and only exists there. A generic marker
+  # such as include/executorch can also appear one level down, in which case the
+  # search from lib/cmake/executorch would stop at lib/ and resolve the wrong root.
+  NAMES share/cmake/executorch-config.cmake
   PATHS "${CMAKE_CURRENT_LIST_DIR}/.." "${CMAKE_CURRENT_LIST_DIR}/../.."
         "${CMAKE_CURRENT_LIST_DIR}/../../.."
   NO_DEFAULT_PATH
@@ -251,6 +255,10 @@ if(EXT_SUFFIX)
     # This config binds to the wheel it ships in, so a same-named library
     # elsewhere on the system must not be picked up instead.
     NO_DEFAULT_PATH
+    # NO_CACHE for the same reason as the package root above: a cached result would
+    # survive the package being upgraded or relocated in the same build directory and
+    # keep naming the previous copy, or a file that no longer exists.
+    NO_CACHE
   )
 endif()
 
