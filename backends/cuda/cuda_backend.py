@@ -83,7 +83,7 @@ def _is_emptied(x) -> bool:
 
 
 @contextlib.contextmanager
-def _compile_time_cpu_clones(target_device: torch.device):
+def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     """Force AOTI's mutated-buffer clones onto CPU while preserving the
     serialized constants' target device."""
     from torch._inductor import compile_fx as _cfx, graph as _graph
@@ -524,25 +524,22 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs to check for platform
 
         platform = "linux"
-        emulate_precision_casts = True
-        max_autotune = True
-        autotune_at_compile_time = None
         shim_library_path = None
+        bool_compile_options = {
+            "emulate_precision_casts": "emulate_precision_casts",
+            "max_autotune": "max_autotune",
+            "autotune_at_compile_time": "triton.autotune_at_compile_time",
+            "autotune_pointwise": "triton.autotune_pointwise",
+        }
         for spec in compile_specs:
             if spec.key == "platform":
                 platform = spec.value.decode("utf-8")
-            elif spec.key == "emulate_precision_casts":
-                emulate_precision_casts = _on_off_compile_spec_value(spec)
-            elif spec.key == "max_autotune":
-                max_autotune = _on_off_compile_spec_value(spec)
-            elif spec.key == "autotune_at_compile_time":
-                autotune_at_compile_time = _on_off_compile_spec_value(spec)
             elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
-        options["emulate_precision_casts"] = emulate_precision_casts
-        options["max_autotune"] = max_autotune
-        if autotune_at_compile_time is not None:
-            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+            elif spec.key in bool_compile_options:
+                options[bool_compile_options[spec.key]] = _on_off_compile_spec_value(
+                    spec
+                )
         # Add platform-specific options
 
         if platform == "windows":

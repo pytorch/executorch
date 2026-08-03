@@ -80,6 +80,19 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
             )
 
+    def test_autotune_pointwise_compile_spec(self):
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec(key="autotune_pointwise", value=b"OFF")]
+        )
+
+        self.assertFalse(options["triton.autotune_pointwise"])
+
+    def test_invalid_autotune_pointwise_compile_spec(self):
+        with self.assertRaisesRegex(ValueError, "Invalid autotune_pointwise"):
+            CudaBackend.get_aoti_compile_options(
+                [CompileSpec(key="autotune_pointwise", value=b"MAYBE")]
+            )
+
 
 class TestCudaExport(unittest.TestCase):
     """Test CUDA export functionality for various operations using to_edge_transform_and_lower."""
