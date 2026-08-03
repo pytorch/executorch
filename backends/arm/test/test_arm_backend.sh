@@ -268,6 +268,20 @@ test_pytest_models_vkml() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_pytest_models_vkml_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest model tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k _vgf_ -m xlarge
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 test_run_vkml() {
     echo "${TEST_SUITE_NAME}: Test VKML delegate examples with run.sh"
 
