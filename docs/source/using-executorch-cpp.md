@@ -79,6 +79,9 @@ build:
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
+#include <cstdio>
+#include <vector>
+
 using namespace executorch::extension;
 
 int main() {
