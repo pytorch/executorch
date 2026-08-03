@@ -332,10 +332,6 @@ inline void exec_update_and_attend(
   // than test for Causal: None and Explicit both map to "" and are told apart
   // only by spec.mask, so an Explicit with no mask would silently attend
   // unmasked.
-  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
-  // than test for Causal: None and Explicit both map to "" and are told apart
-  // only by spec.mask, so an Explicit with no mask would silently attend
-  // unmasked.
   std::string mask_mode;
   switch (spec.kind) {
     case AttendSpec::Mask::None:
