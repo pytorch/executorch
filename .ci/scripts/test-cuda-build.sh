@@ -146,11 +146,21 @@ print(f'SUCCESS: exactly one CUDA delegate across {len(libraries)} shipped libra
     # path, an undefined symbol, or a mismatched CUDA dependency all pass a name
     # check and fail here.
     #
-    # LD_LIBRARY_PATH is removed before the interpreter starts, not inside it: the
-    # loader reads that variable once at process start, so clearing it later would
-    # not change what the library is allowed to find. Without this the check could
-    # pass on a machine whose environment happens to cover the dependencies.
-    env -u LD_LIBRARY_PATH python -c "
+    # Narrowed before the interpreter starts, not inside it: the loader reads this
+    # variable once at process start, so changing it later would not affect what the
+    # library is allowed to find. Only the entries holding a CUDA runtime are kept,
+    # because the wheel does not bundle it. Everything else is dropped so the check
+    # cannot pass on a machine whose environment happens to cover a dependency the
+    # wheel should have carried itself.
+    cuda_search_path=""
+    IFS=':' read -ra _search_entries <<< "${LD_LIBRARY_PATH:-}"
+    for _entry in "${_search_entries[@]}"; do
+      if [ -n "${_entry}" ] && compgen -G "${_entry}/libcudart.so*" > /dev/null; then
+        cuda_search_path="${cuda_search_path:+${cuda_search_path}:}${_entry}"
+      fi
+    done
+
+    LD_LIBRARY_PATH="${cuda_search_path}" python -c "
 import ctypes, os, sys
 from pathlib import Path
 

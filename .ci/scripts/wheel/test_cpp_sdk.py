@@ -238,14 +238,26 @@ def test_shipped_libraries_load() -> None:
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
-        # Torch and the interpreter are excluded rather than treated as packaging
-        # faults. Both arrive from outside the wheel: torch libraries resolve once
-        # the torch package is imported, and libpython comes from the running
-        # interpreter. Neither is reachable from an ldd process, and a wheel must
-        # not carry an absolute path to a build machine's copy just to satisfy this
-        # check. Anything the wheel itself ships still has to resolve below.
+        # Torch, the interpreter, and the CUDA runtime are excluded rather than
+        # treated as packaging faults. All three arrive from outside the wheel: torch
+        # libraries resolve once the torch package is imported, libpython comes from
+        # the running interpreter, and the CUDA runtime is deliberately not bundled,
+        # so it comes from the environment or the separate nvidia packages. None is
+        # reachable from an ldd process, and a wheel must not carry an absolute path
+        # to a build machine's copy just to satisfy this check. Anything the wheel
+        # itself ships still has to resolve below.
         def _provided_externally(name: str) -> bool:
-            return name.startswith(("libpython", "libtorch", "libc10"))
+            return name.startswith(
+                (
+                    "libpython",
+                    "libtorch",
+                    "libc10",
+                    "libcuda",
+                    "libcurand",
+                    "libcublas",
+                    "libnvinfer",
+                )
+            )
 
         absent = [
             name
