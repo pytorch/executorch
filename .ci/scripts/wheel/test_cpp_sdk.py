@@ -554,6 +554,101 @@ def test_python_extensions_import() -> None:
         )
 
 
+_CUSTOM_OP_SOURCE = """\
+// A custom operator, built the way an out-of-tree project builds one: against the
+// shipped Python extension rather than an ExecuTorch source tree.
+#include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
+namespace {
+
+executorch::aten::Tensor& custom_double_out(
+    executorch::runtime::KernelRuntimeContext& context,
+    const executorch::aten::Tensor& input,
+    executorch::aten::Tensor& out) {
+  (void)context;
+  const float* in = input.const_data_ptr<float>();
+  float* dst = out.mutable_data_ptr<float>();
+  for (ssize_t i = 0; i < input.numel(); ++i) {
+    dst[i] = in[i] * 2.0f;
+  }
+  return out;
+}
+
+} // namespace
+
+// The registration macro is the point of the check: it has to compile and resolve
+// against the registry the shipped extension provides.
+EXECUTORCH_LIBRARY(wheel_check, "custom_double.out", custom_double_out);
+"""
+
+_CUSTOM_OP_CMAKE = """\
+cmake_minimum_required(VERSION 3.28)
+project(custom_op_check CXX)
+
+find_package(executorch REQUIRED)
+
+add_library(custom_op_check SHARED custom_op.cpp)
+# The legacy contract: a custom-op library links the shipped Python extension,
+# which owns the operator registry it registers into.
+target_link_libraries(custom_op_check PRIVATE _portable_lib)
+"""
+
+
+def test_custom_op_compiles(work_dir: Path) -> None:
+    """A custom operator compiles and links against the shipped extension.
+
+    This is how an out-of-tree project adds its own kernels, and it points at the
+    Python extension rather than the runtime, so it is not covered by the consumer
+    check above.
+    """
+    assert shutil.which("cmake") is not None, "cmake is required to build a consumer"
+
+    package_dir = _installed_package_dir()
+    if not list(package_dir.glob("extension/pybindings/_portable_lib*")):
+        print("- the wheel ships no Python extension, skipping the custom op check")
+        return
+
+    source_dir = work_dir / "custom-op"
+    build_dir = work_dir / "custom-op-build"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "custom_op.cpp").write_text(_CUSTOM_OP_SOURCE)
+    (source_dir / "CMakeLists.txt").write_text(_CUSTOM_OP_CMAKE)
+
+    configure = subprocess.run(
+        [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={package_dir}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert configure.returncode == 0, (
+        "a custom operator project cannot configure against the wheel: "
+        f"{(configure.stderr or configure.stdout).strip()[-600:]}"
+    )
+
+    compiled = subprocess.run(
+        ["cmake", "--build", str(build_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert compiled.returncode == 0, (
+        "a custom operator does not compile or link against the shipped extension: "
+        f"{(compiled.stderr or compiled.stdout).strip()[-800:]}"
+    )
+    assert list(build_dir.rglob("libcustom_op_check.so")) or list(
+        build_dir.rglob("custom_op_check.dll")
+    ), "the custom operator library was not produced"
+    print("✓ a custom operator compiles against the shipped Python extension")
+
+
 def test_wheel_platform_tag() -> None:
     """The wheel's declared platform tag must match what its libraries need.
 
@@ -584,7 +679,9 @@ def test_wheel_platform_tag() -> None:
     # auditwheel wraps its verdict across lines, so compare on collapsed
     # whitespace rather than the literal output.
     combined = " ".join((result.stdout + result.stderr).split())
-    match = re.search(r'consistent with the following platform tag: "([^"]+)"', combined)
+    match = re.search(
+        r'consistent with the following platform tag: "([^"]+)"', combined
+    )
     assert match, (
         "auditwheel reported no platform tag for the wheel, so its contents could "
         f"not be checked against what it claims: {combined[-400:]}"
@@ -610,4 +707,5 @@ def run_tests(work_dir: Path) -> None:
     test_single_xnnpack_delegate()
     test_single_cuda_delegate()
     test_wheel_platform_tag()
+    test_custom_op_compiles(work_dir)
     test_cpp_consumer(work_dir)
