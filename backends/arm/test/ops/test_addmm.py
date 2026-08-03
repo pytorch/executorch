@@ -231,7 +231,7 @@ def test_addmm_16a8w_tosa_INT(test_data: input_t1):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 addmm operations"
+    reason="int16 addmm fails to load on the Ethos-U55 FVP (method load status 0x14)"
 )
 def test_addmm_16a8w_u55_INT(test_data: input_t1):
     """Test addmm (FC layer) operation with 16A8W quantization on U55 (16-bit
