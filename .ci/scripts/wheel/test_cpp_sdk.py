@@ -311,9 +311,13 @@ def test_shipped_libraries_load() -> None:
             # On a CUDA wheel the CUDA entry points are unresolved because the runtime
             # comes from the environment, so only those are excused. Blanking the whole
             # list instead would hide a genuinely under-linked symbol on the same wheel.
+            # The leading-underscore forms matter too: nvcc emits host stubs such as
+            # __cudaRegisterFatBinary for every compiled .cu file.
             and not (
                 skip_undefined
-                and re.search(r"undefined symbol:\s+(cu|cuda|curand|cublas)", line)
+                and re.search(
+                    r"undefined symbol:\s+_*(cu|cuda|curand|cublas|cudnn)", line
+                )
             )
         ]
         if undefined:
@@ -952,9 +956,21 @@ def test_component_targets_link(work_dir: Path) -> None:
 
     # Run it, so the check covers a registration constructor actually firing rather than
     # only the library being named in DT_NEEDED.
-    environment = {
-        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
-    }
+    #
+    # On a CUDA wheel the consumer links the CUDA delegate, which needs a CUDA runtime
+    # the wheel does not bundle. Stripping the search path would then fail for a reason
+    # that is by design, so the environment is left alone there, matching what the other
+    # checks do for the same wheel.
+    if _needs_external_cuda_runtime(package_dir):
+        environment = dict(os.environ)
+        print(
+            "- a CUDA wheel needs the CUDA runtime from the environment, so the "
+            "consumer runs with the search path left in place"
+        )
+    else:
+        environment = {
+            key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
+        }
     run = subprocess.run(
         [str(consumer)], capture_output=True, text=True, check=False, env=environment
     )
