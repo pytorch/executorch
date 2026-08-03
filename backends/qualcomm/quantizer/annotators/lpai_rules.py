@@ -118,6 +118,7 @@ class Argmin(GeneralOpDef):
     [
         torch.ops.aten.adaptive_avg_pool1d.default,
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.avg_pool1d.default,
         torch.ops.aten.avg_pool2d.default,
     ],
     QnnConstants.OpPoolAvg2d.op_name,
