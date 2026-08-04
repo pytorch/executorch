@@ -63,6 +63,22 @@ cache::CacheConfig flat_config(
   return cfg;
 }
 
+// One ring layer of `window` cells; max_write bounds a multi-token step.
+cache::CacheConfig ring_config(
+    int capacity,
+    int window,
+    int max_write,
+    int n_kv_heads,
+    int head_dim,
+    int kv_dtype) {
+  cache::CacheConfig cfg =
+      flat_config(capacity, /*n_layers=*/1, n_kv_heads, head_dim, kv_dtype);
+  cfg.layers[0].policy =
+      cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, window};
+  cfg.max_write = max_write;
+  return cfg;
+}
+
 class MLXSequenceCacheTest : public ::testing::Test {
  protected:
   const int H = 2;
@@ -258,6 +274,137 @@ TEST_F(MLXSequenceCacheTest, ZeroInitialCapacityGrowsOnFirstWrite) {
   array v0 = randn(3, float16);
   AttendSpec spec0 = c.update_and_fetch(0, /*position=*/0, k0, v0, s);
   EXPECT_TRUE(allclose(spec0.K, k0, 0.0f));
+}
+
+// The sliding-window mask is a band on (key - query): causal above, window
+// below. The span is right-aligned, so the last query's own key is the last
+// key, and each query attends `window` keys ending at its own.
+TEST_F(MLXSequenceCacheTest, WindowCausalMaskIsABand) {
+  using namespace ::mlx::core;
+  // T=3 queries over S=5 keys, window 3. Query i owns key i + (S - T), and
+  // attends the `window` keys ending there -- a band, one row per query.
+  // clang-format off
+  std::vector<int> want = {
+      1, 1, 1, 0, 0,
+      0, 1, 1, 1, 0,
+      0, 0, 1, 1, 1};
+  // A window covering the whole span leaves plain causal: no lower bound bites.
+  std::vector<int> causal = {
+      1, 1, 1, 0, 0,
+      1, 1, 1, 1, 0,
+      1, 1, 1, 1, 1};
+  // clang-format on
+  array m = astype(window_causal_mask(3, 5, 3, s), int32, s);
+  EXPECT_TRUE(allclose(m, array(want.data(), Shape{1, 1, 3, 5}, int32), 0.0f));
+
+  array full = astype(window_causal_mask(3, 5, 5, s), int32, s);
+  EXPECT_TRUE(
+      allclose(full, array(causal.data(), Shape{1, 1, 3, 5}, int32), 0.0f));
+}
+
+// A ring layer decodes past its window: the read span stops at `window` cells
+// and holds the newest tokens, evicting the oldest. No mask -- a single query
+// may attend its whole span.
+TEST_F(MLXSequenceCacheTest, RingDecodeEvictsOldestAndNeedsNoMask) {
+  using namespace ::mlx::core;
+  const int W = 4;
+  MLXSequenceCache c(ring_config(
+      /*capacity=*/64,
+      /*window=*/W,
+      /*max_write=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half)));
+
+  // Feed 6 single tokens; the last 4 must survive, oldest -> newest.
+  std::vector<array> toks;
+  for (int i = 0; i < 6; ++i) {
+    toks.push_back(randn(1, float16));
+  }
+  AttendSpec spec{toks[0], toks[0], AttendSpec::Mask::None, {}};
+  for (int i = 0; i < 6; ++i) {
+    spec = c.update_and_fetch(0, /*position=*/i, toks[i], toks[i], s);
+  }
+  EXPECT_EQ(spec.kind, AttendSpec::Mask::None);
+  EXPECT_EQ(spec.K.shape(2), W);
+  EXPECT_TRUE(allclose(
+      spec.K,
+      concatenate(std::vector<array>{toks[2], toks[3], toks[4], toks[5]}, 2, s),
+      0.0f));
+}
+
+// A ring layer stays Causal while its window still covers the span, so MLX
+// applies its fused mask and no tensor is built. A flat layer always does.
+TEST_F(MLXSequenceCacheTest, WindowWiderThanSpanStaysCausal) {
+  using namespace ::mlx::core;
+  MLXSequenceCache ring(ring_config(
+      /*capacity=*/64,
+      /*window=*/4,
+      /*max_write=*/2,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half)));
+  array k = randn(2, float16); // span 2 < window 4
+  AttendSpec rspec = ring.update_and_fetch(0, /*position=*/0, k, k, s);
+  EXPECT_EQ(rspec.kind, AttendSpec::Mask::Causal);
+  EXPECT_FALSE(rspec.mask.has_value());
+
+  MLXSequenceCache flat(flat_config(
+      /*capacity=*/64,
+      /*n_layers=*/1,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half)));
+  AttendSpec fspec = flat.update_and_fetch(0, /*position=*/0, k, k, s);
+  EXPECT_EQ(fspec.kind, AttendSpec::Mask::Causal);
+  EXPECT_FALSE(fspec.mask.has_value());
+}
+
+// A step whose runs wrap the ring is scattered and gathered in logical order.
+TEST_F(MLXSequenceCacheTest, RingStepWrapsAndRejoinsInOrder) {
+  using namespace ::mlx::core;
+  const int W = 4;
+  const int MW = 2;
+  MLXSequenceCache c(ring_config(
+      /*capacity=*/64,
+      /*window=*/W,
+      /*max_write=*/MW,
+      H,
+      D,
+      static_cast<int>(ScalarType::Half)));
+
+  // ring_size = W + MW - 1 = 5. Fill 4 tokens, then a 2-token step at
+  // position 4 writes slots 4 and 0 -- a wrap.
+  std::vector<array> toks;
+  for (int i = 0; i < 4; ++i) {
+    toks.push_back(randn(1, float16));
+    c.update_and_fetch(0, /*position=*/i, toks.back(), toks.back(), s);
+  }
+  array pair = randn(2, float16);
+  AttendSpec spec = c.update_and_fetch(0, /*position=*/4, pair, pair, s);
+
+  // The span is the union of the two queries' windows -- position 4 attends
+  // 1..4 and position 5 attends 2..5 -- so it is window + T - 1 = 5 cells, not
+  // 4. Since the window is now narrower than the span, the cache hands back a
+  // band to narrow each query back to its own 4.
+  EXPECT_EQ(spec.K.shape(2), W + 1);
+  EXPECT_EQ(spec.kind, AttendSpec::Mask::Explicit);
+  ASSERT_TRUE(spec.mask.has_value());
+  // Span indices 0..4 are positions 1..5. Query 0 is position 4 and attends
+  // 1..4; query 1 is position 5 and attends 2..5 -- four keys each.
+  // clang-format off
+  std::vector<int> band = {
+      1, 1, 1, 1, 0,
+      0, 1, 1, 1, 1};
+  // clang-format on
+  EXPECT_TRUE(allclose(
+      astype(*spec.mask, int32, s),
+      array(band.data(), Shape{1, 1, 2, W + 1}, int32),
+      0.0f));
+  EXPECT_TRUE(allclose(
+      spec.K,
+      concatenate(std::vector<array>{toks[1], toks[2], toks[3], pair}, 2, s),
+      0.0f));
 }
 
 // A negative initial_capacity is rejected rather than reaching MLX as a
