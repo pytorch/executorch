@@ -186,9 +186,11 @@ if(TARGET executorch::runtime)
     # or LD_LIBRARY_PATH. $ORIGIN is a loader token, so it belongs only in RUNPATH, never
     # in IMPORTED_LOCATION.
     #
-    # The wheel's own directory is named first so it wins over an unrelated library that
-    # happens to sit beside the application; otherwise a stray copy in the application's
-    # own $ORIGIN/../lib would be found first.
+    # $ORIGIN is named before the wheel's own directory. An application deployed beside a copy
+    # of the runtime has to find that copy, and the loader takes the first match, so putting
+    # the install directory first would keep sending a relocated application back to the
+    # original wheel for as long as it remains installed. That also makes a relocation test
+    # that deletes the original pass for the wrong reason.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       get_filename_component(
         _executorch_runtime_dir "${_executorch_runtime_library}" DIRECTORY
@@ -196,8 +198,9 @@ if(TARGET executorch::runtime)
       set_property(
         TARGET executorch::runtime
         APPEND
-        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,${_executorch_runtime_dir}"
-                 "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
+        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,$ORIGIN"
+                 "LINKER:-rpath,$ORIGIN/../lib"
+                 "LINKER:-rpath,${_executorch_runtime_dir}"
       )
     endif()
   endif()
