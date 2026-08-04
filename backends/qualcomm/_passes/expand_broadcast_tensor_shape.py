@@ -40,7 +40,6 @@ class ExpandBroadcastTensorShape(ExportPass):
                             new_rank = [1] * (output_rank - input_rank) + list(
                                 arg.meta["val"].shape
                             )
-                            users = list(arg.users.keys())
                             reshape_node = graph_module.graph.create_node(
                                 "call_function",
                                 exir_ops.edge.aten.view_copy.default,
@@ -57,8 +56,12 @@ class ExpandBroadcastTensorShape(ExportPass):
                             reshape_node.meta["val"] = reshape_node.meta["val"].reshape(
                                 new_rank
                             )
-                            for user in users:
-                                user.replace_input_with(arg, reshape_node)
+                            # Redirect ONLY the current broadcast node's input to the reshaped
+                            # view, not every user of `arg`. Rewriting all users leaks the rank
+                            # promotion into unrelated consumers (e.g. an in-place mutation of a
+                            # rank-0 user input), producing a rank-mismatched USER_INPUT_MUTATION
+                            # write-back that fails in to_executorch().
+                            node.replace_input_with(arg, reshape_node)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self.traverse_broadcast_node(graph_module)
