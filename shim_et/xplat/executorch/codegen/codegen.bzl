@@ -273,6 +273,7 @@ def _prepare_genrule_and_lib(
         custom_ops_yaml_path = None,
         custom_ops_requires_runtime_registration = True,
         manual_registration = False,
+        manual_registration_lib_name = None,
         aten_mode = False,
         support_exceptions = True):
     """
@@ -302,6 +303,9 @@ def _prepare_genrule_and_lib(
         },
     }
     """
+    if manual_registration_lib_name and not manual_registration:
+        fail("manual_registration_lib_name requires manual_registration = True")
+
     aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
         "$(exe //executorch/codegen:gen)",
@@ -350,6 +354,10 @@ def _prepare_genrule_and_lib(
         genrule_cmd = genrule_cmd + [
             "--manual_registration",
         ]
+        if manual_registration_lib_name:
+            genrule_cmd = genrule_cmd + [
+                "--manual-registration-lib-name={}".format(manual_registration_lib_name),
+            ]
     if custom_ops_yaml_path:
         genrule_cmd = genrule_cmd + [
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
@@ -828,6 +836,7 @@ def executorch_generated_lib(
         visibility = [],
         aten_mode = False,
         manual_registration = False,
+        manual_registration_lib_name = None,
         use_default_aten_ops_lib = True,
         deps = [],
         xplat_deps = [],
@@ -888,6 +897,10 @@ def executorch_generated_lib(
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library
+        manual_registration_lib_name: Optional library name to include when
+            generating a named manual registration API. The library name must be
+            a valid C++ identifier. If omitted, manual registration keeps using
+            `register_all_kernels`.
         dtype_selective_build: In additional to operator selection, dtype selective build
             further selects the dtypes for each operator. Can be used with model or dict
             selective build APIs, where dtypes can be specified.
@@ -999,6 +1012,7 @@ def executorch_generated_lib(
         custom_ops_requires_runtime_registration = custom_ops_requires_runtime_registration,
         aten_mode = aten_mode,
         manual_registration = manual_registration,
+        manual_registration_lib_name = manual_registration_lib_name,
         support_exceptions = support_exceptions,
     )
 

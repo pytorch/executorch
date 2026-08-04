@@ -154,9 +154,9 @@ endfunction()
 # custom_ops_yaml.
 #
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
-# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
+# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml [MANUAL_REGISTRATION] )
 function(generate_bindings_for_kernels)
-  set(options ADD_EXCEPTION_BOUNDARY)
+  set(options ADD_EXCEPTION_BOUNDARY MANUAL_REGISTRATION)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
@@ -165,8 +165,17 @@ function(generate_bindings_for_kernels)
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
+  if(GEN_MANUAL_REGISTRATION AND NOT GEN_LIB_NAME MATCHES
+                                 "^[A-Za-z_][A-Za-z0-9_]*$"
+  )
+    message(
+      FATAL_ERROR
+        "Manual registration LIB_NAME must be a valid C++ identifier: ${GEN_LIB_NAME}"
+    )
+  endif()
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 
@@ -205,11 +214,23 @@ function(generate_bindings_for_kernels)
   if(GEN_ADD_EXCEPTION_BOUNDARY)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
   endif()
+  if(GEN_MANUAL_REGISTRATION)
+    list(APPEND _gen_command --manual-registration
+         --manual-registration-lib-name=${GEN_LIB_NAME}
+    )
+  endif()
 
-  set(_gen_command_sources
-      ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-  )
+  if(GEN_MANUAL_REGISTRATION)
+    set(_gen_command_sources
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  else()
+    set(_gen_command_sources
+        ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  endif()
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
@@ -268,13 +289,15 @@ endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
 function(gen_operators_lib)
+  set(options MANUAL_REGISTRATION)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
-  cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
+  cmake_parse_arguments(GEN "${options}" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
@@ -284,9 +307,16 @@ function(gen_operators_lib)
 
   add_library(${GEN_LIB_NAME})
 
-  set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-                 ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-  )
+  if(GEN_MANUAL_REGISTRATION)
+    set(_srcs_list
+        ${_out_dir}/RegisterKernelsEverything.cpp ${_out_dir}/RegisterKernels.h
+        ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  else()
+    set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+                   ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+    )
+  endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _srcs_list ${_opvariant_h})
   endif()
@@ -373,6 +403,9 @@ function(gen_operators_lib)
 
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  if(GEN_MANUAL_REGISTRATION)
+    list(APPEND _generated_headers ${_out_dir}/RegisterKernels.h)
+  endif()
   if(GEN_DTYPE_SELECTIVE_BUILD)
     list(APPEND _generated_headers ${_opvariant_h})
   endif()
