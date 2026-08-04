@@ -57,7 +57,7 @@ class RemoveUselessAsStridedCopyNodes(NeutronEdgePass):
 
         return made_changes
 
-    def run(self, graph_module: GraphModule):
+    def run(self, graph_module: GraphModule) -> PassResult:
         made_changes = self._fold_as_strided_copy(graph_module)
 
         graph_module.recompile()
