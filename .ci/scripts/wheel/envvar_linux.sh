@@ -16,6 +16,11 @@ source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
 _executorch_cuda_arch="$(executorch_cuda_arch_list)"
 if [ -n "${_executorch_cuda_arch}" ]; then
-  export CMAKE_ARGS="${CMAKE_ARGS} -DCMAKE_CUDA_ARCHITECTURES=${_executorch_cuda_arch}"
+  # PyTorch's CMake rejects CMAKE_CUDA_ARCHITECTURES and overrides it with OFF, which leaves
+  # the build compiling for one detected architecture, so the list has to go through the
+  # variable PyTorch reads. Both are set: targets that go through PyTorch's CMake honour the
+  # first, and any that do not honour the second.
+  export TORCH_CUDA_ARCH_LIST="${_executorch_cuda_arch}"
+  export CMAKE_ARGS="${CMAKE_ARGS} -DCMAKE_CUDA_ARCHITECTURES=$(executorch_cuda_cmake_arch_list)"
   echo "CUDA architectures for this row: ${_executorch_cuda_arch}"
 fi
