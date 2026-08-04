@@ -66,6 +66,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_arduino_library.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
       contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m/') ||
       contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
       contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
