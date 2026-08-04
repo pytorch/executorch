@@ -16,11 +16,10 @@ namespace executorch {
 namespace backends {
 namespace mlx {
 
-// The K/V window to attend over + how to mask it; the cache owns the semantic.
-// `kind` mirrors MLX SDPA's mask forms (no mask / "causal" / explicit tensor).
-// Will be added: a `window` on Causal (sliding-window -- the
-// mask_mod axis) and a `softcap`/bias field (ALiBi, softcap -- the score_mod
-// axis).
+// The K/V window to attend over + how to mask it; the cache owns the semantic
+// and hands over whatever MLX SDPA needs to apply it. `kind` mirrors MLX's mask
+// forms: no mask, its fused "causal", or an explicit tensor for anything MLX
+// cannot express -- a sliding window, and later tree/speculative patterns.
 struct AttendSpec {
   Tensor K;
   Tensor V;
