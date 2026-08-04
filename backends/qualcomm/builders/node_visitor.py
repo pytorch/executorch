@@ -86,8 +86,16 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
 }
 
+# Group-wise (a.k.a. per-channel-group / blockwise) weight quantization, as used
+# by int4 LLM weights. QNN represents it with a per-block encoding.
+PER_CHANNEL_GROUP_ENCODING = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+}
+
 q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
 }
@@ -96,6 +104,7 @@ dq_ops = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
 }
 
 q_dq_map = {
@@ -105,6 +114,8 @@ q_dq_map = {
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
 }
 
 
@@ -332,6 +343,7 @@ class NodeVisitor:
         per_block_encoding = {
             exir_ops.edge.torchao.quantize_affine.default,
             exir_ops.edge.torchao.dequantize_affine.default,
+            *PER_CHANNEL_GROUP_ENCODING,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
