@@ -528,6 +528,7 @@ class LLMEdgeManager:
             Callable[[torch.fx.Node], Optional[str]]
         ] = None,
         share_mutable_buffers: bool = False,
+        allow_lifetime_and_storage_overlap: bool = False,
     ) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
@@ -561,6 +562,7 @@ class LLMEdgeManager:
                 memory_planning_pass=MemoryPlanningPass(
                     alloc_graph_input=False,
                     share_mutable_buffers=share_mutable_buffers,
+                    allow_lifetime_and_storage_overlap=allow_lifetime_and_storage_overlap,
                 ),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
                 external_constants=external_constants_tag,

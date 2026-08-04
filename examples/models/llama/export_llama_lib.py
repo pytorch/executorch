@@ -983,6 +983,8 @@ def _to_edge_and_lower_llama_xnnpack(
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+    share_mutable_buffers: bool = False,
+    allow_lifetime_and_storage_overlap: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
@@ -1025,7 +1027,10 @@ def _to_edge_and_lower_llama_xnnpack(
 
     # Add gen_tag_fn to tag non-delegated weights as well.
     return builder.to_executorch(
-        passes=additional_passes, external_constants_tag=gen_tag_fn
+        passes=additional_passes,
+        external_constants_tag=gen_tag_fn,
+        share_mutable_buffers=share_mutable_buffers,
+        allow_lifetime_and_storage_overlap=allow_lifetime_and_storage_overlap,
     )
 
 
