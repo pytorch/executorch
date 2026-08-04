@@ -652,9 +652,9 @@ class BuiltExtension(_BaseExtension):
             modpath: The dotted path of the python module that maps to the
                 extension.
         """
-        assert "/" not in modpath, (
-            f"modpath must be a dotted python module path: saw '{modpath}'"
-        )
+        assert (
+            "/" not in modpath
+        ), f"modpath must be a dotted python module path: saw '{modpath}'"
         full_src = src
         if src_dir is None and _is_windows():
             src_dir = "%BUILD_TYPE%/"
@@ -1308,6 +1308,10 @@ setup(
                 ),
                 # Install the CUDA delegate beside them when it is built. The CUDA
                 # runtime itself is not bundled; it comes from the environment.
+                # Gated on the shared runtime as well, because the versioned file name
+                # below only exists in a shared build. Without it the target is a static
+                # archive, the glob matches nothing, and the wheel build fails rather
+                # than skipping the file.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
                     src_name=(
@@ -1317,13 +1321,15 @@ setup(
                         "executorch/lib/libexecutorch_cuda_backend.so."
                         f"{get_runtime_soname_major()}"
                     ),
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
                 ),
                 # The CUDA delegate and the AOTI shim both call into this for stream
                 # handling, so an application that links either from the wheel cannot
-                # resolve it unless this ships too. Gated on CUDA alone, matching the
-                # shim: the target is always built shared, so requiring the shared
-                # runtime here would ship the shim without the library it needs.
+                # resolve it unless this ships too. Gated the same way as the delegate,
+                # since both carry a versioned file name only in a shared build.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
                     src_name=(
