@@ -11,17 +11,24 @@ from typing import List, NamedTuple, Optional
 
 # Import to register et_copy ops
 import executorch.exir.passes._device_copy_ops_registry  # noqa: F401
-
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
 from executorch.exir.backend.test.device_util import (
     CpuOnlyPartitioner,
     DeviceAwarePartitioner,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
@@ -92,6 +99,46 @@ def _collect_device_copy_nodes(gm: torch.fx.GraphModule) -> DeviceCopyNodes:
         delegate_nodes=delegate_nodes,
         getitem_nodes=getitem_nodes,
     )
+
+
+class PerAddDeviceDelegatePartitioner(Partitioner):
+    """Delegates each ``aten.add.Tensor`` as its OWN delegate, each with a
+    per-op ``target_device``.
+
+    Unlike ``DeviceAwarePartitioner`` (which merges connected add ops into a
+    single delegate), this keeps every add in a separate delegate, so two
+    directly-connected adds become two directly-connected delegates -- the shape
+    that leaves a redundant ``device -> host -> device`` round-trip between them.
+    ``devices[i]`` is the target device for the i-th add in graph order (the last
+    entry is reused if there are more adds than devices).
+    """
+
+    def __init__(self, devices: List[str]) -> None:
+        super().__init__()
+        self._devices = list(devices)
+
+    def partition(self, exported_program) -> PartitionResult:
+        partition_tags = {}
+        add_nodes = [
+            n
+            for n in exported_program.graph_module.graph.nodes
+            if n.op == "call_function" and n.target == exir_ops.edge.aten.add.Tensor
+        ]
+        for i, node in enumerate(add_nodes):
+            device = self._devices[min(i, len(self._devices) - 1)]
+            tag = f"tag{i}"
+            node.meta["delegation_tag"] = tag
+            partition_tags[tag] = DelegationSpec(
+                BackendWithCompilerDemo.__name__,
+                [
+                    CompileSpec("max_value", bytes([4])),
+                    CompileSpec(TARGET_DEVICE_COMPILE_SPEC_KEY, device.encode("utf-8")),
+                ],
+            )
+        return PartitionResult(
+            tagged_exported_program=exported_program,
+            partition_tags=partition_tags,
+        )
 
 
 class TestPropagateDevicePass(unittest.TestCase):
@@ -401,6 +448,278 @@ class TestPropagateDevicePass(unittest.TestCase):
                 device_copy_nodes = _collect_device_copy_nodes(gm)
                 self.assertEqual(len(device_copy_nodes.h2d_nodes), 0)
                 self.assertEqual(len(device_copy_nodes.d2h_nodes), 0)
+
+    def test_redundant_same_device_copies_elided(self):
+        """Two directly-connected delegates on the *same* device must not leave a
+        redundant device->host->device round-trip between them. The
+        inter-delegate _d2h_copy/_h2d_copy pair is elided; only the true
+        graph-boundary copies (H2D per input, D2H for the final output) remain."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b, c):
+                return (a + b) + c
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    2,
+                    f"[{pipeline}] expected two separate delegates",
+                )
+                # Boundary copies only: an H2D for each of the 3 graph inputs
+                # (a, b, c) and a single D2H for the final output. The first
+                # delegate's output feeds the second directly on cuda:0, so the
+                # inter-delegate round-trip is elided.
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    3,
+                    f"[{pipeline}] expected 3 boundary H2D copies, got "
+                    f"{len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] expected the inter-delegate D2H to be elided "
+                    f"(1 boundary D2H), got {len(nodes.d2h_nodes)}",
+                )
+
+    def test_cross_device_copies_preserved(self):
+        """A genuine cross-device hand-off (cuda:0 -> cuda:1) between two
+        directly-connected delegates must be preserved -- the round-trip is a
+        real cuda:0->host->cuda:1 move, not a redundant same-device bounce."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b, c):
+                return (a + b) + c
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:1"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(len(nodes.delegate_nodes), 2)
+                # The inter-delegate D2H (cuda:0->host) and H2D (host->cuda:1)
+                # are kept: 4 H2D (a, b on cuda:0; first-add output + c on
+                # cuda:1) and 2 D2H (first delegate output, final output).
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    4,
+                    f"[{pipeline}] cross-device H2D copies should be preserved, "
+                    f"got {len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    2,
+                    f"[{pipeline}] cross-device D2H copies should be preserved, "
+                    f"got {len(nodes.d2h_nodes)}",
+                )
+
+    def test_output_feeding_multiple_same_device_delegates_elided(self):
+        """A delegate output consumed by *multiple* same-device delegates must not
+        leave a redundant round-trip on any of those edges.
+
+        The first add's output feeds two separate cuda:0 delegates.
+        PropagateDevicePass inserts a single D2H after it whose result is wrapped
+        by one H2D per consuming delegate; every such same-device round-trip must
+        be elided, and the shared D2H dropped once all its consumers are rewired.
+        Only the graph-input H2D copies and the single graph-output D2H remain."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0
+                u = t + a  # delegate 1 -- consumes delegate 0's output
+                w = t + b  # delegate 2 -- also consumes delegate 0's output
+                return u + w  # delegate 3
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0", "cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    4,
+                    f"[{pipeline}] expected four delegates",
+                )
+                # a -> {D0, D1} and b -> {D0, D2} give 4 graph-input H2D copies;
+                # the single graph output gives 1 D2H. All inter-delegate
+                # round-trips (including delegate 0's output feeding D1 and D2)
+                # are elided.
+                self.assertEqual(
+                    len(nodes.h2d_nodes),
+                    4,
+                    f"[{pipeline}] expected 4 boundary H2D copies, got "
+                    f"{len(nodes.h2d_nodes)}",
+                )
+                self.assertEqual(
+                    len(nodes.d2h_nodes),
+                    1,
+                    f"[{pipeline}] expected 1 boundary D2H copy, got "
+                    f"{len(nodes.d2h_nodes)}",
+                )
+                # No H2D may still wrap a D2H (a device->host->device round-trip
+                # on the same device), including the shared D2H.
+                for h2d in nodes.h2d_nodes:
+                    src = h2d.args[0]
+                    self.assertFalse(
+                        isinstance(src, torch.fx.Node)
+                        and src.target == torch.ops.et_copy._d2h_copy.out,
+                        f"[{pipeline}] residual same-device round-trip via "
+                        f"{h2d.name}",
+                    )
+
+    def test_output_feeding_gpu_and_cpu_consumers(self):
+        """A delegate output feeding one same-device delegate AND one
+        non-delegated (CPU) consumer.
+
+        The GPU->GPU edge is elided -- the second delegate takes the first
+        delegate's output directly -- while the D2H that feeds the CPU consumer is
+        kept (its shared D2H is still live, so eliminate_dead_code preserves it)."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0 (cuda:0)
+                u = t + a  # delegate 1 (cuda:0) -- GPU consumer of t
+                w = torch.relu(t)  # non-delegated CPU consumer of t
+                return u, w
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    2,
+                    f"[{pipeline}] expected two delegates (relu stays on CPU)",
+                )
+                # GPU->GPU edge elided: no H2D still wraps a D2H.
+                for h2d in nodes.h2d_nodes:
+                    src = h2d.args[0]
+                    self.assertFalse(
+                        isinstance(src, torch.fx.Node) and src.target == d2h_out,
+                        f"[{pipeline}] GPU->GPU round-trip not elided via {h2d.name}",
+                    )
+                # The second delegate consumes the first delegate's output
+                # directly (a delegate getitem is a direct delegate input).
+                direct = any(
+                    self._is_delegate_getitem(arg)
+                    for d in nodes.delegate_nodes
+                    for arg in d.args[1:]
+                    if isinstance(arg, torch.fx.Node)
+                )
+                self.assertTrue(
+                    direct,
+                    f"[{pipeline}] a delegate should consume another delegate's "
+                    f"output directly on device",
+                )
+                # The D2H feeding the CPU (relu) consumer must be kept.
+                relu_fed_by_d2h = any(
+                    "relu" in str(user.target)
+                    for dn in nodes.d2h_nodes
+                    for user in dn.users
+                )
+                self.assertTrue(
+                    relu_fed_by_d2h,
+                    f"[{pipeline}] the D2H feeding the CPU consumer must be kept",
+                )
+
+    def test_output_feeding_same_and_cross_device_delegates(self):
+        """A delegate output feeding two delegates -- one on the SAME device and
+        one on a DIFFERENT device.
+
+        The same-device edge is elided (that delegate takes the output directly),
+        while the cross-device edge keeps its device->host->device round-trip. The
+        shared D2H stays live for the cross-device consumer, so it is not dropped;
+        only the genuinely-redundant same-device H2D is removed."""
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                t = a + b  # delegate 0 (cuda:0)
+                u = t + a  # delegate 1 (cuda:0) -- same-device consumer, elided
+                w = t + b  # delegate 2 (cuda:1) -- cross-device consumer, kept
+                return u, w
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+
+        d2h_out = torch.ops.et_copy._d2h_copy.out
+        for pipeline, gm in _lower_model_to_executorch(
+            model,
+            inputs,
+            PerAddDeviceDelegatePartitioner(["cuda:0", "cuda:0", "cuda:1"]),
+            ExecutorchBackendConfig(enable_non_cpu_memory_planning=True),
+        ):
+            with self.subTest(pipeline=pipeline):
+                nodes = _collect_device_copy_nodes(gm)
+                self.assertEqual(
+                    len(nodes.delegate_nodes),
+                    3,
+                    f"[{pipeline}] expected three delegates",
+                )
+                # Exactly the cross-device edge keeps its round-trip: one H2D
+                # still wraps a D2H, and it targets the other device (cuda:1).
+                residual = [
+                    h2d
+                    for h2d in nodes.h2d_nodes
+                    if isinstance(h2d.args[0], torch.fx.Node)
+                    and h2d.args[0].target == d2h_out
+                ]
+                self.assertEqual(
+                    len(residual),
+                    1,
+                    f"[{pipeline}] expected exactly one preserved cross-device "
+                    f"round-trip, got {len(residual)}",
+                )
+                spec = residual[0].meta.get("spec")
+                self.assertIsInstance(spec, TensorSpec)
+                self.assertEqual(spec.device, DeviceType.CUDA)
+                self.assertEqual(
+                    spec.device_index,
+                    1,
+                    f"[{pipeline}] preserved round-trip should target cuda:1",
+                )
+                # The same-device consumer takes the first delegate's output
+                # directly on device.
+                direct = any(
+                    self._is_delegate_getitem(arg)
+                    for d in nodes.delegate_nodes
+                    for arg in d.args[1:]
+                    if isinstance(arg, torch.fx.Node)
+                )
+                self.assertTrue(
+                    direct,
+                    f"[{pipeline}] the same-device delegate should consume the "
+                    f"first delegate's output directly",
+                )
 
         # ---- Integration tests: device consistency after to_executorch ----
 

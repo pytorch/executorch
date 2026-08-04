@@ -18,8 +18,6 @@ using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using executorch::aten::RuntimeContext;
-using executorch::runtime::CppTypeToScalarType;
-using executorch::runtime::promoteTypes;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 

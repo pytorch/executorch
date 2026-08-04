@@ -9,6 +9,9 @@ import executorch.backends.arm.tosa.dialect  # noqa: F401
 from executorch.backends.arm._passes.aten_to_tosa_activation_functions import (
     get_activation_replacement,
 )
+from executorch.backends.arm._passes.aten_to_tosa_data_layout import (
+    rewrite_data_layout_operator,
+)
 from executorch.backends.arm._passes.aten_to_tosa_tensor_operators import (
     rewrite_argmax,
     rewrite_binary_operator,
@@ -118,3 +121,16 @@ def _get_activation_replacement(
     node: Node, pass_: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     return get_activation_replacement(node, pass_)
+
+
+@register_dialect_substitutions(
+    exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.flip.default,
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.repeat.default,
+    exir_ops.edge.aten.view_copy.default,
+)
+def _get_data_layout_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    return rewrite_data_layout_operator(node, pass_)

@@ -62,16 +62,6 @@ constexpr uint32_t kQ4gswSteelTile = 64u;
 constexpr uint32_t kQ4gswSteelBK = 16u;
 constexpr uint32_t kQ4gswSteelInvocations = 256u;
 
-// Max workgroups per 1D dispatch dimension: the device limit, or 65535 when the
-// query fails / reports 0.
-uint32_t max_workgroups_per_dim(WGPUDevice device) {
-  WGPULimits limits = {};
-  return (wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
-          limits.maxComputeWorkgroupsPerDimension > 0)
-      ? limits.maxComputeWorkgroupsPerDimension
-      : 65535u;
-}
-
 // One workgroup per (tile_m x tile_n) tile, no grid-stride: throw when the tile
 // count would exceed the 1D dispatch limit. Shared by the steel + shmem GEMM
 // routes; `kind` names the route in the error message.
@@ -85,7 +75,7 @@ uint32_t tiled_wg_count(
     const char* kind) {
   const int64_t total_wgs =
       utils::div_up<int64_t>(m, tile_m) * utils::div_up<int64_t>(n, tile_n);
-  if (total_wgs > static_cast<int64_t>(max_workgroups_per_dim(device))) {
+  if (total_wgs > static_cast<int64_t>(utils::queried_max_workgroups(device))) {
     throw std::runtime_error(
         std::string("WebGPU ") + op_name + ": " + kind +
         " tile count exceeds the 1D dispatch limit");
@@ -109,7 +99,7 @@ steel_workgroup_count(WGPUDevice device, uint32_t m, uint32_t n, uint32_t K) {
   const uint64_t total =
       static_cast<uint64_t>((m + kQ4gswSteelTile - 1u) / kQ4gswSteelTile) *
       static_cast<uint64_t>((n + kQ4gswSteelTile - 1u) / kQ4gswSteelTile);
-  const uint32_t max_count = max_workgroups_per_dim(device);
+  const uint32_t max_count = utils::queried_max_workgroups(device);
   return (total == 0u || total > max_count) ? 0u : static_cast<uint32_t>(total);
 }
 
@@ -254,6 +244,11 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kQ4gswLinearWorkgroupSizeX);
   const bool use_gemv = (M == 1u && K % 8u == 0u && gs % 8u == 0u);
+  // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
+  const uint32_t gemv_wg_size = use_gemv
+      ? utils::clamp_workgroup_size_pow2(
+            device, kQ4gswLinearCoop4BicolWorkgroupSizeX)
+      : 0u;
   // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
   const bool use_steel = !use_gemv && steel_supported(device) &&
       steel_workgroup_count(device, M, N, K) > 0u;
@@ -340,81 +335,38 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(Q4gswParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {shader_src, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group layout: out (rw) + in/weight/scales/bias (ro storage) + uniform.
-  WGPUBindGroupLayoutEntry entries[6] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 4; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[5].binding = 5;
-  entries[5].visibility = WGPUShaderStage_Compute;
-  entries[5].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 6;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
+  // GEMV/tiled wire an override wg_size; steel (256) + shmem (64) are fixed.
+  const bool fixed_wg = use_steel || use_shmem_gemm;
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
+  wg_size_constant.value =
+      static_cast<double>(use_gemv ? gemv_wg_size : wg_size);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  // Only tiled GEMM overrides wg_size; GEMV/shmem (64) + steel (256) are fixed.
-  const bool fixed_wg = use_gemv || use_steel || use_shmem_gemm;
-  pipeline_desc.compute.constantCount = fixed_wg ? 0u : 1u;
-  pipeline_desc.compute.constants = fixed_wg ? nullptr : &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[6] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in.buffer;
-  bg_entries[1].size = in.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight.buffer;
-  bg_entries[2].size = weight.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = scales.buffer;
-  bg_entries[3].size = scales.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = bias_buffer;
-  bg_entries[4].size = bias_size;
-  bg_entries[5].binding = 5;
-  bg_entries[5].buffer = uniform_buffer;
-  bg_entries[5].size = sizeof(Q4gswParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 6;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      shader_src,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           scales.buffer,
+           scales.nbytes},
+          {4, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
+          {5,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(Q4gswParams)},
+      },
+      fixed_wg ? nullptr : &wg_size_constant,
+      fixed_wg ? 0u : 1u);
 
   const size_t dispatch_idx = graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "linear_q4gsw"});
+      {bundle.pipeline, bundle.bind_group, workgroup_count, "linear_q4gsw"});
 
   // Dynamic shapes: recompute dispatch + params.M for the live M. use_gemv and
   // use_shmem_gemm are captured (routing is fixed at build); the helper re-runs
@@ -482,9 +434,6 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         g.set_cur_dims(out_id, od);
       });
 
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   // Graph owns it so the resize hook can rewrite it; freed in the dtor.
   graph.own_uniform_buffer(uniform_buffer);
 }

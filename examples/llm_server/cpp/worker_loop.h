@@ -62,9 +62,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -115,6 +117,23 @@ inline void worker_handle_request(
   LLMSession& session = *st.session;
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
   const float temperature = req.value("temperature", 0.0f);
+  const double top_p_value = req.value("top_p", 1.0);
+  const int64_t top_k_value = req.value("top_k", static_cast<int64_t>(0));
+  const int64_t seed_value = req.value("seed", static_cast<int64_t>(0));
+  if (!std::isfinite(top_p_value) || top_p_value <= 0.0 || top_p_value > 1.0) {
+    throw std::runtime_error("top_p must be finite and in (0, 1]");
+  }
+  if (top_k_value < 0 || top_k_value > std::numeric_limits<int32_t>::max()) {
+    throw std::runtime_error("top_k must fit in a nonnegative int32");
+  }
+  // seed == 0 means "unset" (SamplingConfig::seed == 0 -> worker picks a random
+  // seed), so 0 is intentionally accepted here even though the HTTP layer
+  // treats 0 as the omitted sentinel and rejects an explicit seed=0. A JSON
+  // seed >= 2^63 won't fit int64_t and is rejected at parse time above; the
+  // HTTP layer caps the same range at 2^63 - 1 with a structured error.
+  if (seed_value < 0) {
+    throw std::runtime_error("seed must be nonnegative");
+  }
   // Stop strings (the request's `stop` sequences): terminate at the token
   // boundary where one appears so we don't generate to EOS/max_new past it. The
   // control plane also enforces these as a backstop.
@@ -207,6 +226,9 @@ inline void worker_handle_request(
 
   SamplingConfig sampling;
   sampling.temperature = temperature;
+  sampling.top_p = static_cast<float>(top_p_value);
+  sampling.top_k = static_cast<int32_t>(top_k_value);
+  sampling.seed = static_cast<uint64_t>(seed_value);
   const auto prefill_start = std::chrono::steady_clock::now();
   if (session.prefill_tokens(to_prefill, &sampling) !=
       ::executorch::runtime::Error::Ok) {

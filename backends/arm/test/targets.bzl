@@ -151,3 +151,20 @@ def define_arm_tests():
                 "//executorch/backends/arm:public_api",
             ] if runtime.is_oss else []),
         )
+
+    if not runtime.is_oss and _ENABLE_VGF:
+        runtime.cxx_test(
+            name = "vgf_neural_statistics_test",
+            srcs = ["vgf_neural_statistics_test.cpp"],
+            compiler_flags = [
+                "-DUSE_VULKAN_WRAPPER",
+                "-DUSE_VULKAN_VOLK",
+            ],
+            deps = [
+                "//executorch/backends/arm/runtime:vgf_backend",
+                "//executorch/runtime/core:core",
+                "fbsource//third-party/arm-vgf-library/v0.9.0/src:vgf",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+                "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
+            ],
+        )

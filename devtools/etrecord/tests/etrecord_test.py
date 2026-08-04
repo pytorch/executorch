@@ -1201,7 +1201,7 @@ class TestETRecord(unittest.TestCase):
         edge_output2 = to_edge(
             export(f2, f2.get_random_inputs(), strict=True),
             compile_config=exir.EdgeCompileConfig(
-                _check_ir_validity=False, _use_edge_ops=False
+                _check_ir_validity=False,
             ),
         )
 

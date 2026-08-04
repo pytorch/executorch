@@ -116,10 +116,26 @@ def test_dialect_max_pool2d_fallback(test_case, cortex_m_target):
         {
             "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
             "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-            "executorch_exir_dialects_edge__ops_aten_max_pool2d_default": 1,
+            "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
         },
         qtol=1,
     )
+
+
+@parametrize("test_case", fallback_test_cases)
+def test_executorch_max_pool2d_fallback(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.quantize().export().to_edge().run_passes().to_executorch()
+
+
+@parametrize("test_case", fallback_test_cases)
+def test_implementation_max_pool2d_fallback(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.test_implementation(qtol=1)
 
 
 @parametrize("test_case", test_cases, xfails=xfails_max_pool2d)
