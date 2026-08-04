@@ -5,6 +5,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    ExpandBroadcastTensorShape,
     FoldQDQ,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
@@ -31,6 +32,7 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir import to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.graph_signature import OutputKind
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -377,6 +379,87 @@ class TestPasses(unittest.TestCase):
                         should_decompose,
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
+    def test_expand_broadcast_preserves_rank0_input_mutation(self):
+        """A rank-0 user input that is BOTH broadcast (needs rank promotion) AND mutated in
+        place must keep its USER_INPUT_MUTATION write-back on the rank-0 value.
+
+        Regression for the all-users rewrite: it redirected *every* consumer of the operand to
+        the promoted (1,) view, including the in-place mutation, so the write-back became
+        copy_(dst=(), src=(1,)) and to_executorch() failed with "expand: too few dimensions".
+        Asserts the broadcast consumes the promoted view while the mutation path stays rank-0.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class BroadcastAndMutate(torch.nn.Module):
+            def forward(self, x, counter):
+                position = torch.arange(x.shape[-1]) + counter  # rank-1 + rank-0 broadcast
+                counter.add_(x.shape[-1])  # in-place mutation of the rank-0 input
+                return x + position.to(x.dtype)
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(), (torch.randn(1, 4), torch.tensor(0)), strict=True
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        broadcast = [n for n in gm.graph.nodes if n.target == add and n.meta["val"].dim() == 1]
+        self.assertTrue(broadcast)
+        self.assertTrue(
+            any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for n in broadcast
+                for a in n.args
+            ),
+            "the broadcast operand should be rank-promoted to a view_copy",
+        )
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "rank promotion leaked into the USER_INPUT_MUTATION write-back path",
+                )
+
+    def test_expand_broadcast_promotes_per_consumer(self):
+        """One tensor feeding two broadcasts of different output rank must be promoted
+        independently per broadcast node, not shared. The all-users rewrite reshaped the
+        operand once (to the first broadcast's rank) and redirected the second broadcast too,
+        mis-shaping it."""
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoBroadcasts(torch.nn.Module):
+            def forward(self, a2d, a1d, b):
+                return a2d + b, a1d + b  # b:(4,) -> rank-2 needs a view; rank-1 does not
+
+        exported = torch.export.export(
+            TwoBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        for node in gm.graph.nodes:
+            if node.target != add:
+                continue
+            has_view = any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy for a in node.args
+            )
+            if node.meta["val"].dim() == 2:
+                self.assertTrue(has_view, "rank-2 broadcast operand should be promoted")
+            if node.meta["val"].dim() == 1:
+                self.assertFalse(has_view, "rank-1 broadcast operand should not be promoted")
 
 
 if __name__ == "__main__":
