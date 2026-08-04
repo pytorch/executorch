@@ -31,6 +31,15 @@ _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
 _cuda_arch_aarch64_cu126="8.7"
 _cuda_arch_x86_64_cu126="8.0 9.0"
 
+# A CUDA train with no architecture list would otherwise leave the build detecting the
+# builder's GPU, which is the failure this file exists to prevent. Adding a train to the release
+# matrix without adding its architectures should fail loudly.
+_executorch_unknown_train() {
+  echo "cuda_arch_list.sh: no GPU architecture list for CUDA train '$1' on $(uname -m)." >&2
+  echo "Add one before building this row, or the wheel ships device code for one GPU only." >&2
+  return 64
+}
+
 # The architectures for the current row, space separated in the dotted form PyTorch expects.
 # Empty when the row is unknown, which leaves the build detecting as before.
 executorch_cuda_arch_list() {
@@ -40,9 +49,10 @@ executorch_cuda_arch_list() {
   # the matrix field, not of the variable, so reading only that one leaves every row falling
   # back to detecting the builder's GPU.
   local train="${CU_VERSION:-${DESIRED_CUDA:-}}"
-  if [ -z "${train}" ]; then
-    return 0
-  fi
+  # A CPU row names no CUDA train and needs no architectures, so it is not an error.
+  case "${train}" in
+    "" | cpu | CPU | none | NONE) return 0 ;;
+  esac
   # The value arrives as cu130; some callers pass 13.0 instead.
   train="${train#cu}"
   train="${train//./}"
@@ -53,6 +63,7 @@ executorch_cuda_arch_list() {
         126) printf '%s' "${_cuda_arch_aarch64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_aarch64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_aarch64_cu132}" ;;
+        *) _executorch_unknown_train "${train}" ;;
       esac
       ;;
     x86_64)
@@ -60,8 +71,10 @@ executorch_cuda_arch_list() {
         126) printf '%s' "${_cuda_arch_x86_64_cu126}" ;;
         130) printf '%s' "${_cuda_arch_x86_64_cu130}" ;;
         132) printf '%s' "${_cuda_arch_x86_64_cu132}" ;;
+        *) _executorch_unknown_train "${train}" ;;
       esac
       ;;
+    *) _executorch_unknown_train "${train}" ;;
   esac
 }
 

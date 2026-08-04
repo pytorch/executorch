@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 # Registry entry points. A second definer of any of these means a second
 # process-wide registry.
@@ -1180,6 +1181,29 @@ def _requested_cuda_architectures() -> list:
     return found
 
 
+def _cuobjdump() -> Optional[str]:
+    """Path to the CUDA object inspector, or None when it cannot be found.
+
+    It ships with the CUDA toolkit rather than the base system, and is not on the default PATH
+    on a typical CUDA machine, so the toolkit's own directory is searched too. Without this the
+    device-code audit finds no tool and has nothing to inspect.
+    """
+    found = shutil.which("cuobjdump")
+    if found:
+        return found
+    for root in (
+        os.environ.get("CUDA_HOME"),
+        os.environ.get("CUDA_PATH"),
+        "/usr/local/cuda",
+    ):
+        if not root:
+            continue
+        candidate = Path(root) / "bin" / "cuobjdump"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _is_accelerator_row() -> bool:
     """Whether this build is an accelerator row rather than a CPU wheel.
 
@@ -1215,12 +1239,12 @@ def test_device_code_covers_claimed_architectures() -> None:
         print("- this is a CPU wheel, so there is no device code to audit")
         return
 
-    have_cuobjdump = shutil.which("cuobjdump") is not None
-    assert have_cuobjdump or not accelerator_row, (
+    inspector = _cuobjdump()
+    assert inspector or not accelerator_row, (
         "this is an accelerator row but cuobjdump is not available, so the shipped device "
         "code cannot be audited"
     )
-    if not have_cuobjdump:
+    if not inspector:
         print(
             "- cuobjdump is not available and this is not an accelerator row, skipping"
         )
@@ -1246,7 +1270,7 @@ def test_device_code_covers_claimed_architectures() -> None:
     audited = 0
     for library in libraries:
         result = subprocess.run(
-            ["cuobjdump", "--list-elf", str(library)],
+            [inspector, "--list-elf", str(library)],
             capture_output=True,
             text=True,
             check=False,
