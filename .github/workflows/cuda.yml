@@ -64,11 +64,12 @@ jobs:
         cuda-version: ["12.6", "13.0"]
 
     name: test-executorch-cuda-build-${{ matrix.cuda-version }}
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -123,11 +124,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -167,11 +169,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -224,11 +227,12 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
@@ -265,7 +269,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -376,6 +380,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 150
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
@@ -439,7 +444,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -542,6 +547,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
@@ -584,7 +590,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -603,6 +609,7 @@ jobs:
             quantize: "--quantize"
             artifact: "Qwen-Qwen3-0.6B-cuda-quantized-int4-tile-packed"
     with:
+      test-infra-ref: release/2.13
       timeout: 120
       secrets-env: EXECUTORCH_HF_TOKEN
       download-artifact: ${{ matrix.artifact }}

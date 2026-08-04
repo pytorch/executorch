@@ -54,7 +54,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -87,6 +87,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.g5.4xlarge.nvidia.gpu
@@ -161,7 +162,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda-windows.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
@@ -190,6 +191,7 @@ jobs:
             model_name: "dinov2-small-imagenet1k-1-layer"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       timeout: 240
       runner: windows.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda

@@ -30,8 +30,9 @@ concurrency:
 
 jobs:
   test-webgpu-native:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12

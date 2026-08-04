@@ -124,7 +124,7 @@ jobs:
   export-models:
     name: export-models
     needs: set-parameters
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -133,6 +133,7 @@ jobs:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
@@ -206,7 +207,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -214,6 +215,7 @@ jobs:
       matrix: ${{ fromJson(needs.set-parameters.outputs.benchmark_configs) }}
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       timeout: 90
       runner: ${{ contains(matrix.model, 'Qwen3.5-35B-A3B') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
@@ -500,7 +502,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload benchmark results to dashboard
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.13
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false

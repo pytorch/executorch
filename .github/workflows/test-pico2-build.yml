@@ -20,11 +20,12 @@ concurrency:
 jobs:
   test-pico2-fp32-build:
     name: test-pico2-fp32-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -90,11 +91,12 @@ jobs:
 
   test-pico2-cmsis-build:
     name: test-pico2-cmsis-nn-build
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'

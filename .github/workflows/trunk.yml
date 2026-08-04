@@ -44,7 +44,7 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       matrix:
         # Mac runners are expensive and limited, and non reliable.
@@ -63,6 +63,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -82,7 +83,7 @@ jobs:
 
   test-arm-backend-zephyr:
     name: test-arm-backend-zephyr
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.13
     strategy:
       matrix:
         include:
@@ -93,6 +94,7 @@ jobs:
           - { readme: zephyr/samples/mv2-ethosu/README.md, target: ethos-u85 }
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
       submodules: 'recursive'
@@ -120,7 +122,7 @@ jobs:
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -150,6 +152,7 @@ jobs:
             runner: linux.arm64.2xlarge
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'recursive'
@@ -174,13 +177,14 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       matrix:
         include:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -201,13 +205,14 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       matrix:
         include:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -224,7 +229,7 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -235,6 +240,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -251,7 +257,7 @@ jobs:
 
   test-arm-backend-ethos-u:
     name: test-arm-backend-ethos-u
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -272,6 +278,7 @@ jobs:
           - test_arm_backend: test_deit_e2e_ethos_u
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -303,7 +310,7 @@ jobs:
 
   test-arm-backend-vkml:
     name: test-arm-backend-vkml
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -316,6 +323,7 @@ jobs:
           - test_arm_backend: test_smaller_stories_llama_vkml
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
       submodules: 'recursive'
@@ -354,8 +362,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-14-xlarge
       python-version: '3.11'
@@ -384,8 +393,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-static-llama-ane
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -411,8 +421,9 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -433,7 +444,7 @@ jobs:
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -466,6 +477,7 @@ jobs:
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -508,13 +520,14 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-llama-runner-mac
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       matrix:
         dtype: [fp32]
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -544,7 +557,7 @@ jobs:
 
   test-torchao-huggingface-checkpoints:
     name: test-torchao-huggingface-checkpoints
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -569,6 +582,7 @@ jobs:
             backend: torchao
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: ${{ matrix.runner }}
       docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
@@ -598,7 +612,7 @@ jobs:
         needs.run-decision.outputs.is-full-run == 'true'
       )
     name: test-multimodal-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -608,6 +622,7 @@ jobs:
       matrix:
         model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
@@ -638,7 +653,7 @@ jobs:
 
   test-qnn-model:
     name: test-qnn-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -648,6 +663,7 @@ jobs:
         model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, conv_former]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -664,7 +680,7 @@ jobs:
 
   test-qnn-optimum-model:
     name: test-qnn-optimum-model
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -674,6 +690,7 @@ jobs:
         model: [cvt, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -699,12 +716,13 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-coreml
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       matrix:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -753,10 +771,11 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/trunk.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
     name: test-models-macos-mps
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
@@ -781,7 +800,7 @@ jobs:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers-xnnpack
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -800,6 +819,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
@@ -881,7 +901,7 @@ jobs:
         needs.run-decision.outputs.is-full-run == 'true'
       )
     name: test-huggingface-transformers-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -909,6 +929,7 @@ jobs:
         ]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
@@ -944,7 +965,7 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -955,6 +976,7 @@ jobs:
         mode: [qnn]
       fail-fast: false
     with:
+      test-infra-ref: release/2.13
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
@@ -1027,13 +1049,14 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
         model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
         backend: [portable, xnnpack-q8]
     with:
+      test-infra-ref: release/2.13
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |

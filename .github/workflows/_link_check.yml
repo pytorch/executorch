@@ -15,14 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ inputs.ref }}
-      - name: Fetch base ref
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          else
-            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
-          fi
       - name: Lint URLs
         run: |
           ./scripts/lint_urls.sh $(
@@ -48,14 +42,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ inputs.ref }}
-      - name: Fetch base ref
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          else
-            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
-          fi
       - name: Lint cross-references
         run: |
           ./scripts/lint_xrefs.sh $(
@@ -81,14 +69,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           ref: ${{ inputs.ref }}
-      - name: Fetch base ref
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          else
-            git fetch --no-tags --depth=1 origin "${{ github.event.before }}"
-          fi
       - name: Lint file sizes
         run: |
           chmod +x ./scripts/lint_file_size.sh

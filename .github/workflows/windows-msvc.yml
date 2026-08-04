@@ -43,8 +43,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |

@@ -83,17 +83,19 @@ def _is_emptied(x) -> bool:
 
 
 @contextlib.contextmanager
-def _compile_time_cpu_clones(target_device: torch.device):
+def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     """Force AOTI's mutated-buffer clones onto CPU while preserving the
     serialized constants' target device."""
     from torch._inductor import compile_fx as _cfx, graph as _graph
     from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
     from torch._inductor.graph import GraphLowering as _GL
+    from torch._inductor.runtime.triton_heuristics import CachingAutotuner as _Autotuner
 
     orig_clone = _cfx.clone_preserve_strides
     orig_codegen_device = _Cpp.codegen_device
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
+    orig_maybe_clone_args = _Autotuner.maybe_clone_args
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -122,7 +124,24 @@ def _compile_time_cpu_clones(target_device: torch.device):
             if _is_emptied(x):
                 return _full_zeros_preserving_strides(x, "cpu")
             return orig_clone(x).cpu()
+        if _is_emptied(x):
+            # Autotuning needs device-backed inputs. Rehydrate the zero-filled
+            # KV buffer temporarily instead of cloning its freed storage.
+            return _full_zeros_preserving_strides(x, x.device)
         return orig_clone(x)
+
+    def _maybe_clone_args_with_rehydrated_kv(self, exclude, *args, **kwargs):
+        # Inductor only clones mutated arguments before benchmarking. A fused
+        # kernel can also receive read-only views of an emptied KV buffer, so
+        # rehydrate every emptied tensor argument before the clone step.
+        def rehydrate(arg):
+            if _is_emptied(arg):
+                return _full_zeros_preserving_strides(arg, arg.device)
+            return arg
+
+        args = tuple(rehydrate(arg) for arg in args)
+        kwargs = {name: rehydrate(arg) for name, arg in kwargs.items()}
+        return orig_maybe_clone_args(self, exclude, *args, **kwargs)
 
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
@@ -152,6 +171,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
     _Cpp.codegen_device = _codegen_device_target_aware
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
     _graph.is_same_tensor = _is_same_skip_emptied
+    _Autotuner.maybe_clone_args = _maybe_clone_args_with_rehydrated_kv
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -162,6 +182,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
         _Cpp.codegen_device = orig_codegen_device
         _GL.get_original_value_of_constant = orig_get_const
         _graph.is_same_tensor = orig_is_same
+        _Autotuner.maybe_clone_args = orig_maybe_clone_args
 
 
 def _is_kv_buffer(name, v) -> bool:
@@ -503,25 +524,22 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs to check for platform
 
         platform = "linux"
-        emulate_precision_casts = True
-        max_autotune = True
-        autotune_at_compile_time = None
         shim_library_path = None
+        bool_compile_options = {
+            "emulate_precision_casts": "emulate_precision_casts",
+            "max_autotune": "max_autotune",
+            "autotune_at_compile_time": "triton.autotune_at_compile_time",
+            "autotune_pointwise": "triton.autotune_pointwise",
+        }
         for spec in compile_specs:
             if spec.key == "platform":
                 platform = spec.value.decode("utf-8")
-            elif spec.key == "emulate_precision_casts":
-                emulate_precision_casts = _on_off_compile_spec_value(spec)
-            elif spec.key == "max_autotune":
-                max_autotune = _on_off_compile_spec_value(spec)
-            elif spec.key == "autotune_at_compile_time":
-                autotune_at_compile_time = _on_off_compile_spec_value(spec)
             elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
-        options["emulate_precision_casts"] = emulate_precision_casts
-        options["max_autotune"] = max_autotune
-        if autotune_at_compile_time is not None:
-            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
+            elif spec.key in bool_compile_options:
+                options[bool_compile_options[spec.key]] = _on_off_compile_spec_value(
+                    spec
+                )
         # Add platform-specific options
 
         if platform == "windows":

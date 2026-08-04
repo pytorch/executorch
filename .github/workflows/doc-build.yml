@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     permissions:
       id-token: write
       contents: read
@@ -28,6 +28,7 @@ jobs:
         include:
           - build-tool: buck2
     with:
+      test-infra-ref: release/2.13
       job-name: Build doc
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
@@ -98,9 +99,10 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       repository: pytorch/executorch
       download-artifact: docs
       ref: gh-pages

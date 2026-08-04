@@ -40,8 +40,9 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx
       runner: macos-14-xlarge
@@ -114,8 +115,9 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-qwen35-moe
       runner: macos-14-xlarge
@@ -197,8 +199,9 @@ jobs:
       fail-fast: false
       matrix:
         suite: [models, operators]
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-backend-${{ matrix.suite }}
       runner: macos-14-xlarge
@@ -243,8 +246,9 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-parakeet
       runner: macos-14-xlarge
@@ -304,9 +308,10 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-voxtral
       runner: macos-14-xlarge
@@ -368,9 +373,10 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-voxtral-realtime
       runner: macos-14-xlarge
@@ -449,9 +455,10 @@ jobs:
     if: |
       (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request') &&
       (github.event_name == 'pull_request' || needs.run-decision.outputs.is-full-run == 'true')
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-whisper
       runner: macos-14-xlarge
@@ -504,8 +511,9 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-stories110m
       runner: macos-14-xlarge
@@ -600,9 +608,10 @@ jobs:
             use-custom: false
             qconfig: "4w"
             runner: "macos-15-xlarge"
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: test-mlx-llm-${{ matrix.model.name }}${{ matrix.use-custom && '-custom' || '' }}-${{ matrix.qconfig }}
       runner: ${{ matrix.runner }}

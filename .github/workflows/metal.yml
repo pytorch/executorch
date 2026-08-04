@@ -48,8 +48,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -73,8 +74,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -106,8 +108,9 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, 'extension/llm/export') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -218,7 +221,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     secrets: inherit
     strategy:
       fail-fast: false
@@ -244,6 +247,7 @@ jobs:
               name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'
@@ -304,7 +308,7 @@ jobs:
         contains(needs.changed-files.outputs.changed-files, '.github/workflows/metal.yml') ||
         needs.run-decision.outputs.is-full-run == 'true'
       )
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
@@ -329,6 +333,7 @@ jobs:
               name: "Voxtral-Mini-4B-Realtime-2602"
             quant: "non-quantized"
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       runner: macos-m2-stable
       python-version: '3.11'

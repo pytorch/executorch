@@ -14,12 +14,13 @@ concurrency:
 
 jobs:
   apple:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
         preset: [macos, ios, ios-simulator, pybind, profiling, llm]
     with:
+      test-infra-ref: release/2.13
       default-packages: ""
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -34,12 +35,13 @@ jobs:
         ${CONDA_RUN} cmake --build cmake-out -j$(( $(sysctl -n hw.ncpu) - 1 ))
 
   zephyr:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
         preset: [zephyr]
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: linux.2xlarge
@@ -73,7 +75,7 @@ jobs:
         cmake --preset ${{ matrix.preset }}
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
@@ -89,6 +91,7 @@ jobs:
           - runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-clang12
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       runner: ${{ matrix.runner }}
@@ -106,12 +109,13 @@ jobs:
         cmake --build cmake-out -j$(( $(nproc) - 1 ))
 
   windows:
-    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@release/2.13
     strategy:
       fail-fast: false
       matrix:
         preset: [pybind, windows]
     with:
+      test-infra-ref: release/2.13
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
