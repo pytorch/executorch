@@ -11,7 +11,7 @@ from executorch.backends.arm.tosa.dialect.ops.conv2d import (
     conv_output_dim,
     validate_conv2d_args_dtypes,
 )
-from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
+from executorch.backends.arm.tosa.dialect.ops_registration import register_tosa_op
 from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
@@ -32,7 +32,7 @@ def validate_conv3d_args_dtypes(
     return validate_conv2d_args_dtypes(tosa_spec, x, weight, bias, op="CONV3D")
 
 
-@register_fake_tosa_op(
+@register_tosa_op(
     "CONV3D(Tensor input, "
     "Tensor weight, "
     "Tensor bias, "

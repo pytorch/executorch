@@ -79,8 +79,32 @@ Result<DelegateHandle*> WebGPUBackend::init(
     return Error::DelegateInvalidCompatibility;
   }
 
+  // Load-time backend option (BackendOption / LoadBackendOptionsMap), keyed by
+  // the registered backend name; default false. Mirrors the CoreML/XNNPACK
+  // runtime-spec pattern -- no compile flag and no .pte re-export needed.
+  bool enable_f16_kv_cache = false;
+  {
+    Result<bool> spec = context.get_runtime_spec<bool>("enable_f16_kv_cache");
+    if (spec.ok()) {
+      enable_f16_kv_cache = spec.get();
+    }
+  }
+  bool enable_f16_accumulate_gemm = false;
+  {
+    Result<bool> spec =
+        context.get_runtime_spec<bool>("enable_f16_accumulate_gemm");
+    if (spec.ok()) {
+      enable_f16_accumulate_gemm = spec.get();
+    }
+  }
+
   try {
-    graph->build(flatbuffer_data, constant_data, context.get_named_data_map());
+    graph->build(
+        flatbuffer_data,
+        constant_data,
+        context.get_named_data_map(),
+        enable_f16_kv_cache,
+        enable_f16_accumulate_gemm);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -140,18 +164,22 @@ Error WebGPUBackend::execute(
     return Error::Internal;
   }
 
-  // Execute the compute graph
-  graph->execute();
-
-  // Copy outputs from GPU staging buffers to EValue tensor data pointers
-  std::vector<std::pair<void*, size_t>> outputs;
-  outputs.reserve(num_outputs);
-  for (size_t i = 0; i < num_outputs; i++) {
-    const size_t arg_idx = num_inputs + i;
-    auto& tensor = args[arg_idx]->toTensor();
-    outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+  // Execute + read back; fail loud as a runtime Error so a throw never crosses
+  // the backend boundary.
+  try {
+    graph->execute();
+    std::vector<std::pair<void*, size_t>> outputs;
+    outputs.reserve(num_outputs);
+    for (size_t i = 0; i < num_outputs; i++) {
+      const size_t arg_idx = num_inputs + i;
+      auto& tensor = args[arg_idx]->toTensor();
+      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+    }
+    graph->copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
+    return Error::Internal;
   }
-  graph->copy_outputs(outputs);
 
   return Error::Ok;
 }

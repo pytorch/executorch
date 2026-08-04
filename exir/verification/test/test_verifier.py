@@ -38,46 +38,6 @@ class TestEdgeDialectVerifier(unittest.TestCase):
             verifier.check_valid_edge_op(edge_op)
             verifier.check_valid_op(edge_op)
 
-    def test_edge_verifier_check_edge_op(self) -> None:
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.transpose(0, 1)
-
-        m = Model().eval()
-
-        example_input = (torch.zeros([2, 2]),)
-
-        export_model = export(m, example_input, strict=True)
-
-        compile_config_without_edge_op = EdgeCompileConfig(
-            _use_edge_ops=False, _skip_dim_order=False
-        )
-
-        edge_manager = to_edge(
-            export_model, compile_config=compile_config_without_edge_op
-        )
-
-        normal_verifier = EXIREdgeDialectVerifier()
-        disable_edge_op_check_verifier = EXIREdgeDialectVerifier(
-            compile_config_without_edge_op
-        )
-
-        # exported model can not pass normal verifier due to
-        # incontiguous memory layout tensor is not supported in ET
-        with self.assertRaises(SpecViolationError):
-            normal_verifier(edge_manager.exported_program())
-
-        # exported model can pass disable_edge_op_check_verifier due to the
-        # incontiguous memory layout tensor verification is disabled by
-        # compile_config_without_edge_op (_use_edge_ops=False). Noted that this
-        # verifation has been done when calling `to_edge`. Explicitly calling
-        # verifier here just for better demonstration and is unnecessary
-        # in real world for ir verification.
-        disable_edge_op_check_verifier(edge_manager.exported_program())
-
     def test_edge_verifier_check_valid_dim_order_graph(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self):

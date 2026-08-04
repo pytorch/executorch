@@ -177,6 +177,9 @@ class TestViewCopyNewFlow:
         )
 
         dataset = RandomDatasetCreator(low=-128, high=128)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
         comparator = AllCloseOutputComparator(atol=1)
 
         lower_run_compare(
@@ -188,6 +191,7 @@ class TestViewCopyNewFlow:
             comparator,
             mocker=mocker,
             use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
         )
 
     @staticmethod

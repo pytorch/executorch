@@ -45,7 +45,7 @@ class CatConverter(NodeConverter):
         post_node = list(node.users.keys())[0]
         if not _is_quant_node(post_node):
             return False
-        output_zp, output_scale, output_type = (
+        output_scale, output_zp, output_type = (
             post_node.args[1],
             post_node.args[2],
             post_node.args[5],
@@ -55,14 +55,14 @@ class CatConverter(NodeConverter):
             if not _is_dequant_node(input_node):
                 return False
 
-            input_zp, input_scale, input_type = (
+            input_scale, input_zp, input_type = (
                 input_node.args[1],
                 input_node.args[2],
                 input_node.args[5],
             )
-            if (input_zp, input_scale, input_type) != (
-                output_zp,
+            if (input_scale, input_zp, input_type) != (
                 output_scale,
+                output_zp,
                 output_type,
             ):
                 return False

@@ -14,13 +14,14 @@
 
 import logging
 import os  # nosec B404 - used alongside subprocess for tool invocation
+import shlex
 import shutil
 import subprocess  # nosec B404 - required to drive external converter CLI
 import tempfile
 from dataclasses import dataclass
 from typing import Any, final, List
 
-from executorch.backends.arm._passes import RewriteConvPass
+from executorch.backends.arm._passes import DecomposeQuantNodesPass, RewriteConvPass
 from executorch.backends.arm._passes.arm_pass_manager import (
     _registered_pass_insertions,
     PassInsertions,
@@ -30,7 +31,8 @@ from executorch.backends.arm.tosa.backend import (  # type: ignore[import-not-fo
     arm_get_first_delegation_tag,
     TOSABackend,
 )
-from executorch.backends.arm.vgf._passes.rewrite_grid_sampler_to_tosa_custom import (  # type: ignore[import-not-found]
+from executorch.backends.arm.vgf._passes import (  # type: ignore[import-not-found]
+    InsertGridSamplerGridDequantPass,
     RewriteGridSamplerToTosaCustomPass,
 )
 
@@ -48,6 +50,7 @@ from executorch.exir.backend.backend_details import (  # type: ignore[import-not
 from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
     CompileSpec,
 )
+from executorch.exir.pass_base import ExportPass
 from torch.export.exported_program import ExportedProgram
 
 # debug functionality
@@ -143,18 +146,20 @@ def check_vgf_runtime_backend_environment() -> VgfRuntimeEnvironmentCheck:
     )
 
 
-def _register_grid_sampler_rewrite_pass() -> None:
-    """Register VGF-only custom shader lowering passes."""
-    existing_insertions = _registered_pass_insertions.get(RewriteConvPass)
+def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
+    existing_insertions = _registered_pass_insertions.get(target_pass_type)
     if existing_insertions is not None and any(
-        isinstance(pass_, RewriteGridSamplerToTosaCustomPass)
-        for pass_ in existing_insertions.before_passes
+        isinstance(existing_pass, type(pass_))
+        for existing_pass in existing_insertions.before_passes
     ):
         return
-    register_pass_insertions_before(
-        RewriteConvPass,
-        [RewriteGridSamplerToTosaCustomPass()],
-    )
+    register_pass_insertions_before(target_pass_type, [pass_])
+
+
+def _register_vgf_rewrite_passes() -> None:
+    """Register VGF-only custom shader lowering passes."""
+    _register_pass_before(DecomposeQuantNodesPass, InsertGridSamplerGridDequantPass())
+    _register_pass_before(RewriteConvPass, RewriteGridSamplerToTosaCustomPass())
 
 
 def _snapshot_registered_pass_insertions() -> dict[type, PassInsertions]:
@@ -228,7 +233,7 @@ class VgfBackend(BackendDetails):
 
         insertions_snapshot = _snapshot_registered_pass_insertions()
         try:
-            _register_grid_sampler_rewrite_pass()
+            _register_vgf_rewrite_passes()
             compile_spec = VgfCompileSpec._from_list(compile_specs)
             # deduce TOSA compile_spec from VGF compile spec. We get a new
             # compile spec list, containing only elements relevant for the
@@ -250,6 +255,52 @@ class VgfBackend(BackendDetails):
             _restore_registered_pass_insertions(insertions_snapshot)
 
         return PreprocessResult(processed_bytes=binary)
+
+
+def _format_repro_command(command: List[str]) -> str:
+    """Return a shell-safe command string for reproducing converter failures."""
+    return " ".join(shlex.quote(arg) for arg in command)
+
+
+def _copy_failure_artifacts(
+    tosa_path: str,
+    artifact_path: str | None,
+    tag_name: str,
+) -> str | None:
+    """Copy the failing TOSA input to the artifact directory, if configured.
+
+    Args:
+        tosa_path: Temporary TOSA flatbuffer passed to model-converter.
+        artifact_path: User-configured intermediate artifact directory.
+        tag_name: Optional delegation tag used to disambiguate artifacts.
+
+    Returns:
+        Path to the copied TOSA file, or None if no artifact path was configured.
+
+    """
+    if not artifact_path:
+        return None
+
+    os.makedirs(artifact_path, exist_ok=True)
+
+    suffix = f"_{tag_name}" if tag_name else ""
+    failure_tosa_path = os.path.join(
+        artifact_path,
+        f"failed_model_converter_input{suffix}.tosa",
+    )
+    shutil.copy2(tosa_path, failure_tosa_path)
+    return failure_tosa_path
+
+
+def _replace_converter_input_path(
+    conversion_command: List[str],
+    input_path: str,
+) -> List[str]:
+    """Return a converter command that uses a preserved TOSA input path."""
+    input_flag_index = conversion_command.index("-i")
+    repro_command = list(conversion_command)
+    repro_command[input_flag_index + 1] = input_path
+    return repro_command
 
 
 def vgf_compile(
@@ -300,11 +351,37 @@ def vgf_compile(
                 env=model_converter_env(),
             )
         except subprocess.CalledProcessError as process_error:
-            conversion_command_str = " ".join(conversion_command)
+            failure_tosa_path = None
+            failure_artifact_error = None
+
+            try:
+                failure_tosa_path = _copy_failure_artifacts(
+                    tosa_path,
+                    artifact_path,
+                    tag_name,
+                )
+            except Exception as artifact_error:
+                failure_artifact_error = artifact_error
+                logger.warning(
+                    "Failed to copy VGF model-converter failure artifacts.",
+                    exc_info=True,
+                )
+            repro_command = (
+                _replace_converter_input_path(conversion_command, failure_tosa_path)
+                if failure_tosa_path
+                else conversion_command
+            )
+            artifact_note = (
+                f"Failure artifact copy failed:\n{failure_artifact_error}\n"
+                if failure_artifact_error
+                else ""
+            )
             raise RuntimeError(
-                f"Vgf compiler ('{conversion_command_str}') failed with error:\n \
-                {process_error.stderr.decode()}\n \
-                Stdout:\n{process_error.stdout.decode()}"
+                "Vgf compiler failed.\n"
+                f"Repro command:\n  {_format_repro_command(repro_command)}\n"
+                f"{artifact_note}"
+                f"Stderr:\n{process_error.stderr.decode()}\n"
+                f"Stdout:\n{process_error.stdout.decode()}"
             )
 
         if artifact_path:

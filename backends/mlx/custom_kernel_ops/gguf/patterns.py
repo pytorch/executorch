@@ -17,10 +17,11 @@ linear/embedding to::
 These handlers match that ``dequantize_gguf -> linear/embedding`` subgraph and
 lower it without materializing the dequantized weight:
 
-* **Q6_K** -> fused custom Metal kernels in :mod:`.q6k`.
-* **Q5_K** -> fused custom Metal kernels in :mod:`.q5k`.
-* **Q4_K** -> fused custom Metal kernels in :mod:`.q4k` (default), or the legacy
-  MLX-native repack path when ``ET_MLX_EMIT_DIRECT_GGUF=0``.
+* **Q4_K** / **Q5_K** -> MLX-native repack path by default; the fused custom
+  Metal kernels in :mod:`.q4k` / :mod:`.q5k` when ``ET_MLX_EMIT_DIRECT_GGUF=1``.
+* **Q6_K** -> MLX-native repack path when its sub-blocks merge to an
+  MLX-supported group size (>= 32), else the fused kernels in :mod:`.q6k`;
+  ``ET_MLX_EMIT_DIRECT_GGUF=1`` forces fused.
 
 All cover linear and embedding.
 
@@ -43,7 +44,8 @@ from executorch.backends.mlx.pattern_utils import has_single_user, match_target
 from torch.export.exported_program import ExportedProgram
 from torch.fx.node import Node
 
-# Quant types each pattern can lower (both via fused custom Metal kernels).
+# Quant types each pattern can lower (MLX-native repack by default, or fused
+# custom Metal kernels via ``ET_MLX_EMIT_DIRECT_GGUF=1``).
 _LINEAR_TYPES = {"q4_k", "q5_k", "q6_k"}
 _EMBEDDING_TYPES = {"q4_k", "q5_k", "q6_k"}
 

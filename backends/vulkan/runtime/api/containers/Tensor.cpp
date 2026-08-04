@@ -810,10 +810,21 @@ void vTensorStorage::transition(
       dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     }
 
+    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
+
+    // WAR hazard: the read-only source access mask yields an execution-only
+    // dependency that some drivers may drop, so widen it to a full memory
+    // barrier to keep the write from racing the prior read.
+    const bool prev_read = (prev_access & vkapi::MemoryAccessType::READ) != 0;
+    if (prev_read && !prev_written && cur_written) {
+      src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      src_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+
     pipeline_barrier.stage.src |= src_stage;
     pipeline_barrier.stage.dst |= dst_stage;
-
-    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
 
     if (image_) {
       pipeline_barrier.images.emplace_back(

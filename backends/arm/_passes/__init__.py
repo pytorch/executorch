@@ -81,6 +81,7 @@ from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # no
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
+from .decompose_prelu_pass import DecomposePReLUPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
@@ -101,6 +102,9 @@ from .decompose_tosa_unsupported_clamp_pass import (  # noqa
 )
 from .decompose_tril_pass import DecomposeTrilPass  # noqa
 from .decompose_unfold_to_gather_pass import DecomposeUnfoldToGatherPass  # noqa
+from .decompose_unsupported_bilinear_resize_pass import (  # noqa
+    DecomposeUnsupportedBilinearResizePass,
+)
 from .decompose_var_pass import DecomposeVarPass  # noqa
 from .decompose_where_scalar_other_pass import DecomposeWhereScalarOtherPass  # noqa
 from .decorate_fp32_to_int32_casting_pass import DecorateFp32toInt32CastingPass  # noqa
@@ -111,9 +115,12 @@ from .fold_qdq_with_annotated_qparams_pass import (  # noqa
     FoldAndAnnotateQParamsPass,
     QuantizeClampArgumentsPass,
 )
+from .fold_scalar_mul_into_conv_pass import FoldScalarMulIntoConvPass  # noqa
 from .fuse_batch_norm2d_pass import FuseBatchNorm2dPass  # noqa
+from .fuse_consecutive_clamps_pass import FuseConsecutiveClampsPass  # noqa
 from .fuse_consecutive_concat_shapes import FuseConsecutiveConcatShapesPass  # noqa
 from .fuse_consecutive_rescales_pass import FuseConsecutiveRescalesPass  # noqa
+from .fuse_consecutive_slices_pass import FuseConsecutiveSlicesPass  # noqa
 from .fuse_constant_ops_pass import (  # noqa
     ComputeConstantOpsAOTPass,
     FuseConstantArgsPass,
@@ -122,6 +129,7 @@ from .fuse_duplicate_users_pass import FuseDuplicateUsersPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_identical_input_transforms_pass import (  # noqa
     FuseIdenticalInputTransformsPass,
+    NormalizeTransformInputPlaceholdersPass,
 )
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
 from .fuse_view_copy_transform_pass import FuseViewCopyTransformPass  # noqa
@@ -140,6 +148,9 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .move_data_movement_ops_to_smaller_dtype_pass import (  # noqa
+    MoveDataMovementOpsToSmallerDtypePass,
+)
 from .normalize_delegate_io_layout_pass import NormalizeDelegateIOLayoutPass  # noqa
 from .normalize_index_put_bool_index_tensor_pass import (  # noqa
     NormalizeIndexPutBoolIndexTensorPass,

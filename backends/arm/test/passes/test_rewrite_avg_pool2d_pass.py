@@ -6,7 +6,7 @@
 from typing import cast, Dict, Protocol, Tuple
 
 import torch
-from executorch.backends.arm._passes.rewrite_avg_pool2d_pass import RewriteAvgPool2dPass
+from executorch.backends.arm._passes import RewriteAvgPool2dPass
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.backends.test.harness.stages import StageType
@@ -29,7 +29,7 @@ class AvgPool2dWithStride(torch.nn.Module):
 
 class AvgPool2dWithoutStride(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 9, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.avg_pool2d(x, kernel_size=3)
@@ -37,7 +37,7 @@ class AvgPool2dWithoutStride(torch.nn.Module):
 
 class AvgPool2dListKernel(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 8, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.avg_pool2d(x, kernel_size=[2, 3])
@@ -45,7 +45,7 @@ class AvgPool2dListKernel(torch.nn.Module):
 
 class AvgPool2dScalarPadding(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 9, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.avg_pool2d(x, kernel_size=3, stride=2, padding=1)
@@ -53,7 +53,7 @@ class AvgPool2dScalarPadding(torch.nn.Module):
 
 class AvgPool2dWithEmptyStride(torch.nn.Module):
     def get_inputs(self) -> input_t:
-        return (torch.rand(1, 3, 8, 8),)
+        return (torch.rand(1, 3, 8, 9),)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.nn.functional.avg_pool2d(x, kernel_size=[2, 3], stride=[])
@@ -81,9 +81,6 @@ def test_rewrite_avg_pool2d_tosa(module: ModuleWithInputs) -> None:
         },
         pass_list=[RewriteAvgPool2dPass],
     )
-    pipeline.pop_stage(
-        "run_method_and_compare_outputs"
-    )  # Cannot run aten graph with tosa dialect ops
     pipeline.run()
 
 
@@ -119,7 +116,6 @@ def test_rewrite_avg_pool2d_tosa_empty_stride_uses_kernel_size() -> None:
         },
         pass_list=[RewriteAvgPool2dPass],
     )
-    pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
     tosa_node = _get_tosa_avg_pool2d_node(pipeline)

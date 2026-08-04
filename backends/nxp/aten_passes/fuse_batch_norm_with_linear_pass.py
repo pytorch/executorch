@@ -81,7 +81,7 @@ class FuseBatchNormWithLinearPass(PassBase):
                 node_.op == "call_function"
                 and node_.target == torch.ops.aten.linear.default
             )
-            has_single_user = len(node.users) == 1
+            has_single_user = len(node_.users) == 1
 
             return is_linear and has_single_user
 

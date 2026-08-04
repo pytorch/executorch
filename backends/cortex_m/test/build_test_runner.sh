@@ -40,6 +40,7 @@ aten::add.out,\
 aten::clamp.out,\
 aten::mul.out,\
 aten::convolution.out,\
+aten::max_pool2d_with_indices.out,\
 dim_order_ops::_clone_dim_order.out,\
 aten::cat.out,\
 aten::full.out,\

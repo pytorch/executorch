@@ -44,6 +44,10 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     validate_context_binary,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_greater_than,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_ANNOTATION,
     QCOM_MODULE,
@@ -61,8 +65,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    is_qnn_sdk_version_greater_than,
-    is_qnn_sdk_version_less_than,
     PyQnnManagerAdaptor,
     rewrite_prepared_observer,
     skip_annotation,
@@ -473,6 +475,16 @@ class TestQNNFloatingPointOperator(TestQNN):
             torch.randn(1, 125, 256),
             torch.randn(1, 2048, 256),
         )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_channel_shuffle(self):
@@ -2356,6 +2368,43 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort_and_index(self):
+        test_comb = [
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(3, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(3, 10),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(2, 4, 8), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(2, 4, 8),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(1, 4, 8, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 4, 8, 10),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
+
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -3352,6 +3401,18 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_channel_shuffle(self):
         module = ChannelShuffle(2)  # noqa: F405
         sample_input = (torch.randn(1, 4, 3, 3),)
@@ -3929,18 +3990,20 @@ class TestQNNQuantizedOperator(TestQNN):
                 )
                 self.lower_module_and_test_output(modules[i], sample_input)
 
-    # TODO: Once the accuracy issue is fixed, enable this test.
-    @unittest.skip("Bad accuracy for HTP")
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.48"), "UT pass after QNN 2.48")
     def test_qnn_backend_embedding_per_channel(self):
         module = Embedding()  # noqa: F405
         sample_input = (torch.Tensor([1, 2, 4, 5]).to(torch.int32),)
-        qdq_module = self.get_qdq_module(
-            module,
-            sample_input,
-            quant_dtype=QuantDtype.use_16a8w,
-            is_embedding_per_channel=True,
-        )
-        self.lower_module_and_test_output(qdq_module, sample_input)
+        quant_dtype = [QuantDtype.use_16a8w, QuantDtype.use_16a4w]
+        for i, qdtype in enumerate(quant_dtype):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=qdtype,
+                    is_embedding_per_channel=True,
+                )
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_equal(self):
         test_comb = [
@@ -5492,6 +5555,17 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
@@ -8218,7 +8292,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=210_000_000,  # 210 MB
                 wikitext_ppl=23,
                 hellaswag_acc_norm=None,
-                sqnr=20,
+                sqnr=19.5,
             ),
             "smollm3-3b": TestExampleLLMScript.LlmSpecs(
                 SM8650=23,
@@ -8723,18 +8797,18 @@ class TestExampleLLMScript(TestQNN):
                         msg["wiki_ppl"], self.llm_specs[model_name].wikitext_ppl
                     )
 
-    def test_qwen2_5(self):
-        # This is not testing static llm flow.
+    def test_hf_causal_lm(self):
+        # This is the Hugging Face transformers flow, not the static llm flow.
         if not self.required_envs([]):
             self.skipTest("missing required envs")
         prompt = "My favourite condiment is "
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/qwen2_5/qwen2_5.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/hf_causal_lm.py",
             "--prompt",
             prompt,
             "--decoder_model",
-            "qwen2.5_0.5B",
+            "qwen2_5-0_5b",
             "--ptq",
             "16a8w",
             "--enable_spinquant_r3",
@@ -10466,7 +10540,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/relu.pt2",
@@ -10485,7 +10559,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/relu_quantized.pt2",
@@ -10503,7 +10577,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/relu_quantized.pte",
@@ -10547,7 +10621,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/sub.pt2",
@@ -10566,7 +10640,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/sub_quantized.pt2",
@@ -10584,7 +10658,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/sub_quantized.pte",

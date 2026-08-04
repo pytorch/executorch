@@ -16,6 +16,21 @@ install_domains() {
   pip_install --no-build-isolation --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
+configure_pytorch_compiler() {
+  local cxx_version
+  cxx_version=$(/usr/bin/c++ --version | head -n1)
+  if [[ "${cxx_version}" == *clang* ]]; then
+    local clang_major
+    clang_major=$(/usr/bin/c++ -dumpversion | cut -d. -f1)
+    if [[ "${clang_major}" =~ ^[0-9]+$ && "${clang_major}" -lt 16 ]] &&
+      command -v gcc >/dev/null &&
+      command -v g++ >/dev/null; then
+      export CC=gcc
+      export CXX=g++
+    fi
+  fi
+}
+
 install_pytorch_and_domains() {
   git clone https://github.com/pytorch/pytorch.git
 
@@ -33,6 +48,7 @@ install_pytorch_and_domains() {
   if [[ -n "${PYTORCH_BUILD_MAX_JOBS:-}" ]]; then
     export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
   fi
+  configure_pytorch_compiler
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
@@ -40,7 +56,7 @@ install_pytorch_and_domains() {
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=release/2.11
   export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.27
+  TORCHVISION_VERSION=release/0.28
   export TORCHVISION_VERSION
 
   install_domains

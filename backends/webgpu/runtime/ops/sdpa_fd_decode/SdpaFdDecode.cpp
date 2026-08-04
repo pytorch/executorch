@@ -12,6 +12,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -71,70 +73,34 @@ void build_dispatch(
     const char* kernel_name) {
   WGPUDevice device = graph.device();
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
   constexpr uint32_t kMaxEntries = 8;
   if (n_storage + 1u > kMaxEntries) {
     throw std::runtime_error(
         "WebGPU sdpa FlashDecoding: bind group entry count exceeds kMaxEntries");
   }
-  WGPUBindGroupLayoutEntry bgl_entries[kMaxEntries] = {};
   const uint32_t uniform_binding = n_storage;
+  std::vector<utils::BindingSpec> bindings;
+  bindings.reserve(n_storage + 1u);
   for (uint32_t i = 0; i < n_storage; i++) {
-    bgl_entries[i].binding = i;
-    bgl_entries[i].visibility = WGPUShaderStage_Compute;
-    bgl_entries[i].buffer.type = (i < n_rw)
-        ? WGPUBufferBindingType_Storage
-        : WGPUBufferBindingType_ReadOnlyStorage;
+    bindings.push_back(
+        {i,
+         (i < n_rw) ? WGPUBufferBindingType_Storage
+                    : WGPUBufferBindingType_ReadOnlyStorage,
+         storage_bindings[i].buffer,
+         storage_bindings[i].size});
   }
-  bgl_entries[uniform_binding].binding = uniform_binding;
-  bgl_entries[uniform_binding].visibility = WGPUShaderStage_Compute;
-  bgl_entries[uniform_binding].buffer.type = WGPUBufferBindingType_Uniform;
+  bindings.push_back(
+      {uniform_binding,
+       WGPUBufferBindingType_Uniform,
+       uniform_buffer,
+       uniform_size});
 
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = n_storage + 1;
-  bgl_desc.entries = bgl_entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+  utils::ComputePipelineBundle bundle =
+      utils::make_compute_pipeline(device, wgsl_source, bindings);
 
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+  graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, workgroup_count_x, kernel_name});
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  WGPUBindGroupEntry bg_entries[kMaxEntries] = {};
-  for (uint32_t i = 0; i < n_storage; i++) {
-    bg_entries[i].binding = i;
-    bg_entries[i].buffer = storage_bindings[i].buffer;
-    bg_entries[i].size = storage_bindings[i].size;
-  }
-  bg_entries[uniform_binding].binding = uniform_binding;
-  bg_entries[uniform_binding].buffer = uniform_buffer;
-  bg_entries[uniform_binding].size = uniform_size;
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = n_storage + 1;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  graph.add_dispatch({pipeline, bind_group, workgroup_count_x, kernel_name});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   wgpuBufferRelease(uniform_buffer);
 }
 
@@ -185,8 +151,10 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint64_t>(kSdpaFdMaxSplits) * static_cast<uint64_t>(D);
   const uint64_t pml_floats = static_cast<uint64_t>(Hq) *
       static_cast<uint64_t>(kSdpaFdMaxSplits) * 2ull;
-  WGPUBuffer part_o = graph.create_scratch_buffer(po_floats * sizeof(float));
-  WGPUBuffer part_ml = graph.create_scratch_buffer(pml_floats * sizeof(float));
+  WGPUBuffer part_o = graph.acquire_scratch(po_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_o_guard(&graph, part_o);
+  WGPUBuffer part_ml = graph.acquire_scratch(pml_floats * sizeof(float));
+  WebGPUGraph::ScopedScratch part_ml_guard(&graph, part_ml);
 
   // Pass 1: split (Hq*num_splits WGs) -> writes part_o, part_ml.
   FdSplitParams sp = {};
@@ -218,9 +186,13 @@ void sdpa_fd_decode_dispatch(
       static_cast<uint32_t>(split_threads),
       kSdpaFdSplitWorkgroupSizeX,
       "fd_split");
+  const char* split_shader = kSdpaFdSplitWGSL;
+  if (graph.kv_f16()) {
+    split_shader = kSdpaFdSplitHalfWGSL;
+  }
   build_dispatch(
       graph,
-      kSdpaFdSplitWGSL,
+      split_shader,
       split_bindings,
       5,
       2,
