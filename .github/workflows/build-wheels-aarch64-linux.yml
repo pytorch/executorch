@@ -30,7 +30,12 @@ jobs:
       os: linux-aarch64
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
-      with-cuda: disabled
+      # CUDA enabled so the accelerator rows are built and published. The generator
+      # emits one cell per supported CUDA train, and each cell carries its own local
+      # version label so the CPU and accelerator artifacts stay distinguishable. A plain
+      # `pip install executorch` continues to resolve the CPU wheel from the default
+      # index; an accelerator wheel requires pointing at the matching index.
+      with-cuda: enable
       with-rocm: disabled
       python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
 
