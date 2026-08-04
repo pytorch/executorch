@@ -311,7 +311,6 @@ def create_mutable_buffer(
     _validate_graph_signature(exp_program)
 
     persistent_buffer = True
-    exp_program.state_dict[target] = data
 
     graph = exp_program.graph_module.graph
 
@@ -349,9 +348,20 @@ def create_mutable_buffer(
                 break
 
     assert node is not None, "node should be created at this point"
+
+    # torch.fx may rename the node (invalid identifier or collision); the
+    # target, state_dict key and graph signature must follow the assigned name.
+    node.target = node.name
+    if node.name != name:
+        target = node.name[2:] if node.name.startswith("b_") else node.name
+        if target in exp_program.state_dict:
+            graph.erase_node(node)
+            raise RuntimeError(f"Buffer target '{target}' already exists in state_dict")
+    exp_program.state_dict[target] = data
+
     node.meta["val"] = fake_tensor
     buffer_input_spec = InputSpec(
-        InputKind.BUFFER, TensorArgument(name), target, persistent_buffer
+        InputKind.BUFFER, TensorArgument(node.name), target, persistent_buffer
     )
     input_specs.insert(node_index, buffer_input_spec)
 
@@ -367,7 +377,7 @@ def create_mutable_buffer(
 
     output_specs = exp_program.graph_signature.output_specs
     mutation_output_spec = OutputSpec(
-        OutputKind.BUFFER_MUTATION, TensorArgument(name), target
+        OutputKind.BUFFER_MUTATION, TensorArgument(node.name), target
     )
     output_specs.insert(output_index, mutation_output_spec)
 
