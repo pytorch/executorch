@@ -166,6 +166,12 @@ struct ExecutionState {
   // Init chain flag: when true, set_tensor allows writing to constants
   bool is_init_chain{false};
 
+  // Host-side position for the current execute, cached by the position Tid so
+  // the off-graph update_and_attend handler reads it once per step instead of
+  // one device->host sync per layer. Cleared by reset(): the same Tid carries a
+  // new value each step, so it must not persist across executes.
+  std::optional<std::pair<uint32_t, int>> cached_position;
+
   // Logging context
   size_t current_op_idx{0};
   const char* current_op_name{nullptr};
@@ -262,6 +268,7 @@ struct ExecutionState {
     for (auto& v : values) {
       v = std::nullopt;
     }
+    cached_position = std::nullopt;
   }
 
   static inline const char* dtype_str(::mlx::core::Dtype dtype) {

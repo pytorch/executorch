@@ -311,13 +311,18 @@ inline void exec_update_and_attend(
   // the query side (q, scale) and calls SDPA.
   const array& q = st.const_tensor_ref(n.q);
   // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. This is a device->host sync per node, i.e.
-  // n_layers stalls per step -- not one -- even though every layer of a step
-  // sees the same position. The fix is for position to arrive as a host-side
-  // constant instead of a graph tensor; this is the single spot to change.
-  array pos = astype(st.const_tensor_ref(n.position), int32, s);
-  eval(pos);
-  const int position = pos.data<int32_t>()[0];
+  // graph + integer bookkeeping. Every layer of a step sees the same position
+  // tensor (same Tid), so read + sync it once per execute and reuse across
+  // layers; reset() clears the cache so the next step re-reads its new value.
+  int position;
+  if (st.cached_position && st.cached_position->first == n.position.idx) {
+    position = st.cached_position->second;
+  } else {
+    array pos = astype(st.const_tensor_ref(n.position), int32, s);
+    eval(pos);
+    position = pos.data<int32_t>()[0];
+    st.cached_position = std::make_pair(n.position.idx, position);
+  }
   AttendSpec spec = st.cache->update_and_fetch(
       *n.layer_id,
       position,
