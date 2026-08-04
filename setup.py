@@ -387,6 +387,12 @@ def _write_cmake_version_file(destination: str) -> None:
     contents = f"""\
 set(PACKAGE_VERSION "{numeric}")
 
+# The full version this package was built from. PACKAGE_VERSION drops a prerelease suffix
+# and a local version label because neither is a CMake version component, so two different
+# prereleases of one release compare equal. A consumer that must pair with one exact build
+# compares this instead.
+set(EXECUTORCH_BUILD_VERSION "{version}")
+
 if(NOT PACKAGE_FIND_VERSION)
   # No version requested, so any version satisfies it.
   set(PACKAGE_VERSION_COMPATIBLE TRUE)
