@@ -35,7 +35,7 @@ class NormalizeWhileInitialArgsPass(ArmPass):
                 return (val * 2, buffer.clone())
             while_loop(cond, body, (val, buffer), ())
 
-    The clone is neccessary to avoid issues with aliasing.
+    The clone is necessary to avoid issues with aliasing.
     """
 
     def __init__(self, use_exir_clone: bool, *args, **kwargs) -> None:
