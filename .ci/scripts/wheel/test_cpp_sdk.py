@@ -1255,19 +1255,11 @@ def test_device_code_covers_claimed_architectures() -> None:
         return
 
     package_dir = _installed_package_dir()
-    libraries = [
-        library
-        for library in _shipped_shared_objects(package_dir)
-        if "cuda" in library.name or "aoti" in library.name
-    ]
-    assert (
-        libraries or not accelerator_row
-    ), "this is an accelerator row but the wheel ships no accelerator libraries"
-    if not libraries:
-        print(
-            "- this wheel ships no accelerator libraries and is not an accelerator row"
-        )
-        return
+    # Every shipped library is inspected rather than a subset chosen by file name. A
+    # library carrying device code under an unexpected name would otherwise be skipped,
+    # which is the failure this check exists to catch.
+    libraries = _shipped_shared_objects(package_dir)
+    assert libraries, f"no shared libraries found under {package_dir}"
 
     # Each library is checked on its own. Unioning architectures across libraries would let
     # one library's device code stand in for another's, which is the case worth catching.
