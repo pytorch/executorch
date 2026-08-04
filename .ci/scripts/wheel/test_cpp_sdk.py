@@ -351,10 +351,7 @@ def test_shipped_libraries_load() -> None:
             # list instead would hide a genuinely under-linked symbol on the same wheel.
             # The leading-underscore forms matter too: nvcc emits host stubs such as
             # __cudaRegisterFatBinary for every compiled .cu file.
-            and not (
-                skip_undefined
-                and re.search(_CUDA_SYMBOL, line)
-            )
+            and not (skip_undefined and re.search(_CUDA_SYMBOL, line))
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
@@ -1087,9 +1084,17 @@ def test_documented_example_compiles(work_dir: Path) -> None:
 
     build_dir = work_dir / "documented-build"
     configure = subprocess.run(
-        ["cmake", "-S", str(source_dir), "-B", str(build_dir),
-         f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}"],
-        capture_output=True, text=True, check=False,
+        [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert configure.returncode == 0, (
         "the documented example does not configure against the installed wheel: "
@@ -1097,7 +1102,9 @@ def test_documented_example_compiles(work_dir: Path) -> None:
     )
     build = subprocess.run(
         ["cmake", "--build", str(build_dir)],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert build.returncode == 0, (
         "the documented example does not compile against the installed wheel: "
@@ -1149,6 +1156,81 @@ def test_python_extension_links_shared_runtime() -> None:
         )
 
 
+def _requested_cuda_architectures() -> list:
+    """GPU architectures this wheel was built to support, from the build environment.
+
+    Empty when the build did not name any, which is the case for a CPU wheel and for a local
+    build that used detection.
+    """
+    raw = os.environ.get("CMAKE_CUDA_ARCHITECTURES", "")
+    if not raw:
+        match = re.search(
+            r"-DCMAKE_CUDA_ARCHITECTURES=([^\s]+)", os.environ.get("CMAKE_ARGS", "")
+        )
+        raw = match.group(1) if match else ""
+    if not raw:
+        return []
+    found = []
+    for entry in raw.replace(",", ";").split(";"):
+        number = re.match(r"(\d+)", entry.strip())
+        # A "-virtual" entry asks for a portable format rather than compiled code for that
+        # architecture, so it is not expected to appear as device code.
+        if number and "virtual" not in entry:
+            found.append(number.group(1))
+    return found
+
+
+def test_device_code_covers_claimed_architectures() -> None:
+    """Every GPU architecture the row claims must be present as compiled device code.
+
+    A wheel whose device code covers only the build machine's GPU installs on all the hardware
+    the row promises and then fails when a model runs. That failure appears late and looks like
+    a model problem rather than a packaging one, so it is worth catching here.
+    """
+    claimed = _requested_cuda_architectures()
+    if not claimed:
+        print("- this build named no GPU architectures, skipping the device code check")
+        return
+    if shutil.which("cuobjdump") is None:
+        print("- cuobjdump is not available, skipping the device code check")
+        return
+
+    package_dir = _installed_package_dir()
+    libraries = [
+        library
+        for library in _shipped_shared_objects(package_dir)
+        if "cuda" in library.name or "aoti" in library.name
+    ]
+    if not libraries:
+        print(
+            "- this wheel ships no accelerator libraries, skipping the device code check"
+        )
+        return
+
+    present = set()
+    for library in libraries:
+        result = subprocess.run(
+            ["cuobjdump", "--list-elf", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            continue
+        present.update(re.findall(r"sm_(\d+)", result.stdout))
+
+    missing = sorted(set(claimed) - present, key=int)
+    assert not missing, (
+        f"this row claims GPU architectures {sorted(claimed, key=int)} but the shipped "
+        f"libraries only carry device code for {sorted(present, key=int)}; a model would "
+        f"fail on hardware needing {missing}"
+    )
+    print(
+        f"\u2713 device code covers every claimed GPU architecture: "
+        f"{sorted(claimed, key=int)}"
+    )
+
+
 def run_tests(work_dir: Path) -> None:
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
@@ -1162,6 +1244,7 @@ def run_tests(work_dir: Path) -> None:
     test_single_kernel_registration()
     test_single_xnnpack_delegate()
     test_single_cuda_delegate()
+    test_device_code_covers_claimed_architectures()
     test_cpp_consumer(work_dir)
     test_documented_example_compiles(work_dir)
     test_component_targets_link(work_dir)
