@@ -326,13 +326,31 @@
       "displayName": "Build ExecuTorch for riscv64 Linux (cross-compile)",
       "inherits": ["common"],
       "cacheVariables": {
-        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv64_linux.cmake",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv_linux.cmake",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/riscv/riscv64-linux-gnu-toolchain.cmake"
       },
       "condition": {
         "lhs": "${hostSystemName}",
         "type": "equals",
         "rhs": "Linux"
+      }
+    },
+    {
+      "name": "riscv64-baremetal",
+      "displayName": "Build ExecuTorch for riscv64 baremetal (cross-compile)",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv_baremetal.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/riscv/riscv64-unknown-elf-toolchain.cmake"
+      }
+    },
+    {
+      "name": "riscv32-baremetal",
+      "displayName": "Build ExecuTorch for riscv32 baremetal (cross-compile)",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/riscv_baremetal.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/riscv/riscv32-unknown-elf-toolchain.cmake"
       }
     },
     {
