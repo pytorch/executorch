@@ -208,5 +208,116 @@ class TestQuantizeRoundtrip(unittest.TestCase):
                 load_prequantized_model(tmpdir, max_seq_len=TINY_CONFIG.max_seq_len)
 
 
+class TestSerializerFormatDispatch(unittest.TestCase):
+    """CPU-only tests for load_quantized_state_dict format auto-detection.
+
+    Unlike the roundtrip tests above (which need CUDA for
+    Int4TilePackedTo4dTensor), these use a min/max Int4Tensor that quantizes on
+    CPU, so they exercise the modern/legacy/unknown dispatch without a GPU.
+    """
+
+    @staticmethod
+    def _cpu_subclass():
+        from executorch.extension.llm.export.quant import (
+            QuantConfig,
+            quantize_stream,
+            QuantRecipe,
+            QuantRule,
+        )
+
+        model = torch.nn.Sequential(torch.nn.Linear(64, 32, bias=False))
+        model.eval().to(torch.bfloat16)
+        recipe = QuantRecipe(
+            rules=[
+                QuantRule(
+                    r".*\.weight",
+                    QuantConfig(
+                        bits=4, group_size=32, symmetric=False, method="min_max"
+                    ),
+                )
+            ]
+        )
+        # Serializer round-trip: use the serialization form (torchao-native
+        # Int4Tensor from quantize_stream), which is what quantize_and_save
+        # writes. quantize_model yields an ExportableInt4Tensor (in-memory form)
+        # that torchao's flatten cannot serialize.
+        params = ((n, p.data) for n, p in model.named_parameters())
+        return next(iter(quantize_stream(params, recipe)))
+
+    def _assert_subclass_equal(self, a, b):
+        names_a, attrs_a = a.__tensor_flatten__()
+        names_b, attrs_b = b.__tensor_flatten__()
+        self.assertIs(type(a), type(b))
+        self.assertEqual(names_a, names_b)
+        for name in names_a:
+            self.assertTrue(torch.equal(getattr(a, name), getattr(b, name)))
+        self.assertEqual(attrs_a, attrs_b)
+
+    def test_modern_roundtrip(self):
+        """Modern (torchao) bundle: save -> load reconstructs the subclass."""
+        from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+            load_quantized_state_dict,
+            save_quantized_tensors,
+        )
+
+        key, qt = self._cpu_subclass()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "model.safetensors")
+            save_quantized_tensors([(key, qt)], path)
+            out = load_quantized_state_dict(path)
+        self._assert_subclass_equal(qt, out[key])
+
+    def test_legacy_roundtrip(self):
+        """Legacy (pre-torchao) CUDA-format bundle still loads via fallback.
+
+        Fabricates the old on-disk layout (inner tensors as ``{key}.__{name}``
+        plus a ``quantization`` JSON header) and checks the subclass round-trips
+        and plain tensors pass through.
+        """
+        from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+            load_quantized_state_dict,
+        )
+        from safetensors.torch import save_file
+
+        def to_json_attr(val):
+            if isinstance(val, torch.Size):
+                return list(val)
+            if isinstance(val, torch.dtype):
+                return "torch." + str(val).split(".")[-1]
+            return val
+
+        key, qt = self._cpu_subclass()
+        names, attrs = qt.__tensor_flatten__()
+        flat = {f"{key}.__{n}": getattr(qt, n) for n in names}
+        flat["norm.weight"] = torch.ones(4, dtype=torch.bfloat16)
+        header = {
+            key: {
+                "_type": type(qt).__qualname__,
+                **{k: to_json_attr(v) for k, v in attrs.items()},
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "model.safetensors")
+            save_file(flat, path, metadata={"quantization": json.dumps(header)})
+            out = load_quantized_state_dict(path)
+
+        self._assert_subclass_equal(qt, out[key])
+        self.assertTrue(torch.equal(out["norm.weight"], flat["norm.weight"]))
+
+    def test_unknown_format_raises(self):
+        """A bundle with neither header key raises a clear ValueError."""
+        from executorch.examples.models.qwen3_5_moe.quantize_and_save import (
+            load_quantized_state_dict,
+        )
+        from safetensors.torch import save_file
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "model.safetensors")
+            save_file({"x": torch.ones(2)}, path, metadata={"foo": "bar"})
+            with self.assertRaises(ValueError):
+                load_quantized_state_dict(path)
+
+
 if __name__ == "__main__":
     unittest.main()

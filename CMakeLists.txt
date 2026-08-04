@@ -79,6 +79,10 @@ project(executorch
         VERSION "${ET_VERSION_MAJOR}.${ET_VERSION_MINOR}.${ET_VERSION_PATCH}"
 )
 
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
+
 # Hexagon toolchain with release build complains about code in third party
 # libraries. Must come after project(), which runs the toolchain file that sets
 # CMAKE_SYSTEM_PROCESSOR, and before add_subdirectory(third-party).
@@ -899,6 +903,8 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
   endif()
   list(APPEND _executorch_extensions tokenizers)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
+  list(APPEND _executorch_extensions extension_llm_cache)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)

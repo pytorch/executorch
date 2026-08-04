@@ -12,6 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -587,3 +588,37 @@ def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
             quantize=True,
             u55_subset=True,
         ).run()
+
+
+@common.parametrize(
+    "test_data",
+    IndexTensor.test_data_fp | IndexTensor.test_data_bf16 | IndexTensor.test_data_fp16,
+)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_no_quant(test_data: input_params):
+    test_input = test_data
+    pipeline = VgfPipeline[input_params](
+        IndexTensor(),
+        test_input,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        atol=IndexTensorTestCommon.atol,
+        rtol=IndexTensorTestCommon.rtol,
+        tosa_extensions=["bf16"],
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", IndexTensor.test_data_int | IndexTensor.test_data_fp)
+@common.SkipIfNoModelConverter
+def test_index_tensor_vgf_quant(test_data: input_params):
+    test_input = test_data
+    pipeline = VgfPipeline[input_params](
+        IndexTensor(),
+        test_input,
+        IndexTensorTestCommon.aten_op,
+        IndexTensorTestCommon.exir_op,
+        quantize=True,
+    )
+    pipeline.run()

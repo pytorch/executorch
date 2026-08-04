@@ -397,43 +397,47 @@ class ConvolutionConfig(GEMMConfig):
             return False
         return True
 
+    def _get_act_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        act_input = get_input_node(node, self.act_idx)
+        is_transpose = node.args[6]
+        if (
+            precision != ConfigPrecisionType.FP32
+            and not is_transpose
+            and is_node(act_input)
+            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
+            and len(act_input.users) == 1
+        ):
+            conv_padding = cast(List[int], node.args[4])
+            is_1d = len(conv_padding) == 1
+            is_2d = len(conv_padding) == 2
+
+            pad_value = (
+                cast(float, act_input.args[2]) if len(act_input.args) > 2 else 0.0
+            )
+            pad_amounts = cast(List[int], act_input.args[1])
+            spatial_only = (
+                is_1d
+                and (len(pad_amounts) <= 2 or all(a == 0 for a in pad_amounts[2:]))
+            ) or (
+                is_2d
+                and (len(pad_amounts) <= 4 or all(a == 0 for a in pad_amounts[4:]))
+            )
+
+            if pad_value == 0.0 and all(a >= 0 for a in pad_amounts) and spatial_only:
+                valid, deps = super()._get_act_deps(act_input, ep, precision)
+                if valid:
+                    return (True, [act_input, *deps])
+
+        return super()._get_act_deps(node, ep, precision)
+
     def supported_precision_types(self):
         return [
             ConfigPrecisionType.FP32,
             ConfigPrecisionType.STATIC_QUANT,
             ConfigPrecisionType.DYNAMIC_QUANT,
         ]
-
-    def _get_act_deps(
-        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
-    ) -> Tuple[bool, List[torch.fx.Node]]:
-        # An even-kernel 'same'-padding conv decomposes into
-        # dequant -> constant_pad_nd -> convolution. Pull the zero-valued spatial
-        # pad into this conv's partition so it delegates as a quantized
-        # XNNStaticConstantPad alongside the conv (InsertPadQDQPass completes the
-        # pad's quantization); otherwise the pad is orphaned and the conv is left
-        # with an unquantized activation.
-        # Only supporting 2D, non-transposed convs
-        is_transpose = node.args[6]
-        is_2d_conv = len(cast(List[int], node.args[4])) == 2
-        act_input = get_input_node(node, self.act_idx)
-        if (
-            precision != ConfigPrecisionType.FP32
-            and not is_transpose
-            and is_2d_conv
-            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
-            and len(act_input.users) == 1
-            and is_dequant(get_input_node(act_input, 0))
-        ):
-            pad_value = act_input.args[2] if len(act_input.args) > 2 else 0
-            pad_amounts = cast(List[int], act_input.args[1])
-            spatial_only = len(pad_amounts) <= 4 or all(a == 0 for a in pad_amounts[4:])
-            if pad_value == 0 and spatial_only:
-                valid, deps = super()._get_act_deps(act_input, ep, precision)
-                if valid:
-                    return (True, [act_input, *deps])
-
-        return super()._get_act_deps(node, ep, precision)
 
 
 class AddmmConfig(GEMMConfig):

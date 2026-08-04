@@ -36,6 +36,11 @@ bool is_nchw_to_bitw8_shader(const vkapi::ShaderInfo& shader) {
   return shader_prefix_str == kNchwToBitw8PrefixStr;
 }
 
+bool is_coalesced_image_to_nchw_shader(const vkapi::ShaderInfo& shader) {
+  return shader.kernel_name.find("image_to_nchw_coalesced") !=
+      std::string::npos;
+}
+
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
@@ -94,19 +99,26 @@ utils::uvec3 tensor_to_staging_global_wg_size(
 
   utils::uvec3 global_wg_size = graph->create_global_wg_size(in_tensor);
 
-  // Normally, the image_to_nchw shader is structured so that each thread reads
-  // one texel from the input texture and writes each component of the texel
-  // into the corresponding location in the output buffer. However, this shader
-  // is structured slightly differently in that each thread writes out a
-  // complete 32 bit integer (containing 4 packed 8-bit integers) into the
-  // output buffer. Therefore, the global work group size for this shader will
-  // be the number of elements in the output buffer divided by 4, as opposed to
-  // the extents of the input texture.
+  // The bitw8 shader writes out a complete 32 bit integer (containing 4 packed
+  // 8-bit integers) per thread, so its global work group size is the number of
+  // elements in the output buffer divided by 4.
   if (is_bitw8_shader(shader)) {
     const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
         graph->get_staging(out_staging)->numel() / 4);
     global_wg_size = {buffer_len, 1, 1};
+  } else if (is_coalesced_image_to_nchw_shader(shader)) {
+    // The coalesced (output-centric) image_to_nchw variant dispatches one
+    // thread per output (staging) element so that consecutive threads write
+    // consecutive NCHW offsets, keeping writes to the PCIe-backed staging
+    // buffer fully coalesced. This mirrors the buffer_to_nchw path, whose
+    // global size is already numel-based via create_global_wg_size.
+    const uint32_t buffer_len = utils::safe_downcast<uint32_t>(
+        graph->get_staging(out_staging)->numel());
+    global_wg_size = {buffer_len, 1, 1};
   }
+  // Otherwise (texel-centric image_to_nchw, used on unified-memory GPUs) keep
+  // the default texel-grid global size from create_global_wg_size: one thread
+  // per texture texel.
 
   return global_wg_size;
 }
