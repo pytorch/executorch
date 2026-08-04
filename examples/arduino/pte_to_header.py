@@ -16,6 +16,7 @@ defines that section, so this emits a plain rodata array instead.
 
 import argparse
 import os
+import re
 
 BANNER = """\
 /*
@@ -30,7 +31,25 @@ BANNER = """\
 """
 
 
+C_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def c_identifier(value: str) -> str:
+    """argparse type that rejects names that cannot appear in C++."""
+    if not C_IDENTIFIER.match(value):
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a C identifier; it is emitted verbatim as an "
+            "array name, so anything else fails to compile"
+        )
+    return value
+
+
 def to_header(buffer: bytes, name: str = "model_pte", source: str = "a .pte") -> str:
+    if not C_IDENTIFIER.match(name):
+        raise ValueError(
+            f"--name must be a C identifier, got {name!r}. The value is emitted "
+            "verbatim as an array name, so anything else fails to compile."
+        )
     out = [BANNER.format(source=source)]
     out.append("#pragma once")
     out.append("#include <cstddef>")
@@ -49,7 +68,13 @@ def main():
     parser.add_argument("-p", "--pte", required=True, help="Input .pte file")
     parser.add_argument("-o", "--output", required=True, help="Output .h file")
     parser.add_argument("-d", "--outdir", default="", help="Directory for --output")
-    parser.add_argument("-n", "--name", default="model_pte", help="C array name")
+    parser.add_argument(
+        "-n",
+        "--name",
+        default="model_pte",
+        type=c_identifier,
+        help="C array name (must be a valid C identifier)",
+    )
     args = parser.parse_args()
 
     out = os.path.join(args.outdir, args.output) if args.outdir else args.output

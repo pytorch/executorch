@@ -174,7 +174,34 @@ echo "[3/7] Portable kernels copied"
 # the Cortex-M op set plus the portable ops a quantized CNN still needs.
 # Override with ROOT_OPS="aten::foo.out,..." or ALL_OPS=1 when the target has
 # room to spare.
-TORCHGEN=$("$PYTHON" -c "import torchgen, os; print(os.path.dirname(torchgen.__file__))")
+if ! TORCHGEN=$("$PYTHON" -c "import torchgen, os; print(os.path.dirname(torchgen.__file__))" 2>/dev/null); then
+  echo "ERROR: cannot import torchgen with $PYTHON."
+  echo "       The kernel registration codegen needs it. Run ./install_executorch.sh,"
+  echo "       or set PYTHON=... to an interpreter that has ExecuTorch installed."
+  exit 1
+fi
+for yaml in "$TORCHGEN/packaged/ATen/native/tags.yaml" \
+            "$TORCHGEN/packaged/ATen/native/native_functions.yaml"; do
+  if [ ! -f "$yaml" ]; then
+    echo "ERROR: $yaml is missing from the torchgen at $TORCHGEN."
+    echo "       That install looks incomplete; reinstall with ./install_executorch.sh."
+    exit 1
+  fi
+done
+
+# The exporter and the runtime must be the same ExecuTorch. A pip release wheel
+# can be months behind this checkout, and a model exported against one schema
+# fails at Method::execute against a library built from another.
+ET_PY=$("$PYTHON" -c "import executorch; print(next(iter(executorch.__path__), ''))" 2>/dev/null || echo "")
+case "$ET_PY" in
+  "$ET_ROOT"*) ;;
+  "") echo "  NOTE: no executorch Python package found; the library will build but" ;
+      echo "        you cannot export models with this interpreter." ;;
+  *)  echo "  WARNING: $PYTHON imports executorch from $ET_PY, not $ET_ROOT." ;
+      echo "           Models exported with it may not match this library. See" ;
+      echo "           'Keeping this working' in examples/arduino/README.md." ;;
+esac
+
 CODEGEN_OUT="$ET_SRC/codegen"
 CORTEX_M_YAML="$ET_ROOT/backends/cortex_m/ops/operators.yaml"
 mkdir -p "$CODEGEN_OUT"

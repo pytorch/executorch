@@ -450,6 +450,19 @@ curl -sL http://download.tensorflow.org/data/speech_commands_v0.02.tar.gz \
 
 That is 1.2 GB extracted instead of 2.3 GB downloaded plus 2.4 GB unpacked.
 
+`download.tensorflow.org` serves no usable HTTPS -- its certificate does not
+cover that hostname -- which is why the URL is plain HTTP and why
+`torchaudio.datasets.SPEECHCOMMANDS` uses HTTP for it too. If transport
+integrity matters, download the archive first and check it against the SHA-256
+torchaudio pins for v0.02 before extracting:
+
+```bash
+af14739ee7dc311471de98f5f9d2c9191b18aedfe957f4a6ff791c709868ff58
+```
+
+You only need this to retrain. The exported model and its checkpoint are both
+checked in, so nothing here is required to build the library.
+
 The DS-CNN KWS benchmark uses 12 output classes (silence, unknown, plus
 10 keywords).  The Arduino export script trains the 10 keyword classes:
 yes, no, up, down, left, right, on, off, stop, go.
