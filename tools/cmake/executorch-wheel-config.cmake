@@ -112,6 +112,11 @@ set(EXECUTORCH_FOUND OFF)
 # A wheel ships a single file per library, named for its SONAME, so the major is
 # read from the shipped names rather than hardcoded here. Sets <output> to the
 # full path, or to an empty string when the wheel does not carry that library.
+#
+# This depends on an invariant on the build side: every library the wheel ships carries a
+# VERSION and SOVERSION, so its file name ends in a major. A library built without them ships
+# as a bare .so, and while the glob below still finds it, nothing then pins the major a
+# consumer linked against, which is the guarantee the SONAME exists to provide.
 function(_executorch_find_library _output _base_name)
   set(${_output}
       ""
