@@ -13,7 +13,7 @@ from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 
 from executorch.backends.nxp.tests.model_output_comparator import (
-    NumericalStatsOutputComparator,
+    AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.models import SoftmaxModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
@@ -66,15 +66,14 @@ class TestSoftmax:
             expected_delegated_ops={Softmax: 1},
             expected_non_delegated_ops={},
         )
-        output_comparator = NumericalStatsOutputComparator(
-            max_mse_error=0.001, is_classification_task=True
-        )
+        output_comparator = AllCloseOutputComparator(atol=1)
         lower_run_compare(
             model,
             input_shape,
             graph_verifier,
             request,
             output_comparator=output_comparator,
+            remove_quant_io_ops=True,
         )
 
     @pytest.mark.parametrize(

@@ -53,9 +53,8 @@ def test_cifarnet(mocker, request, cifar_test_files, channels_last):
         model.to(memory_format=torch.channels_last)
         input_spec.dim_order = torch.channels_last
 
-    # Allow MSE up to the theoretical error introduced by 1-bit quantization (1/256).
     comparator = NumericalStatsOutputComparator(
-        max_mse_error=0.00390625,
+        max_mse_error=1.53e-5,
         is_classification_task=True,
     )
     lower_run_compare(
@@ -82,9 +81,8 @@ def test_cifarnet_qat(mocker, request, cifar_test_files):
 
     input_shape = (1, 3, 32, 32)
 
-    # Allow MSE up to the theoretical error introduced by 1-bit quantization (1/256).
     comparator = NumericalStatsOutputComparator(
-        max_mse_error=0.00390625,
+        max_mse_error=1.53e-5,
         is_classification_task=True,
     )
     lower_run_compare(
