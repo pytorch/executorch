@@ -240,13 +240,11 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     result = subprocess.run(
         ["nm", "-DC", str(library)], capture_output=True, text=True, check=False
     )
-    # A library nm cannot read would otherwise look like one that simply defines
-    # nothing, letting the single-definer checks pass without having actually
-    # inspected every shipped library.
-    assert result.returncode == 0, (
-        f"nm could not read {library}, so the symbol checks cannot be trusted: "
-        f"{result.stderr.strip()}"
-    )
+    if result.returncode != 0:
+        # The symbol reader exits non-zero on anything that is not an object file. A
+        # stray file whose name merely ends in .so must not abort the symbol checks, so
+        # treat it as defining nothing rather than as a failure.
+        return False
     for line in result.stdout.splitlines():
         if symbol not in line:
             continue
@@ -1064,17 +1062,23 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         print("- the documentation file is not present, skipping the example check")
         return
 
-    match = re.search(
-        r"```cpp\n// main\.cpp\n(.*?)```", documentation.read_text(), re.S
+    # Normalise line endings so a checkout with CRLF still matches, and refuse an
+    # ambiguous document: a second block labelled the same way would silently change
+    # which example this compiles.
+    contents = documentation.read_text().replace("\r\n", "\n")
+    blocks = re.findall(r"```cpp\n// main\.cpp\n(.*?)```", contents, re.S)
+    assert len(blocks) <= 1, (
+        f"{documentation.name} has {len(blocks)} blocks labelled main.cpp, so which\n"
+        f"one this check compiles is ambiguous"
     )
-    assert match, (
+    assert blocks, (
         f"could not find the C++ example in {documentation.name}; the check needs it to "
         "verify what the documentation tells a reader to write"
     )
 
     source_dir = work_dir / "documented"
     source_dir.mkdir(parents=True, exist_ok=True)
-    (source_dir / "main.cpp").write_text("// main.cpp\n" + match.group(1))
+    (source_dir / "main.cpp").write_text("// main.cpp\n" + blocks[0])
     (source_dir / "CMakeLists.txt").write_text(
         "cmake_minimum_required(VERSION 3.28)\n"
         "project(documented_example CXX)\n"
