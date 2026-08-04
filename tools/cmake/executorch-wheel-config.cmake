@@ -109,8 +109,7 @@ function(_executorch_find_library _output _base_name)
       PARENT_SCOPE
   )
   file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
-       "${_executorch_package_root}/lib/${_base_name}.so.[0-9]"
-       "${_executorch_package_root}/lib/${_base_name}.so.[0-9][0-9]"
+       "${_executorch_package_root}/lib/${_base_name}.so.*"
   )
   list(LENGTH _matches _count)
   if(_count EQUAL 0)
