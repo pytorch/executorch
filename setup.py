@@ -147,8 +147,12 @@ def _cuda_dependencies() -> List[str]:
     the CPU rows are unaffected.
     """
     train = _cuda_train()
-    if not train or not _is_env_flag_enabled("EXECUTORCH_BUILD_CUDA"):
+    if not train:
         return []
+    # The CUDA train alone decides this. An earlier version also required
+    # EXECUTORCH_BUILD_CUDA, but that reaches the build as a CMake argument rather than an
+    # environment variable, so the condition was never true and a CUDA wheel shipped with no
+    # declared CUDA dependencies at all.
     packages = _CUDA_RUNTIME_PACKAGES.get(train[:2])
     if not packages:
         return []
