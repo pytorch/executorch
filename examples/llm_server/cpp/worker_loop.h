@@ -126,10 +126,14 @@ inline void worker_handle_request(
   if (top_k_value < 0 || top_k_value > std::numeric_limits<int32_t>::max()) {
     throw std::runtime_error("top_k must fit in a nonnegative int32");
   }
+  // seed == 0 means "unset" (SamplingConfig::seed == 0 -> worker picks a random
+  // seed), so 0 is intentionally accepted here even though the HTTP layer
+  // treats 0 as the omitted sentinel and rejects an explicit seed=0. A JSON
+  // seed >= 2^63 won't fit int64_t and is rejected at parse time above; the
+  // HTTP layer caps the same range at 2^63 - 1 with a structured error.
   if (seed_value < 0) {
     throw std::runtime_error("seed must be nonnegative");
   }
-  // Stop strings
   // Stop strings (the request's `stop` sequences): terminate at the token
   // boundary where one appears so we don't generate to EOS/max_new past it. The
   // control plane also enforces these as a backstop.
