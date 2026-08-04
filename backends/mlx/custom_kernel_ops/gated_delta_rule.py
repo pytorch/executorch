@@ -53,6 +53,15 @@ def gated_delta_rule(
     B, T_len, Hk, Dk = q.shape
     Hv, Dv = v.shape[-2:]
 
+    # The Metal kernel maps each v-head to its k-head group
+    # (hk_idx = hv_idx / (Hv / Hk)); mirror that here so the eager reference also
+    # supports Hk != Hv (GQA) instead of relying on broadcasting, which requires
+    # Hk == Hv. repeat_interleave on the head dim reproduces that index mapping.
+    if Hk != Hv:
+        q = q.repeat_interleave(Hv // Hk, dim=2)
+        k = k.repeat_interleave(Hv // Hk, dim=2)
+        Hk = Hv
+
     s = state.clone()
 
     ys = []
@@ -101,6 +110,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     IntOrVid,
     MetalKernelNode,
     MultiplyNode,
+    RepeatNode,
     ScanNode,
     SubtractNode,
     SumNode,
@@ -449,6 +459,33 @@ class GatedDeltaRuleHandler(PatternHandler):
                 self.state_node,
             ]
         )
+
+        # GQA: q/k carry Hk heads but the recurrence state/v have Hv heads. Expand
+        # q/k to Hv (repeat_interleave on the head axis) so the per-step broadcasts
+        # match, mirroring the Metal kernel's hk_idx = hv_idx / (Hv / Hk).
+        Hk = int(self.q_node.meta["val"].shape[-2])
+        Hv = int(self.v_node.meta["val"].shape[-2])
+        if Hk != Hv:
+            rep = IntOrVid.from_literal(Hv // Hk)
+            _, q_exp = P.make_tmp_slot()
+            P.emit(
+                RepeatNode(
+                    x=P.slot_to_tid(q_slot),
+                    out=P.slot_to_tid(q_exp),
+                    repeats=rep,
+                    axis=2,
+                )
+            )
+            _, k_exp = P.make_tmp_slot()
+            P.emit(
+                RepeatNode(
+                    x=P.slot_to_tid(k_slot),
+                    out=P.slot_to_tid(k_exp),
+                    repeats=rep,
+                    axis=2,
+                )
+            )
+            q_slot, k_slot = q_exp, k_exp
 
         # Carry needs a writable slot. This is node n's persistent output (the
         # mutated state), so it must be a node-owned slot — not a temp slot, whose

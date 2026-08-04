@@ -8,7 +8,7 @@
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -20,12 +20,16 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class DecomposeSelectPass(ArmPass):
+class DecomposeSelectPass(ArmOpTargetedPass):
     """This pass decomposes select into slice + squeeze to ensure that Aten and
     TOSA outputs has the same rank (input rank -1)
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
+    target_ops = (
+        exir_ops.edge.aten.select.int,
+        exir_ops.edge.aten.select_copy.int,
+    )
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
@@ -34,10 +38,7 @@ class DecomposeSelectPass(ArmPass):
             if node.op != "call_function":
                 continue
 
-            if node.target in (
-                exir_ops.edge.aten.select.int,
-                exir_ops.edge.aten.select_copy.int,
-            ):
+            if node.target in self.target_ops:
                 slice_op = exir_ops.edge.aten.slice_copy.Tensor
                 squeeze_op = exir_ops.edge.aten.squeeze_copy.dims
             else:

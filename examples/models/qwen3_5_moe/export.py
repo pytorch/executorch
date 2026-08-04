@@ -53,7 +53,7 @@ def _prepare_and_quantize_mlx(model, config, args):
         model,
         model_dtype=torch.bfloat16,
         config=config,
-        sort_experts=True,
+        sort_cutoff=1,
         fuse_gate_up=False,
     )
     if args.qlinear or args.qembedding:
@@ -176,8 +176,10 @@ def load_and_quantize(args):  # noqa: C901
 
     if backend == "mlx":
         if args.prequantized:
-            raise ValueError(
-                "MLX backend does not support custom prequantized weights. Use a prequantized torchao checkpoint instead."
+            return load_prequantized_model_mlx(
+                args.prequantized,
+                args.max_seq_len,
+                use_splitk_decode=use_splitk,
             )
         _prepare_and_quantize_mlx(model, config, args)
 
@@ -290,6 +292,69 @@ def load_prequantized_model(prequantized_dir, max_seq_len=4096, use_splitk_decod
     # requires_grad=True, which fails. Disable grad on all parameters.
     for p in model.parameters():
         p.requires_grad_(False)
+    model.eval()
+
+    print(
+        f"Model: {config.num_hidden_layers} layers, {config.hidden_size}d, "
+        f"{config.num_experts} experts top-{config.num_experts_per_tok}"
+    )
+    return model, config
+
+
+def load_prequantized_model_mlx(
+    prequantized_dir, max_seq_len=4096, use_splitk_decode=True
+):
+    """Load an MLX-format prequantized safetensors bundle into a model.
+
+    The bundle (from quantize_and_save.py --backend mlx) stores per-expert and
+    dense weights as torchao ``Int4Tensor`` (embedding as
+    ``IntxUnpackedToInt8Tensor``) in the modern torchao safetensors format.
+    Loading:
+
+      1. Build the model on meta and re-apply mlx_source_transformations so the
+         module tree, swapped forwards, and MLX KV cache match the bundle.
+      2. ``load_checkpoint`` streams the bundle in, converting each ``Int4Tensor``
+         to ``ExportableInt4Tensor`` via the default EXPORTABLE_PACKERS and
+         passing the int8 embedding through unchanged.
+      3. ``pack_all_switch_linears`` stacks the per-expert weights into the
+         mlx::gather_qmm buffers.
+
+    The KV cache is a runtime buffer and is not stored in the bundle;
+    mlx_source_transformations recreates it (zero-initialized) with geometry
+    derived from ``max_seq_len``.
+    """
+    from executorch.backends.mlx.llm.switch import pack_all_switch_linears
+    from executorch.examples.models.qwen3_5_moe.mlx_source_transformations import (
+        mlx_source_transformations,
+    )
+    from executorch.extension.llm.export.load import load_checkpoint
+
+    config_path = os.path.join(prequantized_dir, "config.json")
+    safetensors_path = os.path.join(prequantized_dir, "model.safetensors")
+
+    config = Qwen35MoEConfig.from_hf_config(config_path)
+    config.max_seq_len = max_seq_len
+    config.use_splitk_decode = use_splitk_decode
+
+    print("Building model on meta device...")
+    with torch.device("meta"):
+        model = Qwen35MoE(config)
+        # Reproduce the source-transformed structure (per-expert SwitchLinear
+        # nn.Linears, swapped forwards, MLX KV cache) the bundle was saved in.
+        mlx_source_transformations(
+            model,
+            model_dtype=torch.bfloat16,
+            config=config,
+            sort_cutoff=1,
+            fuse_gate_up=False,
+        )
+
+    print(f"Loading prequantized MLX weights from {safetensors_path}...")
+    load_checkpoint(safetensors_path, model)
+
+    # Stack per-expert ExportableInt4Tensors into mlx::gather_qmm buffers.
+    pack_all_switch_linears(model)
+
     model.eval()
 
     print(
@@ -728,7 +793,7 @@ def _strip_sampler_from_forward(model):
         for layer in self.layers:
             x = layer(x, input_pos)
         x = self.norm(x)
-        return self.lm_head(x)
+        return self.lm_head(x[:, -1, :])
 
     model.forward = types.MethodType(_clean_forward, model)
 
@@ -749,16 +814,38 @@ def _export_mlx(model, config, args):
 
     _strip_sampler_from_forward(model)
 
+    sample = getattr(args, "sample", False)
+
     example_tokens = torch.tensor([[0, 1]], dtype=torch.long)
     example_input_pos = torch.tensor([0, 1], dtype=torch.long)
     seq_dim = Dim("seq_len", min=1, max=config.max_seq_len - 1)
-    dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
+
+    if sample:
+        # forward(tokens, input_pos, temperature, top_k, top_p, seed) -> token id.
+        # Scalars are static (None in dynamic_shapes); only the seq dim is dynamic.
+        from executorch.backends.mlx.llm.sampling import SamplingHead
+
+        model = SamplingHead(model)
+        example_args = (
+            example_tokens,
+            example_input_pos,
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+            torch.tensor(1.0, dtype=torch.float32),
+            torch.tensor(0, dtype=torch.int64),
+        )
+        # SamplingHead.forward takes ``*args``; dynamic_shapes mirrors that single
+        # variadic parameter as one nested tuple over the positional inputs.
+        dynamic_shapes = (({1: seq_dim}, {0: seq_dim}, None, None, None, None),)
+    else:
+        example_args = (example_tokens, example_input_pos)
+        dynamic_shapes = ({1: seq_dim}, {0: seq_dim})
 
     print("Exporting with torch.export...")
     with torch.no_grad():
         exported = export(
             model,
-            (example_tokens, example_input_pos),
+            example_args,
             dynamic_shapes=dynamic_shapes,
             strict=True,
         )
@@ -781,6 +868,7 @@ def _export_mlx(model, config, args):
         "use_kv_cache": True,
         "use_sdpa_with_kv_cache": False,
         "enable_dynamic_shape": True,
+        "use_sampling": sample,
     }
     et_prog = to_edge_transform_and_lower(
         exported,
@@ -1050,6 +1138,8 @@ def _export_cuda(model, config, args):
         "enable_dynamic_shape": True,
         "get_mutable_buffer_metadata": _mutable_buffer_metadata_json(model),
     }
+    # Avoid a PyTorch 2.13 Triton codegen bug in Qwen's fused cast/reduction
+    # compile-time autotune path while keeping the CUDA backend defaults unchanged.
     et_prog = to_edge_transform_and_lower(
         {"decode": decode_ep, "prefill": prefill_ep},
         partitioner={
@@ -1058,6 +1148,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("decode"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
@@ -1066,6 +1159,9 @@ def _export_cuda(model, config, args):
                     [
                         CudaBackend.generate_method_name_compile_spec("prefill"),
                         CompileSpec("low_memory_mode", b"ON"),
+                        CompileSpec("emulate_precision_casts", b"OFF"),
+                        CompileSpec("max_autotune", b"OFF"),
+                        CompileSpec("autotune_at_compile_time", b"OFF"),
                     ]
                 )
             ],
@@ -1183,6 +1279,13 @@ def main():  # noqa: C901
         help="Disable split-K (flash-decoding) SDPA for decode; use tiled SDPA instead.",
     )
     parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="MLX only: sample the next token on-device (Gumbel-max with "
+        "temperature/top_p/seed runtime inputs) instead of returning logits "
+        "for host-side sampling.",
+    )
+    parser.add_argument(
         "--moe-activation-dtype",
         choices=["bf16", "int8"],
         default="bf16",
@@ -1225,10 +1328,11 @@ def main():  # noqa: C901
             torch.cuda.reset_peak_memory_stats(0)
 
     if args.backend == "mlx":
-        if args.prequantized:
-            parser.error("--prequantized is not supported with --backend mlx")
         if args.turboquant:
             parser.error("--turboquant is not supported with --backend mlx")
+
+    if args.sample and args.backend != "mlx":
+        parser.error("--sample is only supported with --backend mlx")
 
     if args.backend == "metal":
         if args.turboquant:

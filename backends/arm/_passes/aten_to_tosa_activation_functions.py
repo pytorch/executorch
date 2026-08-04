@@ -128,3 +128,21 @@ def rewrite_clamp(node: Node, pass_: AtenToDialectPass) -> DialectNodeSpec | Non
         exir_ops.backend.tosa.CLAMP.default,
         (node.args[0], *min_max_args),
     )
+
+
+def get_activation_replacement(
+    node: Node, pass_: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    # Dispatch activation rewrites from their ATen target to the matching TOSA
+    # dialect node builder.
+    match node.target:
+        case exir_ops.edge.aten.clamp.default:
+            return rewrite_clamp(node, pass_)
+        case exir_ops.edge.aten.erf.default:
+            return rewrite_erf(node, pass_)
+        case exir_ops.edge.aten.sigmoid.default:
+            return rewrite_sigmoid(node, pass_)
+        case exir_ops.edge.aten.tanh.default:
+            return rewrite_tanh(node, pass_)
+        case _:
+            return None

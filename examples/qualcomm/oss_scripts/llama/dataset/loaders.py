@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 import requests
 import torch
@@ -59,6 +59,7 @@ def collect_lm_eval_tokens(
     vocab_size: int,
     tasks: Union[str, List[str]] = "wikitext",
     tasks_limit: int = 1,
+    num_fewshot: Optional[int] = None,
 ) -> List[List[int]]:
     """
     Collect max_context_length-length token sequences from any lm_eval task(s).
@@ -91,7 +92,9 @@ def collect_lm_eval_tokens(
 
     collector = _TokenCollector()
     with torch.no_grad():
-        simple_evaluate(model=collector, tasks=tasks, limit=tasks_limit)
+        simple_evaluate(
+            model=collector, tasks=tasks, num_fewshot=num_fewshot, limit=tasks_limit
+        )
 
     logging.info(
         "Calibration: collected %d sequences (max_context_length=%d, limit=%d)",

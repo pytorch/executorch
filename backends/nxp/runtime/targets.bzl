@@ -11,7 +11,9 @@ def define_common_targets():
         ],
         link_whole = True,
         # Constructor needed for backend registration.
-        compiler_flags = ["-Wno-global-constructors", "-fno-rtti", "-DNO_HEAP_USAGE"],
+        # NEUTRON_NPU_POWER_GATING clock-gates the NPU around each inference
+        # (neutronResume/neutronSuspend in NeutronBackend.cpp).
+        compiler_flags = ["-Wno-global-constructors", "-fno-rtti", "-DNO_HEAP_USAGE", "-DNEUTRON_NPU_POWER_GATING"],
         labels = [ci.skip_target()],
         visibility = ["PUBLIC"],
         deps = [

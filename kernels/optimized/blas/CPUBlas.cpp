@@ -23,32 +23,12 @@ extern "C" void zgemm_(char *transa, char *transb, int *m, int *n, int *k, void 
 #endif // ET_BUILD_FOR_APPLE
 #endif // ET_BUILD_WITH_BLAS
 
-#ifdef ET_CPUBLAS_MKL_OMP
-// MKL's thread-local thread-count setter. The C name aliases the Fortran
-// by-reference entry point in this MKL build, so the argument is int*. Only
-// referenced when linked against OpenMP MKL, so the strong ref always resolves.
-extern "C" int mkl_set_num_threads_local(int* nt);
-#endif // ET_CPUBLAS_MKL_OMP
-
 namespace executorch {
 namespace cpublas {
 
 using executorch::aten::BFloat16;
 using executorch::aten::complex;
 using executorch::aten::Half;
-
-SingleThreadedGemmGuard::SingleThreadedGemmGuard() : prev_num_threads_(0) {
-#ifdef ET_CPUBLAS_MKL_OMP
-  int one = 1;
-  prev_num_threads_ = mkl_set_num_threads_local(&one);
-#endif // ET_CPUBLAS_MKL_OMP
-}
-
-SingleThreadedGemmGuard::~SingleThreadedGemmGuard() {
-#ifdef ET_CPUBLAS_MKL_OMP
-  mkl_set_num_threads_local(&prev_num_threads_);
-#endif // ET_CPUBLAS_MKL_OMP
-}
 
 #ifdef ET_BUILD_WITH_BLAS
 #ifdef ET_BUILD_FOR_APPLE
@@ -253,6 +233,48 @@ void gemm(
       static_cast<const acc_type>(beta),
       c, ldc);
 #endif
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const BFloat16 *a, int64_t lda,
+    const BFloat16 *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<BFloat16, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const Half *a, int64_t lda,
+    const Half *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<Half, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
 }
 // clang-format on
 

@@ -6,7 +6,7 @@
 from typing import Any, Set, Type
 
 import torch
-from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
     UnsqueezeBeforeRepeatPass,
 )
@@ -14,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeDynamicFullPass(ArmPass):
+class DecomposeDynamicFullPass(ArmOpTargetedPass):
     """Rewrite dynamic-shape `full` into scalar `full` plus `repeat`."""
 
     _passes_required_after: Set[Type[ExportPass]] = {UnsqueezeBeforeRepeatPass}
@@ -23,6 +23,7 @@ class DecomposeDynamicFullPass(ArmPass):
         torch.ops.aten.full.default,
         exir_ops.edge.aten.full.default,
     }
+    target_ops = full_targets
     repeat = exir_ops.edge.aten.repeat.default
 
     @staticmethod

@@ -828,6 +828,10 @@ def _emit_py_prebuild(kind: str, fld: FBSField) -> List[str]:
             return [f"        {n}_vec = {expr}"]
         else:
             return [f"        {n}_vec = {expr} if op.{n} is not None else None"]
+    if kind == "optional_int_or_vid":
+        return [
+            f"        {n}_off = self._build_int_or_vid(builder, op.{n}) if op.{n} is not None else None"
+        ]
     if kind in _PY_PREBUILD_OFFSET:
         suffix = "_off"
         expr = _PY_PREBUILD_OFFSET[kind].format(name=n)
@@ -890,6 +894,12 @@ def _emit_py_add(
             f"        if {n}_off is not None:",
             f"            {add}(builder, {n}_off)",
         ]
+    # Optional compound offset (e.g. sorted_indices_flag: IntOrVid, no default)
+    if kind == "optional_int_or_vid":
+        return [
+            f"        if {n}_off is not None:",
+            f"            {add}(builder, {n}_off)",
+        ]
     return None
 
 
@@ -927,7 +937,7 @@ def _get_field_kind(fld: FBSField, table: FBSTable) -> str:  # noqa: C901
     if t == "Vid":
         return "optional_vid" if not fld.required else "vid"
     if t == "IntOrVid":
-        return "int_or_vid"
+        return "optional_int_or_vid" if not fld.required else "int_or_vid"
     if t == "FloatOrVid":
         return "float_or_vid"
     if t == "VidOrTid":
@@ -996,6 +1006,10 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
         comma = "," if i < len(op_nodes) - 1 else ""
         variant_lines.append(f"    {table.name}{comma}")
 
+    for_each_tid_lines = []
+    for table in op_nodes:
+        for_each_tid_lines.extend(_generate_for_each_tid_case(table))
+
     # Read template and fill placeholders
     header = "\n".join(_file_header("//")) + "\n//\n"
     tmpl = LOADER_H_TMPL.read_text()
@@ -1003,7 +1017,46 @@ def generate_cpp_loader_h(schema: FBSSchema) -> str:
     result = result.replace("{{OPCODE_ENUM_VALUES}}", "\n".join(enum_lines))
     result = result.replace("{{OP_NAME_CASES}}", "\n".join(name_lines))
     result = result.replace("{{NODE_VARIANT_TYPES}}", "\n".join(variant_lines))
+    result = result.replace("{{FOR_EACH_TID_CASES}}", "\n".join(for_each_tid_lines))
     return header + result
+
+
+# for_each_tid emitters: invoke cb(Tid) for each Tid-bearing field. Field kinds
+# that carry no Tid (vid, int_or_vid, scalars, strings, int lists) emit nothing.
+def _emit_cpp_for_each_tid(kind: str, name: str) -> List[str]:
+    """Emit for_each_tid callback lines for a field kind ([] if it has no Tid)."""
+    if kind == "tid":
+        return [f"      cb(n.{name});"]
+    if kind == "optional_tid":
+        return [f"      if (n.{name}.has_value()) cb(*n.{name});"]
+    if kind == "list_tid":
+        return [f"      for (const auto& tid_elem : n.{name}) cb(tid_elem);"]
+    if kind == "vid_or_tid":
+        return [f"      if (!n.{name}.is_vid) cb(n.{name}.tid);"]
+    if kind == "int_or_vid_or_tid":
+        return [f"      if (n.{name}.kind == 2) cb(n.{name}.tid);"]
+    return []
+
+
+def _generate_for_each_tid_case(table: FBSTable) -> List[str]:
+    """Generate a switch case for for_each_tid over one op node."""
+    class_name = table.name
+    op_code = _table_name_to_opcode(class_name)
+
+    body: List[str] = []
+    for fld in table.fields:
+        if fld.name.endswith("_is_set"):
+            continue
+        kind = _get_field_kind(fld, table)
+        body.extend(_emit_cpp_for_each_tid(kind, fld.name))
+
+    lines = [f"    case OpCode::{op_code}: {{"]
+    if body:
+        lines.append(f"      const auto& n = std::get<{class_name}>(instr.node);")
+        lines.extend(body)
+    lines.append("      break;")
+    lines.append("    }")
+    return lines
 
 
 def _is_interned_str(table, field_name) -> bool:
@@ -1056,6 +1109,8 @@ def _fbs_type_to_cpp(
             return "std::optional<Tid>"
         if fbs_type == "Vid":
             return "std::optional<Vid>"
+        if fbs_type in FBS_COMPOUND_TYPES:
+            return f"std::optional<{cpp_type}>"
         if fld is not None and fld.default == "null" and fbs_type in FBS_TO_CPP:
             return f"std::optional<{cpp_type}>"
 
@@ -1335,6 +1390,7 @@ _INSPECTOR_KIND_MAP = {
     "vid": "vid",
     "optional_vid": "vid",
     "int_or_vid": "int_or_vid",
+    "optional_int_or_vid": "int_or_vid",
     "float_or_vid": "float_or_vid",
     "vid_or_tid": "vid_or_tid",
     "int_or_vid_or_tid": "int_or_vid_or_tid",

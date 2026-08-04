@@ -8,7 +8,7 @@ from typing import Any, Tuple
 
 import pytest
 import torch
-from executorch.backends.arm.test import common
+from executorch.backends.transforms.test import common
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -695,6 +695,6 @@ xfails = {"views_channels_last": "Views are not supported for channels last tens
 @pytest.mark.skip(
     reason="Proof of concept - currently no permute-view passes implemented."
 )
-@common.parametrize("case", cases_channels_last, xfail=xfails)
+@common.parametrize("case", cases_channels_last, xfails=xfails)
 def test_permute_view_counts_channels_last(case: PermuteCountTestCase) -> None:
     run_test(case)

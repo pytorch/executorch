@@ -21,6 +21,8 @@ using executorch::runtime::CompileSpec;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+
 namespace executorch {
 namespace backends {
 namespace vgf {
@@ -45,10 +47,16 @@ typedef struct IO {
   VkDeviceMemory image_memory;
   VkDeviceMemory memory;
   VkExtent3D image_extent;
+  void* persistent_memory = nullptr;
   bool owns_memory = true;
   bool owns_image_memory = true;
   bool is_input;
 } IO;
+
+typedef struct PersistentMappedMemory {
+  VkDeviceMemory memory = VK_NULL_HANDLE;
+  void* data = nullptr;
+} PersistentMappedMemory;
 
 typedef struct SegmentState {
   int segment_id = -1;
@@ -61,6 +69,14 @@ typedef struct SegmentState {
   VkDataGraphPipelineSessionARM vk_session = VK_NULL_HANDLE;
   VkShaderModule vk_shader = VK_NULL_HANDLE;
   std::array<uint32_t, 3> dispatch_shape = {1, 1, 1};
+
+  // to work with data provide by arm neural statistics api
+  bool neural_statistics_bind_point_available = false;
+  VkDeviceMemory neural_statistics_memory = VK_NULL_HANDLE;
+  VkDeviceSize neural_statistics_memory_size = 0;
+  bool neural_statistics_memory_host_visible = false;
+  bool neural_statistics_memory_host_coherent = false;
+  std::string neural_statistics_status;
 } SegmentState;
 
 typedef struct ResourceAlloc {
@@ -128,19 +144,26 @@ class VgfRepr {
   std::vector<SegmentState> segments;
   std::vector<ResourceAlloc> extra_allocs;
 
-  bool map_io(IO* io, void** handle) {
-    VkResult result =
-        vkMapMemory(vk_device, io->memory, 0, VK_WHOLE_SIZE, 0, handle);
-    if (result != VK_SUCCESS) {
-      ET_LOG(Error, "Failed to map Vulkan IO memory");
+  // Mapping to persistent IO memory
+  static bool map_io(IO* io, void** handle) {
+    if (io->persistent_memory == nullptr) {
+      ET_LOG(Error, "Vulkan IO memory is not persistently mapped");
       return false;
     }
+    *handle = io->persistent_memory;
     return true;
   }
 
-  void unmap_io(IO* io) {
-    vkUnmapMemory(vk_device, io->memory);
+  // Unmapping to persistent IO memory
+  static void unmap_io(IO* io) {
+    (void)io;
   }
+
+  // to work with arm neural statistics data
+  std::vector<VgfNeuralStatisticsSegmentContext>
+  get_neural_statistics_segment_contexts() const;
+
+  std::string collect_neural_statistics_metadata() const;
 
   ~VgfRepr() {
     free_vgf();
@@ -168,6 +191,10 @@ class VgfRepr {
 
   bool init_timestamp_queries();
   void read_timestamp_queries(executorch::runtime::EventTracer* event_tracer);
+
+  std::vector<PersistentMappedMemory> persistent_mapped_memories;
+  bool map_persistent_io_memory();
+  void unmap_persistent_io_memory();
 };
 
 } // namespace vgf

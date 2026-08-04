@@ -15,14 +15,17 @@ namespace vkcompute {
 
 namespace {
 
-// Compute the im2col output extents (M = H_out * W_out, K4_total) from the
-// im2col_out tensor's current sizes. The tensor is virtually resized on
+// Compute the im2col scratch extents (M_tile = OH_tile * W_out, K4_total) from
+// the im2col_out tensor's current sizes. The tensor is virtually resized on
 // trigger_resize (see resize_conv2d_im2col_node), so reading from it tracks
-// dynamic shapes.
+// dynamic shapes. With H-row tiling the scratch holds OH_tile (not H_out)
+// output-height rows, so M here is OH_tile * W_out, the per-tile dispatch
+// extent (every tile dispatches the same OH_tile rows; trailing threads past
+// the real H_out no-op in the shader).
 //
 // Two layouts are possible:
-//   - flat [M, K_total]                  (buffer / texture2d)
-//   - [1, K_total, H_out, W_out]         (texture3d)
+//   - flat [OH_tile * W_out, K_total]    (buffer / texture2d)
+//   - [1, K_total, OH_tile, W_out]       (texture3d)
 struct Im2colExtents {
   uint32_t m;
   uint32_t k4_total;
@@ -33,13 +36,13 @@ Im2colExtents im2col_extents_of(ComputeGraph* graph, const ValueRef im2col) {
   uint32_t m;
   uint32_t k_total;
   if (sizes.size() == 4) {
-    // texture3d [1, K_total, H_out, W_out]
-    const int64_t h_out = sizes.at(2);
+    // texture3d [1, K_total, OH_tile, W_out]
+    const int64_t oh_tile = sizes.at(2);
     const int64_t w_out = sizes.at(3);
-    m = utils::safe_downcast<uint32_t>(h_out * w_out);
+    m = utils::safe_downcast<uint32_t>(oh_tile * w_out);
     k_total = utils::safe_downcast<uint32_t>(sizes.at(1));
   } else {
-    // flat [M, K_total]
+    // flat [OH_tile * W_out, K_total]
     m = utils::safe_downcast<uint32_t>(sizes.at(0));
     k_total = utils::safe_downcast<uint32_t>(sizes.at(1));
   }
@@ -75,14 +78,22 @@ utils::uvec3 pick_conv2d_im2col_local_wg_size(
   return {16u, 4u, 1u};
 }
 
-// Recompute the im2col output spatial extents from the current input shape and
-// virtually resize the im2col tensor. Both possible layouts must be handled:
-//   - flat [M, K_total]            -> resize dim 0 (M = H_out * W_out)
-//   - [1, K_total, H_out, W_out]   -> resize dims 2/3 (H_out, W_out)
-// K_total / Cin_padded are shape-independent, so the K dimension is preserved
-// from the current tensor sizes.
+// Recompute the im2col scratch extents from the current input shape and
+// virtually resize the im2col tensor. The scratch holds OH_tile output-height
+// rows (not H_out) — H-row tiling bounds it to a fixed byte budget. Only the
+// W_out-dependent extent tracks the dynamic shape; OH_tile is a build-time
+// constant (the row capacity). Both layouts:
+//   - flat [OH_tile * W_out, K_total]  -> resize dim 0 (= OH_tile * W_out)
+//   - [1, K_total, OH_tile, W_out]     -> resize dim 3 (= W_out); dim 2 fixed
+// K_total / Cin_padded / OH_tile are shape-independent.
 //
-// resize_args = { in, weight_data, stride, padding, dilation }
+// resize_args = { in, weight_data, stride, padding, dilation, oh_tile }
+// resize_args[5] carries the raw oh_tile VALUE (not a ValueRef handle): oh_tile
+// is a build-time constant, so packing the int directly into the slot avoids
+// materializing a graph Value for it. Read it with static_cast, never get_int.
+// ExecuteNode's resize dirty-tracker treats this slot as a value index and may
+// spuriously over-trigger this resize fn — deliberate and benign (it recomputes
+// correctly regardless) and memory-safe (was_value_updated guards the lookup).
 void resize_conv2d_im2col_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -93,13 +104,14 @@ void resize_conv2d_im2col_node(
   const ValueRef stride = resize_args.at(2);
   const ValueRef padding = resize_args.at(3);
   const ValueRef dilation = resize_args.at(4);
+  const int64_t oh_tile = static_cast<int32_t>(resize_args.at(5));
 
   const std::vector<int64_t> in_sizes = graph->sizes_of(in);
 
-  // Height / Width from the current input, via the shared conv-output helper
-  // (same H/W split + formula the direct-conv resize uses). kernel_size is read
-  // from the weight dims; stride/padding/dilation from the original IntList
-  // ValueRefs. All are shape-independent — only H_in / W_in change at runtime.
+  // Width from the current input, via the shared conv-output helper (same H/W
+  // split + formula the direct-conv resize uses). kernel_size is read from the
+  // weight dims; stride/padding/dilation from the original IntList ValueRefs.
+  // All are shape-independent — only H_in / W_in change at runtime.
   // transposed=false, and the args[3] slot (consulted only as an optional
   // ceil_mode) is a non-bool ValueRef, so ceil_mode resolves to false.
   const std::vector<int64_t> out_hw = calc_out_sizes_hw(
@@ -109,18 +121,17 @@ void resize_conv2d_im2col_node(
       /*kernel_size_only=*/false,
       {stride, padding, dilation, dilation},
       /*transposed=*/false);
-  const int64_t H_out = out_hw.at(0);
   const int64_t W_out = out_hw.at(1);
 
   const std::vector<int64_t> cur_sizes = graph->sizes_of(im2col_out);
   std::vector<int64_t> new_sizes = cur_sizes;
   if (cur_sizes.size() == 4) {
-    // texture3d [1, K_total, H_out, W_out]: K_total (dim 1) is preserved.
-    new_sizes.at(2) = H_out;
+    // texture3d [1, K_total, OH_tile, W_out]: K_total (dim 1) and OH_tile
+    // (dim 2) are preserved; only W_out tracks the dynamic shape.
     new_sizes.at(3) = W_out;
   } else {
-    // flat [M, K_total]: K_total (dim 1) is preserved.
-    new_sizes.at(0) = H_out * W_out;
+    // flat [OH_tile * W_out, K_total]: K_total (dim 1) is preserved.
+    new_sizes.at(0) = oh_tile * W_out;
   }
   graph->virtual_resize(im2col_out, new_sizes);
 }
@@ -130,8 +141,17 @@ void resize_conv2d_im2col_node(
 // Push constants are uploaded in 16-byte chunks (one ivec4 each) to comply
 // with the per-entry size limit. Layout matches conv2d_im2col.glsl:
 //   { ivec4 kernel_stride, ivec4 padding_dil, ivec4 dims }
-// All fields are shape-independent; W_out / H_out / M are derived in the shader
-// from the (resize-refreshed) in_sizes UBO.
+// dims carries the per-tile output-height window (oh_offset, oh_tile); W_out /
+// H_out are derived in the shader from the (resize-refreshed) in_sizes UBO. All
+// dims fields are shape-independent (oh_offset / oh_tile are build-time tile
+// constants).
+//
+// `oh_offset` / `oh_tile` define which output-height rows this dispatch
+// materializes: the scratch holds oh_tile rows, written from source rows
+// [oh_offset, oh_offset + oh_tile). oh_tile is also packed (as a raw int value,
+// not a ValueRef handle) into the last resize_args slot for the resize fn — see
+// the resize_conv2d_im2col_node note for the rationale and the benign
+// dirty-tracker over-trigger this implies.
 
 void add_conv2d_im2col_node(
     ComputeGraph& graph,
@@ -149,7 +169,9 @@ void add_conv2d_im2col_node(
     const int32_t padding_w,
     const int32_t dilation_h,
     const int32_t dilation_w,
-    const int32_t Cin_padded) {
+    const int32_t Cin_padded,
+    const int32_t oh_offset,
+    const int32_t oh_tile) {
   const utils::StorageType out_storage = graph.storage_type_of(im2col_out);
   VK_CHECK_COND(
       out_storage == utils::kBuffer || out_storage == utils::kTexture2D ||
@@ -168,10 +190,9 @@ void add_conv2d_im2col_node(
 
   const utils::ivec4 kernel_stride{kernel_h, kernel_w, stride_h, stride_w};
   const utils::ivec4 padding_dil{padding_h, padding_w, dilation_h, dilation_w};
-  // dims.y / dims.z (formerly W_out / H_out) are unused by the shader now —
-  // the spatial extents are derived at runtime from in_sizes. Only Cin_padded
-  // and K4_total (both shape-independent) are consumed.
-  const utils::ivec4 dims{Cin_padded, 0, 0, K4_total};
+  // dims = (Cin_padded, oh_offset, oh_tile, K4_total). W_out / H_out are
+  // derived at runtime from in_sizes; the rest are shape-independent.
+  const utils::ivec4 dims{Cin_padded, oh_offset, oh_tile, K4_total};
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -188,8 +209,13 @@ void add_conv2d_im2col_node(
        PushConstantDataInfo(&dims, sizeof(dims))},
       // Specialization constants
       {},
-      // Resize args
-      {in, weight_data, stride, padding, dilation},
+      // Resize args (last slot = raw oh_tile value, not a ValueRef handle)
+      {in,
+       weight_data,
+       stride,
+       padding,
+       dilation,
+       static_cast<ValueRef>(oh_tile)},
       // Resizing logic
       resize_conv2d_im2col_node));
 }

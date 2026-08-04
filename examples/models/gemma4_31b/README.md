@@ -153,14 +153,17 @@ python examples/models/gemma4_31b/inference.py \
 Useful before spending the export+lowering time to confirm the quantized
 model produces sensible text.
 
-## Build the runner
+## Build the runner and worker
 
 ```bash
 make gemma4_31b-cuda   # Linux — CUDA backend
 make gemma4_31b-mlx    # macOS — MLX backend (Apple Silicon)
 ```
 
-The binary lands at `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`.
+The binaries land at:
+
+- `cmake-out/examples/models/gemma4_31b/gemma4_31b_runner`
+- `cmake-out/examples/models/gemma4_31b/gemma4_31b_worker`
 
 ## Run the .pte
 
@@ -179,3 +182,61 @@ Pass `--raw_prompt` to skip template wrapping for pre-formatted input.
 
 For benchmarking, add `--cuda_graph` to capture the decode method in a CUDA
 graph (decode is fully static — `T=1`).
+
+## OpenAI-compatible serving harness
+
+The serving path is a test harness for local-agent workflows. Python owns HTTP,
+chat templating, request validation, and tool parsing; the C++ worker owns model
+loading, prefill/decode, and session state. Use the runner or engine/session API
+directly for production integrations.
+
+### CUDA
+
+```bash
+python -m executorch.examples.models.gemma4_31b.serve \
+    --model-path ./gemma4_31b_exports/model.pte \
+    --data-path ./gemma4_31b_exports/aoti_cuda_blob.ptd \
+    --tokenizer-path ./gemma4_31b_int4/tokenizer.json \
+    --hf-tokenizer ./gemma4_31b_int4 \
+    --model-id gemma4_31b \
+    --max-context 4096 \
+    --max-sessions 4 \
+    --host 127.0.0.1 \
+    --port 8000
+```
+
+### MLX
+
+```bash
+python -m executorch.examples.models.gemma4_31b.serve \
+    --model-path ./gemma4_31b_exports_mlx/model.pte \
+    --tokenizer-path ./gemma4_31b_int4/tokenizer.json \
+    --hf-tokenizer ./gemma4_31b_int4 \
+    --model-id gemma4_31b \
+    --max-context 4096 \
+    --max-sessions 4 \
+    --host 127.0.0.1 \
+    --port 8000
+```
+
+Named sessions use one loaded model with isolated mutable state when the backend
+supports it. Set `--max-sessions >= 2` and send a stable `session_id` (or one of
+the supported affinity headers) to enable separate conversations and warm
+append-only resume. One capacity slot is reserved for anonymous requests.
+
+The default parser is Gemma's tool-call format. Use `--tool-parser hermes`,
+`--tool-parser qwen`, or `--tool-parser none` if a different prompt/template
+emits another format.
+
+### CUDA no-bleed test
+
+The CUDA build also produces `test_gemma4_31b_nobleed`, which validates that
+two sessions can interleave prefill/decode on one loaded model without sharing
+mutable state:
+
+```bash
+GEMMA_MODEL_PATH=gemma4_31b_exports/model.pte \
+GEMMA_DATA_PATH=gemma4_31b_exports/aoti_cuda_blob.ptd \
+GEMMA_TOKENIZER_PATH=gemma4_31b_int4/tokenizer.json \
+  cmake-out/examples/models/gemma4_31b/test_gemma4_31b_nobleed
+```

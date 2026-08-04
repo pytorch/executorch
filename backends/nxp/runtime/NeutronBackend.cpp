@@ -10,6 +10,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include "NeutronDriver.h"
@@ -24,6 +25,8 @@ namespace neutron {
 #define BUFFER_ALIGNMENT 16
 #define ALIGN_SIZE(size) \
   ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
+
+#define KOPC_CALLARGS 6 // The operation for TileIR
 
 // clang-format off
 /* Header schema:
@@ -84,11 +87,24 @@ typedef struct {
   const uint8_t* outputMap;
 } NeutronExecutorchConfig;
 
+typedef struct {
+  uint8_t eventCode;
+  uint8_t opCode;
+  uint8_t functionCode;
+  uint8_t timestampCode;
+  uint32_t time;
+} NeutronSingleProfilingEvent;
+
+typedef struct {
+  NeutronSingleProfilingEvent startEvent;
+  NeutronSingleProfilingEvent stopEvent;
+} NeutronFullProfilingEvent;
+
 #ifdef EXTERNAL_MEM
 // Neutron compute has no access to FLASH.
 // Prefetch weights from FLASH to SRAM using memcpy.
 // For a model converted with --fetch_constants_to_sram.
-void copy(void* dst, void* src, uint32_t size, uint32_t channel) {
+void copy(void* dst, const void* src, uint32_t size, uint32_t channel) {
   memcpy(dst, src, size);
 }
 void wait(uint32_t channel) {}
@@ -274,6 +290,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
     auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
 
+    // allocateInstance returns raw, uninitialized memory (no constructor runs),
+    // so set the driver-config timeout explicitly.
+    cfg->mcfg.timeoutSeconds = 60;
+
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
     //    cfg->numoutputs
@@ -362,8 +382,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
 
     // Prepare data for through neutron driver.
-    NeutronError neutronRC =
-        neutronModelPrepare((const NeutronModelConfig*)&cfg->mcfg, &cfg->nmh);
+    NeutronError neutronRC = neutronModelPrepare(&cfg->mcfg, &cfg->nmh);
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -508,14 +527,38 @@ class NeutronBackend final : public PyTorchBackendInterface {
       }
     }
 
-#ifdef NEUTRON_PROFILE
-    // TODO: Use trace from BackendExecutionContext.
-    NeutronTraceConfig trace_config{.traceConfig = 0};
-    neutronSetTrace(cfg->nmh, &trace_config);
+    // Resume (clock-ungate) the NPU immediately before inference and suspend it
+    // again immediately after, so its clock only runs during compute
+#ifdef NEUTRON_NPU_POWER_GATING
+    NeutronError resumeRC = neutronResume();
+    if (resumeRC != ENONE) {
+      ET_LOG(Error, "neutronResume failed with error code %ld", resumeRC);
+      return Error::InvalidProgram;
+    }
 #endif
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks before neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t start_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks after neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
+
+#ifdef NEUTRON_NPU_POWER_GATING
+    // Suspend (clock-gate) the NPU again regardless of the run result; a failed
+    // suspend only wastes power, so it must not fail the inference.
+    NeutronError suspendRC = neutronSuspend();
+    if (suspendRC != ENONE) {
+      ET_LOG(Error, "neutronSuspend failed with error code %ld", suspendRC);
+    }
+#endif
+
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -558,6 +601,53 @@ class NeutronBackend final : public PyTorchBackendInterface {
         }
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Add traced evens only if model has profiling info.
+    auto profile_size = cfg->profileSize;
+    if (profile_size > 0) {
+      int events_num = static_cast<int>(profile_size / 16);
+      auto profiling_index = cfg->numOutputs + 1;
+      char* profile_info =
+          static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
+      NeutronFullProfilingEvent* neutron_events =
+          reinterpret_cast<NeutronFullProfilingEvent*>(profile_info);
+      executorch::runtime::EventTracer* tracer = context.event_tracer();
+      uint32_t start_time = 0;
+      int index = 0;
+      // Post log neutron events from profiling output.
+      for (int i = 0; i < events_num; i++) {
+        if (start_time == 0) {
+          start_time = neutron_events[i].startEvent.time;
+        }
+        if (neutron_events[i].stopEvent.opCode != KOPC_CALLARGS) {
+          // Only KOPC_CALLARGS events can be mapped to original .pte model.
+          continue;
+        } else {
+          event_tracer_log_profiling_delegate(
+              tracer,
+              nullptr,
+              index,
+              start_time,
+              neutron_events[i].stopEvent.time,
+              static_cast<const void*>(
+                  &neutron_events[i].startEvent.functionCode),
+              sizeof(uint8_t));
+          start_time = 0;
+          index++;
+        }
+      }
+      event_tracer_log_profiling_delegate(
+          tracer,
+          nullptr,
+          index,
+          neutron_events[events_num - 1].startEvent.time,
+          neutron_events[events_num - 1].stopEvent.time + stop_ticks -
+              start_ticks,
+          static_cast<const void*>(
+              &neutron_events[events_num - 1].startEvent.functionCode),
+          sizeof(uint8_t));
+    }
+#endif
 
     return Error::Ok;
   }

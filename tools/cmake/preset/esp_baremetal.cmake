@@ -7,6 +7,8 @@ set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}")
 set_overridable_option(EXECUTORCH_BUILD_EXECUTOR_RUNNER OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR OFF)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER OFF)
+# Bare-metal has no libdl (see CMakeLists.txt EXECUTORCH_USE_DL block).
+set_overridable_option(EXECUTORCH_USE_DL OFF)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_QUANTIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_ENABLE_LOGGING ON)

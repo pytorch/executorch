@@ -22,7 +22,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::nullopt;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;

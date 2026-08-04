@@ -96,9 +96,8 @@ class GatedDeltaRuleGQAModel(nn.Module):
         g: torch.Tensor,  # [B, T, Hv]
         beta: torch.Tensor,  # [B, T, Hv]
     ) -> torch.Tensor:
-        if self.head_repeat > 1:
-            q = q.repeat_interleave(self.head_repeat, dim=2)
-            k = k.repeat_interleave(self.head_repeat, dim=2)
+        # Pass native Hk (no repeat_interleave): the op itself must handle
+        # GQA head expansion (kernel via hk_idx mapping, scan/eager internally).
         return torch.ops.mlx.gated_delta_rule(
             q, k, v, g, beta, self.state, use_custom_kernel=self.use_custom_kernel
         )

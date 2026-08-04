@@ -96,6 +96,9 @@ class LoraConfig:
     lora_rank: int = 0
     lora_alpha: int = 0
     target_modules: List[str] = field(default_factory=list)
+    # Per-adapter quantization/precision: "int8" | "fp16" | "fp32" | None.
+    # Overrides the global --lora_precision flag for this adapter only.
+    adapter_quant: Optional[str] = None
 
 
 @dataclass
@@ -202,6 +205,9 @@ class ModelConfig:
     use_kv_cache: bool = False
     quantize_kv_cache: bool = False
     local_global_attention: Optional[List[int]] = None
+    # Replace eager MOEFeedForward modules with the
+    # `llama::quantized_moe_ffn` portable-runtime custom op.
+    use_moe_quantized_op: bool = False
 
     def __post_init__(self):
         self._validate_attention_sink()
@@ -725,6 +731,8 @@ class LlmConfig:
             llm_config.model.quantize_kv_cache = args.quantize_kv_cache
         if hasattr(args, "local_global_attention"):
             llm_config.model.local_global_attention = args.local_global_attention
+        if hasattr(args, "use_moe_quantized_op"):
+            llm_config.model.use_moe_quantized_op = args.use_moe_quantized_op
 
         # ExportConfig
         if hasattr(args, "max_seq_length"):

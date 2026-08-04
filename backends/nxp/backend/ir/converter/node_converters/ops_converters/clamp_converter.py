@@ -18,7 +18,6 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     _is_dequant_node,
     _is_quant_node,
     CustomDelegationOptions,
-    is_not_qdq_node,
     NodeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import (
@@ -147,9 +146,7 @@ class ClampConverter(NodeConverter):
         # and at the same time the node does not satisfy delegation requirements.
         # In contrast, ReLUN1To1 and ReLU0To1 are supported and delegated successfully.
         if bounds in cls.RELU_COMPATIBLE_BOUNDS.values():
-            is_alone_in_partition = cls.is_node_alone_in_partition(
-                node, partition_list, filter_fn=is_not_qdq_node
-            )
+            is_alone_in_partition = cls.is_node_alone_in_partition(node, partition_list)
             if is_alone_in_partition:
                 # noinspection PyTypeChecker
                 return is_clamp_preserved_under_quantization(

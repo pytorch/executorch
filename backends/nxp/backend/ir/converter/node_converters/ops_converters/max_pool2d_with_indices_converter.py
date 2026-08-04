@@ -16,6 +16,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsLi
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
+    requires_channels_first_format,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.max_pool_2d_options import (
@@ -32,6 +33,7 @@ Dilation = tuple[int, int]
 CeilMode = bool
 
 
+@requires_channels_first_format
 class MaxPool2DWithIndicesConverter(NodeConverter):
 
     @staticmethod

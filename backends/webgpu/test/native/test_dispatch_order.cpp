@@ -10,10 +10,13 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -24,23 +27,8 @@ using namespace executorch::runtime;
 
 namespace {
 
-struct Case {
-  const char* name;
-  std::vector<int32_t> sizes;
-};
-
-// Mirrors _CASES in test_dispatch_order.py (add-chain or rms_norm+add chain).
-const std::vector<Case> kCases = {
-    {"single", {16, 16}},
-    {"chain3", {64, 64}},
-    {"chain5_tiny", {1, 1}},
-    {"chain5_wide", {7, 896}},
-    {"chain8", {256, 256}},
-    {"deep32", {128, 128}},
-    {"large_chain", {1024, 1024}},
-    {"het_small", {1, 1, 7, 896}},
-    {"het_deep", {1, 1, 5, 256}},
-};
+// Artifacts directory; set from env/argv in main() before RUN_ALL_TESTS().
+std::string g_dir; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 std::vector<float> read_f32_bin(const std::string& path) {
   std::ifstream f(path, std::ios::binary | std::ios::ate);
@@ -59,53 +47,35 @@ std::vector<float> read_f32_bin(const std::string& path) {
   return data;
 }
 
-bool run_case(const std::string& dir, const Case& tc) {
-  printf("\n--- dispatch_order[%s] ---\n", tc.name);
-  const std::string base = dir + "/" + tc.name;
+// Mirrors _CASES in test_dispatch_order.py (add-chain or rms_norm+add chain).
+void run_case(const char* name, const std::vector<int32_t>& sizes) {
+  const std::string base = g_dir + "/" + name;
   std::vector<float> input = read_f32_bin(base + ".input.bin");
   std::vector<float> golden = read_f32_bin(base + ".golden.bin");
-  if (input.empty() || golden.empty()) {
-    printf("FAIL: could not read input/golden for %s\n", tc.name);
-    return false;
-  }
+  ASSERT_FALSE(input.empty() || golden.empty())
+      << "could not read input/golden for " << name;
 
   Module module(base + ".pte");
-  if (module.load_forward() != Error::Ok) {
-    printf("FAIL: could not load %s.pte\n", tc.name);
-    return false;
-  }
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load " << name << ".pte";
 
   size_t expected = 1;
-  for (int32_t d : tc.sizes) {
+  for (int32_t d : sizes) {
     expected *= static_cast<size_t>(d);
   }
-  if (input.size() != expected) {
-    printf(
-        "FAIL: input numel %zu != expected %zu for %s\n",
-        input.size(),
-        expected,
-        tc.name);
-    return false;
-  }
-  auto x = make_tensor_ptr(tc.sizes, std::vector<float>(input));
+  ASSERT_EQ(input.size(), expected)
+      << "input numel " << input.size() << " != expected " << expected
+      << " for " << name;
+  auto x = make_tensor_ptr(sizes, std::vector<float>(input));
   auto result = module.forward({EValue(x)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
   const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (static_cast<size_t>(out_tensor.numel()) != golden.size()) {
-    printf(
-        "FAIL: output numel %zu != golden %zu\n",
-        (size_t)out_tensor.numel(),
-        golden.size());
-    return false;
-  }
+  ASSERT_EQ(static_cast<size_t>(out_tensor.numel()), golden.size())
+      << "output numel " << (size_t)out_tensor.numel() << " != golden "
+      << golden.size();
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f;
@@ -116,52 +86,76 @@ bool run_case(const std::string& dir, const Case& tc) {
     const float denom = std::max(std::abs(golden[i]), 1e-6f);
     max_rel_err = std::max(max_rel_err, abs_err / denom);
   }
-  printf(
-      "Max abs error: %e   Max rel error: %e (%zu elements)\n",
-      max_abs_err,
-      max_rel_err,
-      golden.size());
   // Lenient gate: pass iff abs<=tol OR rel<=tol (near-zero goldens).
-  if (max_abs_err > 1e-3f && max_rel_err > 1e-3f) {
-    printf("FAIL: dispatch_order[%s] exceeds tolerance 1e-3\n", tc.name);
-    return false;
-  }
-  printf("PASS: dispatch_order[%s]\n", tc.name);
-  return true;
+  EXPECT_FALSE(max_abs_err > 1e-3f && max_rel_err > 1e-3f)
+      << "dispatch_order[" << name
+      << "] exceeds tolerance 1e-3 (max_abs_err=" << max_abs_err
+      << " max_rel_err=" << max_rel_err << ", " << golden.size()
+      << " elements)";
 }
 
 } // namespace
 
+TEST(DispatchOrder, single) {
+  run_case("single", {16, 16});
+}
+
+TEST(DispatchOrder, chain3) {
+  run_case("chain3", {64, 64});
+}
+
+TEST(DispatchOrder, chain5_tiny) {
+  run_case("chain5_tiny", {1, 1});
+}
+
+TEST(DispatchOrder, chain5_wide) {
+  run_case("chain5_wide", {7, 896});
+}
+
+TEST(DispatchOrder, chain8) {
+  run_case("chain8", {256, 256});
+}
+
+TEST(DispatchOrder, deep32) {
+  run_case("deep32", {128, 128});
+}
+
+TEST(DispatchOrder, large_chain) {
+  run_case("large_chain", {1024, 1024});
+}
+
+TEST(DispatchOrder, het_small) {
+  run_case("het_small", {1, 1, 7, 896});
+}
+
+TEST(DispatchOrder, het_deep) {
+  run_case("het_deep", {1, 1, 5, 256});
+}
+
 int main(int argc, char** argv) {
-  std::string dir = "/tmp/dispatch_order";
+  ::testing::InitGoogleTest(&argc, argv);
+
+  // Artifacts dir: env wins, else first positional arg, else default (gtest
+  // flags were already stripped by InitGoogleTest above).
+  g_dir = "/tmp/dispatch_order";
   if (argc > 1) {
-    dir = argv[1];
+    g_dir = argv[1];
   }
   if (const char* env = std::getenv("WEBGPU_DISPATCH_ORDER_DIR")) {
-    dir = env;
+    g_dir = env;
   }
 
   WebGPUContext ctx;
   try {
     ctx = create_webgpu_context();
   } catch (const std::exception& e) {
-    printf("SKIP: %s\n", e.what());
+    std::printf("SKIP: %s\n", e.what());
     return 0;
   }
   set_default_webgpu_context(&ctx);
-  printf("WebGPU device acquired (native); case dir: %s\n", dir.c_str());
 
-  bool ok = true;
-  for (const auto& tc : kCases) {
-    ok = run_case(dir, tc) && ok;
-  }
-
+  const int rc = RUN_ALL_TESTS();
   set_default_webgpu_context(nullptr);
   destroy_webgpu_context(ctx);
-
-  if (!ok) {
-    return 1;
-  }
-  printf("\nAll dispatch_order tests passed\n");
-  return 0;
+  return rc;
 }

@@ -8,7 +8,7 @@ import operator
 from typing import Set, Type
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.fuse_constant_ops_pass import (
     ComputeConstantOpsAOTPass,
@@ -19,7 +19,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class DecomposeBatchNormNoStatsPass(ArmPass):
+class DecomposeBatchNormNoStatsPass(ArmOpTargetedPass):
     """
     Decompose BatchNorm2d(track_running_stats=False) (aten._native_batch_norm_legit_no_training)
     into a sequence of elementwise operations:
@@ -42,21 +42,21 @@ class DecomposeBatchNormNoStatsPass(ArmPass):
         ComputeConstantOpsAOTPass,
         InsertTableOpsPass,
     }
+    target_ops = (
+        exir_ops.edge.aten._native_batch_norm_legit.no_stats,
+        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
+        torch.ops.aten._native_batch_norm_legit_no_training.default,
+        torch.ops.aten.batch_norm.default,
+        torch.ops.aten.native_batch_norm.default,
+    )
+    check_allowed_to_transform = True
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
-        bn_ops = (
-            exir_ops.edge.aten._native_batch_norm_legit.no_stats,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            torch.ops.aten._native_batch_norm_legit_no_training.default,
-            torch.ops.aten.batch_norm.default,
-            torch.ops.aten.native_batch_norm.default,
-        )
-
         modified = False
         for node in graph_module.graph.nodes:
             if (
                 node.op != "call_function"
-                or node.target not in bn_ops
+                or node.target not in self.target_ops
                 or not self.allowed_to_transform(node.meta)
             ):
                 continue

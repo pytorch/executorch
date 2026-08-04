@@ -299,7 +299,11 @@ def test_slice_scatter_u85_INT_stepN(test_module: input_t):
 @common.SkipIfNoModelConverter
 @common.parametrize(
     "test_module",
-    test_data_int_step1 | test_data_int_stepN | test_data_fp_step1 | test_data_fp_stepN,
+    test_data_int_step1
+    | test_data_int_stepN
+    | test_data_fp_step1
+    | test_data_fp_stepN
+    | test_data_bf16,
 )
 def test_slice_scatter_vgf_no_quant(test_module: input_t):
     pipeline = VgfPipeline[input_t](

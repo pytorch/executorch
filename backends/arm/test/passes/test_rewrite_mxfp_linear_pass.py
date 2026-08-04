@@ -54,10 +54,15 @@ def _get_nodes_from_target(
 
 def _rewrite_linear_module(
     config: MXFPOpConfig,
+    model_dtype: torch.dtype = torch.float32,
 ) -> tuple[torch.fx.GraphModule, list[torch.fx.Node], list[torch.fx.Node]]:
-    model = _LinearModule(bias=True).eval()
+    model = _LinearModule(bias=True).eval().to(model_dtype)
     to_mxfp(model, config, filter_fn=_is_linear)
-    exported = export(model, (torch.randn(4, 5, 32),), strict=False)
+    exported = export(
+        model,
+        (torch.randn(4, 5, 32, dtype=model_dtype),),
+        strict=False,
+    )
     tosa_spec = TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")
 
     with TosaLoweringContext(tosa_spec):
@@ -96,6 +101,19 @@ def test_rewrite_mxfp_linear_replaces_custom_op() -> None:
 
     output_node = graph_module.graph.output_node()
     assert tuple(output_node.meta["val"][0].shape) == (4, 5, 8)
+
+
+def test_rewrite_mxfp_linear_preserves_inferred_bfloat16_output_cast() -> None:
+    graph_module, _, matmul_nodes = _rewrite_linear_module(
+        MXFPOpConfig(),
+        model_dtype=torch.bfloat16,
+    )
+
+    output_node = graph_module.graph.output_node()
+
+    assert len(matmul_nodes) == 1
+    assert matmul_nodes[0].meta["val"].dtype == torch.float32
+    assert output_node.meta["val"][0].dtype == torch.bfloat16
 
 
 def test_rewrite_mxfp6_linear_marks_payload_dtype() -> None:

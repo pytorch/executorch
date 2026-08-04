@@ -347,6 +347,10 @@ class TestSliceTensorConverter:
 
         self.assert_model_without_slices(model, input_shape)
 
+    @pytest.mark.xfail(
+        reason="AIR-14679: should start working after faulty `conv2d` is fixed.",
+        strict=True,
+    )
     def test_nsys_inference__with_conv(self, mocker, request):
         input_shape = (11, 13, 5, 7)
         in_channels = input_shape[1]
@@ -361,8 +365,8 @@ class TestSliceTensorConverter:
         num_slices = len(dims)
         graph_verifier = DetailedGraphVerifier(
             mocker,
-            expected_delegated_ops={SliceCopy: num_slices},
-            expected_non_delegated_ops={Convolution: 1},
+            expected_delegated_ops={SliceCopy: num_slices, Convolution: 1},
+            expected_non_delegated_ops={},
         )
         dataset = RandomDatasetCreator(low=-255.0, high=255.0)
         comparator = AllCloseOutputComparator()

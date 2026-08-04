@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 
@@ -30,18 +31,44 @@ struct EmbeddingParams {
   uint32_t groups_per_row;
   uint32_t bytes_per_row;
   uint32_t total_blocks;
-  uint32_t _pad;
+  uint32_t is_linear_weight;
 };
 static_assert(
     sizeof(EmbeddingParams) == 32,
     "EmbeddingParams must be 32 bytes");
 
-uint64_t numel_of(const std::vector<int64_t>& dims) {
-  uint64_t n = 1;
-  for (int64_t d : dims) {
-    n *= static_cast<uint64_t>(d);
+// Resize hook body: recompute counts/dispatch; out = indices dims +
+// [embed_dim].
+void resize_embedding_q4gsw(
+    WebGPUGraph& g,
+    int indices_id,
+    int out_id,
+    EmbeddingParams params,
+    uint32_t wg_size,
+    size_t dispatch_idx,
+    WGPUBuffer params_buf) {
+  const auto& id = g.cur_dims(indices_id);
+  const uint64_t ni = utils::numel_of(id);
+  if (ni == 0) {
+    throw std::runtime_error("WebGPU embedding_q4gsw: zero indices");
   }
-  return n;
+  const uint64_t total_blocks = ni * params.blocks_per_row;
+  if (total_blocks > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU embedding_q4gsw: total_blocks exceeds uint32");
+  }
+  std::vector<int64_t> od = id;
+  od.push_back(static_cast<int64_t>(params.embed_dim));
+  g.set_cur_dims(out_id, od);
+  params.num_indices = static_cast<uint32_t>(ni);
+  params.total_blocks = static_cast<uint32_t>(total_blocks);
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &params, sizeof(params));
+  g.dispatch_at(dispatch_idx).workgroup_count_x =
+      utils::compute_1d_workgroup_count(
+          g.device(),
+          static_cast<uint32_t>(total_blocks),
+          wg_size,
+          "embedding_q4gsw(resize)");
 }
 
 // arg order mirrors Vulkan EmbeddingQ4gsw.cpp.
@@ -60,7 +87,8 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const auto& indices = graph.get_tensor(indices_id);
   const auto& out = graph.get_tensor(out_id);
 
-  // Only the flat weight path is supported (linear-block unsupported).
+  // is_linear_weight selects the nibble packing (false: even dim = high nibble;
+  // true: even dim = low nibble). The shader handles both via a uniform.
   bool is_linear = false;
   if (graph.get_value_type(is_linear_weight_id) ==
       WebGPUGraph::ValueType::Bool) {
@@ -72,10 +100,6 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   } else {
     throw std::runtime_error(
         "WebGPU embedding_q4gsw: is_linear_weight must be Bool or Int");
-  }
-  if (is_linear) {
-    throw std::runtime_error(
-        "WebGPU embedding_q4gsw: is_linear_weight=true is unsupported");
   }
 
   if (weight.dims.size() < 2 || scales.dims.size() < 2 || out.dims.empty() ||
@@ -102,7 +126,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // Leading index dims flatten row-major (mirrors Vulkan num_indices).
-  const uint64_t out_numel = numel_of(out.dims);
+  const uint64_t out_numel = utils::numel_of(out.dims);
   const uint32_t num_indices = static_cast<uint32_t>(out_numel / embed_dim);
   const uint32_t groups_per_row = static_cast<uint32_t>(scales.dims[1]);
   const uint32_t blocks_per_row = embed_dim / 32u;
@@ -119,9 +143,9 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   // Per-type byte guards (no runtime dtype): indices i32, weight u8, fp32 rest.
-  const uint64_t indices_numel = numel_of(indices.dims);
-  const uint64_t weight_numel = numel_of(weight.dims);
-  const uint64_t scales_numel = numel_of(scales.dims);
+  const uint64_t indices_numel = utils::numel_of(indices.dims);
+  const uint64_t weight_numel = utils::numel_of(weight.dims);
+  const uint64_t scales_numel = utils::numel_of(scales.dims);
   if (indices_numel != num_indices ||
       indices.nbytes != indices_numel * sizeof(int32_t) ||
       weight.nbytes != weight_numel ||
@@ -150,6 +174,7 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.groups_per_row = groups_per_row;
   params.bytes_per_row = bytes_per_row;
   params.total_blocks = static_cast<uint32_t>(total_blocks);
+  params.is_linear_weight = is_linear ? 1u : 0u;
 
   WGPUBufferDescriptor uniform_desc = {};
   uniform_desc.size = sizeof(EmbeddingParams);
@@ -162,81 +187,50 @@ void embedding_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wgpuBufferUnmap(uniform_buffer);
   graph.add_uniform_buffer_bytes(sizeof(EmbeddingParams));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kEmbeddingQ4gswWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  // Bind group layout: out (rw) + indices/weight/scales (ro storage) + uniform.
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-  for (uint32_t i = 1; i <= 3; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  }
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kEmbeddingQ4gswWGSL,
+      {
+          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           indices.buffer,
+           indices.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight.buffer,
+           weight.nbytes},
+          {3,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           scales.buffer,
+           scales.nbytes},
+          {4,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(EmbeddingParams)},
+      },
+      &wg_size_constant,
+      1);
 
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out.buffer;
-  bg_entries[0].size = out.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = indices.buffer;
-  bg_entries[1].size = indices.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight.buffer;
-  bg_entries[2].size = weight.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = scales.buffer;
-  bg_entries[3].size = scales.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = uniform_buffer;
-  bg_entries[4].size = sizeof(EmbeddingParams);
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, workgroup_count, "embedding_q4gsw"});
 
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  // Dynamic shapes: recompute counts/dispatch; out = indices + [embed_dim].
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      indices_id,
+      [indices_id, out_id, params, wg_size, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        resize_embedding_q4gsw(
+            g, indices_id, out_id, params, wg_size, dispatch_idx, params_buf);
+      });
 
-  graph.add_dispatch(
-      {pipeline, bind_group, workgroup_count, "embedding_q4gsw"});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  wgpuBufferRelease(uniform_buffer);
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace

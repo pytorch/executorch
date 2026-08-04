@@ -1,0 +1,22 @@
+q4gsw_linear_gemm_steel:
+  parameter_names_with_default_values:
+    DTYPE: float
+    PWDQ: false
+    ACC: float
+  shader_variants:
+    - NAME: q4gsw_linear_gemm_steel
+      DTYPE: float
+      PWDQ: false
+      ACC: float
+    - NAME: q4gsw_linear_gemm_steel_half
+      DTYPE: half
+      PWDQ: false
+      ACC: float
+    - NAME: q4gsw_linear_gemm_steel_half_pwdq
+      DTYPE: half
+      PWDQ: true
+      ACC: float
+    - NAME: q4gsw_linear_gemm_steel_half_pwdq_f16acc
+      DTYPE: half
+      PWDQ: true
+      ACC: half

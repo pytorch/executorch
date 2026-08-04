@@ -28,17 +28,28 @@
 // units and the pre-instantiated static lib.
 #define VMA_VULKAN_VERSION 1003000
 
-#ifdef __clang__
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wnullability-completeness"
 #pragma clang diagnostic ignored "-Wunused-variable"
-#endif /* __clang__ */
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4100 4101 4189)
+#endif
 
 #include <vk_mem_alloc.h>
 
-#ifdef __clang__
+#if defined(__clang__)
 #pragma clang diagnostic pop
-#endif /* __clang__ */
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #else // !ETVK_USE_META_VMA
 
@@ -74,16 +85,27 @@
 */
 #endif /* VULKAN_DEBUG */
 
-#ifdef __clang__
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wnullability-completeness"
 #pragma clang diagnostic ignored "-Wunused-variable"
-#endif /* __clang__ */
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4100 4101 4189)
+#endif
 
 #include <include/vk_mem_alloc.h>
 
-#ifdef __clang__
+#if defined(__clang__)
 #pragma clang diagnostic pop
-#endif /* __clang__ */
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #endif // ETVK_USE_META_VMA

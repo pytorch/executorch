@@ -506,9 +506,14 @@ class Gemma4_31B(nn.Module):
     ) -> tuple["Gemma4_31B", Gemma4_31BConfig]:
         """Build the model on `meta` and load weights from the HF safetensors checkpoint.
 
-        Uses lazy shard-by-shard loading + assign=True so peak memory stays at
-        roughly one shard's worth of weights.
+        Streams the shards through the shared ``load_checkpoint`` loader, remapping
+        HF tensor names via ``_hf_to_model_key`` (which also skips multimodal keys)
+        and filling the tied ``lm_head`` from ``embed_tokens`` via ``tie_map``.
+        Runtime buffers (KV caches, RoPE tables) stay on meta -- callers fill them
+        with ``materialize_runtime_buffers``.
         """
+        from executorch.extension.llm.export.load import load_checkpoint
+
         config = Gemma4_31BConfig.from_hf_config(os.path.join(model_dir, "config.json"))
         config.max_seq_len = max_seq_len
 
@@ -520,35 +525,11 @@ class Gemma4_31B(nn.Module):
             model = Gemma4_31B(config)
 
         print(f"Loading weights from {model_dir}...")
-        state_dict = _load_and_remap_checkpoint(model_dir, config)
-
-        # Tied embeddings: copy embedding weight into lm_head when missing.
-        if "lm_head.weight" not in state_dict and "embed_tokens.weight" in state_dict:
-            state_dict["lm_head.weight"] = state_dict["embed_tokens.weight"]
-
-        missing, unexpected = model.load_state_dict(
-            state_dict, strict=False, assign=True
-        )
-
-        # Runtime buffers (KV caches, RoPE tables, masks) are zero-initialized
-        # and not in the checkpoint — those are the "expected" missing keys.
-        runtime_prefixes = (
-            ".kv_cache.",
-            ".inv_freq",
-            "embed_normalizer",
-            "logit_softcap",
-            "cache_positions",
-        )
-        actual_missing = set(missing)
-        expected = {k for k in actual_missing if any(p in k for p in runtime_prefixes)}
-        extra = actual_missing - expected
-        if extra:
-            print(f"  WARNING: missing weight keys: {sorted(extra)[:10]}")
-        if unexpected:
-            print(f"  WARNING: unexpected keys: {sorted(unexpected)[:10]}")
-        print(
-            f"  Loaded {len(state_dict)} tensors "
-            f"({len(expected)} runtime buffers OK)"
+        load_checkpoint(
+            model_dir,
+            model,
+            key_map=_hf_to_model_key,
+            tie_map={"embed_tokens.weight": ("lm_head.weight", False)},
         )
         return model, config
 
@@ -607,38 +588,6 @@ def _hf_to_model_key(hf_key: str) -> Optional[str]:
         if m:
             return model_pat.replace("{}", m.group(1), 1)
     return None
-
-
-def _load_and_remap_checkpoint(model_dir: str, config: Gemma4_31BConfig) -> dict:
-    """Stream-load safetensors shards and remap keys to model state_dict keys."""
-    from safetensors import safe_open
-
-    index_path = os.path.join(model_dir, "model.safetensors.index.json")
-    if os.path.exists(index_path):
-        with open(index_path, "r") as f:
-            index = json.load(f)
-        shard_files = sorted(set(index["weight_map"].values()))
-    elif os.path.exists(os.path.join(model_dir, "model.safetensors")):
-        shard_files = ["model.safetensors"]
-    else:
-        raise FileNotFoundError(f"No safetensors checkpoint in {model_dir}")
-
-    state_dict: dict[str, torch.Tensor] = {}
-    skipped = 0
-    for shard_file in shard_files:
-        shard_path = os.path.join(model_dir, shard_file)
-        with safe_open(shard_path, framework="pt", device="cpu") as f:
-            for ckpt_key in f.keys():
-                model_key = _hf_to_model_key(ckpt_key)
-                if model_key is None:
-                    skipped += 1
-                    continue
-                tensor = f.get_tensor(ckpt_key)
-                # layer_scalar in checkpoint is shape (1,) bf16 — keep as-is.
-                state_dict[model_key] = tensor
-    if skipped > 0:
-        print(f"  Skipped {skipped} non-text keys (vision tower, etc.)")
-    return state_dict
 
 
 # ---------------------------------------------------------------------------

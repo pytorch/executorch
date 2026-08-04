@@ -98,6 +98,53 @@ def test_mxfp_linear_quantize_filter_fn_selects_modules() -> None:
     assert isinstance(model.skipped, torch.nn.Linear)
 
 
+def test_mxfp_linear_preserves_bfloat16_output_dtype() -> None:
+    model = LinearModule().eval().to(torch.bfloat16)
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+    )
+
+    output = model(torch.randn(4, 32, dtype=torch.bfloat16))
+
+    assert isinstance(model.linear, MXFPLinearOp)
+    assert model.linear.output_dtype == torch.bfloat16
+    assert output.dtype == torch.bfloat16
+
+
+def test_mxfp_linear_op_output_dtype_constructor_arg() -> None:
+    model = LinearModule().eval()
+    config = MXFPOpConfig(weight_dtype=torch.float8_e4m3fn)
+    to_mxfp(
+        model,
+        config,
+    )
+    assert isinstance(model.linear, MXFPLinearOp)
+
+    fp32_linear = MXFPLinearOp(
+        model.linear.weight_qdata,
+        model.linear.weight_scale,
+        model.linear.bias,
+        config.weight_dtype,
+        config.block_size,
+    )
+    bf16_linear = MXFPLinearOp(
+        model.linear.weight_qdata,
+        model.linear.weight_scale,
+        model.linear.bias,
+        config.weight_dtype,
+        config.block_size,
+        output_dtype=torch.bfloat16,
+    )
+
+    test_input = torch.randn(4, 32)
+
+    assert fp32_linear.output_dtype == torch.float32
+    assert fp32_linear(test_input).dtype == torch.float32
+    assert bf16_linear.output_dtype == torch.bfloat16
+    assert bf16_linear(test_input).dtype == torch.bfloat16
+
+
 def _test_mxfp_linear_export_preserves_custom_op(config: MXFPOpConfig) -> None:
     model = LinearModule().eval()
     to_mxfp(model, config)
@@ -135,3 +182,26 @@ def test_mxfp6_e3m2_linear_export_preserves_custom_op() -> None:
     _test_mxfp_linear_export_preserves_custom_op(
         MXFPOpConfig(weight_dtype=DTYPE_FP6_E3M2)
     )
+
+
+def test_mxfp_linear_export_preserves_inferred_bfloat16_output_dtype() -> None:
+    model = LinearModule().eval().to(torch.bfloat16)
+    to_mxfp(
+        model,
+        MXFPOpConfig(weight_dtype=torch.float8_e4m3fn),
+    )
+
+    exported = export(model, (torch.randn(4, 32, dtype=torch.bfloat16),), strict=False)
+
+    cast_nodes = [
+        node
+        for node in exported.graph_module.graph.nodes
+        if node.op == "call_function" and node.target == torch.ops.aten.to.dtype
+    ]
+
+    assert len(cast_nodes) == 1
+    assert cast_nodes[0].args[1] == torch.bfloat16
+    assert cast_nodes[0].meta["val"].dtype == torch.bfloat16
+    cast_input = cast_nodes[0].args[0]
+    assert isinstance(cast_input, torch.fx.Node)
+    assert cast_input.target == torch.ops.tosa_mxfp.linear.default

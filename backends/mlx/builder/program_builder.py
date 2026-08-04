@@ -322,7 +322,7 @@ class MLXProgramBuilder:
             return IntOrVidOrTid.from_vid(self.slot_to_vid(v))
         return IntOrVidOrTid.from_literal(int(v))
 
-    def _mark_read(self, node: Node):
+    def _mark_read(self, node: Node, consumer: Optional[Node] = None):
         assert self.node_info[node].handled, f"Node {node} is not handled"
         assert (
             self.node_info[node].remaining_reads > 0
@@ -335,8 +335,23 @@ class MLXProgramBuilder:
                 return
             if not isinstance(slot, tuple):
                 slot = (slot,)
+            # When the consuming node reuses one of this node's slots in place as
+            # its own output (out == in, e.g. an in-place unary like exp_), the
+            # slot's lifetime transfers to the consumer: it must NOT be reclaimed
+            # here, or a later allocation could grab the same id while the
+            # consumer (which shares it) is still live. The consumer frees it when
+            # its own reads finish. Slot equality is identity-based.
+            aliased: set = set()
+            if consumer is not None:
+                consumer_slot = self.slot_manager.get_slot(consumer)
+                if consumer_slot is not None:
+                    if not isinstance(consumer_slot, tuple):
+                        consumer_slot = (consumer_slot,)
+                    aliased = set(consumer_slot)
             for s in slot:
                 if s.id_space != IdSpace.Temp:
+                    continue
+                if s in aliased:
                     continue
                 if s.id_type == IdType.Tensor:
                     self.slot_manager.tid_managers[IdSpace.Temp].return_id(s.idx)
@@ -359,7 +374,7 @@ class MLXProgramBuilder:
             for a in flat_args:
                 if isinstance(a, Node):
                     if a not in seen:
-                        self._mark_read(a)
+                        self._mark_read(a, consumer=n)
                         seen.add(a)
 
         if isinstance(handler, PatternHandler):
@@ -552,6 +567,23 @@ class MLXProgramBuilder:
             if n.op in ("placeholder", "output"):
                 dtype_error = _check_dtype(n)
                 if dtype_error is not None:
+                    # A placeholder consumed entirely by pattern handlers (which
+                    # repack it into new constants -- e.g. an MX fp8/e8m0 weight
+                    # reinterpreted to uint32/uint8) is never emitted as an MLX
+                    # tensor, so its own (unserializable) dtype is irrelevant. Its
+                    # users are the pattern's head/body nodes, which at this point
+                    # have a handler assigned (by _apply_patterns) but are not yet
+                    # marked handled, so check for a claimed handler too.
+                    if (
+                        n.op == "placeholder"
+                        and n.users
+                        and all(
+                            self._is_handled(u) or self.node_info[u].handler is not None
+                            for u in n.users
+                        )
+                    ):
+                        self._mark_supported(n)
+                        continue
                     self._mark_unsupported(n, f"{n.op} {dtype_error}")
                     continue
                 self._mark_supported(n)

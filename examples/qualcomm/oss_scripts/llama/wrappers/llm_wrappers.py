@@ -13,7 +13,7 @@ import re
 import types
 
 from functools import partial
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 
@@ -241,6 +241,9 @@ class TextDecoder(Component):
                     # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
                     # See https://github.com/huggingface/transformers/pull/29402
                     state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
+            for k, v in state_dict.items():
+                if "tok_embeddings.weight" == k:
+                    state_dict[k] = v.float() * self.model_args.embedding_scale_factor
         else:
             state_dict = torch.load(
                 self.control_args.checkpoint,
@@ -456,6 +459,7 @@ class TextDecoder(Component):
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
+                1,  # num_heads=1: the mask broadcasts across all heads.
                 self.meta["get_ar_len"],
                 self.meta["get_max_context_len"],
             ),
@@ -465,9 +469,7 @@ class TextDecoder(Component):
             (self.meta["get_ar_len"], self.meta["get_head_dim"] // 2),
         }
 
-        freq_op = {
-            exir_ops.edge.aten.select.int,
-        }
+        freq_op = {exir_ops.edge.aten.select.int, exir_ops.edge.aten.select_copy.int}
         quant_io_type = None
 
         if node.op == "placeholder":
@@ -609,6 +611,7 @@ class TextDecoder(Component):
                     use_i64_token=self.control_args.embedding_quantize is not None,
                     num_fewshot=self.control_args.eval_num_fewshot,
                     limit=self.control_args.eval_limit,
+                    max_batch_size=self.meta["get_max_batch_size"],
                     event_name="export_tasks",
                 )
 
@@ -674,6 +677,7 @@ class TextDecoder(Component):
                     use_i64_token=self.control_args.embedding_quantize is not None,
                     num_fewshot=self.control_args.eval_num_fewshot,
                     limit=self.control_args.eval_limit,
+                    max_batch_size=self.meta["get_max_batch_size"],
                     event_name="convert_pt2e_tasks",
                 )
 
@@ -783,10 +787,26 @@ class HybridTextDecoder(Component):
                     activation_override(quantized_user, unquantized_user)
 
         def parameter_override(quantized_node, unquantized_node):
-            setattr(
+            # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
+            def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
+                attr: Any = graph_module
+                for target_atom in target.split("."):
+                    attr = getattr(attr, target_atom)
+                return attr
+
+            def _set_attr(
+                graph_module: torch.fx.GraphModule, target: str, replacement: Any
+            ) -> Any:
+                attr: Any = graph_module
+                target_list = target.split(".")
+                for target_atom in target_list[:-1]:
+                    attr = getattr(attr, target_atom)
+                setattr(attr, target_list[-1], replacement)
+
+            _set_attr(
                 unquantized_model,
                 unquantized_node.target,
-                getattr(quantized_model, quantized_node.target),
+                _get_attr(quantized_model, quantized_node.target),
             )
             # scale / zero point are part of op's attributes
             if list(quantized_node.users)[0].target in ptq_target:
@@ -1186,8 +1206,9 @@ class Modality(Component):
             outputs.append(outputs_each_batch)
         return DataLoader(
             ModalityEncoderDataset(outputs),
-            batch_size=1,
+            batch_size=self.control_args.batch_size,
             shuffle=False,
+            drop_last=self.control_args.batch_size > 1,
         )
 
     def quantize(self, request: Request):

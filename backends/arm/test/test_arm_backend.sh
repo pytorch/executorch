@@ -90,7 +90,8 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}"
+    # Exit code 5 means no tests were collected; preserve all other failures.
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}" -m "not xlarge" || [[ $? -eq 5 ]]
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -110,7 +111,19 @@ test_pytest_models_tosa() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k tosa -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_tosa_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest models for TOSA"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k tosa -m xlarge
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -146,7 +159,7 @@ test_pytest_models_ethos_u55() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u55 -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -204,7 +217,7 @@ test_pytest_models_ethos_u85() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k u85 -m "not xlarge"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -251,7 +264,21 @@ test_pytest_models_vkml() {
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_ -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_vkml_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest model tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k _vgf_ -m xlarge
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

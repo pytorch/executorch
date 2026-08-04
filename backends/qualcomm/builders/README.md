@@ -508,6 +508,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.add` (with alpha), `aten.sub` (with alpha) | `DecomposeBinaryAlpha` |
 | `aten.cdist`, `aten._cdist_forward` | `DecomposeCDist` |
 | `aten.cosh` | `DecomposeHyperbolicVariants` |
+| `aten.diagonal` | `DecomposeDiagonal` |
 | `aten.div.Tensor_mode` | `DecomposeDivMode` |
 | `aten.div.Scalar_mode` | `LiftConstantScalarOperands` → `DecomposeDivMode` |
 | `aten.im2col`, `aten.col2im` | `DecomposeColIm` |
@@ -520,6 +521,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.log10`, `aten.log2`, `aten.log1p` | `DecomposeLogVariants` |
 | `aten.max_pool3d` | `DecomposeMaxPool3d` |
 | `aten.min.dim`, `aten.max.dim` | `DecomposeMinMaxDim` |
+| `aten.pdist`, `aten._pdist_forward` | `DecomposePDist` |
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
 | `aten.reflection_pad2d` | `DecomposePad` |

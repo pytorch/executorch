@@ -450,6 +450,22 @@ class CDistForward(torch.nn.Module):
         return torch.ops.aten._cdist_forward.default(x, y, 2.0, None)
 
 
+class PDist(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.pdist(x, p=2)
+
+
+class PDistForward(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.ops.aten._pdist_forward.default(x, 2.0)
+
+
 class Ceil(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -885,6 +901,18 @@ class Conv2dTopK(torch.nn.Module):
         return topk_values
 
 
+class Conv2dSort(torch.nn.Module):
+    def __init__(self, descending=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 16, 3)
+        self.descending = descending
+
+    def forward(self, x):
+        x = self.conv(x)
+        sort_values, sort_indices = torch.sort(x, dim=1, descending=self.descending)
+        return sort_values
+
+
 class Conv2dUnbind(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1037,6 +1065,17 @@ class CumSum(torch.nn.Module):
 
     def forward(self, x):
         return x.cumsum(dim=0)
+
+
+class Diagonal(torch.nn.Module):
+    def __init__(self, offset=0, dim1=0, dim2=1):
+        super().__init__()
+        self.offset = offset
+        self.dim1 = dim1
+        self.dim2 = dim2
+
+    def forward(self, x):
+        return torch.diagonal(x, offset=self.offset, dim1=self.dim1, dim2=self.dim2)
 
 
 class Div(torch.nn.Module):
@@ -1521,7 +1560,7 @@ class IsNan(torch.nn.Module):
 class LargeTensorLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        hidden_dim = 8192
+        hidden_dim = 16384
         self.linear1_1 = torch.nn.Linear(512, hidden_dim)
         self.linear1_2 = torch.nn.Linear(512, hidden_dim)
         self.linear1_3 = torch.nn.Linear(512, hidden_dim)
@@ -2386,6 +2425,77 @@ class SimpleModel(torch.nn.Module):
         return z5
 
 
+class SimpleLLMDecoder(torch.nn.Module):
+    """
+    Minimal transformer decoder mirroring how QNN LLM decoders are built:
+    a token embedding feeds a stack of decoder blocks whose linear projections
+    are expressed as 1x1 conv2d (see static_llama.py), grouped under a
+    ``layers.N`` ModuleList. Takes token ids and an additive attention mask.
+    """
+
+    class ConvAttention(torch.nn.Module):
+        def __init__(self, dim, n_heads):
+            super().__init__()
+            self.n_heads = n_heads
+            self.head_dim = dim // n_heads
+            self.scale = self.head_dim**-0.5
+            self.wq_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wk_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wv_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+            self.wo_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+
+        def forward(self, x, atten_mask):  # x: (b, dim, 1, seq)
+            b, dim, _, seq = x.shape
+            q = self.wq_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            k = self.wk_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            v = self.wv_conv(x).view(b, self.n_heads, self.head_dim, seq)
+            attn = torch.matmul(q.transpose(-2, -1), k) * self.scale
+            attn = torch.softmax(attn + atten_mask, dim=-1)
+            ctx = torch.matmul(v, attn.transpose(-2, -1))
+            ctx = ctx.reshape(b, dim, 1, seq)
+            return self.wo_conv(ctx)
+
+    class ConvFeedForward(torch.nn.Module):
+        def __init__(self, dim, hidden_dim):
+            super().__init__()
+            self.w1_conv = torch.nn.Conv2d(dim, hidden_dim, 1, bias=False)
+            self.w2_conv = torch.nn.Conv2d(hidden_dim, dim, 1, bias=False)
+            self.w3_conv = torch.nn.Conv2d(dim, hidden_dim, 1, bias=False)
+            self.act_fn = torch.nn.SiLU()
+
+        def forward(self, x):
+            return self.w2_conv(self.act_fn(self.w1_conv(x)) * self.w3_conv(x))
+
+    class DecoderLayer(torch.nn.Module):
+        def __init__(self, dim, hidden_dim, n_heads):
+            super().__init__()
+            self.attention = SimpleLLMDecoder.ConvAttention(dim, n_heads)
+            self.feed_forward = SimpleLLMDecoder.ConvFeedForward(dim, hidden_dim)
+
+        def forward(self, x, atten_mask):
+            x = x + self.attention(x, atten_mask)
+            x = x + self.feed_forward(x)
+            return x
+
+    def __init__(self, vocab_size=128, dim=32, hidden_dim=64, n_heads=4, n_layers=1):
+        super().__init__()
+        self.tok_embeddings = torch.nn.Embedding(vocab_size, dim)
+        self.layers = torch.nn.ModuleList(
+            [self.DecoderLayer(dim, hidden_dim, n_heads) for _ in range(n_layers)]
+        )
+        self.output_conv = torch.nn.Conv2d(dim, dim, 1, bias=False)
+        self.eval()
+
+    def forward(self, input_ids, atten_mask):  # input_ids: (b, seq)
+        x = self.tok_embeddings(input_ids)  # (b, seq, dim)
+        b, seq, dim = x.shape
+        x = x.reshape(b, seq, 1, dim).transpose(1, 3)  # (b, dim, 1, seq)
+        for layer in self.layers:
+            x = layer(x, atten_mask)
+        x = self.output_conv(x)
+        return x.transpose(1, 3).reshape(b, seq, dim)
+
+
 class SkipBackToBack(torch.nn.Module):
 
     def __init__(self):
@@ -2520,6 +2630,33 @@ class Softmax(torch.nn.Module):
 
     def forward(self, x):
         return torch.nn.functional.softmax(x, dim=self.dim)
+
+
+class Sort(torch.nn.Module):
+    def __init__(self, dim=-1, descending=True):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x):
+        values, indices = torch.sort(x, dim=self.dim, descending=self.descending)
+        return values
+
+
+class SortAndIndex(torch.nn.Module):
+    def __init__(self, shape, dim=-1, descending=True):
+        super().__init__()
+        self.idx_source = torch.rand(*shape)
+        self.dim = dim
+        self.descending = descending
+        self.rank = len(shape)
+
+    def forward(self, x):
+        normalized_dim = self.dim if self.dim >= 0 else self.rank + self.dim
+
+        values, indices = torch.sort(x, dim=normalized_dim, descending=self.descending)
+        gathered = torch.gather(self.idx_source, normalized_dim, indices)
+        return values + gathered
 
 
 class Sqrt(torch.nn.Module):

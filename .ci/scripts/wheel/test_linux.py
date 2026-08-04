@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -30,6 +31,15 @@ if __name__ == "__main__":
             "OpenvinoBackend" in registered
         ), f"OpenvinoBackend not found in registered backends: {registered}"
         print("✓ OpenvinoBackend is registered")
+
+        # Vulkan backend is optional: only present when the wheel was built with
+        # EXECUTORCH_BUILD_VULKAN=1 and the Vulkan SDK (glslc) was available.
+        if "VulkanBackend" in registered:
+            print("✓ VulkanBackend is registered")
+        else:
+            print("⚠ VulkanBackend not registered (expected for the default wheel)")
+
+        test_base.test_cmsis_nn_install()
 
     test_base.run_tests(
         model_tests=[

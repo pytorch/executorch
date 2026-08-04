@@ -37,6 +37,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    get_sdk_build_id,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     HEXAGON_SDK_ROOT,
     HEXAGON_TOOLS_ROOT,
@@ -47,10 +51,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_qnn_context_binary_alignment,
-    get_sdk_build_id,
     get_soc_to_htp_arch_map,
     get_soc_to_lpai_hw_ver_map,
-    is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig

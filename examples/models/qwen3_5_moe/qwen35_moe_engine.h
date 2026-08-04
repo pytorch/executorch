@@ -7,8 +7,8 @@
  */
 
 // Engine/Session adapter for the Qwen3.5 MoE exported prefill/decode methods.
-// CUDA builds can host multiple sessions on one loaded model by rebinding the
-// model's mutable buffers before each execute.
+// CUDA and MLX builds can host multiple sessions on one loaded model by
+// rebinding the model's mutable buffers before each execute.
 
 #pragma once
 
@@ -28,9 +28,27 @@
 
 #ifdef EXECUTORCH_BUILD_CUDA
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
+#elif defined(EXECUTORCH_BUILD_MLX)
+#include <executorch/backends/mlx/runtime/mlx_mutable_state.h>
+#endif
+
+#if defined(EXECUTORCH_BUILD_CUDA) || defined(EXECUTORCH_BUILD_MLX)
+#define QWEN_HAS_MUTABLE_STATE 1
 #endif
 
 namespace executorch::extension::llm {
+
+#if defined(EXECUTORCH_BUILD_CUDA)
+using MutableStateContextOwner =
+    ::executorch::backends::cuda::MutableStateContextOwner;
+constexpr int kNoMutableSession =
+    ::executorch::backends::cuda::kNoMutableSession;
+#elif defined(EXECUTORCH_BUILD_MLX)
+using MutableStateContextOwner =
+    ::executorch::backends::mlx::MutableStateContextOwner;
+constexpr int kNoMutableSession =
+    ::executorch::backends::mlx::kNoMutableSession;
+#endif
 
 /// Immutable configuration for a Qwen3.5 MoE engine.
 struct Qwen35MoEConfig {
@@ -77,10 +95,9 @@ class ET_EXPERIMENTAL Qwen35MoEEngine : public LLMEngine {
       std::unordered_set<uint64_t> eos_ids,
       std::unique_ptr<Module> shared_module,
       bool rebind_available
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
       ,
-      std::unique_ptr<::executorch::backends::cuda::MutableStateContextOwner>
-          mutable_state
+      std::unique_ptr<MutableStateContextOwner> mutable_state
 #endif
       )
       : config_(std::move(config)),
@@ -89,7 +106,7 @@ class ET_EXPERIMENTAL Qwen35MoEEngine : public LLMEngine {
         eos_ids_(std::move(eos_ids)),
         shared_module_(std::move(shared_module)),
         rebind_available_(rebind_available)
-#ifdef EXECUTORCH_BUILD_CUDA
+#ifdef QWEN_HAS_MUTABLE_STATE
         ,
         mutable_state_(std::move(mutable_state))
 #endif
@@ -104,9 +121,8 @@ class ET_EXPERIMENTAL Qwen35MoEEngine : public LLMEngine {
   std::unique_ptr<Module> shared_module_;
   std::mutex exec_mutex_;
   bool rebind_available_ = false;
-#ifdef EXECUTORCH_BUILD_CUDA
-  std::unique_ptr<::executorch::backends::cuda::MutableStateContextOwner>
-      mutable_state_;
+#ifdef QWEN_HAS_MUTABLE_STATE
+  std::unique_ptr<MutableStateContextOwner> mutable_state_;
 #endif
   std::atomic<int> live_sessions_{0};
 };

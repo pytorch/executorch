@@ -192,6 +192,34 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "channels_last_ops",
+        srcs = [
+            "channels_last_ops.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.python_library(
+        name = "decompose_channels_last_pass",
+        srcs = [
+            "decompose_channels_last_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+        ],
+    )
+
+    runtime.python_library(
         name = "rank_0_to_rank_1",
         srcs = [
             "rank_0_to_rank_1.py",
@@ -266,6 +294,34 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":aten_to_dialect_pass",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_channels_last_ops",
+        srcs = [
+            "test/test_channels_last_ops.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_decompose_channels_last_pass",
+        srcs = [
+            "test/test_decompose_channels_last_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            ":decompose_channels_last_pass",
+            "//executorch/exir:lib",
+            "//executorch/extension/pybindings:portable_lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
 
@@ -397,6 +453,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             "//executorch/backends/test:graph_builder",
+            "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
             ":fuse_cascaded_transpose_or_permute_ops",
@@ -404,5 +461,35 @@ def define_common_targets():
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_ops_with_channels_last_variants",
+        srcs = [
+            "replace_ops_with_channels_last_variants.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_ops_with_channels_last_variants",
+        srcs = [
+            "test/test_replace_ops_with_channels_last_variants.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            ":replace_ops_with_channels_last_variants",
+            "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

@@ -96,6 +96,11 @@ def test_generate_stream_yields_and_fills_stats():
                 num_prompt_tokens = 3
                 num_generated_tokens = 2
                 finish_reason = "stop"
+                prefill_ms = 4.0
+                decode_ms = 5.0
+                total_ms = 10.0
+                prefill_tok_s = 750.0
+                decode_tok_s = 400.0
                 generated_token_ids = [10, 11]
 
             stats_callback(S())
@@ -110,6 +115,11 @@ def test_generate_stream_yields_and_fills_stats():
     assert "".join(out) == "Hello world"
     assert stats.completion_tokens == 2
     assert stats.finish_reason == "stop"
+    assert stats.prefill_ms == 4.0
+    assert stats.decode_ms == 5.0
+    assert stats.total_ms == 10.0
+    assert stats.prefill_tok_s == 750.0
+    assert stats.decode_tok_s == 400.0
     assert stats.generated_token_ids == [10, 11]
 
 

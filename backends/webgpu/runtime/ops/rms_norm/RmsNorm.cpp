@@ -7,7 +7,9 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -29,6 +31,39 @@ struct RmsNormParams {
   uint32_t _pad;
 };
 static_assert(sizeof(RmsNormParams) == 16, "RmsNormParams must be 16 bytes");
+
+// Resize hook body: recompute num_rows + rewrite the UBO for the live input.
+void resize_rms_norm(
+    WebGPUGraph& g,
+    int in_id,
+    int out_id,
+    uint32_t row_width,
+    float epsilon,
+    size_t dispatch_idx,
+    WGPUBuffer params_buf) {
+  const auto& d = g.cur_dims(in_id);
+  const uint64_t numel = utils::numel_of(d);
+  if (numel % static_cast<uint64_t>(row_width) != 0) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: numel not a multiple of row_width");
+  }
+  const uint32_t rows =
+      static_cast<uint32_t>(numel / static_cast<uint64_t>(row_width));
+  if (rows == 0) {
+    throw std::runtime_error("WebGPU rms_norm: zero rows");
+  }
+  if (rows > utils::queried_max_workgroups(g.device())) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
+  }
+  RmsNormParams p = {};
+  p.num_rows = rows;
+  p.row_width = row_width;
+  p.epsilon = epsilon;
+  wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
+  g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
+  g.set_cur_dims(out_id, d);
+}
 
 void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // et_vk.rms_norm.default args: [in, weight, eps, out]
@@ -69,9 +104,9 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     throw std::runtime_error("WebGPU rms_norm: zero rows");
   }
   // Validate the 1D dispatch limit before allocating any GPU objects.
-  if (num_rows > 65535u) {
+  if (num_rows > utils::queried_max_workgroups(device)) {
     throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit (65535)");
+        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
   }
 
   // Create uniform buffer for params
@@ -92,98 +127,71 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   graph.add_uniform_buffer_bytes(sizeof(RmsNormParams));
 
-  // Create shader module from built-in WGSL source
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kRmsNormWGSL, WGPU_STRLEN};
+  // Select the vec4 kernel when the row width is a multiple of 4 (every Llama
+  // hidden size qualifies); fall back to the scalar kernel otherwise. The two
+  // kernels are equivalent up to floating-point reassociation (the vec4
+  // reduction reorders the sum, so not bit-identical) and share the same bind
+  // group + dispatch.
+  const bool use_vec4 = (row_width % 4u == 0u);
 
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+  const char* shader_src = use_vec4 ? kRmsNormVec4WGSL : kRmsNormWGSL;
 
-  // Create bind group layout: out (rw) + in/weight (ro storage) + params
-  WGPUBindGroupLayoutEntry entries[4] = {};
+  // Runtime-overridable workgroup size (mirrors add op); clamp only reduces.
+  // Pow2 required: the kernel halves the reduction stride (wg_size / 2u).
+  const uint32_t wg_size =
+      utils::clamp_workgroup_size_pow2(device, kRmsNormWorkgroupSizeX);
+  WGPUConstantEntry wg_size_constant = {};
+  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
+  wg_size_constant.value = static_cast<double>(wg_size);
 
-  // t_out - storage buffer, read-write
-  entries[0].binding = 0;
-  entries[0].visibility = WGPUShaderStage_Compute;
-  entries[0].buffer.type = WGPUBufferBindingType_Storage;
-
-  // t_in - storage buffer, read-only
-  entries[1].binding = 1;
-  entries[1].visibility = WGPUShaderStage_Compute;
-  entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // t_weight - storage buffer, read-only
-  entries[2].binding = 2;
-  entries[2].visibility = WGPUShaderStage_Compute;
-  entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-
-  // params - uniform buffer
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 4;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  // Create pipeline layout
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
-  // Create compute pipeline
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
-
-  // Create bind group with actual buffers
   const auto& out_tensor = graph.get_tensor(out_id);
   const auto& weight_tensor = graph.get_tensor(weight_id);
-
-  WGPUBindGroupEntry bg_entries[4] = {};
-
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = out_tensor.buffer;
-  bg_entries[0].size = out_tensor.nbytes;
-
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = in_tensor.buffer;
-  bg_entries[1].size = in_tensor.nbytes;
-
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = weight_tensor.buffer;
-  bg_entries[2].size = weight_tensor.nbytes;
-
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = uniform_buffer;
-  bg_entries[3].size = sizeof(RmsNormParams);
-
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 4;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      shader_src,
+      {
+          {0,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {2,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           weight_tensor.buffer,
+           weight_tensor.nbytes},
+          {3,
+           WGPUBufferBindingType_Uniform,
+           uniform_buffer,
+           sizeof(RmsNormParams)},
+      },
+      &wg_size_constant,
+      1);
 
   // One workgroup per row (kRmsNormWorkgroupSizeX threads cooperate per row)
   static_assert(
       kRmsNormWorkgroupSizeX == 64,
-      "must match @workgroup_size and WG_SIZE in rms_norm.wgsl");
-  graph.add_dispatch({pipeline, bind_group, num_rows});
+      "kRmsNormWorkgroupSizeX must match override wg_size default (64)");
+  static_assert(
+      kRmsNormVec4WorkgroupSizeX == 64,
+      "kRmsNormVec4WorkgroupSizeX must match override wg_size default (64)");
+  const size_t dispatch_idx =
+      graph.add_dispatch({bundle.pipeline, bundle.bind_group, num_rows});
 
-  // Release intermediate objects (pipeline and bind_group are kept by dispatch)
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  // Dynamic shapes: recompute num_rows + rewrite the UBO for the live input.
+  WGPUBuffer params_buf = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id, out_id, row_width, epsilon, dispatch_idx, params_buf](
+          WebGPUGraph& g) {
+        resize_rms_norm(
+            g, in_id, out_id, row_width, epsilon, dispatch_idx, params_buf);
+      });
+
+  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
+  graph.own_uniform_buffer(uniform_buffer);
 }
 
 } // namespace

@@ -211,6 +211,11 @@ def test_generate_parses_warm_resume_metrics():
                 "reused_prompt_tokens": 90,
                 "prefilled_prompt_tokens": 10,
                 "session_reset_reason": "exact_prefix",
+                "prefill_ms": 12.5,
+                "decode_ms": 25.0,
+                "total_ms": 40.0,
+                "prefill_tok_s": 800.0,
+                "decode_tok_s": 40.0,
             },
         )
     )
@@ -222,6 +227,11 @@ def test_generate_parses_warm_resume_metrics():
     assert st.reused_prompt_tokens == 90
     assert st.prefilled_prompt_tokens == 10
     assert st.session_reset_reason == "exact_prefix"
+    assert st.prefill_ms == 12.5
+    assert st.decode_ms == 25.0
+    assert st.total_ms == 40.0
+    assert st.prefill_tok_s == 800.0
+    assert st.decode_tok_s == 40.0
 
 
 def test_spawn_worker_waits_for_ready():

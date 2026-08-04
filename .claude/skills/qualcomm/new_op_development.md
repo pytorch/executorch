@@ -66,7 +66,7 @@ class MyOpVisitor(NodeVisitor):
 - Static params: `weight = get_parameter(self.get_node(node.args[1]), self.edge_program)`
 - Scalar params → `AddScalarParam`; Array params → `AddTensorParam`
 - Data types: axis/dims=`UINT_32`, epsilon=`FLOAT_32`, booleans=`BOOL_8`
-- Int64 index tensors: use `.to(torch.int32)` in builder + add op to `I64_IN_OPS` in `_passes/i64_to_i32.py` for CPU fallback safety (see `op_gather.py` pattern)
+- Int64 index tensors: If the op **requires** int64 for PyTorch tracing validation (like `gather`, `scatter`), add to `I64_IN_OPS` in `i64_to_i32.py` + `.to(torch.int32)` in builder. If the op **accepts** int32 (like `index_select`), produce int32 directly via `dtype=torch.int32` — no `I64_IN_OPS` entry needed.
 
 ## Step 5: Register Builder (`builders/__init__.py`)
 
@@ -237,7 +237,7 @@ class DecomposeMyOp(ExportPass):
 - **Multi-output ops**: Use `wrapper_idx=i` + `getitem` skip op
 - **Negative dims**: QNN needs positive → `dim = dim % len(shape)`
 - **QCOM_AXIS_ORDER**: `LayoutTransform` permutes NCHW→NHWC; remap axis with `.index(dim)`. `get_tensor()` auto-permutes data.
-- **Int64 indices**: Add to `I64_IN_OPS` in `i64_to_i32.py` + `.to(torch.int32)` in builder (see `op_gather.py`)
+- **Int64 indices**: Only add to `I64_IN_OPS` if the op **requires** int64 at tracing time (e.g., `gather`, `scatter`). If the op accepts int32 (e.g., `index_select`), produce int32 directly in the decomposition pass. Check PyTorch docs for actual dtype requirements.
 - **Recompose passes**: Detect primitive sequences and replace with single native op. Ref: `recompose_pixel_unshuffle.py`
 - **`partition/common_defs.py`**: Remove op from `to_be_implemented_operator` when adding support
 - **HTP doc bugs**: If runtime fails but docs say supported → test on-device always.

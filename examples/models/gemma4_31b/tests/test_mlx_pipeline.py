@@ -21,14 +21,6 @@ import unittest
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_MLX_PACKERS,
-    pack_model,
-    QuantConfig,
-    quantize_model,
-    QuantRecipe,
-    QuantRule,
-)
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_gguf_checkpoint,
     build_random_tiny_model,
@@ -36,6 +28,13 @@ from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     GGUF_CONFIG,
     save_checkpoint,
     TINY_CONFIG,
+)
+from executorch.extension.llm.export.load import assign_state_dict
+from executorch.extension.llm.export.quant import (
+    QuantConfig,
+    quantize_model,
+    QuantRecipe,
+    QuantRule,
 )
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
@@ -67,7 +66,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
 
         for fqn, p in model.named_parameters():
             self.assertNotEqual(p.device.type, "meta", f"Weight '{fqn}' still on meta")
@@ -81,7 +80,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -108,7 +107,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -137,7 +136,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
@@ -192,7 +191,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         mlx_source_transformations(model, dtype=torch.bfloat16)
@@ -244,6 +243,59 @@ class TestMlxPipeline(unittest.TestCase):
             export_and_lower(model, config, out_dir, backend="mlx")
             self.assertTrue(os.path.exists(os.path.join(out_dir, "model.pte")))
 
+    def test_export_to_pte_with_sampling(self):
+        """--sample export: forward returns a seed-reproducible int64 token."""
+        try:
+            from executorch.backends.mlx import MLXPartitioner  # noqa: F401
+        except ImportError:
+            self.skipTest("MLX backend not available")
+
+        from executorch.examples.models.gemma4_31b.export import (
+            export_and_lower,
+            load_prequantized_model,
+        )
+        from executorch.runtime import Runtime, Verification
+
+        with tempfile.TemporaryDirectory() as ckpt_dir, tempfile.TemporaryDirectory() as out_dir:
+            save_checkpoint(ckpt_dir)
+            with open(os.path.join(ckpt_dir, "config.json"), "w") as f:
+                json.dump(config_dict(), f)
+
+            model, config = load_prequantized_model(
+                ckpt_dir, max_seq_len=TINY_CONFIG.max_seq_len, backend="mlx"
+            )
+            export_and_lower(model, config, out_dir, backend="mlx", sample=True)
+            pte = os.path.join(out_dir, "model.pte")
+            self.assertTrue(os.path.exists(pte))
+
+            program = Runtime.get().load_program(pte, verification=Verification.Minimal)
+            self.assertIn("use_sampling", program.method_names)
+            self.assertTrue(bool(program.load_method("use_sampling").execute([])[0]))
+
+            forward = program.load_method("forward")
+            tokens = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+            input_pos = torch.arange(4, dtype=torch.long)
+
+            def sample(seed):
+                return forward.execute(
+                    [
+                        tokens,
+                        input_pos,
+                        torch.tensor(0.8, dtype=torch.float32),
+                        torch.tensor(torch.iinfo(torch.int64).max, dtype=torch.int64),
+                        torch.tensor(0.9, dtype=torch.float32),
+                        torch.tensor(seed, dtype=torch.int64),
+                    ]
+                )[0]
+
+            token = sample(7)
+            self.assertEqual(token.dtype, torch.int64)
+            # Same-seed reproducibility is checked against the host reference
+            # mlx.sample, which is not bit-identical to the on-device graph; on
+            # non-Mac CI the delegated op runs that CPU reference, so this asserts
+            # the reference's determinism, not the Metal delegate's.
+            self.assertTrue(torch.equal(token, sample(7)))  # same seed reproducible
+
 
 class TestGgufMlxPipeline(unittest.TestCase):
     """Test GGUF → MLX loading path with synthetic Q6_K-like tensors."""
@@ -255,23 +307,24 @@ class TestGgufMlxPipeline(unittest.TestCase):
         except ModuleNotFoundError:
             self.skipTest("gguf package not installed")
 
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         # Will fail on missing file, but NOT on "Unsupported backend".
         with self.assertRaisesRegex((FileNotFoundError, OSError, RuntimeError), ".*"):
             load_gguf_model("/nonexistent.gguf", backend="mlx")
 
     def test_mlx_backend_rejects_unknown(self):
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         with self.assertRaisesRegex(ValueError, "Unsupported backend"):
             load_gguf_model("/nonexistent.gguf", backend="tpu")
 
     def test_gs16_packing_preserves_values(self):
         """Q6_K-like weight (gs=16) preserves dequantized values after packing."""
-        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
-        from executorch.examples.models.gemma4_31b.quant.quantize import (
+        from executorch.extension.llm.export.load import assign_one
+        from executorch.extension.llm.export.quant import (
             dequantize_weight,
+            to_exportable,
         )
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
@@ -287,7 +340,7 @@ class TestGgufMlxPipeline(unittest.TestCase):
         before = dequantize_weight(w, torch.float32)
 
         module = nn.Linear(128, 64, bias=False)
-        pack_for_mlx(module, {"weight": w})
+        assign_one(module, "weight", to_exportable("weight", w))
         after = dequantize_weight(module.weight.data, torch.float32)
 
         self.assertTrue(
@@ -297,10 +350,8 @@ class TestGgufMlxPipeline(unittest.TestCase):
 
     def test_embedding_packing_preserves_values(self):
         """MLX embedding packing preserves dequantized weight values."""
-        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
-        from executorch.examples.models.gemma4_31b.quant.quantize import (
-            dequantize_weight,
-        )
+        from executorch.extension.llm.export.load import assign_one
+        from executorch.extension.llm.export.quant import dequantize_weight, to_default
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
         w = IntxUnpackedToInt8Tensor(
@@ -315,7 +366,7 @@ class TestGgufMlxPipeline(unittest.TestCase):
         before = dequantize_weight(w, torch.float32)
 
         module = nn.Embedding(256, 128)
-        pack_for_mlx(module, {"weight": w})
+        assign_one(module, "weight", to_default("weight", w))
         after = dequantize_weight(module.weight.data, torch.float32)
 
         self.assertTrue(
@@ -497,7 +548,7 @@ class TestGgufLoadMlx(unittest.TestCase):
             self.skipTest("gguf package required")
 
     def _load(self, tmp):
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         path = os.path.join(tmp, "tiny.gguf")
         build_gguf_checkpoint(path)

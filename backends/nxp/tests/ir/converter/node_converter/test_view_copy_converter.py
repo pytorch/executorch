@@ -8,37 +8,28 @@ from typing import Sequence
 import numpy as np
 import pytest
 import torch
+from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
+from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
+from executorch.backends.nxp.tests.model_output_comparator import (
+    AllCloseOutputComparator,
+)
+from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 
-from executorch.backends.nxp.backend.edge_program_converter import (
-    EdgeProgramToIRConverter,
-)
-from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
-    ModelBuilder,
-)
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.conv_2d_options import (
-    Conv2D,
-)
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reshape_options import (
-    Reshape,
-)
-from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
-    Transpose,
-)
-from executorch.backends.nxp.tests.executorch_pipeline import (
-    to_edge_program,
-    to_quantized_edge_program,
-)
-from executorch.backends.nxp.tests.executors import (
-    convert_run_compare,
-    graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddMM,
+    AddTensor,
+    AvgPool2D,
+    Convolution,
+    ExecutorchDelegateCall,
+    MM,
+    PermuteCopy,
+    Relu,
+    ViewCopy,
 )
 from torch import nn
-from torch.export import ExportedProgram
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @pytest.fixture(autouse=True)
@@ -47,15 +38,13 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-# noinspection PyProtectedMember
-ExecutorchDelegateCall = torch.ops.higher_order.executorch_call_delegate
-
-
-class FormatlessToChannelsFirstModule(nn.Module):
-    def __init__(self, channels: int, new_shape: Sequence[int]):
+class ReshapeConvModule(nn.Module):
+    def __init__(self, new_shape: Sequence[int]):
         super().__init__()
-        self.conv = nn.Conv2d(channels, channels, 2, bias=True)
         self.new_shape = new_shape
+        self.conv = nn.Conv2d(
+            new_shape[1], new_shape[1], kernel_size=3, padding=1, bias=True
+        )
 
     def forward(self, x):
         x = torch.reshape(x, self.new_shape)
@@ -63,12 +52,31 @@ class FormatlessToChannelsFirstModule(nn.Module):
         return x
 
 
-class FormatlessToFormatlessModule(nn.Module):
+class ConvViewConvModule(nn.Module):
+    def __init__(self, input_shape: Sequence[int], new_shape: Sequence[int]):
+        super().__init__()
+        self.new_shape = new_shape
+        self.conv1 = nn.Conv2d(
+            input_shape[1], input_shape[1], kernel_size=3, padding=1, bias=True
+        )
+        self.conv2 = nn.Conv2d(
+            new_shape[1], new_shape[1], kernel_size=3, padding=1, bias=True
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = torch.reshape(x, self.new_shape)
+        x = self.conv2(x)
+        return x
+
+
+class AddReshapeModule(nn.Module):
     def __init__(self, new_shape: Sequence[int]):
         super().__init__()
         self.new_shape = new_shape
 
     def forward(self, x):
+        x = x + x
         x = torch.reshape(x, self.new_shape)
         return x
 
@@ -76,7 +84,7 @@ class FormatlessToFormatlessModule(nn.Module):
 class ConvReshapeModule(nn.Module):
     def __init__(self, channels: int, new_shape: Sequence[int]):
         super().__init__()
-        self.conv = nn.Conv2d(channels, channels, 2, bias=True)
+        self.conv = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=True)
         self.new_shape = new_shape
 
     def forward(self, x):
@@ -116,7 +124,7 @@ class ConvLinearViewModule(torch.nn.Module):
 
 
 class ConvViewLinearModule(torch.nn.Module):
-    def __init__(self, view_new_shape: list[int], channels: int, bias: bool):
+    def __init__(self, view_new_shape: Sequence[int], channels: int, bias: bool):
         super().__init__()
         self.view_new_shape = view_new_shape
         self.conv = nn.Conv2d(channels, channels, 1, 1)
@@ -129,341 +137,8 @@ class ConvViewLinearModule(torch.nn.Module):
         return x
 
 
-class ConvViewConvModule(torch.nn.Module):
-    def __init__(self, view_new_shape: list[int], channels: int):
-        super().__init__()
-        self.view_new_shape = view_new_shape
-        self.conv1 = nn.Conv2d(channels, channels, 1, 1)
-        self.conv2 = nn.Conv2d(channels, channels, 1, 1)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = x.view(self.view_new_shape)
-        x = self.conv2(x)
-        return x
-
-
-def test__view_copy__channels_first_to_2d(mocker):
-    input_shape = (1, 4, 7, 9)
-    new_shape = (6, 32)  # Mix up the dimensions for a thorough test.
-
-    torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
-    )
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Conv2D)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Reshape)
-
-
-def test__view_copy__channels_first_to_4d(mocker):
-    input_shape = (1, 8, 6, 8)
-    new_shape = (7, 4, 2, 5)
-
-    torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        atol=2.0e-7,
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
-    )
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Conv2D)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Reshape)
-
-
-def test__view_copy__formatless_to_channels_first(mocker):
-    input_shape = (12, 32)
-    new_shape = (1, 4, 12, 8)  # Mix up the dimensions for a thorough test.
-
-    torch_model = FormatlessToChannelsFirstModule(
-        channels=new_shape[1], new_shape=new_shape
-    )
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-        atol=2.0e-7,
-        conversion_config=ConversionConfig(
-            {"use_neutron_for_format_conversion": False}
-        ),
-    )
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 3
-    assert isinstance(ops[0].builtin_options, Reshape)
-    assert isinstance(ops[1].builtin_options, Transpose)
-    assert isinstance(ops[2].builtin_options, Conv2D)
-
-
-def test__view_copy__formatless_to_formatless(mocker):
-    input_shape = (12, 32)
-    new_shape = (1, 4, 6, 16)
-
-    torch_model = FormatlessToFormatlessModule(new_shape=new_shape)
-    edge_program = to_edge_program(torch_model, input_shape).exported_program()
-
-    input_data = np.random.random(input_shape).astype(np.float32)
-
-    converter_spy = mocker.spy(ModelBuilder, "finish")
-
-    convert_run_compare(edge_program, input_data)
-
-    tflite_model = converter_spy.spy_return
-    ops = tflite_model.sub_graphs[0].operators.vector
-    assert len(ops) == 1  # No extra Transpose ops.
-    assert isinstance(ops[0].builtin_options, Reshape)
-
-
-@pytest.mark.parametrize(
-    "input_shape, new_shape",
-    [
-        pytest.param((8, 64), (1, 16, 4, 4), id="2D"),
-    ],
-)
-def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape, use_qat):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(
-        LinearReshapeModule(new_shape=new_shape), input_shape, use_qat=use_qat
-    )
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    edge_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.0
-    )
-
-
-@pytest.mark.parametrize(
-    "input_shape, channels_view_out",
-    [
-        pytest.param((1, 4, 16, 16), 196, id="4D"),
-    ],
-)
-def test_view_w_conv_linear_quant_conversion(
-    mocker, input_shape, channels_view_out, use_qat
-):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(
-        ConvLinearViewModule(
-            channels=input_shape[1], channels_view_out=channels_view_out
-        ),
-        input_shape,
-        use_qat=use_qat,
-        use_neutron_for_format_conversion=False,
-    )
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    edge_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(
-        edge_program,
-        input_data,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tfl_model=tflite_flatbuffers_model,
-        atol=1.0,
-    )
-
-
-@pytest.mark.parametrize(
-    "bias",
-    [True, False],
-)
-def test__view_copy__context_dependent__channels_first_to_formatless__transpose_fused(
-    bias, mocker
-):
-    input_shape = (1, 2, 3, 4)
-    new_shape = [1, 2 * 3 * 4]
-    module = ConvViewLinearModule(new_shape, 2, bias)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure all 3 nodes were delegated
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    converted_edge_program = converter_spy.call_args.args[1]
-    neutron_ir_model = converter_spy.spy_return[0]
-    convert_run_compare(
-        converted_edge_program,
-        input_data,
-        tfl_model=neutron_ir_model,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-    )
-
-
-@pytest.mark.parametrize(
-    "bias",
-    [True, False],
-)
-def test__view_copy__context_dependent__channels_first_to_formatless__transpose_not_fusable(
-    bias,
-):
-    input_shape = (1, 2, 3, 4)
-    new_shape = [
-        2,
-        3 * 4,
-    ]  # The batch size changes, which makes the optimization not applicable.
-    module = ConvViewLinearModule(new_shape, 2, bias)
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure all ops were delegated anyway.
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-
-def test__view_copy__formatless_to_channels_first__transpose_supported(mocker):
-    input_shape = (1, 8 * 3 * 8)
-    new_shape = [1, 8, 3, 8]
-    module = FormatlessToChannelsFirstModule(8, new_shape)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure both nodes were delegated
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    converted_edge_program = converter_spy.call_args.args[1]
-    neutron_ir_model = converter_spy.spy_return[0]
-    convert_run_compare(
-        converted_edge_program,
-        input_data,
-        tfl_model=neutron_ir_model,
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
-
-
-def test__view_copy__channels_first_to_channels_first__transpose_supported(mocker):
-    input_shape = (1, 8, 3, 8)
-    new_shape = [1, 8, 1, 24]
-    module = ConvViewConvModule(new_shape, 8)
-
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    ep = to_quantized_edge_program(
-        module,
-        input_shape,
-        use_neutron_for_format_conversion=False,
-    ).exported_program()
-
-    # Make sure all nodes were delegated
-    assert any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert not graph_contains_any_of_ops(
-        ep.graph,
-        [
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.view_copy.default,
-        ],
-    )
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    converted_edge_program = converter_spy.call_args.args[1]
-    neutron_ir_model = converter_spy.spy_return[0]
-    convert_run_compare(
-        converted_edge_program,
-        input_data,
-        tfl_model=neutron_ir_model,
-        tflite_input_preprocess=ToChannelLastPreprocess(),
-        tflite_output_preprocess=ToChannelFirstPreprocess(),
-    )
-
-
 class ViewViewModel(nn.Module):
-    def __init__(self, new_shape_1: list[int], new_shape_2: list[int]):
+    def __init__(self, new_shape_1: Sequence[int], new_shape_2: Sequence[int]):
         super().__init__()
         self.new_shape_1 = new_shape_1
         self.new_shape_2 = new_shape_2
@@ -474,7 +149,7 @@ class ViewViewModel(nn.Module):
 
 
 class ViewAddZeroModel(nn.Module):
-    def __init__(self, new_shape: list[int]):
+    def __init__(self, new_shape: Sequence[int]):
         super().__init__()
         self.new_shape = new_shape
 
@@ -484,43 +159,262 @@ class ViewAddZeroModel(nn.Module):
         return x + zero
 
 
-def test__view_copy__noop_partitions__second_view():
-    input_shape = (1, 2, 3, 4)
-    new_shape1 = [2, 12]
-    new_shape2 = [6, 4]
-    module = ViewViewModel(new_shape1, new_shape2)
-
-    ep = to_quantized_edge_program(
-        module,
+class TestViewCopyNewFlow:
+    @staticmethod
+    def assert_delegated_and_correct(
+        mocker,
+        model,
         input_shape,
-    ).exported_program()
+        request,
+        exp_deleg_ops,
+        exp_non_deleg_ops,
+        use_qat=False,
+    ):
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops=exp_deleg_ops,
+            expected_non_delegated_ops=exp_non_deleg_ops,
+        )
 
-    # Make sure neither `view_copy` was delegated.
-    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert graph_contains_any_of_ops(
-        ep.graph,
+        dataset = RandomDatasetCreator(low=-128, high=128)
+
+        # Quantize the dataset and allow a single bit error.
+        remove_quant_io_ops = True
+        comparator = AllCloseOutputComparator(atol=1)
+
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            dataset,
+            comparator,
+            mocker=mocker,
+            use_qat=use_qat,
+            remove_quant_io_ops=remove_quant_io_ops,
+        )
+
+    @staticmethod
+    def assert_not_delegated(model, input_shape):
+        delegated_ep = to_quantized_edge_program(
+            model,
+            input_shape,
+        ).exported_program()
+
+        # Make sure the partition was NOT delegated.
+        assert not graph_contains_any_of_ops(
+            delegated_ep.graph, [ExecutorchDelegateCall]
+        )
+        assert graph_contains_any_of_ops(delegated_ep.graph, [ViewCopy])
+
+    @pytest.mark.parametrize(
+        "input_shape, new_shape",
         [
-            exir_ops.edge.aten.view_copy.default,
+            pytest.param((3, 7, 3, 2), (126,), id="1D view"),
+            pytest.param((1, 4, 7, 9), (6, 42), id="2D view"),
+            pytest.param((3, 3, 7, 7), (7, 7, 9), id="3D view"),
+            pytest.param((1, 8, 6, 8), (6, 4, 2, 8), id="4D view"),
+            pytest.param((2, 7, 5, 9), (3, 2, 3, 7, 5), id="5D view"),
         ],
     )
-
-
-def test__view_copy__noop_partitions__add_zeros():
-    input_shape = (1, 2, 3, 4)
-    new_shape = [2, 12]
-    module = ViewAddZeroModel(new_shape)
-
-    ep = to_quantized_edge_program(
-        module,
+    def test__view_copy__channels_first_to_formatless(
+        self,
+        mocker,
         input_shape,
-    ).exported_program()
+        new_shape,
+        request,
+        use_qat,
+    ):
+        model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
 
-    # Make sure neither the `view` nor the `add` was delegated
-    assert not any(n.target == ExecutorchDelegateCall for n in ep.graph.nodes)
-    assert graph_contains_any_of_ops(
-        ep.graph,
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={Convolution: 1, ViewCopy: 1},
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, new_shape",
         [
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.view_copy.default,
+            pytest.param((126,), (3, 7, 3, 2), id="1D view"),
+            pytest.param((6, 42), (1, 4, 7, 9), id="2D view"),
+            pytest.param((7, 7, 9), (3, 3, 7, 7), id="3D view"),
+            pytest.param((6, 4, 2, 8), (1, 8, 6, 8), id="4D view"),
+            pytest.param((3, 2, 3, 7, 5), (2, 7, 5, 9), id="5D view"),
         ],
     )
+    def test__view_copy__formatless_to_channels_first(
+        self, input_shape, new_shape, mocker, request, use_qat
+    ):
+        model = ReshapeConvModule(new_shape=new_shape)
+
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={Convolution: 1, ViewCopy: 1},
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, new_shape",
+        [
+            pytest.param((3, 7, 3, 2), (126,), id="1D view"),
+            pytest.param((1, 4, 7, 9), (6, 42), id="2D view"),
+            pytest.param((3, 3, 7, 7), (7, 7, 9), id="3D view"),
+            pytest.param((1, 8, 6, 8), (6, 4, 2, 8), id="4D view"),
+            pytest.param((2, 7, 5, 9), (3, 2, 3, 7, 5), id="5D view"),
+        ],
+    )
+    def test__view_copy__formatless_to_formatless(
+        self, input_shape, new_shape, mocker, request, use_qat
+    ):
+        model = AddReshapeModule(new_shape=new_shape)
+
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={AddTensor: 1, ViewCopy: 1},
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    @pytest.mark.parametrize(
+        "input_shape, new_shape",
+        [
+            pytest.param((6, 4, 2, 8), (1, 8, 6, 8), id="4D view"),
+        ],
+    )
+    def test__view_copy__channels_first_to_channels_first(
+        self, input_shape, new_shape, mocker, request, use_qat
+    ):
+        model = ConvViewConvModule(input_shape, new_shape)
+
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={Convolution: 2, ViewCopy: 1},
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    def test_view_copy_w_linear_quant_conversion(self, mocker, request, use_qat):
+        input_shape = (8, 64)
+        new_shape = (1, 16, 4, 4)
+
+        model = LinearReshapeModule(new_shape=new_shape)
+
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={AddMM: 1, ViewCopy: 1, PermuteCopy: 1},
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    def test_view_w_conv_linear_quant_conversion(self, request, mocker, use_qat):
+        input_shape = (1, 4, 16, 16)
+        channels_view_out = 196
+
+        model = ConvLinearViewModule(
+            channels=input_shape[1], channels_view_out=channels_view_out
+        )
+
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={
+                AddMM: 1,
+                ViewCopy: 1,
+                Convolution: 1,
+                AvgPool2D: 1,
+                Relu: 1,
+                PermuteCopy: 1,
+            },
+            exp_non_deleg_ops={},
+            use_qat=use_qat,
+        )
+
+    @pytest.mark.parametrize(
+        "bias",
+        [True, False],
+    )
+    def test__view_copy__context_dependent__channels_first_to_formatless__transpose_fused(
+        self, bias, mocker, request
+    ):
+        input_shape = (1, 2, 3, 4)
+        new_shape = (1, 2 * 3 * 4)
+        model = ConvViewLinearModule(new_shape, 2, bias)
+
+        converted_lin_op = AddMM if bias else MM
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={
+                converted_lin_op: 1,
+                ViewCopy: 1,
+                Convolution: 1,
+                PermuteCopy: 1,
+            },
+            exp_non_deleg_ops={},
+        )
+
+    @pytest.mark.parametrize(
+        "bias",
+        [True, False],
+    )
+    def test__view_copy__context_dependent__channels_first_to_formatless__transpose_not_fusable(
+        self, bias, mocker, request
+    ):
+        input_shape = (1, 2, 3, 4)
+        new_shape = (
+            2,
+            3 * 4,
+        )  # The batch size changes, which makes the optimization not applicable.
+        model = ConvViewLinearModule(new_shape, 2, bias)
+
+        converted_lin_op = AddMM if bias else MM
+        self.assert_delegated_and_correct(
+            mocker,
+            model,
+            input_shape,
+            request,
+            exp_deleg_ops={
+                converted_lin_op: 1,
+                ViewCopy: 1,
+                Convolution: 1,
+                PermuteCopy: 1,
+            },
+            exp_non_deleg_ops={},
+        )
+
+    def test__view_copy__noop_partitions__second_view(self):
+        input_shape = (1, 2, 3, 4)
+        new_shape1 = (2, 12)
+        new_shape2 = (6, 4)
+        model = ViewViewModel(new_shape1, new_shape2)
+
+        self.assert_not_delegated(model, input_shape)
+
+    def test__view_copy__noop_partitions__add_zeros(self):
+        input_shape = (1, 2, 3, 4)
+        new_shape = (2, 12)
+        model = ViewAddZeroModel(new_shape)
+
+        self.assert_not_delegated(model, input_shape)

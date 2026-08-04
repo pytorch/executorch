@@ -9,7 +9,11 @@ from typing import cast, Sequence, TypeVar
 import sympy  # type: ignore[import-untyped]
 import torch
 
-from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
+from executorch.backends.arm._passes.dim_maps import (
+    normalize_view_shape,
+    PermuteMap,
+    ViewMap,
+)
 from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
@@ -166,10 +170,11 @@ def _propose_reduction_view_swap(
     if not view_map.is_valid_map:
         return None
 
-    target_dims = view_map.map_dim(source_dims)
-    if target_dims is None:
+    proposal = view_map.map_reduction_after_view(input_shape, source_dims)
+    if proposal is None:
         return None
-    return list(view_shape), target_dims
+    view_shape, target_dims = proposal
+    return cast(list[_DimT], view_shape), target_dims
 
 
 def _propose_view_reduction_swap(
@@ -181,10 +186,11 @@ def _propose_view_reduction_swap(
     if not view_map.is_valid_map:
         return None
 
-    source_dims = view_map.map_dim_inverse(target_dims)
-    if source_dims is None:
+    proposal = view_map.map_reduction_before_view(target_dims)
+    if proposal is None:
         return None
-    return source_dims, _reduce_shape(view_shape, target_dims)
+    source_dims, output_shape = proposal
+    return source_dims, cast(list[_DimT], output_shape)
 
 
 def _bruteforce_permute_view_swaps(
@@ -258,13 +264,13 @@ def test_dim_map_maps_split_and_merged_prime_factor_groups() -> None:
     view_map = ViewMap.from_shapes([1, 2, 3, 4], [1, 6, 2, 2])
 
     assert view_map.is_valid_map
-    assert view_map.map_dim(0) is None
+    assert view_map.map_dim(0) == [0]
     assert view_map.map_dim(1) is None
     assert view_map.map_dim(2) is None
     assert view_map.map_dim(3) == [2, 3]
     assert view_map.map_dim([1, 2]) == [1]
     assert view_map.map_dim([3, 1]) is None
-    assert view_map.map_dim([3, 1, 2]) == [2, 3, 1]
+    assert view_map.map_dim([3, 1, 2]) == [1, 2, 3]
 
     assert view_map.map_dim_inverse(0) is None
     assert view_map.map_dim_inverse(1) == [1, 2]
@@ -297,6 +303,42 @@ def test_dim_map_matches_view_map_docstring_example_reduction_dims() -> None:
     assert view_map.map_dim(1) is None
     assert view_map.map_dim(2) is None
     assert view_map.map_dim_inverse(2) is None
+
+
+def test_dim_map_allows_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    proposal = _propose_reduction_view_swap([6, 4], [0], [6, 1, 4])
+    candidates = _bruteforce_reduction_view_swaps(x, [0], [6, 1, 4])
+
+    assert proposal == ([6, 1, 4], [0])
+    assert proposal in candidates
+
+
+def test_dim_map_allows_inverse_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    proposal = _propose_view_reduction_swap([6, 4], [6, 1, 4], [0])
+    candidates = _bruteforce_view_reduction_swaps(x, [6, 1, 4], [0])
+
+    assert proposal == ([0], [1, 1, 4])
+    assert proposal in candidates
+
+
+def test_dim_map_allows_output_singleton_rank_change_reduction_swap() -> None:
+    x = _tensor([6, 4])
+    view_map = ViewMap.from_shapes([1, 4], [1, 1, 4])
+    proposal = view_map.map_reduction_after_view([6, 4], [0])
+
+    assert proposal == ([6, 1, 4], [0, 1])
+    view_shape, target_dims = proposal
+    original = x.sum(dim=0, keepdim=True).reshape(1, 1, 4)
+    candidate = x.reshape(view_shape).sum(dim=tuple(target_dims), keepdim=True)
+    assert _same(original, candidate)
+
+
+def test_dim_map_rejects_invalid_zero_dim_remap() -> None:
+    view_map = ViewMap.from_shapes([5, 2, 60], [2, 60])
+
+    assert view_map.remap_target_shape([1, 2, 60]) is None
 
 
 def test_dim_map_matches_view_map_docstring_example_permutation_dims() -> None:
@@ -356,6 +398,49 @@ def test_dim_map_uses_strict_no_mapping_for_singletons() -> None:
     assert split_view_map.map_dim_inverse([0, 2]) == [0]
 
 
+def test_dim_map_maps_reduced_singletons_only_when_unambiguous() -> None:
+    split_singleton_view_map = ViewMap.from_shapes([1, 4], [1, 1, 4])
+    assert split_singleton_view_map.map_dim(0) == [0, 1]
+
+    squeezed_singleton_view_map = ViewMap.from_shapes([1, 50, 10, 1], [1, 50, 10])
+    assert squeezed_singleton_view_map.map_dim(-1) is None
+    assert squeezed_singleton_view_map.map_dim([0, -1]) == [0]
+
+
+def test_dim_map_remaps_unit_slice_through_view() -> None:
+    view_map = ViewMap.from_shapes([5, 2, 1, 4, 6], [5, 2, 4, 6])
+
+    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 0, 1) == (
+        [5, 2, 12, 6],
+        2,
+        0,
+        4,
+    )
+    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 1, 2) == (
+        [5, 2, 12, 6],
+        2,
+        4,
+        8,
+    )
+
+
+def test_dim_map_remaps_unit_slice_through_flattening_view() -> None:
+    view_map = ViewMap.from_shapes([5, 2, 1, 4, 6], [5, 2, 24])
+
+    assert view_map.remap_unit_slice([5, 2, 3, 4, 6], 2, 1, 2) == (
+        [5, 2, 72],
+        2,
+        24,
+        48,
+    )
+
+
+def test_dim_map_does_not_remap_unit_slice_into_previous_axis() -> None:
+    view_map = ViewMap.from_shapes([3, 3, 1], [3, 3])
+
+    assert view_map.remap_unit_slice([3, 3, 3], 2, 0, 1) is None
+
+
 def test_dim_map_preserves_symbolic_dimensions_as_prime_factors() -> None:
     shape_env = ShapeEnv()
     batch = _make_symint(shape_env, "batch", hint=4)
@@ -366,6 +451,53 @@ def test_dim_map_preserves_symbolic_dimensions_as_prime_factors() -> None:
     assert view_map.map_dim(0) == [0]
     assert view_map.map_dim(1) == [1, 2]
     assert view_map.map_dim_inverse(0) == [0]
+
+
+def test_normalize_view_shape_infers_concrete_dim_from_symints() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    normalized_shape = normalize_view_shape([batch, 6], [batch, -1])
+
+    assert normalized_shape[0] is batch
+    assert normalized_shape[1] == 6
+    assert isinstance(normalized_shape[1], int)
+
+
+def test_normalize_view_shape_preserves_symbolic_inferred_dim() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    normalized_shape = normalize_view_shape([2, batch], [-1])
+
+    assert isinstance(normalized_shape[0], torch.SymInt)
+    assert normalized_shape[0] is not batch
+    assert sympy.simplify(normalized_shape[0].node.expr - 2 * batch.node.expr) == 0
+
+
+def test_view_map_simplifies_constant_symint_dims() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+    constant = batch * 6 // batch
+
+    view_map = ViewMap.from_shapes([batch, constant], [batch, 2, 3])
+
+    assert view_map.source_shape[1] == 6
+    assert isinstance(view_map.source_shape[1], int)
+    assert view_map.is_valid_map
+    assert view_map.map_dim(1) == [1, 2]
+
+
+def test_view_map_from_shapes_normalizes_symbolic_view_shape() -> None:
+    shape_env = ShapeEnv()
+    batch = _make_symint(shape_env, "batch", hint=4)
+
+    view_map = ViewMap.from_shapes([batch, 6], [batch, -1])
+
+    assert view_map.target_shape[0] is batch
+    assert view_map.target_shape[1] == 6
+    assert isinstance(view_map.target_shape[1], int)
+    assert view_map.is_valid_map
 
 
 def test_dim_map_permute_view_swap_preserves_symbolic_view_shape_dims() -> None:
@@ -411,7 +543,7 @@ def test_dim_map_reduction_view_swap_preserves_symbolic_view_shape_dims() -> Non
     assert proposal is not None
     view_shape, target_dims = proposal
     assert isinstance(view_shape[0], torch.SymInt)
-    assert view_shape[0] is batch
+    assert sympy.simplify(view_shape[0].node.expr - batch.node.expr) == 0
     assert view_shape[1:] == [2, 3]
     assert target_dims == [1, 2]
 

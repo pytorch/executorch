@@ -36,6 +36,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.utils import DelegateMappingBuilder
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
+from executorch.exir.operator.convert import unwrap_op_overload
 from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -90,11 +91,12 @@ class QnnBackend(BackendDetails):
                         "is not supported in Qnn Delegate"
                     )
                     try:
+                        op = unwrap_op_overload(node.target)
                         context_loader_target = eval(
-                            f"torch.ops.{OpContextLoader.namespace}.{node.target.__name__}",
+                            f"torch.ops.{OpContextLoader.namespace}.{op.__name__}",
                             globals().update(torch.__dict__),
                         )
-                        assert node.target == context_loader_target, err_msg
+                        assert op == context_loader_target, err_msg
                         # if graph has context binary loader node, return directly
                         return node.meta[OpContextLoader.meta_ctx_bin]
                     except:

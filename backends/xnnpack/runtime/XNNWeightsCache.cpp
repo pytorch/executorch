@@ -13,7 +13,6 @@
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <cerrno>
 #endif
@@ -341,8 +340,10 @@ size_t XNNWeightsCache::look_up(
   const void* unpacked_bias_ptr = cache_key->bias;
   auto entry = context->unpacked_data_to_name_.find(unpacked_weights_ptr);
   if (entry == context->unpacked_data_to_name_.end()) {
+    context->last_lookup_unnamed_ = true;
     return SIZE_MAX;
   }
+  context->last_lookup_unnamed_ = false;
   std::string weight_bias_name = entry->second;
 
   if (unpacked_bias_ptr != nullptr) {
@@ -376,6 +377,9 @@ size_t XNNWeightsCache::look_up(
 
 void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
 #ifndef _WIN32
+  if (context->last_lookup_unnamed_ || context->loaded_from_disk_) {
+    return context->reserve_space_heap(n);
+  }
   if (context->packed_file_fd_ >= 0) {
     size_t page_size = sysconf(_SC_PAGESIZE);
     size_t file_offset =
@@ -637,12 +641,16 @@ bool XNNWeightsCache::load_packed_cache() {
     close(fd);
     return false;
   }
-  struct stat st {};
-  if (fstat(fd, &st) != 0 || st.st_size < 20) {
+  // Use lseek instead of fstat: fstat is on Apple's Required Reason API
+  // list (file-timestamp category), which would force every iOS consumer
+  // of this header to declare a PrivacyInfo reason. lseek is not on the
+  // list and yields the same byte count for a regular file.
+  off_t end_off = lseek(fd, 0, SEEK_END);
+  if (end_off < 20) {
     close(fd);
     return false;
   }
-  size_t file_size = static_cast<size_t>(st.st_size);
+  size_t file_size = static_cast<size_t>(end_off);
 
   uint8_t footer[20];
   if (pread(fd, footer, 20, file_size - 20) != 20) {
@@ -750,6 +758,8 @@ bool XNNWeightsCache::load_packed_cache() {
   // a no-op until new packs arrive. Initialize watermark so
   // save_packed_index short-circuits.
   mmap_regions_at_last_save_ = mmap_regions_.size();
+  mmap_regions_synced_ = mmap_regions_.size();
+  loaded_from_disk_ = true;
   return true;
 #else
   return false;

@@ -94,7 +94,7 @@ def test_slice_tensor_tosa_FP_fp8(test_data):
         exir_op,
         tosa_extensions=[tosa_extension],
     )
-    pipeline.count_tosa_ops({"SLICE": 3})
+    pipeline.count_tosa_ops({"SLICE": 1})
     pipeline.run()
 
 
@@ -144,7 +144,9 @@ def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite | test_data_suite_fp16)
+@common.parametrize(
+    "test_data", test_data_suite | test_data_suite_bf16 | test_data_suite_fp16
+)
 @common.SkipIfNoModelConverter
 def test_slice_tensor_vgf_no_quant(test_data: torch.Tensor):
     pipeline = VgfPipeline[input_t1](

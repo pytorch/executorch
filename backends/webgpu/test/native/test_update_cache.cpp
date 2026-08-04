@@ -10,10 +10,13 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -22,6 +25,9 @@ using namespace executorch::extension;
 using namespace executorch::runtime;
 
 namespace {
+
+// Artifacts directory; set from env/argv in main() before RUN_ALL_TESTS().
+std::string g_dir; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 struct UpdateCacheCase {
   const char* name;
@@ -40,20 +46,10 @@ constexpr UpdateCacheCase kCases[] = {
     {"shape_b_offset", 3, 4, 8, 16, 10},
 };
 
-bool run_case(const std::string& dir, const UpdateCacheCase& tc) {
-  printf(
-      "\n--- Test: update_cache[%s] (S=%d,H=%d,D=%d,Cmax=%d,pos=%d) ---\n",
-      tc.name,
-      tc.s,
-      tc.h,
-      tc.d,
-      tc.cmax,
-      tc.input_pos);
-  Module module(dir + "/" + tc.name + ".pte");
-  if (module.load_forward() != Error::Ok) {
-    printf("FAIL: could not load %s.pte\n", tc.name);
-    return false;
-  }
+void run_case(const UpdateCacheCase& tc) {
+  Module module(g_dir + "/" + tc.name + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load " << tc.name << ".pte";
 
   const int vnumel = tc.s * tc.h * tc.d;
   const int cnumel = tc.cmax * tc.h * tc.d;
@@ -79,37 +75,24 @@ bool run_case(const std::string& dir, const UpdateCacheCase& tc) {
   auto v = make_tensor_ptr({1, tc.s, tc.h, tc.d}, std::vector<float>(value));
   auto c = make_tensor_ptr({1, tc.cmax, tc.h, tc.d}, std::vector<float>(cache));
   auto result = module.forward({EValue(v), EValue(c)});
-  if (!result.ok()) {
-    printf("FAIL: forward failed (error %d)\n", (int)result.error());
-    return false;
-  }
+  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                           << ")";
   const auto& outputs = result.get();
-  if (outputs.empty() || !outputs[0].isTensor()) {
-    printf("FAIL: no tensor output\n");
-    return false;
-  }
+  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
   const auto& out_tensor = outputs[0].toTensor();
-  if (static_cast<int>(out_tensor.numel()) != cnumel) {
-    printf(
-        "FAIL: output numel %zu != expected %d\n",
-        (size_t)out_tensor.numel(),
-        cnumel);
-    return false;
-  }
+  ASSERT_EQ(static_cast<int>(out_tensor.numel()), cnumel)
+      << "output numel " << (size_t)out_tensor.numel() << " != expected "
+      << cnumel;
   const float* out_data = out_tensor.const_data_ptr<float>();
 
   float max_abs_err = 0.0f;
   for (int i = 0; i < cnumel; i++) {
     max_abs_err = std::max(max_abs_err, std::abs(out_data[i] - ref[i]));
   }
-  printf("Max abs error: %e (checked %d elements)\n", max_abs_err, cnumel);
   // update_cache is a pure scatter copy: the output must be bit-exact.
-  if (max_abs_err > 0.0f) {
-    printf("FAIL: update_cache[%s] not bit-exact\n", tc.name);
-    return false;
-  }
-  printf("PASS: update_cache[%s]\n", tc.name);
-  return true;
+  EXPECT_EQ(max_abs_err, 0.0f)
+      << "update_cache[" << tc.name << "] not bit-exact (max abs error "
+      << max_abs_err << ", checked " << cnumel << " elements)";
 }
 
 struct ReplayCase {
@@ -120,18 +103,11 @@ struct ReplayCase {
 };
 
 // Multi-step advancing-input_pos cache accumulation, mirroring VulkanSDPATest.
-bool run_replay(const std::string& dir, const ReplayCase& rc) {
+void run_replay(const ReplayCase& rc) {
   int cmax = 0;
   for (int s : rc.seq_lens) {
     cmax += s;
   }
-  printf(
-      "\n--- Replay: update_cache[%s] (H=%d,D=%d,Cmax=%d,%zu steps) ---\n",
-      rc.name,
-      rc.h,
-      rc.d,
-      cmax,
-      rc.seq_lens.size());
 
   const int cnumel = cmax * rc.h * rc.d;
   std::vector<float> cache(cnumel);
@@ -141,7 +117,6 @@ bool run_replay(const std::string& dir, const ReplayCase& rc) {
   std::vector<float> ref(cache);
 
   int input_pos = 0;
-  bool ok = true;
   for (size_t step = 0; step < rc.seq_lens.size(); step++) {
     const int s = rc.seq_lens[step];
     const int vnumel = s * rc.h * rc.d;
@@ -151,31 +126,22 @@ bool run_replay(const std::string& dir, const ReplayCase& rc) {
       value[i] = (base + static_cast<float>(i)) * 0.25f;
     }
 
-    const std::string fname = dir + "/" + rc.name + "_step" +
+    const std::string fname = g_dir + "/" + rc.name + "_step" +
         std::to_string(step) + "_S" + std::to_string(s) + "_pos" +
         std::to_string(input_pos) + ".pte";
     Module module(fname);
-    if (module.load_forward() != Error::Ok) {
-      printf("FAIL: could not load %s\n", fname.c_str());
-      return false;
-    }
+    ASSERT_EQ(module.load_forward(), Error::Ok) << "could not load " << fname;
 
     auto v = make_tensor_ptr({1, s, rc.h, rc.d}, std::vector<float>(value));
     auto c = make_tensor_ptr({1, cmax, rc.h, rc.d}, std::vector<float>(cache));
     auto result = module.forward({EValue(v), EValue(c)});
-    if (!result.ok()) {
-      printf(
-          "FAIL: forward failed step %zu (error %d)\n",
-          step,
-          (int)result.error());
-      return false;
-    }
+    ASSERT_TRUE(result.ok()) << "forward failed step " << step << " (error "
+                             << (int)result.error() << ")";
     const auto& outputs = result.get();
-    if (outputs.empty() || !outputs[0].isTensor() ||
-        static_cast<int>(outputs[0].toTensor().numel()) != cnumel) {
-      printf("FAIL: bad cache output at step %zu\n", step);
-      return false;
-    }
+    ASSERT_TRUE(
+        !outputs.empty() && outputs[0].isTensor() &&
+        static_cast<int>(outputs[0].toTensor().numel()) == cnumel)
+        << "bad cache output at step " << step;
     const float* out_data = outputs[0].toTensor().const_data_ptr<float>();
 
     const int dst_offset = input_pos * rc.h * rc.d;
@@ -190,24 +156,12 @@ bool run_replay(const std::string& dir, const ReplayCase& rc) {
       max_abs_err = std::max(max_abs_err, std::abs(out_data[i] - ref[i]));
       cache[i] = out_data[i]; // thread the accumulated cache into the next step
     }
-    printf(
-        "  step %zu (S=%d,pos=%d): max abs error %e\n",
-        step,
-        s,
-        input_pos,
-        max_abs_err);
-    if (max_abs_err > 0.0f) { // pure scatter copy: must be bit-exact
-      ok = false;
-    }
+    // pure scatter copy: must be bit-exact
+    EXPECT_EQ(max_abs_err, 0.0f)
+        << "step " << step << " (S=" << s << ",pos=" << input_pos
+        << "): max abs error " << max_abs_err;
     input_pos += s;
   }
-
-  if (ok) {
-    printf("PASS: update_cache[%s] replay\n", rc.name);
-  } else {
-    printf("FAIL: update_cache[%s] replay\n", rc.name);
-  }
-  return ok;
 }
 
 struct NegativeCase {
@@ -216,30 +170,55 @@ struct NegativeCase {
 };
 
 // Single-op, single-guard-violation cases: rejection maps to the named guard.
-bool run_negative_case(const std::string& dir, const NegativeCase& nc) {
-  printf(
-      "\n--- Negative: update_cache[%s] (expect rejection: %s) ---\n",
-      nc.name,
-      nc.guard);
-  Module module(dir + "/" + nc.name + ".pte");
+void run_negative_case(const NegativeCase& nc) {
+  Module module(g_dir + "/" + nc.name + ".pte");
   const Error err = module.load_forward();
   // init catches the guard throw -> this code; other errors = setup failure.
-  if (err != Error::DelegateInvalidCompatibility) {
-    printf(
-        "FAIL: %s.pte -> error %d; expected DelegateInvalidCompatibility "
-        "from the '%s' guard\n",
-        nc.name,
-        (int)err,
-        nc.guard);
-    return false;
-  }
-  printf("PASS: rejected with DelegateInvalidCompatibility (%s)\n", nc.guard);
-  return true;
+  EXPECT_EQ(err, Error::DelegateInvalidCompatibility)
+      << nc.name << ".pte -> error " << (int)err
+      << "; expected DelegateInvalidCompatibility from the '" << nc.guard
+      << "' guard";
 }
 
 } // namespace
 
+// Single-step scatter cases (prefill / offset / shape variants): the op output
+// must equal the inline integer-exact scatter reference.
+TEST(UpdateCache, ScatterCases) {
+  for (const auto& tc : kCases) {
+    run_case(tc);
+  }
+}
+
+// Multi-step advancing-input_pos cache accumulation, mirroring VulkanSDPATest.
+TEST(UpdateCache, Replay) {
+  const std::vector<ReplayCase> kReplays = {
+      {"seqA", 4, 4, {3, 1, 1, 5, 1, 1, 2}},
+      {"seqB", 2, 8, {3, 1, 1, 5, 1, 1}},
+      {"llama3", 8, 128, {111, 1, 1, 1, 57, 1, 1}},
+  };
+  for (const auto& rc : kReplays) {
+    run_replay(rc);
+  }
+}
+
+// Guard-violation cases: each must be rejected with
+// DelegateInvalidCompatibility.
+TEST(UpdateCache, Negative) {
+  const NegativeCase kNegatives[] = {
+      {"neg_batch", "batch must be 1"},
+      {"neg_fp16", "fp32-only"},
+  };
+  for (const auto& nc : kNegatives) {
+    run_negative_case(nc);
+  }
+}
+
 int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+
+  // Artifacts dir: env wins, else first positional arg, else default (gtest
+  // flags were already stripped by InitGoogleTest above).
   std::string dir = "/tmp/update_cache";
   if (argc > 1) {
     dir = argv[1];
@@ -247,45 +226,19 @@ int main(int argc, char** argv) {
   if (const char* env = std::getenv("WEBGPU_UPDATE_CACHE_DIR")) {
     dir = env;
   }
+  g_dir = dir;
 
   WebGPUContext ctx;
   try {
     ctx = create_webgpu_context();
   } catch (const std::exception& e) {
-    printf("SKIP: %s\n", e.what());
+    std::printf("SKIP: %s\n", e.what());
     return 0;
   }
   set_default_webgpu_context(&ctx);
-  printf("WebGPU device acquired (native); case dir: %s\n", dir.c_str());
 
-  bool ok = true;
-  for (const auto& tc : kCases) {
-    ok = run_case(dir, tc) && ok;
-  }
-
-  const std::vector<ReplayCase> kReplays = {
-      {"seqA", 4, 4, {3, 1, 1, 5, 1, 1, 2}},
-      {"seqB", 2, 8, {3, 1, 1, 5, 1, 1}},
-      {"llama3", 8, 128, {111, 1, 1, 1, 57, 1, 1}},
-  };
-  for (const auto& rc : kReplays) {
-    ok = run_replay(dir, rc) && ok;
-  }
-
-  const NegativeCase kNegatives[] = {
-      {"neg_batch", "batch must be 1"},
-      {"neg_fp16", "fp32-only"},
-  };
-  for (const auto& nc : kNegatives) {
-    ok = run_negative_case(dir, nc) && ok;
-  }
-
+  const int rc = RUN_ALL_TESTS();
   set_default_webgpu_context(nullptr);
   destroy_webgpu_context(ctx);
-
-  if (!ok) {
-    return 1;
-  }
-  printf("\nAll update_cache tests passed\n");
-  return 0;
+  return rc;
 }

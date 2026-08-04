@@ -74,8 +74,10 @@ void _q_at_k_gemm(
     accum_t* qk_data) {
   ET_CHECK_MSG(q_data.dtype == k_data.dtype, "q and k must have same dtype");
   ET_CHECK_MSG(
-      q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float,
-      "q and k must be either int8 or float");
+      q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float ||
+          q_data.dtype == ScalarType::Half ||
+          q_data.dtype == ScalarType::BFloat16,
+      "q and k must be int8, float, half, or bfloat16");
   if (q_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       int a_stride_m_tmp, b_stride_n_tmp;
@@ -102,6 +104,35 @@ void _q_at_k_gemm(
     } else {
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
+    }
+  } else if (
+      q_data.dtype == ScalarType::BFloat16 ||
+      q_data.dtype == ScalarType::Half) {
+    if constexpr (std::is_same<accum_t, float>::value) {
+      auto do_gemm = [&](auto rt_tag) {
+        using rt = decltype(rt_tag);
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::Transpose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            k_n,
+            q_m,
+            qk_k,
+            1.0f,
+            static_cast<const rt*>(k_data.data),
+            k_stride_n,
+            static_cast<const rt*>(q_data.data),
+            q_stride_m,
+            0.0f,
+            qk_data,
+            k_n);
+      };
+      if (q_data.dtype == ScalarType::BFloat16) {
+        do_gemm(::executorch::aten::BFloat16{});
+      } else {
+        do_gemm(::executorch::aten::Half{});
+      }
+    } else {
+      ET_CHECK_MSG(false, "Reduced-precision q@k requires float accumulation");
     }
   } else {
     ::executorch::cpublas::gemm(
@@ -251,7 +282,7 @@ void _qk_at_v_gemm(
     const int64_t m,
     const int64_t n,
     const int64_t k,
-    const accum_t* qk_data,
+    const void* qk_data,
     const int64_t qk_stride_m,
     const MaybeQuantizedMatrixData& v_data,
     const int64_t v_stride_n,
@@ -261,6 +292,7 @@ void _qk_at_v_gemm(
     accum_t* buf_qdq_ptr) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
+      const float* qk = static_cast<const float*>(qk_data);
       if (m > 4) {
         // For larger batch sizes, dequantize and use BLAS for better
         // performance
@@ -268,7 +300,7 @@ void _qk_at_v_gemm(
             m,
             n,
             k,
-            const_cast<float*>(qk_data),
+            const_cast<float*>(qk),
             qk_stride_m,
             v_data,
             v_stride_n,
@@ -286,7 +318,7 @@ void _qk_at_v_gemm(
             m,
             n,
             k,
-            qk_data,
+            qk,
             qk_stride_m /*lhs_stride_m*/,
             static_cast<const int8_t*>(v_data.data),
             v_stride_n /*rhs_stride_n*/,
@@ -301,6 +333,37 @@ void _qk_at_v_gemm(
       ET_CHECK_MSG(
           false, "Accumulation in dtype other than float not supported yet");
     }
+  } else if (
+      v_data.dtype == ScalarType::BFloat16 ||
+      v_data.dtype == ScalarType::Half) {
+    // qk has been cast to the activation dtype (see qk_reduced_data); both
+    // operands are reduced precision and accumulate into the float output.
+    if constexpr (std::is_same<accum_t, float>::value) {
+      auto do_gemm = [&](auto rt_tag) {
+        using rt = decltype(rt_tag);
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            n,
+            m,
+            k,
+            1.0f,
+            static_cast<const rt*>(v_data.data),
+            v_stride_n,
+            static_cast<const rt*>(qk_data),
+            qk_stride_m,
+            beta,
+            o_data,
+            o_stride_m);
+      };
+      if (v_data.dtype == ScalarType::BFloat16) {
+        do_gemm(::executorch::aten::BFloat16{});
+      } else {
+        do_gemm(::executorch::aten::Half{});
+      }
+    } else {
+      ET_CHECK_MSG(false, "Reduced-precision qk@v requires float accumulation");
+    }
   } else {
     ::executorch::cpublas::gemm(
         ::executorch::cpublas::TransposeType::NoTranspose,
@@ -311,7 +374,7 @@ void _qk_at_v_gemm(
         static_cast<accum_t>(1),
         static_cast<const accum_t*>(v_data.data),
         v_stride_n,
-        qk_data,
+        static_cast<const accum_t*>(qk_data),
         qk_stride_m,
         beta,
         o_data,
@@ -572,11 +635,9 @@ void cpu_flash_attention(
   constexpr bool is_reduced_type =
       ::executorch::runtime::is_reduced_floating_point_v<scalar_t>;
 
-  ET_CHECK_MSG(
-      !is_reduced_type, "FlashAttention does not support reduced types.");
-  // Figure out mixed precision a little later
-  // using accum_t = at::opmath_type<scalar_t>;
-  using accum_t = scalar_t;
+  // Reduced-precision (bf16/fp16) activations accumulate in float: the two
+  // matmuls run as reduced-in/float-out gemms and the softmax stays in float.
+  using accum_t = std::conditional_t<is_reduced_type, float, scalar_t>;
   using Vec = vec::Vectorized<accum_t>;
   accum_t scaling_factor = static_cast<accum_t>(calculate_scale(query, scale));
 
@@ -774,7 +835,19 @@ void cpu_flash_attention(
   } else {
     buf = scratch.get();
   }
+  std::unique_ptr<char[]> allocated_buf_reduced;
   void* buf_reduced = nullptr;
+  if (is_reduced_type) {
+    int64_t size_reduced_bytes =
+        qSplitSize * kvSplitSize * num_thread * sizeof(scalar_t);
+    Result<void*> scratch_reduced = ctx.allocate_temp(size_reduced_bytes, 64);
+    if (!scratch_reduced.ok()) {
+      allocated_buf_reduced = std::make_unique<char[]>(size_reduced_bytes);
+      buf_reduced = allocated_buf_reduced.get();
+    } else {
+      buf_reduced = scratch_reduced.get();
+    }
+  }
   int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
@@ -805,9 +878,6 @@ void cpu_flash_attention(
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
 
   auto compute_lambda = [&](int64_t begin, int64_t end) {
-    // Blocks are parallelized over the threadpool; keep each block's gemms
-    // single-threaded so an OpenMP-threaded BLAS doesn't nest a second layer.
-    ::executorch::cpublas::SingleThreadedGemmGuard gemm_guard;
     int64_t i = 0, j = 0, k = 0;
     data_index_init(begin, i, batchSize, j, num_head, k, qSlice);
     int ompIdx = torch::executor::get_thread_num();
@@ -1015,9 +1085,8 @@ void cpu_flash_attention(
           if (tmp_max == -std::numeric_limits<accum_t>::infinity()) {
             // to avoid `nan = exp2f(-inf - (-inf))`
             fill_stub(
-                conditional_data_ptr(qk_data, qk_reduced_data) +
-                    row * kvBlockSize,
-                static_cast<scalar_t>(0),
+                qk_data + row * kvBlockSize,
+                static_cast<accum_t>(0),
                 kvBlockSize);
           } else {
             // qk <- exp(qk - max) and sum per row
@@ -1025,8 +1094,7 @@ void cpu_flash_attention(
             _exp_reduce_sum_fusion_kernel(
                 qk_data + row * kvBlockSize,
                 kvBlockSize,
-                conditional_data_ptr(qk_data, qk_reduced_data) +
-                    row * kvBlockSize,
+                qk_data + row * kvBlockSize,
                 tmp_sum);
             // exp_tmp <- exp(max[row] - max)
             exp_tmp = std::exp(qk_max_data[row] - tmp_max);
@@ -1068,12 +1136,23 @@ void cpu_flash_attention(
             headSize,
             v_quant_params_StrideN,
             value.scalar_type());
+        // For reduced-precision activations the attention weights are cast to
+        // the activation dtype so that Softmax(q @ k.T) @ v runs as a
+        // reduced-in/float-out gemm matching the value matrix.
+        const void* qk_gemm_data = qk_data;
+        if constexpr (is_reduced_type) {
+          if (!is_quantized_sdpa) {
+            vec::convert<accum_t, scalar_t>(
+                qk_data, qk_reduced_data, qBlockSize * kvBlockSize);
+            qk_gemm_data = qk_reduced_data;
+          }
+        }
         // Calculate Softmax(q @ k.T) @ v
         _qk_at_v_gemm<accum_t>(
             qBlockSize,
             headSize,
             kvBlockSize,
-            qk_data,
+            qk_gemm_data,
             kvBlockSize,
             v_sub_matrix_data,
             vStrideN,
@@ -1086,12 +1165,20 @@ void cpu_flash_attention(
       // reorder MHA output with strides
       for (int64_t row = 0; row < qBlockSize; ++row) {
         accum_t sum_reciprocal = 1 / qk_sum_data[row];
-        vec::map<scalar_t>(
-            [sum_reciprocal](Vec x) { return x * Vec(sum_reciprocal); },
-            out_data + i * oStrideB + j * oStrideH + m * oStrideM +
-                row * oStrideM,
-            dst_data + row * headSize,
-            headSize);
+        scalar_t* out_row = out_data + i * oStrideB + j * oStrideH +
+            m * oStrideM + row * oStrideM;
+        const accum_t* dst_row = dst_data + row * headSize;
+        if constexpr (is_reduced_type) {
+          for (int64_t d = 0; d < headSize; ++d) {
+            out_row[d] = static_cast<scalar_t>(dst_row[d] * sum_reciprocal);
+          }
+        } else {
+          vec::map<scalar_t>(
+              [sum_reciprocal](Vec x) { return x * Vec(sum_reciprocal); },
+              out_row,
+              dst_row,
+              headSize);
+        }
       }
       // Move to the next query
       data_index_step(i, batchSize, j, num_head, k, qSlice);
