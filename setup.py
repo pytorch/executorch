@@ -458,6 +458,12 @@ elseif(PACKAGE_FIND_VERSION_RANGE)
   elseif(NOT PACKAGE_FIND_VERSION_MIN_MAJOR STREQUAL "{major}")
     # Same major rule as below: a different major means a different shared runtime.
     set(PACKAGE_VERSION_UNSUITABLE TRUE)
+  elseif(PACKAGE_FIND_VERSION_MAX_MAJOR
+         AND NOT PACKAGE_FIND_VERSION_MAX_MAJOR STREQUAL "{major}")
+    # Both endpoints have to share the major, the way CMake's own template requires.
+    # Checking only the lower one accepts a range such as 1.0...3.0 against a 1.x
+    # runtime, which tells a consumer that majors 2 and 3 are satisfied too.
+    set(PACKAGE_VERSION_UNSUITABLE TRUE)
   else()
     set(PACKAGE_VERSION_COMPATIBLE TRUE)
   endif()
