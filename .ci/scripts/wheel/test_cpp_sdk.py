@@ -215,9 +215,10 @@ def _needs_external_cuda_runtime(package_dir: Path) -> bool:
     does not depend on a tool being installed. Getting this wrong in the absent-tool
     direction would treat a CUDA wheel as a CPU one and fail the checks it should skip.
     """
-    return any(
-        "cuda" in library.name for library in _shipped_shared_objects(package_dir)
-    )
+    # The shipped delegate is the signal, not a substring. A library whose name merely
+    # contains "cuda" would flip a CPU wheel into CUDA mode, which skips the clean
+    # environment import check and part of the dependency check.
+    return bool(list(package_dir.rglob("libexecutorch_cuda_backend.so*")))
 
 
 def _installed_package_dir() -> Path:
