@@ -112,9 +112,17 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
         ["nm", "-DC", str(library)], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
-        # The symbol reader exits non-zero on anything that is not an object file. A
-        # stray file whose name merely ends in .so must not abort the symbol checks, so
-        # treat it as defining nothing rather than as a failure.
+        # A file that is not an object file at all is not this check's concern: something whose
+        # name merely ends in .so must not abort the run. A shipped library the reader cannot
+        # parse is different, because a real definition could be hiding inside it, and reporting
+        # "defines nothing" would let a duplicate pass. The ELF magic bytes tell them apart
+        # without depending on the reader's wording.
+        with library.open("rb") as handle:
+            is_object_file = handle.read(4) == b"\x7fELF"
+        assert not is_object_file, (
+            f"nm could not read {library.name}, which is a shipped object file, so the symbol "
+            f"checks cannot be trusted: {result.stderr.strip()[:200]}"
+        )
         return False
     for line in result.stdout.splitlines():
         if symbol not in line:
