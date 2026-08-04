@@ -1272,7 +1272,7 @@ def test_device_code_covers_claimed_architectures() -> None:
 
     # Each library is checked on its own. Unioning architectures across libraries would let
     # one library's device code stand in for another's, which is the case worth catching.
-    audited = 0
+    audited_names: List[str] = []
     for library in libraries:
         result = subprocess.run(
             [inspector, "--list-elf", str(library)],
@@ -1301,15 +1301,23 @@ def test_device_code_covers_claimed_architectures() -> None:
             f"carries device code for {sorted(present, key=int)}; a model would fail on "
             f"hardware needing {missing}"
         )
-        audited += 1
+        audited_names.append(library.name)
 
-    assert (
-        audited or not accelerator_row
-    ), "this is an accelerator row but no library carried device code to audit"
+    # A count is not enough. The library that carries the compiled kernels has to be the one
+    # audited, or a build that produced only forward-compatible intermediate code there would
+    # still pass on the strength of some other library's coverage.
+    assert audited_names or not accelerator_row, (
+        "this is an accelerator row but no library carried device code to audit"
+    )
+    if accelerator_row:
+        assert any("shim" in name for name in audited_names), (
+            "no shim library carried device code; the row claims "
+            f"{sorted(claimed, key=int)} but only {sorted(audited_names)} were audited"
+        )
     print(
         f"\u2713 device code covers every claimed GPU architecture "
-        f"{sorted(claimed, key=int)} in {audited} "
-        f"librar{'y' if audited == 1 else 'ies'}"
+        f"{sorted(claimed, key=int)} in {len(audited_names)} "
+        f"librar{'y' if len(audited_names) == 1 else 'ies'}"
     )
 
 
