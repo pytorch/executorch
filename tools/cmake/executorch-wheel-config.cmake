@@ -145,7 +145,10 @@ if(_executorch_runtime_library)
   # when several subprojects each call find_package(executorch). Creating the
   # target twice is an error, so only define it once and set the properties
   # either way.
-  if(NOT TARGET executorch::runtime)
+  if(TARGET executorch::runtime)
+    # Already defined by an in-tree build, so keep it rather than redefining it.
+    message(STATUS "executorch: executorch::runtime is already defined, leaving it as is")
+  else()
     add_library(executorch::runtime SHARED IMPORTED)
   endif()
   set_target_properties(
@@ -188,9 +191,14 @@ function(executorch_define_component _suffix _library_name)
   endif()
 
   set(_target "executorch::${_suffix}")
-  if(NOT TARGET ${_target})
-    add_library(${_target} SHARED IMPORTED)
+  if(TARGET ${_target})
+    # An in-tree build defines these names, sometimes as an ALIAS whose properties
+    # cannot be set. A consumer that both adds this project as a subdirectory and
+    # calls find_package should keep the target it is already building.
+    message(STATUS "executorch: ${_target} is already defined, leaving it as is")
+    return()
   endif()
+  add_library(${_target} SHARED IMPORTED)
   set_target_properties(
     ${_target}
     PROPERTIES IMPORTED_LOCATION "${_library}"
@@ -316,7 +324,10 @@ if(_portable_lib_LIBRARY)
     STATUS "ExecuTorch portable library is found at ${_portable_lib_LIBRARY}"
   )
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
-  if(NOT TARGET _portable_lib)
+  if(TARGET _portable_lib)
+    # Already defined by an in-tree build, so keep it rather than redefining it.
+    message(STATUS "executorch: _portable_lib is already defined, leaving it as is")
+  else()
     # SHARED, not STATIC: this resolves to the Python extension module, which is
     # a shared object. Declaring it static makes CMake treat it as an archive,
     # which changes how it is placed on a link line and how runtime paths are
