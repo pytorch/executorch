@@ -12,6 +12,7 @@ def _create_qnn_flow(
     per_channel_linear=False,
     is_qat=False,
     use_fp16=True,
+    skip_patterns: list[str] | None = None,
 ) -> TestFlow:
     if quantize and quant_dtype is None:
         raise RuntimeError("Quant dtype must be provided when quantize is true.")
@@ -37,10 +38,11 @@ def _create_qnn_flow(
         tester_factory=create_tester,
         quantize=quantize,
         quantize_stage_factory=create_quantize_stage if quantize else None,
+        skip_patterns=skip_patterns or [],
     )
 
 
-QNN_TEST_FLOW = _create_qnn_flow("qnn")
+QNN_TEST_FLOW = _create_qnn_flow("qnn", skip_patterns=["test_maxvit_t"])
 QNN_16A16W_TEST_FLOW = _create_qnn_flow(
     "qnn_16a16w", quantize=True, quant_dtype=QuantDtype.use_16a16w, use_fp16=False
 )

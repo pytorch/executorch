@@ -113,7 +113,12 @@ GOLDEN_DIR="${ARTIFACT_DIR}/golden-artifacts"
 export GOLDEN_ARTIFACTS_DIR="${GOLDEN_DIR}"
 
 EXIT_CODE=0
-PYTEST_ARGS=(-c /dev/null -n auto)
+PYTEST_WORKERS=auto
+if [[ "$FLOW" == *qnn* && "$SUITE" == "models" ]]; then
+    # Concurrent QNN model exports can exhaust a linux.2xlarge runner.
+    PYTEST_WORKERS=2
+fi
+PYTEST_ARGS=(-c /dev/null -n "$PYTEST_WORKERS")
 if [[ ${#PYTEST_RETRY_ARGS[@]} -gt 0 ]]; then
     PYTEST_ARGS+=("${PYTEST_RETRY_ARGS[@]}")
 fi
