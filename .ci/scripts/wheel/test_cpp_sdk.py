@@ -152,8 +152,13 @@ def _assert_single_definer(symbols, what: str) -> None:
     libraries = _shipped_shared_objects(package_dir)
     assert libraries, f"no shared libraries found under {package_dir}"
 
-    for symbol in symbols:
-        definers = [lib for lib in libraries if _defines_symbol(lib, symbol)]
+    # Every symbol is resolved before anything is reported, so a component that is only
+    # half present is described as such rather than looking like one that is absent.
+    found = {
+        symbol: [lib for lib in libraries if _defines_symbol(lib, symbol)]
+        for symbol in symbols
+    }
+    for symbol, definers in found.items():
         pretty = [str(lib.relative_to(package_dir)) for lib in definers]
         assert len(definers) == 1, (
             f"expected exactly one library to define {symbol}, found "
