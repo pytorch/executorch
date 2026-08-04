@@ -343,4 +343,60 @@ float bf16_dot_with_fp32_arith(
   }
 }
 
+#if COMPILER_SUPPORTS_BF16_TARGET
+// Four dots against a shared vec1: the cross-lane reduction is paid once per
+// four results rather than per result, which matters when callers reduce over
+// headSize while producing a whole tile of outputs.
+TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  constexpr int64_t kElementsPerIteration = 8;
+  float32x4_t acc[4] = {
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f),
+      vdupq_n_f32(0.0f)};
+  int64_t idx = 0;
+  for (; idx + kElementsPerIteration <= len; idx += kElementsPerIteration) {
+    // See NOTE[Intrinsics in bfdot variant] above.
+    const auto v1 =
+        vld1q_bf16(reinterpret_cast<const bfloat16_t*>(&vec1[idx]));
+    for (int64_t j = 0; j < 4; ++j) {
+      const auto v2 = vld1q_bf16(
+          reinterpret_cast<const bfloat16_t*>(&vec2[j * stride2 + idx]));
+      acc[j] = vbfdotq_f32(acc[j], v1, v2);
+    }
+  }
+  const float32x4_t sums = vpaddq_f32(
+      vpaddq_f32(acc[0], acc[1]), vpaddq_f32(acc[2], acc[3]));
+  vst1q_f32(out, sums);
+  for (; idx < len; ++idx) {
+    for (int64_t j = 0; j < 4; ++j) {
+      out[j] += static_cast<float>(vec1[idx]) *
+          static_cast<float>(vec2[j * stride2 + idx]);
+    }
+  }
+}
+#endif // COMPILER_SUPPORTS_BF16_TARGET
+
+void bf16_dot4_with_fp32_arith(
+    const at::BFloat16* vec1,
+    const at::BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+#if COMPILER_SUPPORTS_BF16_TARGET
+  if (cpuinfo_initialize() && cpuinfo_has_arm_bf16()) {
+    dot4_with_fp32_arith_bfdot(vec1, vec2, stride2, len, out);
+    return;
+  }
+#endif // COMPILER_SUPPORTS_BF16_TARGET
+  for (int64_t j = 0; j < 4; ++j) {
+    out[j] = bf16_dot_with_fp32_arith(vec1, vec2 + j * stride2, len);
+  }
+}
+
 } // namespace executorch::cpublas::internal

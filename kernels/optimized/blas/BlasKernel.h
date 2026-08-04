@@ -139,6 +139,13 @@ float bf16_dot_with_fp32_arith(
     const torch::executor::BFloat16* vec1,
     const torch::executor::BFloat16* vec2,
     int64_t len);
+// Four dots of vec1 against vec2, vec2 + stride2, ... into out[0..3].
+void bf16_dot4_with_fp32_arith(
+    const torch::executor::BFloat16* vec1,
+    const torch::executor::BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out);
 } // namespace internal
 
 // Used by custom SDPA's attn@V. Serial on purpose: SDPA already parallelizes
@@ -308,17 +315,24 @@ inline void gemm_transa_<torch::executor::BFloat16, float, float>(
     const torch::executor::BFloat16 *b, int64_t ldb,
     float beta,
     float *c, int64_t ldc) {
+  // Four columns at a time: k is headSize here, short enough that each dot's
+  // cross-lane reduction is a large share of its cost, and this tile produces
+  // m*n of them.
   const auto *a_ = a;
-  for (int i = 0; i < m; ++i) {
-    const auto *b_ = b;
-    for (int j = 0; j < n; ++j) {
-      const float dot = internal::bf16_dot_with_fp32_arith(a_, b_, k);
-      b_ += ldb;
-      if (beta == 0) {
-        c[j*ldc+i] = alpha*dot;
-      } else {
-        c[j*ldc+i] = beta*c[j*ldc+i]+alpha*dot;
+  for (int64_t i = 0; i < m; ++i) {
+    int64_t j = 0;
+    for (; j + 4 <= n; j += 4) {
+      float dots[4];
+      internal::bf16_dot4_with_fp32_arith(a_, b + j * ldb, ldb, k, dots);
+      for (int64_t d = 0; d < 4; ++d) {
+        float *dst = c + (j + d) * ldc + i;
+        *dst = (beta == 0) ? alpha * dots[d] : beta * *dst + alpha * dots[d];
       }
+    }
+    for (; j < n; ++j) {
+      const float dot = internal::bf16_dot_with_fp32_arith(a_, b + j * ldb, k);
+      float *dst = c + j * ldc + i;
+      *dst = (beta == 0) ? alpha * dot : beta * *dst + alpha * dot;
     }
     a_ += lda;
   }
