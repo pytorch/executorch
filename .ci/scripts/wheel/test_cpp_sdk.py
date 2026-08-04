@@ -1180,19 +1180,50 @@ def _requested_cuda_architectures() -> list:
     return found
 
 
+def _is_accelerator_row() -> bool:
+    """Whether this build is an accelerator row rather than a CPU wheel.
+
+    Taken from the build variable that names the row's CUDA train, which is the same signal
+    the rest of the wheel build uses. A CPU row leaves it unset or names no CUDA train.
+    """
+    train = (
+        os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or ""
+    ).strip()
+    return bool(train) and train.lower() not in {"cpu", "none"}
+
+
 def test_device_code_covers_claimed_architectures() -> None:
     """Every GPU architecture the row claims must be present as compiled device code.
 
-    A wheel whose device code covers only the build machine's GPU installs on all the hardware
-    the row promises and then fails when a model runs. That failure appears late and looks like
-    a model problem rather than a packaging one, so it is worth catching here.
+    A wheel whose device code covers only the build machine's GPU installs on all the
+    hardware the row promises and then fails when a model runs. That failure appears late and
+    looks like a model problem rather than a packaging one, so it is caught here.
+
+    On an accelerator row this fails closed. A missing architecture claim, a missing
+    inspection tool, a missing library, or a failed inspection each leave the shipped device
+    code unverified, so each blocks rather than passes.
     """
+    accelerator_row = _is_accelerator_row()
     claimed = _requested_cuda_architectures()
+
     if not claimed:
-        print("- this build named no GPU architectures, skipping the device code check")
+        assert not accelerator_row, (
+            "this is an accelerator row but the build named no GPU architectures, so its "
+            "device code is whatever the build machine's GPU happened to be; the row's "
+            "architecture list has to reach the build"
+        )
+        print("- this is a CPU wheel, so there is no device code to audit")
         return
-    if shutil.which("cuobjdump") is None:
-        print("- cuobjdump is not available, skipping the device code check")
+
+    have_cuobjdump = shutil.which("cuobjdump") is not None
+    assert have_cuobjdump or not accelerator_row, (
+        "this is an accelerator row but cuobjdump is not available, so the shipped device "
+        "code cannot be audited"
+    )
+    if not have_cuobjdump:
+        print(
+            "- cuobjdump is not available and this is not an accelerator row, skipping"
+        )
         return
 
     package_dir = _installed_package_dir()
@@ -1201,13 +1232,18 @@ def test_device_code_covers_claimed_architectures() -> None:
         for library in _shipped_shared_objects(package_dir)
         if "cuda" in library.name or "aoti" in library.name
     ]
+    assert (
+        libraries or not accelerator_row
+    ), "this is an accelerator row but the wheel ships no accelerator libraries"
     if not libraries:
         print(
-            "- this wheel ships no accelerator libraries, skipping the device code check"
+            "- this wheel ships no accelerator libraries and is not an accelerator row"
         )
         return
 
-    present = set()
+    # Each library is checked on its own. Unioning architectures across libraries would let
+    # one library's device code stand in for another's, which is the case worth catching.
+    audited = 0
     for library in libraries:
         result = subprocess.run(
             ["cuobjdump", "--list-elf", str(library)],
@@ -1215,19 +1251,36 @@ def test_device_code_covers_claimed_architectures() -> None:
             text=True,
             check=False,
         )
+        combined = result.stdout + result.stderr
+        # A library with no device code is a legitimate case, for example the delegate itself,
+        # which links the runtime but carries no kernels. cuobjdump reports that with a
+        # non-zero status, so it has to be told apart from a real inspection failure.
+        if "does not contain device code" in combined:
+            continue
+        assert result.returncode == 0 or not accelerator_row, (
+            f"could not inspect {library.name} on an accelerator row: "
+            f"{result.stderr.strip()[:200]}"
+        )
         if result.returncode != 0:
             continue
-        present.update(re.findall(r"sm_(\d+)", result.stdout))
+        present = set(re.findall(r"sm_(\d+)", result.stdout))
+        if not present:
+            continue
+        missing = sorted(set(claimed) - present, key=int)
+        assert not missing, (
+            f"{library.name} claims GPU architectures {sorted(claimed, key=int)} but only "
+            f"carries device code for {sorted(present, key=int)}; a model would fail on "
+            f"hardware needing {missing}"
+        )
+        audited += 1
 
-    missing = sorted(set(claimed) - present, key=int)
-    assert not missing, (
-        f"this row claims GPU architectures {sorted(claimed, key=int)} but the shipped "
-        f"libraries only carry device code for {sorted(present, key=int)}; a model would "
-        f"fail on hardware needing {missing}"
-    )
+    assert (
+        audited or not accelerator_row
+    ), "this is an accelerator row but no library carried device code to audit"
     print(
-        f"\u2713 device code covers every claimed GPU architecture: "
-        f"{sorted(claimed, key=int)}"
+        f"\u2713 device code covers every claimed GPU architecture "
+        f"{sorted(claimed, key=int)} in {audited} "
+        f"librar{'y' if audited == 1 else 'ies'}"
     )
 
 
