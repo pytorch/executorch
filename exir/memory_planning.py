@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -1065,7 +1066,6 @@ def greedy(
         else:
             spec_alloc_result.mem_id = spec.mem_id
         greedy_result.spec_dict[spec] = spec_alloc_result
-        spec.realign(alignment)
 
         if spec.inplace_base is not None:
             deferred_inplace.append(spec)
@@ -1123,6 +1123,9 @@ class MemoryPlanningAlgorithmSuite:
         Returns:
             List of buffer sizes for each memory hierarchy
         """
+
+        for spec in specs:
+            spec.realign(alignment)
 
         mem_algo_results = {}
         for algo in self.algo_list:
@@ -1222,7 +1225,6 @@ def naive(
 
         # allocate spec.allocated_memory bytes in the buffer
         # with the corresponding mem_id
-        spec.realign(alignment)
         spec_alloc_result.mem_offset = _allocate_buf(
             bufsizes, spec_alloc_result.mem_id, spec.allocated_memory
         )
@@ -1569,6 +1571,8 @@ def apply_algo(
         )
 
         # Run algorithm independently on this device's specs
+        for spec in device_specs:
+            spec.realign(alignment)
         device_bufsizes = algo(
             alignment, device_specs, graph_module, graph_signature, extra_padding
         )
