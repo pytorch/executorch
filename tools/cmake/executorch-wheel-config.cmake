@@ -145,32 +145,40 @@ if(_executorch_runtime_library)
   # when several subprojects each call find_package(executorch). Creating the
   # target twice is an error, so only define it once and set the properties
   # either way.
-  if(TARGET executorch::runtime)
-    # Already defined by an in-tree build, so keep it rather than redefining it.
+if(TARGET executorch::runtime)
+    # An in-tree build defines this name, sometimes as an ALIAS whose properties cannot be
+    # set. A consumer that both adds this project as a subdirectory and calls find_package
+    # should keep the target it is already building, so skip the whole definition.
     message(STATUS "executorch: executorch::runtime is already defined, leaving it as is")
   else()
     add_library(executorch::runtime SHARED IMPORTED)
-  endif()
-  set_target_properties(
-    executorch::runtime
-    PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
-               INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               INTERFACE_COMPILE_FEATURES cxx_std_17
-               INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
-  )
-  # Consumers get the wheel's lib/ directory in their RUNPATH automatically,
-  # because CMake adds the imported library's directory. Also record
-  # $ORIGIN-relative entries so an application that is deployed next to a copy
-  # of the runtime keeps working without relinking or LD_LIBRARY_PATH. $ORIGIN
-  # is a loader token, so it belongs only in RUNPATH, never in
-  # IMPORTED_LOCATION.
-  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set_property(
-      TARGET executorch::runtime
-      APPEND
-      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,$ORIGIN"
-               "LINKER:-rpath,$ORIGIN/../lib"
+    set_target_properties(
+      executorch::runtime
+      PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
+                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                 INTERFACE_COMPILE_FEATURES cxx_std_17
+                 INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
     )
+    # Consumers get the wheel's lib/ directory in their RUNPATH automatically, because
+    # CMake adds the imported library's directory. Also record $ORIGIN-relative entries so
+    # an application deployed next to a copy of the runtime keeps working without relinking
+    # or LD_LIBRARY_PATH. $ORIGIN is a loader token, so it belongs only in RUNPATH, never
+    # in IMPORTED_LOCATION.
+    #
+    # The wheel's own directory is named first so it wins over an unrelated library that
+    # happens to sit beside the application; otherwise a stray copy in the application's
+    # own $ORIGIN/../lib would be found first.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      get_filename_component(
+        _executorch_runtime_dir "${_executorch_runtime_library}" DIRECTORY
+      )
+      set_property(
+        TARGET executorch::runtime
+        APPEND
+        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,${_executorch_runtime_dir}"
+                 "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
+      )
+    endif()
   endif()
 endif()
 
