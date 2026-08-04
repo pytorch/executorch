@@ -30,6 +30,14 @@
 # EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
 # EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
 # EXECUTORCH_LIBRARIES    -- Libraries to link against
+# EXECUTORCH_BUILD_VERSION -- The full version this package was built from, including
+#                            any prerelease suffix and local version label. Compare this
+#                            when an exact build pairing is required, since the CMake
+#                            package version keeps only the numeric part.
+# EXECUTORCH_BUILD_VERSION -- The full version this package was built from, including
+#                            any prerelease suffix and local version label. Compare this
+#                            when an exact build pairing is required, since the CMake
+#                            package version keeps only the numeric part.
 #
 # and, when the prebuilt shared runtime is present, the imported target:
 #
