@@ -69,19 +69,20 @@ class TestLiftConstantScalarOperandsPass(unittest.TestCase):
         )
 
     def test_keeps_sdpa_scale_mul_scalar(self):
-        graph_module = deepcopy(sdpa.get_graphs()[0])
+        for graph in sdpa.get_graphs():
+            graph_module = deepcopy(graph)
 
-        LiftConstantScalarOperandsPass()(graph_module)
+            LiftConstantScalarOperandsPass()(graph_module)
 
-        scale_mul_count = 0
-        lifted_mul_count = 0
-        for node in graph_module.graph.nodes:
-            if node.op != "call_function":
-                continue
-            if node.target == exir_ops.edge.aten.mul.Scalar:
-                scale_mul_count += 1
-            if node.target == exir_ops.edge.aten.mul.Tensor:
-                lifted_mul_count += 1
+            scale_mul_count = 0
+            lifted_mul_count = 0
+            for node in graph_module.graph.nodes:
+                if node.op != "call_function":
+                    continue
+                if node.target == exir_ops.edge.aten.mul.Scalar:
+                    scale_mul_count += 1
+                if node.target == exir_ops.edge.aten.mul.Tensor:
+                    lifted_mul_count += 1
 
-        self.assertEqual(scale_mul_count, 2)
-        self.assertEqual(lifted_mul_count, 0)
+            self.assertEqual(scale_mul_count, 2)
+            self.assertEqual(lifted_mul_count, 0)

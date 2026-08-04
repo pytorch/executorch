@@ -16,7 +16,6 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
 
-
 ScalarOp = Union[EdgeOpOverload, OpOverload]
 
 
@@ -64,6 +63,7 @@ class LiftConstantScalarOperandsPass(ExportPass):
         input_value = input_node.meta["val"]
         tensor = torch.tensor(value, dtype=input_value.dtype, device=input_value.device)
         name = self._get_new_attr_name(graph_module)
+        # ExportPass has no ExportedProgram access to create a constant placeholder.
         # Keep constants as module attributes so the portable path can emit them
         # without introducing aten.full, while XNNPACK can still read them as params.
         graph_module.register_buffer(name, tensor)
