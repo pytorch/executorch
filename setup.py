@@ -108,6 +108,40 @@ def _is_minimal_build() -> bool:
     return _is_env_flag_enabled("EXECUTORCH_BUILD_MINIMAL")
 
 
+def _cuda_train() -> str:
+    """The CUDA train this wheel is being built for, as a bare number like "130".
+
+    Read from the wheel build environment rather than detected from an installed compiler.
+    A CPU wheel built on a machine that happens to have a CUDA toolkit must not declare CUDA
+    dependencies, and detection cannot tell the two cases apart.
+    """
+    train = os.environ.get("DESIRED_CUDA", "").strip().lower()
+    if not train:
+        return ""
+    train = train.removeprefix("cu").replace(".", "")
+    return train if train.isdigit() else ""
+
+
+def _cuda_dependencies() -> List[str]:
+    """Runtime libraries a CUDA wheel needs but does not bundle.
+
+    Empty for a CPU wheel, and empty for a build whose CUDA train is unknown, so the CPU rows
+    are unaffected. The major decides the package suffix, matching how these are published.
+    """
+    train = _cuda_train()
+    if not train or not _is_env_flag_enabled("EXECUTORCH_BUILD_CUDA"):
+        return []
+    major = train[:2] if train.startswith("13") else train[:2]
+    suffix = f"cu{major}"
+    # Only what the delegate and its shim actually link. A shorter list keeps a CUDA install
+    # from pulling in libraries nothing in this wheel references.
+    return [
+        f"nvidia-cuda-runtime-{suffix}; platform_system == 'Linux'",
+        f"nvidia-curand-{suffix}; platform_system == 'Linux'",
+        f"nvidia-cublas-{suffix}; platform_system == 'Linux'",
+    ]
+
+
 def _minimal_cmake_flags() -> List[str]:
     return [
         "-DEXECUTORCH_BUILD_COREML=OFF",
@@ -1205,7 +1239,7 @@ if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
     setup_kwargs["install_requires"] = _minimal_dependencies()
 else:
-    setup_kwargs["install_requires"] = _base_dependencies()
+    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
 
 
 setup(

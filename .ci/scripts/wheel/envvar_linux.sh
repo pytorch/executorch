@@ -9,3 +9,13 @@
 # any variables so that subprocesses will see them.
 
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
+
+# Compile device code for the GPU architectures this release row claims, rather than for
+# whichever GPU the builder happens to have. A wheel built with detection alone installs on
+# every machine the row covers and then fails when a model runs on a different generation.
+source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
+_executorch_cuda_arch="$(executorch_cuda_arch_list)"
+if [ -n "${_executorch_cuda_arch}" ]; then
+  export CMAKE_ARGS="${CMAKE_ARGS} -DCMAKE_CUDA_ARCHITECTURES=${_executorch_cuda_arch}"
+  echo "CUDA architectures for this row: ${_executorch_cuda_arch}"
+fi
