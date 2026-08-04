@@ -184,11 +184,12 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
-        "pytorch-tokenizers",
+        "pytorch-tokenizers>=1.4.0",
         "pyyaml",
         "ruamel.yaml",
         "sympy",
         "tabulate",
+        "torchao>=0.18.0",
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
