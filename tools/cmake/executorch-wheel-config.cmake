@@ -12,6 +12,15 @@
 # find_package(executorch REQUIRED)
 # target_link_libraries(my_app PRIVATE executorch::runtime)
 # ~~~
+#
+# This file describes the same contract as the in-tree package config, but is written by hand
+# rather than generated, because the wheel copies build products out of the build tree instead
+# of running an install step. That leaves two descriptions of one contract, which is why a
+# target already defined by an in-tree build has to be detected and left alone below.
+#
+# The end state that removes the duplication is a staged install whose generated targets file
+# the wheel ships, so the source and wheel contracts become the same object rather than two
+# things that must agree.
 # -------
 #
 # Finds the ExecuTorch library

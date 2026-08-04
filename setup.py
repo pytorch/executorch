@@ -420,9 +420,13 @@ def _write_cmake_version_file(destination: str) -> None:
     """Generate the CMake package version file next to the package config.
 
     Read from version.txt so the version CMake reports is the same one the wheel and
-    the runtime SONAME use. Written by hand rather than with
-    write_basic_package_version_file because that helper needs a CMake run, and this
-    file is produced while assembling the wheel.
+    the runtime SONAME use.
+
+    Written by hand rather than from CMake's own template because the rule here is
+    deliberately stricter than any stock one: a request above the package version is
+    refused, not just a different major. A delegate built against one release cannot be
+    assumed to work with a later one, so accepting a higher request would let a consumer
+    match a package that does not satisfy it.
     """
     root = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(root, "version.txt")) as handle:
