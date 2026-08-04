@@ -28,7 +28,7 @@ import sys
 
 from executorch.exir._serialize._program import deserialize_pte_binary
 
-KERNEL_RE = re.compile(r'Kernel\(\s*"([^"]+)"(.*?)stack\.size\(\) == (\d+)', re.S)
+KERNEL_RE = re.compile(r'Kernel\(\s*"([^"]+)"(.*?)stack\.size\(\)\s*==\s*(\d+)', re.S)
 
 
 def library_expectations(library: pathlib.Path) -> dict[str, int]:
@@ -38,8 +38,21 @@ def library_expectations(library: pathlib.Path) -> dict[str, int]:
         sys.exit(f"no kernel registration found under {library}/src/executorch/codegen")
     expectations: dict[str, int] = {}
     for source in generated:
-        for match in KERNEL_RE.finditer(source.read_text()):
-            expectations[match.group(1)] = int(match.group(3))
+        for match in KERNEL_RE.finditer(source.read_text(encoding="utf-8")):
+            name, size = match.group(1), int(match.group(3))
+            previous = expectations.get(name)
+            if previous is not None and previous != size:
+                sys.exit(
+                    f"{name} is registered twice with different stack sizes "
+                    f"({previous} and {size}); the library is inconsistent"
+                )
+            expectations[name] = size
+    if not expectations:
+        sys.exit(
+            f"parsed no stack-size checks out of {len(generated)} generated "
+            "file(s). The codegen output format has probably changed, so this "
+            "script needs updating -- treat that as a bug here, not a bad model."
+        )
     return expectations
 
 

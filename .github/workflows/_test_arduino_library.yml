@@ -49,11 +49,16 @@ jobs:
 
         # arduino-cli, the Uno Q core, and the Serial dependency the core
         # hard-errors without.
+        # Pinned release tarballs rather than piping an installer script from a
+        # moving branch: reproducible, and one less thing to fail transiently.
+        ARDUINO_CLI_VERSION=1.5.1
+        ARDUINO_LINT_VERSION=1.3.0
         export ARDUINO_DIRECTORIES_USER="${RUNNER_TEMP}/arduino"
-        mkdir -p "${ARDUINO_DIRECTORIES_USER}"
-        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
-          | BINDIR="${RUNNER_TEMP}/bin" sh
+        mkdir -p "${ARDUINO_DIRECTORIES_USER}" "${RUNNER_TEMP}/bin"
         export PATH="${RUNNER_TEMP}/bin:${PATH}"
+        curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+          "https://downloads.arduino.cc/arduino-cli/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
+          | tar xz -C "${RUNNER_TEMP}/bin" arduino-cli
         arduino-cli core update-index
         arduino-cli core install arduino:zephyr
         arduino-cli lib install Arduino_RouterBridge
@@ -71,8 +76,9 @@ jobs:
 
         # The library is published through the Arduino Library Manager, which
         # applies these rules at submission time.
-        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-lint/main/etc/install.sh \
-          | BINDIR="${RUNNER_TEMP}/bin" sh
+        curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+          "https://downloads.arduino.cc/arduino-lint/arduino-lint_${ARDUINO_LINT_VERSION}_Linux_64bit.tar.gz" \
+          | tar xz -C "${RUNNER_TEMP}/bin" arduino-lint
         cp ../../LICENSE arduino_lib/ExecuTorch/LICENSE
         cp README.md arduino_lib/ExecuTorch/README.md
         (cd arduino_lib/ExecuTorch && arduino-lint \
