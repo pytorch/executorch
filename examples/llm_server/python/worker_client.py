@@ -185,6 +185,9 @@ class WorkerClient:
         request = {
             "max_new_tokens": getattr(config, "max_new_tokens", -1),
             "temperature": getattr(config, "temperature", 0.0),
+            "top_p": getattr(config, "top_p", 1.0),
+            "top_k": getattr(config, "top_k", 0),
+            "seed": getattr(config, "seed", 0),
             "stop": list(getattr(config, "stop", []) or []),
         }
         # Token-ID segments take precedence over the rendered string:

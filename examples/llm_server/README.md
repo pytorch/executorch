@@ -26,14 +26,17 @@ See `python/README.md` to run it.
 Status: experimental, reliability-first and deliberately narrow. Implemented:
 `/health`, `/v1/models`, `/v1/chat/completions` (streaming + non-streaming),
 Hugging Face chat templates (`--hf-tokenizer`), `temperature` / `max_tokens` /
-`max_completion_tokens` / `stop`, Hermes tool calling by default
+`max_completion_tokens` / `stop`, sampling controls `top_p` / `top_k` / `seed`
+(these only affect output when `temperature > 0`; under the default greedy
+decoding `temperature = 0` they are accepted but have no effect, and an omitted
+`seed` uses the worker's unset/random value), Hermes tool calling by default
 (`<tool_call>...</tool_call>` JSON, complete calls only; model-specific launchers
 may select the Qwen XML format) with `tool_choice="none"`,
 structured API errors, and best-effort cancellation. One worker process with
 serialized execution; a worker can host isolated sessions on one weight load when its engine reports
 capacity > 1 (with warm append-only resume across turns). KV/prefix state lives inside the
-worker/session, not the control plane. Unsupported params (including `top_p`,
-`seed`, `n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
+worker/session, not the control plane. Unsupported params (including
+`n>1`, `reasoning_effort`, penalties, `logit_bias`, `response_format`,
 `logprobs`, and `tool_choice="required"`) are rejected with a structured 400
 rather than silently ignored. See `python/README.md` to run it and
 `spec/README.md` for the exact contract.
@@ -85,8 +88,10 @@ Supported contract for pi:
 - `tool_choice`: only `"auto"`, `"none"`, or unset.
 - Rejected with a structured 400 (`unsupported_parameter`), not silently
   ignored: `tool_choice="required"` or specific-function forcing,
-  `response_format` JSON/constrained output, `logprobs`, `top_p` other than
-  `1.0`, and `seed`.
+  `response_format` JSON/constrained output, and `logprobs`.
+- `top_p`, `top_k`, and `seed` are supported, but only take effect when
+  `temperature > 0`; the default greedy decoding (`temperature = 0`) ignores
+  them, and an omitted `seed` uses the worker's unset/random value.
 
 Reliability guidance:
 
