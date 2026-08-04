@@ -36,11 +36,14 @@ _cuda_arch_x86_64_cu126="8.0 9.0"
 executorch_cuda_arch_list() {
   local machine
   machine="$(uname -m)"
-  local train="${DESIRED_CUDA:-}"
+  # The wheel build exports the row's CUDA train as CU_VERSION. DESIRED_CUDA is the name of
+  # the matrix field, not of the variable, so reading only that one leaves every row falling
+  # back to detecting the builder's GPU.
+  local train="${CU_VERSION:-${DESIRED_CUDA:-}}"
   if [ -z "${train}" ]; then
     return 0
   fi
-  # DESIRED_CUDA arrives as cu130; some callers pass 13.0 instead.
+  # The value arrives as cu130; some callers pass 13.0 instead.
   train="${train#cu}"
   train="${train//./}"
 

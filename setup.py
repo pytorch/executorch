@@ -114,32 +114,47 @@ def _cuda_train() -> str:
     Read from the wheel build environment rather than detected from an installed compiler.
     A CPU wheel built on a machine that happens to have a CUDA toolkit must not declare CUDA
     dependencies, and detection cannot tell the two cases apart.
+
+    The wheel build exports this as CU_VERSION; DESIRED_CUDA is the matrix field name and is
+    accepted only so local invocations keep working.
     """
-    train = os.environ.get("DESIRED_CUDA", "").strip().lower()
+    train = (
+        (os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or "")
+        .strip()
+        .lower()
+    )
     if not train:
         return ""
     train = train.removeprefix("cu").replace(".", "")
     return train if train.isdigit() else ""
 
 
+# The published project names for the CUDA runtime components this wheel links but does not
+# bundle, keyed by CUDA major. These are not derivable from a suffix rule: the CUDA 12 wheels
+# carry a "-cu12" suffix while the CUDA 13 wheels are published under unsuffixed names, and the
+# suffixed CUDA 13 projects are placeholders that ship no binaries. A train with no entry gets
+# no declared dependencies, which is safer than requesting a name that may not exist.
+_CUDA_RUNTIME_PACKAGES = {
+    "12": ("nvidia-cuda-runtime-cu12", "nvidia-curand-cu12", "nvidia-cublas-cu12"),
+    "13": ("nvidia-cuda-runtime", "nvidia-curand", "nvidia-cublas"),
+}
+
+
 def _cuda_dependencies() -> List[str]:
     """Runtime libraries a CUDA wheel needs but does not bundle.
 
-    Empty for a CPU wheel, and empty for a build whose CUDA train is unknown, so the CPU rows
-    are unaffected. The major decides the package suffix, matching how these are published.
+    Empty for a CPU wheel, and empty for a build whose CUDA train is unknown or unmapped, so
+    the CPU rows are unaffected.
     """
     train = _cuda_train()
     if not train or not _is_env_flag_enabled("EXECUTORCH_BUILD_CUDA"):
         return []
-    major = train[:2] if train.startswith("13") else train[:2]
-    suffix = f"cu{major}"
+    packages = _CUDA_RUNTIME_PACKAGES.get(train[:2])
+    if not packages:
+        return []
     # Only what the delegate and its shim actually link. A shorter list keeps a CUDA install
     # from pulling in libraries nothing in this wheel references.
-    return [
-        f"nvidia-cuda-runtime-{suffix}; platform_system == 'Linux'",
-        f"nvidia-curand-{suffix}; platform_system == 'Linux'",
-        f"nvidia-cublas-{suffix}; platform_system == 'Linux'",
-    ]
+    return [f"{name}; platform_system == 'Linux'" for name in packages]
 
 
 def _minimal_cmake_flags() -> List[str]:
@@ -686,9 +701,9 @@ class BuiltExtension(_BaseExtension):
             modpath: The dotted path of the python module that maps to the
                 extension.
         """
-        assert "/" not in modpath, (
-            f"modpath must be a dotted python module path: saw '{modpath}'"
-        )
+        assert (
+            "/" not in modpath
+        ), f"modpath must be a dotted python module path: saw '{modpath}'"
         full_src = src
         if src_dir is None and _is_windows():
             src_dir = "%BUILD_TYPE%/"
