@@ -134,16 +134,23 @@ def test_generate_stream_forwards_session_and_segments_to_worker():
             captured["session_id"] = config.session_id
             captured["segments"] = config.prompt_segments
             captured["prompt"] = prompt
+            captured["top_p"] = config.top_p
+            captured["top_k"] = config.top_k
+            captured["seed"] = config.seed
 
     async def scenario():
         rt = SessionRuntime(_Cap())
         seg = PromptInput(segments=[{"text": "a"}, {"ids": [1, 2]}])
-        async for _ in rt.generate_stream("sess", seg, _OPTS, GenStats()):
+        options = GenerationOptions(max_new_tokens=8, top_p=0.75, top_k=24, seed=456)
+        async for _ in rt.generate_stream("sess", seg, options, GenStats()):
             pass
 
     asyncio.run(scenario())
     assert captured["session_id"] == "sess"
     assert captured["segments"] == [{"text": "a"}, {"ids": [1, 2]}]
+    assert captured["top_p"] == 0.75
+    assert captured["top_k"] == 24
+    assert captured["seed"] == 456
 
 
 def test_cancellation_calls_worker_stop():
