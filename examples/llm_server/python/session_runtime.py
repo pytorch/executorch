@@ -79,6 +79,7 @@ class GenStats:
     total_ms: float = 0.0
     prefill_tok_s: float = 0.0
     decode_tok_s: float = 0.0
+    vision_encoder_ms: Optional[float] = None
     # Exact token ids generated this turn, for an adapter's transcript
     # store. Empty when the worker doesn't report them (e.g. a stop-trimmed turn).
     generated_token_ids: list = field(default_factory=list)
@@ -131,6 +132,7 @@ class _GenerationBridge:
         self._stats.total_ms = getattr(s, "total_ms", 0.0)
         self._stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
         self._stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
+        self._stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
         self._stats.generated_token_ids = getattr(s, "generated_token_ids", [])
 
     def run(self) -> None:

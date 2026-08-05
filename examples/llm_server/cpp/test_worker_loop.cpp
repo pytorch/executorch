@@ -185,13 +185,16 @@ Emitted run(
     bool warm,
     const nlohmann::json& req,
     const std::unordered_map<std::string, int64_t>& md = {},
-    const std::vector<uint64_t>& prefix = {}) {
+    const std::vector<uint64_t>& prefix = {},
+    const nlohmann::json& additional_terminal_stats =
+        nlohmann::json::object()) {
   static FakeTokenizer tok;
   std::ostringstream cap;
   std::streambuf* old = std::cout.rdbuf(cap.rdbuf());
   Emitted em;
   try {
-    worker_handle_request(st, warm, tok, md, req, prefix);
+    worker_handle_request(
+        st, warm, tok, md, req, prefix, additional_terminal_stats);
   } catch (const std::exception&) {
     em.threw = true;
   }
@@ -476,6 +479,23 @@ void test_stop_straddles_pieces() {
   check("stop-straddle: dirty", st.dirty);
 }
 
+void test_additional_terminal_stats() {
+  auto st = makeState();
+  fake(st).steps = {{10, "a", false, false}};
+  auto em = run(st, false, idsReq({1}), {}, {}, {{"vision_encoder_ms", 12.5}});
+  check("terminal stats: request succeeds", !em.threw);
+  check(
+      "terminal stats: custom field emitted",
+      em.done["vision_encoder_ms"] == 12.5);
+}
+
+void test_additional_terminal_stats_reject_reserved_key() {
+  auto st = makeState();
+  auto em = run(st, false, idsReq({1}), {}, {}, {{"prefill_ms", 12.5}});
+  check("terminal stats: reserved key rejected", em.threw);
+  check("terminal stats: no partial terminal event", em.done.is_null());
+}
+
 void test_reset_named_only_clears_on_success() {
   FakeEngine engine;
   WorkerSessions sessions(engine);
@@ -528,6 +548,8 @@ int main() {
   test_decode_failure_marks_dirty();
   test_utf8_split_across_pieces_emits_once_intact();
   test_stop_straddles_pieces();
+  test_additional_terminal_stats();
+  test_additional_terminal_stats_reject_reserved_key();
   test_reset_named_only_clears_on_success();
   printf(
       "\n%s (%d failure(s))\n",
