@@ -1008,6 +1008,58 @@ TEST(WebGPURopeValidation, RejectsMalformedGraphsBeforeDispatchAllocation) {
   }
 }
 
+TEST(WebGPUToCopyValidation, RejectsBoolAndByteIntegerConversions) {
+  ASSERT_TRUE(webgpu_operator_registry().has_op("aten._to_copy.default"));
+  namespace vk = vkgraph;
+  struct TestCase {
+    const char* name;
+    vk::VkDataType input_dtype;
+    vk::VkDataType output_dtype;
+  };
+  const TestCase cases[] = {
+      {"bool_to_int8", vk::VkDataType::BOOL, vk::VkDataType::INT8},
+      {"bool_to_uint8", vk::VkDataType::BOOL, vk::VkDataType::UINT8},
+      {"int8_to_bool", vk::VkDataType::INT8, vk::VkDataType::BOOL},
+      {"uint8_to_bool", vk::VkDataType::UINT8, vk::VkDataType::BOOL},
+  };
+  for (const TestCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    ::flatbuffers::FlatBufferBuilder fbb;
+    const std::vector<uint32_t> dims = {4};
+    std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(fbb, test_case.input_dtype, &dims, -1, 0)
+            .Union()));
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(fbb, test_case.output_dtype, &dims, -1, 1)
+            .Union()));
+    const std::vector<int32_t> args = {0, 1};
+    std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+    chain.push_back(
+        vk::CreateOperatorCallDirect(fbb, 0, "aten._to_copy.default", &args));
+    const std::vector<uint32_t> input_ids = {0};
+    const std::vector<uint32_t> output_ids = {1};
+    const auto root = vk::CreateVkGraphDirect(
+        fbb, "0", &chain, &values, &input_ids, &output_ids);
+    vk::FinishVkGraphBuffer(fbb, root);
+
+    WebGPUGraph graph;
+    try {
+      graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+      FAIL() << test_case.name << " unexpectedly built";
+    } catch (const std::runtime_error& error) {
+      EXPECT_STREQ(
+          error.what(),
+          "WebGPU to_copy: bool and integer conversions are unsupported");
+    }
+    EXPECT_EQ(graph.memory_stats().num_dispatches, 0);
+  }
+}
+
 TEST(WebGPUExecution, FullySuppressedPlanPerformsNoQueueSubmission) {
   WebGPUGraph graph;
   const WebGPUExecutionPlan plan;

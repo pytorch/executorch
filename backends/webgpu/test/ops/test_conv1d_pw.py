@@ -27,8 +27,7 @@ CONFIGS = {
     "batch2": (2, 3, 4, 5, True),
 }
 
-# name -> batch, in_channels, out_channels, L, kernel, stride, padding,
-# dilation, bias
+# name -> N, C_in, C_out, L, K, stride, padding, dilation, bias
 GENERAL_CONFIGS = {
     "voxtral_stride1": (1, 4, 6, 10, 3, 1, 0, 1, True),
     "voxtral_stride2": (1, 6, 5, 10, 3, 2, 0, 1, True),
@@ -113,9 +112,7 @@ def _delegated(et) -> bool:
 
 
 def _op_delegated(edge, op_substr: str) -> bool:
-    # The op must be absorbed into a delegate: absent from the top-level graph AND
-    # present inside a lowered submodule reached by an executorch_call_delegate node
-    # (a bare absence check also passes for an empty graph or a renamed op).
+    # Require the op in a delegate, not merely absent from the host graph.
     from executorch.exir.lowered_backend_module import get_lowered_submodules
 
     gm = edge.exported_program().graph_module
