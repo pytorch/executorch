@@ -239,12 +239,25 @@ elseif(_executorch_runtime_library)
       get_filename_component(
         _executorch_runtime_dir "${_executorch_runtime_library}" DIRECTORY
       )
+      # Only relocatable entries go into a consumer's runtime search path. An entry inherited
+      # through this interface is emitted before the consuming target's own entries, whatever
+      # order it is appended in here, so an absolute install directory would be searched first
+      # and a library in the builder's directory would shadow the one a user installed.
+      #
+      # The install directory is still needed to link, so it goes in as a link directory, which
+      # the link step uses without recording a runtime search entry. A consumer that wants the
+      # installed location searched at run time can add it, which is the normal way to depend on
+      # a package outside the default search path.
       set_property(
         TARGET executorch::runtime
         APPEND
         PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,$ORIGIN"
                  "LINKER:-rpath,$ORIGIN/../lib"
-                 "LINKER:-rpath,${_executorch_runtime_dir}"
+      )
+      set_property(
+        TARGET executorch::runtime
+        APPEND
+        PROPERTY INTERFACE_LINK_DIRECTORIES "${_executorch_runtime_dir}"
       )
     endif()
   endif()
