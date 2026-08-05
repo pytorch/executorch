@@ -3754,6 +3754,21 @@ class ReflectionPad(torch.nn.Module):
                         metrics=metrics,
                     )
 
+    @staticmethod
+    @unpack_fixtures
+    def test_5d(qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(1, 3, 6, 8, 8),)
+        padding = (1, 1, 1, 1, 1, 1)
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(3, padding),
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
 
 class Relu(torch.nn.Module):
     def __init__(self):
