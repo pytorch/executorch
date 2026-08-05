@@ -174,17 +174,6 @@ class Conv2dAndMaxPool2DModule(torch.nn.Module):
         return self.maxpool(x)
 
 
-class Conv2dConstantPadNDModule(torch.nn.Module):
-    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
-        super().__init__()
-        self.pad = ConstantPadNDModule(paddings, constant)
-        self.conv = Conv2dModule()
-
-    def forward(self, x):
-        x = self.conv(x)
-        return self.pad(x)
-
-
 class SoftmaxModule(torch.nn.Module):
     def __init__(self, dim: int):
         super().__init__()
@@ -372,26 +361,38 @@ class ConvFCFCSoftmaxModuleWithoutReshape(torch.nn.Module):
         return x
 
 
-class ConstantPadNDModule(torch.nn.Module):
-    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+class PadModule(torch.nn.Module):
+    def __init__(
+        self,
+        paddings: Collection[int],
+        mode: str = "constant",
+        value: float | None = None,
+    ):
         super().__init__()
-        self.paddings = paddings
-        self.constant = constant
+        self.paddings = tuple(paddings)
+        self.mode = mode
+        self.value = value
 
     def forward(self, x):
-        if self.constant is None:
-            return torch.nn.functional.pad(x, tuple(self.paddings), "constant")
+        if self.mode == "constant":
+            return torch.nn.functional.pad(x, self.paddings, self.mode, self.value)
+        elif self.mode == "reflect":
+            return torch.nn.functional.pad(x, self.paddings, self.mode)
         else:
-            return torch.nn.functional.pad(
-                x, tuple(self.paddings), "constant", self.constant
-            )
+            raise ValueError("Unsupported pad mode.")
 
 
-class ConstantPadNDConvModule(torch.nn.Module):
-    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+class PadConvModule(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        paddings: Collection[int],
+        mode: str = "constant",
+        value: float | None = None,
+    ):
         super().__init__()
-        self.pad = ConstantPadNDModule(paddings, constant)
-        self.conv = Conv2dModule()
+        self.pad = PadModule(paddings, mode, value)
+        self.conv = Conv2dModule(in_channels=in_channels)
 
     def forward(self, x):
         x = self.pad(x)
