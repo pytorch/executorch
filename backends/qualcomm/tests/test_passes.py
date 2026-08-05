@@ -378,6 +378,34 @@ class TestPasses(unittest.TestCase):
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
 
+    def test_index_put_int64_value_not_quantized(self):
+        """QNN's IndexPut annotator must skip a non-float (int64) value arg.
+
+        Regression for MoE (Mixtral) routing, where index_put's value is an int64
+        arange: annotating it for per-tensor quant makes quantize_per_tensor assert
+        float32 and to_executorch() fail. Only float tensors may be annotated.
+        """
+
+        class IndexPutInt64Value(torch.nn.Module):
+            def forward(self, x):
+                buf = torch.zeros(4, dtype=torch.long)
+                idx = torch.arange(4)  # int64 value written by index_put
+                buf = buf.index_put((torch.tensor([0, 1, 2, 3]),), idx)
+                return x + buf.to(torch.float32)
+
+        module = IndexPutInt64Value().eval()
+        sample_input = (torch.randn(4),)
+
+        gm = torch.export.export(module, sample_input).run_decompositions({}).module()
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(gm, quantizer)
+        prepared(*sample_input)
+        converted = convert_pt2e(prepared)
+        # Re-export runs the quantize_per_tensor meta kernel; before the dtype guard
+        # this raised "Expecting input to have dtype torch.float32" on the int64 value.
+        torch.export.export(converted, sample_input)
+
 
 if __name__ == "__main__":
     unittest.main()

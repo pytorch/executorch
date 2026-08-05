@@ -462,11 +462,14 @@ class IndexPut(GeneralOpDef):
         value = node.args[2]
 
         input_qspec_map = {}
-        input_qspec_map[value] = quantization_config.input_activation
+        output_qspec = None
+        if _is_float_tensor(value):
+            input_qspec_map[value] = quantization_config.input_activation
+            output_qspec = SharedQuantizationSpec((value, node))
 
         node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=SharedQuantizationSpec((value, node)),
+            output_qspec=output_qspec,
             _annotated=True,
         )
 

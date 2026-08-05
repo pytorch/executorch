@@ -839,7 +839,7 @@ class IndexPut(GeneralOpDef):
         input_qspec_map = {}
         input_qspec = quantization_config.input_activation
         output_qspec = None
-        if input_qspec is not None:
+        if input_qspec is not None and _is_float_tensor(value):
             input_qspec_map[value] = input_qspec
             output_qspec = SharedQuantizationSpec((value, node))
 
