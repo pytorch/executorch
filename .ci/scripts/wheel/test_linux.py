@@ -7,6 +7,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import platform
+import sys
 
 import test_base
 from examples.models import Backend, Model
@@ -41,15 +42,20 @@ if __name__ == "__main__":
 
         test_base.test_cmsis_nn_install()
 
-    test_base.run_tests(
-        model_tests=[
-            test_base.ModelTest(
-                model=Model.Mv3,
-                backend=Backend.XnnpackQuantizationDelegation,
-            ),
+    model_tests = [
+        test_base.ModelTest(
+            model=Model.Mv3,
+            backend=Backend.XnnpackQuantizationDelegation,
+        ),
+    ]
+    if sys.version_info < (3, 14):
+        model_tests.append(
             test_base.ModelTest(
                 model=Model.Mv3,
                 backend=Backend.CoreMlExportOnly,
-            ),
-        ]
-    )
+            )
+        )
+    else:
+        print("Skipping Core ML export: coremltools 9.0 does not support Python 3.14")
+
+    test_base.run_tests(model_tests=model_tests)
