@@ -33,10 +33,10 @@ set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 # against, which names the machine that built it and stops the wheel being
 # relocatable.
 #
-# Linux only. On Apple the pybind target deliberately keeps no install runtime path,
-# because adding one duplicates an entry the linker rejects, so switching the build
-# over to that empty value would leave the extension unable to find the libraries it
-# links against.
+# Linux only. On Apple the pybind target deliberately keeps no install runtime
+# path, because adding one duplicates an entry the linker rejects, so switching
+# the build over to that empty value would leave the extension unable to find
+# the libraries it links against.
 if(NOT APPLE)
   set_overridable_option(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 endif()
