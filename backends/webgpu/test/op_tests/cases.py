@@ -38,10 +38,10 @@ from executorch.backends.webgpu.test.ops.test_argmax import (
 )
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_bitwise import (
+    BITWISE_NOT_SHAPES,
     BitwiseAndModule,
     BitwiseNotModule,
     bw_gen_a,
-    bw_gen_b,
 )
 from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
@@ -53,7 +53,11 @@ from executorch.backends.webgpu.test.ops.test_compare import (
     CompareModule,
 )
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
-from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
+from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
+    Conv1dModule,
+    Conv1dPwModule,
+    GENERAL_CONFIGS as _CONV1D_CONFIGS,
+)
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
@@ -71,14 +75,13 @@ from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
     make_qcs4w_linear_module,
 )
 from executorch.backends.webgpu.test.ops.test_logical_and import (
-    la_gen_a,
-    la_gen_b,
+    LOGICAL_BINARY_CASES,
+    logical_binary_gen_a,
+    logical_binary_gen_b,
     LogicalAndModule,
 )
 from executorch.backends.webgpu.test.ops.test_logical_or import (
     BitwiseOrModule,
-    lo_gen_a,
-    lo_gen_b,
     LogicalOrModule,
 )
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
@@ -112,7 +115,15 @@ from executorch.backends.webgpu.test.ops.test_quant import (
     DequantizeConstModule,
     QuantizeModule,
 )
-from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
+from executorch.backends.webgpu.test.ops.test_reduce import (
+    amax_sign_trap_input,
+    amax_tie_input,
+    AmaxModule,
+    amin_sign_trap_input,
+    amin_tie_input,
+    AminModule,
+    EXTREMA_CONFIGS,
+)
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_rms_norm import (
     _CASES,
@@ -145,6 +156,18 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_to_copy import (
+    bool_tail_input,
+    compare_to_copy_input_a,
+    compare_to_copy_input_b,
+    CompareToCopyBoolToFloatModule,
+    to_copy_float_input,
+    to_copy_int_input,
+    ToCopyBoolToFloatModule,
+    ToCopyFloatToIntToFloatModule,
+    ToCopyIntToFloatModule,
+)
+
 from executorch.backends.webgpu.test.ops.test_unary_activations import (
     _lin as _unary_lin,
     CLAMP_CONFIGS,
@@ -175,6 +198,39 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
         "self": AddSelfModule,
         "chained": AddChainedModule,
     }[variant]()
+
+
+@register_op_test("to_copy_bool_to_float")
+def _to_copy_bool_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=CompareToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(
+                    InputSpec((n,), gen=compare_to_copy_input_a),
+                    InputSpec((n,), gen=compare_to_copy_input_b),
+                ),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("to_copy_bool_input_to_float")
+def _to_copy_bool_input_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=ToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(InputSpec((n,), gen=bool_tail_input),),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("add")
@@ -238,7 +294,7 @@ def _rms_norm_suite() -> WebGPUTestSuite:
 
 @register_op_test("mul")
 def _mul_suite() -> WebGPUTestSuite:
-    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    # Full binary_op-family numeric coverage, including broadcast.
     return WebGPUTestSuite(
         module_factory=lambda: MulModule(),
         cases=[
@@ -263,21 +319,25 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
 
 @register_op_test("minimum")
 def _minimum_suite() -> WebGPUTestSuite:
-    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    # Same-shape and mixed-rank broadcast numeric coverage.
     return WebGPUTestSuite(
         module_factory=lambda: MinimumModule(),
         cases=[
             Case(name="2d", inputs=((M1, M2), (M1, M2))),
             Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-3.0, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 4.0)),
+                ),
+            ),
         ],
     )
 
 
 def _compare_suite(op: str) -> WebGPUTestSuite:
-    # Elementwise fp32 comparison -> bool (byte-exact golden). The two inputs use
-    # DIFFERENT discrete-range seeds so a!=b (real lt/gt mix) while colliding
-    # often (eq/le/ge ties); all shapes have numel % 4 == 0 (bool output packs 4
-    # bytes/word). Same-shape only (flat kernel; broadcast=smoke).
+    # Distinct inputs and tail shapes cover byte-exact packed BOOL output.
     def case(name, shape):
         return Case(
             name=name,
@@ -289,7 +349,14 @@ def _compare_suite(op: str) -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda: CompareModule(op),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        cases=[
+            case("tail_1", (1,)),
+            case("tail_5", (5,)),
+            case("tail_67", (67,)),
+            case("2d", (4, 8)),
+            case("3d", (2, 3, 8)),
+            case("sq", (16, 16)),
+        ],
         golden_dtype="bool",
     )
 
@@ -319,49 +386,33 @@ def _ge_suite() -> WebGPUTestSuite:
     return _compare_suite("ge")
 
 
-@register_op_test("logical_and")
-def _logical_and_suite() -> WebGPUTestSuite:
-    # out = (a>0) && (b>0): two bool masks derived on-GPU from float inputs via
-    # gt.Tensor (baked zeros), AND'd -> bool. Distinct a/b seeds so the masks
-    # differ (AND ~25% True, a real mix an OR mutant fails); all shapes numel %
-    # 4 == 0 (bool packs 4/word). float32 oracle (byte-exact bool golden).
+def _logical_binary_suite(module_factory) -> WebGPUTestSuite:
+    # Every packed u32 receives all four Boolean pairs in byte order.
     def case(name, shape):
         return Case(
             name=name,
             construct={"shape": shape},
             inputs=(
-                InputSpec(shape=shape, gen=la_gen_a),
-                InputSpec(shape=shape, gen=la_gen_b),
+                InputSpec(shape=shape, gen=logical_binary_gen_a),
+                InputSpec(shape=shape, gen=logical_binary_gen_b),
             ),
         )
 
     return WebGPUTestSuite(
-        module_factory=lambda shape: LogicalAndModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        module_factory=module_factory,
+        cases=[case(name, shape) for name, shape in LOGICAL_BINARY_CASES],
         golden_dtype="float32",
     )
+
+
+@register_op_test("logical_and")
+def _logical_and_suite() -> WebGPUTestSuite:
+    return _logical_binary_suite(lambda shape: LogicalAndModule(shape))
 
 
 @register_op_test("bitwise_and")
 def _bitwise_and_suite() -> WebGPUTestSuite:
-    # bool bitwise AND == logical_and for canonical 0/1 (shares the handler).
-    # Two masks derived on-GPU from float inputs via gt.Tensor (baked zeros),
-    # distinct a/b seeds (AND ~25% True); all shapes numel % 4 == 0.
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=bw_gen_a),
-                InputSpec(shape=shape, gen=bw_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: BitwiseAndModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: BitwiseAndModule(shape))
 
 
 @register_op_test("bitwise_not")
@@ -377,52 +428,22 @@ def _bitwise_not_suite() -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda shape: BitwiseNotModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        cases=[
+            case(name, shape)
+            for name, shape in zip(("2d", "3d", "sq"), BITWISE_NOT_SHAPES)
+        ],
         golden_dtype="float32",
     )
 
 
 @register_op_test("logical_or")
 def _logical_or_suite() -> WebGPUTestSuite:
-    # out = (a>0) || (b>0): two bool masks derived on-GPU from float inputs via
-    # gt.Tensor (baked zeros), OR'd -> bool. Distinct a/b seeds (~50% each,
-    # independent -> OR ~75% True, a real mix an AND mutant fails); all shapes
-    # numel % 4 == 0. float32 oracle (byte-exact bool golden).
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=lo_gen_a),
-                InputSpec(shape=shape, gen=lo_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: LogicalOrModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: LogicalOrModule(shape))
 
 
 @register_op_test("bitwise_or")
 def _bitwise_or_suite() -> WebGPUTestSuite:
-    # bool bitwise OR == logical_or for canonical 0/1 (shares the handler).
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=lo_gen_a),
-                InputSpec(shape=shape, gen=lo_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: BitwiseOrModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: BitwiseOrModule(shape))
 
 
 @register_op_test("pow")
@@ -443,6 +464,13 @@ def _pow_suite() -> WebGPUTestSuite:
                 inputs=(
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 3.0)),
                 ),
             ),
         ],
@@ -478,39 +506,54 @@ def _floor_divide_suite() -> WebGPUTestSuite:
                 ),
                 golden_fn=_floor_div_golden,
             ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-8.0, 8.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(0.5, 4.0)),
+                ),
+                golden_fn=_floor_div_golden,
+            ),
         ],
     )
 
 
-def _reduce_suite(module_cls) -> WebGPUTestSuite:
-    # Last-dim reduction; both keepdim variants over a 2d and a 3d shape.
+def _reduce_suite(module_cls, op: str) -> WebGPUTestSuite:
+    generators = {
+        ("amax", "sign_trap"): amax_sign_trap_input,
+        ("amax", "tie"): amax_tie_input,
+        ("amin", "sign_trap"): amin_sign_trap_input,
+        ("amin", "tie"): amin_tie_input,
+    }
+    cases = []
+    for name, shape, dim, keepdim, input_class in EXTREMA_CONFIGS:
+        inputs = (shape,)
+        kwargs = {}
+        if input_class != "default":
+            inputs = (InputSpec(shape=shape, gen=generators[(op, input_class)]),)
+            kwargs = {"atol": 0.0, "rtol": 0.0}
+        cases.append(
+            Case(
+                name=name,
+                construct={"keepdim": keepdim, "dim": dim},
+                inputs=inputs,
+                **kwargs,
+            )
+        )
     return WebGPUTestSuite(
-        module_factory=lambda keepdim: module_cls(keepdim),
-        cases=[
-            Case(name="keepdim_2d", construct={"keepdim": True}, inputs=((M1, M2),)),
-            Case(name="nodim_2d", construct={"keepdim": False}, inputs=((M1, M2),)),
-            Case(
-                name="keepdim_3d",
-                construct={"keepdim": True},
-                inputs=((S, S1, S2),),
-            ),
-            Case(
-                name="nodim_3d",
-                construct={"keepdim": False},
-                inputs=((S, S1, S2),),
-            ),
-        ],
+        module_factory=module_cls,
+        cases=cases,
     )
 
 
 @register_op_test("amax")
 def _amax_suite() -> WebGPUTestSuite:
-    return _reduce_suite(AmaxModule)
+    return _reduce_suite(AmaxModule, "amax")
 
 
 @register_op_test("amin")
 def _amin_suite() -> WebGPUTestSuite:
-    return _reduce_suite(AminModule)
+    return _reduce_suite(AminModule, "amin")
 
 
 @register_op_test("flip")
@@ -615,6 +658,55 @@ def _conv1d_dw_suite() -> WebGPUTestSuite:
             case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
             case("dil2", 3, 10, 3, 1, 2, 2, True),
             case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+            case("single_channel_route", 1, 8, 3, 1, 1, 1, True),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("conv1d")
+def _conv1d_suite() -> WebGPUTestSuite:
+    # General groups=1 NCL conv1d; fp64 oracle. The neighboring pointwise and
+    # depthwise suites remain routing controls for the two retained fast paths.
+    def case(name, cfg):
+        n, ic, oc, length, kernel, stride, padding, dilation, bias = cfg
+        return Case(
+            name=name,
+            construct={
+                "in_channels": ic,
+                "out_channels": oc,
+                "kernel_size": kernel,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=((n, ic, length),),
+        )
+
+    dynamic_cfg = _CONV1D_CONFIGS["voxtral_stride1"]
+    n, ic, oc, length, kernel, stride, padding, dilation, bias = dynamic_cfg
+    dynamic_length = torch.export.Dim("manifest_conv1d_length", min=7, max=length)
+    return WebGPUTestSuite(
+        module_factory=Conv1dModule,
+        cases=[
+            *[case(name, cfg) for name, cfg in _CONV1D_CONFIGS.items()],
+            Case(
+                name="dynamic_length_10_to_7",
+                construct={
+                    "in_channels": ic,
+                    "out_channels": oc,
+                    "kernel_size": kernel,
+                    "stride": stride,
+                    "padding": padding,
+                    "dilation": dilation,
+                    "bias": bias,
+                },
+                export_inputs=((n, ic, length),),
+                inputs=((n, ic, 7),),
+                dynamic_shapes=({2: dynamic_length},),
+            ),
         ],
         atol=1e-3,
         rtol=1e-3,
@@ -843,6 +935,38 @@ def _grid_priors_suite() -> WebGPUTestSuite:
 @register_op_test("view_copy")
 def _view_copy_suite() -> WebGPUTestSuite:
     return _fn_config_suite(ViewModule, _VIEW_CONFIGS)
+
+
+def _to_copy_factory(variant: str) -> torch.nn.Module:
+    return {
+        "int_to_float": ToCopyIntToFloatModule,
+        "float_roundtrip": ToCopyFloatToIntToFloatModule,
+    }[variant]()
+
+
+@register_op_test("to_copy")
+def _to_copy_suite() -> WebGPUTestSuite:
+    cases = []
+    for n in (63, 64, 65, 257):
+        cases.extend(
+            [
+                Case(
+                    name=f"int_to_float_{n}",
+                    construct={"variant": "int_to_float"},
+                    inputs=(InputSpec(shape=(n,), gen=to_copy_int_input),),
+                ),
+                Case(
+                    name=f"float_roundtrip_{n}",
+                    construct={"variant": "float_roundtrip"},
+                    inputs=(InputSpec(shape=(n,), gen=to_copy_float_input),),
+                ),
+            ]
+        )
+    return WebGPUTestSuite(
+        module_factory=_to_copy_factory,
+        cases=cases,
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("select")
