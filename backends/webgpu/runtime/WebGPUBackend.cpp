@@ -90,7 +90,7 @@ Result<DelegateHandle*> WebGPUBackend::init(
 
   // Parse header to locate flatbuffer and constant data
   Result<WebGPUDelegateHeader> header =
-      WebGPUDelegateHeader::parse(processed->data());
+      WebGPUDelegateHeader::parse(processed->data(), processed->size());
   if (!header.ok()) {
     ET_LOG(Error, "WebGPUDelegateHeader may be corrupt");
     return header.error();
@@ -100,6 +100,17 @@ Result<DelegateHandle*> WebGPUBackend::init(
       reinterpret_cast<const uint8_t*>(processed->data());
   const uint8_t* flatbuffer_data = buffer_start + header->flatbuffer_offset;
   const uint8_t* constant_data = buffer_start + header->bytes_offset;
+
+  size_t constant_data_size = header->bytes_size;
+  if (constant_data_size == 0 && processed->size() > header->bytes_offset) {
+    constant_data_size = processed->size() - header->bytes_offset;
+  }
+
+  flatbuffers::Verifier verifier(flatbuffer_data, header->flatbuffer_size);
+  if (!vkgraph::VerifyVkGraphBuffer(verifier)) {
+    ET_LOG(Error, "WebGPU delegate FlatBuffer verification failed");
+    return Error::DelegateInvalidCompatibility;
+  }
 
   // Verify FlatBuffer identifier
   if (!vkgraph::VkGraphBufferHasIdentifier(flatbuffer_data)) {
@@ -125,10 +136,20 @@ Result<DelegateHandle*> WebGPUBackend::init(
       config.f16_accumulate_gemm = spec.get();
     }
   }
+  {
+    Result<int> spec = context.get_runtime_spec<int>("sdpa_query_tile");
+    if (spec.ok()) {
+      config.sdpa_query_tile = spec.get();
+    }
+  }
 
   try {
     graph->build(
-        flatbuffer_data, constant_data, context.get_named_data_map(), config);
+        flatbuffer_data,
+        constant_data,
+        constant_data_size,
+        context.get_named_data_map(),
+        config);
   } catch (const std::exception& e) {
     ET_LOG(Error, "WebGPU graph build failed: %s", e.what());
     graph->~WebGPUGraph();
@@ -163,8 +184,13 @@ Error WebGPUBackend::execute(
       const auto& tensor = args[i]->toTensor();
       const bool host_is_int64 =
           tensor.scalar_type() == executorch::aten::ScalarType::Long;
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
       inputs.push_back(
-          {tensor.const_data_ptr(), tensor.nbytes(), host_is_int64});
+          {tensor.const_data_ptr(),
+           tensor.nbytes(),
+           host_is_int64,
+           host_is_fp32});
       const auto sizes = tensor.sizes();
       std::vector<int64_t> new_dims(sizes.begin(), sizes.end());
       graph->resize_input(graph->input_ids()[i], new_dims);
@@ -205,12 +231,15 @@ Error WebGPUBackend::execute(
     graph->execute(plan);
 
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
-    std::vector<std::pair<void*, size_t>> outputs;
+    std::vector<OutputData> outputs;
     outputs.reserve(num_outputs);
     for (size_t i = 0; i < num_outputs; i++) {
       const size_t arg_idx = num_inputs + i;
       auto& tensor = args[arg_idx]->toTensor();
-      outputs.emplace_back(tensor.mutable_data_ptr(), tensor.nbytes());
+      const bool host_is_fp32 =
+          tensor.scalar_type() == executorch::aten::ScalarType::Float;
+      outputs.push_back(
+          {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
     }
     graph->copy_outputs(outputs, plan);
   } catch (const std::exception& e) {
