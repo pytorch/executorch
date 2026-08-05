@@ -296,11 +296,31 @@ function(strip_python_lib target)
   if(MSVC)
     return()
   endif()
+  # The module helper links the embedding form of Python for anything that is not a MODULE
+  # library, and that form brings a hard dependency on the interpreter's shared library plus an
+  # absolute path to wherever it was found on the build machine. Neither survives being shipped:
+  # the loader cannot satisfy the dependency from an installed wheel, and the absolute path names
+  # the build machine.
+  #
+  # These targets cannot simply become MODULE libraries, because other targets link them and CMake
+  # refuses to link a MODULE. So keep the type and replace the Python library instead. An
+  # extension does not need it: the interpreter already provides those symbols to anything it
+  # loads.
+  #
+  # The interfaces arrive as PRIVATE links, so they appear in LINK_LIBRARIES wrapped rather than as
+  # bare target names. Rewrite the property from the filtered list instead of relying on a name
+  # match against the wrapped form.
   get_target_property(_libs ${target} LINK_LIBRARIES)
   if(_libs)
-    list(REMOVE_ITEM _libs Python::Python pybind11::embed)
-    list(APPEND _libs pybind11::module)
-    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
+    set(_kept "")
+    foreach(_lib IN LISTS _libs)
+      # Match the embedding interfaces however they are spelled, including inside a wrapper.
+      if(NOT _lib MATCHES "(pybind11::embed|Python3?::Python)")
+        list(APPEND _kept "${_lib}")
+      endif()
+    endforeach()
+    list(APPEND _kept pybind11::module)
+    set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_kept}")
   endif()
   if(APPLE)
     # Apple's linker needs telling that the undefined symbols resolve at load time. The
