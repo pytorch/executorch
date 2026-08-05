@@ -757,6 +757,10 @@ class TestConv:
                 s := 1,
                 d := 1,
                 id=f"bounds of kernel height: {_conv_id(ins, oc, ks=ks, s=s, d=d)}",
+                marks=pytest.mark.xfail(
+                    reason="AIR-14679",
+                    strict=True,
+                ),
             ),
             pytest.param(
                 ins := (4, 3, 3, 8500),
