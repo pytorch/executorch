@@ -97,10 +97,10 @@ target_include_directories(
 )
 
 if(EXECUTORCH_BUILD_SHARED)
-  # extension_threadpool is a shared library here and already provides pthreadpool
-  # and cpuinfo. Naming the static archives as well would give this delegate its own
-  # second copy of both, so a process would end up with two thread pools rather than
-  # the one the shared library exists to provide.
+  # extension_threadpool is a shared library here and already provides
+  # pthreadpool and cpuinfo. Naming the static archives as well would give this
+  # delegate its own second copy of both, so a process would end up with two
+  # thread pools rather than the one the shared library exists to provide.
   set(xnnpack_third_party extension_threadpool)
 else()
   set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
