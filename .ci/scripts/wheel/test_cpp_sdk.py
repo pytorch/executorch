@@ -540,8 +540,12 @@ def _assert_single_definer(symbols, what: str) -> None:
         pretty = [str(lib.relative_to(package_dir)) for lib in definers]
         assert len(definers) == 1, (
             f"expected exactly one library to define {symbol}, found "
-            f"{len(definers)}: {pretty}. More than one definition means the "
-            f"process has more than one {what}."
+            f"{len(definers)}: {pretty}. "
+            + (
+                f"No definition means nothing shipped provides the {what}."
+                if not definers
+                else f"More than one means the process has more than one {what}."
+            )
         )
     print(f"✓ single {what} across {len(libraries)} shipped libraries")
 
@@ -1264,7 +1268,10 @@ def _requested_cuda_architectures() -> list:
         return []
     found = []
     for entry in raw.replace(",", ";").split(";"):
-        number = re.match(r"(\d+)", entry.strip())
+        # Remove the separator before matching. A dotted spelling such as "8.0" would
+        # otherwise yield "8", which never matches the inspector's "sm_80", and the audit
+        # would report every architecture missing on a wheel that is correct.
+        number = re.match(r"(\d+)", entry.strip().replace(".", ""))
         # A "-virtual" entry asks for a portable format rather than compiled code for that
         # architecture, so it is not expected to appear as device code.
         if number and "virtual" not in entry:

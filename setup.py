@@ -158,7 +158,15 @@ def _cuda_dependencies() -> List[str]:
         return []
     # Only what the delegate and its shim actually link. A shorter list keeps a CUDA install
     # from pulling in libraries nothing in this wheel references.
-    return [f"{name}; platform_system == 'Linux'" for name in packages]
+    #
+    # Bounded to the major this wheel was built against, which is the same key that selected the
+    # names. Without an upper bound, the day a newer CUDA major publishes, a fresh install of an
+    # unchanged wheel resolves to it, and a different major carries a different library version
+    # than the shipped code links, so the wheel installs and then fails to load.
+    major = int(train[:2])
+    return [
+        f"{name}>={major},<{major + 1}; platform_system == 'Linux'" for name in packages
+    ]
 
 
 def _minimal_cmake_flags() -> List[str]:
