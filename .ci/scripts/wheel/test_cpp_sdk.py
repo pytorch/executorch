@@ -187,16 +187,25 @@ def _provided_externally(name: str) -> bool:
     return bool(re.fullmatch(r"libpython3(?:\.\d+)?", base))
 
 
-# The component library each target is expected to expose. Keyed by the library base
-# name as shipped, so the test can start from what is in the wheel and require a target
-# for it, rather than only inspecting targets that happen to exist.
-_COMPONENT_LIBRARIES = {
-    "libexecutorch_threadpool": "threadpool",
-    "libexecutorch_kernels_optimized": "kernels_optimized",
-    "libexecutorch_etdump": "etdump",
-    "libexecutorch_backend_xnnpack": "backend_xnnpack",
-    "libexecutorch_backend_cuda": "backend_cuda",
-}
+# Every component a wheel can ship, named as a consumer passes it to find_package.
+#
+# One list rather than one per check: the shipped library is always
+# libexecutorch_<component>, and the test consumer below is generated from these names
+# too. Holding the names twice is how a rename reached the shipped libraries and the
+# package config but not this test, which then reported the components as unlinkable.
+_COMPONENTS = (
+    "threadpool",
+    "kernels_optimized",
+    "kernels_quantized",
+    "etdump",
+    "backend_xnnpack",
+    "backend_cuda",
+)
+
+# Keyed by shipped library base name, so a check can start from what the wheel
+# contains and require a target for it, rather than only inspecting the targets that
+# happen to exist.
+_COMPONENT_LIBRARIES = {f"libexecutorch_{name}": name for name in _COMPONENTS}
 
 
 def _shipped_components(package_dir: Path) -> set:
@@ -1022,8 +1031,9 @@ add_executable(component_consumer consumer.cpp)
 target_link_libraries(component_consumer PRIVATE executorch::runtime)
 
 # Link every component this wheel offers, and report which ones those are so the test
-# can check the result. Guarded individually because the set depends on the wheel.
-foreach(_component threadpool kernels xnnpack_backend cuda_backend)
+# can check the result. Guarded per name because a wheel built without a backend or
+# kernel set ships no library for it, and the caller compares against what shipped.
+foreach(_component ${_EXPECTED_COMPONENTS})
   if(TARGET executorch::${_component})
     target_link_libraries(component_consumer PRIVATE executorch::${_component})
     # Report the library file, not just the target name: the two differ, and the test
@@ -1054,7 +1064,13 @@ def test_component_targets_link(work_dir: Path) -> None:
     build_dir = work_dir / "components-build"
     source_dir.mkdir(parents=True, exist_ok=True)
     (source_dir / "consumer.cpp").write_text(_CONSUMER_SOURCE)
-    (source_dir / "CMakeLists.txt").write_text(_COMPONENT_CONSUMER_CMAKE)
+    # Name every component explicitly so a target that failed to be created is a
+    # failure here rather than a check that quietly does nothing.
+    (source_dir / "CMakeLists.txt").write_text(
+        _COMPONENT_CONSUMER_CMAKE.replace(
+            "${_EXPECTED_COMPONENTS}", " ".join(_COMPONENTS)
+        )
+    )
 
     configure = subprocess.run(
         [
