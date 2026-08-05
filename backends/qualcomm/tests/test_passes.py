@@ -471,6 +471,7 @@ class TestPasses(unittest.TestCase):
                         should_decompose,
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
+
     def test_expand_broadcast_preserves_rank0_input_mutation(self):
         """A rank-0 user input that is BOTH broadcast (needs rank promotion) AND mutated in
         place must keep its USER_INPUT_MUTATION write-back on the rank-0 value.
@@ -485,17 +486,23 @@ class TestPasses(unittest.TestCase):
 
         class BroadcastAndMutate(torch.nn.Module):
             def forward(self, x, counter):
-                position = torch.arange(x.shape[-1]) + counter  # rank-1 + rank-0 broadcast
+                position = (
+                    torch.arange(x.shape[-1]) + counter
+                )  # rank-1 + rank-0 broadcast
                 counter.add_(x.shape[-1])  # in-place mutation of the rank-0 input
                 return x + position.to(x.dtype)
 
         exported = torch.export.export(
-            BroadcastAndMutate().eval(), (torch.randn(1, 4), torch.tensor(0)), strict=True
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
         )
         ep = to_edge(exported).exported_program()
         gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
 
-        broadcast = [n for n in gm.graph.nodes if n.target == add and n.meta["val"].dim() == 1]
+        broadcast = [
+            n for n in gm.graph.nodes if n.target == add and n.meta["val"].dim() == 1
+        ]
         self.assertTrue(broadcast)
         self.assertTrue(
             any(
@@ -512,8 +519,10 @@ class TestPasses(unittest.TestCase):
             if spec.kind == OutputKind.USER_INPUT_MUTATION
         }
         self.assertTrue(mutated)
+        checked = 0
         for node in gm.graph.nodes:
             if node.name in mutated:
+                checked += 1
                 self.assertFalse(
                     any(
                         isinstance(a, torch.fx.Node) and a.target == view_copy
@@ -521,6 +530,11 @@ class TestPasses(unittest.TestCase):
                     ),
                     "rank promotion leaked into the USER_INPUT_MUTATION write-back path",
                 )
+        self.assertEqual(
+            checked,
+            len(mutated),
+            "did not find every mutation-output node in the graph",
+        )
 
     def test_expand_broadcast_promotes_per_consumer(self):
         """One tensor feeding two broadcasts of different output rank must be promoted
@@ -532,7 +546,10 @@ class TestPasses(unittest.TestCase):
 
         class TwoBroadcasts(torch.nn.Module):
             def forward(self, a2d, a1d, b):
-                return a2d + b, a1d + b  # b:(4,) -> rank-2 needs a view; rank-1 does not
+                return (
+                    a2d + b,
+                    a1d + b,
+                )  # b:(4,) -> rank-2 needs a view; rank-1 does not
 
         exported = torch.export.export(
             TwoBroadcasts().eval(),
@@ -546,12 +563,15 @@ class TestPasses(unittest.TestCase):
             if node.target != add:
                 continue
             has_view = any(
-                isinstance(a, torch.fx.Node) and a.target == view_copy for a in node.args
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for a in node.args
             )
             if node.meta["val"].dim() == 2:
                 self.assertTrue(has_view, "rank-2 broadcast operand should be promoted")
             if node.meta["val"].dim() == 1:
-                self.assertFalse(has_view, "rank-1 broadcast operand should not be promoted")
+                self.assertFalse(
+                    has_view, "rank-1 broadcast operand should not be promoted"
+                )
 
 
 if __name__ == "__main__":
