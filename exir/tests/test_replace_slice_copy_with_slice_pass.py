@@ -78,9 +78,7 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
                 return (x + 1.0).relu()
 
         gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
-        self.assertEqual(
-            [n for n in gm.graph.nodes if is_contiguous_slice_copy(n)], []
-        )
+        self.assertEqual([n for n in gm.graph.nodes if is_contiguous_slice_copy(n)], [])
 
 
 if __name__ == "__main__":
