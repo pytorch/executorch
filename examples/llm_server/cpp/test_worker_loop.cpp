@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -64,13 +65,18 @@ class FakeSession : public LLMSession {
   int fail_prefill_on = -1; // 0-based call index to fail (-1 = never)
   int decode_calls = 0;
   int fail_decode_on = -1;
+  std::vector<SamplingConfig> prefill_sampling;
+  std::vector<SamplingConfig> decode_sampling;
   int reset_calls = 0;
   bool fail_reset = false;
 
   ETError prefill_tokens(
       const std::vector<uint64_t>& tokens,
-      const SamplingConfig* /*initial_sampling*/ = nullptr) override {
+      const SamplingConfig* initial_sampling = nullptr) override {
     prefill_sizes.push_back(tokens.size());
+    if (initial_sampling != nullptr) {
+      prefill_sampling.push_back(*initial_sampling);
+    }
     prefill_batches.push_back(tokens);
     if (prefill_calls++ == fail_prefill_on) {
       return ETError::Internal; // failed AFTER (notionally) mutating state
@@ -79,7 +85,8 @@ class FakeSession : public LLMSession {
     return ETError::Ok;
   }
 
-  ETResult<DecodeResult> decode_one(const SamplingConfig& /*s*/) override {
+  ETResult<DecodeResult> decode_one(const SamplingConfig& sampling) override {
+    decode_sampling.push_back(sampling);
     if (decode_calls++ == fail_decode_on) {
       return ETError::Internal;
     }
@@ -217,6 +224,67 @@ FakeSession& fake(WorkerSessionState& st) {
 }
 nlohmann::json idsReq(std::vector<uint64_t> ids, int64_t max_new = 8) {
   return {{"max_new_tokens", max_new}, {"prompt_segments", {{{"ids", ids}}}}};
+}
+
+bool sameSampling(
+    const SamplingConfig& sampling,
+    float temperature,
+    float top_p,
+    int32_t top_k,
+    uint64_t seed) {
+  return sampling.temperature == temperature && sampling.top_p == top_p &&
+      sampling.top_k == top_k && sampling.seed == seed;
+}
+
+void test_sampling_config_forwarded() {
+  auto st = makeState();
+  fake(st).steps = {{10, "a", false, false}, {0, "", true, true}};
+  auto req = idsReq({1, 2, 3});
+  req["temperature"] = 0.7;
+  req["top_p"] = 0.8;
+  req["top_k"] = 32;
+  req["seed"] = 123;
+  run(st, /*warm=*/false, req);
+
+  check(
+      "sampling: explicit config reaches prefill",
+      fake(st).prefill_sampling.size() == 1 &&
+          sameSampling(fake(st).prefill_sampling[0], 0.7f, 0.8f, 32, 123));
+  check(
+      "sampling: explicit config reaches every decode",
+      fake(st).decode_sampling.size() == 2 &&
+          std::all_of(
+              fake(st).decode_sampling.begin(),
+              fake(st).decode_sampling.end(),
+              [](const SamplingConfig& sampling) {
+                return sameSampling(sampling, 0.7f, 0.8f, 32, 123);
+              }));
+
+  auto defaults = makeState();
+  fake(defaults).steps = {{0, "", true, true}};
+  run(defaults, /*warm=*/false, idsReq({1}));
+  check(
+      "sampling: omitted fields use worker defaults",
+      fake(defaults).prefill_sampling.size() == 1 &&
+          sameSampling(fake(defaults).prefill_sampling[0], 0.0f, 1.0f, 0, 0));
+}
+
+void test_invalid_sampling_config_rejected() {
+  for (auto invalid : std::vector<nlohmann::json>{
+           {{"top_p", 0.0}},
+           {{"top_k", -1}},
+           {{"top_k",
+             static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1}},
+           {{"seed", -1}},
+       }) {
+    auto st = makeState();
+    auto req = idsReq({1});
+    req.update(invalid);
+    const auto em = run(st, /*warm=*/false, req);
+    check(
+        "sampling: invalid direct worker value rejected before prefill",
+        em.threw && fake(st).prefill_calls == 0);
+  }
 }
 
 void test_new_full_prefill() {
@@ -446,6 +514,8 @@ void test_reset_named_only_clears_on_success() {
 
 int main() {
   printf("worker_loop.h harness:\n");
+  test_sampling_config_forwarded();
+  test_invalid_sampling_config_rejected();
   test_new_full_prefill();
   test_exact_prefix_warm_suffix();
   test_mismatch_full_reset();
