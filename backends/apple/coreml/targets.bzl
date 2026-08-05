@@ -1,0 +1,346 @@
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "APPLE")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/runtime/core:targets.bzl", "build_sdk")
+
+def define_common_targets(is_fbcode = False):
+    """Combined fbcode + xplat target definitions for backends/apple/coreml.
+
+    Pre-migration this dir had a TARGETS file (fbcode-only Python rules)
+    and a BUCK file (xplat-only Apple platform cxx_library rules). The
+    branches below preserve that exact split.
+    """
+    if is_fbcode:
+        # Any targets that should be shared between fbcode and xplat must be defined in
+        # targets.bzl. This file can contain fbcode-only targets.
+
+
+
+        # TODO: this is a placeholder to support internal fbcode build. We should add the coreml backend target properly.
+        runtime.python_library(
+            name = "coreml",
+            visibility = ["PUBLIC"],
+        )
+
+        runtime.python_library(
+            name = "backend",
+            srcs = glob([
+                "compiler/*.py",
+                "logging.py",
+            ]),
+            visibility = ["PUBLIC"],
+            deps = [
+                "fbsource//third-party/pypi/coremltools:coremltools",
+                ":executorchcoreml",
+                "//executorch/exir/backend:backend_details",
+                "//executorch/exir/backend:compile_spec_schema",
+            ],
+        )
+
+        runtime.python_library(
+            name = "partitioner",
+            srcs = glob([
+                "partition/*.py",
+                "logging.py",
+            ]),
+            visibility = ["PUBLIC"],
+            deps = [
+                "fbsource//third-party/pypi/coremltools:coremltools",
+                ":backend",
+                "//caffe2:torch",
+                "//executorch/exir:lib",
+                "//executorch/exir/backend:compile_spec_schema",
+                "//executorch/exir/backend:partitioner",
+                "//executorch/exir/backend:utils",
+            ],
+        )
+
+        runtime.python_library(
+            name = "quantizer",
+            srcs = glob([
+                "quantizer/*.py",
+            ]),
+            visibility = ["PUBLIC"],
+        )
+
+        runtime.python_library(
+            name = "coreml_recipes",
+            srcs = [
+                "recipes/__init__.py",
+                "recipes/coreml_recipe_provider.py"
+            ],
+            visibility = ["PUBLIC"],
+            deps = [
+                "fbsource//third-party/pypi/coremltools:coremltools",
+                ":coreml_recipe_types",
+                ":backend",
+                ":partitioner",
+                ":quantizer",
+                "//caffe2:torch",
+                "//executorch/exir:lib",
+                "//executorch/exir/backend:compile_spec_schema",
+                "//executorch/exir/backend:partitioner",
+                "//executorch/exir/backend:utils",
+                "//executorch/export:lib",
+                "//executorch/runtime:runtime",  # @manual
+            ],
+        )
+
+        runtime.python_library(
+            name = "coreml_recipe_types",
+            srcs = [
+                "recipes/coreml_recipe_types.py",
+            ],
+            visibility = ["PUBLIC"],
+            deps = [
+                "//executorch/export:recipe",
+            ],
+        )
+
+        runtime.cxx_python_extension(
+            name = "executorchcoreml",
+            srcs = [
+                "runtime/inmemoryfs/inmemory_filesystem.cpp",
+                "runtime/inmemoryfs/inmemory_filesystem_py.cpp",
+                "runtime/inmemoryfs/inmemory_filesystem_utils.cpp",
+                "runtime/inmemoryfs/memory_buffer.cpp",
+                "runtime/inmemoryfs/memory_stream.cpp",
+                "runtime/inmemoryfs/reversed_memory_stream.cpp",
+                "runtime/util/json_util.cpp",
+            ],
+            headers = glob([
+                "runtime/inmemoryfs/**/*.hpp",
+            ]),
+            base_module = "executorch.backends.apple.coreml",
+            compiler_flags = [
+                "-std=c++17",
+            ],
+            preprocessor_flags = [
+                "-Iexecutorch/backends/apple/coreml/runtime/util",
+            ],
+            types = [
+                "executorchcoreml.pyi",
+            ],
+            visibility = ["PUBLIC"],
+            deps = [
+                "fbsource//third-party/nlohmann-json:nlohmann-json",
+                "fbsource//third-party/pybind11:pybind11",
+            ],
+        )
+
+        runtime.python_test(
+            name = "test",
+            srcs = glob([
+                "test/*.py",
+            ]),
+            deps = [
+                "fbsource//third-party/pypi/coremltools:coremltools",
+                "fbsource//third-party/pypi/pytest:pytest",
+                ":partitioner",
+                ":quantizer",
+                ":coreml_recipes",
+                "//caffe2:torch",
+                "//pytorch/vision:torchvision",
+                "fbsource//third-party/pypi/scikit-learn:scikit-learn",
+            ],
+        )
+
+        # Header-only library for CoreML backend options
+        runtime.cxx_library(
+            name = "coreml_backend_options",
+            exported_headers = [
+                "runtime/include/coreml_backend/coreml_backend_options.h",
+            ],
+            header_namespace = "executorch/backends/apple/coreml",
+            visibility = ["PUBLIC"],
+            exported_deps = [
+                "//executorch/runtime/backend:backend_options",
+            ],
+        )
+
+        runtime.cxx_test(
+            name = "coreml_backend_options_test",
+            srcs = [
+                "runtime/test/coreml_backend_options_test.cpp",
+            ],
+            deps = [
+                ":coreml_backend_options",
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/backend:backend_options_map",
+                "//executorch/runtime/core:core",
+            ],
+        )
+    else:
+        # xplat-only Apple platform cxx_library targets
+
+        runtime.cxx_library(
+            name = "coreml",
+            srcs = [
+                "runtime/delegate/ETCoreMLAsset.mm",
+                "runtime/delegate/ETCoreMLAssetManager.mm",
+                "runtime/delegate/ETCoreMLDefaultModelExecutor.mm",
+                "runtime/delegate/ETCoreMLLogging.mm",
+                "runtime/delegate/ETCoreMLModel.mm",
+                "runtime/delegate/ETCoreMLModelCache.mm",
+                "runtime/delegate/ETCoreMLModelCompiler.mm",
+                "runtime/delegate/ETCoreMLModelLoader.mm",
+                "runtime/delegate/ETCoreMLModelManager.mm",
+                "runtime/delegate/ETCoreMLStrings.mm",
+                "runtime/delegate/MLModel_Prewarm.mm",
+                "runtime/delegate/MLMultiArray_Copy.mm",
+                "runtime/delegate/asset.mm",
+                "runtime/delegate/backend_delegate.mm",
+                "runtime/delegate/coreml_backend_delegate.mm",
+                "runtime/delegate/multiarray.mm",
+                "runtime/delegate/executorch_operations.mm",
+                "runtime/delegate/serde_json.mm",
+                "runtime/inmemoryfs/inmemory_filesystem.cpp",
+                "runtime/inmemoryfs/inmemory_filesystem_utils.mm",
+                "runtime/inmemoryfs/memory_buffer.cpp",
+                "runtime/inmemoryfs/memory_stream.cpp",
+                "runtime/inmemoryfs/reversed_memory_stream.cpp",
+                "runtime/kvstore/database.cpp",
+                "runtime/kvstore/json_key_value_store.cpp",
+                "runtime/kvstore/key_value_store.cpp",
+                "runtime/kvstore/sqlite_error.cpp",
+                "runtime/kvstore/statement.cpp",
+                "runtime/util/json_util.cpp",
+                "runtime/util/objc_json_serde.mm",
+            ] + (glob([
+                "runtime/sdk/*.mm",
+            ]) if build_sdk() else []),
+            headers = glob([
+                "runtime/include/coreml_backend/delegate.h",
+                "runtime/kvstore/*.hpp",
+                "runtime/inmemoryfs/*.hpp",
+                "runtime/delegate/*.h",
+                "runtime/delegate/*.hpp",
+                "runtime/util/*.h",
+                "runtime/util/*.hpp",
+            ]) + (glob([
+                "runtime/sdk/*.h",
+            ]) if build_sdk() else []),
+            compiler_flags = [
+                "-fobjc-arc",
+                "-fno-exceptions",
+                "-fno-rtti",
+                "-Wno-null-character",
+                "-Wno-receiver-expr",
+                "-Wno-error",
+            ],
+            define_static_target = True,
+            header_namespace = "backends/apple/coreml",
+            exported_headers = ["runtime/delegate/executorch_operations.h", "runtime/include/coreml_backend/delegate.h"],
+            fbobjc_ios_target_sdk_version = "13.0",
+            fbobjc_frameworks = [
+                "Accelerate",
+                "CoreML",
+                "Foundation",
+            ],
+            include_directories = [
+                "runtime/include",
+                "runtime/kvstore",
+                "runtime/inmemoryfs",
+                "runtime/delegate",
+                "runtime/util",
+            ] + ([
+                "runtime/sdk",
+            ] if build_sdk() else []),
+            fbobjc_libraries = [
+                "libsqlite3",
+            ],
+            link_whole = True,
+            platforms = [APPLE],
+            visibility = ["PUBLIC"],
+            deps = [
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/backend:interface",
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/kernel:kernel_includes",
+            ] + ([
+                ":proto",
+            ] if build_sdk() else []),
+        )
+
+        _PROTOS = [
+            "ArrayFeatureExtractor",
+            "AudioFeaturePrint",
+            "BayesianProbitRegressor",
+            "CategoricalMapping",
+            "ClassConfidenceThresholding",
+            "CustomModel",
+            "DataStructures",
+            "DictVectorizer",
+            "FeatureTypes",
+            "FeatureVectorizer",
+            "Gazetteer",
+            "GLMClassifier",
+            "GLMRegressor",
+            "Identity",
+            "Imputer",
+            "ItemSimilarityRecommender",
+            "LinkedModel",
+            "MIL",
+            "Model",
+            "NearestNeighbors",
+            "NeuralNetwork",
+            "NonMaximumSuppression",
+            "Normalizer",
+            "OneHotEncoder",
+            "Parameters",
+            "Scaler",
+            "SoundAnalysisPreprocessing",
+            "SVM",
+            "TextClassifier",
+            "TreeEnsemble",
+            "VisionFeaturePrint",
+            "WordEmbedding",
+            "WordTagger",
+        ]
+
+        runtime.cxx_test(
+            name = "coreml_backend_options_test",
+            srcs = [
+                "runtime/test/coreml_backend_options_test.cpp",
+            ],
+            deps = [
+                ":coreml_backend_options",
+                "//executorch/runtime/backend:backend_options",
+                "//executorch/runtime/backend:backend_options_map",
+                "//executorch/runtime/core:core",
+            ],
+        )
+
+        # Header-only library for CoreML backend options
+        runtime.cxx_library(
+            name = "coreml_backend_options",
+            exported_headers = [
+                "runtime/include/coreml_backend/coreml_backend_options.h",
+            ],
+            header_namespace = "executorch/backends/apple/coreml",
+            visibility = ["PUBLIC"],
+            exported_deps = [
+                "//executorch/runtime/backend:backend_options",
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "proto",
+            srcs = [
+                "fbsource//third-party/pypi/coremltools:exported-cpp-protoc[{}.pb.cc]".format(name)
+                for name in _PROTOS
+            ],
+            exported_headers = {
+                "format/{}.pb.h".format(name): "fbsource//third-party/pypi/coremltools:exported-cpp-protoc[{}.pb.h]".format(name)
+                for name in _PROTOS
+            },
+            header_namespace = "",
+            compiler_flags = [
+                "-Wno-global-constructors",
+            ],
+            public_include_directories = [
+                "",
+            ],
+            deps = [
+                "//third-party/protobuf:fb-protobuf-lite",
+            ],
+        )
