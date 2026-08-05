@@ -27,8 +27,8 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 
 # Registry entry points. A second definer of any of these means a second
@@ -399,7 +399,14 @@ target_link_libraries(custom_op_check PRIVATE _portable_lib)
 
 # Libraries that belong to torch rather than to this wheel. A library here resolves when the
 # Python package that owns it is imported, so it is not something this wheel can or should ship.
-_TORCH_LIBRARY_PREFIXES = ("libtorch", "libc10", "libshm", "libgomp", "libcudnn", "libcublas")
+_TORCH_LIBRARY_PREFIXES = (
+    "libtorch",
+    "libc10",
+    "libshm",
+    "libgomp",
+    "libcudnn",
+    "libcublas",
+)
 
 
 def _is_torch_library(name: str) -> bool:
@@ -688,6 +695,7 @@ def _find_wheel_files() -> list:
             return found
     return []
 
+
 def test_wheel_platform_tag() -> None:
     """The wheel's declared platform tag must match what its libraries need.
 
@@ -764,9 +772,7 @@ def test_no_absolute_runtime_paths() -> None:
         if result.returncode != 0:
             continue
         absolute = [
-            entry
-            for entry in result.stdout.strip().split(":")
-            if entry.startswith("/")
+            entry for entry in result.stdout.strip().split(":") if entry.startswith("/")
         ]
         if absolute:
             offenders[str(library.relative_to(package_dir))] = absolute
@@ -919,9 +925,17 @@ def test_documented_example_compiles(work_dir: Path) -> None:
 
     build_dir = work_dir / "documented-build"
     configure = subprocess.run(
-        ["cmake", "-S", str(source_dir), "-B", str(build_dir),
-         f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}"],
-        capture_output=True, text=True, check=False,
+        [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert configure.returncode == 0, (
         "the documented example does not configure against the installed wheel: "
@@ -929,7 +943,9 @@ def test_documented_example_compiles(work_dir: Path) -> None:
     )
     build = subprocess.run(
         ["cmake", "--build", str(build_dir)],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert build.returncode == 0, (
         "the documented example does not compile against the installed wheel: "
