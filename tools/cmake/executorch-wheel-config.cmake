@@ -52,13 +52,22 @@
 # literal flag, so the build fails much later with "cannot find -lexecutorch::<name>" instead
 # of anything that names the missing component.
 #
-# 3.28 rather than something older: the imported targets below export
-# "$ORIGIN"-relative runtime paths as link options, and CMake writes that token
-# incorrectly before 3.28. Versions 3.24 through 3.27 emit a doubled dollar with
-# the Makefile generator and a bare dollar with Ninja, so a consumer builds and
-# runs in place, because the absolute package directory is also recorded, then
-# fails once it is deployed somewhere else.
-cmake_minimum_required(VERSION 3.28)
+# The floor stays where it was, so a consumer that only wants the long-standing variables and the
+# prebuilt Python extension keeps working on the CMake it already has. The shared-runtime targets
+# below need more than this and check for it themselves.
+cmake_minimum_required(VERSION 3.19)
+
+# The imported targets below export "$ORIGIN"-relative runtime paths as link options, and CMake
+# writes that token incorrectly before 3.28. Versions 3.24 through 3.27 emit a doubled dollar with
+# the Makefile generator and a bare dollar with Ninja, so a consumer builds and runs in place,
+# because the absolute package directory is also recorded, then fails once it is deployed somewhere
+# else. Silently defining a target that behaves that way is worse than not defining it, so the
+# targets are skipped and a consumer that asked for one gets a message naming the reason.
+if(CMAKE_VERSION VERSION_LESS 3.28)
+  set(_executorch_targets_supported FALSE)
+else()
+  set(_executorch_targets_supported TRUE)
+endif()
 
 # Everything is resolved relative to this file so the wheel stays relocatable:
 # no absolute path from the machine that built it is baked in here. The file is
@@ -169,7 +178,15 @@ endfunction()
 
 # The prebuilt runtime.
 _executorch_find_library(_executorch_runtime_library libexecutorch)
-if(_executorch_runtime_library)
+if(_executorch_runtime_library AND NOT _executorch_targets_supported)
+  message(
+    STATUS
+      "executorch: the prebuilt runtime is present but its imported targets need CMake 3.28 or "
+      "newer, because older versions write the \$ORIGIN token in a runtime search path "
+      "incorrectly. The long-standing EXECUTORCH_LIBRARIES and the prebuilt Python extension are "
+      "unaffected."
+  )
+elseif(_executorch_runtime_library)
   set(EXECUTORCH_FOUND ON)
   message(STATUS "ExecuTorch runtime found at ${_executorch_runtime_library}")
 
@@ -243,6 +260,12 @@ endif()
 #
 # Call as: executorch_define_component(<target suffix> <library base name>)
 function(executorch_define_component _suffix _library_name)
+  # Same reason the runtime target is skipped on older CMake: a component target exports an
+  # $ORIGIN-relative search path, and a version that writes it wrong produces a target that works
+  # in place and fails once deployed.
+  if(NOT _executorch_targets_supported)
+    return()
+  endif()
   _executorch_find_library(_library "lib${_library_name}")
   if(NOT _library)
     return()
@@ -456,9 +479,19 @@ foreach(_component ${executorch_FIND_COMPONENTS})
     set(executorch_${_component}_FOUND FALSE)
     if(executorch_FIND_REQUIRED_${_component})
       set(executorch_FOUND FALSE)
-      set(executorch_NOT_FOUND_MESSAGE
-          "this ExecuTorch package does not provide the required component '${_component}'"
-      )
+      # Naming the CMake version when that is the cause saves a consumer from concluding the
+      # component is missing from the package, which is the wrong thing to go looking for.
+      if(NOT _executorch_targets_supported)
+        set(executorch_NOT_FOUND_MESSAGE
+            "the required component '${_component}' needs CMake 3.28 or newer, because older "
+            "versions write the \$ORIGIN token in a runtime search path incorrectly; this "
+            "package is otherwise usable through EXECUTORCH_LIBRARIES"
+        )
+      else()
+        set(executorch_NOT_FOUND_MESSAGE
+            "this ExecuTorch package does not provide the required component '${_component}'"
+        )
+      endif()
     endif()
   endif()
 endforeach()
