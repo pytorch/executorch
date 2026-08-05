@@ -1267,6 +1267,18 @@ def test_slice_scatter(request, kwargs):
     SliceScatter.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(AssertionError),
+    ]
+)
+@with_htp_context
+def test_scatter_value(request, kwargs):
+    ScatterValue.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_softmax(request, kwargs):
