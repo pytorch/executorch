@@ -524,7 +524,7 @@ The following PyTorch operators are supported through decomposition or annotatio
 | `aten.pdist`, `aten._pdist_forward` | `DecomposePDist` |
 | `aten.reciprocal` | `DecomposeReciprocal` |
 | `aten.reflection_pad1d` | PyTorch built-in decomposition |
-| `aten.reflection_pad2d` | `DecomposePad` |
+| `aten.reflection_pad2d`, `aten.reflection_pad3d` | `DecomposePad` |
 | `aten.remainder.Scalar`, `aten.remainder.Tensor` | `DecomposeRemainder` |
 | `aten.roll` | `DecomposeRoll` |
 | `aten.select_scatter` | `DecomposeSelectScatter` |
