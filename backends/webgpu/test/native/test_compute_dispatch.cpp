@@ -173,34 +173,31 @@ void build_conv1d_route_graph(
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
   auto add_tensor = [&](const std::vector<uint32_t>& dims, int mem_obj_id) {
     const int id = static_cast<int>(values.size());
-    values.push_back(
-        vk::CreateVkValue(
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
             fbb,
-            vk::GraphTypes::VkTensor,
-            vk::CreateVkTensorDirect(
-                fbb,
-                vk::VkDataType::FLOAT32,
-                &dims,
-                /*constant_id=*/-1,
-                mem_obj_id)
-                .Union()));
+            vk::VkDataType::FLOAT32,
+            &dims,
+            /*constant_id=*/-1,
+            mem_obj_id)
+            .Union()));
     return id;
   };
   auto add_int = [&](int64_t value) {
     const int id = static_cast<int>(values.size());
-    values.push_back(
-        vk::CreateVkValue(
-            fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, value).Union()));
+    values.push_back(vk::CreateVkValue(
+        fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, value).Union()));
     return id;
   };
   auto add_int_list = [&](int64_t value) {
     const int id = static_cast<int>(values.size());
     const std::vector<int64_t> items = {value};
-    values.push_back(
-        vk::CreateVkValue(
-            fbb,
-            vk::GraphTypes::IntList,
-            vk::CreateIntListDirect(fbb, &items).Union()));
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::IntList,
+        vk::CreateIntListDirect(fbb, &items).Union()));
     return id;
   };
 
@@ -212,9 +209,8 @@ void build_conv1d_route_graph(
   const int padding = add_int_list(test_case.padding);
   const int dilation = add_int_list(test_case.dilation);
   const int transposed = static_cast<int>(values.size());
-  values.push_back(
-      vk::CreateVkValue(
-          fbb, vk::GraphTypes::Bool, vk::CreateBool(fbb, false).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Bool, vk::CreateBool(fbb, false).Union()));
   const int output_padding = add_int_list(0);
   const int groups = add_int(test_case.groups);
   const int output = add_tensor(test_case.output_dims, 2);
