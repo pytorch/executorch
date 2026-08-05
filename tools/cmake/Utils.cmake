@@ -90,10 +90,11 @@ function(executorch_target_link_options_shared_lib target_name)
       # leaves every library after the first outside any --no-as-needed scope.
       "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${target_name}>,--pop-state"
     )
-    # Do not return here. A shared library also links archives of its own, and the
-    # registration objects inside those have no referenced symbol, so without
-    # whole-archive the linker discards them. The library still loads, which is why
-    # losing them surfaces later as a missing operator rather than a link error.
+    # Do not return here. A shared library also links archives of its own, and
+    # the registration objects inside those have no referenced symbol, so
+    # without whole-archive the linker discards them. The library still loads,
+    # which is why losing them surfaces later as a missing operator rather than
+    # a link error.
   endif()
   if(APPLE)
     executorch_macos_kernel_link_options(${target_name})
