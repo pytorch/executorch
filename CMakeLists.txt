@@ -284,9 +284,16 @@ add_subdirectory(third-party)
 # state crash at import time. This function replaces pybind11::embed with
 # pybind11::module (which links Python::Module instead of Python::Python —
 # headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
-# symbol resolution. No-op on non-Apple platforms.
+# symbol resolution.
+#
+# Linux needs the same treatment for a different reason. An extension is loaded by an interpreter
+# that already has the Python runtime in the process, so it must not carry its own dependency on
+# libpython: the interpreter's library directory is not on any search path a wheel can predict, and
+# an interpreter built with a shared libpython leaves the extension unable to resolve it. The
+# undefined symbols are supplied by the loading process, which is how a Python extension normally
+# works. No-op on Windows, where extensions link the import library by design.
 function(strip_python_lib target)
-  if(NOT APPLE)
+  if(MSVC)
     return()
   endif()
   get_target_property(_libs ${target} LINK_LIBRARIES)
@@ -295,7 +302,11 @@ function(strip_python_lib target)
     list(APPEND _libs pybind11::module)
     set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
   endif()
-  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  if(APPLE)
+    # Apple's linker needs telling that the undefined symbols resolve at load time. The
+    # Linux loader already permits that for a shared object and does not accept the flag.
+    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
 endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
