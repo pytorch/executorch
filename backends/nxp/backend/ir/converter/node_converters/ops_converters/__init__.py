@@ -76,6 +76,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
     NegConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.pad_converter import (
+    PadConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
@@ -151,6 +154,7 @@ __all__ = [
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
+    "PadConverter",
     "PermuteCopyConverter",
     "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
