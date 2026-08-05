@@ -55,13 +55,17 @@ def _materialize(spec) -> torch.Tensor:
 
 
 def export_case(suite: WebGPUTestSuite, case) -> tuple[torch.nn.Module, tuple, object]:
-    """Build the module + forward inputs and export to an ExecuTorch program."""
+    """Build the module and export it, returning the live runtime inputs."""
     module = suite.module_factory(**case.construct)
     # Seed so an unseeded-randn input is reproducible across generations (the golden uses
     # the SAME tensor, so this only affects which bytes a case sees, never pass/fail).
     torch.manual_seed(0)
     inputs = tuple(_materialize(s) for s in case.inputs)
-    ep = torch.export.export(module, inputs)
+    export_inputs = inputs
+    if case.export_inputs is not None:
+        torch.manual_seed(0)
+        export_inputs = tuple(_materialize(s) for s in case.export_inputs)
+    ep = torch.export.export(module, export_inputs, dynamic_shapes=case.dynamic_shapes)
     prog = to_edge_transform_and_lower(
         ep, partitioner=[VulkanPartitioner()]
     ).to_executorch()

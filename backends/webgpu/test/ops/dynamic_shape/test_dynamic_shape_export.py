@@ -19,6 +19,7 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
@@ -252,9 +253,40 @@ def _write_goldens(model, prefix: str, out_dir: str, s_values) -> None:
         print(f"  golden {prefix} S={s}")
 
 
+def export_dynamic_conv1d_cases(out_dir: str) -> None:
+    """Write one dynamic Conv1d program and live-length runtime fixtures."""
+    os.makedirs(out_dir, exist_ok=True)
+    max_length = 16
+    lengths = (max_length, 9, 5)
+    model = Conv1dModule(
+        in_channels=3,
+        out_channels=4,
+        kernel_size=3,
+        stride=2,
+        padding=1,
+        dilation=2,
+        bias=True,
+    ).eval()
+    length_dim = torch.export.Dim("conv1d_length", min=5, max=max_length)
+    _export(
+        model,
+        (_ramp((1, 3, max_length)),),
+        {"x": {2: length_dim}},
+        os.path.join(out_dir, "dyn_conv1d.pte"),
+    )
+    for length in lengths:
+        x = _ramp((1, 3, length))
+        with torch.no_grad():
+            golden = model(x)
+        prefix = os.path.join(out_dir, f"dyn_conv1d.S{length}")
+        x.detach().numpy().astype("<f4").tofile(prefix + ".input.bin")
+        golden.detach().numpy().astype("<f4").tofile(prefix + ".golden.bin")
+
+
 def export_dynamic_shape_cases(out_dir: str) -> None:
     """Write the dynamic + static .pte's and per-S goldens for the native test."""
     os.makedirs(out_dir, exist_ok=True)
+    export_dynamic_conv1d_cases(out_dir)
     s_dim = torch.export.Dim("s", min=1, max=MAXS)
 
     # 1) Single dynamic rms_norm, graph built at S=MAXS (upper bound).
@@ -1536,6 +1568,13 @@ class TestDynamicShapeExport(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.pte")))
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.S1.golden.bin")))
             expected = [
+                "dyn_conv1d.pte",
+                "dyn_conv1d.S16.input.bin",
+                "dyn_conv1d.S16.golden.bin",
+                "dyn_conv1d.S9.input.bin",
+                "dyn_conv1d.S9.golden.bin",
+                "dyn_conv1d.S5.input.bin",
+                "dyn_conv1d.S5.golden.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",
