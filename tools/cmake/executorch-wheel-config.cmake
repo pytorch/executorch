@@ -282,6 +282,17 @@ endfunction()
 
 executorch_define_component(threadpool executorch_threadpool)
 
+# A consumer that links the thread pool has to see the same switch a source build sets, or the
+# parallel helpers in the runtime headers compile their serial fallback instead and the library
+# they linked is never used.
+if(TARGET executorch::threadpool)
+  set_property(
+    TARGET executorch::threadpool
+    APPEND
+    PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
+  )
+endif()
+
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
 # independently of the runtime target above.
