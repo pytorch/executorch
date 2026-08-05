@@ -47,10 +47,11 @@
 # executorch::threadpool executorch::kernels executorch::xnnpack_backend
 # executorch::cuda_backend
 #
-# Check with if(TARGET executorch::<name>) rather than assuming one exists. A name that was
-# never defined is not an error at configure time: CMake passes it through to the linker as a
-# literal flag, so the build fails much later with "cannot find -lexecutorch::<name>" instead
-# of anything that names the missing component.
+# Check with if(TARGET executorch::<name>) rather than assuming one exists. A namespaced name
+# that was never defined is a configure-time error that names the component, so a consumer who
+# links one unconditionally gets a clear failure rather than a broken build. Guarding is still
+# worth doing, because a component's absence is a legitimate state: a CPU-only wheel ships no
+# accelerator delegate, and a consumer that guards adapts instead of failing.
 #
 # The floor stays where it was, so a consumer that only wants the long-standing variables and the
 # prebuilt Python extension keeps working on the CMake it already has. The shared-runtime targets
