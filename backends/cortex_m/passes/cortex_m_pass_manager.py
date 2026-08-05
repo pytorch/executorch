@@ -26,6 +26,7 @@ from .activation_fusion_pass import ActivationFusionPass
 from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
+from .decompose_lstm_cell_pass import DecomposeLSTMCellPass
 from .decompose_mean_pass import DecomposeMeanPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
@@ -48,6 +49,10 @@ class CortexMPassManager(PassManager):
     ]
 
     pass_list_transform_for_annotation: list[PassClass] = [
+        # Decompose aten.lstm_cell before annotation so the quantizer sees the
+        # gate linear/sigmoid/tanh/mul/add and can observe them (the opaque
+        # cell op only decomposes at to_edge, after quantization).
+        DecomposeLSTMCellPass,
         ScalarsToAttributePass,
         ReplaceScalarWithTensorArgPass,
         ClampHardswishPass,
