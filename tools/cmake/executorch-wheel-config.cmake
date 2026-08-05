@@ -47,7 +47,10 @@
 # executorch::threadpool executorch::kernels executorch::xnnpack_backend
 # executorch::cuda_backend
 #
-# Check with if(TARGET executorch::<name>) rather than assuming one exists.
+# Check with if(TARGET executorch::<name>) rather than assuming one exists. A name that was
+# never defined is not an error at configure time: CMake passes it through to the linker as a
+# literal flag, so the build fails much later with "cannot find -lexecutorch::<name>" instead
+# of anything that names the missing component.
 #
 # 3.28 rather than something older: the imported targets below export
 # "$ORIGIN"-relative runtime paths as link options, and CMake writes that token
