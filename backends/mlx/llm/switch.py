@@ -41,6 +41,7 @@ Usage:
 """
 
 import logging
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -93,6 +94,10 @@ class SwitchLinear(nn.Module):
         - Quantized: extracts inner tensors (qdata, scale, zero_point),
           stacks into [E, out, in_packed] buffers. Weight layout matches
           mlx::gather_qmm's expectations (transpose=True handles transposition).
+          4-bit qdata is nibble-packed to uint8 [E, out, in//2] (two values per
+          byte, value = signed q + 8) so it stays packed end-to-end — the
+          gather_qmm lowering reinterprets it as uint32 directly. 8-bit qdata
+          keeps the int8 [E, out, in] layout.
         - Unquantized: stacks weight.data into [E, out, in], then pretransposes
           to [E, in, out] so gather_mm receives the correct layout directly
           (no runtime transpose needed).
@@ -100,24 +105,60 @@ class SwitchLinear(nn.Module):
         if self._packed:
             return
 
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+
         w0 = self.experts[0].weight
         self._is_quantized = hasattr(w0, "qdata")
 
-        if self._is_quantized:
-            _, metadata = w0.__tensor_flatten__()
-            self.group_size = metadata["block_size"][-1]
-
+        if isinstance(w0, ExportableInt4Tensor):
+            # Per-expert ExportableInt4Tensor: qdata is already nibble-packed
+            # uint8 (out, in//2); scale/zero_point are (in//gs, out) unsigned.
+            # Stack into the gather layout the gather_qmm handler expects
+            # (packed uint8 qdata + signed zero_point).
+            self.group_size = w0.group_size
             self.register_buffer(
-                "qdata",
-                torch.stack([e.weight.qdata for e in self.experts]),
+                "qdata", torch.stack([e.weight.qdata for e in self.experts])
             )
             self.register_buffer(
                 "scale",
-                torch.stack([e.weight.scale for e in self.experts]),
+                torch.stack([e.weight.scale.t().contiguous() for e in self.experts]),
             )
             self.register_buffer(
                 "zero_point",
-                torch.stack([e.weight.zero_point for e in self.experts]),
+                torch.stack(
+                    [
+                        (e.weight.zero_point.to(torch.int16) - 8)
+                        .t()
+                        .contiguous()
+                        .to(torch.int8)
+                        for e in self.experts
+                    ]
+                ),
+            )
+        elif isinstance(w0, IntxUnpackedToInt8Tensor):
+            _, metadata = w0.__tensor_flatten__()
+            self.group_size = metadata["block_size"][-1]
+
+            qdata = torch.stack([e.weight.qdata for e in self.experts])
+            scale = torch.stack([e.weight.scale for e in self.experts])
+            zero_point = torch.stack([e.weight.zero_point for e in self.experts])
+
+            # Nibble-pack 4-bit qdata into uint8 [E, out, in//2] so experts stay
+            # packed through export (half the storage; gather_qmm views as uint32).
+            if metadata.get("target_dtype") == torch.int4:
+                E, out, in_features = qdata.shape
+                qu = (qdata.to(torch.int16) + 8).to(torch.uint8)
+                qu = qu.reshape(E, out, in_features // 2, 2)
+                qdata = (qu[..., 0] | (qu[..., 1] << 4)).contiguous()
+
+            self.register_buffer("qdata", qdata)
+            self.register_buffer("scale", scale)
+            self.register_buffer("zero_point", zero_point)
+        elif self._is_quantized:
+            raise TypeError(
+                f"Unsupported quantized expert weight type: {type(w0).__name__}; "
+                "expected ExportableInt4Tensor or IntxUnpackedToInt8Tensor"
             )
         else:
             # Stack [E, out, in] then pretranspose to [E, in, out]
@@ -131,15 +172,20 @@ class SwitchLinear(nn.Module):
         self,
         x: torch.Tensor,
         indices: torch.Tensor,
-        sorted_indices: bool = False,
+        sorted_indices: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward without unsqueeze/squeeze — caller manages dimensions.
 
         Used by UnfusedMoEExperts which passes x as [N, 1, 1, D]
         and indices as [N, top_k] to handle all experts at once.
+
+        sorted_indices: None, or a 0-d int tensor where 0 means the expert
+        gather is unsorted and any nonzero value means it is sorted (see
+        gather_mm/gather_qmm docstrings in custom_ops.py). Passed straight
+        through to those ops.
         """
         if not self._packed:
-            raise RuntimeError("SwitchLinear.pack() must be called before forward_raw.")
+            raise RuntimeError("SwitchLinear.pack() must be called before forward.")
 
         if self._is_quantized:
             return torch.ops.mlx.gather_qmm(
@@ -193,6 +239,7 @@ class SwitchMLP(nn.Module):
         activation=None,
         bias: bool = False,
         fuse_gate_up: bool = False,
+        sort_cutoff: int = 1,
     ):
         super().__init__()
         if activation is None:
@@ -201,6 +248,11 @@ class SwitchMLP(nn.Module):
         self.num_experts = num_experts
         self.intermediate_size = intermediate_size
         self.fuse_gate_up = fuse_gate_up
+        # Static export-time threshold, compared against M=N inside
+        # moe_gather_inputs to decide sort/no-sort at runtime.
+        if sort_cutoff < 1:
+            raise ValueError(f"sort_cutoff must be >= 1, got {sort_cutoff}")
+        self.sort_cutoff = sort_cutoff
 
         if fuse_gate_up:
             self.gate_up_proj = SwitchLinear(
@@ -223,7 +275,6 @@ class SwitchMLP(nn.Module):
         expert_weights: torch.Tensor,
         expert_indices: torch.Tensor,
         top_k: int,
-        sort_experts: bool = False,
     ) -> torch.Tensor:
         """Forward pass through the gated MoE MLP.
 
@@ -232,25 +283,17 @@ class SwitchMLP(nn.Module):
             expert_weights: Routing weights [N, top_k] (already softmaxed)
             expert_indices: Expert assignments [N, top_k]
             top_k: Number of experts per token
-            sort_experts: Sort tokens by expert index for coalesced memory
-                access during prefill. No effect on decode (single token).
 
         Returns:
             Output tensor [N, D]
-        """
-        N = x.shape[0]
 
-        if sort_experts:
-            flat_indices = expert_indices.flatten()
-            order = flat_indices.argsort().to(torch.int32)
-            inv_order = order.argsort().to(torch.int32)
-            sorted_idx = flat_indices[order].to(torch.int32)
-            x_sorted = x[(order // top_k).to(torch.int64)]
-            x_input = x_sorted.unsqueeze(-2)
-            idx = sorted_idx
-        else:
-            x_input = x.unsqueeze(-2).unsqueeze(-2)
-            idx = expert_indices
+        Sort/no-sort is a runtime decision (M vs self.sort_cutoff) made
+        inside moe_gather_inputs, rather than a compile-time flag. Configure
+        the threshold once via SwitchMLP(..., sort_cutoff=...).
+        """
+        x_input, idx, sort_experts, inv_order = torch.ops.mlx.moe_gather_inputs(
+            x, expert_indices, top_k, self.sort_cutoff
+        )
 
         if self.fuse_gate_up:
             gate_up = self.gate_up_proj(x_input, idx, sorted_indices=sort_experts)
@@ -262,11 +305,7 @@ class SwitchMLP(nn.Module):
         h = self.activation(gate) * up
         down = self.down_proj(h, idx, sorted_indices=sort_experts)
 
-        if sort_experts:
-            down = down.squeeze(-2)
-            down = down[inv_order].reshape(N, top_k, -1)
-        else:
-            down = down.squeeze(-2)
+        down = torch.ops.mlx.moe_scatter_outputs(down, sort_experts, inv_order, top_k)
 
         return (down * expert_weights.unsqueeze(-1)).sum(dim=-2)
 

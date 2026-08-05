@@ -26,8 +26,13 @@ def _get_qnn_host_lib_dir_name() -> str:
 
 
 def get_sdk_build_id():
+    qnn_sdk_root = os.environ.get("QNN_SDK_ROOT")
+    if not qnn_sdk_root:
+        raise EnvironmentError(
+            "QNN_SDK_ROOT must be set to query the QNN SDK build id."
+        )
     htp_library_path = os.path.join(
-        os.environ.get("QNN_SDK_ROOT", None),
+        qnn_sdk_root,
         "lib",
         _get_qnn_host_lib_dir_name(),
         get_qnn_lib_name("QnnHtp"),

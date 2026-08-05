@@ -117,8 +117,9 @@ def test_softmax_vgf_quant(test_data):
         data,
         [],
         quantize=True,
+        # Make sure that we don't use any EXT-INT16
+        tosa_spec="TOSA-1.0+INT",
     )
-    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
     # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

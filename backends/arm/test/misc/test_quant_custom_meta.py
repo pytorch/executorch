@@ -105,5 +105,6 @@ def test_quantized_to_float_transition_tosa_INT_FP(fp_extension: bool):
         )
     pipeline.quantizer.set_module_type(torch.nn.Sigmoid, None)  # type: ignore
     pipeline.quantizer.set_module_type(torch.nn.Conv1d, None)  # type: ignore
+    pipeline.quantizer.set_io(None)  # type: ignore
 
     pipeline.run()

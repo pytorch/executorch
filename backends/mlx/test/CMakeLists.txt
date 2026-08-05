@@ -88,3 +88,27 @@ if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
   )
 endif()
 add_test(NAME mlx_mutable_state COMMAND mlx_mutable_state_test)
+
+# Off-graph KV cache op-level test (no model/tokenizer needed). et_cxx_test
+# links GTest + executorch_core and registers the ctest target.
+et_cxx_test(
+  mlx_sequence_cache_test
+  SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/mlx_sequence_cache_test.cpp
+  EXTRA_LIBS
+  mlxdelegate
+  mlx_schema
+  mlx
+)
+target_include_directories(
+  mlx_sequence_cache_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime
+)
+if(EXECUTORCH_MLX_ENABLE_SANITIZERS)
+  target_compile_options(
+    mlx_sequence_cache_test PRIVATE -fsanitize=address,undefined
+                                    -fno-omit-frame-pointer
+  )
+  target_link_options(
+    mlx_sequence_cache_test PRIVATE ${_mlx_sanitizer_link_options}
+  )
+endif()

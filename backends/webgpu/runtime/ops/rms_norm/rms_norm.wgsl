@@ -12,13 +12,14 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-const WG_SIZE: u32 = 64u;
+// wg_size must be a power of two (the tree reduction halves the stride).
+override wg_size: u32 = 64u;
 
-var<workgroup> shared_sum: array<${accum_scalar_type(DTYPE)}, WG_SIZE>;
+var<workgroup> shared_sum: array<${accum_scalar_type(DTYPE)}, wg_size>;
 
 fn reduce_shared(worker_id: u32) {
   workgroupBarrier();
-  var stride: u32 = WG_SIZE / 2u;
+  var stride: u32 = wg_size / 2u;
   loop {
     if (stride == 0u) {
       break;
@@ -32,10 +33,10 @@ fn reduce_shared(worker_id: u32) {
 }
 
 $if VEC == 4:
-  // vec4 variant of rms_norm: each lane strides by WG_SIZE over rw4 = row_width/4
+  // vec4 variant of rms_norm: each lane strides by wg_size over rw4 = row_width/4
   // texels and accumulates dot(v, v). row_width is the ELEMENT count, so mean_sq
   // divides by it (not rw4). The host selects this only when row_width % 4 == 0.
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -64,7 +65,7 @@ fn main(
         local_sq_sum = local_sq_sum + dot(vec4<f32>(v), vec4<f32>(v));
       $else:
         local_sq_sum = local_sq_sum + dot(v, v);
-      x4 = x4 + WG_SIZE;
+      x4 = x4 + wg_size;
     }
   $else:
     var x: u32 = worker_id;
@@ -77,7 +78,7 @@ fn main(
         local_sq_sum = local_sq_sum + f32(v) * f32(v);
       $else:
         local_sq_sum = local_sq_sum + v * v;
-      x = x + WG_SIZE;
+      x = x + wg_size;
     }
 
   shared_sum[worker_id] = local_sq_sum;
@@ -96,7 +97,7 @@ fn main(
         t_out[base4 + x4] = vec4<f16>(vec4<f32>(t_in[base4 + x4]) * rstd * vec4<f32>(t_weight[x4]));
       $else:
         t_out[base4 + x4] = t_in[base4 + x4] * rstd * t_weight[x4];
-      x4 = x4 + WG_SIZE;
+      x4 = x4 + wg_size;
     }
   $else:
     x = worker_id;
@@ -110,6 +111,6 @@ fn main(
         t_out[base + x] = f16(f32(v) * rstd * f32(w));
       $else:
         t_out[base + x] = v * rstd * w;
-      x = x + WG_SIZE;
+      x = x + wg_size;
     }
 }

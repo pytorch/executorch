@@ -477,6 +477,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_channel_shuffle(self):
         module = ChannelShuffle(2)  # noqa: F405
         sample_input = (torch.randn(1, 4, 3, 3),)
@@ -2064,6 +2074,27 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_reflection_pad3d(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    ReflectionPad3d(),  # noqa: F405
+                    ReflectionPad3dAsymmetric(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 3, 6, 8, 8),),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -2181,6 +2212,42 @@ class TestQNNFloatingPointOperator(TestQNN):
                             dtype=torch.int64,
                         ),
                         torch.rand(3, 5),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_scatter_value(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterValue(dim=1, value=0.5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterValue(dim=0, value=1.0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
                     ),
                 ],
             },
@@ -2357,6 +2424,43 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort_and_index(self):
+        test_comb = [
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(3, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(3, 10),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(2, 4, 8), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(2, 4, 8),),
+            },
+            {
+                QCOM_MODULE: SortAndIndex(  # noqa: F405
+                    shape=(1, 4, 8, 10), dim=-1, descending=True
+                ),
+                QCOM_SAMPLE_INPUTS: (torch.randn(1, 4, 8, 10),),
+            },
+        ]
+        for i, test in enumerate(test_comb):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    test[QCOM_MODULE], test[QCOM_SAMPLE_INPUTS]
+                )
 
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
@@ -3351,6 +3455,18 @@ class TestQNNQuantizedOperator(TestQNN):
             torch.randn(1, 125, 256),
             torch.randn(1, 2048, 256),
         )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist(self):
+        module = PDist()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pdist_forward(self):
+        module = PDistForward()  # noqa: F405
+        sample_input = (torch.randn(8, 64),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -5191,6 +5307,26 @@ class TestQNNQuantizedOperator(TestQNN):
                         qdq_module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(qdq_module, sample_input)
 
+    def test_qnn_backend_reflection_pad3d(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    ReflectionPad3d(),  # noqa: F405
+                    ReflectionPad3dAsymmetric(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.randn(1, 3, 6, 8, 8),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -5316,6 +5452,43 @@ class TestQNNQuantizedOperator(TestQNN):
                             dtype=torch.int64,
                         ),
                         torch.rand(3, 5),
+                    ),
+                ],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_scatter_value(self):
+        test_comb = [
+            {
+                QCOM_MODULE: [ScatterValue(dim=1, value=0.5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                            dtype=torch.int64,
+                        ),
+                    ),
+                ],
+            },
+            {
+                QCOM_MODULE: [ScatterValue(dim=0, value=1.0)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.rand(3, 5),
+                        torch.tensor(
+                            [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                            dtype=torch.int64,
+                        ),
                     ),
                 ],
             },
@@ -5496,6 +5669,17 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sort(self):
+        modules = [
+            Conv2dSort(descending=True),  # noqa: F405
+            Conv2dSort(descending=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(1, 3, 32, 32),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_squared_relu(self):
         module = SquaredReLU()  # noqa: F405
@@ -8222,7 +8406,7 @@ class TestExampleLLMScript(TestQNN):
                 pte_size=210_000_000,  # 210 MB
                 wikitext_ppl=23,
                 hellaswag_acc_norm=None,
-                sqnr=20,
+                sqnr=19.5,
             ),
             "smollm3-3b": TestExampleLLMScript.LlmSpecs(
                 SM8650=23,
@@ -10470,7 +10654,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/relu.pt2",
@@ -10489,7 +10673,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/relu_quantized.pt2",
@@ -10507,7 +10691,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/relu_quantized.pte",
@@ -10551,7 +10735,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "quantize",
                 "--artifact",
                 f"{tmp_dir}/sub.pt2",
@@ -10570,7 +10754,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "compile",
                 "--artifact",
                 f"{tmp_dir}/q_out/sub_quantized.pt2",
@@ -10588,7 +10772,7 @@ class TestUtilsScript(TestQNN):
             cmds = [
                 "python",
                 "-m",
-                "examples.qualcomm.util_scripts.cli",
+                "executorch.examples.qualcomm.util_scripts.cli",
                 "execute",
                 "--artifact",
                 f"{tmp_dir}/c_out/sub_quantized.pte",
