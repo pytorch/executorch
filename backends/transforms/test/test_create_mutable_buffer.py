@@ -140,6 +140,36 @@ class TestMutableBufferCreation(unittest.TestCase):
             # Recompiling emits the placeholder target as a parameter name
             assert exported_program.module()(torch.zeros(1)) == 0
 
+    def test_create_mutable_buffer_duplicate_name_raises(self):
+        """
+        A mutable buffer cannot be silently shared, so repeating a request must
+        raise instead of deduplicating, even when torch.fx renamed the node.
+        """
+
+        class EmptyNetwork(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+            test_data: torch.Tensor = (torch.zeros(1),)
+
+        for requested_name in ("b_cache", "0_cache"):
+            exported_program = export(
+                EmptyNetwork(), args=EmptyNetwork.test_data, strict=True
+            )
+            exported_program = to_edge(exported_program).exported_program()
+
+            create_mutable_buffer(
+                exp_program=exported_program,
+                name=requested_name,
+                data=torch.ones(1),
+            )
+            with self.assertRaises(RuntimeError):
+                create_mutable_buffer(
+                    exp_program=exported_program,
+                    name=requested_name,
+                    data=torch.ones(1),
+                )
+
 
 class TestRegisterMutableBufferPass(unittest.TestCase):
     """
