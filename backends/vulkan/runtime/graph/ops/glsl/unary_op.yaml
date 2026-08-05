@@ -44,6 +44,8 @@ unary_op:
       OPERATOR: hardsigmoid(X)
     - NAME: leaky_relu
       OPERATOR: leaky_relu(X, A)
+    - NAME: log10
+      OPERATOR: log(X) * 0.4342944819
     - NAME: round
       OPERATOR: round(X)
     - NAME: bitwise_not_uint8
