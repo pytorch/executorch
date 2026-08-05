@@ -13,14 +13,15 @@
 # target_link_libraries(my_app PRIVATE executorch::runtime)
 # ~~~
 #
-# This file describes the same contract as the in-tree package config, but is written by hand
-# rather than generated, because the wheel copies build products out of the build tree instead
-# of running an install step. That leaves two descriptions of one contract, which is why a
-# target already defined by an in-tree build has to be detected and left alone below.
+# This file describes the same contract as the in-tree package config, but is
+# written by hand rather than generated, because the wheel copies build products
+# out of the build tree instead of running an install step. That leaves two
+# descriptions of one contract, which is why a target already defined by an
+# in-tree build has to be detected and left alone below.
 #
-# The end state that removes the duplication is a staged install whose generated targets file
-# the wheel ships, so the source and wheel contracts become the same object rather than two
-# things that must agree.
+# The end state that removes the duplication is a staged install whose generated
+# targets file the wheel ships, so the source and wheel contracts become the
+# same object rather than two things that must agree.
 # -------
 #
 # Finds the ExecuTorch library
@@ -29,11 +30,10 @@
 #
 # EXECUTORCH_FOUND        -- True if the system has the ExecuTorch library
 # EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
-# EXECUTORCH_LIBRARIES    -- Libraries to link against
-# EXECUTORCH_BUILD_VERSION -- The full version this package was built from, including
-#                            any prerelease suffix and local version label. Compare this
-#                            when an exact build pairing is required, since the CMake
-#                            package version keeps only the numeric part.
+# EXECUTORCH_LIBRARIES    -- Libraries to link against EXECUTORCH_BUILD_VERSION
+# -- The full version this package was built from, including any prerelease
+# suffix and local version label. Compare this when an exact build pairing is
+# required, since the CMake package version keeps only the numeric part.
 #
 # and, when the prebuilt shared runtime is present, the imported target:
 #
@@ -47,23 +47,27 @@
 # executorch::threadpool executorch::kernels executorch::xnnpack_backend
 # executorch::cuda_backend
 #
-# Check with if(TARGET executorch::<name>) rather than assuming one exists. A namespaced name
-# that was never defined is a configure-time error that names the component, so a consumer who
-# links one unconditionally gets a clear failure rather than a broken build. Guarding is still
-# worth doing, because a component's absence is a legitimate state: a CPU-only wheel ships no
+# Check with if(TARGET executorch::<name>) rather than assuming one exists. A
+# namespaced name that was never defined is a configure-time error that names
+# the component, so a consumer who links one unconditionally gets a clear
+# failure rather than a broken build. Guarding is still worth doing, because a
+# component's absence is a legitimate state: a CPU-only wheel ships no
 # accelerator delegate, and a consumer that guards adapts instead of failing.
 #
-# The floor stays where it was, so a consumer that only wants the long-standing variables and the
-# prebuilt Python extension keeps working on the CMake it already has. The shared-runtime targets
-# below need more than this and check for it themselves.
+# The floor stays where it was, so a consumer that only wants the long-standing
+# variables and the prebuilt Python extension keeps working on the CMake it
+# already has. The shared-runtime targets below need more than this and check
+# for it themselves.
 cmake_minimum_required(VERSION 3.21)
 
-# The imported targets below export "$ORIGIN"-relative runtime paths as link options, and CMake
-# writes that token incorrectly before 3.28. Versions 3.24 through 3.27 emit a doubled dollar with
-# the Makefile generator and a bare dollar with Ninja, so a consumer builds and runs in place,
-# because the absolute package directory is also recorded, then fails once it is deployed somewhere
-# else. Silently defining a target that behaves that way is worse than not defining it, so the
-# targets are skipped and a consumer that asked for one gets a message naming the reason.
+# The imported targets below export "$ORIGIN"-relative runtime paths as link
+# options, and CMake writes that token incorrectly before 3.28. Versions 3.24
+# through 3.27 emit a doubled dollar with the Makefile generator and a bare
+# dollar with Ninja, so a consumer builds and runs in place, because the
+# absolute package directory is also recorded, then fails once it is deployed
+# somewhere else. Silently defining a target that behaves that way is worse than
+# not defining it, so the targets are skipped and a consumer that asked for one
+# gets a message naming the reason.
 if(CMAKE_VERSION VERSION_LESS 3.28)
   set(_executorch_targets_supported FALSE)
 else()
@@ -92,11 +96,13 @@ find_path(
   NO_CACHE
 )
 
-# Normalise the result before it is used to build paths. The search can return a directory with a
-# trailing separator, which then appears doubled in every path derived from it and in the message
-# reporting where the runtime was found.
+# Normalise the result before it is used to build paths. The search can return a
+# directory with a trailing separator, which then appears doubled in every path
+# derived from it and in the message reporting where the runtime was found.
 if(_executorch_package_root)
-  string(REGEX REPLACE "/+$" "" _executorch_package_root "${_executorch_package_root}")
+  string(REGEX REPLACE "/+$" "" _executorch_package_root
+                       "${_executorch_package_root}"
+  )
 endif()
 
 # Both directories are needed for a usable package. The C10 compatibility
@@ -111,15 +117,18 @@ endif()
 set(_executorch_c10_include
     "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
 )
-# The full version this package was built from. It lives in the generated version file, which
-# CMake includes in a throwaway scope while deciding whether the package is acceptable, so
-# nothing assigned there reaches a consumer. Reading that file here, from the config, is what
-# makes the value visible. Both files are installed side by side, so the path is fixed
-# relative to this one.
-set(_executorch_version_file "${CMAKE_CURRENT_LIST_DIR}/executorch-config-version.cmake")
+# The full version this package was built from. It lives in the generated
+# version file, which CMake includes in a throwaway scope while deciding whether
+# the package is acceptable, so nothing assigned there reaches a consumer.
+# Reading that file here, from the config, is what makes the value visible. Both
+# files are installed side by side, so the path is fixed relative to this one.
+set(_executorch_version_file
+    "${CMAKE_CURRENT_LIST_DIR}/executorch-config-version.cmake"
+)
 if(EXISTS "${_executorch_version_file}")
   file(STRINGS "${_executorch_version_file}" _executorch_version_lines
-       REGEX "^set\\(EXECUTORCH_BUILD_VERSION")
+       REGEX "^set\\(EXECUTORCH_BUILD_VERSION"
+  )
   foreach(_line IN LISTS _executorch_version_lines)
     if(_line MATCHES "\"([^\"]+)\"")
       set(EXECUTORCH_BUILD_VERSION "${CMAKE_MATCH_1}")
@@ -154,10 +163,11 @@ set(EXECUTORCH_FOUND OFF)
 # read from the shipped names rather than hardcoded here. Sets <output> to the
 # full path, or to an empty string when the wheel does not carry that library.
 #
-# This depends on an invariant on the build side: every library the wheel ships carries a
-# VERSION and SOVERSION, so its file name ends in a major. A library built without them ships
-# as a bare .so, and while the glob below still finds it, nothing then pins the major a
-# consumer linked against, which is the guarantee the SONAME exists to provide.
+# This depends on an invariant on the build side: every library the wheel ships
+# carries a VERSION and SOVERSION, so its file name ends in a major. A library
+# built without them ships as a bare .so, and while the glob below still finds
+# it, nothing then pins the major a consumer linked against, which is the
+# guarantee the SONAME exists to provide.
 function(_executorch_find_library _output _base_name)
   set(${_output}
       ""
@@ -208,10 +218,14 @@ elseif(_executorch_runtime_library)
   # target twice is an error, so only define it once and set the properties
   # either way.
   if(TARGET executorch::runtime)
-    # An in-tree build defines this name, sometimes as an ALIAS whose properties cannot be
-    # set. A consumer that both adds this project as a subdirectory and calls find_package
-    # should keep the target it is already building, so skip the whole definition.
-    message(STATUS "executorch: executorch::runtime is already defined, leaving it as is")
+    # An in-tree build defines this name, sometimes as an ALIAS whose properties
+    # cannot be set. A consumer that both adds this project as a subdirectory
+    # and calls find_package should keep the target it is already building, so
+    # skip the whole definition.
+    message(
+      STATUS
+        "executorch: executorch::runtime is already defined, leaving it as is"
+    )
   else()
     add_library(executorch::runtime SHARED IMPORTED)
     set_target_properties(
@@ -219,42 +233,48 @@ elseif(_executorch_runtime_library)
       PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
                  INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
                  INTERFACE_COMPILE_FEATURES cxx_std_17
-                 INTERFACE_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
+                 INTERFACE_COMPILE_DEFINITIONS
+                 C10_USING_CUSTOM_GENERATED_MACROS
     )
-    # Consumers get the wheel's lib/ directory in their RUNPATH automatically, because
-    # CMake adds the imported library's directory. Also record $ORIGIN-relative entries so
-    # an application deployed next to a copy of the runtime keeps working without relinking
-    # or LD_LIBRARY_PATH. $ORIGIN is a loader token, so it belongs only in RUNPATH, never
-    # in IMPORTED_LOCATION.
+    # Consumers get the wheel's lib/ directory in their RUNPATH automatically,
+    # because CMake adds the imported library's directory. Also record
+    # $ORIGIN-relative entries so an application deployed next to a copy of the
+    # runtime keeps working without relinking or LD_LIBRARY_PATH. $ORIGIN is a
+    # loader token, so it belongs only in RUNPATH, never in IMPORTED_LOCATION.
     #
-    # $ORIGIN is named before the wheel's own directory. An application deployed beside a copy
-    # of the runtime has to find that copy, and the loader takes the first match, so putting
-    # the install directory first would keep sending a relocated application back to the
-    # original wheel for as long as it remains installed. That also makes a relocation test
-    # that deletes the original pass for the wrong reason.
+    # $ORIGIN is named before the wheel's own directory. An application deployed
+    # beside a copy of the runtime has to find that copy, and the loader takes
+    # the first match, so putting the install directory first would keep sending
+    # a relocated application back to the original wheel for as long as it
+    # remains installed. That also makes a relocation test that deletes the
+    # original pass for the wrong reason.
     #
-    # The cost, measured rather than assumed: a library that merely shares this SONAME and sits
-    # in the application's own directory will win. That is what $ORIGIN means in every package
-    # that uses it, and a package cannot offer relocation while also refusing to honour what the
-    # user placed beside their binary. The consequence worth worrying about, a delegate pairing
-    # with a different registry, is caught directly by the single-registry checks, which inspect
-    # what the shipped libraries define instead of trusting the loader's choice.
+    # The cost, measured rather than assumed: a library that merely shares this
+    # SONAME and sits in the application's own directory will win. That is what
+    # $ORIGIN means in every package that uses it, and a package cannot offer
+    # relocation while also refusing to honour what the user placed beside their
+    # binary. The consequence worth worrying about, a delegate pairing with a
+    # different registry, is caught directly by the single-registry checks,
+    # which inspect what the shipped libraries define instead of trusting the
+    # loader's choice.
     #
-    # The absolute entry cannot simply be dropped to avoid the question: an application built
-    # against the installed package fails to start without it.
+    # The absolute entry cannot simply be dropped to avoid the question: an
+    # application built against the installed package fails to start without it.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       get_filename_component(
         _executorch_runtime_dir "${_executorch_runtime_library}" DIRECTORY
       )
-      # Only relocatable entries go into a consumer's runtime search path. An entry inherited
-      # through this interface is emitted before the consuming target's own entries, whatever
-      # order it is appended in here, so an absolute install directory would be searched first
-      # and a library in the builder's directory would shadow the one a user installed.
+      # Only relocatable entries go into a consumer's runtime search path. An
+      # entry inherited through this interface is emitted before the consuming
+      # target's own entries, whatever order it is appended in here, so an
+      # absolute install directory would be searched first and a library in the
+      # builder's directory would shadow the one a user installed.
       #
-      # The install directory is still needed to link, so it goes in as a link directory, which
-      # the link step uses without recording a runtime search entry. A consumer that wants the
-      # installed location searched at run time can add it, which is the normal way to depend on
-      # a package outside the default search path.
+      # The install directory is still needed to link, so it goes in as a link
+      # directory, which the link step uses without recording a runtime search
+      # entry. A consumer that wants the installed location searched at run time
+      # can add it, which is the normal way to depend on a package outside the
+      # default search path.
       set_property(
         TARGET executorch::runtime
         APPEND
@@ -281,9 +301,9 @@ endif()
 #
 # Call as: executorch_define_component(<target suffix> <library base name>)
 function(executorch_define_component _suffix _library_name)
-  # Same reason the runtime target is skipped on older CMake: a component target exports an
-  # $ORIGIN-relative search path, and a version that writes it wrong produces a target that works
-  # in place and fails once deployed.
+  # Same reason the runtime target is skipped on older CMake: a component target
+  # exports an $ORIGIN-relative search path, and a version that writes it wrong
+  # produces a target that works in place and fails once deployed.
   if(NOT _executorch_targets_supported)
     return()
   endif()
@@ -294,10 +314,13 @@ function(executorch_define_component _suffix _library_name)
 
   set(_target "executorch::${_suffix}")
   if(TARGET ${_target})
-    # An in-tree build defines these names, sometimes as an ALIAS whose properties
-    # cannot be set. A consumer that both adds this project as a subdirectory and
-    # calls find_package should keep the target it is already building.
-    message(STATUS "executorch: ${_target} is already defined, leaving it as is")
+    # An in-tree build defines these names, sometimes as an ALIAS whose
+    # properties cannot be set. A consumer that both adds this project as a
+    # subdirectory and calls find_package should keep the target it is already
+    # building.
+    message(
+      STATUS "executorch: ${_target} is already defined, leaving it as is"
+    )
     return()
   endif()
   add_library(${_target} SHARED IMPORTED)
@@ -352,9 +375,9 @@ endfunction()
 
 executorch_define_component(threadpool executorch_threadpool)
 
-# A consumer that links the thread pool has to see the same switch a source build sets, or the
-# parallel helpers in the runtime headers compile their serial fallback instead and the library
-# they linked is never used.
+# A consumer that links the thread pool has to see the same switch a source
+# build sets, or the parallel helpers in the runtime headers compile their
+# serial fallback instead and the library they linked is never used.
 if(TARGET executorch::threadpool)
   set_property(
     TARGET executorch::threadpool
@@ -437,7 +460,9 @@ if(_portable_lib_LIBRARY)
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   if(TARGET _portable_lib)
     # Already defined by an in-tree build, so keep it rather than redefining it.
-    message(STATUS "executorch: _portable_lib is already defined, leaving it as is")
+    message(
+      STATUS "executorch: _portable_lib is already defined, leaving it as is"
+    )
   else()
     # SHARED, not STATIC: this resolves to the Python extension module, which is
     # a shared object. Declaring it static makes CMake treat it as an archive,
@@ -490,22 +515,27 @@ foreach(_component ${executorch_FIND_COMPONENTS})
     set(executorch_${_component}_FOUND FALSE)
     if(executorch_FIND_REQUIRED_${_component})
       set(executorch_FOUND FALSE)
-      # Naming the CMake version when that is the cause saves a consumer from concluding the
-      # component is missing from the package, which is the wrong thing to go looking for.
+      # Naming the CMake version when that is the cause saves a consumer from
+      # concluding the component is missing from the package, which is the wrong
+      # thing to go looking for.
       if(NOT _executorch_targets_supported)
         # One string rather than several arguments. Several make a list, and
-        # message() joins a list with semicolons, which lands separators mid sentence.
+        # message() joins a list with semicolons, which lands separators mid
+        # sentence.
         string(
-          CONCAT executorch_NOT_FOUND_MESSAGE
+          CONCAT
+            executorch_NOT_FOUND_MESSAGE
             "the required component '${_component}' needs CMake 3.28 or newer, because older "
             "versions write the \$ORIGIN token in a runtime search path incorrectly; this "
             "package is otherwise usable through EXECUTORCH_LIBRARIES"
         )
       else()
         # One string rather than several arguments. Several make a list, and
-        # message() joins a list with semicolons, which lands separators mid sentence.
+        # message() joins a list with semicolons, which lands separators mid
+        # sentence.
         string(
-          CONCAT executorch_NOT_FOUND_MESSAGE
+          CONCAT
+            executorch_NOT_FOUND_MESSAGE
             "this ExecuTorch package does not provide the required component '${_component}'"
         )
       endif()
