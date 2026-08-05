@@ -18,16 +18,14 @@ class AnnotateStack(ExportPass):
     generated after quantization process.
     """
 
-    decomp_ops = [torch.ops.aten.stack.default]
+    _SOURCE_OPS = [torch.stack, torch.ops.aten.stack.default, "stack"]
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateStack, self).__init__()
         self.edge_program = edge_program
 
     def _annotate_stack(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(
-            graph_module.graph, [torch.stack, torch.ops.aten.stack.default, "stack"]
-        )
+        partitions = get_source_partitions(graph_module.graph, self._SOURCE_OPS)
         for src_partitions in partitions.values():
             for src_partition in src_partitions:
                 output = src_partition.output_nodes[0]

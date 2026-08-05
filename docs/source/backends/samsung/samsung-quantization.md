@@ -56,5 +56,5 @@ et_program = to_edge_transform_and_lower( # (6)
 ).to_executorch()
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html)
 for more information.
