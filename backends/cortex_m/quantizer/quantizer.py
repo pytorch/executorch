@@ -12,6 +12,7 @@ from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     PatternQuantizer,
     SharedQspecQuantizer,
 )
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.node_finders import (
     GlobalNodeFinder,
@@ -45,7 +46,20 @@ def mark_node_as_annotated(
 
 class CortexMQuantizer(ComposableQuantizer):
 
-    def __init__(self) -> None:
+    def __init__(self, per_tensor_config: Optional[QuantizationConfig] = None) -> None:
+        """Cortex-M PT2E quantizer.
+
+        Args:
+            per_tensor_config: Per-tensor activation config applied to the
+                non-conv elementwise ops (div/mul/add/...) that
+                ``GlobalNodeFinder`` matches anywhere in the graph. Convolutions
+                are always quantized with the per-channel config. Defaults to
+                ``INT8_PER_TENSOR_CONFIG``; pass ``INT16_PER_TENSOR_CONFIG`` to
+                quantize the ops that support it (e.g. ``quantized_div``) with
+                int16 activations.
+        """
+        per_tensor_config = per_tensor_config or INT8_PER_TENSOR_CONFIG
+
         conv_targets: set[OpOverload] = set()
         for key in CONV_OP_PATTERNS.keys() | CONV_TRANSPOSE_OP_PATTERNS.keys():
             conv_targets.update(key)
@@ -67,7 +81,7 @@ class CortexMQuantizer(ComposableQuantizer):
                 pattern_matcher=pattern_matcher,
             ),
             PatternQuantizer(
-                INT8_PER_TENSOR_CONFIG,
+                per_tensor_config,
                 node_finder=GlobalNodeFinder(),
                 pattern_matcher=pattern_matcher,
             ),
