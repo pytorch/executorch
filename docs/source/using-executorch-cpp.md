@@ -108,7 +108,7 @@ each one is defined only when the installed wheel actually ships it:
 | --- | --- |
 | `executorch::runtime` | The core runtime. Always present. |
 | `executorch::threadpool` | The shared thread pool the kernels and backends use. |
-| `executorch::kernels` | CPU operator kernels, for any operator not taken by a backend. |
+| `executorch::kernels_optimized` | CPU operator kernels, for any operator not taken by a backend. |
 
 Each target already carries what it needs: the runtime dependency, the include
 directories, the runtime search paths, and the linker options that keep a
@@ -132,7 +132,7 @@ target_link_libraries(
     PRIVATE executorch
     executorch::backends
     executorch::extensions
-    executorch::kernels)
+    executorch::kernels_optimized)
 ```
 
 See [Building from Source](using-executorch-building-from-source.md) for more information on the CMake build process.

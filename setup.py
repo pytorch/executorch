@@ -1309,12 +1309,12 @@ setup(
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/configurations/",
                     src_name=(
-                        "libexecutorch_optimized_native_cpu_ops_lib.so."
+                        "libexecutorch_kernels_optimized.so."
                         f"{get_runtime_soname_major()}.*"
                     ),
                     dst=(
                         "executorch/lib/"
-                        "libexecutorch_optimized_native_cpu_ops_lib.so."
+                        "libexecutorch_kernels_optimized.so."
                         f"{get_runtime_soname_major()}"
                     ),
                     # The target is only created when the optimized kernels are
