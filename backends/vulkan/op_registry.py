@@ -226,6 +226,7 @@ def register_copy_op():
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.log10.default,
     ]
 )
 def register_unaryop_cpp_ops():
@@ -1266,6 +1267,21 @@ def register_alias_copy():
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE_INCL_PACKED_INT8,
         inputs_dtypes=utils.FP_INT_BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
+# Unfold.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.unfold_copy.default)
+def register_unfold_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_T,
         supports_resize=True,
         supports_highdim=True,
     )
