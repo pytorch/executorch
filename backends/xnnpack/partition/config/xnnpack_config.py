@@ -50,6 +50,11 @@ class XNNPartitionerConfig(PartitionerConfig):
         self.force_non_static_weights_for_f32_linear = kwargs.get(
             "force_non_static_weights_for_f32_linear", False
         )
+        # Opt-in flag for bf16 delegation (e.g. bf16 fully-connected). XNNPACK
+        # only supports bf16 fully-connected on new enough revisions, so this
+        # stays off by default and bf16 nodes fall back to the portable op
+        # unless the caller explicitly enables it.
+        self.enable_bf16 = kwargs.get("enable_bf16", False)
 
     def get_partition(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -229,6 +234,8 @@ class XNNPartitionerConfig(PartitionerConfig):
             torch.float32,
             torch.float16,
         }
+        if self.enable_bf16:
+            valid_dtypes.add(torch.bfloat16)
         # Only allow int8 and quant dtypes for quant operations
         if is_quant(node) or is_dequant(node) or is_qparam(node):
             valid_dtypes.update(
