@@ -109,16 +109,20 @@ def create_constant_placeholder(
     decide where to insert the node, at an insertion point before the first input node.
     """
 
-    target = name
+    # Multiple pattern replacements may request the same shared weight; return
+    # the existing node to avoid duplicate parameter names on recompile.
+    for n in graph.nodes:
+        if n.op == "placeholder" and n.meta.get("requested_name") == name:
+            return n
 
-    # If a placeholder with this target already exists, return it to avoid
-    # duplicate parameter names in the generated function signature which would
-    # cause a SyntaxError on recompile. This can happen when multiple pattern
-    # replacements independently create placeholders for a shared weight.
-    if name in exp_program.state_dict or name in exp_program.constants:
-        for n in graph.nodes:
-            if n.op == "placeholder" and n.target == name:
-                return n
+    fake_tensor = _get_fake_tensor_mode(graph, data)
+
+    # torch.fx may rename the node (invalid identifier or collision); the
+    # target, state_dict key and graph signature must follow the assigned name.
+    node = graph.create_node(op="placeholder", name=name, target=name)
+    target = node.target = node.name
+    node.meta["val"] = fake_tensor
+    node.meta["requested_name"] = name
 
     # Add data to state_dict/ constants
     match kind:
@@ -140,15 +144,9 @@ def create_constant_placeholder(
         case _:
             raise RuntimeError("Can only create constant input nodes.")
 
-    fake_tensor = _get_fake_tensor_mode(graph, data)
-
-    # Create node
-    node = graph.create_node(op="placeholder", name=name, target=name)
-    node.meta["val"] = fake_tensor
-
     # Add tensor to graph_signature in the same order as nodes in the graph
     node_names = [n.name for n in graph.nodes if n.op == "placeholder"]
-    node_index = node_names.index(name)
+    node_index = node_names.index(node.name)
 
     input_specs = exp_program.graph_signature.input_specs
     user_input_indices = [
@@ -161,7 +159,7 @@ def create_constant_placeholder(
             f"Failed to insert {name}; Const placeholder nodes must be inserted before user input nodes in the graph."
         )
 
-    arg_spec = TensorArgument(name)
+    arg_spec = TensorArgument(node.name)
     input_spec = InputSpec(kind, arg_spec, target, persistent_buffer)
     input_specs.insert(node_index, input_spec)
 
