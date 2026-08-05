@@ -308,6 +308,22 @@ endfunction()
 
 executorch_define_component(threadpool executorch_threadpool)
 
+# The merged CPU kernels. Documented as a component and asserted by the release checks, so it has
+# to be defined here or a consumer following the documentation gets a bare name that CMake hands
+# to the linker as a literal flag.
+executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
+
+# A consumer that links the thread pool has to see the same switch a source build sets, or the
+# parallel helpers in the runtime headers compile their serial fallback instead and the library
+# they linked is never used.
+if(TARGET executorch::threadpool)
+  set_property(
+    TARGET executorch::threadpool
+    APPEND
+    PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
+  )
+endif()
+
 
 executorch_define_component(xnnpack_backend executorch_xnnpack_backend)
 
