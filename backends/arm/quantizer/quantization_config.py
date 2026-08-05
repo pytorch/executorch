@@ -261,6 +261,8 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
     quantize_grid_sampler_grid = False
 
+    # Ops whose output range matches their input's, so reusing the input qspec
+    # costs no resolution. Ops that compress the value range do not belong here.
     SHARED_OUTPUT_ACT_QSPEC_PATTERNS = {
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.upsample_bilinear2d.vec,
@@ -269,8 +271,6 @@ class TOSAQuantizationConfig(QuantizationConfig):
         torch.ops.aten.max_pool2d.default,
         torch.ops.aten.mean.default,
         torch.ops.aten.mean.dim,
-        torch.ops.aten.silu.default,
-        torch.ops.aten.silu_.default,
     }
 
     SHARED_INPUT_ACT_QSPEC_PATTERNS = {
