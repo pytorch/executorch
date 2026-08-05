@@ -170,10 +170,33 @@ target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
 # quantized_ops_lib: Register quantized ops kernels into Executorch runtime
+
+# Ship this as a shared library so an installed package has something a C++
+# application can link. A static library would need whole-archive linking on the
+# consumer side for the kernel registration to survive.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_quantized_ops_shared SHARED)
+else()
+  set(_quantized_ops_shared "")
+endif()
 gen_operators_lib(
-  LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS
+  ${_quantized_ops_shared}
+  LIB_NAME
+  "quantized_ops_lib"
+  KERNEL_LIBS
+  quantized_kernels
+  DEPS
   executorch_core
 )
+if(EXECUTORCH_BUILD_SHARED)
+  # Name the file after the component that selects it, so the pair reads
+  # together: executorch::kernels_quantized resolves to
+  # libexecutorch_kernels_quantized.so. The helper would otherwise name it after
+  # its internal target.
+  set_target_properties(
+    quantized_ops_lib PROPERTIES OUTPUT_NAME executorch_kernels_quantized
+  )
+endif()
 
 install(
   TARGETS quantized_kernels quantized_ops_lib
