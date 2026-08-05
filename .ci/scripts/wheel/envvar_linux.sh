@@ -14,7 +14,7 @@ source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/envvar_base.sh"
 # whichever GPU the builder happens to have. A wheel built with detection alone installs on
 # every machine the row covers and then fails when a model runs on a different generation.
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
-_executorch_cuda_arch="$(executorch_cuda_arch_list)"
+_executorch_cuda_arch="$(executorch_cuda_arch_list_with_ptx)"
 if [ -n "${_executorch_cuda_arch}" ]; then
   # PyTorch's CMake rejects CMAKE_CUDA_ARCHITECTURES and overrides it with OFF, which leaves
   # the build compiling for one detected architecture, so the list has to go through the

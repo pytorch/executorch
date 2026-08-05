@@ -82,10 +82,37 @@ executorch_cuda_arch_list() {
   esac
 }
 
+# The highest architecture in a row, which is the one that gets a portable form as well.
+executorch_cuda_top_arch() {
+  local dotted
+  # Propagate a failed lookup rather than reporting an empty top architecture, since the caller
+  # cannot tell those apart and an unknown row would otherwise pass silently.
+  dotted="$(executorch_cuda_arch_list)" || return $?
+  [ -n "${dotted}" ] || return 0
+  printf '%s\n' ${dotted} | sort -g | tail -1
+}
+
+# The row's architectures plus a portable form of the highest one, which is what PyTorch's own
+# variable wants. Without it a GPU newer than every listed architecture has no kernel image at all
+# and the model cannot run. Measured to add no size, since the embedded text fits in space the
+# object already reserves.
+executorch_cuda_arch_list_with_ptx() {
+  local dotted top
+  # Capture the status explicitly. An unknown row makes the inner helper fail, and testing the
+  # captured string alone would discard that status and let the build ship a wheel with no device
+  # code at all.
+  dotted="$(executorch_cuda_arch_list)" || return $?
+  [ -n "${dotted}" ] || return 0
+  top="$(executorch_cuda_top_arch)" || return $?
+  printf '%s %s+PTX' "${dotted}" "${top}"
+}
+
 # The same architectures in CMake's own form, for targets outside PyTorch's CMake.
 executorch_cuda_cmake_arch_list() {
   local dotted
-  dotted="$(executorch_cuda_arch_list)"
+  # Propagate a failed lookup. Returning an empty list on an unknown row would let the build
+  # continue and produce an accelerator wheel carrying no device code.
+  dotted="$(executorch_cuda_arch_list)" || return $?
   if [ -z "${dotted}" ]; then
     return 0
   fi
@@ -94,5 +121,12 @@ executorch_cuda_cmake_arch_list() {
     entry="${entry//./}"
     out="${out:+${out};}${entry}-real"
   done
+  # Also emit the highest architecture in its portable form, so a device newer than every listed
+  # one can still compile at load time rather than finding no kernel image.
+  local top
+  top="$(executorch_cuda_top_arch)"
+  if [ -n "${top}" ]; then
+    out="${out:+${out};}${top//./}-virtual"
+  fi
   printf '%s' "${out}"
 }
