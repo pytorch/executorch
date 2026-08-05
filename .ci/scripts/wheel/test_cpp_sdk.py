@@ -144,6 +144,10 @@ _EXTERNAL_LIBRARY_NAMES = frozenset(
         "libtorch_python",
         "libtorch_global_deps",
         "libc10",
+        # Torch links these itself and installs them beside its own libraries, so a shipped
+        # library that needs them resolves once torch is imported, the same as libtorch.
+        "libgomp",
+        "libshm",
         "libc10_cuda",
         "libcuda",
         "libcudart",
