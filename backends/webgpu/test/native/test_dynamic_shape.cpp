@@ -19,6 +19,7 @@
 //   G  rms+residual  H rms*x  I dyn_linear  J sdpa_dyn  K emb_dyn  L rope_dyn
 //   M  dyn_sigmoid   N dyn_select (select_copy(0,-1), dynamic S)
 //   O  ONE dyn_conv1d graph reused across live input lengths
+//   P  ONE dyn_gelu graph reused above -> at -> above the old 1D dispatch cap
 // .pte + goldens from test/ops/dynamic_shape/test_dynamic_shape_export.py.
 //
 // Artifacts dir: $WEBGPU_DYNAMIC_SHAPE_DIR, else argv[1], else
@@ -34,6 +35,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -162,6 +164,38 @@ void check_conv1d(Module& module, int length) {
       output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
   const float error = max_err(got, golden);
   EXPECT_LT(error, 1e-3f) << "conv1d length=" << length << " max_err=" << error;
+}
+
+constexpr int kGeluOld1dDispatchCap = 4 * 64 * 65535;
+constexpr int kGelu2dDispatchBoundary = kGeluOld1dDispatchCap + 1;
+constexpr int kGeluPatternSize = 257;
+
+void check_gelu_2d(Module& module, int elements) {
+  std::array<float, kGeluPatternSize> golden = {};
+  std::vector<float> input(static_cast<size_t>(elements));
+  for (int i = 0; i < kGeluPatternSize; i++) {
+    const float value = -4.0f + 8.0f * i / (kGeluPatternSize - 1);
+    golden[i] = 0.5f * value * (1.0f + std::erf(value * 0.7071067811865476f));
+  }
+  for (int i = 0; i < elements; i++) {
+    input[i] = -4.0f + 8.0f * (i % kGeluPatternSize) / (kGeluPatternSize - 1);
+  }
+  auto tensor = make_tensor_ptr({elements}, std::move(input));
+  auto result = module.forward({EValue(tensor)});
+  ASSERT_TRUE(
+      result.ok() && result.get().size() == 1 && result.get()[0].isTensor())
+      << "gelu elements=" << elements << " forward failed";
+  const auto& output = result.get()[0].toTensor();
+  ASSERT_EQ(output.dim(), 1);
+  ASSERT_EQ(output.size(0), elements);
+  ASSERT_EQ(output.numel(), elements);
+  const float* data = output.const_data_ptr<float>();
+  float error = 0.0f;
+  for (int i = 0; i < elements; i++) {
+    error = std::fmax(error, std::fabs(data[i] - golden[i % kGeluPatternSize]));
+  }
+  EXPECT_LT(error, 1e-4f) << "gelu elements=" << elements
+                          << " max_err=" << error;
 }
 
 // Dynamic quantized linear: input [M, kLinK] -> output [M, n]. kLinN is the
@@ -936,6 +970,35 @@ TEST(DynamicShape, Conv1dReusedGraph) {
   for (int length : {16, 9, 5, 16}) {
     check_conv1d(module, length);
   }
+}
+
+TEST(DynamicShape, GeluCrosses2dDispatchBoundary) {
+  if (std::getenv("WEBGPU_TEST_HEAVY") == nullptr) {
+    GTEST_SKIP() << "WEBGPU_TEST_HEAVY not set";
+  }
+  Module module(g_dir + "/dyn_gelu_2d.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load dyn_gelu_2d.pte";
+  for (int elements :
+       {kGelu2dDispatchBoundary,
+        kGeluOld1dDispatchCap,
+        kGelu2dDispatchBoundary}) {
+    check_gelu_2d(module, elements);
+  }
+}
+
+TEST(DynamicShape, ExpandCopyRejectsDynamicShapesAtLoad) {
+  const std::string path = g_dir + "/dyn_expand_copy.pte";
+  ASSERT_TRUE(std::ifstream(path).good()) << "missing dyn_expand_copy.pte";
+  Module module(path);
+  EXPECT_NE(module.load_forward(), Error::Ok);
+}
+
+TEST(DynamicShape, ExpandCopyRejectsInferredDynamicShapesAtLoad) {
+  const std::string path = g_dir + "/dyn_expand_copy_inferred.pte";
+  ASSERT_TRUE(std::ifstream(path).good())
+      << "missing dyn_expand_copy_inferred.pte";
+  Module module(path);
+  EXPECT_NE(module.load_forward(), Error::Ok);
 }
 
 // C2: grow-only reuse — one loaded rms graph run smallest -> largest, so the

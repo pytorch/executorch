@@ -70,9 +70,7 @@ void add_convert_op(
   ConvertParams params = {};
   params.num_elements = num_elements;
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(ConvertParams));
-  graph.add_uniform_buffer_bytes(sizeof(ConvertParams));
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
@@ -115,9 +113,6 @@ void add_convert_op(
                 wg_size,
                 "to_copy(resize)");
       });
-
-  // Graph owns it so the resize hook can rewrite it; freed in the dtor.
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 // Decode byte-packed bool storage into numeric fp32 values.
@@ -160,9 +155,7 @@ void add_bool_to_float_op(WebGPUGraph& graph, int in_id, int out_id) {
 
   ConvertParams params = {};
   params.num_elements = num_elements;
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(ConvertParams));
-  graph.add_uniform_buffer_bytes(sizeof(ConvertParams));
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
@@ -208,8 +201,6 @@ void add_bool_to_float_op(WebGPUGraph& graph, int in_id, int out_id) {
                 wg_size,
                 "to_copy_bool_to_float(resize)");
       });
-
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 void to_copy_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -222,6 +213,12 @@ void to_copy_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 void add_to_copy_node(WebGPUGraph& graph, int in_id, int out_id) {
   const auto& in_tensor = graph.get_tensor(in_id);
   const auto& out_tensor = graph.get_tensor(out_id);
+
+  if (in_tensor.is_bool != out_tensor.is_bool && in_tensor.is_int &&
+      out_tensor.is_int) {
+    throw std::runtime_error(
+        "WebGPU to_copy: bool and integer conversions are unsupported");
+  }
 
   // Same is_int+width = flat byte copy; unique dtype key in the 32-bit domain.
   if (in_tensor.is_int == out_tensor.is_int &&

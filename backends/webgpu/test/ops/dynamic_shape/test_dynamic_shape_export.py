@@ -20,6 +20,7 @@ import unittest
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
+from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
@@ -182,6 +183,20 @@ class SelectModule(torch.nn.Module):
         return x.select(0, -1)
 
 
+class DynamicExpandCopyModule(torch.nn.Module):
+    """Dynamic expand_copy is rejected until its TensorMeta can be resized."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.expand((4, x.shape[1])).clone()
+
+
+class DynamicExpandCopyInferredModule(torch.nn.Module):
+    """Dynamic expand_copy whose -1 target hides symbolic provenance."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.expand((4, -1)).clone()
+
+
 def _ramp(shape) -> torch.Tensor:
     n = 1
     for d in shape:
@@ -283,10 +298,45 @@ def export_dynamic_conv1d_cases(out_dir: str) -> None:
         golden.detach().numpy().astype("<f4").tofile(prefix + ".golden.bin")
 
 
+def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
+    """Write a dynamic GELU fixture crossing the old 1D dispatch cap."""
+    os.makedirs(out_dir, exist_ok=True)
+    max_elements = 4 * 64 * 65535 + 1
+    model = GeluModule("none").eval()
+    elements_dim = torch.export.Dim("gelu_elements", min=1024, max=max_elements)
+    _export(
+        model,
+        (torch.empty((max_elements,), dtype=torch.float32),),
+        {"x": {0: elements_dim}},
+        os.path.join(out_dir, "dyn_gelu_2d.pte"),
+    )
+
+
+def export_dynamic_expand_copy_rejection_case(out_dir: str) -> None:
+    """Write a dynamic expand_copy graph that the runtime must reject at load."""
+    model = DynamicExpandCopyModule().eval()
+    elements_dim = torch.export.Dim("expand_elements", min=1, max=8)
+    _export(
+        model,
+        (_ramp((1, 8)),),
+        {"x": {1: elements_dim}},
+        os.path.join(out_dir, "dyn_expand_copy.pte"),
+    )
+    _export(
+        DynamicExpandCopyInferredModule().eval(),
+        (_ramp((1, 8)),),
+        {"x": {1: elements_dim}},
+        os.path.join(out_dir, "dyn_expand_copy_inferred.pte"),
+    )
+
+
 def export_dynamic_shape_cases(out_dir: str) -> None:
     """Write the dynamic + static .pte's and per-S goldens for the native test."""
     os.makedirs(out_dir, exist_ok=True)
     export_dynamic_conv1d_cases(out_dir)
+    export_dynamic_expand_copy_rejection_case(out_dir)
+    if os.environ.get("WEBGPU_TEST_HEAVY"):
+        export_dynamic_gelu_boundary_cases(out_dir)
     s_dim = torch.export.Dim("s", min=1, max=MAXS)
 
     # 1) Single dynamic rms_norm, graph built at S=MAXS (upper bound).
