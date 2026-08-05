@@ -9,7 +9,11 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_DATA,
+    QCOM_QUANT_ATTRS,
+)
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
@@ -18,7 +22,7 @@ from .qnn_constants import OpScatterElements, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class ScatterElements(NodeVisitor):
-    target = ["aten.scatter.src"]
+    target = ["aten.scatter.src", "aten.scatter.value"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -48,15 +52,42 @@ class ScatterElements(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        updates_node = self.get_node(node.args[3])
-        updates_tensor = self.get_tensor(updates_node, node)
-        updates_tensor_wrapper = self.define_tensor(
-            updates_node,
-            node,
-            updates_tensor,
-            PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers,
-        )
+        # Handle both scatter.src (args[3] is a Node/tensor) and
+        # scatter.value (args[3] is a scalar)
+        if isinstance(node.args[3], torch.fx.Node):
+            # scatter.src path: args[3] is a tensor node
+            updates_node = self.get_node(node.args[3])
+            updates_tensor = self.get_tensor(updates_node, node)
+            updates_tensor_wrapper = self.define_tensor(
+                updates_node,
+                node,
+                updates_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+                nodes_to_wrappers,
+            )
+        else:
+            # scatter.value: expand scalar to a float static tensor matching index
+            # shape. For quantized models, use input_node as quant source so
+            # define_tensor derives correct encoding and handles quantization via
+            # get_quant_tensor_value. For fp, use index_node to avoid tensor
+            # aliasing issues with the input at runtime.
+            scalar_val = node.args[3]
+            updates_tensor = torch.full(
+                index_tensor.shape, scalar_val, dtype=input_tensor.dtype
+            )
+            quant_source = (
+                input_node if input_node.meta.get(QCOM_QUANT_ATTRS) else index_node
+            )
+
+            updates_tensor_wrapper = self.define_tensor(
+                quant_source,
+                node,
+                updates_tensor,
+                PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
+                nodes_to_wrappers,
+                node_name=f"{node.name}_updates_value",
+                wrapper_idx=2,
+            )
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
