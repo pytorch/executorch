@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from to_copy_int_to_float.wgsl - DO NOT EDIT.
+// @generated from to_copy_convert.wgsl - DO NOT EDIT.
 // wgsl-sha256: e18dd733a3838f83eded4977a2a2b21119099c8409b234f12474fae5acc9b195
 inline constexpr const char* kToCopyIntToFloatWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<i32>;
