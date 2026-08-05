@@ -404,10 +404,7 @@ def test_shipped_libraries_load() -> None:
             # list instead would hide a genuinely under-linked symbol on the same wheel.
             # The leading-underscore forms matter too: nvcc emits host stubs such as
             # __cudaRegisterFatBinary for every compiled .cu file.
-            and not (
-                skip_undefined
-                and re.search(_CUDA_SYMBOL, line)
-            )
+            and not (skip_undefined and re.search(_CUDA_SYMBOL, line))
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
@@ -1145,9 +1142,17 @@ def test_documented_example_compiles(work_dir: Path) -> None:
 
     build_dir = work_dir / "documented-build"
     configure = subprocess.run(
-        ["cmake", "-S", str(source_dir), "-B", str(build_dir),
-         f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}"],
-        capture_output=True, text=True, check=False,
+        [
+            "cmake",
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={_installed_package_dir()}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert configure.returncode == 0, (
         "the documented example does not configure against the installed wheel: "
@@ -1155,7 +1160,9 @@ def test_documented_example_compiles(work_dir: Path) -> None:
     )
     build = subprocess.run(
         ["cmake", "--build", str(build_dir)],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert build.returncode == 0, (
         "the documented example does not compile against the installed wheel: "
