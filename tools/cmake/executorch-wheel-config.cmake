@@ -282,7 +282,6 @@ endfunction()
 
 executorch_define_component(threadpool executorch_threadpool)
 
-executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
 
 executorch_define_component(xnnpack_backend executorch_xnnpack_backend)
 
