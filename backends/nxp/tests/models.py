@@ -1020,6 +1020,33 @@ class NonstaticDivLinearModel(torch.nn.Module):
         return x / divisor
 
 
+class AddScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x + self.scalar
+
+
+class MulScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x * self.scalar
+
+
+class SubScalarModule(torch.nn.Module):
+    def __init__(self, scalar: float | int = 2.0):
+        super().__init__()
+        self.scalar = scalar
+
+    def forward(self, x):
+        return x - self.scalar
+
+
 class BatchMatMulModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1081,3 +1108,39 @@ class MaxPoolMinimumModule(torch.nn.Module):
     def forward(self, x, y):
         x = self.max_pool2d(x)
         return torch.minimum(x, y)
+
+
+class LinearHardswishModule(torch.nn.Module):
+    def __init__(self, in_features, out_features, inplace=False):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_features, out_features=out_features)
+        self.hardswish = torch.nn.Hardswish(inplace=inplace)
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.hardswish(x)
+
+
+class HardswishModule(torch.nn.Module):
+    def __init__(self, inplace=False):
+        super().__init__()
+
+        self.hardswish = torch.nn.Hardswish(inplace=inplace)
+
+    def forward(self, x):
+        return self.hardswish(x)
+
+
+class ConvHardswishModule(torch.nn.Module):
+    def __init__(self, in_channels, inplace=False):
+        super().__init__()
+
+        self.conv = Conv2dModule(
+            in_channels=in_channels, out_channels=in_channels, stride=1, padding=1
+        )
+        self.hardswish = torch.nn.Hardswish(inplace=inplace)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.hardswish(x)
