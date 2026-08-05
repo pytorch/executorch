@@ -8,6 +8,7 @@ on:
       - .github/workflows/build-wheels-linux.yml
       - examples/**/*
       - pyproject.toml
+      - requirements-examples.txt
       - setup.py
   push:
     branches:

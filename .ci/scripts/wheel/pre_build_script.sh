@@ -66,7 +66,7 @@ fi
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
 
-"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"
+"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
 # Enable VGF in pybind wheel builds when the platform-specific build input is
 # available from pip.
