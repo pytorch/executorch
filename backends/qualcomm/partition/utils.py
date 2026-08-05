@@ -75,5 +75,7 @@ def get_skip_decomp_table() -> List[torch._ops.OperatorBase]:
         torch.ops.aten.unbind.int,
         torch.ops.torchao.quantize_affine.default,
         torch.ops.torchao.dequantize_affine.default,
+        torch.ops.quantized_decomposed.quantize_per_channel_group.default,
+        torch.ops.quantized_decomposed.dequantize_per_channel_group.default,
     ]
     return do_not_decompose
