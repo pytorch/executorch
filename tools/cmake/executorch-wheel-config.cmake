@@ -282,7 +282,6 @@ endfunction()
 
 executorch_define_component(threadpool executorch_threadpool)
 
-executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
