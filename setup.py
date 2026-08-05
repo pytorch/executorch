@@ -941,6 +941,7 @@ class CustomBuildPy(build_py):
                 "extension/named_data_map/",
                 "extension/tensor/",
                 "extension/threadpool/",
+                "devtools/etdump/",
             ]:
                 src_list = Path(include_dir).rglob("*.h")
                 for src in src_list:
@@ -1281,6 +1282,26 @@ setup(
                     src_name=f"libexecutorch.so.{get_runtime_soname_major()}.*",
                     dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the profiler next to it. Keeping it separate lets a C++
+                # application link it without pulling in the Python extension, which
+                # is where it was only reachable before.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_name=(
+                        f"libexecutorch_etdump.so.{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_etdump.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    # The target only exists when the developer tools are built, so
+                    # packaging has to require that too or a shared build without them
+                    # looks for a file that was never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_DEVTOOLS",
+                    ],
                 ),
                 # Install the shared thread pool next to it. It is a separate
                 # library so that a process has one pool rather than one per
