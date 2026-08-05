@@ -1518,17 +1518,10 @@ constexpr uint32_t kRouteK16CausalBound = 1u << 11;
 constexpr uint32_t kRouteBicolSubgroup = 1u << 12;
 constexpr uint32_t kRouteQwen3Q16K16 = 1u << 13;
 constexpr uint32_t kRouteQwen3Q32K16 = 1u << 14;
-#endif // WGPU_BACKEND_ENABLE_PROFILING
-
-// Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
-// WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
 bool should_timestamp_query() {
-#ifdef WGPU_BACKEND_ENABLE_PROFILING
   return std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
-#else
-  return false;
-#endif
 }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 } // namespace
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
@@ -1739,12 +1732,13 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     return 1;
   }
 
-  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   if (should_timestamp_query()) {
     throw std::runtime_error(
         "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
         "(multi-submit); disable chunking to use GPU timestamp queries");
   }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
   for (size_t chunk_index = 0; chunk_index < plan.dispatch_chunks.size();
        chunk_index++) {
