@@ -102,8 +102,8 @@ See [Partitioner API](arm-ethos-u-partitioner.md) for more information of the Pa
 ## Quantization
 
 Since the Ethos-U backend is integer-only, all operators intended be executed on the NPU needs to be quantized. The Ethos-U quantizer supports
-[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
-[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
+[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html)  and
+[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_qat.html) quantization.
 
 For more information on quantization, see [Quantization](arm-ethos-u-quantization.md) <!-- @lint-ignore -->
 
