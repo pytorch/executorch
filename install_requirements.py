@@ -45,7 +45,11 @@ def install_requirements(use_pytorch_nightly):
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    torchao_url = determine_torch_url(TORCHAO_URL_BASE)
+    # torchao only publishes its pinned nightly on the plain index. The CUDA-suffixed indexes
+    # carry it for x86_64 only, so suffixing this URL breaks every aarch64 accelerator row the
+    # moment CUDA is detected. The build needs torchao's Python API rather than its GPU kernels,
+    # so the plain index is the right source on every platform.
+    torchao_url = f"{TORCHAO_URL_BASE}/cpu"
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
