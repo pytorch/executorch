@@ -1325,9 +1325,14 @@ void WebGPUGraph::build(
         auto mit = qkv_member.find(i);
         if (mit != qkv_member.end()) {
           QkvFusionGroup& g = qkv_groups[mit->second];
-          const size_t di = num_dispatches() - 1; // this linear's dispatch
+          const utils::DispatchRange dispatch_range = {
+              dispatch_begin, num_dispatches()};
+          if (dispatch_range.begin == dispatch_range.end) {
+            throw std::runtime_error(
+                "WebGPU QKV fusion member emitted no dispatch");
+          }
           if (i == g.op_idx[0]) {
-            g.sep_dispatch[0] = di;
+            g.sep_dispatch[0] = dispatch_range;
             // Emit the fused dispatch RIGHT AFTER the q-linear (the anchor) so
             // at M>1 it writes q/k/v BEFORE any consumer. q/k/v may be
             // interleaved with rope in the chain, so emitting it at the LAST
@@ -1335,14 +1340,14 @@ void WebGPUGraph::build(
             // fresh_q -> garbage.
             add_qkv_fused_dispatch(g);
           } else if (i == g.op_idx[1]) {
-            g.sep_dispatch[1] = di;
+            g.sep_dispatch[1] = dispatch_range;
           } else {
-            g.sep_dispatch[2] = di;
+            g.sep_dispatch[2] = dispatch_range;
           }
         }
         auto lit = qkv_last.find(i);
         if (lit != qkv_last.end()) {
-          // All 3 sep dispatch indices + the fused index are now known.
+          // All 3 separate route ranges + the fused index are now known.
           add_qkv_fused_hook(qkv_groups[lit->second]);
         }
       }
@@ -1670,8 +1675,9 @@ void WebGPUGraph::add_qkv_fused_dispatch(QkvFusionGroup& g) {
   g.fused_params = uniform_buffer;
 }
 
-// M-gate coordinator: registered at the LAST triple op (all dispatch indices
-// known). Prefill (M>1): run the fused GEMM, zero the 3 separate linears.
+// M-gate coordinator: registered at the LAST triple op (all dispatch ranges
+// known). Prefill (M>1): run the fused GEMM, zero every route of the 3 separate
+// linears.
 // Decode (M==1): zero the fused, leave the 3 coop4 GEMVs (their own hooks set
 // the decode wg) -- the fused 64x64 tile wastes 63/64 rows at M=1. Recomputes
 // live M + the 3 output cur_dims + fused params. Inert on a static graph; a
@@ -1681,8 +1687,9 @@ void WebGPUGraph::add_qkv_fused_hook(const QkvFusionGroup& g) {
             out_v_id = g.out_v;
   const uint32_t K = g.K, Kp = g.K_packed, gs = g.group_size, Nq = g.Nq,
                  Nk = g.Nk, Nv = g.Nv, Nf = g.Nq + g.Nk + g.Nv;
-  const size_t fused_idx = g.fused_dispatch, sep0 = g.sep_dispatch[0],
-               sep1 = g.sep_dispatch[1], sep2 = g.sep_dispatch[2];
+  const size_t fused_idx = g.fused_dispatch;
+  const std::array<utils::DispatchRange, 3> separate_ranges = {
+      g.sep_dispatch[0], g.sep_dispatch[1], g.sep_dispatch[2]};
   WGPUBuffer params_buf = g.fused_params;
   auto update_route = [input_id,
                        out_q_id,
@@ -1696,9 +1703,7 @@ void WebGPUGraph::add_qkv_fused_hook(const QkvFusionGroup& g) {
                        Nv,
                        Nf,
                        fused_idx,
-                       sep0,
-                       sep1,
-                       sep2,
+                       separate_ranges,
                        params_buf](WebGPUGraph& gr) {
     const auto& d = gr.cur_dims(input_id);
     uint64_t numel = 1;
@@ -1729,12 +1734,12 @@ void WebGPUGraph::add_qkv_fused_hook(const QkvFusionGroup& g) {
       const uint32_t nbM2 = (m + 63u) / 64u;
       gr.dispatch_at(fused_idx).workgroup_count_x = nbN2 * nbM2;
       gr.dispatch_at(fused_idx).workgroup_count_y = 1u;
-      gr.dispatch_at(sep0).workgroup_count_x = 0u;
-      gr.dispatch_at(sep0).workgroup_count_y = 0u;
-      gr.dispatch_at(sep1).workgroup_count_x = 0u;
-      gr.dispatch_at(sep1).workgroup_count_y = 0u;
-      gr.dispatch_at(sep2).workgroup_count_x = 0u;
-      gr.dispatch_at(sep2).workgroup_count_y = 0u;
+      for (const auto& range : separate_ranges) {
+        for (size_t i = range.begin; i < range.end; i++) {
+          gr.dispatch_at(i).workgroup_count_x = 0u;
+          gr.dispatch_at(i).workgroup_count_y = 0u;
+        }
+      }
     } else {
       gr.dispatch_at(fused_idx).workgroup_count_x = 0u;
       gr.dispatch_at(fused_idx).workgroup_count_y = 0u;
