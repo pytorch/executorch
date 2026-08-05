@@ -185,7 +185,7 @@ message(
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
 )
