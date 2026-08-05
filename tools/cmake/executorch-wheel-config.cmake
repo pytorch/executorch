@@ -356,6 +356,10 @@ executorch_define_component(threadpool executorch_threadpool)
 # to be defined here or a consumer following the documentation gets a bare name that CMake hands
 # to the linker as a literal flag.
 executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The quantized kernel set, for a model exported with quantized operators that runs them on plain
+# CPU. A model delegated to XNNPACK does not need this, because that delegate claims the quantize
+# and dequantize operators itself.
+executorch_define_component(kernels_quantized executorch_kernels_quantized)
 
 # A consumer that links the thread pool has to see the same switch a source build sets, or the
 # parallel helpers in the runtime headers compile their serial fallback instead and the library
