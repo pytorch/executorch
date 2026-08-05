@@ -18,6 +18,9 @@ examples/xnnpack
 ## Delegating a Floating-point Model
 
 The following command will produce a floating-point XNNPACK delegated model `mv2_xnnpack_fp32.pte` that can be run using XNNPACK's operators. It will also print out the lowered graph, showing what parts of the models have been lowered to XNNPACK via `executorch_call_delegate`.
+The compiler uses the optional pre-partition transform stage. For XNNPACK this
+is recommended in general because it exposes supported patterns to the
+partitioner before delegation decisions are made.
 
 ```bash
 # For MobileNet V2
