@@ -126,7 +126,7 @@ target_link_libraries(
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
     xnnpack_backend
-    PROPERTIES OUTPUT_NAME executorch_xnnpack_backend
+    PROPERTIES OUTPUT_NAME executorch_backend_xnnpack
                VERSION "${PROJECT_VERSION}"
                SOVERSION "${PROJECT_VERSION_MAJOR}"
   )
