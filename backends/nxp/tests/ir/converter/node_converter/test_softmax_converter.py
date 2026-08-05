@@ -17,7 +17,12 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 )
 from executorch.backends.nxp.tests.models import SoftmaxModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall, Softmax
+from executorch.backends.nxp.tests.ops_aliases import (
+    Convolution,
+    ExecutorchDelegateCall,
+    Softmax,
+    ViewCopy,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -110,3 +115,33 @@ class TestSoftmax:
         # Make sure the `softmax` was NOT delegated.
 
         assert_softmax_not_delegated(delegated_ep.graph)
+
+    @pytest.mark.parametrize(
+        "input_shape,dim",
+        [
+            pytest.param((9, 7, 7), -1, id="3D_dim_-1"),
+            pytest.param((1, 9, 2, 3), -3, id="4D_dim_-3"),
+        ],
+    )
+    def test_basic_nsys_inference__conv_softmax(
+        self, mocker, request, input_shape, dim: int
+    ):
+        model = ConvSoftmaxModule(dim, input_shape[-3])
+        graph_verifier = DetailedGraphVerifier(
+            mocker,
+            expected_delegated_ops={
+                Softmax: 1,
+                Convolution: 1,
+                **({ViewCopy: 2} if len(input_shape) == 3 else {}),
+            },
+            expected_non_delegated_ops={},
+        )
+        output_comparator = AllCloseOutputComparator(atol=1)
+        lower_run_compare(
+            model,
+            input_shape,
+            graph_verifier,
+            request,
+            output_comparator=output_comparator,
+            remove_quant_io_ops=True,
+        )
