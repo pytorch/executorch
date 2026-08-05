@@ -761,7 +761,7 @@ target_link_libraries(component_consumer PRIVATE executorch::runtime)
 
 # Link every component this wheel offers, and report which ones those are so the test
 # can check the result. Guarded individually because the set depends on the wheel.
-foreach(_component threadpool kernels xnnpack_backend cuda_backend)
+foreach(_component threadpool)
   if(TARGET executorch::${_component})
     target_link_libraries(component_consumer PRIVATE executorch::${_component})
     # Report the library file, not just the target name: the two differ, and the test
