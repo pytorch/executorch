@@ -52,9 +52,7 @@ class TestReplaceSliceCopyWithSlicePass(unittest.TestCase):
                 return torch.ops.aten.slice_copy.Tensor(x, -2, 0, 2).sum()
 
         gm = self._edge_graph_module(M(), (torch.randn(4, 8),))
-        eligible = [
-            n for n in gm.graph.nodes if is_contiguous_slice_copy(n)
-        ]
+        eligible = [n for n in gm.graph.nodes if is_contiguous_slice_copy(n)]
         self.assertEqual(len(eligible), 1)
 
     def test_pass_is_safe_noop_until_offset_aliasing_lands(self) -> None:
