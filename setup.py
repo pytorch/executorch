@@ -369,15 +369,16 @@ def _write_cmake_version_file(destination: str) -> None:
     Read from version.txt so the version CMake reports is the same one the wheel and
     the runtime SONAME use.
 
-    Written by hand rather than configured from CMake's own template for two reasons that the
-    template cannot express. First, it also publishes the full build version, including any
-    prerelease suffix and local label, which a consumer needs when it must pair with one exact
-    build; CMake's numeric version drops those parts. Second, it accepts an exclusive upper bound
-    at exactly the next major, the idiomatic way to ask for "any version in this series", which the
-    same-major template refuses.
+    Written by hand rather than configured from CMake's own template for one reason the template
+    cannot express: it also publishes the full build version, including any prerelease suffix and
+    local label, which a consumer needs when it must pair with one exact build. CMake's numeric
+    version drops those parts, so two prereleases of one release compare equal.
 
-    The compatibility rule itself matches the stock same-major behaviour, including refusing a
-    request above the package version.
+    The compatibility rule itself matches the stock same-major behaviour. That was checked rather
+    than assumed, across plain versions, inclusive and exclusive ranges, cross-major requests and
+    exact requests, and the two agree on every case. An earlier version of this text claimed the
+    stock template refuses an exclusive upper bound at the next major. That is wrong: it accepts
+    1.0...<2.0 for a 1.4.0 package exactly as this file does.
     """
     # The same version the wheel publishes, including any BUILD_VERSION override, so one
     # artifact cannot report one identity to pip and a different one to CMake.
