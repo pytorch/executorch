@@ -39,6 +39,8 @@ def _materialize(spec) -> torch.Tensor:
         shape, gen = spec, "randn"
     if callable(gen):
         _t = gen(shape)
+        if _t.dtype == torch.bool:
+            return _t
         return (
             _t.to(torch.int32) if not _t.is_floating_point() else _t.to(torch.float32)
         )
@@ -169,7 +171,10 @@ def generate_case(op: str, suite: WebGPUTestSuite, case, out_dir: str) -> list[d
     input_entries: list[dict] = []
     for i, t in enumerate(inputs):
         rel = f"{case_id}.in{i}.bin"
-        if t.dtype == torch.int32:
+        if t.dtype == torch.bool:
+            _write_int8(t.to(torch.int8), os.path.join(out_dir, rel))
+            in_dtype = "bool"
+        elif t.dtype == torch.int32:
             t.detach().cpu().numpy().astype("<i4").tofile(os.path.join(out_dir, rel))
             in_dtype = "int32"
         else:
