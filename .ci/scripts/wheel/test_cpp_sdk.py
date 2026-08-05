@@ -940,7 +940,11 @@ def test_wheel_platform_tag() -> None:
         if found:
             return (int(found.group(1)), int(found.group(2)))
         # The older aliases name a distribution rather than a version.
-        legacy = {"manylinux1": (2, 5), "manylinux2010": (2, 12), "manylinux2014": (2, 17)}
+        legacy = {
+            "manylinux1": (2, 5),
+            "manylinux2010": (2, 12),
+            "manylinux2014": (2, 17),
+        }
         for name, version in legacy.items():
             if name in tag:
                 return version
@@ -1396,9 +1400,9 @@ def test_device_code_covers_claimed_architectures() -> None:
     # A count is not enough. The library that carries the compiled kernels has to be the one
     # audited, or a build that produced only forward-compatible intermediate code there would
     # still pass on the strength of some other library's coverage.
-    assert audited_names or not accelerator_row, (
-        "this is an accelerator row but no library carried device code to audit"
-    )
+    assert (
+        audited_names or not accelerator_row
+    ), "this is an accelerator row but no library carried device code to audit"
     print(
         f"\u2713 device code covers every claimed GPU architecture "
         f"{sorted(claimed, key=int)} in {len(audited_names)} "
