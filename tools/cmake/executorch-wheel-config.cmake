@@ -199,7 +199,7 @@ elseif(_executorch_runtime_library)
   # when several subprojects each call find_package(executorch). Creating the
   # target twice is an error, so only define it once and set the properties
   # either way.
-if(TARGET executorch::runtime)
+  if(TARGET executorch::runtime)
     # An in-tree build defines this name, sometimes as an ALIAS whose properties cannot be
     # set. A consumer that both adds this project as a subdirectory and calls find_package
     # should keep the target it is already building, so skip the whole definition.
