@@ -378,6 +378,29 @@ class TestPasses(unittest.TestCase):
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
 
+    def test_partitioner_falls_back_on_op_without_visitor(self):
+        """QnnOperatorSupport must reject an op that has no node visitor by returning
+        False (CPU fallback), not by KeyError-ing on the node_visitors lookup.
+
+        Regression for Mamba2 QNN lowering: its causal mask uses ~torch.tril(...),
+        which traces to aten.bitwise_not.default; QNN ships no visitor for it, so the
+        unguarded lookup aborted the whole partition instead of falling back.
+        """
+
+        class BitwiseNot(torch.nn.Module):
+            def forward(self, x):
+                return (~(x > 0)).to(torch.float32) + x
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        # Must not raise KeyError: bitwise_not falls back to CPU; the rest may delegate.
+        edge = to_edge_transform_and_lower_to_qnn(
+            BitwiseNot().eval(), (torch.randn(1, 4),), compiler_specs
+        )
+        edge.to_executorch()
+
 
 if __name__ == "__main__":
     unittest.main()
