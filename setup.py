@@ -1202,6 +1202,11 @@ class CustomBuild(build):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
 
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
+                # Nothing else in the wheel links this, so without naming it here the
+                # target is declared but never built and packaging finds no file.
+                cmake_build_args += ["--target", "quantized_ops_lib"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
 
@@ -1344,6 +1349,29 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # Install the quantized kernels the same way. A model exported
+                # with quantized operators needs these registered at run time,
+                # and they existed only inside the Python extension before, so a
+                # C++ application had nothing to link.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
+                    src_name=(
+                        "libexecutorch_kernels_quantized.so."
+                        f"{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/"
+                        "libexecutorch_kernels_quantized.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    # The target is only created when the quantized kernels are
+                    # enabled, so packaging has to require that too rather than
+                    # looking for a file a shared build may never have produced.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
