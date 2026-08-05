@@ -192,9 +192,10 @@ def _provided_externally(name: str) -> bool:
 # for it, rather than only inspecting targets that happen to exist.
 _COMPONENT_LIBRARIES = {
     "libexecutorch_threadpool": "threadpool",
-    "libexecutorch_optimized_native_cpu_ops_lib": "kernels",
-    "libexecutorch_xnnpack_backend": "xnnpack_backend",
-    "libexecutorch_cuda_backend": "cuda_backend",
+    "libexecutorch_kernels_optimized": "kernels_optimized",
+    "libexecutorch_etdump": "etdump",
+    "libexecutorch_backend_xnnpack": "backend_xnnpack",
+    "libexecutorch_backend_cuda": "backend_cuda",
 }
 
 
@@ -223,7 +224,7 @@ def _needs_external_cuda_runtime(package_dir: Path) -> bool:
     # The shipped delegate is the signal, not a substring. A library whose name merely
     # contains "cuda" would flip a CPU wheel into CUDA mode, which skips the clean
     # environment import check and part of the dependency check.
-    return bool(list(package_dir.rglob("libexecutorch_cuda_backend.so*")))
+    return bool(list(package_dir.rglob("libexecutorch_backend_cuda.so*")))
 
 
 def _installed_package_dir() -> Path:
@@ -583,7 +584,7 @@ def test_single_cuda_delegate() -> None:
     wheel would skip the check instead of failing it.
     """
     package_dir = _installed_package_dir()
-    if not list(package_dir.rglob("libexecutorch_cuda_backend.so*")):
+    if not list(package_dir.rglob("libexecutorch_backend_cuda.so*")):
         print("- no CUDA delegate in this wheel, skipping")
         return
     _assert_single_definer(_CUDA_SYMBOLS, "CUDA delegate")

@@ -124,7 +124,7 @@ for library in libraries:
 # The file is checked as well as the symbol. A missing delegate would already fail the
 # symbol count above, but naming the file gives a clearer message about what is wrong.
 delegates = [
-    p for p in package.rglob('libexecutorch_cuda_backend.so*')
+    p for p in package.rglob('libexecutorch_backend_cuda.so*')
     if p.is_file() and not p.is_symlink()
 ]
 if len(delegates) != 1:
@@ -189,7 +189,7 @@ import executorch
 
 package = Path(getattr(executorch, '__path__', [None])[0])
 delegates = [
-    p for p in package.rglob('libexecutorch_cuda_backend.so*')
+    p for p in package.rglob('libexecutorch_backend_cuda.so*')
     if p.is_file() and not p.is_symlink()
 ]
 if len(delegates) != 1:

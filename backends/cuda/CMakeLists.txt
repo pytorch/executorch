@@ -218,7 +218,7 @@ add_library(
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
     aoti_cuda_backend
-    PROPERTIES OUTPUT_NAME executorch_cuda_backend
+    PROPERTIES OUTPUT_NAME executorch_backend_cuda
                VERSION "${PROJECT_VERSION}"
                SOVERSION "${PROJECT_VERSION_MAJOR}"
   )
