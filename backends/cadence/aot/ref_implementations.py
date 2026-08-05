@@ -2632,7 +2632,6 @@ def softmax_f32_f32(
 
 def quantized_softmax_per_tensor_common(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2646,9 +2645,6 @@ def quantized_softmax_per_tensor_common(
 
     Args:
         - input_tensor (Tensor): The quantized input tensor
-        - mask (Tensor): Currently ignored. Causal masking is still supported when
-          mask_type=1 and is derived from pos; this argument is reserved for future
-          mask types.
         - dim (int): The dimension along which softmax is computed
         - mask_type (int): Masking strategy (0=none, 1=position-based causal)
         - pos (Tensor): Position tensor for causal masking
@@ -2657,7 +2653,6 @@ def quantized_softmax_per_tensor_common(
         - out_scale (float): The scale of the output quantization
         - out_zero_point (int): The zero point of the output quantization
     """
-    del mask
     assert input_tensor.dtype in (
         torch.int8,
         torch.uint8,
@@ -2715,7 +2710,6 @@ def quantized_softmax_per_tensor_common(
 @impl_tracked(m, "quantized_softmax.per_tensor")
 def quantized_softmax_per_tensor(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2726,7 +2720,6 @@ def quantized_softmax_per_tensor(
 ) -> torch.Tensor:
     return quantized_softmax_per_tensor_common(
         input_tensor,
-        mask,
         dim,
         mask_type,
         pos,
@@ -2740,7 +2733,6 @@ def quantized_softmax_per_tensor(
 @impl_tracked(m, "quantized_softmax")
 def quantized_softmax(
     input_tensor: torch.Tensor,
-    mask: torch.Tensor,
     dim: int,
     mask_type: int,
     pos: torch.Tensor,
@@ -2751,7 +2743,6 @@ def quantized_softmax(
 ) -> torch.Tensor:
     return quantized_softmax_per_tensor_common(
         input_tensor,
-        mask,
         dim,
         mask_type,
         pos,

@@ -23,7 +23,6 @@ namespace native {
  *
  * @param ctx Kernel runtime context (unused)
  * @param input Input quantized tensor
- * @param mask Mask tensor (currently unused, reserved for future mask types)
  * @param dim Dimension along which to compute softmax. Only the last dimension
  *            is currently supported (dim == -1 or dim == input.dim() - 1)
  * @param mask_type Masking strategy to use:
@@ -49,7 +48,6 @@ namespace native {
 ::executorch::aten::Tensor& quantized_softmax_out(
     __ET_UNUSED ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
-    const ::executorch::aten::Tensor& mask,
     int64_t dim,
     int64_t mask_type,
     const ::executorch::aten::Tensor& pos,
@@ -62,7 +60,6 @@ namespace native {
 ::executorch::aten::Tensor& quantized_softmax_per_tensor_out(
     __ET_UNUSED ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
-    const ::executorch::aten::Tensor& mask,
     int64_t dim,
     int64_t mask_type,
     const ::executorch::aten::Tensor& pos,
