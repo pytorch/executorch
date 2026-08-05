@@ -207,7 +207,6 @@ using executorch::bundled_program::ErrorStats;
 using executorch::bundled_program::verify_method_outputs;
 #endif
 #if defined(ET_EVENT_TRACER_ENABLED)
-using executorch::etdump::BufferDataSink;
 using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::runtime::EventTracerDebugLogLevel;

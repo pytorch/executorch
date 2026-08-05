@@ -30,8 +30,6 @@
 #include "arm_neon.h"
 #endif
 
-using executorch::aten::Tensor;
-using executorch::extension::Module;
 using executorch::extension::llm::Audio;
 using executorch::extension::llm::get_rss_bytes;
 using executorch::extension::llm::Image;

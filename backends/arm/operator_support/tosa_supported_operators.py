@@ -423,6 +423,7 @@ def tosa_support_factory(
     exported_program: ExportedProgram,
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_checks: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
     """Create an OperatorSupport composite for a TOSA spec.
 
@@ -435,12 +436,16 @@ def tosa_support_factory(
         reporter (WhyNoPartitionReporter): Reporter for rejections.
         additional_checks (Optional[Sequence[OperatorSupportBase]]): Extra
             negative checks to apply.
+        additional_positive_checks (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks to add to the support list.
 
     Returns:
         OperatorSupportBase: Composite checker for the given spec.
 
     """
     positive_checks = _positive_checks(tosa_spec, exported_program, reporter)
+    if additional_positive_checks:
+        positive_checks.extend(additional_positive_checks)
     negative_checks = _negative_checks(
         tosa_spec, exported_program, reporter, additional_checks
     )

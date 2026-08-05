@@ -17,11 +17,9 @@
 #pragma clang diagnostic ignored \
     "-Wbraced-scalar-init" // {0} below upsets clang.
 
-using executorch::extension::FileDataLoader;
 using executorch::extension::training::optimizer::SGD;
 using executorch::extension::training::optimizer::SGDOptions;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 DEFINE_string(model_path, "xor.pte", "Model serialized in flatbuffer format.");
 DEFINE_string(ptd_path, "", "Model weights serialized in flatbuffer format.");
 

@@ -23,8 +23,9 @@ INT4 (W4A8, asymmetric; pack path in coalesced_int4_tensor.py):
   1. torch.manual_seed(case.seed) on CPU.
   2. Draw a random bf16 weight ``[N, K]`` then activation ``[M, K]`` (weight
      first, then activation: fixed order is part of the seed contract).
-  3. quantize_weight(..., bits=4, min_max, asymmetric) -> torchao Int4Tensor.
-  4. CudaCoalescedInt4Tensor.from_int4_tensor(...) -> qdata [N, K/2] uint8,
+  3. quantize_weight(..., bits=4, min_max, asymmetric) -> torchao Int4Tensor,
+     wrapped as the canonical ExportableInt4Tensor.
+  4. CudaCoalescedInt4Tensor.from_exportable_int4_tensor(...) -> qdata [N, K/2] uint8,
      scale codes [N, K/gs] uint8, scale_step [N, K/256] fp16, zero_point codes
      [N, K/gs] uint8, zero_point_step [N, K/256] fp16.
   5. expected = F.linear(A, tensor.dequantize(bf16)).
@@ -157,8 +158,9 @@ def _i8(t: torch.Tensor) -> List[int]:
 def build_int4(case: Case) -> Dict[str, tuple]:
     """Return {array_name: (ctype, [ints])} for one INT4 case (CPU only)."""
     from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
-    from executorch.examples.models.gemma4_31b.quant.quantize import quantize_weight
-    from executorch.examples.models.gemma4_31b.quant.recipe import QuantConfig
+    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from executorch.extension.llm.export.quant.quantize import quantize_weight
+    from executorch.extension.llm.export.quant.recipe import QuantConfig
 
     torch.manual_seed(case.seed)
     # Weight first, then activation: fixed order is part of the seed contract.
@@ -167,7 +169,9 @@ def build_int4(case: Case) -> Dict[str, tuple]:
 
     config = QuantConfig(bits=4, group_size=case.gs, symmetric=False, method="min_max")
     int4 = quantize_weight(w, config)
-    c = CudaCoalescedInt4Tensor.from_int4_tensor(int4)
+    c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(
+        ExportableInt4Tensor.from_int4_tensor(int4)
+    )
 
     # bf16 dequant @ F.linear reference (kernel adds activation-quant noise).
     w_deq = c.dequantize(torch.bfloat16)

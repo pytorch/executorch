@@ -55,6 +55,9 @@ class GenerationOptions:
 
     max_new_tokens: int
     temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = 0
+    seed: int = 0
     stop: list[str] = field(default_factory=list)
 
 
@@ -88,6 +91,9 @@ class GenStats:
 class _WorkerRequest:
     max_new_tokens: int
     temperature: float
+    top_p: float
+    top_k: int
+    seed: int
     stop: list[str]
     session_id: Optional[str]
     prompt_segments: Optional[list]
@@ -223,6 +229,9 @@ class SessionRuntime:
         req = _WorkerRequest(
             max_new_tokens=options.max_new_tokens,
             temperature=options.temperature,
+            top_p=options.top_p,
+            top_k=options.top_k,
+            seed=options.seed,
             stop=list(options.stop),
             session_id=session_id,
             prompt_segments=prompt.segments,

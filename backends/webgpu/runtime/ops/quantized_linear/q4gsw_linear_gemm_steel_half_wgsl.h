@@ -13,11 +13,11 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_steel.wgsl - DO NOT EDIT.
-// wgsl-sha256: 00cdd2f2fb98a5c7343d16fdf7e59f1b840e180cec3f82bf9b569513c0a45396
+// wgsl-sha256: 363916e1aacae9635b4573d2ce35d0ee22916ce225537a3717df98a0ed3353da
 inline constexpr const char* kQ4gswLinearGemmSteelHalfWGSL = R"(
 enable f16;
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
-@group(0) @binding(1) var<storage, read> t_input: array<f32>;
+@group(0) @binding(1) var<storage, read> t_input: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> t_weight: array<u32>;
 @group(0) @binding(3) var<storage, read> t_scales: array<f32>;
 @group(0) @binding(4) var<storage, read> t_bias: array<f32>;
@@ -50,6 +50,7 @@ struct Params {
 const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
 var<workgroup> As: array<f16, 1024>;   // BM*BK
 var<workgroup> Bs: array<f16, 1024>;   // BK*BN
+// 16x16 = 256 threads, bound to the 64x64 tile + 4x4 reg tile (not a knob).
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -77,10 +78,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
-      As[ar * BK + ac + 0u] = f16(t_input[base]);
-      As[ar * BK + ac + 1u] = f16(t_input[base + 1u]);
-      As[ar * BK + ac + 2u] = f16(t_input[base + 2u]);
-      As[ar * BK + ac + 3u] = f16(t_input[base + 3u]);
+      // vec4<f32> coalesced load; base is 4-aligned on the steel route (K%16==0, ac/k0 multiples of 4).
+      let av = t_input[base >> 2u];
+      As[ar * BK + ac + 0u] = f16(av.x);
+      As[ar * BK + ac + 1u] = f16(av.y);
+      As[ar * BK + ac + 2u] = f16(av.z);
+      As[ar * BK + ac + 3u] = f16(av.w);
     } else {
       As[ar * BK + ac + 0u] = 0.0; As[ar * BK + ac + 1u] = 0.0;
       As[ar * BK + ac + 2u] = 0.0; As[ar * BK + ac + 3u] = 0.0;

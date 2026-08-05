@@ -17,7 +17,6 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using exec_aten::OptionalArrayRef;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;

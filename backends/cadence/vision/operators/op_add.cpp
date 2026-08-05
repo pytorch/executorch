@@ -18,7 +18,6 @@ using executorch::runtime::canCast;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::promoteTypes;
 using torch::executor::apply_binary_elementwise_fn;
-using torch::executor::Error;
 using torch::executor::native::utils::extract_scalar;
 
 namespace impl {

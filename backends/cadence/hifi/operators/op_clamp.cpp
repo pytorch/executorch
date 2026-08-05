@@ -23,26 +23,17 @@
 #include <executorch/backends/cadence/common/xt_macros.h>
 
 using executorch::aten::RuntimeContext;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::canCast;
-using executorch::runtime::isFloatingType;
-using executorch::runtime::isIntegralType;
 using executorch::runtime::promoteTypes;
 using executorch::runtime::tensors_have_same_dim_order;
-using torch::executor::apply_ternary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 using torch::executor::native::utils::apply_tritensor_elementwise_fn;
-using torch::executor::native::utils::apply_unitensor_elementwise_fn;
-using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_compute_type;
-using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::max_override;
 using torch::executor::native::utils::min_override;
-using torch::executor::native::utils::promote_type_with_scalar;
-using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
 namespace impl {

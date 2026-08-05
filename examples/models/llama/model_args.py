@@ -2,9 +2,11 @@ import dataclasses
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import torch.nn.functional as F
+
+MoEScoreFunc = Literal["sigmoid", "softmax", "softmax_all"]
 
 
 class ActFn(Enum):
@@ -71,6 +73,11 @@ class ModelArgs:
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
+    moe_hidden_dim: Optional[int] = None
+    moe_shared_expert_hidden_dim: Optional[int] = None
+    moe_use_expert_bias: bool = False
+    moe_score_func: MoEScoreFunc = "softmax"
+    moe_route_scale: float = 1.0
     attention_type: str = "mha"  # Attention type, registered in attention.py
     use_q_gate: bool = (
         False  # Use q-gated projection in attention (Qwen3.5 full attention)
