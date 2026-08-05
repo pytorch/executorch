@@ -10,9 +10,7 @@
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
-using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
-using executorch::runtime::Error;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
 using executorch::runtime::TensorInfo;

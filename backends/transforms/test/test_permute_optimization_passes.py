@@ -1034,6 +1034,39 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permute_unsqueeze_copy_neg_dim_mul_squeeze_copy_permute",
         )
 
+    def test_unsqueeze_at_moved_position(self) -> None:
+        """The permutation moves the unsqueeze position (P[index] != index), so
+        the adapted permutation must be built from P[index], not index."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(u, u))
+        sq = builder.call_operator(
+            op=exir_ops.edge.aten.squeeze_copy.dim, args=(mul, 1)
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "UnsqueezeAtMovedPosition"
+        )
+
     def test_upstream_view_rank_mismatch_no_crash(self) -> None:
         """Regression test for IndexError when a squeeze/unsqueeze view_copy
         is reached via upstream traversal with a permutation whose rank does
@@ -1096,4 +1129,26 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             result.graph_module,
             [x_data],
             "upstream_view_rank_mismatch_no_crash",
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tests for RemovePermutesAroundElementwiseOps
+# ──────────────────────────────────────────────────────────────────────
+
+
+class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
+    def test_no_permutes_is_noop(self) -> None:
+        """With no surrounding permutes, the pass makes no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 4, 8, 8))
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(x, x))
+        builder.output([mul])
+        original = builder.get_graph_module()
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
         )

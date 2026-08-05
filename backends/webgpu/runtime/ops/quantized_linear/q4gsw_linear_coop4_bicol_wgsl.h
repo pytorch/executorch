@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_coop4_bicol.wgsl - DO NOT EDIT.
-// wgsl-sha256: 44c53ca7879f7a3382a45703a67cbc6fc221ecbcada58f8c413df50abbc6e544
+// wgsl-sha256: ef677c2771c3d4a73704f4725bb490174149b971bc62e696595b8d13941c979e
 inline constexpr const char* kQ4gswLinearCoop4BicolWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
@@ -34,10 +34,11 @@ struct Params {
 @group(0) @binding(5) var<uniform> params: Params;
 
 // Cooperative-over-K GEMV, 2 output columns/workgroup; input read once, reused.
-const WG: u32 = 64u;
-var<workgroup> partial: array<vec2<f32>, WG>;
+// wg_size must be a power of two (the tree reduction halves the stride).
+override wg_size: u32 = 64u;
+var<workgroup> partial: array<vec2<f32>, wg_size>;
 
-@compute @workgroup_size(WG, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(num_workgroups) ngrp: vec3<u32>,
@@ -86,12 +87,12 @@ fn main(
         acc1 = acc1 + in0 * f32(i32(b1 & 0x0Fu) - 8) * scale1;
         acc1 = acc1 + in1 * f32(i32((b1 >> 4u) & 0x0Fu) - 8) * scale1;
       }
-      w = w + WG;
+      w = w + wg_size;
     }
 
     partial[lid.x] = vec2<f32>(acc0, acc1);
     workgroupBarrier();
-    var s: u32 = WG >> 1u;
+    var s: u32 = wg_size >> 1u;
     loop {
       if (s == 0u) {
         break;

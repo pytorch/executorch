@@ -6,14 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDelegateHeader.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 
+#include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -21,7 +24,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -150,6 +155,78 @@ void test_query_pool_roundtrip(const WebGPUContext& ctx) {
   printf("  probe duration: %llu ns\n", (unsigned long long)dur);
   EXPECT_NE(dur, 0u) << "probe duration is zero (expected monotonic non-zero)";
 }
+
+// Device-free: tick->duration delta math (the Mali begin-pinning fix).
+void test_query_pool_delta_math() {
+  auto durs = [](std::vector<uint32_t> idxs) {
+    std::vector<ShaderDuration> v;
+    for (uint32_t i : idxs) {
+      ShaderDuration d;
+      d.idx = i;
+      v.push_back(d);
+    }
+    return v;
+  };
+  // Well-behaved backend (begin >= prev end): per-op == end - begin, unchanged.
+  {
+    const uint64_t ticks[] = {10, 20, 20, 35, 40, 50};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].execution_duration_ns, 10u);
+    EXPECT_EQ(d[1].execution_duration_ns, 15u);
+    EXPECT_EQ(d[2].execution_duration_ns, 10u);
+  }
+  // Tile GPU: begin pinned, ends cumulative -> recover per-op; sum == wall.
+  {
+    const uint64_t ticks[] = {0, 20, 0, 50, 0, 90};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].execution_duration_ns, 20u);
+    EXPECT_EQ(d[1].execution_duration_ns, 30u);
+    EXPECT_EQ(d[2].execution_duration_ns, 40u);
+    const uint64_t sum = d[0].execution_duration_ns +
+        d[1].execution_duration_ns + d[2].execution_duration_ns;
+    EXPECT_EQ(sum, 90u);
+  }
+  // Recorded out of order: the idx-sort keeps the delta correct.
+  {
+    const uint64_t ticks[] = {0, 20, 0, 50, 0, 90};
+    auto d = durs({2, 0, 1});
+    fill_shader_durations(d, ticks, 1.0);
+    for (const auto& x : d) {
+      const uint64_t exp = x.idx == 0 ? 20u : (x.idx == 1 ? 30u : 40u);
+      EXPECT_EQ(x.execution_duration_ns, exp) << "idx " << x.idx;
+    }
+  }
+  // Non-monotone end (op1 end < prev end): running-max base + zero-clamp.
+  {
+    const uint64_t ticks[] = {0, 100, 0, 40, 0, 120};
+    auto d = durs({0, 1, 2});
+    fill_shader_durations(d, ticks, 1.0);
+    EXPECT_EQ(d[0].start_time_ns, 0u);
+    EXPECT_EQ(d[0].end_time_ns, 100u);
+    EXPECT_EQ(d[0].execution_duration_ns, 100u);
+    EXPECT_EQ(d[1].start_time_ns, 0u);
+    EXPECT_EQ(d[1].end_time_ns, 40u);
+    EXPECT_EQ(d[1].execution_duration_ns, 0u);
+    EXPECT_EQ(d[2].start_time_ns, 0u);
+    EXPECT_EQ(d[2].end_time_ns, 120u);
+    EXPECT_EQ(d[2].execution_duration_ns, 20u);
+  }
+  // Each extraction is independent; no previous-end state leaks across calls.
+  {
+    const uint64_t first_ticks[] = {0, 100, 0, 140};
+    auto first = durs({0, 1});
+    fill_shader_durations(first, first_ticks, 1.0);
+    EXPECT_EQ(first[1].execution_duration_ns, 40u);
+
+    const uint64_t second_ticks[] = {10, 30, 30, 60};
+    auto second = durs({0, 1});
+    fill_shader_durations(second, second_ticks, 1.0);
+    EXPECT_EQ(second[0].execution_duration_ns, 20u);
+    EXPECT_EQ(second[1].execution_duration_ns, 30u);
+  }
+}
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 void test_update_cache(const std::string& model_path) {
@@ -256,6 +333,185 @@ bool sdpa_within_tol(
   return ok;
 }
 
+// Matches the WGSL Params struct in rms_norm.wgsl (16-byte aligned).
+struct RmsNormProbeParams {
+  uint32_t num_rows;
+  uint32_t row_width;
+  float epsilon;
+  uint32_t _pad;
+};
+
+struct WgMapData {
+  WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
+};
+void wg_map_cb(
+    WGPUMapAsyncStatus status,
+    WGPUStringView /*message*/,
+    void* userdata1,
+    void* /*userdata2*/) {
+  static_cast<WgMapData*>(userdata1)->status = status;
+}
+
+// Run the rms_norm scalar kernel at an explicit override wg_size and map the
+// output back. Module::forward can't set a second workgroup size (the handler
+// always clamps to 64), so the pipeline is built directly here; the
+// map/readback mirrors WebGPUGraph::copy_outputs.
+std::vector<float> run_rms_norm_at_wg(
+    const WebGPUContext& ctx,
+    uint32_t wg_size,
+    const std::vector<float>& input,
+    const std::vector<float>& weight,
+    uint32_t num_rows,
+    uint32_t row_width,
+    float epsilon) {
+  WGPUDevice device = ctx.device;
+  const uint64_t out_bytes =
+      static_cast<uint64_t>(num_rows) * row_width * sizeof(float);
+  const uint64_t in_bytes = static_cast<uint64_t>(input.size()) * sizeof(float);
+  const uint64_t w_bytes = static_cast<uint64_t>(weight.size()) * sizeof(float);
+
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kRmsNormWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  WGPUBindGroupLayoutEntry bgl_entries[4] = {};
+  bgl_entries[0].binding = 0;
+  bgl_entries[0].visibility = WGPUShaderStage_Compute;
+  bgl_entries[0].buffer.type = WGPUBufferBindingType_Storage;
+  bgl_entries[1].binding = 1;
+  bgl_entries[1].visibility = WGPUShaderStage_Compute;
+  bgl_entries[1].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  bgl_entries[2].binding = 2;
+  bgl_entries[2].visibility = WGPUShaderStage_Compute;
+  bgl_entries[2].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
+  bgl_entries[3].binding = 3;
+  bgl_entries[3].visibility = WGPUShaderStage_Compute;
+  bgl_entries[3].buffer.type = WGPUBufferBindingType_Uniform;
+  WGPUBindGroupLayoutDescriptor bgl_desc = {};
+  bgl_desc.entryCount = 4;
+  bgl_desc.entries = bgl_entries;
+  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
+
+  WGPUPipelineLayoutDescriptor pl_desc = {};
+  pl_desc.bindGroupLayoutCount = 1;
+  pl_desc.bindGroupLayouts = &bgl;
+  WGPUPipelineLayout pl = wgpuDeviceCreatePipelineLayout(device, &pl_desc);
+
+  WGPUConstantEntry wg_const = {};
+  wg_const.key = {"wg_size", WGPU_STRLEN};
+  wg_const.value = static_cast<double>(wg_size);
+
+  WGPUComputePipelineDescriptor pipe_desc = {};
+  pipe_desc.layout = pl;
+  pipe_desc.compute.module = shader;
+  pipe_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipe_desc.compute.constantCount = 1;
+  pipe_desc.compute.constants = &wg_const;
+  WGPUComputePipeline pipe =
+      wgpuDeviceCreateComputePipeline(device, &pipe_desc);
+
+  WGPUBufferDescriptor out_bd = {};
+  out_bd.size = out_bytes;
+  out_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc;
+  WGPUBuffer out_buf = wgpuDeviceCreateBuffer(device, &out_bd);
+
+  WGPUBufferDescriptor in_bd = {};
+  in_bd.size = in_bytes;
+  in_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+  WGPUBuffer in_buf = wgpuDeviceCreateBuffer(device, &in_bd);
+  wgpuQueueWriteBuffer(ctx.queue, in_buf, 0, input.data(), in_bytes);
+
+  WGPUBufferDescriptor w_bd = {};
+  w_bd.size = w_bytes;
+  w_bd.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst;
+  WGPUBuffer w_buf = wgpuDeviceCreateBuffer(device, &w_bd);
+  wgpuQueueWriteBuffer(ctx.queue, w_buf, 0, weight.data(), w_bytes);
+
+  RmsNormProbeParams params = {num_rows, row_width, epsilon, 0u};
+  WGPUBufferDescriptor p_bd = {};
+  p_bd.size = sizeof(RmsNormProbeParams);
+  p_bd.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+  WGPUBuffer p_buf = wgpuDeviceCreateBuffer(device, &p_bd);
+  wgpuQueueWriteBuffer(ctx.queue, p_buf, 0, &params, sizeof(params));
+
+  WGPUBufferDescriptor stg_bd = {};
+  stg_bd.size = out_bytes;
+  stg_bd.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+  WGPUBuffer staging = wgpuDeviceCreateBuffer(device, &stg_bd);
+
+  WGPUBindGroupEntry bg_entries[4] = {};
+  bg_entries[0].binding = 0;
+  bg_entries[0].buffer = out_buf;
+  bg_entries[0].size = out_bytes;
+  bg_entries[1].binding = 1;
+  bg_entries[1].buffer = in_buf;
+  bg_entries[1].size = in_bytes;
+  bg_entries[2].binding = 2;
+  bg_entries[2].buffer = w_buf;
+  bg_entries[2].size = w_bytes;
+  bg_entries[3].binding = 3;
+  bg_entries[3].buffer = p_buf;
+  bg_entries[3].size = sizeof(RmsNormProbeParams);
+  WGPUBindGroupDescriptor bg_desc = {};
+  bg_desc.layout = bgl;
+  bg_desc.entryCount = 4;
+  bg_desc.entries = bg_entries;
+  WGPUBindGroup bg = wgpuDeviceCreateBindGroup(device, &bg_desc);
+
+  WGPUCommandEncoder enc = wgpuDeviceCreateCommandEncoder(device, nullptr);
+  WGPUComputePassDescriptor pass_desc = {};
+  WGPUComputePassEncoder pass =
+      wgpuCommandEncoderBeginComputePass(enc, &pass_desc);
+  wgpuComputePassEncoderSetPipeline(pass, pipe);
+  wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, nullptr);
+  wgpuComputePassEncoderDispatchWorkgroups(pass, num_rows, 1, 1);
+  wgpuComputePassEncoderEnd(pass);
+  wgpuComputePassEncoderRelease(pass);
+  wgpuCommandEncoderCopyBufferToBuffer(enc, out_buf, 0, staging, 0, out_bytes);
+  WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(enc, nullptr);
+  wgpuQueueSubmit(ctx.queue, 1, &cmd);
+  wgpuCommandBufferRelease(cmd);
+  wgpuCommandEncoderRelease(enc);
+
+  WgMapData cb = {};
+  WGPUBufferMapCallbackInfo cb_info = {};
+  cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
+  cb_info.callback = wg_map_cb;
+  cb_info.userdata1 = &cb;
+  WGPUFuture fut =
+      wgpuBufferMapAsync(staging, WGPUMapMode_Read, 0, out_bytes, cb_info);
+  const WGPUWaitStatus wait = webgpu_wait(ctx.instance, fut);
+
+  std::vector<float> result(static_cast<size_t>(num_rows) * row_width);
+  bool ok = false;
+  if (wait == WGPUWaitStatus_Success &&
+      cb.status == WGPUMapAsyncStatus_Success) {
+    const void* mapped = wgpuBufferGetConstMappedRange(staging, 0, out_bytes);
+    std::memcpy(result.data(), mapped, out_bytes);
+    wgpuBufferUnmap(staging);
+    ok = true;
+  }
+
+  wgpuBufferRelease(staging);
+  wgpuBufferRelease(p_buf);
+  wgpuBufferRelease(w_buf);
+  wgpuBufferRelease(in_buf);
+  wgpuBufferRelease(out_buf);
+  wgpuBindGroupRelease(bg);
+  wgpuComputePipelineRelease(pipe);
+  wgpuPipelineLayoutRelease(pl);
+  wgpuBindGroupLayoutRelease(bgl);
+  wgpuShaderModuleRelease(shader);
+
+  if (!ok) {
+    throw std::runtime_error("rms_norm wg-size probe: output map failed");
+  }
+  return result;
+}
+
 // linear_q4gsw sweep config; mirrors CONFIGS in test_quantized_linear.py.
 struct Q4gswConfig {
   const char* name;
@@ -284,8 +540,7 @@ const Q4gswConfig kQ4gswConfigs[] = {
     // The M==1 configs above (q/kv/gate/down_proj) exercise the bicol 2-col
     // decode GEMV (handler routes M==1 -> bicol; each reads its own per-column
     // scale over 64-256 K-groups). q4gsw requires N % 8 == 0, so odd-N is not
-    // exportable; bicol's has1 odd-N guard is defensive (mirrors coop4
-    // general-N robustness).
+    // exportable; bicol's has1 odd-N guard is defensive.
     // M>1: steel GEMM on a >=256-invocation device (K%16==0), else shmem/tiled.
     {"steel", 96, 2048, 256, 1e-4f, 1e-3f, true, false}, // steel-isolating
     // Same shape as "steel" run under the f16-multiply steel kernel; the f16
@@ -1373,6 +1628,386 @@ const EmbConfig kEmbConfigs[] = {
      2048},
 };
 
+// Regression: an edge-dialect-serialized integer slice `start` can arrive as a
+// Double (e.g. Florence-2 DaViT serialized start=0 as Double 0.0), which once
+// threw "slice: dynamic/unsupported start". The Python op-tests can only emit
+// an Int start (the serializer keys on the Python runtime type), so this case
+// is unreachable from a .pte export -- it must be built natively. Here we
+// hand-author a VkGraph flatbuffer whose slice `start` is a Double value, run
+// it on the device, and assert the gather matches in[start + i*step]. Two
+// cases: a Double 0.0 (identity) and a Double 2.0 (non-zero offset).
+static bool test_slice_double_start_case(double start_d, int out_len) {
+  namespace vk = vkgraph;
+  // Slice x[1, kInLen] along dim 1 with `start` as a Double; out is
+  // [1,out_len].
+  constexpr int kInLen = 6;
+  printf(
+      "\n--- Test: slice Double start (start=%.1f -> out[1,%d]) ---\n",
+      start_d,
+      out_len);
+
+  // Value ids: 0=in tensor, 1=dim(Int), 2=start(Double), 3=end(Int),
+  // 4=step(Int), 5=out tensor. dims are uint vectors; tensors take distinct
+  // mem_obj_ids so build() allocates a real Storage buffer for each.
+  ::flatbuffers::FlatBufferBuilder fbb;
+
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(out_len)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  // The value under test: `start` serialized as a Double, not an Int.
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/start_d).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: graph build threw: %s\n", e.what());
+    return false;
+  }
+
+  std::vector<float> in(kInLen);
+  for (int i = 0; i < kInLen; i++) {
+    in[i] = static_cast<float>(i) + 0.5f;
+  }
+  std::vector<InputData> inputs(1);
+  inputs[0] = {in.data(), in.size() * sizeof(float), false};
+  std::vector<float> out(out_len, -1.0f);
+  std::vector<std::pair<void*, size_t>> outputs(1);
+  outputs[0] = {out.data(), out.size() * sizeof(float)};
+  try {
+    graph.copy_inputs(inputs);
+    graph.execute();
+    graph.copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    printf("FAIL: slice execute threw: %s\n", e.what());
+    return false;
+  }
+
+  const int start = static_cast<int>(start_d);
+  float max_abs_err = 0.0f;
+  for (int i = 0; i < out_len; i++) {
+    const float expected = in[start + i]; // step == 1
+    max_abs_err = std::max(max_abs_err, std::abs(out[i] - expected));
+  }
+  printf("Max abs error: %e (checked %d elements)\n", max_abs_err, out_len);
+  if (max_abs_err != 0.0f) { // pure gather: must be bit-exact
+    printf("FAIL: slice Double-start gather mismatch\n");
+    return false;
+  }
+  printf("PASS: slice Double start (start=%.1f)\n", start_d);
+  return true;
+}
+
+// Negative control: a Double `start` that is fractional, NaN, or outside the
+// int64 range must throw (never silently truncate, never invoke UB via the
+// int64_t cast).
+static bool test_slice_double_start_rejects(double bad_start) {
+  namespace vk = vkgraph;
+  constexpr int kInLen = 6;
+  printf("\n--- Test: slice Double start REJECTS (start=%g) ---\n", bad_start);
+
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<uint32_t> in_dims = {1u, static_cast<uint32_t>(kInLen)};
+  std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(kInLen)};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/bad_start).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Int,
+      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.slice_copy.Tensor", &args));
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {5};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("PASS: rejected as expected: %s\n", e.what());
+    return true;
+  }
+  printf(
+      "FAIL: expected a throw for start=%g, graph.build() succeeded\n",
+      bad_start);
+  return false;
+}
+
+static bool test_slice_double_start() {
+  // start=0.0 (identity copy) + start=2.0 (non-zero gather offset).
+  bool ok = true;
+  ok = test_slice_double_start_case(/*start_d=*/0.0, /*out_len=*/6) && ok;
+  ok = test_slice_double_start_case(/*start_d=*/2.0, /*out_len=*/4) && ok;
+  // Reject: fractional, NaN, and out-of-int64-range Doubles.
+  ok = test_slice_double_start_rejects(/*bad_start=*/0.5) && ok;
+  ok = test_slice_double_start_rejects(
+           /*bad_start=*/std::numeric_limits<double>::quiet_NaN()) &&
+      ok;
+  ok = test_slice_double_start_rejects(/*bad_start=*/1e300) && ok;
+  return ok;
+}
+
+// Regression for serialized integer select arguments that alias an earlier
+// floating-point scalar in the Vulkan scalar cache. A production graph has
+// select calls whose dim and index both reference Double 0.0.
+static void finish_select_scalar_graph(
+    ::flatbuffers::FlatBufferBuilder& fbb,
+    double dim,
+    double index,
+    uint32_t out_len,
+    bool symint_dim = false) {
+  namespace vk = vkgraph;
+  std::vector<uint32_t> in_dims = {2u, 3u};
+  std::vector<uint32_t> out_dims = {out_len};
+
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &in_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/0)
+          .Union()));
+  if (symint_dim) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::SymInt,
+        vk::CreateSymInt(fbb, /*value=*/0).Union()));
+  } else {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::Double,
+        vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
+  }
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::Double,
+      vk::CreateDouble(fbb, /*double_val=*/index).Union()));
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::VkTensor,
+      vk::CreateVkTensorDirect(
+          fbb,
+          vk::VkDataType::FLOAT32,
+          &out_dims,
+          /*constant_id=*/-1,
+          /*mem_obj_id=*/1)
+          .Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.select_copy.int", &args));
+  std::vector<uint32_t> input_ids = {0};
+  std::vector<uint32_t> output_ids = {3};
+  auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+}
+
+static bool test_select_double_scalar_case(
+    double dim,
+    double index,
+    const std::vector<float>& expected) {
+  printf(
+      "\n--- Test: select Double scalars (dim=%g, index=%g) ---\n", dim, index);
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(
+      fbb, dim, index, static_cast<uint32_t>(expected.size()));
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: graph build threw: %s\n", e.what());
+    return false;
+  }
+
+  std::vector<float> in = {0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f};
+  std::vector<InputData> inputs = {
+      {in.data(), in.size() * sizeof(float), false}};
+  std::vector<float> out(expected.size(), -1.0f);
+  std::vector<std::pair<void*, size_t>> outputs = {
+      {out.data(), out.size() * sizeof(float)}};
+  try {
+    graph.copy_inputs(inputs);
+    graph.execute();
+    graph.copy_outputs(outputs);
+  } catch (const std::exception& e) {
+    printf("FAIL: select execute threw: %s\n", e.what());
+    return false;
+  }
+
+  if (out != expected) {
+    printf("FAIL: select Double-scalar gather mismatch\n");
+    return false;
+  }
+  printf("PASS: select Double scalars\n");
+  return true;
+}
+
+static bool test_select_scalar_build_error(
+    double dim,
+    double index,
+    const char* expected_error,
+    bool symint_dim = false) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(fbb, dim, index, /*out_len=*/3u, symint_dim);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& e) {
+    const std::string error = e.what();
+    if (error.find(expected_error) != std::string::npos) {
+      printf("PASS: rejected with expected error: %s\n", e.what());
+      return true;
+    }
+    printf(
+        "FAIL: rejection error %s did not contain %s\n",
+        e.what(),
+        expected_error);
+    return false;
+  }
+  printf("FAIL: expected graph build to reject select scalars\n");
+  return false;
+}
+
+static bool test_select_double_scalars() {
+  constexpr double kInt64Limit = 0x1p63;
+  const double below_int64_min =
+      std::nextafter(-kInt64Limit, -std::numeric_limits<double>::infinity());
+
+  bool ok = true;
+  // Production artifact representation: both schema-int arguments alias 0.0.
+  ok = test_select_double_scalar_case(
+           /*dim=*/0.0, /*index=*/0.0, {0.5f, 1.5f, 2.5f}) &&
+      ok;
+  // Negative Double indices retain normal select index normalization.
+  ok = test_select_double_scalar_case(
+           /*dim=*/1.0, /*index=*/-1.0, {2.5f, 5.5f}) &&
+      ok;
+
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.5,
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.0,
+           /*index=*/0.5,
+           "select: non-integral index") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           std::numeric_limits<double>::quiet_NaN(),
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           std::numeric_limits<double>::infinity(),
+           /*index=*/0.0,
+           "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           kInt64Limit, /*index=*/0.0, "select: non-integral dim") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           below_int64_min, /*index=*/0.0, "select: non-integral dim") &&
+      ok;
+  // -2^63 is representable: conversion succeeds, then the normal dim check
+  // rejects it as out of range for this rank-2 input.
+  ok = test_select_scalar_build_error(
+           -kInt64Limit, /*index=*/0.0, "select: dim out of range") &&
+      ok;
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.0,
+           /*index=*/0.0,
+           "select: dynamic/unsupported dim",
+           /*symint_dim=*/true) &&
+      ok;
+  return ok;
+}
+
 // apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
 struct RopeConfig {
   const char* name;
@@ -1413,7 +2048,61 @@ TEST(WebGPUNative, QueryPoolOverrunThrows) {
 TEST(WebGPUNative, QueryPoolRoundtrip) {
   test_query_pool_roundtrip(*get_default_webgpu_context());
 }
+
+TEST(WebGPUNative, QueryPoolDeltaMath) {
+  test_query_pool_delta_math();
+}
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+
+// The override wg_size must not change results: run the rms_norm scalar kernel
+// at wg_size 64 and 128 (the handler always clamps to 64, so 128 is only
+// reachable via a direct pipeline) and require element-wise agreement. Absolute
+// rms_norm correctness is covered by the model-driven golden tests; this locks
+// the runtime-configurability guarantee (same WGSL, different size -> same
+// output).
+TEST(WebGPUNative, RmsNormWorkgroupSizeConfigurable) {
+  const WebGPUContext* ctx = get_default_webgpu_context();
+  if (ctx == nullptr || ctx->device == nullptr) {
+    GTEST_SKIP() << "no WebGPU device";
+  }
+  constexpr uint32_t num_rows = 3, row_width = 256;
+  constexpr float epsilon = 1e-5f;
+  std::vector<float> input(static_cast<size_t>(num_rows) * row_width);
+  std::vector<float> weight(row_width);
+  for (size_t i = 0; i < input.size(); i++) {
+    input[i] = std::sin(0.1f * static_cast<float>(i)) * 2.0f + 0.5f;
+  }
+  for (uint32_t j = 0; j < row_width; j++) {
+    weight[j] = 0.5f + 0.001f * static_cast<float>(j);
+  }
+
+  const std::vector<float> out64 =
+      run_rms_norm_at_wg(*ctx, 64, input, weight, num_rows, row_width, epsilon);
+  const std::vector<float> out128 = run_rms_norm_at_wg(
+      *ctx, 128, input, weight, num_rows, row_width, epsilon);
+  ASSERT_EQ(out64.size(), static_cast<size_t>(num_rows) * row_width);
+  ASSERT_EQ(out128.size(), out64.size());
+
+  double sumsq = 0.0;
+  for (float v : out64) {
+    sumsq += static_cast<double>(v) * static_cast<double>(v);
+  }
+  float max_abs = 0.0f, max_rel = 0.0f;
+  const bool consistent = sdpa_within_tol(
+      out64.data(),
+      out128.data(),
+      static_cast<int>(out64.size()),
+      &max_abs,
+      &max_rel);
+  printf(
+      "  rms_norm wg64-vs-wg128: max_abs=%e max_rel=%e sumsq=%f\n",
+      max_abs,
+      max_rel,
+      sumsq);
+  EXPECT_GT(sumsq, 0.0) << "wg64 output is all zero (kernel did not run)";
+  EXPECT_TRUE(consistent) << "wg64 vs wg128 differ beyond tol (abs " << max_abs
+                          << " rel " << max_rel << ")";
+}
 
 TEST(WebGPUNative, UpdateCache) {
   if (g_update_cache_model_path.empty()) {
@@ -1497,6 +2186,16 @@ TEST(WebGPUNative, Prepack) {
     GTEST_SKIP() << "WEBGPU_TEST_PREPACK_MODEL/GOLDEN not set";
   }
   test_prepack(g_prepack_model_path, g_prepack_golden_path);
+}
+
+TEST(WebGPUNative, SliceDoubleStart) {
+  EXPECT_TRUE(test_slice_double_start())
+      << "slice Double-start gather/reject checks failed";
+}
+
+TEST(WebGPUNative, SelectDoubleScalars) {
+  EXPECT_TRUE(test_select_double_scalars())
+      << "select Double-scalar compatibility checks failed";
 }
 
 TEST(WebGPUNative, Prepack2) {

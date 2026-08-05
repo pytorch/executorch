@@ -28,7 +28,10 @@ def test_export_case_has_delegate():
 
 def test_generate_case_writes_artifacts(tmp_path):
     suite, case = _add_regular_case()
-    entry = g.generate_case("add", suite, case, str(tmp_path))
+    # generate_case returns one entry per output; add is single-output.
+    entries = g.generate_case("add", suite, case, str(tmp_path))
+    assert len(entries) == 1
+    entry = entries[0]
     # .pte + 2 input .bin + golden .bin all exist
     assert (tmp_path / entry["pte"]).exists()
     assert len(entry["inputs"]) == 2
@@ -77,7 +80,7 @@ def test_generate_manifest(tmp_path):
 def test_every_case_delegates():
     # Contract: every registered case must lower to a VulkanBackend delegate. An op that
     # silently CPU-falls-back would otherwise produce a misleading golden-equals-golden pass.
-    for op in ("add", "rms_norm"):
+    for op in ("add", "mul", "sigmoid", "rms_norm"):
         suite = op_test_registry[op]
         for case in suite.cases:
             _module, _inputs, prog = g.export_case(suite, case)

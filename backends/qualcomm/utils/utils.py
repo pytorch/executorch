@@ -65,7 +65,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
 
-from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
+from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import (
@@ -321,7 +321,7 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
             if skip_decomp_op
-            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
+            not in AnnotateStack._SOURCE_OPS + AnnotateUnbind._SOURCE_OPS
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
@@ -947,8 +947,6 @@ def from_context_binary(  # noqa: C901
     # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
         {graph_name: bundle_prog["exported_program"]},
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
 
     # update meta with context binary

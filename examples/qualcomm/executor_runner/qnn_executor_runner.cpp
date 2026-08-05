@@ -156,7 +156,6 @@ using executorch::etdump::ETDumpGen;
 using executorch::etdump::ETDumpResult;
 using executorch::extension::FileDataLoader;
 using executorch::extension::prepare_input_tensors;
-using executorch::runtime::BackendOption;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracerDebugLogLevel;

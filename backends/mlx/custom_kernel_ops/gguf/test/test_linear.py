@@ -207,10 +207,10 @@ def _fp32_linear_reference(model: "GGUFLinearModel", x: torch.Tensor):
     return [out.to(x.dtype)]
 
 
-def _q4k_mlx_native_dequant(weight) -> torch.Tensor:
+def _q4k_mlx_native_dequant(weight, scale_dtype: torch.dtype) -> torch.Tensor:
     from executorch.backends.mlx.builder.op_helpers import to_mlx_qparams
 
-    intx = weight.to_intx_unpacked_to_int8_tensor()
+    intx = weight.to_intx_unpacked_to_int8_tensor(scale_dtype=scale_dtype)
     group_size = int(intx.block_size[-1])
     packed, biases = to_mlx_qparams(intx.qdata, intx.scale, intx.zero_point, 4)
     packed_bytes = packed.view(torch.uint8)
@@ -226,15 +226,18 @@ def _q4k_mlx_native_dequant(weight) -> torch.Tensor:
 _GGML_BITS = {"q4_k": 4, "q5_k": 5, "q6_k": 6}
 
 
-def _mlx_native_dequant(weight) -> torch.Tensor:
+def _mlx_native_dequant(weight, scale_dtype: torch.dtype) -> torch.Tensor:
     """Reference for the MLX-native repack path (q4_k / q5_k / q6_k).
 
     Mirrors the export-time repack (``to_intx_unpacked_to_int8_tensor`` with
-    ``max_group_size=128``) and the MLX affine kernel, which computes
-    ``scale*Q + bias == scale*(qdata - zero_point)``. Invariant to lossless
-    group merging, so it validates the group-size upgrade too.
+    ``max_group_size=128`` and the activation ``scale_dtype``) and the MLX affine
+    kernel, which computes ``scale*Q + bias == scale*(qdata - zero_point)``.
+    Invariant to lossless group merging, so it validates the group-size upgrade
+    too.
     """
-    intx = weight.to_intx_unpacked_to_int8_tensor(max_group_size=128)
+    intx = weight.to_intx_unpacked_to_int8_tensor(
+        max_group_size=128, scale_dtype=scale_dtype
+    )
     gs = int(intx.block_size[-1])
     q = intx.qdata.float()
     scale = intx.scale.float().repeat_interleave(gs, dim=1)
@@ -246,9 +249,9 @@ def _fp32_linear_mlx_native_reference(model: "GGUFLinearModel", x: torch.Tensor)
     lin = model.linear
     # q4_k keeps its packed-nibble oracle; q5_k/q6_k use the generic one.
     if lin.weight.ggml_type == "q4_k":
-        w = _q4k_mlx_native_dequant(lin.weight)
+        w = _q4k_mlx_native_dequant(lin.weight, x.dtype)
     else:
-        w = _mlx_native_dequant(lin.weight)
+        w = _mlx_native_dequant(lin.weight, x.dtype)
     bias = lin.bias.float() if lin.bias is not None else None
     out = torch.nn.functional.linear(x.float(), w, bias)
     return [out.to(x.dtype)]
