@@ -92,6 +92,13 @@ find_path(
   NO_CACHE
 )
 
+# Normalise the result before it is used to build paths. The search can return a directory with a
+# trailing separator, which then appears doubled in every path derived from it and in the message
+# reporting where the runtime was found.
+if(_executorch_package_root)
+  string(REGEX REPLACE "/+$" "" _executorch_package_root "${_executorch_package_root}")
+endif()
+
 # Both directories are needed for a usable package. The C10 compatibility
 # headers are not optional: core headers such as runtime/core/array_ref.h
 # include c10 unconditionally, so a package missing them cannot compile anything
