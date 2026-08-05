@@ -419,8 +419,8 @@ def get_dynamic_lib_name(name: str) -> str:
 def _write_cmake_version_file(destination: str) -> None:
     """Generate the CMake package version file next to the package config.
 
-    Takes the version the wheel publishes so a single artifact reports one identity
-    everywhere: to pip, to CMake, and in the runtime SONAME.
+    Read from version.txt so the version CMake reports is the same one the wheel and
+    the runtime SONAME use.
 
     Written by hand rather than from CMake's own template because the rule here is
     deliberately stricter than any stock one: a request above the package version is
@@ -431,12 +431,21 @@ def _write_cmake_version_file(destination: str) -> None:
     # The same version the wheel publishes, including any BUILD_VERSION override, so one
     # artifact cannot report one identity to pip and a different one to CMake.
     version = Version.string()
+    # CMake executes this file to decide whether the package is acceptable, so a quote or a
+    # backslash in the version would be a parse error rather than a bad comparison, and
+    # find_package would hard-fail for every consumer. The normal pipeline cannot produce one,
+    # but BUILD_VERSION is an unvalidated environment override.
+    assert not set(version) & set('"\\'), (
+        f"version {version!r} contains a character that cannot appear in the generated CMake "
+        "version file"
+    )
     # A pre-release suffix is not a CMake version component, so keep the numeric
     # prefix and let compatibility be decided on the major.
     numeric = re.match(r"\d+(?:\.\d+){0,2}", version)
     numeric = numeric.group(0) if numeric else "0.0.0"
     major = numeric.split(".")[0]
-    # Only an exclusive bound at the immediately following major means "any {major}.x".
+    # Only an exclusive bound at the immediately following major means "any {major}.x",
+    # which is the idiomatic way to ask for this release series.
     next_major = str(int(major) + 1)
 
     contents = f"""\
@@ -475,11 +484,6 @@ elseif(PACKAGE_FIND_VERSION_RANGE)
     # Both endpoints have to share the major, the way CMake's own template requires.
     # Checking only the lower one accepts a range such as 1.0...3.0 against a 1.x
     # runtime, which tells a consumer that majors 2 and 3 are satisfied too.
-    #
-    # The exception is an exclusive bound exactly at the next major, as in 1.0...<2.0.
-    # That is the idiomatic way to ask for "any 1.x", and it excludes major 2 rather
-    # than reaching into it, so refusing it would reject the very request this rule
-    # exists to describe.
     set(PACKAGE_VERSION_UNSUITABLE TRUE)
   else()
     set(PACKAGE_VERSION_COMPATIBLE TRUE)
