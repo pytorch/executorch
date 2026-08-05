@@ -30,7 +30,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 # Registry entry points. A second definer of any of these means a second
 # process-wide registry.
