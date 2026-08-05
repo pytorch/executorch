@@ -184,7 +184,7 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
-        "pytorch-tokenizers>=1.4.0",
+        "pytorch-tokenizers>=1.4.1",
         "pyyaml",
         "ruamel.yaml",
         "sympy",
