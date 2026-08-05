@@ -53,7 +53,11 @@ from executorch.backends.webgpu.test.ops.test_compare import (
     CompareModule,
 )
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
-from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
+from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
+    Conv1dModule,
+    Conv1dPwModule,
+    GENERAL_CONFIGS as _CONV1D_CONFIGS,
+)
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
@@ -654,6 +658,55 @@ def _conv1d_dw_suite() -> WebGPUTestSuite:
             case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
             case("dil2", 3, 10, 3, 1, 2, 2, True),
             case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+            case("single_channel_route", 1, 8, 3, 1, 1, 1, True),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("conv1d")
+def _conv1d_suite() -> WebGPUTestSuite:
+    # General groups=1 NCL conv1d; fp64 oracle. The neighboring pointwise and
+    # depthwise suites remain routing controls for the two retained fast paths.
+    def case(name, cfg):
+        n, ic, oc, length, kernel, stride, padding, dilation, bias = cfg
+        return Case(
+            name=name,
+            construct={
+                "in_channels": ic,
+                "out_channels": oc,
+                "kernel_size": kernel,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=((n, ic, length),),
+        )
+
+    dynamic_cfg = _CONV1D_CONFIGS["voxtral_stride1"]
+    n, ic, oc, length, kernel, stride, padding, dilation, bias = dynamic_cfg
+    dynamic_length = torch.export.Dim("manifest_conv1d_length", min=7, max=length)
+    return WebGPUTestSuite(
+        module_factory=Conv1dModule,
+        cases=[
+            *[case(name, cfg) for name, cfg in _CONV1D_CONFIGS.items()],
+            Case(
+                name="dynamic_length_10_to_7",
+                construct={
+                    "in_channels": ic,
+                    "out_channels": oc,
+                    "kernel_size": kernel,
+                    "stride": stride,
+                    "padding": padding,
+                    "dilation": dilation,
+                    "bias": bias,
+                },
+                export_inputs=((n, ic, length),),
+                inputs=((n, ic, 7),),
+                dynamic_shapes=({2: dynamic_length},),
+            ),
         ],
         atol=1e-3,
         rtol=1e-3,
