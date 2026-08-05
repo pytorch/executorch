@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import operator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -26,6 +27,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
 )
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
@@ -4479,12 +4481,34 @@ class TagQuantIO:
             return torch.relu(x)
 
     @staticmethod
+    def _delegate_output_arity(gm: torch.fx.GraphModule) -> dict[torch.fx.Node, int]:
+        """Map every delegate users to the number of users, so we can ensure
+        both the single-output and multi-output scenarios are covered."""
+        arity = {}
+        for n in gm.graph.nodes:
+            if n.op == "call_function" and n.target is executorch_call_delegate:
+                getitems = [u for u in n.users if u.target is operator.getitem]
+                arity.update(dict.fromkeys(getitems, len(getitems)))
+        return arity
+
+    @staticmethod
     @unpack_pass_fixtures
-    def test():
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+    ):
+        from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+            get_qnn_pass_manager_cls,
+        )
+        from executorch.backends.qualcomm.tests.models import SkipSplitToConcat
         from executorch.backends.qualcomm.utils.constants import (
+            QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
             QCOM_QUANT_ATTRS,
             QCOM_QUANT_ATTRS_MAP,
             QCOM_QUANTIZED_IO,
+        )
+        from executorch.backends.qualcomm.utils.utils import (
+            to_edge_transform_and_lower_to_qnn,
         )
 
         module = TagQuantIO._Relu()
@@ -4529,3 +4553,59 @@ class TagQuantIO:
                 f"expected {num_returned} entries in QCOM_QUANT_ATTRS_MAP, "
                 f"got {len(n.meta[QCOM_QUANT_ATTRS_MAP])}"
             )
+
+        # Trait 3: QCOM_QUANTIZED_IO tags applied before to_backend survive on
+        # delegate-output getitems. Keeping split/cat on CPU splits the graph so
+        # that both the single-output and multi-output scenarios are covered.
+        skip_targets = {
+            exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.cat.default,
+        }
+
+        def get_boundary_dtype(node):
+            targets = {node.target, *(u.target for u in node.users)}
+            return torch.uint8 if targets & skip_targets else None
+
+        passes_job = get_qnn_pass_manager_cls(backend_type).get_capture_program_passes()
+        passes_job[_passes.TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[_passes.TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "get_quant_io_dtype_fn"
+        ] = get_boundary_dtype
+
+        module = SkipSplitToConcat()
+        inputs = (
+            torch.randn(1, 4, 4, 6),
+            torch.randn(1, 4, 4, 2),
+            torch.randn(1, 4, 4, 2),
+            torch.randn(1, 4, 4, 2),
+        )
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module,
+            inputs,
+            compile_spec,
+            passes_job=passes_job,
+            skip_node_op_set={t.__name__ for t in skip_targets},
+        )
+
+        gm = edge_prog_mgr.exported_program().graph_module
+        arity = TagQuantIO._delegate_output_arity(gm)
+
+        # get_boundary_dtype tagged the nodes feeding the CPU-side split/cat, so
+        # after lowering, those delegate outputs must carry the QCOM_QUANTIZED_IO tag.
+        expected = {n for n in arity if any(u.target in skip_targets for u in n.users)}
+        assert expected, "no delegate-output getitem feeds the skipped nodes"
+
+        tagged = {
+            n: n.meta[QCOM_QUANTIZED_IO] for n in arity if QCOM_QUANTIZED_IO in n.meta
+        }
+        assert tagged == dict.fromkeys(expected, torch.uint8), (
+            f"delegate outputs should be carrying {QCOM_QUANTIZED_IO!r} {tagged} "
+            f"!= boundaries tagged uint8 before to_backend "
+            f"{dict.fromkeys(expected, torch.uint8)}"
+        )
+
+        arities = {arity[n] for n in expected}
+        assert 1 in arities and arities != {1}, (
+            f"expected both single-output and multi-output delegates to be covered, "
+            f"got output counts {sorted(arities)}"
+        )
