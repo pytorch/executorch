@@ -44,8 +44,6 @@
 # dependency and, for a registration-only library, the link options that keep it
 # from being dropped. The names, when present, are:
 #
-# executorch::threadpool executorch::kernels executorch::xnnpack_backend
-# executorch::cuda_backend
 #
 # Check with if(TARGET executorch::<name>) rather than assuming one exists. A namespaced name
 # that was never defined is a configure-time error that names the component, so a consumer who
@@ -91,6 +89,13 @@ find_path(
   # directory that has moved, which is worse than reporting it as not found.
   NO_CACHE
 )
+
+# Normalise the result before it is used to build paths. The search can return a directory with a
+# trailing separator, which then appears doubled in every path derived from it and in the message
+# reporting where the runtime was found.
+if(_executorch_package_root)
+  string(REGEX REPLACE "/+$" "" _executorch_package_root "${_executorch_package_root}")
+endif()
 
 # Both directories are needed for a usable package. The C10 compatibility
 # headers are not optional: core headers such as runtime/core/array_ref.h
@@ -348,7 +353,10 @@ executorch_define_component(threadpool executorch_threadpool)
 # The merged CPU kernels. Documented as a component and asserted by the release checks, so it has
 # to be defined here or a consumer following the documentation gets a bare name that CMake hands
 # to the linker as a literal flag.
-executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
+executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The profiler. A C++ application could not record timing data from an installed package before,
+# because the implementation shipped only inside the Python extension.
+executorch_define_component(etdump executorch_etdump)
 
 # A consumer that links the thread pool has to see the same switch a source build sets, or the
 # parallel helpers in the runtime headers compile their serial fallback instead and the library
@@ -362,7 +370,10 @@ if(TARGET executorch::threadpool)
 endif()
 
 
-executorch_define_component(xnnpack_backend executorch_xnnpack_backend)
+# The profiler. A C++ application could not record timing data from an installed package
+# before, because the implementation shipped only inside the Python extension.
+executorch_define_component(etdump executorch_etdump)
+executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
