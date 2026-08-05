@@ -738,6 +738,9 @@ class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
             # pyre-ignore[6]
             list[torch.fx.Node] | tuple[torch.fx.Node, ...],
         )
+        # Moving one reused permute after cat makes it process the larger output.
+        if inputs and all(inp is inputs[0] for inp in inputs):
+            return None
 
         unpermuted_inputs: List[torch.fx.Node] = []
         common_permutation: Optional[Tuple[int, ...]] = None
