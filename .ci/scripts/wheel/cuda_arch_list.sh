@@ -27,8 +27,12 @@ _cuda_arch_x86_64_cu132="${_cuda_arch_x86_64_cu130}"
 _cuda_arch_aarch64_cu130="9.0 10.0 11.0"
 _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
 
-# The older CUDA train, where Orin is the target.
-_cuda_arch_aarch64_cu126="8.7"
+# The older CUDA train on generic ARM. These are the server parts that train supports, matching
+# what the x86_64 row of the same train claims. Jetson is deliberately not here: a Jetson-only
+# architecture such as Orin's 8.7 in a generic manylinux wheel would advertise a device the row
+# cannot otherwise serve, since a Jetson also needs the pinned CUDA, TensorRT and PyTorch from its
+# own software release rather than the ones a generic wheel resolves.
+_cuda_arch_aarch64_cu126="8.0 9.0"
 _cuda_arch_x86_64_cu126="8.0 9.0"
 
 # A CUDA train with no architecture list would otherwise leave the build detecting the
