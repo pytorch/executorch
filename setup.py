@@ -422,11 +422,15 @@ def _write_cmake_version_file(destination: str) -> None:
     Read from version.txt so the version CMake reports is the same one the wheel and
     the runtime SONAME use.
 
-    Written by hand rather than from CMake's own template because the rule here is
-    deliberately stricter than any stock one: a request above the package version is
-    refused, not just a different major. A delegate built against one release cannot be
-    assumed to work with a later one, so accepting a higher request would let a consumer
-    match a package that does not satisfy it.
+    Written by hand rather than configured from CMake's own template for two reasons that the
+    template cannot express. First, it also publishes the full build version, including any
+    prerelease suffix and local label, which a consumer needs when it must pair with one exact
+    build; CMake's numeric version drops those parts. Second, it accepts an exclusive upper bound
+    at exactly the next major, the idiomatic way to ask for "any version in this series", which the
+    same-major template refuses.
+
+    The compatibility rule itself matches the stock same-major behaviour, including refusing a
+    request above the package version.
     """
     # The same version the wheel publishes, including any BUILD_VERSION override, so one
     # artifact cannot report one identity to pip and a different one to CMake.
