@@ -191,6 +191,16 @@ if(TARGET executorch::runtime)
     # the install directory first would keep sending a relocated application back to the
     # original wheel for as long as it remains installed. That also makes a relocation test
     # that deletes the original pass for the wrong reason.
+    #
+    # The cost, measured rather than assumed: a library that merely shares this SONAME and sits
+    # in the application's own directory will win. That is what $ORIGIN means in every package
+    # that uses it, and a package cannot offer relocation while also refusing to honour what the
+    # user placed beside their binary. The consequence worth worrying about, a delegate pairing
+    # with a different registry, is caught directly by the single-registry checks, which inspect
+    # what the shipped libraries define instead of trusting the loader's choice.
+    #
+    # The absolute entry cannot simply be dropped to avoid the question: an application built
+    # against the installed package fails to start without it.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       get_filename_component(
         _executorch_runtime_dir "${_executorch_runtime_library}" DIRECTORY
