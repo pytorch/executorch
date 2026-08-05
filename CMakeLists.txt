@@ -286,35 +286,39 @@ add_subdirectory(third-party)
 # headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
 # symbol resolution.
 #
-# Linux needs the same treatment for a different reason. An extension is loaded by an interpreter
-# that already has the Python runtime in the process, so it must not carry its own dependency on
-# libpython: the interpreter's library directory is not on any search path a wheel can predict, and
-# an interpreter built with a shared libpython leaves the extension unable to resolve it. The
-# undefined symbols are supplied by the loading process, which is how a Python extension normally
-# works. No-op on Windows, where extensions link the import library by design.
+# Linux needs the same treatment for a different reason. An extension is loaded
+# by an interpreter that already has the Python runtime in the process, so it
+# must not carry its own dependency on libpython: the interpreter's library
+# directory is not on any search path a wheel can predict, and an interpreter
+# built with a shared libpython leaves the extension unable to resolve it. The
+# undefined symbols are supplied by the loading process, which is how a Python
+# extension normally works. No-op on Windows, where extensions link the import
+# library by design.
 function(strip_python_lib target)
   if(MSVC)
     return()
   endif()
-  # The module helper links the embedding form of Python for anything that is not a MODULE
-  # library, and that form brings a hard dependency on the interpreter's shared library plus an
-  # absolute path to wherever it was found on the build machine. Neither survives being shipped:
-  # the loader cannot satisfy the dependency from an installed wheel, and the absolute path names
+  # The module helper links the embedding form of Python for anything that is
+  # not a MODULE library, and that form brings a hard dependency on the
+  # interpreter's shared library plus an absolute path to wherever it was found
+  # on the build machine. Neither survives being shipped: the loader cannot
+  # satisfy the dependency from an installed wheel, and the absolute path names
   # the build machine.
   #
-  # These targets cannot simply become MODULE libraries, because other targets link them and CMake
-  # refuses to link a MODULE. So keep the type and replace the Python library instead. An
-  # extension does not need it: the interpreter already provides those symbols to anything it
-  # loads.
+  # These targets cannot simply become MODULE libraries, because other targets
+  # link them and CMake refuses to link a MODULE. So keep the type and replace
+  # the Python library instead. An extension does not need it: the interpreter
+  # already provides those symbols to anything it loads.
   #
-  # The interfaces arrive as PRIVATE links, so they appear in LINK_LIBRARIES wrapped rather than as
-  # bare target names. Rewrite the property from the filtered list instead of relying on a name
-  # match against the wrapped form.
+  # The interfaces arrive as PRIVATE links, so they appear in LINK_LIBRARIES
+  # wrapped rather than as bare target names. Rewrite the property from the
+  # filtered list instead of relying on a name match against the wrapped form.
   get_target_property(_libs ${target} LINK_LIBRARIES)
   if(_libs)
     set(_kept "")
     foreach(_lib IN LISTS _libs)
-      # Match the embedding interfaces however they are spelled, including inside a wrapper.
+      # Match the embedding interfaces however they are spelled, including
+      # inside a wrapper.
       if(NOT _lib MATCHES "(pybind11::embed|Python3?::Python)")
         list(APPEND _kept "${_lib}")
       endif()
@@ -323,8 +327,9 @@ function(strip_python_lib target)
     set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_kept}")
   endif()
   if(APPLE)
-    # Apple's linker needs telling that the undefined symbols resolve at load time. The
-    # Linux loader already permits that for a shared object and does not accept the flag.
+    # Apple's linker needs telling that the undefined symbols resolve at load
+    # time. The Linux loader already permits that for a shared object and does
+    # not accept the flag.
     target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
   endif()
 endfunction()
@@ -1007,7 +1012,8 @@ endif()
 
 # Added after the shared runtime for readability, so the dependency reads in the
 # order it exists. CMake resolves target names at generate time, so a reference
-# from an earlier subdirectory would work too, as several other backends here do.
+# from an earlier subdirectory would work too, as several other backends here
+# do.
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
   list(APPEND _executorch_backends qnn_executorch_backend)
