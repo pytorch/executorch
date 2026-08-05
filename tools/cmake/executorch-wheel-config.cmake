@@ -56,7 +56,7 @@
 # The floor stays where it was, so a consumer that only wants the long-standing variables and the
 # prebuilt Python extension keeps working on the CMake it already has. The shared-runtime targets
 # below need more than this and check for it themselves.
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.21)
 
 # The imported targets below export "$ORIGIN"-relative runtime paths as link options, and CMake
 # writes that token incorrectly before 3.28. Versions 3.24 through 3.27 emit a doubled dollar with
@@ -330,6 +330,29 @@ function(executorch_define_component _suffix _library_name)
   )
 endfunction()
 
+executorch_define_component(threadpool executorch_threadpool)
+
+# The merged CPU kernels. Documented as a component and asserted by the release checks, so it has
+# to be defined here or a consumer following the documentation gets a bare name that CMake hands
+# to the linker as a literal flag.
+executorch_define_component(kernels executorch_optimized_native_cpu_ops_lib)
+
+# A consumer that links the thread pool has to see the same switch a source build sets, or the
+# parallel helpers in the runtime headers compile their serial fallback instead and the library
+# they linked is never used.
+if(TARGET executorch::threadpool)
+  set_property(
+    TARGET executorch::threadpool
+    APPEND
+    PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
+  )
+endif()
+
+
+executorch_define_component(xnnpack_backend executorch_xnnpack_backend)
+
+executorch_define_component(cuda_backend executorch_cuda_backend)
+
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
 # independently of the runtime target above.
@@ -460,13 +483,19 @@ foreach(_component ${executorch_FIND_COMPONENTS})
       # Naming the CMake version when that is the cause saves a consumer from concluding the
       # component is missing from the package, which is the wrong thing to go looking for.
       if(NOT _executorch_targets_supported)
-        set(executorch_NOT_FOUND_MESSAGE
+        # One string rather than several arguments. Several make a list, and
+        # message() joins a list with semicolons, which lands separators mid sentence.
+        string(
+          CONCAT executorch_NOT_FOUND_MESSAGE
             "the required component '${_component}' needs CMake 3.28 or newer, because older "
             "versions write the \$ORIGIN token in a runtime search path incorrectly; this "
             "package is otherwise usable through EXECUTORCH_LIBRARIES"
         )
       else()
-        set(executorch_NOT_FOUND_MESSAGE
+        # One string rather than several arguments. Several make a list, and
+        # message() joins a list with semicolons, which lands separators mid sentence.
+        string(
+          CONCAT executorch_NOT_FOUND_MESSAGE
             "this ExecuTorch package does not provide the required component '${_component}'"
         )
       endif()
