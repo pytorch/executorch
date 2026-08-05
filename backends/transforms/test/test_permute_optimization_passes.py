@@ -1097,3 +1097,25 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             [x_data],
             "upstream_view_rank_mismatch_no_crash",
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tests for RemovePermutesAroundElementwiseOps
+# ──────────────────────────────────────────────────────────────────────
+
+
+class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
+    def test_no_permutes_is_noop(self) -> None:
+        """With no surrounding permutes, the pass makes no change."""
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 4, 8, 8))
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(x, x))
+        builder.output([mul])
+        original = builder.get_graph_module()
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
