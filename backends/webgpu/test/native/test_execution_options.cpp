@@ -140,5 +140,28 @@ TEST(WebGPUExecutionPlanTest, CopyOnlyPlanRetainsOneSubmissionChunk) {
   EXPECT_EQ(plan.copy_outputs, (std::vector<bool>{true}));
 }
 
+TEST(WebGPUExecutionPlanTest, FiltersDisabledDispatchesAcrossChunks) {
+  const std::vector<bool> enabled = {true, false, true, false, true, true};
+  const WebGPUExecutionPlan plan = plan_webgpu_execution(
+      6, 1, ExecuteConfig{2, 1}, {}, WebGPUGraphExecutionOptions{}, enabled);
+
+  EXPECT_EQ(
+      plan.dispatch_chunks,
+      (std::vector<std::vector<size_t>>{{0}, {2}, {4}, {5}}));
+  EXPECT_EQ(plan.copy_outputs, (std::vector<bool>{true}));
+}
+
+TEST(WebGPUExecutionPlanTest, RejectsMismatchedEnabledDispatches) {
+  EXPECT_THROW(
+      plan_webgpu_execution(
+          3,
+          1,
+          ExecuteConfig{},
+          {},
+          WebGPUGraphExecutionOptions{},
+          {true, false}),
+      std::runtime_error);
+}
+
 } // namespace
 } // namespace executorch::backends::webgpu

@@ -51,7 +51,8 @@ WebGPUExecutionPlan plan_webgpu_execution(
     size_t output_count,
     ExecuteConfig config,
     const std::vector<SuppressibleOutput>& suppressible_outputs,
-    WebGPUGraphExecutionOptions options);
+    WebGPUGraphExecutionOptions options,
+    const std::vector<bool>& enabled_dispatches = {});
 
 WebGPUGraphExecutionOptions resolve_webgpu_graph_execution_options(
     const std::vector<const void*>& delegate_outputs,
