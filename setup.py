@@ -375,14 +375,25 @@ def _write_cmake_version_file(destination: str) -> None:
     assumed to work with a later one, so accepting a higher request would let a consumer
     match a package that does not satisfy it.
     """
-    root = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(root, "version.txt")) as handle:
-        version = handle.read().strip()
+    # The same version the wheel publishes, including any BUILD_VERSION override, so one
+    # artifact cannot report one identity to pip and a different one to CMake.
+    version = Version.string()
+    # CMake executes this file to decide whether the package is acceptable, so a quote or a
+    # backslash in the version would be a parse error rather than a bad comparison, and
+    # find_package would hard-fail for every consumer. The normal pipeline cannot produce one,
+    # but BUILD_VERSION is an unvalidated environment override.
+    assert not set(version) & set('"\\'), (
+        f"version {version!r} contains a character that cannot appear in the generated CMake "
+        "version file"
+    )
     # A pre-release suffix is not a CMake version component, so keep the numeric
     # prefix and let compatibility be decided on the major.
     numeric = re.match(r"\d+(?:\.\d+){0,2}", version)
     numeric = numeric.group(0) if numeric else "0.0.0"
     major = numeric.split(".")[0]
+    # Only an exclusive bound at the immediately following major means "any {major}.x",
+    # which is the idiomatic way to ask for this release series.
+    next_major = str(int(major) + 1)
 
     contents = f"""\
 set(PACKAGE_VERSION "{numeric}")
@@ -412,7 +423,11 @@ elseif(PACKAGE_FIND_VERSION_RANGE)
     # Same major rule as below: a different major means a different shared runtime.
     set(PACKAGE_VERSION_UNSUITABLE TRUE)
   elseif(PACKAGE_FIND_VERSION_MAX_MAJOR
-         AND NOT PACKAGE_FIND_VERSION_MAX_MAJOR STREQUAL "{major}")
+         AND NOT PACKAGE_FIND_VERSION_MAX_MAJOR STREQUAL "{major}"
+         AND NOT (PACKAGE_FIND_VERSION_RANGE_MAX STREQUAL "EXCLUDE"
+                  AND PACKAGE_FIND_VERSION_MAX_MAJOR EQUAL {next_major}
+                  AND PACKAGE_FIND_VERSION_MAX_MINOR EQUAL 0
+                  AND PACKAGE_FIND_VERSION_MAX_PATCH EQUAL 0))
     # Both endpoints have to share the major, the way CMake's own template requires.
     # Checking only the lower one accepts a range such as 1.0...3.0 against a 1.x
     # runtime, which tells a consumer that majors 2 and 3 are satisfied too.
