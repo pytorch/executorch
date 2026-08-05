@@ -34,10 +34,6 @@
 #                            any prerelease suffix and local version label. Compare this
 #                            when an exact build pairing is required, since the CMake
 #                            package version keeps only the numeric part.
-# EXECUTORCH_BUILD_VERSION -- The full version this package was built from, including
-#                            any prerelease suffix and local version label. Compare this
-#                            when an exact build pairing is required, since the CMake
-#                            package version keeps only the numeric part.
 #
 # and, when the prebuilt shared runtime is present, the imported target:
 #
@@ -95,6 +91,23 @@ find_path(
 set(_executorch_c10_include
     "${_executorch_package_root}/include/executorch/runtime/core/portable_type/c10"
 )
+# The full version this package was built from. It lives in the generated version file, which
+# CMake includes in a throwaway scope while deciding whether the package is acceptable, so
+# nothing assigned there reaches a consumer. Reading that file here, from the config, is what
+# makes the value visible. Both files are installed side by side, so the path is fixed
+# relative to this one.
+set(_executorch_version_file "${CMAKE_CURRENT_LIST_DIR}/executorch-config-version.cmake")
+if(EXISTS "${_executorch_version_file}")
+  file(STRINGS "${_executorch_version_file}" _executorch_version_lines
+       REGEX "^set\\(EXECUTORCH_BUILD_VERSION")
+  foreach(_line IN LISTS _executorch_version_lines)
+    if(_line MATCHES "\"([^\"]+)\"")
+      set(EXECUTORCH_BUILD_VERSION "${CMAKE_MATCH_1}")
+    endif()
+  endforeach()
+endif()
+unset(_executorch_version_file)
+
 set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
                             "${_executorch_c10_include}"
 )
