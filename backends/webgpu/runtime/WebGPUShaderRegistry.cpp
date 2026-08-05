@@ -38,6 +38,7 @@
 #include <executorch/backends/webgpu/runtime/ops/constant_pad_nd/constant_pad_nd_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv_with_clamp/conv_with_clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/dequantize/dequantize_per_tensor_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/embedding/embedding_wgsl.h>
@@ -152,7 +153,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 134> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -362,6 +363,13 @@ constexpr std::array<WebGPUShaderInfo, 134> kShaderRegistry = {{
         kConstantPadNdWorkgroupSizeX,
         kConstantPadNdWorkgroupSizeY,
         kConstantPadNdWorkgroupSizeZ,
+    },
+    {
+        "conv1d",
+        kConv1dWGSL,
+        kConv1dWorkgroupSizeX,
+        kConv1dWorkgroupSizeY,
+        kConv1dWorkgroupSizeZ,
     },
     {
         "conv1d_dw",
