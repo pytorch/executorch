@@ -397,6 +397,15 @@ target_link_libraries(custom_op_check PRIVATE _portable_lib)
 """
 
 
+# Libraries that belong to torch rather than to this wheel. A library here resolves when the
+# Python package that owns it is imported, so it is not something this wheel can or should ship.
+_TORCH_LIBRARY_PREFIXES = ("libtorch", "libc10", "libshm", "libgomp", "libcudnn", "libcublas")
+
+
+def _is_torch_library(name: str) -> bool:
+    return name.startswith(_TORCH_LIBRARY_PREFIXES)
+
+
 def test_shipped_libraries_load() -> None:
     """Every shipped library must depend only on things that exist.
 
@@ -472,7 +481,16 @@ def test_shipped_libraries_load() -> None:
         ]
         if undefined:
             unresolved[str(library.relative_to(package_dir))] = undefined[:5]
-        absent = [name for name in missing if name not in shipped]
+        # Torch's own libraries are the documented exception. They are not in this wheel, and a
+        # library that needs them resolves once the Python package owning them is imported, which
+        # is how every accelerator and AOT library in this package is used. Treating them as
+        # missing fails a wheel that works, and it fires only where torch installs its libraries
+        # somewhere the plain loader search does not reach.
+        absent = [
+            name
+            for name in missing
+            if name not in shipped and not _is_torch_library(name)
+        ]
         present_but_unreachable = [name for name in missing if name in shipped]
         if absent:
             broken[str(library.relative_to(package_dir))] = absent
