@@ -40,9 +40,9 @@ add_custom_command(
 )
 
 # The profiler is reachable from both the Python extension and a standalone C++
-# application, and each one linking it statically would keep its own tracing state.
-# Build it shared for the wheel, where both are loaded into one process, and keep it
-# static everywhere else so no other build changes.
+# application, and each one linking it statically would keep its own tracing
+# state. Build it shared for the wheel, where both are loaded into one process,
+# and keep it static everywhere else so no other build changes.
 if(EXECUTORCH_BUILD_SHARED)
   set(_etdump_library_type SHARED)
 else()
@@ -60,8 +60,9 @@ add_library(
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.h
 )
-# Private, not public: the flatbuffer runtime is an implementation detail and the wheel
-# does not ship it, so exposing it would make the shipped header unlinkable.
+# Private, not public: the flatbuffer runtime is an implementation detail and
+# the wheel does not ship it, so exposing it would make the shipped header
+# unlinkable.
 target_link_libraries(etdump PRIVATE flatccrt)
 # As with bundled_program, avoid the whole-archive of the `executorch` target so
 # the primitive operator registrations are not duplicated alongside the copy
