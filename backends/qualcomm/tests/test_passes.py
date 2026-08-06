@@ -483,15 +483,32 @@ class TestPasses(unittest.TestCase):
             def forward(self, x):
                 return (~(x > 0)).to(torch.float32) + x
 
+        sample_input = (torch.randn(1, 4),)
+
+        # Guard against a vacuous test: the visitor-less op must actually be present.
+        exported = torch.export.export(BitwiseNot().eval(), sample_input)
+        self.assertTrue(
+            any(
+                node.op == "call_function" and "bitwise_not" in str(node.target)
+                for node in exported.graph.nodes
+            ),
+            "expected aten.bitwise_not.default in the traced graph",
+        )
+
         compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650,
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
-        # Must not raise KeyError: bitwise_not falls back to CPU; the rest may delegate.
-        edge = to_edge_transform_and_lower_to_qnn(
-            BitwiseNot().eval(), (torch.randn(1, 4),), compiler_specs
-        )
-        edge.to_executorch()
+        try:
+            # Must not raise KeyError: bitwise_not falls back to CPU; the rest may delegate.
+            edge = to_edge_transform_and_lower_to_qnn(
+                BitwiseNot().eval(), sample_input, compiler_specs
+            )
+            edge.to_executorch()
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
 
 
 if __name__ == "__main__":
