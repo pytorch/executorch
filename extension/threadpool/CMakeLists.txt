@@ -53,10 +53,7 @@ if(EXECUTORCH_BUILD_SHARED)
                SOVERSION "${PROJECT_VERSION_MAJOR}"
   )
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
-  set_target_properties(
-    extension_threadpool PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH
-                                                          "$ORIGIN"
-  )
+  executorch_target_shipped_runtime_path(extension_threadpool)
   # cpuinfo and pthreadpool are forced static, so bundle them inside this
   # library instead of making every consumer supply them.
   executorch_target_whole_archive(extension_threadpool cpuinfo)

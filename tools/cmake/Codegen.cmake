@@ -302,9 +302,7 @@ function(gen_operators_lib)
                  SOVERSION "${PROJECT_VERSION_MAJOR}"
     )
     # Ships beside the runtime in the wheel's lib/ directory.
-    set_target_properties(
-      ${GEN_LIB_NAME} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
-    )
+    executorch_target_shipped_runtime_path(${GEN_LIB_NAME})
   else()
     add_library(${GEN_LIB_NAME})
   endif()

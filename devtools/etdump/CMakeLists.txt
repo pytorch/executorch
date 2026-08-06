@@ -60,16 +60,17 @@ add_library(
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/data_sinks/file_data_sink.h
 )
-# Private, not public: the flatbuffer runtime is an implementation detail and
-# the wheel does not ship it, so exposing it would make the shipped header
-# unlinkable.
-target_link_libraries(etdump PRIVATE flatccrt)
 # As with bundled_program, avoid the whole-archive of the `executorch` target so
 # the primitive operator registrations are not duplicated alongside the copy
 # already inside libexecutorch.so.
 if(EXECUTORCH_BUILD_SHARED)
-  target_link_libraries(etdump PRIVATE executorch_shared)
+  # Private, not public: this library bundles the flatbuffer runtime rather than
+  # depending on it, and the wheel does not ship flatccrt, so exposing it would
+  # name something a consumer cannot link. Scoped to the shared build so a build
+  # that does not opt in keeps the parent's public dependency.
+  target_link_libraries(etdump PRIVATE flatccrt executorch_shared)
 else()
+  target_link_libraries(etdump PUBLIC flatccrt)
   target_link_libraries(etdump PRIVATE executorch)
 endif()
 if(EXECUTORCH_BUILD_SHARED)
@@ -81,9 +82,7 @@ if(EXECUTORCH_BUILD_SHARED)
   )
   # Ships beside libexecutorch.so in the wheel's lib/ directory, and needs it,
   # so it has to be able to find it from wherever the package is installed.
-  set_target_properties(
-    etdump PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
-  )
+  executorch_target_shipped_runtime_path(etdump)
 endif()
 
 target_include_directories(

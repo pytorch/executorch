@@ -74,9 +74,8 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
   if(EXECUTORCH_BUILD_SHARED)
-    # The shipped file is named after the component a consumer asks for, rather
-    # than after the code generation target, so the pair reads together:
-    # executorch::kernels_optimized resolves to
+    # Named after what the library provides rather than after the code
+    # generation target that produces it, so the shipped file reads as
     # libexecutorch_kernels_optimized.so. The target name stays as it is because
     # a source build already refers to it.
     set_target_properties(

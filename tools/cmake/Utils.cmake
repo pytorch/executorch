@@ -343,6 +343,43 @@ function(executorch_target_retain_shared_library target_name library_target)
   add_dependencies(${target_name} ${library_target})
 endfunction()
 
+# Mark a library as one the wheel ships, so it finds its siblings wherever it
+# ends up.
+#
+# Two layouts have to work and they are not the same shape. In the wheel these
+# all land in one directory, so "$ORIGIN" finds a sibling. In the build tree
+# each sits in its own subdirectory with the runtime at the top, so "$ORIGIN"
+# alone finds nothing and the hops up toward the top are needed too. The hops
+# are derived here rather than written at each call site, so nobody has to count
+# directory levels.
+#
+# BUILD_WITH_INSTALL_RPATH is deliberately not used. It REPLACES the build-time
+# path with the install one, which drops those hops, and a build-tree consumer
+# then cannot load under a linker that emits DT_RUNPATH instead of DT_RPATH,
+# because DT_RUNPATH is not inherited down the dependency chain. Packaging
+# strips the absolute build directory that CMake also appends, which is what
+# keeps the shipped file free of paths from the machine that produced it.
+function(executorch_target_shipped_runtime_path target_name)
+  set(_paths "$ORIGIN")
+  file(RELATIVE_PATH _to_top "${CMAKE_CURRENT_BINARY_DIR}"
+       "${CMAKE_BINARY_DIR}"
+  )
+  string(REGEX REPLACE "/+$" "" _to_top "${_to_top}")
+  if(_to_top)
+    # One entry per level rather than only the top, because a sibling can sit at
+    # any depth in between.
+    string(REPLACE "/" ";" _components "${_to_top}")
+    set(_prefix "")
+    foreach(_component IN LISTS _components)
+      string(APPEND _prefix "${_component}/")
+      list(APPEND _paths "$ORIGIN/${_prefix}")
+    endforeach()
+  endif()
+  set_target_properties(
+    ${target_name} PROPERTIES BUILD_RPATH "${_paths}" INSTALL_RPATH "$ORIGIN"
+  )
+endfunction()
+
 # Create and install a shared library composed from dependency libraries. The
 # target links the provided dependencies and carries VERSION/SOVERSION.
 function(executorch_add_shared_library target_name)

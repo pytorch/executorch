@@ -994,6 +994,8 @@ if(EXECUTORCH_BUILD_SHARED)
                ARCHIVE_OUTPUT_NAME executorch_shared
                EXPORT_NAME executorch-shared
   )
+  # Ships in the wheel's lib/ directory beside the libraries that link it.
+  executorch_target_shipped_runtime_path(executorch_shared)
   target_include_directories(
     executorch_shared PUBLIC ${_common_include_directories}
   )
@@ -1322,8 +1324,15 @@ if(EXECUTORCH_BUILD_PYBIND)
   # These libraries register their operators or their backend from a static
   # initializer, so nothing here references a symbol from them and some linkers
   # drop them from DT_NEEDED. That surfaces at runtime as a missing kernel or an
-  # unregistered backend rather than as a link error.
-  foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend)
+  # unregistered backend rather than as a link error. Every shipped library, not
+  # only the two that register something. A library reached transitively is
+  # still subject to --as-needed and gets dropped, so the thread pool and the
+  # profiler need naming here too even though the extension does reference
+  # symbols from them. A distro toolchain that defaults to --as-needed would
+  # otherwise leave them out of DT_NEEDED entirely.
+  foreach(_retained_component optimized_native_cpu_ops_lib xnnpack_backend
+                              extension_threadpool etdump
+  )
     if(TARGET ${_retained_component})
       executorch_target_retain_shared_library(
         portable_lib ${_retained_component}

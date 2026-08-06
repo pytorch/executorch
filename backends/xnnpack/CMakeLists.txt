@@ -136,9 +136,7 @@ if(EXECUTORCH_BUILD_SHARED)
   executorch_target_whole_archive(xnnpack_backend xnnpack-microkernels-prod)
   target_link_libraries(xnnpack_backend PUBLIC executorch_shared)
   # Ships beside the runtime in the wheel's lib/ directory.
-  set_target_properties(
-    xnnpack_backend PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
-  )
+  executorch_target_shipped_runtime_path(xnnpack_backend)
 else()
   target_link_libraries(xnnpack_backend PUBLIC executorch_core)
 endif()

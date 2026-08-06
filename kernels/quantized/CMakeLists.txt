@@ -144,9 +144,13 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # libraries will look like "@rpath/_portable_lib.cpython-310-darwin.so",
       # so we can add an LC_RPATH entry to look in a directory relative to the
       # installed location of our _portable_lib.so file. To see these LC_*
-      # values, run `otool -l libquantized_ops_lib.dylib`.
+      # values, run `otool -l libquantized_ops_lib.dylib`. "extension", not
+      # "extensions": the plural directory does not exist, so the parent's path
+      # reached nothing and this library could not find the extension it needs.
+      # Fixed on both branches so they cannot disagree. Not cosmetic: the
+      # dependency-closure check fails without it.
       if(APPLE)
-        set(RPATH "@loader_path/../../extensions/pybindings")
+        set(RPATH "@loader_path/../../extension/pybindings")
       else()
         set(RPATH "$ORIGIN/../../extension/pybindings")
         if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)

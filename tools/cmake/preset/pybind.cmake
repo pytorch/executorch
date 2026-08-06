@@ -27,20 +27,6 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 set_overridable_option(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE ON)
 
-# Use the install runtime paths at build time. Packaging copies libraries out of
-# the build tree rather than running an install step, so without this the build
-# paths ship: every library keeps the absolute directories of whatever it linked
-# against, which names the machine that built it and stops the wheel being
-# relocatable.
-#
-# Linux only. On Apple the pybind target deliberately keeps no install runtime
-# path, because adding one duplicates an entry the linker rejects, so switching
-# the build over to that empty value would leave the extension unable to find
-# the libraries it links against.
-if(NOT APPLE)
-  set_overridable_option(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-endif()
-
 # Optional VGF enable for the default pybind/install flow. This is intentionally
 # scoped to this preset rather than acting as a general environment-to-CMake
 # override mechanism.

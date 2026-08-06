@@ -677,6 +677,8 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
+        _strip_absolute_runtime_paths(dst_file)
+
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
         # but that would clobber the X bit on any executables. TODO(dbort): This
@@ -684,6 +686,49 @@ class InstallerBuildExt(build_ext):
         if not os.access(src_file, os.W_OK):
             # Make the file writable. This should respect the umask.
             os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
+
+
+def _strip_absolute_runtime_paths(library: Path) -> None:
+    """Remove absolute runtime search paths from a shipped runtime library.
+
+    These libraries are copied out of the build tree rather than installed, so they
+    still carry the directories the linker recorded while resolving their
+    dependencies. The relative entries are what a user needs; an absolute one names
+    the machine that built the wheel and points somewhere that will not exist.
+
+    Scoped to the libraries this project ships as its runtime. The Python extensions
+    link torch, and the directories the linker found it in are how they load at all
+    in an environment where torch is not beside them, so those are left alone.
+
+    A no-op when patchelf is absent or the file has no absolute entry, so a build
+    without it produces a working wheel with the paths still in place rather than
+    failing.
+    """
+    if not re.fullmatch(r"libexecutorch(_[a-z_]+)?\.so\.\d+", library.name):
+        return
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        return
+    result = subprocess.run(
+        [patchelf, "--print-rpath", os.fspath(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    original = result.stdout.strip()
+    # Empty entries are dropped alongside the absolute ones. An empty entry means
+    # the current working directory, which is both wrong for a shipped library and a
+    # place it should never search.
+    entries = [entry for entry in original.split(":") if entry]
+    rewritten = ":".join(entry for entry in entries if not entry.startswith("/"))
+    if rewritten == original:
+        return
+    subprocess.run(
+        [patchelf, "--set-rpath", rewritten, os.fspath(library)],
+        check=True,
+    )
 
 
 class CustomBuildPy(build_py):
@@ -1101,8 +1146,8 @@ setup(
             []
             if _is_minimal_build()
             else [
-                # Install the shared C++ runtime so a standalone application can
-                # link executorch::runtime from the wheel. Shipped under its
+                # Install the shared runtime the Python extension links, rather
+                # than having the extension contain its own copy. Shipped under its
                 # SONAME so the DT_NEEDED a consumer records resolves at runtime.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/",
@@ -1110,9 +1155,9 @@ setup(
                     dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
-                # Install the profiler next to it. Keeping it separate lets a C++
-                # application link it without pulling in the Python extension, which
-                # is where it was only reachable before.
+                # Install the profiler next to it, as its own library rather than
+                # code fused into the Python extension, so a process has one copy of
+                # it however many consumers load.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
                     src_name=(
