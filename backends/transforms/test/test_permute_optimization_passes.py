@@ -1067,6 +1067,73 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             gm_before, result.graph_module, [x_data], "UnsqueezeAtMovedPosition"
         )
 
+    def test_squeeze_dims_multiple_unit_dims(self) -> None:
+        """squeeze_copy.dims dropping more than one unit dim at once."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        u1 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
+        )
+        u2 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(u1, 2)
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(u2, u2))
+        sq = builder.call_operator(
+            op=exir_ops.edge.aten.squeeze_copy.dims, args=(mul, [1, 2])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "SqueezeDimsMultiple"
+        )
+
+    def test_squeeze_on_non_unit_dim_is_not_optimized(self) -> None:
+        """A squeeze only drops size-1 dims, so a listed non-unit dim makes the
+        rank change ambiguous and the region must be skipped. Covers both the
+        squeeze_copy.dim and squeeze_copy.dims overloads."""
+        for op, dim_arg, name in (
+            (exir_ops.edge.aten.squeeze_copy.dim, 1, "SqueezeDimNonUnit"),
+            (exir_ops.edge.aten.squeeze_copy.dims, [1], "SqueezeDimsNonUnit"),
+        ):
+            with self.subTest(name=name):
+                builder = GraphBuilder()
+                x_data = torch.randn(1, 8, 16)
+                x = builder.placeholder("x", x_data)
+                p1 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+                )
+                mul = builder.call_operator(
+                    op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1)
+                )
+                # dim 1 has size 16, so the squeeze leaves it in place.
+                sq = builder.call_operator(op=op, args=(mul, dim_arg))
+                p2 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+                )
+                builder.output([p2])
+                original = builder.get_graph_module()
+                gm_before = copy.deepcopy(original)
+
+                p = RemovePermutesAroundElementwiseOps()
+                result = cast(PassResult, p(original))
+                self.assertFalse(result.modified)
+                validate_numerics(gm_before, result.graph_module, [x_data], name)
+
     def test_upstream_view_rank_mismatch_no_crash(self) -> None:
         """Regression test for IndexError when a squeeze/unsqueeze view_copy
         is reached via upstream traversal with a permutation whose rank does

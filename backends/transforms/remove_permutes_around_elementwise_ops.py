@@ -78,7 +78,54 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     _UNSQUEEZE_OPS = (exir_ops.edge.aten.unsqueeze_copy.default,)
 
-    _SQUEEZE_OPS = (exir_ops.edge.aten.squeeze_copy.dim,)
+    # squeeze_copy.dim takes a single position; squeeze_copy.dims takes a list
+    # of them, so it can change rank by more than one.
+    _SQUEEZE_OPS = (
+        exir_ops.edge.aten.squeeze_copy.dim,
+        exir_ops.edge.aten.squeeze_copy.dims,
+    )
+
+    @staticmethod
+    def _concrete_shape(node: torch.fx.Node) -> list[int] | None:
+        """Return a node's shape, or None if it is missing or symbolic."""
+        val = node.meta.get("val")
+        if val is None:
+            return None
+        shape = val.shape
+        if not all(isinstance(d, int) for d in shape):
+            return None
+        return [int(d) for d in shape]
+
+    def _squeezed_positions(self, node: torch.fx.Node) -> list[int] | None:
+        """Normalised positions dropped by a squeeze_copy, else None.
+
+        A squeeze only drops the listed positions that are size 1, so return
+        None unless every one of them is a concrete size-1 dim. Otherwise the
+        rank change is unknown and the permutation cannot be adapted.
+        """
+        inp = node.args[0]
+        if not isinstance(inp, torch.fx.Node):
+            return None
+        in_shape = self._concrete_shape(inp)
+        if in_shape is None:
+            return None
+        raw = get_arg(node, "dim")
+        if isinstance(raw, int):
+            raw = [raw]
+        elif not isinstance(raw, (list, tuple)) or not raw:
+            return None
+        rank = len(in_shape)
+        positions = []
+        for d in raw:
+            if not isinstance(d, int):
+                return None
+            pos = d if d >= 0 else d + rank
+            if not 0 <= pos < rank or in_shape[pos] != 1:
+                return None
+            positions.append(pos)
+        if len(set(positions)) != len(positions):
+            return None
+        return sorted(positions)
 
     @staticmethod
     def _find_extra_one(longer: list[int], shorter: list[int]) -> int:
@@ -94,7 +141,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     def _is_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
         """Check if a node is a squeeze, unsqueeze, or view_copy that only
-        adds or removes a single dim of size 1."""
+        adds or removes dims of size 1."""
         if node in self._sq_unsq_cache:
             return self._sq_unsq_cache[node]
         result = self._check_squeeze_unsqueeze_view(node)
@@ -102,8 +149,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return result
 
     def _check_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
-        if node.target in self._UNSQUEEZE_OPS or node.target in self._SQUEEZE_OPS:
+        if node.target in self._UNSQUEEZE_OPS:
             return True
+        if node.target in self._SQUEEZE_OPS:
+            return self._squeezed_positions(node) is not None
         if node.target not in self._VIEW_OPS:
             return False
         inp = node.args[0]
@@ -160,20 +209,22 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             new_perm.insert(index, inserted_value)
             return new_perm
 
-        # Handle explicit squeeze_copy(dim)
+        # Handle explicit squeeze_copy(dim) / squeeze_copy(dims)
         if node.target in self._SQUEEZE_OPS:
-            dim = cast(int, node.args[1])
-            rank = len(permute)
-            index = dim if dim >= 0 else dim + rank
-            # index is a POSITION in the tensor; the permutation VALUE at
+            positions = self._squeezed_positions(node)
+            # Positions are normalised against the node's input rank, which can
+            # differ from the permutation's rank when a squeeze is reached via
+            # upstream traversal after an earlier rank change.
+            if positions is None or positions[-1] >= len(permute):
+                return None
+            # A position is a POSITION in the tensor; the permutation VALUE at
             # that position is the logical dim being removed.
-            squeezed_value = permute[index]
-            new_perm = [
-                x - 1 if x > squeezed_value else x
+            squeezed_values = {permute[p] for p in positions}
+            return [
+                x - sum(1 for v in squeezed_values if v < x)
                 for x in permute
-                if x != squeezed_value
+                if x not in squeezed_values
             ]
-            return new_perm
 
         # Handle view_copy (squeeze/unsqueeze-like reshape)
         inp = node.args[0]
@@ -486,9 +537,14 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     # Inserting at or beyond existing dims — position unchanged
                     node.update_arg(1, index)
             elif node.target in self._SQUEEZE_OPS:
-                # squeeze dim is in input space (rank)
-                dim = get_arg(node, "dim", int)
-                set_arg(node, "dim", node_start_perm[dim])
+                # squeezed positions are in input space (rank)
+                positions = self._squeezed_positions(node)
+                if positions is not None and positions[-1] < len(node_start_perm):
+                    mapped = [node_start_perm[p] for p in positions]
+                    if node.target == exir_ops.edge.aten.squeeze_copy.dim:
+                        set_arg(node, "dim", mapped[0])
+                    else:
+                        set_arg(node, "dim", mapped)
 
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
