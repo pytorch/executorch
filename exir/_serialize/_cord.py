@@ -4,8 +4,77 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import io
+import os
+import shutil
+import tempfile
 from typing import List, Optional, Union
+
+
+class FileBackedData:
+    """A byte buffer that stays on disk until a Cord writes it."""
+
+    _COPY_CHUNK_SIZE = 8 * 1024 * 1024
+
+    def __init__(self, path: str, cleanup: bool = False) -> None:
+        self._path = path
+        self._size = os.path.getsize(path)
+        self._cleanup = cleanup
+        self._sha256: Optional[bytes] = None
+
+    @classmethod
+    def move_from(cls, path: str) -> "FileBackedData":
+        """Take ownership of ``path`` without loading its contents."""
+        directory = os.path.dirname(path) or "."
+        fd, owned_path = tempfile.mkstemp(
+            prefix=".executorch_", suffix=".data", dir=directory
+        )
+        os.close(fd)
+        try:
+            os.replace(path, owned_path)
+        except Exception:
+            os.remove(owned_path)
+            raise
+        return cls(owned_path, cleanup=True)
+
+    def __len__(self) -> int:
+        return self._size
+
+    def prefix(self, size: int) -> bytes:
+        with open(self._path, "rb") as f:
+            return f.read(size)
+
+    def sha256(self) -> bytes:
+        if self._sha256 is None:
+            digest = hashlib.sha256()
+            with open(self._path, "rb") as f:
+                while chunk := f.read(self._COPY_CHUNK_SIZE):
+                    digest.update(chunk)
+            self._sha256 = digest.digest()
+        return self._sha256
+
+    def to_bytes(self) -> bytes:
+        with open(self._path, "rb") as f:
+            return f.read()
+
+    def write_to_file(self, outfile: io.BufferedIOBase) -> None:
+        with open(self._path, "rb") as f:
+            shutil.copyfileobj(f, outfile, length=self._COPY_CHUNK_SIZE)
+
+    def close(self) -> None:
+        if self._cleanup:
+            self._cleanup = False
+            try:
+                os.remove(self._path)
+            except FileNotFoundError:
+                pass
+
+    def __del__(self) -> None:
+        self.close()
+
+
+CordBuffer = Union[bytes, FileBackedData]
 
 
 class Cord:
@@ -16,9 +85,9 @@ class Cord:
     `bytes` or `bytearray` object.
     """
 
-    def __init__(self, data: Optional[Union[bytes, "Cord"]] = None) -> None:
+    def __init__(self, data: Optional[Union[CordBuffer, "Cord"]] = None) -> None:
         """Initialize Cord data structure."""
-        self._buffers: List[bytes] = []
+        self._buffers: List[CordBuffer] = []
         self._byte_size: int = 0
 
         if data is not None:
@@ -30,20 +99,28 @@ class Cord:
 
     def __bytes__(self) -> bytes:
         """Return the contents of the Cord as a single `bytes` object."""
-        return b"".join(self._buffers)
+        return b"".join(
+            item if isinstance(item, bytes) else item.to_bytes()
+            for item in self._buffers
+        )
 
-    def append(self, data: Union[bytes, "Cord"]) -> None:
+    def append(self, data: Union[CordBuffer, "Cord"]) -> None:
         """Append a bytes or Cord to the current Cord."""
-        if isinstance(data, bytes):
+        if isinstance(data, (bytes, FileBackedData)):
             self._buffers.append(data)
             self._byte_size += len(data)
         elif isinstance(data, Cord):
             self._buffers.extend(data._buffers)
             self._byte_size += len(data)
         else:
-            raise TypeError(f"Can only append bytes or Cords, received {type(data)}")
+            raise TypeError(
+                f"Can only append bytes, FileBackedData, or Cords, received {type(data)}"
+            )
 
     def write_to_file(self, outfile: io.BufferedIOBase) -> None:
         """Write the Cord to a file."""
         for item in self._buffers:
-            outfile.write(item)
+            if isinstance(item, bytes):
+                outfile.write(item)
+            else:
+                item.write_to_file(outfile)
