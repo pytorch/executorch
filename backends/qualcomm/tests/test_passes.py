@@ -573,6 +573,76 @@ class TestPasses(unittest.TestCase):
                     has_view, "rank-1 broadcast operand should not be promoted"
                 )
 
+    def test_expand_broadcast_dedupes_shared_same_rank(self):
+        """One operand feeding two broadcasts of the SAME output rank must be promoted with a
+        single shared view_copy, not one per broadcast node.
+
+        Regression for the per-node redirect (PR #21583): redirecting only the current node's
+        input fixed the rank-0 mutation bug but created a separate view_copy for every broadcast
+        consumer, so `a2d + b, a2d - b` (b:(4,)) produced two identical (1,4) reshapes. Deduping
+        by (operand, new_rank) collapses them to one while keeping the rank-0 mutation path (whose
+        operand is never rank-promoted) at rank-0 -- so this coexists with
+        test_expand_broadcast_preserves_rank0_input_mutation.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        sub = exir_ops.edge.aten.sub.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoSameRankBroadcasts(torch.nn.Module):
+            def forward(self, a2d, b):
+                return a2d + b, a2d - b  # b:(4,) promoted to (1,4) for both
+
+        exported = torch.export.export(
+            TwoSameRankBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        views = [n for n in gm.graph.nodes if n.target == view_copy]
+        self.assertEqual(
+            len(views), 1, "the shared operand should yield exactly one view_copy"
+        )
+        shared = views[0]
+        for target in (add, sub):
+            broadcast = [n for n in gm.graph.nodes if n.target == target]
+            self.assertTrue(broadcast)
+            self.assertTrue(
+                all(shared in n.args for n in broadcast),
+                "both same-rank broadcasts should consume the shared view_copy",
+            )
+
+        class BroadcastAndMutate(torch.nn.Module):
+            def forward(self, x, counter):
+                position = torch.arange(x.shape[-1]) + counter  # rank-1 + rank-0
+                counter.add_(x.shape[-1])  # in-place mutation of the rank-0 input
+                return x + position.to(x.dtype)
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "dedupe must not rank-promote the USER_INPUT_MUTATION write-back",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
