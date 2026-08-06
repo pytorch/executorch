@@ -46,7 +46,7 @@ class AddTensorConverter(NodeConverter):
         if len(node.args) != 2:
             return False
 
-        if hasattr(node.kwargs, "alpha"):
+        if node.kwargs.get("alpha", 1) != 1:
             return False
 
         return True
