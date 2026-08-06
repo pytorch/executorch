@@ -925,12 +925,16 @@ def _to_edge_cortex_m(
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
-            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
-                logging.warning(
-                    "Converting input tensor with shape %s to channels_last",
-                    list(x.shape),
-                )
-                return x.to(memory_format=torch.channels_last)
+            if x.dim() == 4:
+                # Singleton channels can satisfy both contiguity checks while
+                # retaining NCHW strides, so always request the target format.
+                channels_last = x.to(memory_format=torch.channels_last)
+                if channels_last.stride() != x.stride():
+                    logging.warning(
+                        "Converting input tensor with shape %s to channels_last",
+                        list(x.shape),
+                    )
+                return channels_last
             return x
         elif isinstance(x, tuple):
             return tuple(_to_channels_last(t) for t in x)
@@ -979,7 +983,7 @@ def _to_edge_cortex_m(
     )
     edge._edge_programs["forward"] = pass_manager.transform()
 
-    return model_quant, edge
+    return model_quant, edge, example_inputs
 
 
 def _to_edge_no_delegate(
@@ -1078,7 +1082,7 @@ def main() -> None:  # noqa: C901
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = _to_edge_cortex_m(
+        model_quant, edge, example_inputs = _to_edge_cortex_m(
             exported_program,
             args,
             model,
