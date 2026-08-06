@@ -132,7 +132,7 @@ class TestSoftmax:
             expected_delegated_ops={
                 Softmax: 1,
                 Convolution: 1,
-                **({ViewCopy: 2} if len(input_shape) == 3 else {}),
+                ViewCopy: 2 if len(input_shape) == 3 else 0,
             },
             expected_non_delegated_ops={},
         )
