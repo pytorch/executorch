@@ -474,25 +474,26 @@ class TestPasses(unittest.TestCase):
         """QnnOperatorSupport must reject an op that has no node visitor by returning
         False (CPU fallback), not by KeyError-ing on the node_visitors lookup.
 
-        Regression for Mamba2 QNN lowering: its causal mask uses ~torch.tril(...),
-        which traces to aten.bitwise_not.default; QNN ships no visitor for it, so the
-        unguarded lookup aborted the whole partition instead of falling back.
+        Uses aten.frac.default: it has no QNN node visitor and is not on any partition
+        operator list, so it exercises the missing-visitor guard directly. (bitwise_not,
+        the op that first surfaced this on Mamba2, is now in to_be_implemented_operator,
+        which returns earlier and would not reach the guard.)
         """
 
-        class BitwiseNot(torch.nn.Module):
+        class FracModule(torch.nn.Module):
             def forward(self, x):
-                return (~(x > 0)).to(torch.float32) + x
+                return torch.frac(x) + x
 
         sample_input = (torch.randn(1, 4),)
 
         # Guard against a vacuous test: the visitor-less op must actually be present.
-        exported = torch.export.export(BitwiseNot().eval(), sample_input)
+        exported = torch.export.export(FracModule().eval(), sample_input)
         self.assertTrue(
             any(
-                node.op == "call_function" and "bitwise_not" in str(node.target)
+                node.op == "call_function" and "frac" in str(node.target)
                 for node in exported.graph.nodes
             ),
-            "expected aten.bitwise_not.default in the traced graph",
+            "expected aten.frac.default in the traced graph",
         )
 
         compiler_specs = generate_qnn_executorch_compiler_spec(
@@ -500,9 +501,9 @@ class TestPasses(unittest.TestCase):
             backend_options=generate_htp_compiler_spec(use_fp16=True),
         )
         try:
-            # Must not raise KeyError: bitwise_not falls back to CPU; the rest may delegate.
+            # Must not raise KeyError: frac falls back to CPU; the rest may delegate.
             edge = to_edge_transform_and_lower_to_qnn(
-                BitwiseNot().eval(), sample_input, compiler_specs
+                FracModule().eval(), sample_input, compiler_specs
             )
             edge.to_executorch()
         except RuntimeError as e:
