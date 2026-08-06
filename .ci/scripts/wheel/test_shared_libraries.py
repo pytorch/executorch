@@ -1074,7 +1074,13 @@ def test_shipped_libraries_are_all_versioned() -> None:
         print("- this wheel ships no lib directory, nothing to check")
         return
 
-    shipped = sorted(p for p in lib_dir.glob("*.so*") if p.is_file())
+    # Regular files only. A symlink is how an unversioned name is normally offered
+    # alongside a versioned one, which is what a linker needs to resolve -lexecutorch,
+    # so it is not the stale-artifact case this check is about. A leftover from an
+    # earlier build is a real file, and that is still caught.
+    shipped = sorted(
+        p for p in lib_dir.glob("*.so*") if p.is_file() and not p.is_symlink()
+    )
     assert shipped, f"the wheel ships a lib directory with no libraries: {lib_dir}"
 
     # The names packaging can put here. Listed rather than derived because setup.py
