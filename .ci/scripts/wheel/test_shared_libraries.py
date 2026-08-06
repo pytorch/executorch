@@ -95,10 +95,12 @@ def _declared_requirements() -> set:
     Used to tell a package this environment simply does not have from one the wheel
     said it needed, because only the second is a packaging defect.
 
-    Resolved through importlib's own reverse map rather than by transforming the
-    distribution name, because the two are frequently different: PyYAML provides
-    `yaml`, ruamel.yaml provides `ruamel`, hydra-core provides `hydra`. Guessing
-    would treat a genuinely missing declared dependency as an acceptable skip.
+    Two sources, because neither alone is sufficient. importlib's reverse map is
+    authoritative where a distribution is INSTALLED, which is what makes
+    PyYAML -> yaml, ruamel.yaml -> ruamel and hydra-core -> hydra resolve correctly.
+    But it enumerates installed distributions only, so a declared dependency that is
+    MISSING can never appear in it, which is precisely the case this function exists
+    to catch. The transformed distribution name covers that case.
     """
     try:
         from importlib.metadata import packages_distributions, requires
@@ -109,15 +111,20 @@ def _declared_requirements() -> set:
     except Exception:
         return set()
 
-    wanted = set()
+    wanted, names = set(), set()
     for requirement in declared:
         # Only the distribution name, dropping any version specifier, extra or
         # environment marker.
         name = re.split(r"[\s;\[<>=!~(]", requirement.strip(), maxsplit=1)[0]
-        if name:
-            wanted.add(name.lower().replace("-", "_").replace(".", "_"))
+        if not name:
+            continue
+        wanted.add(name.lower().replace("-", "_").replace(".", "_"))
+        # The likely import name, so a MISSING declared dependency is still
+        # recognised as declared rather than silently skipped.
+        names.add(name)
+        names.add(name.replace("-", "_"))
+        names.add(name.split(".")[0])
 
-    names = set()
     for import_name, distributions in packages_distributions().items():
         for distribution in distributions:
             if distribution.lower().replace("-", "_").replace(".", "_") in wanted:
@@ -259,8 +266,15 @@ def test_single_threadpool() -> None:
         _THREADPOOL_SYMBOLS, "thread pool", "libexecutorch_threadpool.so"
     )
     # And one copy of the pool implementation underneath it. The accessor above can
-    # have a single owner while pthreadpool itself is bundled into two libraries,
+    # have a single owner while pthreadpool itself is bundled into two of these,
     # which is two real pools, each sized to every core.
+    #
+    # One copy among the libraries this wheel ships. torch links pthreadpool too and
+    # exports the same symbols, so the process still holds two definitions and which
+    # one a caller reaches depends on load order. Fixing that needs an explicit
+    # export list: hiding the bundled symbols wholesale with --exclude-libs,ALL
+    # breaks aarch64, where the optimized kernels resolve cpuinfo_initialize from
+    # this library across a library boundary. That is a separate change.
     _assert_single_definer(
         _BUNDLED_THREADPOOL_SYMBOLS,
         "bundled thread pool implementation",
@@ -300,8 +314,10 @@ def test_single_xnnpack_delegate() -> None:
     _assert_single_definer(
         _XNNPACK_SYMBOLS, "XNNPACK delegate", "libexecutorch_backend_xnnpack.so"
     )
-    # And one copy of the delegate's own runtime underneath it. The wrapper above
-    # can have a single owner while this does not.
+    # And one copy of the delegate's own runtime underneath it, among the libraries
+    # this wheel ships. torch also links XNNPACK and exports hundreds of the same
+    # xnn_* symbols, so process-wide uniqueness is not something this commit can
+    # claim; see the note in test_single_threadpool.
     _assert_single_definer(
         _BUNDLED_XNNPACK_SYMBOLS,
         "bundled XNNPACK runtime",
@@ -803,8 +819,25 @@ def test_wheel_platform_tag() -> None:
     implies.
     """
     if importlib.util.find_spec("auditwheel") is None:
-        print("- auditwheel unavailable, skipping the platform tag check")
-        return
+        # Installed here rather than skipped, because auditwheel is not in any CI
+        # image and a skip is indistinguishable from a pass in the summary. This
+        # check is the only thing that compares the wheel's declared tag against
+        # what its libraries actually need, and this change adds five libraries
+        # under that tag.
+        print("- auditwheel not present, installing it so this check can run")
+        installed = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "auditwheel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if installed.returncode != 0 or importlib.util.find_spec("auditwheel") is None:
+            print(
+                "- auditwheel could not be installed, skipping the platform tag "
+                f"check: {installed.stderr.strip()[-200:]}"
+            )
+            return
+        importlib.invalidate_caches()
 
     wheels = _find_wheel_files()
     if not wheels:
@@ -863,17 +896,20 @@ def test_wheel_platform_tag() -> None:
 
 
 def test_no_absolute_runtime_paths() -> None:
-    """The libraries the wheel ships as its runtime must carry no absolute path.
+    """No shipped library may search a directory a user does not have.
 
-    Packaging copies libraries out of the build tree rather than installing them,
-    so anything CMake recorded at build time ships as-is. An absolute entry both
-    names the build machine and points somewhere that will not exist for a user.
+    Packaging copies libraries out of the build tree rather than installing them, so
+    every directory the linker recorded ships as-is. Two kinds are rejected on every
+    shipped library, not only the lib/ payload:
 
-    Scoped to the lib/ payload. The Python extensions link torch, and the linker
-    records the directories it found torch and its own dependencies in; those
-    entries are how the extension loads at all in an environment where torch is
-    not beside it, so removing them breaks the import. Cleaning those up is a
-    separate problem from this one, and pre-existing.
+    - a directory inside the build, which names the machine that produced the wheel
+    - an empty entry, which the loader reads as the process working directory
+
+    Torch's own directory is accepted. The extensions link torch and resolve it
+    through the directory the linker recorded, so that entry is load-bearing rather
+    than leftover. Narrowing this check to lib/ once hid seven extensions carrying
+    build-tree paths, so the exclusion is by what an entry POINTS AT, never by which
+    file carries it.
 
     The check reads the shipped file directly, with nothing stripped, which is what
     a user actually receives.
@@ -883,13 +919,13 @@ def test_no_absolute_runtime_paths() -> None:
         return
 
     package_dir = _installed_package_dir()
-    lib_dir = package_dir / "lib"
-    if not lib_dir.is_dir():
-        print("- this wheel ships no lib directory, nothing to check")
-        return
+
+    # Directories that only exist inside a build of this project.
+    build_markers = ("/pip-out/", "/cmake-out", "/build/lib.")
 
     offenders = {}
-    for library in sorted(lib_dir.rglob("*.so*")):
+    checked = 0
+    for library in sorted(package_dir.rglob("*.so*")):
         if not library.is_file() or library.is_symlink():
             continue
         result = subprocess.run(
@@ -900,23 +936,32 @@ def test_no_absolute_runtime_paths() -> None:
         )
         if result.returncode != 0:
             continue
-        # Absolute entries name the build machine. An empty entry means the current
-        # working directory, which is not a place a shipped library should search and
-        # is what a naive strip of an absolute entry leaves behind.
-        bad = [
-            entry if entry else "<empty>"
-            for entry in result.stdout.strip().split(":")
-            if entry.startswith("/") or not entry
-        ]
+        checked += 1
+        # An absent RPATH and one containing a single empty entry both print as an
+        # empty string, so treat empty output as "no runtime path" rather than as an
+        # empty entry. A library with nothing to search is fine; the defect is
+        # searching somewhere unusable.
+        raw = result.stdout.strip()
+        if not raw:
+            continue
+        bad = []
+        for entry in raw.split(":"):
+            if not entry:
+                bad.append("<empty>")
+            elif entry.startswith("/") and any(m in entry for m in build_markers):
+                bad.append(entry)
         if bad:
             offenders[str(library.relative_to(package_dir))] = bad
 
     assert not offenders, (
-        "the libraries the wheel ships as its runtime carry runtime search paths "
-        "that are absolute or empty, so they are not relocatable or would search the "
+        "shipped libraries search directories a user does not have, either inside "
+        "the build tree that produced the wheel or, for an empty entry, the process "
         f"working directory: {offenders}"
     )
-    print("✓ the shipped runtime libraries carry no absolute runtime search path")
+    print(
+        f"✓ none of the {checked} shipped libraries searches a build-tree or empty "
+        "runtime path"
+    )
 
 
 def test_extension_contains_no_component() -> None:

@@ -689,22 +689,24 @@ class InstallerBuildExt(build_ext):
 
 
 def _strip_absolute_runtime_paths(library: Path) -> None:
-    """Remove absolute runtime search paths from a shipped runtime library.
+    """Remove unusable runtime search paths from a library the wheel ships.
 
     These libraries are copied out of the build tree rather than installed, so they
-    still carry the directories the linker recorded while resolving their
-    dependencies. The relative entries are what a user needs; an absolute one names
-    the machine that built the wheel and points somewhere that will not exist.
+    still carry every directory the linker recorded while resolving their
+    dependencies. Two kinds of entry are removed:
 
-    Scoped to the libraries this project ships as its runtime. The Python extensions
-    link torch, and the directories the linker found it in are how they load at all
-    in an environment where torch is not beside them, so those are left alone.
+    - a directory inside this build, which names the machine that produced the
+      wheel and cannot exist for a user
+    - an empty entry, which the loader reads as the process working directory
 
-    A no-op when patchelf is absent or the file has no absolute entry, so a build
-    without it produces a working wheel with the paths still in place rather than
-    failing.
+    Other absolute entries are kept. The Python extensions link torch and resolve it
+    through the directory the linker recorded, so dropping that would stop them
+    importing in an environment where torch is not beside them.
+
+    A no-op when patchelf is absent, so a build without it still produces a working
+    wheel, with the paths left in place rather than the build failing.
     """
-    if not re.fullmatch(r"libexecutorch(_[a-z_]+)?\.so\.\d+", library.name):
+    if library.suffix != ".so" and ".so." not in library.name:
         return
     patchelf = shutil.which("patchelf")
     if patchelf is None:
@@ -718,11 +720,27 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
     if result.returncode != 0:
         return
     original = result.stdout.strip()
-    # Empty entries are dropped alongside the absolute ones. An empty entry means
-    # the current working directory, which is both wrong for a shipped library and a
-    # place it should never search.
-    entries = [entry for entry in original.split(":") if entry]
-    rewritten = ":".join(entry for entry in entries if not entry.startswith("/"))
+    if not original:
+        # No runtime search path at all, which is nothing to clean. patchelf prints
+        # the same empty string for an absent tag and for one holding a single empty
+        # entry, so there is nothing to distinguish here and nothing to do either way.
+        return
+
+    def keep(entry: str) -> bool:
+        if not entry:
+            # The loader reads an empty entry as the process working directory.
+            return False
+        if not entry.startswith("/"):
+            return True
+        # Absolute, so decide by what it points at. A directory inside this build
+        # cannot exist for a user. Anything else absolute is a dependency the
+        # environment provides, such as torch's own lib directory, which is how
+        # these extensions resolve torch at all.
+        return not any(
+            marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")
+        )
+
+    rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
     if rewritten == original:
         return
     subprocess.run(
