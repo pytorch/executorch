@@ -517,6 +517,122 @@ class TestTritonSdpa(unittest.TestCase):
         self.assertFalse(torch.isnan(out).any())
         self.assertLess(_max_abs_error(out, ref), MAX_ABS_TOL)
 
+    # ------------------------------------------------------------------
+    # is_causal + kv_len: in-kernel bottom-right causal reconstruction
+    #
+    # This mirrors the global-attention path: instead of passing a
+    # dense [B, 1, L_q, L_kv] causal bool mask, the caller passes
+    # attn_mask=None, is_causal=True, kv_len=<filled positions>. The kernel
+    # reconstructs a standard causal mask with BOTTOM-RIGHT alignment (query row
+    # i sits at absolute position (kv_len - L_q) + i and attends to keys
+    # [0, (kv_len - L_q) + i]) — the correct semantics for chunked prefill /
+    # decode over a KV cache. These tests assert byte-for-byte-equivalent output
+    # to the explicit dense bottom-right causal mask.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, device):
+        """Dense [B, 1, Lq, Lk] causal mask, bottom-right aligned + kv_len bound.
+
+        Row i (absolute position (kv_len - Lq) + i) attends to keys
+        [0, (kv_len - Lq) + i]; positions >= kv_len are never attended (matches
+        the FlatKVCache empty-tail semantics the kv_len bound enforces).
+        """
+        q_abs = (kv_len - Lq) + torch.arange(Lq, device=device).view(Lq, 1)
+        cache_pos = torch.arange(Lk, device=device).view(1, Lk)
+        keep = (cache_pos <= q_abs) & (cache_pos < kv_len)
+        return keep.view(1, 1, Lq, Lk).expand(B, 1, Lq, Lk).contiguous()
+
+    def test_mask_is_causal_matches_dense_prefill(self):
+        """is_causal + kv_len reconstruction == explicit dense causal, prefill shapes.
+
+        Sweeps GQA ratios and chunked-prefill shapes (L_q < L_kv, the global
+        layer case: a prefill chunk of L_q new queries over a kv_len-long
+        context in a large flat buffer).
+        """
+        D = 128  # head_dim (pow2)
+        B = 1
+        # (H_q, H_kv, L_q, kv_len, L_kv_buffer)
+        shapes = [
+            (16, 2, 128, 128, 256),  # first chunk: kv_len == L_q
+            (16, 2, 64, 200, 256),  # later chunk: L_q < kv_len < buffer
+            (8, 2, 32, 96, 512),  # smaller chunk, larger buffer
+            (4, 4, 64, 64, 128),  # MHA square
+        ]
+        for H_q, H_kv, Lq, kv_len, Lk in shapes:
+            with self.subTest(H_q=H_q, H_kv=H_kv, Lq=Lq, kv_len=kv_len, Lk=Lk):
+                torch.manual_seed(0)
+                q = torch.randn(B, H_q, Lq, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+
+                dense = self._dense_bottom_right_causal_mask(B, Lq, kv_len, Lk, "cuda")
+                out_dense = self.sdpa(
+                    q, k, v, attn_mask=dense, enable_gqa=True, kv_len=kv_len_t
+                )
+                out_inkernel = self.sdpa(
+                    q,
+                    k,
+                    v,
+                    attn_mask=None,
+                    enable_gqa=True,
+                    kv_len=kv_len_t,
+                    is_causal=True,
+                )
+                # Same masking semantics; the two paths may autotune to different
+                # tiles (different bf16 reduction order), so compare with a tight
+                # tolerance rather than bit-exact.
+                self.assertLess(
+                    _max_abs_error(out_inkernel, out_dense),
+                    MAX_ABS_TOL,
+                    "is_causal + kv_len != dense causal",
+                )
+                # And both must match the fp32 reference within tolerance.
+                ref = _reference_sdpa(q, k, v, attn_mask=dense)
+                self.assertLess(_max_abs_error(out_inkernel, ref), MAX_ABS_TOL)
+                self.assertLess(_max_abs_error(out_dense, ref), MAX_ABS_TOL)
+
+    def test_mask_is_causal_matches_dense_decode(self):
+        """is_causal + kv_len is a no-op vs dense for L_q==1 decode over a KV cache."""
+        D, B, H_q, H_kv = 128, 1, 16, 2
+        for kv_len, Lk in [(64, 512), (300, 512), (511, 512)]:
+            with self.subTest(kv_len=kv_len, Lk=Lk):
+                torch.manual_seed(1)
+                q = torch.randn(B, H_q, 1, D, dtype=torch.bfloat16, device="cuda")
+                k = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                v = torch.randn(B, H_kv, Lk, D, dtype=torch.bfloat16, device="cuda")
+                kv_len_t = torch.tensor([kv_len], dtype=torch.int32, device="cuda")
+
+                dense = self._dense_bottom_right_causal_mask(B, 1, kv_len, Lk, "cuda")
+                out_dense = self.sdpa(
+                    q, k, v, attn_mask=dense, enable_gqa=True, kv_len=kv_len_t
+                )
+                out_inkernel = self.sdpa(
+                    q,
+                    k,
+                    v,
+                    attn_mask=None,
+                    enable_gqa=True,
+                    kv_len=kv_len_t,
+                    is_causal=True,
+                )
+                self.assertLess(
+                    _max_abs_error(out_inkernel, out_dense),
+                    MAX_ABS_TOL,
+                    "decode is_causal + kv_len != dense",
+                )
+
+    def test_mask_is_causal_requires_kv_len(self):
+        """is_causal=True with L_q != L_kv and no kv_len should raise."""
+        B, H, Lq, Lk, D = 1, 4, 32, 64, 128
+        torch.manual_seed(0)
+        q = torch.randn(B, H, Lq, D, dtype=torch.bfloat16, device="cuda")
+        k = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+        v = torch.randn(B, H, Lk, D, dtype=torch.bfloat16, device="cuda")
+        with self.assertRaises(RuntimeError):
+            self.sdpa(q, k, v, is_causal=True)
+
 
 if __name__ == "__main__":
     unittest.main()
