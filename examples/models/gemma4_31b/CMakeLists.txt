@@ -74,13 +74,6 @@ target_include_directories(
 )
 target_link_libraries(gemma4_31b_worker PUBLIC ${link_libraries})
 
-# Standalone C++ DFlash benchmark runner using the Module API.
-add_executable(dflash_cpp_driver dflash_cpp_driver.cpp)
-target_include_directories(
-  dflash_cpp_driver PUBLIC ${_common_include_directories} ${_json_include}
-)
-target_link_libraries(dflash_cpp_driver PUBLIC ${link_libraries})
-
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_link_options_gc_sections(gemma4_31b_runner)
   if(NOT APPLE AND NOT MSVC)
@@ -95,7 +88,6 @@ endif()
 if(TARGET mlxdelegate)
   executorch_target_copy_mlx_metallib(gemma4_31b_runner)
   executorch_target_copy_mlx_metallib(gemma4_31b_worker)
-  executorch_target_copy_mlx_metallib(dflash_cpp_driver)
 endif()
 
 if(EXECUTORCH_BUILD_CUDA)
