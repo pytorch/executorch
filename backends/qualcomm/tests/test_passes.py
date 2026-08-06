@@ -476,6 +476,7 @@ class TestPasses(unittest.TestCase):
         Regression for MoE (Mixtral) routing, where index_put's value is an int64
         arange: annotating it for per-tensor quant makes quantize_per_tensor assert
         float32 and to_executorch() fail. Only float tensors may be annotated.
+        Exercised on both the HTP and LPAI annotators, which share the guard.
         """
 
         class IndexPutInt64Value(torch.nn.Module):
@@ -488,15 +489,29 @@ class TestPasses(unittest.TestCase):
         module = IndexPutInt64Value().eval()
         sample_input = (torch.randn(4),)
 
-        gm = torch.export.export(module, sample_input).run_decompositions({}).module()
-        quantizer = QnnQuantizer()
-        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
-        prepared = prepare_pt2e(gm, quantizer)
-        prepared(*sample_input)
-        converted = convert_pt2e(prepared)
-        # Re-export runs the quantize_per_tensor meta kernel; before the dtype guard
-        # this raised "Expecting input to have dtype torch.float32" on the int64 value.
-        torch.export.export(converted, sample_input)
+        for backend in (
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kLpaiBackend,
+        ):
+            try:
+                quantizer = QnnQuantizer(backend=backend)
+            except Exception as e:
+                # LPAI needs quantized_aot_lib; skip that leg if it isn't available.
+                self.skipTest(f"{backend} quantizer unavailable: {e}")
+            quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+
+            gm = (
+                torch.export.export(module, sample_input)
+                .run_decompositions({})
+                .module()
+            )
+            prepared = prepare_pt2e(gm, quantizer)
+            prepared(*sample_input)
+            converted = convert_pt2e(prepared)
+            # Re-export runs the quantize_per_tensor meta kernel; before the dtype
+            # guard this raised "Expecting input to have dtype torch.float32" on the
+            # int64 value.
+            torch.export.export(converted, sample_input)
 
 
 if __name__ == "__main__":
