@@ -56,8 +56,8 @@ install_pytorch_and_domains() {
   # sccache. With isolation off the frontend does not fetch the PEP 517 build
   # requirements, so install the ones not already in the image here. Keep in
   # sync with pytorch/pyproject.toml [build-system].requires.
-  conda_run pip install build "scikit-build-core>=1.0" "packaging>=24.2" \
-    "typing-extensions>=4.10.0" pyyaml six
+  conda_run pip install build "scikit-build-core>=1.0" "setuptools>=77.0.0,<82" \
+    "cmake>=3.27" ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six
   conda_run python -m build --wheel --no-isolation
   pip_install "$(echo dist/*.whl)"
 
