@@ -149,6 +149,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             dim = cast(int, node.args[1])
             rank = len(permute)
             index = dim if dim >= 0 else dim + rank + 1
+            if not 0 <= index <= rank:
+                # `permute` is not in this node's input-rank space, so it
+                # cannot be adapted across the boundary.
+                return None
             # `index` is a POSITION in the permuted output; the un-permuted
             # position the new dim lands at is the permutation VALUE there
             # (or the end, when appending). permute_subgraph rewrites the dim
@@ -165,6 +169,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             dim = cast(int, node.args[1])
             rank = len(permute)
             index = dim if dim >= 0 else dim + rank
+            if not 0 <= index < rank:
+                # `permute` is not in this node's input-rank space, so it
+                # cannot be adapted across the boundary.
+                return None
             # index is a POSITION in the tensor; the permutation VALUE at
             # that position is the logical dim being removed.
             squeezed_value = permute[index]
@@ -180,6 +188,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         assert isinstance(inp, torch.fx.Node)
         in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
+
+        if len(permute) != len(in_shape):
+            # `permute` is expressed in this node's input-rank space; a
+            # mismatch means the traversal reached the view with a permutation
+            # already adapted to a different rank, so it cannot be adapted
+            # again here.
+            return None
 
         if len(out_shape) == len(in_shape) + 1:
             # unsqueeze: insert identity mapping at the new dim

@@ -1170,6 +1170,74 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permutation_sink_view_splitting_the_non_unit_dim",
         )
 
+    def test_upstream_squeeze_view_rank_mismatch_no_crash(self) -> None:
+        """Regression test for IndexError in _adapt_permute_across_view when
+        upstream traversal reaches a squeeze view after the permutation has
+        already been adapted to a lower rank.
+
+        Graph:
+            x [1, 8, 4, 2]                 y [2, 8, 4, 1]
+                    |                            |
+            permute [0, 3, 1, 2]           view_copy (squeeze trailing 1)
+            [1, 2, 8, 4]                   [2, 8, 4]
+                    |                            |
+            view_copy (squeeze dim 0)            |
+            [2, 8, 4]                            |
+                     \\                          /
+                      ---- add (3D) ------------
+                              |
+                      view_copy (unsqueeze dim 0)
+                              |
+                        permute [0, 2, 3, 1]
+
+        Traversal crosses the first view, so the permutation is adapted from
+        rank 4 to rank 3.  It then walks upstream from `add` into the second
+        view, whose input is still rank 4 and whose squeezed dim is the
+        trailing one (index 3).  Indexing the rank-3 permutation at 3 raised
+        IndexError; the adaptation must bail out and skip the subgraph."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 4, 2)
+        y_data = torch.randn(2, 8, 4, 1)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        squeeze_batch = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [2, 8, 4])
+        )
+        # Squeezes the TRAILING size-1 dim, so the squeezed index (3) is out of
+        # range for the rank-3 permutation reaching it.
+        squeeze_trailing = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(y, [2, 8, 4])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(squeeze_batch, squeeze_trailing)
+        )
+        unsqueeze_batch = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(add, [1, 2, 8, 4])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(unsqueeze_batch, [0, 2, 3, 1]),
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "upstream_squeeze_view_rank_mismatch_no_crash",
+        )
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Tests for RemovePermutesAroundElementwiseOps
