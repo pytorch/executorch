@@ -3754,6 +3754,21 @@ class ReflectionPad(torch.nn.Module):
                         metrics=metrics,
                     )
 
+    @staticmethod
+    @unpack_fixtures
+    def test_5d(qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(1, 3, 6, 8, 8),)
+        padding = (1, 1, 1, 1, 1, 1)
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(3, padding),
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
 
 class Relu(torch.nn.Module):
     def __init__(self):
@@ -4209,6 +4224,53 @@ class ScaledDotProductAttention(torch.nn.Module):
                             scale=scale, is_causal=is_causal, use_mask=False
                         ),
                         inputs=qkv,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class ScatterValue(torch.nn.Module):
+    def __init__(self, dim, value):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+
+    def forward(self, data, index):
+        return torch.scatter(data, self.dim, index, self.value)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        cases = [
+            # (dim, value, data_shape, index_tensor)
+            (
+                1,
+                0.5,
+                (3, 5),
+                torch.tensor(
+                    [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                    dtype=torch.int64,
+                ),
+            ),
+            (
+                0,
+                1.0,
+                (3, 5),
+                torch.tensor(
+                    [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                    dtype=torch.int64,
+                ),
+            ),
+        ]
+        for dim, value, data_shape, index in cases:
+            with subtests.test(msg=f"dim:{dim}, value:{value}"):
+                inputs = (torch.rand(*data_shape), index)
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim, value=value),
+                        inputs=inputs,
                         qnn_config=qnn_config,
                         quantizer=quantizer,
                         compile_specs=compile_spec,

@@ -14,6 +14,9 @@ from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps,
+)
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -45,6 +48,49 @@ def _count_nodes(graph_module: torch.fx.GraphModule, target) -> int:
         for node in graph_module.graph.nodes
         if node.op == "call_function" and node.target == target
     )
+
+
+def test_extra_permutable_ops_makes_op_permutable() -> None:
+    """Ops in extra_permutable_ops are permutable in the base pass."""
+
+    def build() -> torch.fx.GraphModule:
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        x.meta["val"] = torch.randn(1, 3, 4, 5)
+        permute_in = graph.create_node(
+            "call_function",
+            PERMUTE_TARGET,
+            args=(x, [0, 2, 3, 1]),
+        )
+        permute_in.meta["val"] = torch.randn(1, 4, 5, 3)
+        rescale = graph.create_node(
+            "call_function",
+            RESCALE_TARGET,
+            args=(permute_in, torch.int8, [1.0], 0, 0),
+        )
+        rescale.meta["val"] = torch.randn(1, 4, 5, 3)
+        permute_out = graph.create_node(
+            "call_function",
+            PERMUTE_TARGET,
+            args=(rescale, [0, 3, 1, 2]),
+        )
+        permute_out.meta["val"] = torch.randn(1, 3, 4, 5)
+        graph.output(permute_out)
+        return torch.fx.GraphModule({}, graph)
+
+    # RESCALE is not permutable by default, so the boundary permutes stay.
+    baseline = RemovePermutesAroundElementwiseOps().call(build())
+    assert not baseline.modified
+    assert _count_nodes(baseline.graph_module, PERMUTE_TARGET) == 2
+
+    # Supplying RESCALE via extra_permutable_ops lets the region collapse.
+    with TosaLoweringContext(TOSA_INT_SPEC):
+        result = RemovePermutesAroundElementwiseOps(
+            extra_permutable_ops={RESCALE_TARGET}
+        ).call(build())
+    assert result.modified
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
+    assert _count_nodes(result.graph_module, RESCALE_TARGET) == 1
 
 
 def test_remove_permutes_around_rescale_tosa_INT() -> None:
@@ -140,7 +186,10 @@ def test_remove_permutes_around_gelu_with_folded_scalar_constants_tosa_FP() -> N
         )
 
     assert result.modified
-    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 3
+    # The scalar constants are numel-1 (1,1,1,1): layout-invariant, so they are
+    # left wired directly with no compensating permute, and every permute in the
+    # region cancels.
+    assert _count_nodes(result.graph_module, PERMUTE_TARGET) == 0
     assert _count_nodes(result.graph_module, ERF_TARGET) == 1
 
 
