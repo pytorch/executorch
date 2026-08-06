@@ -24,6 +24,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.tests.models import (
+    BroadcastAndMutate,
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
@@ -484,14 +485,6 @@ class TestPasses(unittest.TestCase):
         add = exir_ops.edge.aten.add.Tensor
         view_copy = exir_ops.edge.aten.view_copy.default
 
-        class BroadcastAndMutate(torch.nn.Module):
-            def forward(self, x, counter):
-                position = (
-                    torch.arange(x.shape[-1]) + counter
-                )  # rank-1 + rank-0 broadcast
-                counter.add_(x.shape[-1])  # in-place mutation of the rank-0 input
-                return x + position.to(x.dtype)
-
         exported = torch.export.export(
             BroadcastAndMutate().eval(),
             (torch.randn(1, 4), torch.tensor(0)),
@@ -612,12 +605,6 @@ class TestPasses(unittest.TestCase):
                 all(shared in n.args for n in broadcast),
                 "both same-rank broadcasts should consume the shared view_copy",
             )
-
-        class BroadcastAndMutate(torch.nn.Module):
-            def forward(self, x, counter):
-                position = torch.arange(x.shape[-1]) + counter  # rank-1 + rank-0
-                counter.add_(x.shape[-1])  # in-place mutation of the rank-0 input
-                return x + position.to(x.dtype)
 
         exported = torch.export.export(
             BroadcastAndMutate().eval(),
