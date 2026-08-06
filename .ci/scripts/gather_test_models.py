@@ -109,6 +109,7 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     """
     # yolo26 was contributed as an OpenVINO/XNNPACK example and has never passed on
     # the portable backend, so gathering it only ever produces a permanently red job.
+    # TODO(#21621): drop this skip once yolo26 exports cleanly on portable.
     if model == "yolo26":
         return False
     if target_os == "macos":
