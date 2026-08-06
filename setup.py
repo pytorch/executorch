@@ -322,6 +322,18 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
+def get_runtime_soname_major() -> str:
+    """The major version in the shared runtime's SONAME.
+
+    CMake derives SOVERSION from version.txt, so read the major from the same
+    place. Version.string() is not usable here because BUILD_VERSION can
+    override it without changing what the linker recorded.
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(root, "version.txt")) as f:
+        return f.read().strip().split(".")[0]
+
+
 def get_executable_name(name: str) -> str:
     if _is_windows():
         return name + ".exe"
@@ -781,6 +793,7 @@ class CustomBuildPy(build_py):
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
 
+
         # Copy CMake-generated Python directories that setuptools missed.
         # Setuptools discovers packages at configuration time, before CMake
         # runs. Directories created by CMake during the build (e.g. by
@@ -1089,6 +1102,94 @@ setup(
             []
             if _is_minimal_build()
             else [
+                # Install the shared C++ runtime so a standalone application can
+                # link executorch::runtime from the wheel. Shipped under its
+                # SONAME so the DT_NEEDED a consumer records resolves at runtime.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name=f"libexecutorch.so.{get_runtime_soname_major()}.*",
+                    dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the profiler next to it. Keeping it separate lets a C++
+                # application link it without pulling in the Python extension, which
+                # is where it was only reachable before.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_name=(
+                        f"libexecutorch_etdump.so.{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_etdump.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
+                    # the devtools subdirectory itself, so the library exists
+                    # whenever the shared build does. The Python extension carries a
+                    # hard dependency on it, so requiring the option here left a
+                    # wheel whose extension could not load at all.
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the shared thread pool next to it. It is a separate
+                # library so that a process has one pool rather than one per
+                # component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_name=(
+                        f"libexecutorch_threadpool.so.{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_threadpool.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    # The target only exists when both of its dependencies are
+                    # enabled, so packaging has to require them too or a shared
+                    # build with either turned off looks for a file that was
+                    # never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_PTHREADPOOL",
+                        "EXECUTORCH_BUILD_CPUINFO",
+                    ],
+                ),
+                # Install the merged CPU kernels beside them, so the operators are
+                # registered once per process rather than once per component.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/configurations/",
+                    src_name=(
+                        "libexecutorch_kernels_optimized.so."
+                        f"{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/"
+                        "libexecutorch_kernels_optimized.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    # The target is only created when the optimized kernels are
+                    # enabled, so packaging has to require that too rather than
+                    # looking for a file a shared build may never have produced.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # Install the XNNPACK delegate beside them, so a process has one
+                # copy of it instead of one per component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
+                    src_name=(
+                        "libexecutorch_backend_xnnpack.so."
+                        f"{get_runtime_soname_major()}.*"
+                    ),
+                    dst=(
+                        "executorch/lib/libexecutorch_backend_xnnpack.so."
+                        f"{get_runtime_soname_major()}"
+                    ),
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.

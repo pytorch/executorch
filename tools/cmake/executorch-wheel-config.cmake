@@ -75,4 +75,21 @@ if(_portable_lib_LIBRARY)
                INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
                CXX_STANDARD 20
   )
+
+  # The extension links the runtime rather than containing it, so it no longer
+  # satisfies the runtime symbols a custom-op library references. Put the
+  # shipped runtime on this target's interface, which is where the definitions
+  # moved to, so an out-of-tree operator project keeps building and loading
+  # against the extension exactly as it did before.
+  file(GLOB _executorch_runtime
+       "${CMAKE_CURRENT_LIST_DIR}/../../lib/libexecutorch.so.*"
+  )
+  if(_executorch_runtime)
+    list(GET _executorch_runtime 0 _executorch_runtime)
+    set_property(
+      TARGET _portable_lib
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES "${_executorch_runtime}"
+    )
+  endif()
 endif()

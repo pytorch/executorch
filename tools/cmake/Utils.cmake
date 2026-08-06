@@ -47,9 +47,77 @@ function(executorch_msvc_kernel_link_options target_name)
   )
 endfunction()
 
+# Bundle a static library's whole contents into a target.
+#
+# Deliberately a link option rather than the WHOLE_ARCHIVE link feature: that
+# feature refuses to coexist with the plain references other targets make to the
+# same archive, which the archives bundled here all have, until CMake 3.30. Link
+# options are also emitted before the ordered link libraries, which keeps a
+# bundled archive ahead of anything that would otherwise satisfy the same
+# symbols.
+function(executorch_target_whole_archive target_name archive_target)
+  set_property(
+    TARGET ${target_name}
+    APPEND
+    PROPERTY _EXECUTORCH_WHOLE_ARCHIVES "$<TARGET_FILE:${archive_target}>"
+  )
+  get_target_property(
+    _emitted ${target_name} _EXECUTORCH_WHOLE_ARCHIVES_EMITTED
+  )
+  if(NOT _emitted)
+    set_property(
+      TARGET ${target_name} PROPERTY _EXECUTORCH_WHOLE_ARCHIVES_EMITTED 1
+    )
+    # One wrapper for every archive, reading the accumulated list at generate
+    # time, because the two constraints here pull in opposite directions. A path
+    # must be its own option, since CMake splits a comma-joined LINKER: list at
+    # every comma and SHELL: splits on spaces, so a valid path containing either
+    # arrives at the linker as two broken arguments. But repeating the flag text
+    # once per archive lets CMake remove the duplicate, which silently leaves
+    # every archive after the first outside the wrapper and drops its
+    # registration objects. GENEX_EVAL is needed because a stored generator
+    # expression is otherwise emitted literally.
+    target_link_options(
+      ${target_name}
+      PRIVATE
+      "LINKER:--whole-archive"
+      "$<GENEX_EVAL:$<TARGET_PROPERTY:${target_name},_EXECUTORCH_WHOLE_ARCHIVES>>"
+      "LINKER:--no-whole-archive"
+    )
+  endif()
+  # Also link the archive the ordinary way. A link option naming a file is not a
+  # build prerequisite of the link, so on its own it lets the archive be rebuilt
+  # while the library that bundles it keeps the previous contents. That produces
+  # a stale registration rather than a build error, and a clean build hides it.
+  # The duplicate reference costs nothing: the wrapper is emitted first and has
+  # already extracted every member.
+  target_link_libraries(${target_name} PRIVATE ${archive_target})
+endfunction()
+
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
 function(executorch_target_link_options_shared_lib target_name)
+  # A shared library cannot be retained with --whole-archive: that flag only
+  # governs how an archive's members are pulled in, so the library is still
+  # subject to --as-needed and gets dropped along with its registration
+  # constructor. Export scoped --no-as-needed retention instead, which is what
+  # actually keeps a registration-only shared library on the link line.
+  get_target_property(_target_type ${target_name} TYPE)
+  if(_target_type STREQUAL "SHARED_LIBRARY" AND NOT (APPLE OR MSVC))
+    target_link_options(
+      ${target_name}
+      INTERFACE
+      # One option with the library inside it, for two reasons. A SHELL: string
+      # would split on spaces and break a path containing one, and separate
+      # options repeat identical text that CMake de-duplicates, which silently
+      # leaves every library after the first outside any --no-as-needed scope.
+      "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${target_name}>,--pop-state"
+    )
+    # Retention is fully handled above, and applying whole-archive to a shared
+    # library below would do nothing: that flag governs archive member
+    # extraction, and this target is not an archive.
+    return()
+  endif()
   if(APPLE)
     executorch_macos_kernel_link_options(${target_name})
   elseif(MSVC)
@@ -210,6 +278,69 @@ function(executorch_target_copy_mlx_metallib target)
       )
     endif()
   endif()
+endfunction()
+
+# Make a target resolve the ExecuTorch runtime from libexecutorch.so.
+#
+# Naming the shared runtime as an ordinary dependency is not enough. CMake
+# orders link libraries so that an archive precedes what it depends on, which
+# puts libexecutorch_core.a ahead of libexecutorch.so; the archive then
+# satisfies the runtime symbols first and the target ends up with a private copy
+# of the backend registry. Link options come before the ordered libraries, so
+# naming the runtime there leaves the archive with nothing left to resolve.
+#
+# On ELF platforms --no-as-needed is needed around it, because a shared library
+# with no already-referenced symbol at the point it appears can be dropped, and
+# the static archive further along the line would then supply the registry after
+# all. Other linkers keep the reference without it.
+function(executorch_target_link_shared_runtime target_name)
+  executorch_target_retain_shared_library(${target_name} executorch_shared)
+endfunction()
+
+# Put a shared library on a consumer's link line and keep it there.
+#
+# A library whose only purpose is to run a static initializer, such as a backend
+# or an operator registration library, has no symbol the consumer references
+# directly, so the linker is free to drop it from DT_NEEDED. Some linkers do
+# exactly that and the initializer never runs, which shows up at runtime as a
+# backend or kernel that is missing rather than as a link error.
+function(executorch_target_retain_shared_library target_name library_target)
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    return()
+  endif()
+  set_property(
+    TARGET ${target_name}
+    APPEND
+    PROPERTY _EXECUTORCH_RETAINED_LIBRARIES "$<TARGET_FILE:${library_target}>"
+  )
+  get_target_property(
+    _emitted ${target_name} _EXECUTORCH_RETAINED_LIBRARIES_EMITTED
+  )
+  if(NOT _emitted)
+    set_property(
+      TARGET ${target_name} PROPERTY _EXECUTORCH_RETAINED_LIBRARIES_EMITTED 1
+    )
+    # One region for every retained library, for the same reasons the archive
+    # wrapper is one: a path inside a comma-joined LINKER: list is split at the
+    # comma, and repeating the flag text per library lets CMake remove the
+    # duplicate and silently unscope every library after the first.
+    #
+    # push-state and pop-state rather than closing with an explicit --as-needed,
+    # which would leave --as-needed in force for everything after it on the line
+    # and drop the next library that only exists to register something.
+    target_link_options(
+      ${target_name}
+      PRIVATE
+      "LINKER:--push-state,--no-as-needed"
+      "$<GENEX_EVAL:$<TARGET_PROPERTY:${target_name},_EXECUTORCH_RETAINED_LIBRARIES>>"
+      "LINKER:--pop-state"
+    )
+  endif()
+  # A link option does not order the build, so say it outright. A shared library
+  # needs no relink of its consumer when it changes, because it is resolved by
+  # name at load time, which is why an ordinary link edge is not needed here the
+  # way it is for an archive.
+  add_dependencies(${target_name} ${library_target})
 endfunction()
 
 # Create and install a shared library composed from dependency libraries. The

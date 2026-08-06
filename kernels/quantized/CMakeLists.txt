@@ -86,6 +86,24 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+    # Only when the pybind extension is absent. When it is present, the block
+    # below sets the full runtime path for this target in one place, and setting
+    # it here as well would leave two independent copies of the same logic where
+    # the later one wins.
+    if(EXECUTORCH_BUILD_SHARED
+       AND NOT APPLE
+       AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+       AND NOT TARGET portable_lib
+    )
+      # Wheel-specific: the generated library lands in
+      # <site-packages>/executorch/kernels/quantized, two levels below the
+      # wheel's lib/. A normal install puts the runtime in CMAKE_INSTALL_LIBDIR,
+      # which this relative path would not reach.
+      set_target_properties(
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                                         INSTALL_RPATH "$ORIGIN/../../lib"
+      )
+    endif()
 
     # Register quantized ops to portable_lib, so that they're available via
     # pybindings.
@@ -130,7 +148,11 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       if(APPLE)
         set(RPATH "@loader_path/../../extensions/pybindings")
       else()
-        set(RPATH "$ORIGIN/../../extensions/pybindings")
+        set(RPATH "$ORIGIN/../../extension/pybindings")
+        if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+          # Wheel-specific: two levels below the wheel's lib/ directory.
+          string(APPEND RPATH ":$ORIGIN/../../lib")
+        endif()
       endif()
       set_target_properties(
         quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
