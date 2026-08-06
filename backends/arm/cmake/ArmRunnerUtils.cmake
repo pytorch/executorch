@@ -67,3 +67,31 @@ function(arm_runner_configure_runtime_output TARGET_NAME FALLBACK_DIR)
     endforeach()
   endif()
 endfunction()
+
+function(verify_targets_exist)
+  cmake_parse_arguments(ARG "" "CONTEXT" "TARGETS" ${ARGN})
+
+  set(_targets ${ARG_TARGETS} ${ARG_UNPARSED_ARGUMENTS})
+  if(NOT ARG_CONTEXT)
+    set(ARG_CONTEXT "verify_targets_exist")
+  endif()
+
+  foreach(_target IN LISTS _targets)
+    if(NOT TARGET ${_target})
+      message(FATAL_ERROR "${ARG_CONTEXT} requires missing target ${_target}.")
+    endif()
+  endforeach()
+endfunction()
+
+# Link the provided target with minimal specs. This minimizes code size, but
+# comes with limited support. Notably, printing with %zu is not supported.
+function(arm_runner_link_minimal_specs TARGET_NAME)
+  verify_targets_exist(
+    CONTEXT arm_runner_link_minimal_specs TARGETS ${TARGET_NAME}
+  )
+  if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(
+      ${TARGET_NAME} PRIVATE --specs=nano.specs -u _printf_float
+    )
+  endif()
+endfunction()

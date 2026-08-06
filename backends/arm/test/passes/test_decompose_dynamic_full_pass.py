@@ -140,17 +140,17 @@ def test_backend_pipeline_decomposes_dynamic_full_like() -> None:
         if node.op == "call_function"
         and node.target == exir_ops.edge.aten.full_like.default
     ]
-    repeat_nodes = [
+    tile_nodes = [
         node
         for node in graph_module.graph.nodes
         if node.op == "call_function"
-        and node.target == exir_ops.edge.aten.repeat.default
+        and node.target == exir_ops.backend.tosa.TILE.default
     ]
 
     assert not full_nodes
     assert not full_like_nodes
-    assert len(repeat_nodes) == 1
-    assert repeat_nodes[0].args[1][1] == 3
+    assert len(tile_nodes) == 1
+    assert tile_nodes[0].args[1][1] == 3
 
 
 def test_decompose_dynamic_full_leaves_static_full_unchanged() -> None:

@@ -20,7 +20,6 @@ namespace {
 using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
-using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::quantize;
 
 // This implements a generic 1d conv kernel that operates on raw pointers.

@@ -1,0 +1,34 @@
+Fix the activation row stride in sorted RHS gather_mm.
+
+The specialized gather_mm_rhs paths flatten all leading activation dimensions
+into M, but derive lda from the original second-to-last dimension. For a valid
+[N, 1, K] view produced by expand_dims, that singleton dimension can have
+stride 1. The kernel then reads row n from A + n instead of A + n * K.
+
+The activation is made row-contiguous before this calculation, so flattened
+rows are K elements apart. Use K as lda in both the Steel and NAX paths.
+
+Upstream candidate.
+
+diff --git a/mlx/backend/metal/matmul.cpp b/mlx/backend/metal/matmul.cpp
+index 87d2bf52..4fc2c1de 100644
+--- a/mlx/backend/metal/matmul.cpp
++++ b/mlx/backend/metal/matmul.cpp
+@@ -1897,7 +1897,7 @@ void gather_mm_rhs(
+   int K = a.shape(-1);
+   int M = a.size() / K;
+   int N = b.shape(-1);
+-  int lda = a.strides()[a.ndim() - 2]; // should be K
++  int lda = K;
+ 
+   // Define the dispatch blocks
+   int bm = 16, bn = 64, bk = 16;
+@@ -2030,7 +2030,7 @@ void gather_mm_rhs_nax(
+   int K = a.shape(-1);
+   int M = a.size() / K;
+   int N = b.shape(-1);
+-  int lda = a.strides()[a.ndim() - 2]; // should be K
++  int lda = K;
+   int E = b.shape(0);
+ 
+   // Define the dispatch blocks

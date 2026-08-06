@@ -72,8 +72,22 @@ $CmakeX86    = 'build-x86_64-windows'
 $CmakeArm64  = 'build-arm64-windows'
 $CmakeHexagon = 'build-hexagon'
 
-# Use the Python that is active in the current environment.
-$PythonExe = if ($env:PYTHON_EXECUTABLE) { $env:PYTHON_EXECUTABLE } else { 'python' }
+# Preserve the current Python executable path before launching the Visual
+# Studio developer shell (Launch-VsDevShell.ps1)
+#
+# When launching, it rewrites the $env:PATH to inject the MSVC toolchain.
+# Depending on the Visual Studio version, these changes can override or remove
+# the Python entry from $env:PATH
+#
+# To ensure the Python interpreter remains accessible, capture and store its
+# absolute path before invoking Launch-VsDevShell.ps1.
+$PyCmd = Get-Command python -ErrorAction SilentlyContinue
+if (-not $PyCmd) {
+    Write-Error "No 'python' found on PATH. Requires 'python' to continue the QNN Windows MSVC build."
+    exit 1
+}
+$PythonExe = $PyCmd.Source
+Write-Host "Using Python: $PythonExe" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
 # Helper: clean or prepare a build directory
@@ -116,6 +130,46 @@ function Run-CMake([string[]]$ConfigArgs, [string]$BuildDir, [string]$Target = '
 }
 
 # ---------------------------------------------------------------------------
+# Helper: locate an installed Visual Studio and its matching CMake generator
+# ---------------------------------------------------------------------------
+function Get-InstalledVsGenerator() {
+    $ProgramRoots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles) | Where-Object { $_ }
+    $VsInstalls = @(
+        @{ Dir = "18"; Generator = "Visual Studio 18 2026" },
+        @{ Dir = "2022"; Generator = "Visual Studio 17 2022" }
+    )
+    $Editions = @("Enterprise", "Professional", "Community", "Preview", "BuildTools")
+    foreach ($root in $ProgramRoots) {
+        foreach ($vs in $VsInstalls) {
+            foreach ($edition in $Editions) {
+                $DevShell = "$root\Microsoft Visual Studio\$($vs.Dir)\$edition\Common7\Tools\Launch-VsDevShell.ps1"
+                if (Test-Path $DevShell) {
+                    Write-Host "Using VS dev shell: $DevShell" -ForegroundColor Cyan
+                    return [PSCustomObject]@{ Generator = $vs.Generator; DevShell = $DevShell }
+                }
+            }
+        }
+    }
+    throw "No supported Visual Studio installation found (2026 or 2022)."
+}
+
+# ---------------------------------------------------------------------------
+# Helper: validate that the active CMake supports the selected generator
+#
+# Must be executed after activating the Visual Studio Developer Shell so the
+# `cmake` resolved from PATH matches the build environment.
+# ---------------------------------------------------------------------------
+function Assert-GeneratorSupported([string]$Generator) {
+    if ($Generator -eq "Visual Studio 18 2026") {
+        $cmakeVersion = [version](& cmake --version |
+            Select-String -Pattern '(\d+\.\d+\.\d+)').Matches[0].Value
+        if ($cmakeVersion.Major -lt 4) {
+            throw "'Visual Studio 18 2026' requires CMake >= 4, but found CMake version $cmakeVersion"
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Block 1: ARM64 Windows cross-compiled build  (build-arm64-windows/)
 #
 # Cross-compiles the ExecuTorch runtime + QNN backend for arm64-windows using
@@ -131,15 +185,24 @@ function Run-CMake([string[]]$ConfigArgs, [string]$BuildDir, [string]$Target = '
 # ---------------------------------------------------------------------------
 if (-not $SkipArm64Windows) {
     $BuildRoot = Join-Path $PrjRoot $CmakeArm64
+
+    # Activate the VS environment for ARM64 MSVC toolchain
+    $VsGenerator = Get-InstalledVsGenerator
+    & $VsGenerator.DevShell -Arch arm64
+    Assert-GeneratorSupported $VsGenerator.Generator
+
     Prepare-BuildDir $BuildRoot
 
     $ConfigArgs = @(
         $PrjRoot,
-        "-DCMAKE_INSTALL_PREFIX=$BuildRoot",
-        "-DCMAKE_BUILD_TYPE=$BuildType",
+        "-G", $VsGenerator.Generator,
+        "-A", "ARM64",
         "-DCMAKE_SYSTEM_NAME=Windows",
         "-DCMAKE_SYSTEM_PROCESSOR=ARM64",
-        "-A", "ARM64",
+        "-DCMAKE_BUILD_TYPE=$BuildType",
+        "-DCMAKE_INSTALL_PREFIX=$BuildRoot",
+        "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DQNN_SDK_ROOT=$env:QNN_SDK_ROOT",
         "-DEXECUTORCH_BUILD_QNN=ON",
         "-DEXECUTORCH_BUILD_DEVTOOLS=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_LLM=ON",
@@ -149,11 +212,9 @@ if (-not $SkipArm64Windows) {
         "-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
         "-DEXECUTORCH_ENABLE_EVENT_TRACER=ON",
         "-DEXECUTORCH_ENABLE_LOGGING=ON",
-        "-DQNN_SDK_ROOT=$env:QNN_SDK_ROOT",
-        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
-        "-DPYTHON_EXECUTABLE=$PythonExe",
         "-B$BuildRoot"
     )
     Run-CMake -ConfigArgs $ConfigArgs -BuildDir $BuildRoot
@@ -167,17 +228,18 @@ if (-not $SkipArm64Windows) {
 
     $ExampleArgs = @(
         $ExampleRoot,
+        "-G", $VsGenerator.Generator,
+        "-A", "ARM64",
         "-DCMAKE_SYSTEM_NAME=Windows",
         "-DCMAKE_SYSTEM_PROCESSOR=ARM64",
-        "-A", "ARM64",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_PREFIX_PATH=$CmakePrefixPath",
-        "-DSUPPORT_REGEX_LOOKAHEAD=ON",
-        "-DBUILD_TESTING=OFF",
-        "-DEXECUTORCH_ENABLE_LOGGING=ON",
-        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
         "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
         "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DEXECUTORCH_ENABLE_LOGGING=ON",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
+        "-DSUPPORT_REGEX_LOOKAHEAD=ON",
+        "-DBUILD_TESTING=OFF",
         "-DDSP_TYPE=$DspType",
         $DirectModeFlag,
         "-B$ExampleBuild"
@@ -194,15 +256,16 @@ if (-not $SkipArm64Windows) {
 
     $LlamaArgs = @(
         $LlamaRoot,
-        "-DBUILD_TESTING=OFF",
+        "-G", $VsGenerator.Generator,
+        "-A", "ARM64",
         "-DCMAKE_SYSTEM_NAME=Windows",
         "-DCMAKE_SYSTEM_PROCESSOR=ARM64",
-        "-A", "ARM64",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_PREFIX_PATH=$CmakePrefixPath",
-        "-DEXECUTORCH_ENABLE_LOGGING=ON",
         "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
         "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DEXECUTORCH_ENABLE_LOGGING=ON",
+        "-DBUILD_TESTING=OFF",
         "-B$LlamaBuild"
     )
     Write-Host "`n=== cmake configure (examples/models/llama arm64-windows) ===" -ForegroundColor Cyan
@@ -226,8 +289,15 @@ if ($EnableHexagon) {
 
     $ConfigArgs = @(
         $PrjRoot,
-        "-DCMAKE_INSTALL_PREFIX=$BuildRoot",
+        "-DCMAKE_TOOLCHAIN_FILE=$env:HEXAGON_SDK_ROOT\build\cmake\hexagon_toolchain.cmake",
         "-DCMAKE_BUILD_TYPE=$BuildType",
+        "-DCMAKE_INSTALL_PREFIX=$BuildRoot",
+        "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DQNN_SDK_ROOT=$env:QNN_SDK_ROOT",
+        "-DHEXAGON_SDK_ROOT=$env:HEXAGON_SDK_ROOT",
+        "-DHEXAGON_TOOLS_ROOT=$env:HEXAGON_TOOLS_ROOT",
+        "-DDSP_VERSION=$env:DSP_VERSION",
+        "-DDSP_TYPE=$DspType",
         "-DEXECUTORCH_BUILD_QNN=ON",
         "-DEXECUTORCH_BUILD_XNNPACK=OFF",
         "-DEXECUTORCH_BUILD_DEVTOOLS=ON",
@@ -236,19 +306,12 @@ if ($EnableHexagon) {
         "-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON",
-        "-DEXECUTORCH_ENABLE_EVENT_TRACER=ON",
-        "-DEXECUTORCH_ENABLE_LOGGING=ON",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
         "-DEXECUTORCH_BUILD_PTHREADPOOL=OFF",
         "-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF",
+        "-DEXECUTORCH_ENABLE_EVENT_TRACER=ON",
+        "-DEXECUTORCH_ENABLE_LOGGING=ON",
         "-DFLATCC_ALLOW_WERROR=OFF",
-        "-DQNN_SDK_ROOT=$env:QNN_SDK_ROOT",
-        "-DHEXAGON_SDK_ROOT=$env:HEXAGON_SDK_ROOT",
-        "-DHEXAGON_TOOLS_ROOT=$env:HEXAGON_TOOLS_ROOT",
-        "-DDSP_VERSION=$env:DSP_VERSION",
-        "-DCMAKE_TOOLCHAIN_FILE=$env:HEXAGON_SDK_ROOT\build\cmake\hexagon_toolchain.cmake",
-        "-DDSP_TYPE=$DspType",
-        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
-        "-DPYTHON_EXECUTABLE=$PythonExe",
         "-B$BuildRoot"
     )
     Run-CMake -ConfigArgs $ConfigArgs -BuildDir $BuildRoot
@@ -270,11 +333,22 @@ if ($EnableHexagon) {
 if (-not $SkipX86Windows) {
     $BuildRoot = Join-Path $PrjRoot $CmakeX86
 
+    # Activate the VS environment for AMD64 MSVC toolchain
+    $VsGenerator = Get-InstalledVsGenerator
+    & $VsGenerator.DevShell -Arch amd64
+    Assert-GeneratorSupported $VsGenerator.Generator
+
     Prepare-BuildDir $BuildRoot
 
     $ConfigArgs = @(
+        $PrjRoot,
+        "-G", $VsGenerator.Generator,
+        "-A", "x64",
+        "-DCMAKE_SYSTEM_NAME=Windows",
+        "-DCMAKE_SYSTEM_PROCESSOR=AMD64",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_INSTALL_PREFIX=$BuildRoot",
+        "-DPYTHON_EXECUTABLE=$PythonExe",
         "-DQNN_SDK_ROOT=$env:QNN_SDK_ROOT",
         "-DEXECUTORCH_BUILD_QNN=ON",
         "-DEXECUTORCH_BUILD_DEVTOOLS=ON",
@@ -284,12 +358,10 @@ if (-not $SkipX86Windows) {
         "-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON",
-        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
         "-DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON",
+        "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",
         "-DEXECUTORCH_ENABLE_EVENT_TRACER=ON",
         "-DEXECUTORCH_ENABLE_LOGGING=ON",
-        "-DPYTHON_EXECUTABLE=$PythonExe",
-        "-S$PrjRoot",
         "-B$BuildRoot"
     )
     Run-CMake -ConfigArgs $ConfigArgs -BuildDir $BuildRoot
@@ -342,13 +414,17 @@ if (-not $SkipX86Windows) {
 
     $ExampleArgs = @(
         $ExampleRoot,
+        "-G", $VsGenerator.Generator,
+        "-A", "x64",
+        "-DCMAKE_SYSTEM_NAME=Windows",
+        "-DCMAKE_SYSTEM_PROCESSOR=AMD64",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_PREFIX_PATH=$CmakePrefixPath",
         "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
         "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DEXECUTORCH_ENABLE_LOGGING=ON",
         "-DSUPPORT_REGEX_LOOKAHEAD=ON",
         "-DBUILD_TESTING=OFF",
-        "-DEXECUTORCH_ENABLE_LOGGING=ON",
         "-B$ExampleBuild"
     )
     Write-Host "`n=== cmake configure (examples/qualcomm x86-64 Windows) ===" -ForegroundColor Cyan
@@ -366,12 +442,16 @@ if (-not $SkipX86Windows) {
 
     $LlamaArgs = @(
         $LlamaRoot,
-        "-DBUILD_TESTING=OFF",
+        "-G", $VsGenerator.Generator,
+        "-A", "x64",
+        "-DCMAKE_SYSTEM_NAME=Windows",
+        "-DCMAKE_SYSTEM_PROCESSOR=AMD64",
         "-DCMAKE_BUILD_TYPE=$BuildType",
         "-DCMAKE_PREFIX_PATH=$CmakePrefixPath",
-        "-DEXECUTORCH_ENABLE_LOGGING=ON",
         "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH",
         "-DPYTHON_EXECUTABLE=$PythonExe",
+        "-DEXECUTORCH_ENABLE_LOGGING=ON",
+        "-DBUILD_TESTING=OFF",
         "-B$LlamaBuild"
     )
     Write-Host "`n=== cmake configure (examples/models/llama x86-64 Windows) ===" -ForegroundColor Cyan

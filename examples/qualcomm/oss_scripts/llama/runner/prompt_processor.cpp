@@ -13,7 +13,6 @@ using executorch::aten::TensorImpl;
 using executorch::runtime::EValue;
 using executorch::runtime::MethodMeta;
 using executorch::runtime::Result;
-using executorch::runtime::Span;
 using executorch::runtime::TensorInfo;
 namespace example {
 
