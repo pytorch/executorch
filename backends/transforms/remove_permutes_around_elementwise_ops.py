@@ -149,8 +149,15 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             dim = cast(int, node.args[1])
             rank = len(permute)
             index = dim if dim >= 0 else dim + rank + 1
-            new_perm = [x + 1 if x >= index else x for x in permute]
-            new_perm.insert(index, index)
+            # `index` is a POSITION in the permuted output; the un-permuted
+            # position the new dim lands at is the permutation VALUE there
+            # (or the end, when appending). permute_subgraph rewrites the dim
+            # arg to exactly this value, so the two must agree -- using `index`
+            # here instead silently desynchronises them whenever
+            # permute[index] != index.
+            inserted_value = permute[index] if index < rank else rank
+            new_perm = [x + 1 if x >= inserted_value else x for x in permute]
+            new_perm.insert(index, inserted_value)
             return new_perm
 
         # Handle explicit squeeze_copy(dim)

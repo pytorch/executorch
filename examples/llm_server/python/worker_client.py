@@ -58,6 +58,7 @@ class WorkerStats:
     total_ms: float = 0.0
     prefill_tok_s: float = 0.0
     decode_tok_s: float = 0.0
+    vision_encoder_ms: Optional[float] = None
     # The exact (non-terminal) token ids generated this turn. The control plane
     # stores these per session and splices them back as an `ids` prompt segment
     # next turn, so a prior assistant span is an exact token extension instead of
@@ -177,6 +178,7 @@ class WorkerClient:
                     total_ms=msg.get("total_ms", 0.0),
                     prefill_tok_s=msg.get("prefill_tok_s", 0.0),
                     decode_tok_s=msg.get("decode_tok_s", 0.0),
+                    vision_encoder_ms=msg.get("vision_encoder_ms"),
                     generated_token_ids=msg.get("generated_token_ids", []),
                 )
             )
