@@ -432,6 +432,44 @@ TEST(ReduceUtilTest, ApplyOverDimListLength4) {
   EXPECT_TENSOR_EQ(in, tf.zeros({2, 4, 5, 3}));
 }
 
+TEST(ReduceUtilTest, ApplyOverDimListChannelsLast) {
+  TensorFactory<ScalarType::Long> tf;
+  optional<ArrayRef<int64_t>> dim_list;
+
+  // Reducing over every dim but 1 should visit each element exactly once.
+  // Doing that requires following the tensor's strides, which the traversal
+  // did not do for a channels-last memory format: it covered part of the
+  // tensor twice and ran off the end of the buffer. The indices are counted
+  // here rather than written through, so an out-of-bounds index is reported
+  // instead of corrupting memory.
+  Tensor in = tf.zeros_channels_last({2, 2, 3, 3});
+  int64_t dim_array_023[3] = {0, 2, 3};
+  dim_list = optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_023, 3});
+
+  const size_t numel = static_cast<size_t>(in.numel());
+  std::vector<size_t> visits(numel, 0);
+  size_t out_of_bounds = 0;
+  for (size_t out_ix = 0; out_ix < get_out_numel(in, dim_list); ++out_ix) {
+    apply_over_dim_list(
+        [&visits, &out_of_bounds, numel](size_t in_ix) {
+          if (in_ix >= numel) {
+            ++out_of_bounds;
+          } else {
+            ++visits[in_ix];
+          }
+        },
+        in,
+        dim_list,
+        out_ix);
+  }
+
+  EXPECT_EQ(out_of_bounds, 0u);
+  for (size_t i = 0; i < numel; ++i) {
+    EXPECT_EQ(visits[i], 1u) << "element " << i << " visited " << visits[i]
+                             << " times, expected exactly once";
+  }
+}
+
 TEST(ReduceUtilTest, ApplyOnZeroDimTensorOverDim) {
   TensorFactory<ScalarType::Long> tf;
 

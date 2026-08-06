@@ -411,6 +411,7 @@ if(TARGET quantized_kernels)
   set(_quantized_kernels_test_sources
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_add_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_choose_qparams_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_dequantize_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding2b_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding4b_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding_test.cpp"
