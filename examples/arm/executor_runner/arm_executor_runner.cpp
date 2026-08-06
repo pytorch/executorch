@@ -94,6 +94,9 @@
  * ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE - Size of memory area
  *                                                          used when running
  *                                                          inferences
+ * ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE              - Size of the fast
+ *                                                          planned memory area
+ *                                                          for mem_id = 3
  */
 
 #include <errno.h>
@@ -288,6 +291,15 @@ dedicated_sram[ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE];
 unsigned char* ethosu_fast_scratch = dedicated_sram;
 }
 #endif
+
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+const size_t planned_fast_memory_pool_size =
+    ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE;
+unsigned char __attribute__((
+    section(".fast_memory"),
+    aligned(16))) planned_fast_memory_pool[planned_fast_memory_pool_size];
+#endif
+constexpr size_t FAST_MEMORY_REGION_INDEX = 2;
 
 [[maybe_unused]] void et_pal_init(void) {
 #if defined(__ARM_ARCH_8_1M_MAIN__)
@@ -581,6 +593,7 @@ struct RunnerContext {
   Box<BufferDataLoader> loader;
   Box<Program> program;
   Box<ArmMemoryAllocator> method_allocator;
+  Box<ArmMemoryAllocator> planned_fast_allocator;
   Box<ArmMemoryAllocator> temp_allocator;
   std::vector<Span<uint8_t>> planned_spans;
   Box<HierarchicalAllocator> planned_memory;
@@ -672,6 +685,15 @@ void runner_init(
   ctx.method_allocator.reset(
       method_allocation_pool_size, method_allocation_pool);
 
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+  ET_LOG(
+      Info,
+      "Setup planned FAST_MEMORY_REGION pool. Size: %lu bytes.",
+      static_cast<unsigned long>(planned_fast_memory_pool_size));
+  ctx.planned_fast_allocator.reset(
+      planned_fast_memory_pool_size, planned_fast_memory_pool);
+#endif
+
   ctx.planned_spans.clear();
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
   ctx.planned_spans.reserve(num_memory_planned_buffers);
@@ -680,20 +702,49 @@ void runner_init(
   for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
     size_t buffer_size =
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+
     ET_LOG(
         Info,
-        "Setting up planned buffer %lu, size %lu.",
-        static_cast<unsigned long>(id),
+        "Setting up planned buffer with mem_id=%lu, size %lu.",
+        static_cast<unsigned long>(id + 1),
         static_cast<unsigned long>(buffer_size));
+    if (buffer_size == 0) {
+      ctx.planned_spans.push_back(Span<uint8_t>(
+          static_cast<uint8_t*>(nullptr), static_cast<size_t>(0)));
+      continue;
+    }
 
-    /* Move to it's own allocator when MemoryPlanner is in place. */
-    /* Ethos-U driver requires 16 bit alignment. */
-    uint8_t* buffer = reinterpret_cast<uint8_t*>(
-        ctx.method_allocator->allocate(buffer_size, 16UL));
+    uint8_t* buffer = nullptr;
+    const char* memory_region = nullptr;
+    switch (id) {
+      case FAST_MEMORY_REGION_INDEX:
+        memory_region = "FAST_MEMORY_REGION";
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+        buffer = reinterpret_cast<uint8_t*>(
+            ctx.planned_fast_allocator->allocate(buffer_size, 16UL));
+#else
+        ET_CHECK_MSG(
+            false,
+            "Planned buffer %lu uses mem_id=%lu/FAST_MEMORY_REGION, but "
+            "ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE is not set",
+            static_cast<unsigned long>(id),
+            static_cast<unsigned long>(id + 1));
+#endif
+        break;
+      default:
+        memory_region = "SLOW_MEMORY_REGION";
+        /* Ethos-U driver requires 16 bit alignment. */
+        buffer = reinterpret_cast<uint8_t*>(
+            ctx.method_allocator->allocate(buffer_size, 16UL));
+        break;
+    }
     ET_CHECK_MSG(
         buffer != nullptr,
-        "Could not allocate memory for memory planned buffer size %lu",
-        static_cast<unsigned long>(buffer_size));
+        "Could not allocate memory for planned buffer with mem_id=%lu, size "
+        "%lu in %s",
+        static_cast<unsigned long>(id + 1),
+        static_cast<unsigned long>(buffer_size),
+        memory_region);
     ctx.planned_spans.push_back({buffer, buffer_size});
   }
 
@@ -916,6 +967,23 @@ void log_mem_status(RunnerContext& ctx) {
         Info,
         "method_allocator_planned:  %lu bytes",
         static_cast<unsigned long>(ctx.planned_buffer_memsize));
+#if defined(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+    if (ctx.planned_fast_allocator->size() > 0) {
+      ET_LOG(
+          Info,
+          "planned_fast_allocator:    %lu / %lu free: %lu ( used: %lu %% ) ",
+          static_cast<unsigned long>(ctx.planned_fast_allocator->used_size()),
+          static_cast<unsigned long>(ctx.planned_fast_allocator->size()),
+          static_cast<unsigned long>(ctx.planned_fast_allocator->free_size()),
+          static_cast<unsigned long>(
+              100 * ctx.planned_fast_allocator->used_size() /
+              ctx.planned_fast_allocator->size()));
+      ET_LOG(
+          Info,
+          "planned_fast_used:         %lu bytes",
+          static_cast<unsigned long>(ctx.planned_fast_allocator->used_size()));
+    }
+#endif
     ET_LOG(
         Info,
         "method_allocator_loaded:   %lu bytes",

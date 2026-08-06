@@ -482,6 +482,32 @@ test_memory_allocation() {
             --require "Total DRAM used" "<= 0.06 KiB"
 
     _test_runner_size_optimization
+
+    echo "${TEST_SUITE_NAME}: Test planned slow and fast memory allocation"
+    local plan_dir="arm_test/test_run/memory_planning"
+    local pte_file="${plan_dir}/memory_planning_mem_id_3.pte"
+    local runner_dir="${plan_dir}/cmake-out"
+    local planned_log="${plan_dir}/planned.log"
+    mkdir -p "${plan_dir}"
+
+    python3 "${et_root_dir}/backends/arm/test/assets/export_memory_planning_mem_id_3.py" \
+        --output="${pte_file}"
+
+    backends/arm/scripts/build_executor_runner.sh \
+        --pte="${pte_file}" \
+        --target=ethos-u55-128 \
+        --output="${runner_dir}" \
+        --select_ops_list="aten::add.out,aten::mul.out" \
+        --extra_build_flags="-DFETCH_ETHOS_U_CONTENT=OFF -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x180000 -DET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE=0x1000"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${runner_dir}/arm_executor_runner" \
+        --target=ethos-u55-128 \
+        &> "${planned_log}"
+
+    python3 backends/arm/test/test_memory_allocator_log.py --log "${planned_log}" \
+            --require "method_allocator_planned" "== 8 B" \
+            --require "planned_fast_used" "== 8 B"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
