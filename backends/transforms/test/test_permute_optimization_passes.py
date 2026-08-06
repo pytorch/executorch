@@ -1131,6 +1131,45 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "upstream_view_rank_mismatch_no_crash",
         )
 
+    def test_permutation_sink_view_splitting_the_non_unit_dim(self) -> None:
+        """A reshape whose input has a single non-unit dim is a permutation sink
+        even when it splits that dim rather than flattening it:
+        (1, 1, 1, 4) -> (1, 2, 2) walks the same elements under any layout, so
+        the upstream permute is dropped with no compensating permute and the
+        view's shape arg must be left untouched."""
+        x_data = torch.randn(1, 4, 1, 1)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        permute = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 3, 1])
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor, args=(permute, permute)
+        )
+        view = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mul, [1, 2, 2])
+        )
+        builder.output([view])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        (view_after,) = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default
+        )
+        self.assertEqual(view_after.args[1], [1, 2, 2])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "permutation_sink_view_splitting_the_non_unit_dim",
+        )
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Tests for RemovePermutesAroundElementwiseOps
