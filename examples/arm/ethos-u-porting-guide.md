@@ -85,17 +85,17 @@ expected to place the scratch buffer and NN in the correct memory location.
 For example, if you generate a pte file with compile specification for Shared Sram, the scratch buffer should be placed in the SRAM and the NN in the external memory in the runtime application code. You can see we are following
 this approach in the `examples/arm/executor_runner/arm_executor_runner.cpp` example application. In the linker scripts for the application(`examples/arm/executor_runner/Corstone-320.ld` and
 `examples/arm/executor_runner/Corstone-300.ld`) we check the value of `ETHOSU_ARENA` to determine whether the ethos-u scratch buffer is placed in the on-chip memory or in the external memory. In this
-way, depending on the `ETHOSU_ARENA` parameter, the linker knows whether the symbol is to be placed in the .ddr or .sram.bss sections. The `ETHOSU_ARENA` parameter is set in the `backends/arm/scripts/corstone_utils.cmake` and
-its value is derived based on the memory mode parameter that is passed to the `examples/arm/run.sh` shell script. Then, at link time, the .ddr section is always placed in the external memory and the .sram.bss is always placed in the SRAM.
+way, depending on the `ETHOSU_ARENA` parameter, the linker knows whether the input section is to be placed in the .ddr.bss or .sram.bss sections. The `ETHOSU_ARENA` parameter is set in the `backends/arm/scripts/corstone_utils.cmake` and
+its value is derived based on the memory mode parameter that is passed to the `examples/arm/run.sh` shell script. Then, at link time, the .ddr.bss section is always placed in the external memory and the .sram.bss is always placed in the SRAM.
 Finally, note that in the `examples/arm/executor_runner/arm_executor_runner.cpp` application code, we place the buffers for the Ethos-u scratch and the neural network in the correct symbol from the linker script. For instance,
-the Ethos-u scratch buffer corresponds to the the `.bss.tensor_arena` section in the linker script, In the application code, when we allocate memory for the Ethos-u scratch buffer, we place this array in the .bss.tensor_arena section in the memory map.
+the Ethos-u scratch buffer corresponds to the the `.bss.tensor_arena` input section in the linker script, In the application code, when we allocate memory for the Ethos-u scratch buffer, we place this array in the .bss.tensor_arena section in the memory map.
 
 ```
 unsigned char __attribute__((
     section(".bss.tensor_arena"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
 ```
-and the `.bss.tensor_arena` section is placed in the correct location in the memory map thanks to
+and the `.bss.tensor_arena` input section is placed in the correct location in the memory map thanks to
 the `ETHOSU_ARENA` parameter.
 
 There is a tight coupling between the memory mode for the Ethos-U and the placement of the ethos-u scratch buffer,
