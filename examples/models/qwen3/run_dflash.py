@@ -75,6 +75,7 @@ def main():
         "--draft-pte was exported with a different block_size than the "
         "z-lab checkpoint's native config (e.g. our block_size=8 test export).",
     )
+    p.add_argument("--max-seq-len", type=int, default=4096, help="Target's static cache capacity.")
     args = p.parse_args()
 
     config = load_dflash_config(
@@ -89,6 +90,17 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, local_files_only=True)
     eos_id = tokenizer.eos_token_id
+
+    if tokenizer.chat_template is None:
+        # Some transformers versions expect chat templates in a standalone
+        # chat_template.jinja file and don't fall back to the legacy
+        # embedded tokenizer_config.json field when that file is absent.
+        import json
+        from huggingface_hub import hf_hub_download
+        cfg_path = hf_hub_download(args.tokenizer, "tokenizer_config.json")
+        cfg = json.loads(Path(cfg_path).read_text())
+        if "chat_template" in cfg:
+            tokenizer.chat_template = cfg["chat_template"]
 
     # The draft model was trained on Qwen3 chat-formatted prompt/response pairs,so applying the same chat template during inference keeps the input distribution consistent with training.
     # Using raw completion text noticeably reduces acceptance rates.
@@ -132,25 +144,28 @@ def main():
 
     while len(generated) < args.max_new_tokens:
         rounds += 1
-        # The exported draft model expects a fixed input shape for its token block.
-        # Although the hidden-state and position inputs support dynamic lengths, the token input does not.
-        # Reducing the block size near the end of generation causes the runtime to reject the input.
-        # Supporting truly dynamic block sizes would require exporting the draft model with a dynamic token dimension.
-        bs = block_size
+        # Dynamic block_len: shrink the proposal near the end of generation.
+        bs = min(block_size, args.max_new_tokens - len(generated), args.max_seq_len - pos)
+        if bs <= 0:
+            break
 
-        # 1. Build draft input block.
-        draft_input = torch.cat(
-            [
-                torch.tensor([[last_token]], dtype=torch.long),
-                torch.full((1, bs - 1), mask_id, dtype=torch.long),
-            ],
-            dim=1,
-        )
-        draft_pos = torch.arange(hidden.shape[1] + bs, dtype=torch.long).unsqueeze(0)
-        _t0 = time.time()
-        (draft_logits,) = draft.execute([draft_input, hidden, draft_pos])
-        _draft_exec_time = time.time() - _t0
-        draft_ids = draft_logits[0].argmax(-1).tolist()  # block_size - 1 tokens
+        if bs == 1:
+            # No room to speculate -- skip the draft, target-only step.
+            draft_ids = []
+            _draft_exec_time = 0.0
+        else:
+            # 1. Build draft input block.
+            draft_input = torch.cat(
+                [
+                    torch.tensor([[last_token]], dtype=torch.long),
+                    torch.full((1, bs - 1), mask_id, dtype=torch.long),
+                ],
+                dim=1,
+            )
+            _t0 = time.time()
+            (draft_logits,) = draft.execute([draft_input, hidden])
+            _draft_exec_time = time.time() - _t0
+            draft_ids = draft_logits[0].argmax(-1).tolist()  # bs - 1 tokens
 
         # 2. Verify the draft predictions. Target model predicts the next token after every position in the block in a single forward pass.
         verify_input = torch.cat(
@@ -164,7 +179,7 @@ def main():
         _t1 = time.time()
         target_logits, new_hidden = target.execute([verify_input, verify_pos])
         _target_exec_time = time.time() - _t1
-        target_ids = target_logits[0].argmax(-1).tolist()  # block_size tokens
+        target_ids = target_logits[0].argmax(-1).tolist()  # bs tokens
 
         # 3. Keep every drafting token that matches the target. At the first mismatch, stop accepting draft predictions and use the target model's token instead.
         # (target_ids has block_size entries vs draft_ids' block_size - 1, so
@@ -212,8 +227,9 @@ def main():
     print(f"Generated ({n} tokens): {text}")
     print("\n--stats--")
     print(f"rounds: {rounds}")
-    print(f"avg accepted/round (draft-only): {accepted_total / rounds:.2f}")
-    print(f"avg emitted/round (tau, incl. bonus): {emitted_total / rounds:.2f}")
+    if rounds:
+        print(f"avg accepted/round (draft-only): {accepted_total / rounds:.2f}")
+        print(f"avg emitted/round (tau, incl. bonus): {emitted_total / rounds:.2f}")
     print(f"time: {dt:.2f}s   tokens/s: {n / dt:.2f}")
 
 

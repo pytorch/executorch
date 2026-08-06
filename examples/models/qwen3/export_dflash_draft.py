@@ -52,6 +52,12 @@ def load_draft_model(draft_id: str, target_state_dict: dict) -> DFlashDraftModel
 
 
 def main():
+    # Register "mlx" into ALL_ATTENTION_FUNCTIONS so DFlashQwen3Attention's
+    # dispatch can resolve it. export_llm_hf.py does this for the target;
+    # the draft's own export script needs the same call.
+    from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
+    register_mlx_attention()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-model", default="Qwen/Qwen3-4B")
     parser.add_argument("--draft-model", default="z-lab/Qwen3-4B-DFlash-b16")
@@ -86,20 +92,23 @@ def main():
     hidden_size = model.fc.in_features
     tokens = torch.randint(0, 1000, (1, block_size), dtype=torch.long)
     target_hidden = torch.randn(1, ctx_len, hidden_size)
-    position_ids = torch.arange(ctx_len + block_size).unsqueeze(0)
 
+    # block_len is now bounded/dynamic; position_ids is no longer a model input.
     ctx_dim = Dim("ctx_len", min=1, max=args.max_ctx_len)
+    # min=2, not 1: block_len=1 hits a shape-ambiguity guard during export.
+    # run_dflash.py's bs==1 branch already skips the draft entirely in that
+    # case (target-only step), so the export never needs to support it.
+    block_dim = Dim("block_len", min=2, max=block_size)
     dynamic_shapes = {
-        "tokens": None,
+        "tokens": {1: block_dim},
         "target_hidden": {1: ctx_dim},
-        "position_ids": {1: ctx_dim + block_size},
     }
 
     import torch.fx.experimental._config as fx_config
 
     with fx_config.patch(backed_size_oblivious=True):
         exported = torch.export.export(
-            model, (tokens, target_hidden, position_ids), dynamic_shapes=dynamic_shapes
+            model, (tokens, target_hidden), dynamic_shapes=dynamic_shapes
         )
 
     from executorch.backends.mlx.partitioner import MLXPartitioner
@@ -112,7 +121,7 @@ def main():
         f.write(et_program.buffer)
     print(f"Saved draft model to: {args.output}")
     print(
-        f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, block_size fixed at {block_size}."
+        f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, dynamic block_len supported: 1 to {block_size}."
     )
 
 
