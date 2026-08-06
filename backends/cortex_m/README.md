@@ -28,7 +28,7 @@ This drives `aot_arm_compiler --bundleio`, invokes `build_test_runner.sh`, and l
 
 ## Supported operators
 Refer to `backends/cortex_m/test/ops` for currently supported accelerated ops/dtypes. Additionally, the quantizer targets pure "data-movement ops" such as data copies, slicing and concatenations to use quantized dtypes using the portable-kernels operator library.
-In general however, operators not supported by Cortex-M are kept in `fp32` using non-accelerated portable-kernels. It is recommended to analyze the graph after lowering to understand how much of the graph has been accelerated.
+In general however, operators not supported by Cortex-M are kept in `fp32` using non-accelerated portable-kernels. It is recommended to analyze the graph after lowering to understand how much of the graph has been accelerated. The exception is `aten.lstm.input`, which has no portable kernel: if it is preserved through `to_edge` but cannot be fused, lowering fails instead of falling back.
 
 ## Notices
 Arm and Cortex are registered trademarks of Arm Limited (or its subsidiaries) in the US and/or elsewhere.

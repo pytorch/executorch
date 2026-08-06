@@ -18,6 +18,8 @@ from executorch.backends.cortex_m.library import cmsis_nn
 
 from executorch.backends.cortex_m.passes.passes_utils import (
     build_activation_lut,
+    is_dequant_node,
+    is_quant_node,
     quantize_multiplier_aot,
     quantize_val,
     SHIFT_INT8,
@@ -29,6 +31,7 @@ from executorch.backends.cortex_m.passes.scratch_buffer_sizes import (
 from executorch.backends.cortex_m.quantizer.quantization_configs import (
     CMSIS_SOFTMAX_SCALE,
     CMSIS_SOFTMAX_ZERO_POINT,
+    LSTM_BOUNDARY_META_KEY,
 )
 from executorch.backends.cortex_m.target_config import CortexMTargetConfig
 from executorch.backends.transforms.aten_to_dialect_pass import (
@@ -73,10 +76,37 @@ class AtenToCortexMPass(AtenToDialectPass):
             result.graph_module
         )
 
+        # The LSTM substitution rewires the output quantize's users onto a new
+        # single-output op; DCE then drops that quantize and getitem(0). fx
+        # treats lstm.input as impure and won't remove it even once user-less,
+        # so erase it explicitly and DCE its now-dead inputs.
+        graph = result.graph_module.graph
+        graph.eliminate_dead_code()
+        lstm_fused = False
+        for n in list(graph.nodes):
+            if n.target == exir_ops.edge.aten.lstm.input and len(n.users) == 0:
+                graph.erase_node(n)
+                lstm_fused = True
+        graph.eliminate_dead_code()
+
+        # A preserved aten.lstm.input that is still live was not fused (an
+        # unsupported configuration). There is no portable LSTM kernel, so fail
+        # here with a clear message rather than later with a missing-kernel error.
+        for n in graph.nodes:
+            if n.target == exir_ops.edge.aten.lstm.input:
+                raise RuntimeError(
+                    "cortex_m: an aten.lstm.input survived lowering unfused. Only "
+                    "single-layer, unidirectional, biased, zero-initial-state, "
+                    "output-only LSTM is supported by the Cortex-M backend."
+                )
+        result.graph_module.recompile()
+
         for node in result.graph_module.graph.nodes:
             self._initialize_alloc_node_size(node)
 
-        return PassResult(result.graph_module, result.modified or max_pool_modified)
+        return PassResult(
+            result.graph_module, result.modified or max_pool_modified or lstm_fused
+        )
 
     def _initialize_alloc_node_size(self, node: torch.fx.Node) -> None:
         """Initialize trailing scratch alloc nodes for CMSIS-NN kernels."""
@@ -185,6 +215,149 @@ def _restore_max_pool2d_with_indices_fallback(
 
 
 _SOFTMAX_INPUT_INTEGER_BITS = 5
+
+
+@AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.lstm.input)
+def _get_lstm_replacement(
+    node: Node, dialect_pass: AtenToDialectPass
+) -> DialectNodeSpec | None:
+    """Fuse a preserved, boundary-quantized aten.lstm.input into a single
+    cortex_m.quantized_lstm. Gate weights are quantized per-gate ahead of time
+    from the float params; the boundary scales come from the dequantize feeding
+    the node and the quantize consuming getitem(0), which LstmBoundaryQuantizer
+    deliberately leaves unfolded.
+
+    The op is single-output, so this rewires the output quantize's consumers
+    directly and returns None; the surrounding pass DCEs the now-dead tuple op.
+    """
+    from executorch.backends.cortex_m.passes.lstm_params import (
+        cell_scale_power_for_time_steps,
+        derive_lstm_params,
+        flatten_lstm_params,
+    )
+
+    if not node.meta.get("custom", {}).get(LSTM_BOUNDARY_META_KEY):
+        # Not accepted by LstmBoundaryQuantizer (unsupported config); leave it
+        # for call() to flag as an un-fused, unlowerable LSTM.
+        return None
+
+    input_dq = node.args[0]
+    if not isinstance(input_dq, Node) or not is_dequant_node(input_dq):
+        return None
+
+    getitem0 = next(
+        (u for u in node.users if u.target == operator.getitem and u.args[1] == 0),
+        None,
+    )
+    if getitem0 is None or len(getitem0.users) != 1:
+        return None
+    output_q = next(iter(getitem0.users))
+    if not is_quant_node(output_q):
+        return None
+
+    exported_program = dialect_pass.exported_program
+    input_scale = cast(float, input_dq.args[1])
+    input_zp = cast(int, input_dq.args[2])
+    output_scale = cast(float, output_q.args[1])
+    output_zp = cast(int, output_q.args[2])
+
+    params = cast(list[Node], node.args[2])
+    weight_ih = cast(torch.Tensor, get_param_tensor(exported_program, params[0]))
+    weight_hh = cast(torch.Tensor, get_param_tensor(exported_program, params[1]))
+    bias = cast(torch.Tensor, get_param_tensor(exported_program, params[2])) + cast(
+        torch.Tensor, get_param_tensor(exported_program, params[3])
+    )
+
+    time_major = not bool(node.args[8])
+    input_shape = get_first_fake_tensor(input_dq).shape
+    time_steps = int(input_shape[0] if time_major else input_shape[1])
+
+    lstm_params = derive_lstm_params(
+        weight_ih,
+        weight_hh,
+        bias,
+        input_scale,
+        input_zp,
+        output_scale,
+        output_zp,
+        cell_scale_power_for_time_steps(time_steps),
+    )
+    iw, hw, ieb, heb, in_mult, in_shift, hid_mult, hid_shift = flatten_lstm_params(
+        lstm_params
+    )
+
+    graph = node.graph
+    # Const placeholders must live in the placeholder region (before user
+    # inputs), so insert them after an existing weight placeholder.
+    with graph.inserting_after(params[0]):
+        iw_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_input_weights",
+            InputKind.PARAMETER,
+            iw,
+        )
+        hw_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_hidden_weights",
+            InputKind.PARAMETER,
+            hw,
+        )
+        ieb_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_input_eff_bias",
+            InputKind.PARAMETER,
+            ieb,
+        )
+        heb_c = create_constant_placeholder(
+            exported_program,
+            graph,
+            node.name + "_hidden_eff_bias",
+            InputKind.PARAMETER,
+            heb,
+        )
+    # CMSIS needs three int16 working buffers (temp1, temp2, cell_state); the
+    # multi-buffer scratch API sizes each one independently (scratch_buffer_sizes).
+    temp1 = _create_uninitialized_alloc_node(node, exported_program)
+    temp2 = _create_uninitialized_alloc_node(node, exported_program)
+    cell_state = _create_uninitialized_alloc_node(node, exported_program)
+
+    op_args = (
+        input_dq.args[0],
+        iw_c,
+        hw_c,
+        ieb_c,
+        heb_c,
+        in_mult,
+        in_shift,
+        hid_mult,
+        hid_shift,
+        lstm_params.input_offset,
+        lstm_params.output_offset,
+        lstm_params.forget_to_cell_multiplier,
+        lstm_params.forget_to_cell_shift,
+        lstm_params.input_to_cell_multiplier,
+        lstm_params.input_to_cell_shift,
+        lstm_params.output_multiplier,
+        lstm_params.output_shift,
+        lstm_params.cell_scale_power,
+        lstm_params.cell_clip,
+        time_major,
+        temp1,
+        temp2,
+        cell_state,
+    )
+    with graph.inserting_before(node):
+        op_node = graph.create_node(
+            "call_function",
+            target=exir_ops.edge.cortex_m.quantized_lstm.default,
+            args=op_args,
+        )
+    op_node.meta = dict(output_q.meta)
+    output_q.replace_all_uses_with(op_node)
+    return None
 
 
 def _to_int_pair(
