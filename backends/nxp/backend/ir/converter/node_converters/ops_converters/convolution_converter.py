@@ -246,7 +246,12 @@ class ConvolutionConverter(NodeConverter):
         if conv_params.transposed and conv_utils.group_conv_convertible_as_depthwise(
             node, conv_params.groups
         ):
-            # TFLite does not support transposed depthwise convolution
+            # Neutron IR does not support transposed depthwise convolution
+            return False
+
+        non_default_dilation = any(d != 1 for d in conv_params.dilation)
+        if conv_params.transposed and non_default_dilation:
+            # Neutron IR TransposeConv2D does not support dilation.
             return False
 
         if not conv_params.transposed and conv_params.out_padding != [0] * dimensions:
@@ -306,7 +311,7 @@ class ConvolutionConverter(NodeConverter):
     def _convert_unpadded_2D(
         self, t_op: tflite_model.Operator, conv_params: ConvParameters
     ) -> conv_utils.ConvConversionResult:
-        """Convert the `aten.convolution` into TFLite. The `padding` and `builtin_options` must be converted by the
+        """Convert the `aten.convolution` into Neutron IR. The `padding` and `builtin_options` must be converted by the
         caller.
         """
         common.assign_2d_strides(t_op.builtin_options, conv_params.stride)
@@ -317,7 +322,7 @@ class ConvolutionConverter(NodeConverter):
         y: tflite_model.Tensor = t_op.tmp_outputs[0]
 
         if (b := try_get_input(t_op, 2)) is None:
-            # Operator has no bias. Convolution aten op can omit it, TFLite can't.
+            # Operator has no bias. Convolution aten op can omit it, Neutron IR can't.
             output_channels = w.shape.vector[0]
 
             if w.type == TensorType.FLOAT32:
@@ -345,7 +350,7 @@ class ConvolutionConverter(NodeConverter):
                     b, bias_scale, bias_zero_point, quantized_dimension=0
                 )
 
-        # Assign the operator its TFLite inputs and outputs
+        # Assign the operator its Neutron IR inputs and outputs
         t_op.tmp_inputs = [x, w, b]
         t_op.tmp_outputs = [y]
 
@@ -357,7 +362,7 @@ class ConvolutionConverter(NodeConverter):
     def _convert_transpose_conv(
         self, t_op: tflite_model.Operator, conv_params: ConvParameters
     ) -> conv_utils.ConvConversionResult:
-        """Convert the `aten.convolution` into TFLite TransposeConv. The `builtin_options` must be
+        """Convert the `aten.convolution` into Neutron IR TransposeConv. The `builtin_options` must be
         converted by the caller.
         """
         common.assign_2d_strides(t_op.builtin_options, conv_params.stride)
@@ -367,8 +372,8 @@ class ConvolutionConverter(NodeConverter):
         y: tflite_model.Tensor = t_op.tmp_outputs[0]
 
         if (b := try_get_input(t_op, 2)) is None:
-            # Operator has no bias. Convolution aten op can omit it, TFLite can't.
-            # Weight tensor format in TFLite: [C, kH, kW, O]
+            # Operator has no bias. Convolution aten op can omit it, Neutron IR can't.
+            # Weight tensor format in Neutron IR: [C, kH, kW, O]
             # (C = input channels, O = output channels, kW = kernel width, kH = kernel height)
             output_channels = w.shape.vector[-1]
 
@@ -397,7 +402,7 @@ class ConvolutionConverter(NodeConverter):
                     b, bias_scale, bias_zero_point, quantized_dimension=0
                 )
 
-        # TransposeConv weight tensor format in TFLite: [O, kH, kW, C]
+        # TransposeConv weight tensor format in Neutron IR: [O, kH, kW, C]
         # (C = input channels, O = output channels, kW = kernel width, kH = kernel height)
         if tensor_has_data(w):
             # Transpose cloned tensor statically
@@ -415,7 +420,7 @@ class ConvolutionConverter(NodeConverter):
             output_shape_tensor_data, "output_shape"
         )
 
-        # Assign the operator its TFLite inputs and outputs
+        # Assign the operator its Neutron IR inputs and outputs
         t_op.tmp_inputs = [o, w, x, b]
         t_op.tmp_outputs = [y]
         conversion_result = ConvConversionResult(x, w, b, y, o)
