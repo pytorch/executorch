@@ -474,8 +474,8 @@ class TestPasses(unittest.TestCase):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
 
         Regression for MoE (Mixtral) routing, where index_put's value is an int64
-        arange: annotating it for per-tensor quant makes quantize_per_tensor assert
-        float32 and to_executorch() fail. Only float tensors may be annotated.
+        arange: annotating it makes quantize_per_tensor assert a float input, so
+        to_executorch() fails. Only float tensors may be annotated.
         Exercised on both the HTP and LPAI annotators, which share the guard.
         """
 
