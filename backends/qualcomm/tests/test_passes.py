@@ -482,22 +482,26 @@ class TestPasses(unittest.TestCase):
         class IndexPutInt64Value(torch.nn.Module):
             def forward(self, x):
                 buf = torch.zeros(4, dtype=torch.long)
-                idx = torch.arange(4)  # int64 value written by index_put
+                idx = torch.arange(
+                    4, dtype=torch.int64
+                )  # int64 value written by index_put
                 buf = buf.index_put((torch.tensor([0, 1, 2, 3]),), idx)
                 return x + buf.to(torch.float32)
 
         module = IndexPutInt64Value().eval()
         sample_input = (torch.randn(4),)
 
+        ran = 0
         for backend in (
             QnnExecuTorchBackendType.kHtpBackend,
             QnnExecuTorchBackendType.kLpaiBackend,
         ):
             try:
                 quantizer = QnnQuantizer(backend=backend)
-            except Exception as e:
-                # LPAI needs quantized_aot_lib; skip that leg if it isn't available.
-                self.skipTest(f"{backend} quantizer unavailable: {e}")
+            except Exception:
+                # LPAI needs quantized_aot_lib; skip only this backend's leg if it
+                # isn't available so the other backend's coverage is preserved.
+                continue
             quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
 
             gm = (
@@ -512,6 +516,10 @@ class TestPasses(unittest.TestCase):
             # guard this raised "Expecting input to have dtype torch.float32" on the
             # int64 value.
             torch.export.export(converted, sample_input)
+            ran += 1
+
+        if ran == 0:
+            self.skipTest("no QNN quantizer backend available (HTP/LPAI)")
 
 
 if __name__ == "__main__":
