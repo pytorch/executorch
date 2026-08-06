@@ -1163,6 +1163,104 @@ class MultiMapModel(torch.nn.Module):
         return self.map_model.get_random_inputs()
 
 
+class OverlappingCondModel(torch.nn.Module):
+    """Two cond nodes where cond_0's outputs are still live when cond_1 executes."""
+
+    IV = torch.zeros(1, dtype=torch.float32)
+    INC1 = torch.tensor(1, dtype=torch.int32)
+    INC2 = torch.tensor(2, dtype=torch.int32)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("aggr_v", torch.tensor(0, dtype=torch.int32))
+        self.register_buffer("prev_v", self.IV.clone())
+        self.register_buffer("curr_v", self.IV.clone())
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        aggr_v = self.aggr_v.clone()
+        v = x[0].unsqueeze(0)
+        is_valid = (v >= 0) & (x[1] >= 0)
+
+        prev_v, curr_v = torch.cond(
+            is_valid,
+            lambda v: (self.curr_v.clone(), v.clone()),
+            lambda v: (self.prev_v.clone(), self.curr_v.clone()),
+            [v],
+        )
+        self.prev_v.copy_(prev_v)
+        self.curr_v.copy_(curr_v)
+
+        aggr_v += torch.cond(
+            is_valid,
+            lambda: self.INC1.clone(),
+            lambda: self.INC2.clone(),
+        )
+        self.aggr_v.copy_(aggr_v)
+
+        return self.aggr_v, self.prev_v, self.curr_v
+
+
+class NonOverlappingCondModel(torch.nn.Module):
+    """Two cond nodes where cond_0's outputs are consumed before cond_1 executes."""
+
+    INC1 = torch.tensor(1, dtype=torch.int32)
+    INC2 = torch.tensor(2, dtype=torch.int32)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("counter", torch.tensor(0, dtype=torch.int32))
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        is_positive = x[0] > 0
+
+        inc1 = torch.cond(
+            is_positive,
+            lambda: self.INC1.clone(),
+            lambda: self.INC2.clone(),
+        )
+        self.counter.copy_(self.counter + inc1)
+
+        inc2 = torch.cond(
+            is_positive,
+            lambda: self.INC2.clone(),
+            lambda: self.INC1.clone(),
+        )
+        self.counter.copy_(self.counter + inc2)
+
+        return (self.counter,)
+
+
+class NestedCondModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.tensor(torch.nan, dtype=torch.float64))
+
+    def forward(self, data: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        pred = data >= 0.0
+
+        result1 = torch.cond(
+            pred,
+            lambda v: v.clone(),
+            lambda v: self.state.clone(),
+            [data],
+        )
+
+        result2 = torch.cond(
+            pred,
+            lambda r: torch.cond(
+                torch.isnan(self.state),
+                lambda r2: r2.clone(),
+                lambda r2: r2 + 1.0,
+                [r],
+            ),
+            lambda r: self.state.clone(),
+            [result1],
+        )
+
+        self.state.copy_(result1)
+        return result1, result2
+
+
 class TestMap(unittest.TestCase):
 
     def test_map(self) -> None:
@@ -1765,3 +1863,145 @@ class TestInPlaceElemWise(unittest.TestCase):
             if node.op == "call_function"
         )
         self.assertFalse(has_inplace)
+
+
+class TestCondOverlap(unittest.TestCase):
+    """Tests for memory planning with multiple cond nodes whose outputs overlap."""
+
+    def test_overlapping_cond_outputs_no_corruption(self) -> None:
+        """Two cond nodes where cond_0's outputs are still live when cond_1 executes."""
+
+        module = OverlappingCondModel().eval()
+        INPUTS = [
+            torch.tensor(d, dtype=torch.float32)
+            for d in [[5, 1], [6, 1], [7, -1], [8, 1]]
+        ]
+        # State: aggr_v=0, prev_v=[0.], curr_v=[0.]
+        # [5,1]: valid=T, prev_v←curr_v=[0.], curr_v←v=[5.], aggr_v=0+1=1
+        # [6,1]: valid=T, prev_v←[5.], curr_v←[6.], aggr_v=1+1=2
+        # [7,-1]: valid=F, prev_v←[5.], curr_v←[6.], aggr_v=2+2=4
+        # [8,1]: valid=T, prev_v←[6.], curr_v←[8.], aggr_v=4+1=5
+        EXPECTED = [
+            (
+                torch.tensor(1, dtype=torch.int32),
+                torch.tensor([0.0]),
+                torch.tensor([5.0]),
+            ),
+            (
+                torch.tensor(2, dtype=torch.int32),
+                torch.tensor([5.0]),
+                torch.tensor([6.0]),
+            ),
+            (
+                torch.tensor(4, dtype=torch.int32),
+                torch.tensor([5.0]),
+                torch.tensor([6.0]),
+            ),
+            (
+                torch.tensor(5, dtype=torch.int32),
+                torch.tensor([6.0]),
+                torch.tensor([8.0]),
+            ),
+        ]
+
+        forward_ep = export(module, (INPUTS[0],))
+        edge = to_edge(forward_ep)
+        et = edge.to_executorch()
+
+        import executorch.runtime
+
+        rt_prog = executorch.runtime.Runtime.get().load_program(et.buffer)
+        rt_forward = rt_prog.load_method("forward")
+
+        for inp, expected in zip(INPUTS, EXPECTED):
+            result = tuple(rt_forward.execute([inp]))
+            for r, e in zip(result, expected):
+                self.assertTrue(
+                    torch.equal(r, e),
+                    f"Mismatch for input {inp}: got {r}, expected {e}",
+                )
+
+    def test_non_overlapping_conds_share_memory(self) -> None:
+        """When cond outputs are consumed before the next cond, memory should be shared."""
+
+        module = NonOverlappingCondModel().eval()
+        inp = torch.tensor([5.0, 1.0])
+
+        forward_ep = export(module, (inp,))
+        edge = to_edge(forward_ep)
+
+        gm = edge.exported_program().graph_module
+
+        mem_algo = MemoryPlanningAlgorithmSuite(algo_list=[greedy])
+        gm = PassManager(
+            passes=[SpecPropPass(), ToOutVarPass()],
+        )(gm).graph_module
+        mem_planning_pass = MemoryPlanningPass(
+            mem_algo,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+            alloc_mutable_buffers=True,
+        )
+        gm = mem_planning_pass.run(gm).graph_module
+
+        cond_nodes = list(
+            gm.graph.find_nodes(op="call_function", target=torch.ops.higher_order.cond)
+        )
+        self.assertEqual(len(cond_nodes), 2)
+
+        sub1_true = getattr(gm, cond_nodes[0].args[1].target)
+        sub2_true = getattr(gm, cond_nodes[1].args[1].target)
+        bufsizes1 = sub1_true.meta["non_const_buffer_sizes"]
+        bufsizes2 = sub2_true.meta["non_const_buffer_sizes"]
+
+        self.assertEqual(bufsizes1, bufsizes2)
+
+    def test_nested_cond_no_corruption(self) -> None:
+        """Nested cond branches must not overwrite still-live outer cond outputs."""
+        from executorch.exir.passes.init_mutable_pass import (
+            InitializedMutableBufferPass,
+        )
+
+        INPUTS = [
+            torch.tensor(5.0, dtype=torch.float64),
+            torch.tensor(6.0, dtype=torch.float64),
+        ]
+        # state starts as NaN.
+        # Call 1 (5.0): pred=True, result1=5.0, isnan(state)=True so result2=5.0, state←5.0
+        # Call 2 (6.0): pred=True, result1=6.0, isnan(state)=False so result2=6.0+1.0=7.0
+        EXPECTED = [
+            (
+                torch.tensor(5.0, dtype=torch.float64),
+                torch.tensor(5.0, dtype=torch.float64),
+            ),
+            (
+                torch.tensor(6.0, dtype=torch.float64),
+                torch.tensor(7.0, dtype=torch.float64),
+            ),
+        ]
+
+        module = NestedCondModel().eval()
+        forward_ep = export(module, (INPUTS[0],))
+        edge = to_edge(forward_ep)
+        et = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                passes=[InitializedMutableBufferPass(list(module._buffers.keys()))],
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False,
+                    alloc_graph_output=True,
+                ),
+            )
+        )
+
+        import executorch.runtime
+
+        rt_prog = executorch.runtime.Runtime.get().load_program(et.buffer)
+        rt_forward = rt_prog.load_method("forward")
+
+        for inp, expected in zip(INPUTS, EXPECTED):
+            result = tuple(rt_forward.execute([inp]))
+            for r, e in zip(result, expected):
+                self.assertTrue(
+                    torch.equal(r, e),
+                    f"Mismatch for input {inp}: got {r}, expected {e}",
+                )
