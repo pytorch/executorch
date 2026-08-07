@@ -3049,3 +3049,12 @@ class ZeroDimTensor(torch.nn.Module):
         input1 = torch.zeros(1)
         selected_element = torch.select(input1, 0, 0)
         return torch.add(x, selected_element)
+
+
+# rank-0 input `counter` that is both broadcast (arange + counter) and mutated in place;
+# exercises ExpandBroadcastTensorShape's rank promotion and the USER_INPUT_MUTATION write-back.
+class BroadcastAndMutate(torch.nn.Module):
+    def forward(self, x, counter):
+        position = torch.arange(x.shape[-1]) + counter
+        counter.add_(x.shape[-1])
+        return x + position.to(x.dtype)
