@@ -81,15 +81,16 @@ if(_portable_lib_LIBRARY)
   # shipped runtime on this target's interface, which is where the definitions
   # moved to, so an out-of-tree operator project keeps building and loading
   # against the extension exactly as it did before.
-  file(GLOB _executorch_runtime
-       "${CMAKE_CURRENT_LIST_DIR}/../../lib/libexecutorch.so.*"
+  find_library(
+    EXECUTORCH_RUNTIME_LIBRARY executorch
+    PATHS "${CMAKE_CURRENT_LIST_DIR}/../../lib"
+    NO_DEFAULT_PATH
   )
-  if(_executorch_runtime)
-    list(GET _executorch_runtime 0 _executorch_runtime)
+  if(EXECUTORCH_RUNTIME_LIBRARY)
     set_property(
       TARGET _portable_lib
       APPEND
-      PROPERTY INTERFACE_LINK_LIBRARIES "${_executorch_runtime}"
+      PROPERTY INTERFACE_LINK_LIBRARIES "${EXECUTORCH_RUNTIME_LIBRARY}"
     )
   endif()
 endif()

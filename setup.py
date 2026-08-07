@@ -322,18 +322,6 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.so"
 
 
-def get_runtime_soname_major() -> str:
-    """The major version in the shared runtime's SONAME.
-
-    CMake derives SOVERSION from version.txt, so read the major from the same
-    place. Version.string() is not usable here because BUILD_VERSION can
-    override it without changing what the linker recorded.
-    """
-    root = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(root, "version.txt")) as f:
-        return f.read().strip().split(".")[0]
-
-
 def get_executable_name(name: str) -> str:
     if _is_windows():
         return name + ".exe"
@@ -703,8 +691,15 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
     through the directory the linker recorded, so dropping that would stop them
     importing in an environment where torch is not beside them.
 
-    A no-op when patchelf is absent, so a build without it still produces a working
-    wheel, with the paths left in place rather than the build failing.
+    Best effort: a build without patchelf still produces a working wheel, with the
+    paths left in place. The tool cannot be guaranteed on PATH (the pip package does
+    not reliably provide a binary inside a build venv), so failing the build here
+    would break building from source on a machine that simply lacks it.
+
+    What must not happen is both this and its check going quiet together, which is how
+    a wheel carrying build-machine directories could ship unnoticed. So the check in
+    the release tests treats a missing patchelf as a failure rather than a skip: the
+    wheel-build environment has it, and that is where the guarantee belongs.
     """
     if library.suffix != ".so" and ".so." not in library.name:
         return
@@ -1165,12 +1160,15 @@ setup(
             if _is_minimal_build()
             else [
                 # Install the shared runtime the Python extension links, rather
-                # than having the extension contain its own copy. Shipped under its
-                # SONAME so the DT_NEEDED a consumer records resolves at runtime.
+                # than having the extension contain its own copy. Named without a
+                # version, so a consumer's find_library(executorch) resolves it: that
+                # matches libexecutorch.so and not libexecutorch.so.1. A version is
+                # only useful where something upgrades the library independently of
+                # what links it, which never happens inside a wheel.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/",
-                    src_name=f"libexecutorch.so.{get_runtime_soname_major()}.*",
-                    dst=f"executorch/lib/libexecutorch.so.{get_runtime_soname_major()}",
+                    src_name="libexecutorch.so",
+                    dst="executorch/lib/libexecutorch.so",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
                 # Install the profiler next to it, as its own library rather than
@@ -1178,13 +1176,8 @@ setup(
                 # it however many consumers load.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
-                    src_name=(
-                        f"libexecutorch_etdump.so.{get_runtime_soname_major()}.*"
-                    ),
-                    dst=(
-                        "executorch/lib/libexecutorch_etdump.so."
-                        f"{get_runtime_soname_major()}"
-                    ),
+                    src_name="libexecutorch_etdump.so",
+                    dst="executorch/lib/libexecutorch_etdump.so",
                     # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
                     # the devtools subdirectory itself, so the library exists
                     # whenever the shared build does. The Python extension carries a
@@ -1197,13 +1190,8 @@ setup(
                 # component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
-                    src_name=(
-                        f"libexecutorch_threadpool.so.{get_runtime_soname_major()}.*"
-                    ),
-                    dst=(
-                        "executorch/lib/libexecutorch_threadpool.so."
-                        f"{get_runtime_soname_major()}"
-                    ),
+                    src_name="libexecutorch_threadpool.so",
+                    dst="executorch/lib/libexecutorch_threadpool.so",
                     # The target only exists when both of its dependencies are
                     # enabled, so packaging has to require them too or a shared
                     # build with either turned off looks for a file that was
@@ -1218,15 +1206,8 @@ setup(
                 # registered once per process rather than once per component.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/configurations/",
-                    src_name=(
-                        "libexecutorch_kernels_optimized.so."
-                        f"{get_runtime_soname_major()}.*"
-                    ),
-                    dst=(
-                        "executorch/lib/"
-                        "libexecutorch_kernels_optimized.so."
-                        f"{get_runtime_soname_major()}"
-                    ),
+                    src_name="libexecutorch_kernels_optimized.so",
+                    dst="executorch/lib/libexecutorch_kernels_optimized.so",
                     # The target is only created when the optimized kernels are
                     # enabled, so packaging has to require that too rather than
                     # looking for a file a shared build may never have produced.
@@ -1239,14 +1220,8 @@ setup(
                 # copy of it instead of one per component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
-                    src_name=(
-                        "libexecutorch_backend_xnnpack.so."
-                        f"{get_runtime_soname_major()}.*"
-                    ),
-                    dst=(
-                        "executorch/lib/libexecutorch_backend_xnnpack.so."
-                        f"{get_runtime_soname_major()}"
-                    ),
+                    src_name="libexecutorch_backend_xnnpack.so",
+                    dst="executorch/lib/libexecutorch_backend_xnnpack.so",
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",

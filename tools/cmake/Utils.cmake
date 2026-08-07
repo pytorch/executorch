@@ -56,41 +56,19 @@ endfunction()
 # bundled archive ahead of anything that would otherwise satisfy the same
 # symbols.
 function(executorch_target_whole_archive target_name archive_target)
-  set_property(
-    TARGET ${target_name}
-    APPEND
-    PROPERTY _EXECUTORCH_WHOLE_ARCHIVES "$<TARGET_FILE:${archive_target}>"
+  # One self-contained option per archive. The path sits inside the option so
+  # its text is unique, which matters because CMake removes a duplicate option
+  # and that would leave every archive after the first outside the scope,
+  # silently dropping its registration objects.
+  target_link_options(
+    ${target_name}
+    PRIVATE
+    "LINKER:--push-state,--whole-archive,$<TARGET_FILE:${archive_target}>,--pop-state"
   )
-  get_target_property(
-    _emitted ${target_name} _EXECUTORCH_WHOLE_ARCHIVES_EMITTED
-  )
-  if(NOT _emitted)
-    set_property(
-      TARGET ${target_name} PROPERTY _EXECUTORCH_WHOLE_ARCHIVES_EMITTED 1
-    )
-    # One wrapper for every archive, reading the accumulated list at generate
-    # time, because the two constraints here pull in opposite directions. A path
-    # must be its own option, since CMake splits a comma-joined LINKER: list at
-    # every comma and SHELL: splits on spaces, so a valid path containing either
-    # arrives at the linker as two broken arguments. But repeating the flag text
-    # once per archive lets CMake remove the duplicate, which silently leaves
-    # every archive after the first outside the wrapper and drops its
-    # registration objects. GENEX_EVAL is needed because a stored generator
-    # expression is otherwise emitted literally.
-    target_link_options(
-      ${target_name}
-      PRIVATE
-      "LINKER:--whole-archive"
-      "$<GENEX_EVAL:$<TARGET_PROPERTY:${target_name},_EXECUTORCH_WHOLE_ARCHIVES>>"
-      "LINKER:--no-whole-archive"
-    )
-  endif()
-  # Also link the archive the ordinary way. A link option naming a file is not a
-  # build prerequisite of the link, so on its own it lets the archive be rebuilt
-  # while the library that bundles it keeps the previous contents. That produces
-  # a stale registration rather than a build error, and a clean build hides it.
-  # The duplicate reference costs nothing: the wrapper is emitted first and has
-  # already extracted every member.
+  # Also link it the ordinary way. A link option naming a file is not a build
+  # prerequisite, so on its own it lets the archive be rebuilt while the library
+  # bundling it keeps the previous contents, which is a stale registration
+  # rather than a build error.
   target_link_libraries(${target_name} PRIVATE ${archive_target})
 endfunction()
 
@@ -308,80 +286,62 @@ function(executorch_target_retain_shared_library target_name library_target)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
   endif()
-  set_property(
-    TARGET ${target_name}
-    APPEND
-    PROPERTY _EXECUTORCH_RETAINED_LIBRARIES "$<TARGET_FILE:${library_target}>"
+  # Scoped per library for the same reason as whole-archive above: unique option
+  # text, so nothing is de-duplicated out of the retention scope. Without this a
+  # registration-only library is dropped under the default --as-needed and its
+  # static initializer never runs.
+  target_link_options(
+    ${target_name}
+    PRIVATE
+    "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${library_target}>,--pop-state"
   )
-  get_target_property(
-    _emitted ${target_name} _EXECUTORCH_RETAINED_LIBRARIES_EMITTED
-  )
-  if(NOT _emitted)
-    set_property(
-      TARGET ${target_name} PROPERTY _EXECUTORCH_RETAINED_LIBRARIES_EMITTED 1
-    )
-    # One region for every retained library, for the same reasons the archive
-    # wrapper is one: a path inside a comma-joined LINKER: list is split at the
-    # comma, and repeating the flag text per library lets CMake remove the
-    # duplicate and silently unscope every library after the first.
-    #
-    # push-state and pop-state rather than closing with an explicit --as-needed,
-    # which would leave --as-needed in force for everything after it on the line
-    # and drop the next library that only exists to register something.
-    target_link_options(
-      ${target_name}
-      PRIVATE
-      "LINKER:--push-state,--no-as-needed"
-      "$<GENEX_EVAL:$<TARGET_PROPERTY:${target_name},_EXECUTORCH_RETAINED_LIBRARIES>>"
-      "LINKER:--pop-state"
-    )
-  endif()
-  # A link option does not order the build, so say it outright. A shared library
-  # needs no relink of its consumer when it changes, because it is resolved by
-  # name at load time, which is why an ordinary link edge is not needed here the
-  # way it is for an archive.
-  add_dependencies(${target_name} ${library_target})
+  target_link_libraries(${target_name} PRIVATE ${library_target})
 endfunction()
 
 # Mark a library as one the wheel ships, so it finds its siblings wherever it
-# ends up.
-#
-# Two layouts have to work and they are not the same shape. In the wheel these
-# all land in one directory, so "$ORIGIN" finds a sibling. In the build tree
-# each sits in its own subdirectory with the runtime at the top, so "$ORIGIN"
-# alone finds nothing and the hops up toward the top are needed too. The hops
-# are derived here rather than written at each call site, so nobody has to count
-# directory levels.
+# ends up. In the wheel all of these land in one directory, so "$ORIGIN" is the
+# whole answer.
 #
 # BUILD_WITH_INSTALL_RPATH is deliberately not used. It REPLACES the build-time
-# path with the install one, which drops those hops, and a build-tree consumer
-# then cannot load under a linker that emits DT_RUNPATH instead of DT_RPATH,
-# because DT_RUNPATH is not inherited down the dependency chain. Packaging
-# strips the absolute build directory that CMake also appends, which is what
-# keeps the shipped file free of paths from the machine that produced it.
+# path with the install one, which drops the dependency directories CMake
+# records, and in the build tree these libraries are NOT siblings: the runtime
+# sits at the top while the others are in their own subdirectories. Those
+# recorded directories are what resolves them there, and packaging strips them
+# so nothing absolute ships.
 function(executorch_target_shipped_runtime_path target_name)
-  set(_paths "$ORIGIN")
-  file(RELATIVE_PATH _to_top "${CMAKE_CURRENT_BINARY_DIR}"
-       "${CMAKE_BINARY_DIR}"
+  set_target_properties(
+    ${target_name} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
   )
-  string(REGEX REPLACE "/+$" "" _to_top "${_to_top}")
-  if(_to_top)
-    # One entry per level rather than only the top, because a sibling can sit at
-    # any depth in between.
-    string(REPLACE "/" ";" _components "${_to_top}")
-    set(_prefix "")
-    foreach(_component IN LISTS _components)
-      string(APPEND _prefix "${_component}/")
-      list(APPEND _paths "$ORIGIN/${_prefix}")
-    endforeach()
+endfunction()
+
+# Apply the SONAME policy for a library the project ships.
+#
+# A distribution package needs a versioned SONAME: it installs
+# libexecutorch.so.1 into a system directory where independent packages link it,
+# and the version is what lets a later major coexist during an upgrade. That is
+# why the shared library support carries VERSION and SOVERSION.
+#
+# A wheel is the opposite case. The library and the only things that link it
+# ship in the same archive and are replaced together, so no version needs
+# pinning, and a versioned name actively hurts: `find_library(executorch)`
+# matches libexecutorch.so and not libexecutorch.so.1, so a consumer's
+# find_package could not locate it. The torch wheel ships plain names with
+# unversioned SONAMEs for the same reason. Offering an unversioned symlink
+# instead is not equivalent, because a wheel is a zip and the format has no
+# portable symlink support.
+function(executorch_target_soname_policy target_name)
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    return()
   endif()
   set_target_properties(
-    ${target_name} PROPERTIES BUILD_RPATH "${_paths}" INSTALL_RPATH "$ORIGIN"
+    ${target_name} PROPERTIES VERSION "${PROJECT_VERSION}"
+                              SOVERSION "${PROJECT_VERSION_MAJOR}"
   )
 endfunction()
 
 # Create and install a shared library composed from dependency libraries. The
-# target links the provided dependencies and carries VERSION/SOVERSION.
+# target links the provided dependencies and carries the project's SONAME
+# policy.
 function(executorch_add_shared_library target_name)
   set(empty_source_name "${target_name}_empty.cpp")
   file(
@@ -395,12 +355,8 @@ function(executorch_add_shared_library target_name)
   if(ARGN)
     target_link_libraries(${target_name} PRIVATE ${ARGN})
   endif()
-  set_target_properties(
-    ${target_name}
-    PROPERTIES VERSION "${PROJECT_VERSION}"
-               SOVERSION "${PROJECT_VERSION_MAJOR}"
-               LINKER_LANGUAGE CXX
-  )
+  set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
+  executorch_target_soname_policy(${target_name})
   install(
     TARGETS ${target_name}
     EXPORT ExecuTorchTargets

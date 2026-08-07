@@ -164,10 +164,45 @@ def _installed_package_dir() -> Path:
     return paths[0]
 
 
+def _tool(name: str):
+    """Locate a build tool, including one pip installed beside this interpreter.
+
+    `shutil.which` searches PATH only, and a virtual environment's `bin` is on PATH
+    only when the environment is activated. These tests are normally run by invoking
+    the interpreter directly, so a tool pip installed into that environment is present
+    on disk and invisible to a PATH search.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    beside = Path(sys.executable).parent / name
+    return str(beside) if beside.is_file() else None
+
+
 def _shipped_shared_objects(package_dir: Path):
     return [
         path
         for path in sorted(package_dir.rglob("*.so*"))
+        if path.is_file() and not path.is_symlink()
+    ]
+
+
+def _shipped_runtime_libraries(package_dir: Path):
+    """The libraries the wheel ships under lib/, whatever it names them.
+
+    One place, because three checks previously spelled the pattern themselves as
+    `*.so.*` and every one of them silently stopped matching when the build moved to
+    unversioned names. The failure was invisible: a check that finds nothing reports
+    that the component is absent, which each of those treats as acceptable.
+
+    Matches a versioned name too, so a build that does set SOVERSION is still found.
+    """
+    lib_dir = package_dir / "lib"
+    if not lib_dir.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(lib_dir.glob("lib*.so*"))
         if path.is_file() and not path.is_symlink()
     ]
 
@@ -214,7 +249,7 @@ def _assert_single_definer(symbols, what: str, owner: str | None = None) -> None
     fault. Delegates and kernel sets are build options, so a wheel built without one
     has zero definers and is reported as such. What must never happen is two.
     """
-    assert shutil.which("nm") is not None, "nm is required to inspect the wheel"
+    assert _tool("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
     libraries = _shipped_shared_objects(package_dir)
@@ -255,79 +290,76 @@ def _assert_single_definer(symbols, what: str, owner: str | None = None) -> None
     print(f"✓ single {what}{where} across {len(libraries)} shipped libraries")
 
 
-def test_single_backend_registry() -> None:
-    """Exactly one shipped library may define the backend registry."""
-    _assert_single_definer(_REGISTRY_SYMBOLS, "backend registry", "libexecutorch.so")
-
-
-def test_single_threadpool() -> None:
-    """Exactly one shipped library may define the thread pool accessor."""
-    _assert_single_definer(
-        _THREADPOOL_SYMBOLS, "thread pool", "libexecutorch_threadpool.so"
-    )
-    # And one copy of the pool implementation underneath it. The accessor above can
-    # have a single owner while pthreadpool itself is bundled into two of these,
-    # which is two real pools, each sized to every core.
-    #
-    # One copy among the libraries this wheel ships. torch links pthreadpool too and
-    # exports the same symbols, so the process still holds two definitions and which
-    # one a caller reaches depends on load order. Fixing that needs an explicit
-    # export list: hiding the bundled symbols wholesale with --exclude-libs,ALL
-    # breaks aarch64, where the optimized kernels resolve cpuinfo_initialize from
-    # this library across a library boundary. That is a separate change.
-    _assert_single_definer(
-        _BUNDLED_THREADPOOL_SYMBOLS,
-        "bundled thread pool implementation",
-        "libexecutorch_threadpool.so",
-    )
-
-
-def test_single_kernel_registration() -> None:
-    """At most one shipped library may define the merged CPU kernels.
-
-    The owner is only required when the wheel actually ships that library. A wheel
-    built without the optimized kernels deliberately falls back to linking the
-    portable ops into the Python extension instead, which is a supported
-    configuration rather than a duplicate, so the owner is asserted only when the
-    library it names is present.
-    """
-    package_dir = _installed_package_dir()
-    ships_kernels = any(
-        (package_dir / "lib").glob("libexecutorch_kernels_optimized.so.*")
-    )
-    _assert_single_definer(
-        _KERNEL_SYMBOLS,
-        "set of CPU kernels",
-        "libexecutorch_kernels_optimized.so" if ships_kernels else None,
-    )
-    # Ownership of the operator table, not just of a kernel implementation. A
-    # second copy means a second table, and a static initializer registering into
-    # a table nothing else reads shows up as an operator that is missing at run
-    # time rather than as a link error. The runtime owns this either way.
-    _assert_single_definer(
-        _KERNEL_REGISTRY_SYMBOLS, "operator registry", "libexecutorch.so"
-    )
-
-
-def test_single_xnnpack_delegate() -> None:
-    """Exactly one shipped library may define the XNNPACK delegate."""
-    _assert_single_definer(
-        _XNNPACK_SYMBOLS, "XNNPACK delegate", "libexecutorch_backend_xnnpack.so"
-    )
-    # And one copy of the delegate's own runtime underneath it, among the libraries
-    # this wheel ships. torch also links XNNPACK and exports hundreds of the same
-    # xnn_* symbols, so process-wide uniqueness is not something this commit can
-    # claim; see the note in test_single_threadpool.
-    _assert_single_definer(
-        _BUNDLED_XNNPACK_SYMBOLS,
-        "bundled XNNPACK runtime",
+# Each component the wheel ships as its own library, the symbols that identify it,
+# and the library that must own them. `required` says whether the owner has to be
+# present: the optimized kernels are optional, because a wheel built without them
+# deliberately links the portable ops into the Python extension instead, which is a
+# supported configuration rather than a duplicate.
+#
+# A table rather than one function per component, because the per-function form let
+# one of them drift: it looked up its library with its own glob, which silently
+# stopped matching when the libraries were renamed while the others kept working.
+_OWNED_COMPONENTS = (
+    ("backend registry", _REGISTRY_SYMBOLS, "libexecutorch.so", True),
+    ("operator registry", _KERNEL_REGISTRY_SYMBOLS, "libexecutorch.so", True),
+    ("thread pool", _THREADPOOL_SYMBOLS, "libexecutorch_threadpool.so", True),
+    ("profiler", _ETDUMP_SYMBOLS, "libexecutorch_etdump.so", True),
+    (
+        "XNNPACK delegate",
+        _XNNPACK_SYMBOLS,
         "libexecutorch_backend_xnnpack.so",
-    )
+        True,
+    ),
+    (
+        "set of CPU kernels",
+        _KERNEL_SYMBOLS,
+        "libexecutorch_kernels_optimized.so",
+        False,
+    ),
+    # The third-party code these libraries bundle, checked separately from the
+    # wrappers above. A wrapper can have a single owner while the implementation
+    # underneath it is bundled into two of these, which is two real thread pools or
+    # two XNNPACK runtimes.
+    #
+    # One copy among the libraries this wheel ships, which is what this change
+    # controls. torch links the same projects and exports the same symbols, so the
+    # process still holds two definitions and which one a caller reaches depends on
+    # load order. Fixing that needs an explicit export list: hiding them wholesale
+    # with --exclude-libs,ALL breaks aarch64, where the optimized kernels resolve
+    # cpuinfo_initialize from the thread pool across a library boundary.
+    (
+        "bundled thread pool implementation",
+        _BUNDLED_THREADPOOL_SYMBOLS,
+        "libexecutorch_threadpool.so",
+        True,
+    ),
+    (
+        "bundled XNNPACK runtime",
+        _BUNDLED_XNNPACK_SYMBOLS,
+        "libexecutorch_backend_xnnpack.so",
+        True,
+    ),
+)
 
 
-def test_single_profiler() -> None:
-    """Exactly one shipped library may define the profiler."""
-    _assert_single_definer(_ETDUMP_SYMBOLS, "profiler", "libexecutorch_etdump.so")
+def test_each_component_has_one_owner() -> None:
+    """No component may be defined by more than one library the wheel ships.
+
+    This is the property the split exists to create. Two copies of a component mean
+    two registries or two thread pools in one process, and a static initializer that
+    registers into a table nothing else reads shows up as an operator missing at run
+    time rather than as a link error.
+    """
+    shipped = {
+        path.name for path in _shipped_runtime_libraries(_installed_package_dir())
+    }
+    for what, symbols, owner, required in _OWNED_COMPONENTS:
+        present = any(name.startswith(owner) for name in shipped)
+        assert present or not required, (
+            f"the wheel ships no {owner}, which owns the {what}. Either packaging "
+            "dropped it or the build did not produce it."
+        )
+        _assert_single_definer(symbols, what, owner if present else None)
 
 
 def test_python_extensions_import() -> None:
@@ -488,7 +520,7 @@ def test_shipped_libraries_load() -> None:
     dependencies into the process, so they intentionally carry no path to them.
     Only a name nothing in the wheel provides is a real problem.
     """
-    if shutil.which("ldd") is None:
+    if _tool("ldd") is None:
         print("- ldd not available, skipping the load check")
         return
     # Torch has to be installed for this to mean anything: several shipped libraries
@@ -532,6 +564,19 @@ def test_shipped_libraries_load() -> None:
         # ldd reports missing libraries on stdout but undefined symbols on stderr,
         # so both streams matter.
         combined = resolved.stdout + resolved.stderr
+        # A non-zero exit with none of the expected text means ldd could not inspect
+        # the file at all, which a text-only search reads as "nothing wrong". A file
+        # under lib/ that is not a loadable object is a packaging defect, so treat it
+        # as one rather than passing it.
+        if (
+            resolved.returncode != 0
+            and "not found" not in combined
+            and "undefined symbol" not in combined
+        ):
+            unresolved[str(library.relative_to(package_dir))] = [
+                f"ldd could not inspect this file: {combined.strip()[:160]}"
+            ]
+            continue
         missing = [
             line.split("=>")[0].strip()
             for line in combined.splitlines()
@@ -595,7 +640,7 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
     mirrors the wheel layout, drop every absolute runtime path, and check what is
     left is enough.
     """
-    if shutil.which("ldd") is None or shutil.which("patchelf") is None:
+    if _tool("ldd") is None or _tool("patchelf") is None:
         print("- ldd or patchelf unavailable, skipping the relocated load check")
         return
 
@@ -618,7 +663,7 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
         for library in libraries:
             target = root / library.relative_to(package_dir)
             current = subprocess.run(
-                ["patchelf", "--print-rpath", str(target)],
+                [_tool("patchelf"), "--print-rpath", str(target)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -627,7 +672,7 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
                 entry for entry in current.split(":") if entry.startswith("$ORIGIN")
             ]
             subprocess.run(
-                ["patchelf", "--set-rpath", ":".join(relative), str(target)],
+                [_tool("patchelf"), "--set-rpath", ":".join(relative), str(target)],
                 # A failure here would leave the original absolute build paths in
                 # place, and the check below would then pass by resolving through
                 # them, which is exactly what this test exists to rule out.
@@ -678,7 +723,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     # Skipped rather than asserted, the same as every other tool this suite needs.
     # A missing compiler says nothing about the wheel, and aborting here would take
     # the whole run down with it rather than reporting the one check it prevents.
-    if shutil.which("cmake") is None:
+    if _tool("cmake") is None:
         print("- cmake unavailable, skipping the custom op check")
         return
 
@@ -914,9 +959,24 @@ def test_no_absolute_runtime_paths() -> None:
     The check reads the shipped file directly, with nothing stripped, which is what
     a user actually receives.
     """
-    if shutil.which("patchelf") is None:
-        print("- patchelf unavailable, skipping the runtime path check")
-        return
+    # Fatal, not a skip. Packaging strips these paths best-effort, because it cannot
+    # guarantee patchelf on PATH, so this is the only place the guarantee can be
+    # enforced. If both went quiet on the same missing tool, a wheel carrying the
+    # build machine's directories would ship looking correct.
+    if _tool("patchelf") is None:
+        print("- patchelf not present, installing it so this check can run")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--quiet", "patchelf"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    patchelf = _tool("patchelf")
+    assert patchelf is not None, (
+        "patchelf is required to check the shipped runtime paths and could not be "
+        "installed. Packaging uses it to strip build-tree directories, and without it "
+        "here neither side would notice that they were left in place."
+    )
 
     package_dir = _installed_package_dir()
 
@@ -929,7 +989,7 @@ def test_no_absolute_runtime_paths() -> None:
         if not library.is_file() or library.is_symlink():
             continue
         result = subprocess.run(
-            ["patchelf", "--print-rpath", str(library)],
+            [patchelf, "--print-rpath", str(library)],
             capture_output=True,
             text=True,
             check=False,
@@ -972,8 +1032,8 @@ def test_extension_contains_no_component() -> None:
     inside the extension. The direct statement is that the extension defines none of
     what the shipped libraries own, and records a dependency on each instead.
     """
-    assert shutil.which("nm") is not None, "nm is required to inspect the wheel"
-    if shutil.which("readelf") is None:
+    assert _tool("nm") is not None, "nm is required to inspect the wheel"
+    if _tool("readelf") is None:
         print("- readelf unavailable, skipping the extension composition check")
         return
 
@@ -1017,7 +1077,7 @@ def test_extension_contains_no_component() -> None:
         ).stdout.splitlines()
         if "NEEDED" in line
     }
-    shipped = {path.name for path in lib_dir.glob("lib*.so.*") if path.is_file()}
+    shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
     unused = sorted(shipped - needed)
     assert not unused, (
         f"the wheel ships {unused} but {extension.name} does not depend on them, so "
@@ -1053,7 +1113,7 @@ def test_extension_contains_no_component() -> None:
     )
 
 
-def test_shipped_libraries_are_all_versioned() -> None:
+def test_shipped_library_names_are_expected() -> None:
     """Every library in lib/ must be one this build could have produced.
 
     Packaging copies binaries out of a staging directory rather than running an
@@ -1074,10 +1134,9 @@ def test_shipped_libraries_are_all_versioned() -> None:
         print("- this wheel ships no lib directory, nothing to check")
         return
 
-    # Regular files only. A symlink is how an unversioned name is normally offered
-    # alongside a versioned one, which is what a linker needs to resolve -lexecutorch,
-    # so it is not the stale-artifact case this check is about. A leftover from an
-    # earlier build is a real file, and that is still caught.
+    # Regular files only. A symlink here would be a deliberate alias rather than the
+    # stale-artifact case this check is about, and a leftover from an earlier build is
+    # a real file, so it is still caught.
     shipped = sorted(
         p for p in lib_dir.glob("*.so*") if p.is_file() and not p.is_symlink()
     )
@@ -1098,7 +1157,9 @@ def test_shipped_libraries_are_all_versioned() -> None:
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
     )
-    permitted = re.compile(rf"(?:{'|'.join(known)})\.so\.\d+")
+    # A plain .so, because the wheel build does not version these. A trailing
+    # .so.<digits> would also be a name packaging did not produce here.
+    permitted = re.compile(rf"(?:{'|'.join(known)})\.so")
     unknown = sorted(p.name for p in shipped if not permitted.fullmatch(p.name))
     assert not unknown, (
         f"the wheel ships {unknown} under lib/, which packaging does not produce. "
@@ -1106,17 +1167,8 @@ def test_shipped_libraries_are_all_versioned() -> None:
         "and it ships while looking correct to every other check."
     )
 
-    # A bare .so pins no major, so nothing constrains what a consumer that linked
-    # it will load later, which is the guarantee a soname exists to provide.
-    unversioned = [p.name for p in shipped if not re.search(r"\.so\.\d+$", p.name)]
-    assert not unversioned, (
-        f"shipped libraries carry no major version: {unversioned}. Either the build "
-        "did not set VERSION and SOVERSION, or these are leftovers from an earlier "
-        "build that packaging copied out of a stale staging directory."
-    )
-
-    if shutil.which("readelf") is None:
-        print(f"✓ {len(shipped)} shipped libraries are versioned")
+    if _tool("readelf") is None:
+        print(f"✓ {len(shipped)} shipped libraries have expected names")
         return
 
     # The recorded soname has to match the file name, or a consumer records a
@@ -1140,7 +1192,7 @@ def test_shipped_libraries_are_all_versioned() -> None:
         "shipped libraries record a soname that is not their file name, so a "
         f"consumer would look for a file the wheel does not ship: {mismatched}"
     )
-    print(f"✓ {len(shipped)} shipped libraries are versioned with matching sonames")
+    print(f"✓ {len(shipped)} shipped libraries have expected names and sonames")
 
 
 _PARITY_MODEL = '''
@@ -1223,7 +1275,8 @@ def test_model_matches_eager_pytorch(work_dir: Path) -> None:
     # execution there would reject a correct artifact.
     modes = ["plain"]
     if any(
-        (_installed_package_dir() / "lib").glob("libexecutorch_backend_xnnpack.so.*")
+        path.name.startswith("libexecutorch_backend_xnnpack.so")
+        for path in _shipped_runtime_libraries(_installed_package_dir())
     ):
         modes.append("delegate")
     else:
@@ -1252,17 +1305,13 @@ def test_model_matches_eager_pytorch(work_dir: Path) -> None:
 
 
 def run_tests(work_dir: Path) -> None:
-    test_single_backend_registry()
+    test_each_component_has_one_owner()
     test_python_extensions_import()
     test_extension_contains_no_component()
-    test_shipped_libraries_are_all_versioned()
+    test_shipped_library_names_are_expected()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
     test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
     test_no_absolute_runtime_paths()
     test_model_matches_eager_pytorch(work_dir)
-    test_single_threadpool()
-    test_single_kernel_registration()
-    test_single_xnnpack_delegate()
-    test_single_profiler()

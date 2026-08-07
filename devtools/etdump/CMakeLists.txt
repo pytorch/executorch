@@ -74,12 +74,8 @@ else()
   target_link_libraries(etdump PRIVATE executorch)
 endif()
 if(EXECUTORCH_BUILD_SHARED)
-  set_target_properties(
-    etdump
-    PROPERTIES OUTPUT_NAME executorch_etdump
-               VERSION "${PROJECT_VERSION}"
-               SOVERSION "${PROJECT_VERSION_MAJOR}"
-  )
+  set_target_properties(etdump PROPERTIES OUTPUT_NAME executorch_etdump)
+  executorch_target_soname_policy(etdump)
   # Ships beside libexecutorch.so in the wheel's lib/ directory, and needs it,
   # so it has to be able to find it from wherever the package is installed.
   executorch_target_shipped_runtime_path(etdump)

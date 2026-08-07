@@ -295,12 +295,10 @@ function(gen_operators_lib)
 
   if(GEN_SHARED)
     add_library(${GEN_LIB_NAME} SHARED)
-    set_target_properties(
-      ${GEN_LIB_NAME}
-      PROPERTIES OUTPUT_NAME executorch_${GEN_LIB_NAME}
-                 VERSION "${PROJECT_VERSION}"
-                 SOVERSION "${PROJECT_VERSION_MAJOR}"
-    )
+    # The caller names the library and sets its version, because the shipped
+    # name describes what the library provides rather than which generation
+    # target produced it, and only the caller knows that.
+    #
     # Ships beside the runtime in the wheel's lib/ directory.
     executorch_target_shipped_runtime_path(${GEN_LIB_NAME})
   else()
@@ -315,13 +313,12 @@ function(gen_operators_lib)
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
-  if(GEN_SHARED)
-    # Resolve the runtime from the shared library rather than from the static
-    # core in GEN_DEPS. Linking the static core gives this library its own copy
-    # of the operator table, so its static initializer registers into a table
-    # nothing else reads and the operators appear missing at run time.
-    executorch_target_link_shared_runtime(${GEN_LIB_NAME})
-  endif()
+  # Resolve the runtime from the shared library rather than from the static core
+  # in GEN_DEPS. Linking the static core gives this library its own copy of the
+  # operator table, so its static initializer registers into a table nothing
+  # else reads and the operators appear missing at run time. A no-op unless the
+  # shared runtime exists, so it needs no guard here.
+  executorch_target_link_shared_runtime(${GEN_LIB_NAME})
   set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
 

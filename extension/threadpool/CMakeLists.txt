@@ -47,11 +47,9 @@ add_library(
 )
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
-    extension_threadpool
-    PROPERTIES OUTPUT_NAME executorch_threadpool
-               VERSION "${PROJECT_VERSION}"
-               SOVERSION "${PROJECT_VERSION_MAJOR}"
+    extension_threadpool PROPERTIES OUTPUT_NAME executorch_threadpool
   )
+  executorch_target_soname_policy(extension_threadpool)
   # Ships beside libexecutorch.so in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(extension_threadpool)
   # cpuinfo and pthreadpool are forced static, so bundle them inside this

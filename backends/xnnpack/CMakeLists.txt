@@ -125,11 +125,9 @@ target_link_libraries(
 )
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
-    xnnpack_backend
-    PROPERTIES OUTPUT_NAME executorch_backend_xnnpack
-               VERSION "${PROJECT_VERSION}"
-               SOVERSION "${PROJECT_VERSION_MAJOR}"
+    xnnpack_backend PROPERTIES OUTPUT_NAME executorch_backend_xnnpack
   )
+  executorch_target_soname_policy(xnnpack_backend)
   # XNNPACK and its microkernels are forced static, so bundle them inside this
   # library instead of making every consumer supply them.
   executorch_target_whole_archive(xnnpack_backend XNNPACK)

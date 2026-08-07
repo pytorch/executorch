@@ -79,10 +79,9 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     # libexecutorch_kernels_optimized.so. The target name stays as it is because
     # a source build already refers to it.
     set_target_properties(
-      optimized_native_cpu_ops_lib
-      PROPERTIES OUTPUT_NAME executorch_kernels_optimized
-                 VERSION "${PROJECT_VERSION}"
-                 SOVERSION "${PROJECT_VERSION_MAJOR}"
+      optimized_native_cpu_ops_lib PROPERTIES OUTPUT_NAME
+                                              executorch_kernels_optimized
     )
+    executorch_target_soname_policy(optimized_native_cpu_ops_lib)
   endif()
 endif()
