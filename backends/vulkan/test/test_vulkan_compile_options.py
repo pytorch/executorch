@@ -41,6 +41,10 @@ class TestVulkanCompileOptions(unittest.TestCase):
         round_tripped = self._round_trip({"skip_memory_planning": True})
         self.assertTrue(round_tripped.get("skip_memory_planning"))
 
+    def test_alias_buffer_mutations_round_trips(self) -> None:
+        round_tripped = self._round_trip({"alias_buffer_mutations": True})
+        self.assertTrue(round_tripped.get("alias_buffer_mutations"))
+
     def test_force_fp16_round_trips(self) -> None:
         round_tripped = self._round_trip({"force_fp16": True})
         self.assertTrue(round_tripped.get("force_fp16"))
@@ -105,15 +109,15 @@ class TestVulkanCompileOptions(unittest.TestCase):
         ), patch(
             "executorch.backends.vulkan.vulkan_preprocess.VkGraphBuilder",
             return_value=graph_builder,
-        ), patch(
+        ) as graph_builder_factory, patch(
             "executorch.backends.vulkan.vulkan_preprocess.serialize_vulkan_graph",
             return_value=b"vk_graph",
         ):
             result = VulkanBackend.preprocess(program, parse_compile_options(options))
-        return result.data_store_output, externalize_pte_data
+        return result.data_store_output, externalize_pte_data, graph_builder_factory
 
     def test_external_constants_default_keeps_constants_inline(self) -> None:
-        output, externalize_pte_data = self._preprocess_named_data({})
+        output, externalize_pte_data, _ = self._preprocess_named_data({})
 
         self.assertEqual(output.buffers, [b"constant"])
         self.assertEqual(output.pte_data, {"constant": DataEntry(0, 16, None)})
@@ -121,7 +125,7 @@ class TestVulkanCompileOptions(unittest.TestCase):
         externalize_pte_data.assert_not_called()
 
     def test_external_constants_option_externalizes_constants(self) -> None:
-        output, externalize_pte_data = self._preprocess_named_data(
+        output, externalize_pte_data, _ = self._preprocess_named_data(
             {"external_constants_max_data_bytes": 16}
         )
 
@@ -131,8 +135,21 @@ class TestVulkanCompileOptions(unittest.TestCase):
         self.assertEqual(list(next(iter(output.external_data.values()))), ["constant"])
         externalize_pte_data.assert_called_once_with(16, "vulkan_constants")
 
+    def test_alias_buffer_mutations_reaches_graph_builder(self) -> None:
+        for options, expected in (
+            ({}, False),
+            ({"alias_buffer_mutations": True}, True),
+        ):
+            with self.subTest(options=options):
+                _, _, graph_builder_factory = self._preprocess_named_data(options)
+                self.assertIs(
+                    graph_builder_factory.call_args.kwargs["alias_buffer_mutations"],
+                    expected,
+                )
+
     def test_unset_options_are_absent(self) -> None:
         round_tripped = self._round_trip({})
+        self.assertNotIn("alias_buffer_mutations", round_tripped)
         self.assertNotIn("small_texture_limits", round_tripped)
         self.assertNotIn("skip_memory_planning", round_tripped)
         self.assertNotIn("external_constants_max_data_bytes", round_tripped)
