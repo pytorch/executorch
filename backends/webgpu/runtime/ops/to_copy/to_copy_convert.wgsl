@@ -1,5 +1,5 @@
-@group(0) @binding(0) var<storage, read> input: array<f32>;
-@group(0) @binding(1) var<storage, read_write> output: array<i32>;
+@group(0) @binding(0) var<storage, read> input: array<${IN_TYPE}>;
+@group(0) @binding(1) var<storage, read_write> output: array<${OUT_TYPE}>;
 
 struct Params {
   num_elements: u32,
@@ -14,5 +14,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (idx >= params.num_elements) {
         return;
     }
-    output[idx] = i32(input[idx]);
+    output[idx] = ${OUT_TYPE}(input[idx]);
 }

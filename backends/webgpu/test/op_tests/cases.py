@@ -145,6 +145,13 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
     SqueezeModule,
 )
 
+from executorch.backends.webgpu.test.ops.test_to_copy import (
+    to_copy_float_input,
+    to_copy_int_input,
+    ToCopyFloatToIntToFloatModule,
+    ToCopyIntToFloatModule,
+)
+
 from executorch.backends.webgpu.test.ops.test_unary_activations import (
     _lin as _unary_lin,
     CLAMP_CONFIGS,
@@ -843,6 +850,38 @@ def _grid_priors_suite() -> WebGPUTestSuite:
 @register_op_test("view_copy")
 def _view_copy_suite() -> WebGPUTestSuite:
     return _fn_config_suite(ViewModule, _VIEW_CONFIGS)
+
+
+def _to_copy_factory(variant: str) -> torch.nn.Module:
+    return {
+        "int_to_float": ToCopyIntToFloatModule,
+        "float_roundtrip": ToCopyFloatToIntToFloatModule,
+    }[variant]()
+
+
+@register_op_test("to_copy")
+def _to_copy_suite() -> WebGPUTestSuite:
+    cases = []
+    for n in (63, 64, 65, 257):
+        cases.extend(
+            [
+                Case(
+                    name=f"int_to_float_{n}",
+                    construct={"variant": "int_to_float"},
+                    inputs=(InputSpec(shape=(n,), gen=to_copy_int_input),),
+                ),
+                Case(
+                    name=f"float_roundtrip_{n}",
+                    construct={"variant": "float_roundtrip"},
+                    inputs=(InputSpec(shape=(n,), gen=to_copy_float_input),),
+                ),
+            ]
+        )
+    return WebGPUTestSuite(
+        module_factory=_to_copy_factory,
+        cases=cases,
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("select")
