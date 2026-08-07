@@ -65,6 +65,7 @@ DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 UPDATE_CACHE_DIR="/tmp/update_cache"
 INDEX_DIR="/tmp/index"
 DYNAMIC_SHAPE_DIR="/tmp/dynamic_shape"
+ROPE_HF_DIR="/tmp/webgpu_rope_hf"
 SYMINT_BLOB="/tmp/sdpa_dyn_small.pte"
 OUTPUT_SUPPRESSION_DIR="/tmp/output_suppression"
 EMBEDDING_MODEL="/tmp/webgpu_embedding_q4gsw.pte"
@@ -102,6 +103,11 @@ $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_rope import export_rope_model
 export_rope_model('${ROPE_MODEL}', '${ROPE_XQ_GOLDEN}', '${ROPE_XK_GOLDEN}')
 export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DECODE_XK_GOLDEN}', 'decode')
+"
+
+$PYTHON_EXECUTABLE -c "
+from executorch.backends.webgpu.test.ops.test_rope_hf import export_rope_hf_dynamic
+export_rope_hf_dynamic('${ROPE_HF_DIR}')
 "
 
 $PYTHON_EXECUTABLE -c "
@@ -150,6 +156,7 @@ export_dynamic_decode('/tmp')
 export_incache_decode('/tmp')
 "
 
+require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"
 require_file "${SYMINT_BLOB}"
 require_file "${OUTPUT_SUPPRESSION_DIR}/input.bin"
 
@@ -201,6 +208,7 @@ run_with_required_device env WEBGPU_TEST_SDPA_DIR=/tmp/ \
     WEBGPU_TEST_ROPE_DECODE_MODEL="${ROPE_DECODE_MODEL}" \
     WEBGPU_TEST_ROPE_DECODE_XQ_GOLDEN="${ROPE_DECODE_XQ_GOLDEN}" \
     WEBGPU_TEST_ROPE_DECODE_XK_GOLDEN="${ROPE_DECODE_XK_GOLDEN}" \
+    WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}" \
     WEBGPU_TEST_SYMINT_BLOB="${SYMINT_BLOB}" \
     WEBGPU_TEST_PREPACK_MODEL="${PREPACK_MODEL}" \
     WEBGPU_TEST_PREPACK_GOLDEN="${PREPACK_GOLDEN}" \

@@ -11,6 +11,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_hf_wgsl.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -513,6 +514,152 @@ std::vector<float> run_rms_norm_at_wg(
   return result;
 }
 
+struct RotaryHfProbeParams {
+  uint32_t n_heads;
+  uint32_t seq;
+  uint32_t head_dim;
+  uint32_t half_dim;
+  uint32_t num_pairs;
+  uint32_t rotary_dim;
+  uint32_t start_pos;
+  uint32_t _pad;
+};
+
+std::vector<float> run_rope_hf_2d_probe(const WebGPUContext& ctx) {
+  constexpr uint32_t kWorkgroupSize = 2;
+  constexpr uint32_t kWorkgroupsX = 2;
+  constexpr uint32_t kWorkgroupsY = 2;
+  constexpr uint32_t kNumPairs = kWorkgroupSize * kWorkgroupsX * kWorkgroupsY;
+  constexpr uint32_t kHeadDim = kNumPairs * 2;
+
+  std::vector<float> input(kHeadDim);
+  std::vector<float> output(kHeadDim, 0.0f);
+  std::vector<float> freqs_cos(kHeadDim, 1.0f);
+  std::vector<float> freqs_sin(kHeadDim, 0.0f);
+  for (uint32_t i = 0; i < kHeadDim; i++) {
+    input[i] = static_cast<float>(i + 1u);
+    if (i >= kNumPairs) {
+      freqs_cos[i] = 2.0f;
+    }
+  }
+
+  WGPUDevice device = ctx.device;
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {kRotaryEmbeddingHfWGSL, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+
+  WGPUConstantEntry wg_const = {};
+  wg_const.key = {"wg_size", WGPU_STRLEN};
+  wg_const.value = static_cast<double>(kWorkgroupSize);
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.compute.module = shader;
+  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = 1;
+  pipeline_desc.compute.constants = &wg_const;
+  WGPUComputePipeline pipeline =
+      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  WGPUBindGroupLayout layout =
+      wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+
+  auto make_buffer =
+      [device](const void* data, uint64_t size, WGPUBufferUsage usage) {
+        WGPUBufferDescriptor desc = {};
+        desc.size = size;
+        desc.usage = usage;
+        desc.mappedAtCreation = true;
+        WGPUBuffer buffer = wgpuDeviceCreateBuffer(device, &desc);
+        std::memcpy(wgpuBufferGetMappedRange(buffer, 0, size), data, size);
+        wgpuBufferUnmap(buffer);
+        return buffer;
+      };
+
+  const uint64_t data_bytes = kHeadDim * sizeof(float);
+  WGPUBuffer out_buffer = make_buffer(
+      output.data(),
+      data_bytes,
+      WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+  WGPUBuffer in_buffer =
+      make_buffer(input.data(), data_bytes, WGPUBufferUsage_Storage);
+  WGPUBuffer cos_buffer =
+      make_buffer(freqs_cos.data(), data_bytes, WGPUBufferUsage_Storage);
+  WGPUBuffer sin_buffer =
+      make_buffer(freqs_sin.data(), data_bytes, WGPUBufferUsage_Storage);
+  const RotaryHfProbeParams params = {
+      1u, 1u, kHeadDim, kNumPairs, kNumPairs, kHeadDim, 0u, 0u};
+  WGPUBuffer params_buffer =
+      make_buffer(&params, sizeof(params), WGPUBufferUsage_Uniform);
+
+  WGPUBindGroupEntry entries[5] = {};
+  const WGPUBuffer buffers[] = {
+      out_buffer, in_buffer, cos_buffer, sin_buffer, params_buffer};
+  const uint64_t sizes[] = {
+      data_bytes, data_bytes, data_bytes, data_bytes, sizeof(params)};
+  for (uint32_t i = 0; i < 5; i++) {
+    entries[i].binding = i;
+    entries[i].buffer = buffers[i];
+    entries[i].size = sizes[i];
+  }
+  WGPUBindGroupDescriptor bind_group_desc = {};
+  bind_group_desc.layout = layout;
+  bind_group_desc.entryCount = 5;
+  bind_group_desc.entries = entries;
+  WGPUBindGroup bind_group =
+      wgpuDeviceCreateBindGroup(device, &bind_group_desc);
+
+  WGPUBufferDescriptor staging_desc = {};
+  staging_desc.size = data_bytes;
+  staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+  WGPUBuffer staging = wgpuDeviceCreateBuffer(device, &staging_desc);
+
+  WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+  WGPUComputePassDescriptor pass_desc = {};
+  WGPUComputePassEncoder pass =
+      wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+  wgpuComputePassEncoderSetPipeline(pass, pipeline);
+  wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, nullptr);
+  wgpuComputePassEncoderDispatchWorkgroups(pass, kWorkgroupsX, kWorkgroupsY, 1);
+  wgpuComputePassEncoderEnd(pass);
+  wgpuComputePassEncoderRelease(pass);
+  wgpuCommandEncoderCopyBufferToBuffer(
+      encoder, out_buffer, 0, staging, 0, data_bytes);
+  WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, nullptr);
+  wgpuQueueSubmit(ctx.queue, 1, &command);
+  wgpuCommandBufferRelease(command);
+  wgpuCommandEncoderRelease(encoder);
+
+  WgMapData callback = {};
+  WGPUBufferMapCallbackInfo callback_info = {};
+  callback_info.mode = WGPUCallbackMode_WaitAnyOnly;
+  callback_info.callback = wg_map_cb;
+  callback_info.userdata1 = &callback;
+  WGPUFuture future = wgpuBufferMapAsync(
+      staging, WGPUMapMode_Read, 0, data_bytes, callback_info);
+  const WGPUWaitStatus wait = webgpu_wait(ctx.instance, future);
+  if (wait == WGPUWaitStatus_Success &&
+      callback.status == WGPUMapAsyncStatus_Success) {
+    const void* mapped = wgpuBufferGetConstMappedRange(staging, 0, data_bytes);
+    std::memcpy(output.data(), mapped, data_bytes);
+    wgpuBufferUnmap(staging);
+  } else {
+    output.clear();
+  }
+
+  wgpuBufferRelease(staging);
+  wgpuBindGroupRelease(bind_group);
+  wgpuBufferRelease(params_buffer);
+  wgpuBufferRelease(sin_buffer);
+  wgpuBufferRelease(cos_buffer);
+  wgpuBufferRelease(in_buffer);
+  wgpuBufferRelease(out_buffer);
+  wgpuBindGroupLayoutRelease(layout);
+  wgpuComputePipelineRelease(pipeline);
+  wgpuShaderModuleRelease(shader);
+  return output;
+}
+
 // linear_q4gsw sweep config; mirrors CONFIGS in test_quantized_linear.py.
 struct Q4gswConfig {
   const char* name;
@@ -765,6 +912,220 @@ void test_rope(
       xq_numel + xk_numel);
   EXPECT_TRUE(pass_q && pass_k)
       << "apply_rotary_emb exceeds tolerance 1e-3 (abs AND rel)";
+}
+
+bool has_shape(
+    const executorch::aten::Tensor& tensor,
+    const std::vector<int64_t>& expected) {
+  if (tensor.dim() != static_cast<int64_t>(expected.size())) {
+    return false;
+  }
+  for (size_t i = 0; i < expected.size(); i++) {
+    if (tensor.size(static_cast<int64_t>(i)) != expected[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void test_rope_hf_dynamic(const std::string& dir) {
+  constexpr int S = 1;
+  constexpr int NH = 16;
+  constexpr int NKV = 8;
+  constexpr int HD = 128;
+  constexpr int MAXS = 16;
+  constexpr int positions[] = {0, 7, 15};
+  constexpr int xq_numel = S * NH * HD;
+  constexpr int xk_numel = S * NKV * HD;
+  constexpr int freqs_numel = MAXS * HD;
+
+  Module module(dir + "rope_hf_dynamic.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load HF RoPE dynamic model";
+
+  std::vector<float> xq = load_golden(dir + "rope_hf_dynamic.xq.bin", xq_numel);
+  std::vector<float> xk = load_golden(dir + "rope_hf_dynamic.xk.bin", xk_numel);
+  std::vector<float> freqs_cos =
+      load_golden(dir + "rope_hf_dynamic.freqs_cos.bin", freqs_numel);
+  std::vector<float> freqs_sin =
+      load_golden(dir + "rope_hf_dynamic.freqs_sin.bin", freqs_numel);
+  ASSERT_FALSE(
+      xq.empty() || xk.empty() || freqs_cos.empty() || freqs_sin.empty())
+      << "could not load HF RoPE input binaries from " << dir;
+
+  for (const int position : positions) {
+    auto xqt = make_tensor_ptr({1, S, NH, HD}, std::vector<float>(xq));
+    auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
+    auto fct = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_cos));
+    auto fst = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_sin));
+    auto post = make_tensor_ptr(
+        {1}, std::vector<int64_t>{static_cast<int64_t>(position)});
+    auto result = module.forward(
+        {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
+    ASSERT_TRUE(result.ok())
+        << "HF RoPE forward failed at position " << position << " (error "
+        << static_cast<int>(result.error()) << ")";
+    const auto& outputs = result.get();
+    ASSERT_TRUE(
+        outputs.size() == 2 && outputs[0].isTensor() && outputs[1].isTensor())
+        << "expected exactly two HF RoPE tensor outputs";
+    const auto& xq_out = outputs[0].toTensor();
+    const auto& xk_out = outputs[1].toTensor();
+    ASSERT_TRUE(has_shape(xq_out, {1, S, NH, HD}))
+        << "HF RoPE query output has the wrong shape at position " << position;
+    ASSERT_TRUE(has_shape(xk_out, {1, S, NKV, HD}))
+        << "HF RoPE key output has the wrong shape at position " << position;
+
+    const std::string prefix =
+        dir + "rope_hf_dynamic.pos" + std::to_string(position);
+    const std::vector<float> golden_q =
+        load_golden(prefix + ".xq.golden.bin", xq_numel);
+    const std::vector<float> golden_k =
+        load_golden(prefix + ".xk.golden.bin", xk_numel);
+    ASSERT_FALSE(golden_q.empty() || golden_k.empty())
+        << "could not load HF RoPE goldens for position " << position;
+
+    float q_abs = 0.0f, q_rel = 0.0f, k_abs = 0.0f, k_rel = 0.0f;
+    const bool q_ok = quant_within_tol(
+        xq_out.const_data_ptr<float>(),
+        golden_q.data(),
+        xq_numel,
+        1e-4f,
+        1e-3f,
+        &q_abs,
+        &q_rel);
+    const bool k_ok = quant_within_tol(
+        xk_out.const_data_ptr<float>(),
+        golden_k.data(),
+        xk_numel,
+        1e-4f,
+        1e-3f,
+        &k_abs,
+        &k_rel);
+    EXPECT_TRUE(q_ok && k_ok)
+        << "HF RoPE mismatch at position " << position << ": q abs=" << q_abs
+        << " rel=" << q_rel << ", k abs=" << k_abs << " rel=" << k_rel;
+  }
+
+  auto xqt = make_tensor_ptr({1, S, NH, HD}, std::vector<float>(xq));
+  auto xkt = make_tensor_ptr({1, S, NKV, HD}, std::vector<float>(xk));
+  auto fct = make_tensor_ptr({MAXS, HD}, std::move(freqs_cos));
+  auto fst = make_tensor_ptr({MAXS, HD}, std::move(freqs_sin));
+
+  auto overflow_post =
+      make_tensor_ptr({1}, std::vector<int64_t>{INT64_C(1) << 32});
+  auto overflow = module.forward({
+      EValue(xqt),
+      EValue(xkt),
+      EValue(fct),
+      EValue(fst),
+      EValue(overflow_post),
+  });
+  EXPECT_FALSE(overflow.ok())
+      << "HF RoPE accepted a start_pos that aliases to zero when narrowed";
+
+  auto post = make_tensor_ptr({1}, std::vector<int64_t>{MAXS});
+  auto out_of_range = module.forward(
+      {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
+  EXPECT_FALSE(out_of_range.ok())
+      << "HF RoPE accepted start_pos + seq beyond the frequency table";
+
+  auto negative_post = make_tensor_ptr({1}, std::vector<int64_t>{-1});
+  auto negative = module.forward({
+      EValue(xqt),
+      EValue(xkt),
+      EValue(fct),
+      EValue(fst),
+      EValue(negative_post),
+  });
+  EXPECT_FALSE(negative.ok()) << "HF RoPE accepted a negative start_pos";
+}
+
+void test_rope_hf_dynamic_sequence_reused_graph(const std::string& dir) {
+  constexpr int NH = 16;
+  constexpr int NKV = 8;
+  constexpr int HD = 128;
+  constexpr int MAXS = 16;
+  struct Case {
+    int seq;
+    int position;
+  };
+  constexpr Case cases[] = {{16, 0}, {5, 7}, {1, 15}, {16, 0}};
+
+  const std::string prefix = dir + "rope_hf_dynamic_sequence";
+  Module module(prefix + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok)
+      << "could not load HF RoPE dynamic-sequence model";
+
+  const int freqs_numel = MAXS * HD;
+  const std::vector<float> freqs_cos =
+      load_golden(prefix + ".freqs_cos.bin", freqs_numel);
+  const std::vector<float> freqs_sin =
+      load_golden(prefix + ".freqs_sin.bin", freqs_numel);
+  ASSERT_FALSE(freqs_cos.empty() || freqs_sin.empty())
+      << "could not load HF RoPE dynamic-sequence frequencies";
+
+  for (const Case& c : cases) {
+    const int xq_numel = c.seq * NH * HD;
+    const int xk_numel = c.seq * NKV * HD;
+    const std::string case_prefix = prefix + ".S" + std::to_string(c.seq) +
+        ".pos" + std::to_string(c.position);
+    const std::vector<float> xq =
+        load_golden(case_prefix + ".xq.bin", xq_numel);
+    const std::vector<float> xk =
+        load_golden(case_prefix + ".xk.bin", xk_numel);
+    const std::vector<float> golden_q =
+        load_golden(case_prefix + ".xq.golden.bin", xq_numel);
+    const std::vector<float> golden_k =
+        load_golden(case_prefix + ".xk.golden.bin", xk_numel);
+    ASSERT_FALSE(
+        xq.empty() || xk.empty() || golden_q.empty() || golden_k.empty())
+        << "could not load HF RoPE dynamic-sequence case " << case_prefix;
+
+    auto xqt = make_tensor_ptr({1, c.seq, NH, HD}, std::vector<float>(xq));
+    auto xkt = make_tensor_ptr({1, c.seq, NKV, HD}, std::vector<float>(xk));
+    auto fct = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_cos));
+    auto fst = make_tensor_ptr({MAXS, HD}, std::vector<float>(freqs_sin));
+    auto post = make_tensor_ptr(
+        {1}, std::vector<int64_t>{static_cast<int64_t>(c.position)});
+    auto result = module.forward(
+        {EValue(xqt), EValue(xkt), EValue(fct), EValue(fst), EValue(post)});
+    ASSERT_TRUE(result.ok())
+        << "HF RoPE dynamic-sequence forward failed for " << case_prefix
+        << " (error " << static_cast<int>(result.error()) << ")";
+    const auto& outputs = result.get();
+    ASSERT_TRUE(
+        outputs.size() == 2 && outputs[0].isTensor() && outputs[1].isTensor())
+        << "expected exactly two HF RoPE dynamic-sequence tensor outputs";
+    const auto& xq_out = outputs[0].toTensor();
+    const auto& xk_out = outputs[1].toTensor();
+    ASSERT_TRUE(has_shape(xq_out, {1, c.seq, NH, HD}))
+        << "HF RoPE query output has the wrong shape for " << case_prefix;
+    ASSERT_TRUE(has_shape(xk_out, {1, c.seq, NKV, HD}))
+        << "HF RoPE key output has the wrong shape for " << case_prefix;
+
+    float q_abs = 0.0f, q_rel = 0.0f, k_abs = 0.0f, k_rel = 0.0f;
+    const bool q_ok = quant_within_tol(
+        xq_out.const_data_ptr<float>(),
+        golden_q.data(),
+        xq_numel,
+        1e-4f,
+        1e-3f,
+        &q_abs,
+        &q_rel);
+    const bool k_ok = quant_within_tol(
+        xk_out.const_data_ptr<float>(),
+        golden_k.data(),
+        xk_numel,
+        1e-4f,
+        1e-3f,
+        &k_abs,
+        &k_rel);
+    EXPECT_TRUE(q_ok && k_ok)
+        << "HF RoPE dynamic-sequence mismatch for " << case_prefix
+        << ": q abs=" << q_abs << " rel=" << q_rel << ", k abs=" << k_abs
+        << " rel=" << k_rel;
+  }
 }
 
 void test_prepack(
@@ -2125,6 +2486,82 @@ static bool test_select_double_scalars() {
   return ok;
 }
 
+void expect_rope_hf_resize_numel_overflow(uint32_t q_heads, uint32_t k_heads) {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+
+  const std::vector<uint32_t> q_dims = {1u, 1u, q_heads, 2u};
+  const std::vector<uint32_t> k_dims = {1u, 1u, k_heads, 2u};
+  const std::vector<uint32_t> freqs_dims = {2u, 2u};
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  const auto add_tensor = [&](const std::vector<uint32_t>& dims, int mem_id) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb,
+            vk::VkDataType::FLOAT32,
+            &dims,
+            /*constant_id=*/-1,
+            /*mem_obj_id=*/mem_id)
+            .Union()));
+  };
+  add_tensor(q_dims, 0);
+  add_tensor(k_dims, 1);
+  add_tensor(freqs_dims, 2);
+  add_tensor(freqs_dims, 3);
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  add_tensor(q_dims, 4);
+  add_tensor(k_dims, 5);
+  const std::vector<int32_t> output_items = {5, 6};
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::ValueList,
+      vk::CreateValueListDirect(fbb, &output_items).Union()));
+
+  const std::vector<int32_t> args = {0, 1, 2, 3, 4, 7};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(vk::CreateOperatorCallDirect(
+      fbb, 0, "et_vk.apply_rotary_emb_hf.default", &args));
+  const std::vector<uint32_t> input_ids = {0, 1, 2, 3};
+  const std::vector<uint32_t> output_ids = {5, 6};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  ASSERT_NO_THROW(graph.build(fbb.GetBufferPointer(), nullptr, nullptr));
+  ASSERT_EQ(graph.num_dispatches(), 2u);
+  const uint32_t q_x = graph.dispatch_at(0).workgroup_count_x;
+  const uint32_t q_y = graph.dispatch_at(0).workgroup_count_y;
+  const uint32_t k_x = graph.dispatch_at(1).workgroup_count_x;
+  const uint32_t k_y = graph.dispatch_at(1).workgroup_count_y;
+
+  constexpr int64_t kLargeBatch = INT64_C(1) << 30;
+  const std::vector<int64_t> q_live = {
+      kLargeBatch, 1, static_cast<int64_t>(q_heads), 2};
+  const std::vector<int64_t> k_live = {
+      kLargeBatch, 1, static_cast<int64_t>(k_heads), 2};
+  graph.get_tensor(0).dims = q_live;
+  graph.get_tensor(1).dims = k_live;
+  ASSERT_NO_THROW(graph.resize_input(0, q_live));
+  ASSERT_NO_THROW(graph.resize_input(1, k_live));
+
+  try {
+    graph.propagate_resize();
+    FAIL() << "accepted q/k element count outside uint32 range";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(
+        error.what(),
+        "apply_rotary_emb_hf(resize): element index exceeds uint32 range");
+  }
+  EXPECT_EQ(graph.dispatch_at(0).workgroup_count_x, q_x);
+  EXPECT_EQ(graph.dispatch_at(0).workgroup_count_y, q_y);
+  EXPECT_EQ(graph.dispatch_at(1).workgroup_count_x, k_x);
+  EXPECT_EQ(graph.dispatch_at(1).workgroup_count_y, k_y);
+}
+
 // apply_rotary_emb on-GPU configs: multi + decode (env-gated, run-if-present).
 struct RopeConfig {
   const char* name;
@@ -2296,6 +2733,48 @@ TEST(WebGPUNative, Rope) {
   if (!any) {
     GTEST_SKIP() << "no apply_rotary_emb config env set";
   }
+}
+
+TEST(WebGPUNative, RopeHfDynamic) {
+  const char* env = std::getenv("WEBGPU_TEST_ROPE_HF_DIR");
+  if (env == nullptr || *env == '\0') {
+    GTEST_SKIP() << "WEBGPU_TEST_ROPE_HF_DIR not set";
+  }
+  std::string dir = env;
+  if (dir.back() != '/') {
+    dir += '/';
+  }
+  test_rope_hf_dynamic(dir);
+}
+
+TEST(WebGPUNative, RopeHfDynamicSequenceReusedGraph) {
+  const char* env = std::getenv("WEBGPU_TEST_ROPE_HF_DIR");
+  if (env == nullptr || *env == '\0') {
+    GTEST_SKIP() << "WEBGPU_TEST_ROPE_HF_DIR not set";
+  }
+  std::string dir = env;
+  if (dir.back() != '/') {
+    dir += '/';
+  }
+  test_rope_hf_dynamic_sequence_reused_graph(dir);
+}
+
+TEST(WebGPUNative, RopeHfUsesFull2DGridStride) {
+  const WebGPUContext* ctx = get_default_webgpu_context();
+  ASSERT_NE(ctx, nullptr);
+  const std::vector<float> output = run_rope_hf_2d_probe(*ctx);
+  ASSERT_EQ(output.size(), 16u) << "HF RoPE probe output map failed";
+  for (size_t i = 0; i < output.size(); i++) {
+    const float expected =
+        static_cast<float>(i + 1u) * (i < output.size() / 2u ? 1.0f : 2.0f);
+    EXPECT_EQ(output[i], expected)
+        << "HF RoPE 2D grid or second-half frequency mismatch at element " << i;
+  }
+}
+
+TEST(WebGPUNative, RopeHfResizeRejectsQOrKNumelOverflow) {
+  expect_rope_hf_resize_numel_overflow(/*q_heads=*/2, /*k_heads=*/1);
+  expect_rope_hf_resize_numel_overflow(/*q_heads=*/1, /*k_heads=*/2);
 }
 
 TEST(WebGPUNative, Prepack) {
