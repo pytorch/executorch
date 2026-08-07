@@ -12,18 +12,11 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from q4gsw_linear_gemm_qkv_fused.wgsl - DO NOT EDIT.
-// wgsl-sha256: 93e127e8ee4609d846015c8b75a600a29502e19a92bdf3a08e3429635f834085
-inline constexpr const char* kQ4gswLinearGemmQkvFusedWGSL = R"(
+// @generated from q4gsw_qkv_bk64.wgsl - DO NOT EDIT.
+// wgsl-sha256: d738762f00f79ca16cf1549d47e6d1f51155f50805eec5e7e6df3bc07ee309ee
+inline constexpr const char* kQ4gswQkvBk64WGSL = R"(
 enable f16;
-// Fused QKV q4gsw GEMM (Llama attention projections): one [M, N=3072] pwdq + f16-accumulate GEMM
-// (vec4<f32> activation load) that scatter-writes each output column range to a SEPARATE buffer --
-// c<2048 -> q, [2048,2560) -> k, [2560,3072) -> v. Replaces the 3 separate q/k/v linear dispatches;
-// fixes the N=512 K/V occupancy starvation (16 WGs -> 96 WGs at M~128). Boundaries are 64-tile-aligned
-// so each 64-col tile maps to exactly one output (uniform branch per workgroup). Per-output ROW STRIDE:
-// q=2048, k=v=512. BIT-EXACT to 3 separate pwdqf16acc linears (fusing along N does not change the
-// per-column K-accumulation order). Validated on Canary M4 Pro: correct (maxRel ~1e-3), scatter overhead
-// 1.02x (free), concat win 1.63x on the QKV block. Boundaries hardcoded for Llama-3.2-1B GQA (32Q/8KV).
+
 @group(0) @binding(0) var<storage, read_write> t_out_q: array<f32>;
 @group(0) @binding(1) var<storage, read_write> t_out_k: array<f32>;
 @group(0) @binding(2) var<storage, read_write> t_out_v: array<f32>;
@@ -42,10 +35,12 @@ struct Params {
   _pad: u32,
 }
 @group(0) @binding(7) var<uniform> params: Params;
-const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 16u;
+
+// BK64 QKV variant: group_size=64 keeps one scale valid for all eight packed words.
+const BM: u32 = 64u; const BN: u32 = 64u; const BK: u32 = 64u;
 const N_Q: u32 = 2048u; const N_QK: u32 = 2560u; const N_KV: u32 = 512u;
-var<workgroup> As: array<f16, 1024>;
-var<workgroup> Bs: array<f16, 1024>;
+var<workgroup> As: array<f16, 4096>;
+var<workgroup> Bs: array<f16, 4096>;
 @compute @workgroup_size(16, 16)
 fn main(@builtin(workgroup_id) wid: vec3<u32>,
         @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -61,18 +56,31 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
   }
   let ar = tid / 4u;
   let ac = (tid % 4u) * 4u;
+
   var k0: u32 = 0u;
   loop {
     if (k0 >= params.K) { break; }
     let arow = row0 + ar;
     if (arow < params.M) {
       let base = arow * params.K + k0 + ac;
-      let av = t_input[base >> 2u];
-      As[ar * BK + ac + 0u] = f16(av.x); As[ar * BK + ac + 1u] = f16(av.y);
-      As[ar * BK + ac + 2u] = f16(av.z); As[ar * BK + ac + 3u] = f16(av.w);
+      let av0 = t_input[(base + 0u) >> 2u];
+      let av1 = t_input[(base + 16u) >> 2u];
+      let av2 = t_input[(base + 32u) >> 2u];
+      let av3 = t_input[(base + 48u) >> 2u];
+      As[ar * BK + ac + 0u] = f16(av0.x); As[ar * BK + ac + 1u] = f16(av0.y);
+      As[ar * BK + ac + 2u] = f16(av0.z); As[ar * BK + ac + 3u] = f16(av0.w);
+      As[ar * BK + ac + 16u] = f16(av1.x); As[ar * BK + ac + 17u] = f16(av1.y);
+      As[ar * BK + ac + 18u] = f16(av1.z); As[ar * BK + ac + 19u] = f16(av1.w);
+      As[ar * BK + ac + 32u] = f16(av2.x); As[ar * BK + ac + 33u] = f16(av2.y);
+      As[ar * BK + ac + 34u] = f16(av2.z); As[ar * BK + ac + 35u] = f16(av2.w);
+      As[ar * BK + ac + 48u] = f16(av3.x); As[ar * BK + ac + 49u] = f16(av3.y);
+      As[ar * BK + ac + 50u] = f16(av3.z); As[ar * BK + ac + 51u] = f16(av3.w);
     } else {
-      As[ar * BK + ac + 0u] = 0.0h; As[ar * BK + ac + 1u] = 0.0h;
-      As[ar * BK + ac + 2u] = 0.0h; As[ar * BK + ac + 3u] = 0.0h;
+      for (var segment: u32 = 0u; segment < 4u; segment = segment + 1u) {
+        for (var ai: u32 = 0u; ai < 4u; ai = ai + 1u) {
+          As[ar * BK + ac + segment * 16u + ai] = 0.0h;
+        }
+      }
     }
     if (tid < BN) {
       let c = tid;
@@ -81,10 +89,17 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
         let scale_row = (k0 / params.group_size) * params.padded_N;
         let scale = f16(t_scales[scale_row + n]);
         let base_word = n * (params.K_packed >> 2u) + (k0 >> 3u);
-        let w0 = t_weight[base_word];
+        let w0 = t_weight[base_word + 0u];
         let w1 = t_weight[base_word + 1u];
+        let w2 = t_weight[base_word + 2u];
+        let w3 = t_weight[base_word + 3u];
+        let w4 = t_weight[base_word + 4u];
+        let w5 = t_weight[base_word + 5u];
+        let w6 = t_weight[base_word + 6u];
+        let w7 = t_weight[base_word + 7u];
+        let words = array<u32, 8>(w0, w1, w2, w3, w4, w5, w6, w7);
         for (var br: u32 = 0u; br < BK; br = br + 1u) {
-          let word = select(w1, w0, br < 8u);
+          let word = words[br >> 3u];
           let nib = (word >> ((br & 7u) * 4u)) & 0x0Fu;
           Bs[br * BN + c] = f16(i32(nib) - 8) * scale;
         }
@@ -108,7 +123,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
   for (var m: u32 = 0u; m < 4u; m = m + 1u) {
     for (var n: u32 = 0u; n < 4u; n = n + 1u) {
       let r = row0 + lid.y * 4u + m;
-      let c = col0 + lid.x * 4u + n;   // global fused column [0, 3072)
+      let c = col0 + lid.x * 4u + n;
       if (r < params.M && c < params.N) {
         var val = f32(acc[m][n]);
         if (params.has_bias != 0u) { val = val + t_bias[c]; }
@@ -121,8 +136,8 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>,
 }
 )";
 
-inline constexpr uint32_t kQ4gswLinearGemmQkvFusedWorkgroupSizeX = 16;
-inline constexpr uint32_t kQ4gswLinearGemmQkvFusedWorkgroupSizeY = 16;
-inline constexpr uint32_t kQ4gswLinearGemmQkvFusedWorkgroupSizeZ = 1;
+inline constexpr uint32_t kQ4gswQkvBk64WorkgroupSizeX = 16;
+inline constexpr uint32_t kQ4gswQkvBk64WorkgroupSizeY = 16;
+inline constexpr uint32_t kQ4gswQkvBk64WorkgroupSizeZ = 1;
 
 } // namespace executorch::backends::webgpu
