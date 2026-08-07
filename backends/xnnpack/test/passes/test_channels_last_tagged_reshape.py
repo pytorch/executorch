@@ -364,6 +364,54 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
+    class EltwiseConv2dDynamicQuant(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(3, 10, 3)
+
+        def forward(self, x):
+            return self.conv(torch.sigmoid(x))
+
+    def test_dq_conv2d_eltwise_source_channels_last_tagged_reshape_pass(self) -> None:
+        # The conv's input is sigmoid -> q -> dq. Stepping past the q/dq pair leaves
+        # the sigmoid reading NHWC while its own output stays NCHW, which XNNPACK
+        # only rejects at runtime.
+        tester = (
+            Tester(self.EltwiseConv2dDynamicQuant().eval(), (torch.randn(1, 3, 8, 8),))
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        artifact = tester.get_artifact(StageType.RUN_PASSES)
+        graph_module = artifact.exported_program().graph_module
+        sigmoid_nodes = [
+            node
+            for node in graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.sigmoid.default
+        ]
+        self.assertEqual(len(sigmoid_nodes), 1)
+        sigmoid = sigmoid_nodes[0]
+
+        # The sigmoid keeps its NCHW input and the copy sits on its output instead.
+        self.assertEqual(sigmoid.args[0].op, "placeholder")
+        copies = [
+            user
+            for user in sigmoid.users
+            if user.target == exir_ops.edge.aten._to_copy.default
+            and user.kwargs.get("memory_format") == torch.channels_last
+        ]
+        self.assertEqual(len(copies), 1)
+
+        tester.run_method_and_compare_outputs()
+
     class ConvAddConvOutput(torch.nn.Module):
         def __init__(self):
             super().__init__()

@@ -14,6 +14,7 @@ from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_dynamic_qdq,
+    is_quant,
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
@@ -410,9 +411,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             is_dynamic_input = is_dynamic_qdq(input_node)
 
             if is_dynamic_input:
-                # Trace back to original source node. Stop if args[0] is not
-                # a Node (e.g., immutable_list from cat).
-                while getattr(input_node, "args", None) and isinstance(
+                # Trace back over the q/dq wrapper to the source node, so the copy
+                # lands ahead of the quantize. Only q/dq nodes may be stepped over:
+                # walking further reaches ordinary compute, which the blanket
+                # replace_all_uses_with below has no business rewriting.
+                while (is_quant(input_node) or is_dequant(input_node)) and isinstance(
                     input_node.args[0], torch.fx.Node
                 ):
                     input_node = input_node.args[0]
