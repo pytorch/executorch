@@ -33,11 +33,8 @@ fn gelu_erf4(x: vec4<f32>) -> vec4<f32> {
 // before use), computes GELU as one vec4 op, then scatters back only the
 // in-bounds lanes.
 @compute @workgroup_size(wg_size, 1, 1)
-fn main_tanh(
-    @builtin(global_invocation_id) gid: vec3<u32>,
-    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let thread_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
-    let base = thread_idx * 4u;
+fn main_tanh(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let base = gid.x * 4u;
     if (base >= params.num_elements) {
         return;
     }
@@ -52,11 +49,8 @@ fn main_tanh(
 }
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main_erf(
-    @builtin(global_invocation_id) gid: vec3<u32>,
-    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-    let thread_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
-    let base = thread_idx * 4u;
+fn main_erf(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let base = gid.x * 4u;
     if (base >= params.num_elements) {
         return;
     }

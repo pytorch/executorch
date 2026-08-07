@@ -46,21 +46,6 @@ class ToCopyFloatModule(torch.nn.Module):
         return x.to(torch.float32, copy=True)
 
 
-class ToCopyBoolToFloatModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.to(torch.float32)
-
-
-class ToCopyInt8ToFloatModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.to(torch.float32)
-
-
-class CompareToCopyBoolToFloatModule(torch.nn.Module):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return (a > b).to(torch.float32)
-
-
 def to_copy_int_input(shape: tuple[int, ...]) -> torch.Tensor:
     n = math.prod(shape)
     return (torch.arange(n, dtype=torch.int32) - n // 2).reshape(shape)
@@ -76,32 +61,14 @@ def to_copy_float_input(shape: tuple[int, ...]) -> torch.Tensor:
     return pattern.repeat(repeats)[:n].reshape(shape)
 
 
-def bool_tail_input(shape: tuple[int, ...]) -> torch.Tensor:
-    n = math.prod(shape)
-    pattern = torch.tensor([True, False, True, True, False, False, True])
-    repeats = (n + pattern.numel() - 1) // pattern.numel()
-    return pattern.repeat(repeats)[:n].reshape(shape)
-
-
-def compare_to_copy_input_a(shape: tuple[int, ...]) -> torch.Tensor:
-    n = math.prod(shape)
-    pattern = torch.tensor([1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0])
-    repeats = (n + pattern.numel() - 1) // pattern.numel()
-    return pattern.repeat(repeats)[:n].reshape(shape)
-
-
-def compare_to_copy_input_b(shape: tuple[int, ...]) -> torch.Tensor:
-    return torch.zeros(shape, dtype=torch.float32)
-
-
-def _lower(model: torch.nn.Module, *inputs: torch.Tensor):
-    ep = torch.export.export(model.eval(), inputs)
+def _lower(model: torch.nn.Module, x: torch.Tensor):
+    ep = torch.export.export(model.eval(), (x,))
     edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
     return ep, edge
 
 
-def _export(model: torch.nn.Module, *inputs: torch.Tensor):
-    _, edge = _lower(model, *inputs)
+def _export(model: torch.nn.Module, x: torch.Tensor):
+    _, edge = _lower(model, x)
     return edge.to_executorch()
 
 
@@ -175,22 +142,3 @@ class ToCopyTest(unittest.TestCase):
         self.assertTrue(
             _delegated(et), "Expected a VulkanBackend delegate (to_copy float->float)"
         )
-
-    def test_bool_to_float_delegates(self) -> None:
-        x = bool_tail_input((5,))
-        ep, edge = _lower(ToCopyBoolToFloatModule(), x)
-        self.assertEqual(_prepartition_cast_dtypes(ep), [torch.float32])
-        self.assertEqual(_delegated_cast_dtypes(edge), [torch.float32])
-        self.assertTrue(_delegated(edge.to_executorch()))
-
-    def test_compare_bool_to_float_delegates(self) -> None:
-        a = compare_to_copy_input_a((5,))
-        b = compare_to_copy_input_b((5,))
-        ep, edge = _lower(CompareToCopyBoolToFloatModule(), a, b)
-        self.assertEqual(_prepartition_cast_dtypes(ep), [torch.float32])
-        self.assertEqual(_delegated_cast_dtypes(edge), [torch.float32])
-        self.assertTrue(_delegated(edge.to_executorch()))
-
-    def test_int8_to_float_does_not_delegate(self) -> None:
-        x = torch.tensor([-2, 0, 3], dtype=torch.int8)
-        self.assertFalse(_delegated(_export(ToCopyInt8ToFloatModule(), x)))

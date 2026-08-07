@@ -39,8 +39,6 @@ struct WebGPUTensor {
   // Serialized (GPU-side) element type, used to narrow wider host inputs.
   size_t elem_size = 0;
   bool is_int = false;
-  // Exact BOOL tag for byte-packed WGSL storage.
-  bool is_bool = false;
   // Exactly int8 (not uint8/bool), so int8-only ops can guard their dtype.
   bool is_int8 = false;
 };

@@ -19,8 +19,6 @@ import unittest
 
 import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
-from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
 
@@ -183,20 +181,6 @@ class SelectModule(torch.nn.Module):
         return x.select(0, -1)
 
 
-class DynamicExpandCopyModule(torch.nn.Module):
-    """Dynamic expand_copy is rejected until its TensorMeta can be resized."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.expand((4, x.shape[1])).clone()
-
-
-class DynamicExpandCopyInferredModule(torch.nn.Module):
-    """Dynamic expand_copy whose -1 target hides symbolic provenance."""
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.expand((4, -1)).clone()
-
-
 def _ramp(shape) -> torch.Tensor:
     n = 1
     for d in shape:
@@ -268,75 +252,9 @@ def _write_goldens(model, prefix: str, out_dir: str, s_values) -> None:
         print(f"  golden {prefix} S={s}")
 
 
-def export_dynamic_conv1d_cases(out_dir: str) -> None:
-    """Write one dynamic Conv1d program and live-length runtime fixtures."""
-    os.makedirs(out_dir, exist_ok=True)
-    max_length = 16
-    lengths = (max_length, 9, 5)
-    model = Conv1dModule(
-        in_channels=3,
-        out_channels=4,
-        kernel_size=3,
-        stride=2,
-        padding=1,
-        dilation=2,
-        bias=True,
-    ).eval()
-    length_dim = torch.export.Dim("conv1d_length", min=5, max=max_length)
-    _export(
-        model,
-        (_ramp((1, 3, max_length)),),
-        {"x": {2: length_dim}},
-        os.path.join(out_dir, "dyn_conv1d.pte"),
-    )
-    for length in lengths:
-        x = _ramp((1, 3, length))
-        with torch.no_grad():
-            golden = model(x)
-        prefix = os.path.join(out_dir, f"dyn_conv1d.S{length}")
-        x.detach().numpy().astype("<f4").tofile(prefix + ".input.bin")
-        golden.detach().numpy().astype("<f4").tofile(prefix + ".golden.bin")
-
-
-def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
-    """Write a dynamic GELU fixture crossing the old 1D dispatch cap."""
-    os.makedirs(out_dir, exist_ok=True)
-    max_elements = 4 * 64 * 65535 + 1
-    model = GeluModule("none").eval()
-    elements_dim = torch.export.Dim("gelu_elements", min=1024, max=max_elements)
-    _export(
-        model,
-        (torch.empty((max_elements,), dtype=torch.float32),),
-        {"x": {0: elements_dim}},
-        os.path.join(out_dir, "dyn_gelu_2d.pte"),
-    )
-
-
-def export_dynamic_expand_copy_rejection_case(out_dir: str) -> None:
-    """Write a dynamic expand_copy graph that the runtime must reject at load."""
-    model = DynamicExpandCopyModule().eval()
-    elements_dim = torch.export.Dim("expand_elements", min=1, max=8)
-    _export(
-        model,
-        (_ramp((1, 8)),),
-        {"x": {1: elements_dim}},
-        os.path.join(out_dir, "dyn_expand_copy.pte"),
-    )
-    _export(
-        DynamicExpandCopyInferredModule().eval(),
-        (_ramp((1, 8)),),
-        {"x": {1: elements_dim}},
-        os.path.join(out_dir, "dyn_expand_copy_inferred.pte"),
-    )
-
-
 def export_dynamic_shape_cases(out_dir: str) -> None:
     """Write the dynamic + static .pte's and per-S goldens for the native test."""
     os.makedirs(out_dir, exist_ok=True)
-    export_dynamic_conv1d_cases(out_dir)
-    export_dynamic_expand_copy_rejection_case(out_dir)
-    if os.environ.get("WEBGPU_TEST_HEAVY"):
-        export_dynamic_gelu_boundary_cases(out_dir)
     s_dim = torch.export.Dim("s", min=1, max=MAXS)
 
     # 1) Single dynamic rms_norm, graph built at S=MAXS (upper bound).
@@ -1618,13 +1536,6 @@ class TestDynamicShapeExport(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.pte")))
             self.assertTrue(os.path.exists(os.path.join(d, "dyn_rms.S1.golden.bin")))
             expected = [
-                "dyn_conv1d.pte",
-                "dyn_conv1d.S16.input.bin",
-                "dyn_conv1d.S16.golden.bin",
-                "dyn_conv1d.S9.input.bin",
-                "dyn_conv1d.S9.golden.bin",
-                "dyn_conv1d.S5.input.bin",
-                "dyn_conv1d.S5.golden.bin",
                 "dyn_linear_bk64.pte",
                 "dyn_linear_bk64.S512.input.bin",
                 "dyn_linear_bk64.S512.golden.bin",

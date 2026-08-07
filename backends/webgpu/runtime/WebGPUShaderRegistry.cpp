@@ -38,7 +38,6 @@
 #include <executorch/backends/webgpu/runtime/ops/constant_pad_nd/constant_pad_nd_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_dw_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_pw_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/conv1d_dw/conv1d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/conv_with_clamp/conv_with_clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/dequantize/dequantize_per_tensor_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/embedding/embedding_wgsl.h>
@@ -125,7 +124,6 @@
 #include <executorch/backends/webgpu/runtime/ops/slice/slice_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/log_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/softmax_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_bool_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
@@ -153,7 +151,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 133> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -363,13 +361,6 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kConstantPadNdWorkgroupSizeX,
         kConstantPadNdWorkgroupSizeY,
         kConstantPadNdWorkgroupSizeZ,
-    },
-    {
-        "conv1d",
-        kConv1dWGSL,
-        kConv1dWorkgroupSizeX,
-        kConv1dWorkgroupSizeY,
-        kConv1dWorkgroupSizeZ,
     },
     {
         "conv1d_dw",
@@ -1042,13 +1033,6 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kTanhWorkgroupSizeX,
         kTanhWorkgroupSizeY,
         kTanhWorkgroupSizeZ,
-    },
-    {
-        "to_copy_bool_to_float",
-        kToCopyBoolToFloatWGSL,
-        kToCopyBoolToFloatWorkgroupSizeX,
-        kToCopyBoolToFloatWorkgroupSizeY,
-        kToCopyBoolToFloatWorkgroupSizeZ,
     },
     {
         "to_copy_float_to_int",
