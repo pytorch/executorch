@@ -239,6 +239,67 @@ void build_conv1d_route_graph(
   graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
 }
 
+TEST(WebGPUShaderRegistry, FindsKnownShaderAndRejectsUnknownName) {
+  const WebGPUShaderInfo& sigmoid = get_webgpu_shader_info("sigmoid");
+  EXPECT_EQ(sigmoid.name, "sigmoid");
+  EXPECT_NE(sigmoid.source, nullptr);
+  EXPECT_GT(sigmoid.workgroup_size_x, 0u);
+  EXPECT_THROW(
+      get_webgpu_shader_info("not_a_registered_shader"), std::runtime_error);
+}
+
+TEST(WebGPUQ4RouteSignal, PreservesStaticAndRecordsBothDynamicSignals) {
+  WebGPUGraph static_graph;
+  static_graph.set_device(g_device);
+  build_q4_route_graph(static_graph, Q4RouteSignal::Static);
+  const auto static_dispatches = q4_dispatches(static_graph);
+  ASSERT_EQ(static_dispatches.size(), 1);
+  EXPECT_EQ(static_graph.num_dispatches(), 1);
+  EXPECT_NE(static_dispatches[0]->pipeline, nullptr);
+  EXPECT_NE(static_dispatches[0]->bind_group, nullptr);
+  EXPECT_FALSE(static_graph.has_dynamic_shapes());
+  EXPECT_FALSE(static_graph.config().record_q4gsw_decode_route);
+
+  WebGPUGraph legacy_graph;
+  legacy_graph.set_device(g_device);
+  build_q4_route_graph(legacy_graph, Q4RouteSignal::LegacyGraphMarker);
+  EXPECT_TRUE(legacy_graph.has_dynamic_shapes());
+  EXPECT_FALSE(legacy_graph.config().record_q4gsw_decode_route);
+  EXPECT_EQ(legacy_graph.num_dispatches(), 3);
+  expect_dual_q4_topology(legacy_graph);
+
+  WebGPUGraph explicit_graph;
+  explicit_graph.set_device(g_device);
+  build_q4_route_graph(explicit_graph, Q4RouteSignal::ExplicitOption);
+  EXPECT_FALSE(explicit_graph.has_dynamic_shapes());
+  EXPECT_TRUE(explicit_graph.config().record_q4gsw_decode_route);
+  EXPECT_EQ(explicit_graph.num_dispatches(), 2);
+  expect_dual_q4_topology(explicit_graph);
+}
+
+TEST(WebGPUConv1dRoute, SelectsPointwiseGeneralAndSingleChannelDepthwise) {
+  const Conv1dRouteCase cases[] = {
+      {"pointwise", {1, 4, 8}, {6, 4, 1}, {1, 6, 8}, 1, 0, 1, 1, "conv1d_pw"},
+      {"general", {1, 4, 10}, {6, 4, 3}, {1, 6, 4}, 2, 0, 1, 1, "conv1d"},
+      {"single-channel depthwise",
+       {1, 1, 8},
+       {1, 1, 3},
+       {1, 1, 8},
+       1,
+       1,
+       1,
+       1,
+       "conv1d_dw"},
+  };
+  for (const Conv1dRouteCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    WebGPUGraph graph;
+    build_conv1d_route_graph(graph, test_case);
+    ASSERT_EQ(graph.num_dispatches(), 1);
+    EXPECT_EQ(graph.dispatch_at(0).kernel_name, test_case.expected_kernel);
+  }
+}
+
 TEST(WebGPUComputeDispatch, PipelineKeyCanonicalizesConstants) {
   WebGPUComputeDispatchDescriptor first;
   first.shader_name = "sigmoid";
