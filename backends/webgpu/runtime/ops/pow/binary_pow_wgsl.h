@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from binary_op.wgsl - DO NOT EDIT.
+// @generated from binary_pow.wgsl - DO NOT EDIT.
 // wgsl-sha256: a88c161bd3f43d21a72ebd8ca6f8611b6b9b854e3572a8e6b820602091bc464c
 inline constexpr const char* kBinaryPowWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;

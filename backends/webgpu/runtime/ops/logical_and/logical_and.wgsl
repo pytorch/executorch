@@ -16,13 +16,10 @@ override wg_size: u32 = 64u;
 fn main(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-  $if OP == "&":
-    // bool packed 4/word; canonical 0/1 bytes -> word-wise AND == per-byte AND.
-  $else:
-    // bool packed 4/word; canonical 0/1 bytes -> word-wise OR == per-byte OR.
+  // bool packed 4/word; canonical 0/1 bytes -> word-wise AND == per-byte AND.
   let w = gid.x + gid.y * (num_workgroups.x * wg_size);
   if (w >= params.num_words) {
     return;
   }
-  t_out[w] = t_a[w] ${OP} t_b[w];
+  t_out[w] = t_a[w] & t_b[w];
 }

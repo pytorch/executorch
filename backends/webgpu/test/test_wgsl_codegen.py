@@ -213,11 +213,7 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 134)
         self.assertEqual(
             digest.hexdigest(),
-            "e502196846f0f8100f468e5d9f8f9c006b67e08df54e1e2e667daa2fc50d8844",
-        )
-        self.assertEqual(
-            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "492535b396833ad6ebfed29b093057e38f40b1182b5c7d6b3eb2f3577cab024e",
+            "ef97dca2336315ee2c8b0f9e896c6aa082834ae94948bda3ccb42b1145f2bd27",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -954,6 +950,10 @@ class WgslTemplateEngineTest(unittest.TestCase):
             entries["to_copy_int_to_float"].include,
             "runtime/ops/to_copy/to_copy_int_to_float_wgsl.h",
         )
+        self.assertEqual(
+            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
+            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
+        )
 
     def test_extrema_template_roundtrip_byte_identical(self) -> None:
         extrema_dir = g.BACKEND_ROOT / "runtime/ops/extrema"
@@ -1004,108 +1004,10 @@ class WgslTemplateEngineTest(unittest.TestCase):
                 hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
             )
 
-    def test_logical_binary_template_roundtrip_byte_identical(self) -> None:
-        logical_dir = g.BACKEND_ROOT / "runtime/ops/logical_binary"
-        template_path = logical_dir / "logical_binary.wgsl"
-        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
-        variants = {params["NAME"]: params for params in spec[template_path.stem]}
-        expected = {
-            "logical_and": (
-                "&",
-                "cf7c1d1dbba94e429120796c9c25a6717786cca03c08f3bd1e291d5627089c20",
-            ),
-            "logical_or": (
-                "|",
-                "4ad19ee04e2c7b396b4669cf44f95133d658c3ec2e6f37d7b271bedc0e582ecf",
-            ),
-        }
-        self.assertEqual(set(variants), set(expected))
-        template = template_path.read_text()
-
-        for name, (op, expected_hash) in expected.items():
-            params = variants[name]
-            self.assertEqual(params["OP"], op)
-            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
-            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
-
-            header_path = logical_dir / f"{name}_wgsl.h"
-            header = header_path.read_text()
-            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
-            self.assertEqual(body, expanded)
-            self.assertEqual(g.embedded_sha256(header), expected_hash)
-            self.assertEqual(g.parse_workgroup_size(body), (64, 1, 1))
-
-        entries = {entry.name: entry for entry in g.registry_entries()}
-        for name in expected:
-            self.assertEqual(
-                entries[name].include,
-                f"runtime/ops/logical_binary/{name}_wgsl.h",
-            )
-            self.assertEqual(entries[name].symbol, g.symbol_base(name))
-
-        handler_hashes = {
-            "logical_and": "eb85a8f97ee7640298a661da49feb08aa79b8c24d3d4458b71d24d3f01bc388d",
-            "logical_or": "bda18617f7077fee5a812c21cdc495c89542a1688f7e1ef6739ed01da343a66b",
-        }
-        for name, expected_hash in handler_hashes.items():
-            handler = (
-                g.BACKEND_ROOT / f"runtime/ops/{name}/Logical{name[8:].title()}.cpp"
-            )
-            self.assertEqual(
-                hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
-            )
-
-    def test_binary_family_roundtrip_byte_identical(self) -> None:
-        binary_dir = g.BACKEND_ROOT / "runtime/ops/binary_op"
-        template_path = binary_dir / "binary_op.wgsl"
-        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
-        variants = {params["NAME"]: params for params in spec[template_path.stem]}
-        expected = {
-            "binary_div": (
-                0,
-                "e36b560fd623dd5337b9ae57acd8981c9c635b995d6021caf1331c182cd3f0cd",
-            ),
-            "binary_sub": (
-                0,
-                "63209ff70422a21fc340d9aadba0945bc259bba89bdf05db018a6507d01c7ae5",
-            ),
-            "binary_minimum": (
-                1,
-                "929b7ba85936e3652baea9f4e5e7f049d232c7ae7a74814a536b4c2674897972",
-            ),
-            "binary_pow": (
-                1,
-                "a88c161bd3f43d21a72ebd8ca6f8611b6b9b854e3572a8e6b820602091bc464c",
-            ),
-            "binary_floor_divide": (
-                1,
-                "baf71d277da79389315a6b96b439e7f0a55842e8288283f2af121f84536b3af3",
-            ),
-            "binary_mul": (
-                1,
-                "d248c0f1856b57115a5001a47f4936caa564dd3b787c02ceba504a13ab987812",
-            ),
-        }
-        self.assertEqual(set(variants), set(expected))
-        template = template_path.read_text()
-        entries = {entry.name: entry for entry in g.registry_entries()}
-
-        for name, (inline, expected_hash) in expected.items():
-            params = variants[name]
-            self.assertEqual(params["INLINE"], inline)
-            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
-            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
-
-            header = (binary_dir / f"{name}_wgsl.h").read_text()
-            literal = header.split('R"(', 1)[1].split(')";', 1)[0]
-            self.assertEqual(literal, "\n" + expanded)
-            self.assertEqual(g.embedded_sha256(header), expected_hash)
-            self.assertEqual(g.parse_workgroup_size(expanded), (64, 1, 1))
-            self.assertIn(f"k{g.symbol_base(name)}WGSL", header)
-            self.assertEqual(
-                entries[name].include,
-                f"runtime/ops/binary_op/{name}_wgsl.h",
-            )
+        self.assertEqual(
+            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
+            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
+        )
 
     def test_unary_template_roundtrip_byte_identical(self) -> None:
         unary_dir = g.BACKEND_ROOT / "runtime/ops/unary"

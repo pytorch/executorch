@@ -1,20 +1,3 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-#pragma once
-
-#include <cstdint>
-
-namespace executorch::backends::webgpu {
-
-// @generated from binary_op.wgsl - DO NOT EDIT.
-// wgsl-sha256: d248c0f1856b57115a5001a47f4936caa564dd3b787c02ceba504a13ab987812
-inline constexpr const char* kBinaryMulWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
 @group(0) @binding(1) var<storage, read> input2: array<f32>;
 @group(0) @binding(2) var<storage, read_write> output: array<f32>;
@@ -50,7 +33,7 @@ fn main(
         }
     }
     if (same) {
-        output[idx] = input1[idx] * input2[idx];
+        output[idx] = pow(input1[idx], input2[idx]);
         return;
     }
 
@@ -64,12 +47,5 @@ fn main(
         l1 = l1 + min(coord, in1_meta.sizes[d >> 2u][d & 3u] - 1u) * in1_meta.strides[d >> 2u][d & 3u];
         l2 = l2 + min(coord, in2_meta.sizes[d >> 2u][d & 3u] - 1u) * in2_meta.strides[d >> 2u][d & 3u];
     }
-    output[idx] = input1[l1] * input2[l2];
+    output[idx] = pow(input1[l1], input2[l2]);
 }
-)";
-
-inline constexpr uint32_t kBinaryMulWorkgroupSizeX = 64;
-inline constexpr uint32_t kBinaryMulWorkgroupSizeY = 1;
-inline constexpr uint32_t kBinaryMulWorkgroupSizeZ = 1;
-
-} // namespace executorch::backends::webgpu
