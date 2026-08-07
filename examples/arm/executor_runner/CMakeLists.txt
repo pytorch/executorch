@@ -178,14 +178,16 @@ message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
 # By default, use 2MB of temporary scratch buffer. For Dedicated_Sram, use 64MB
-# for the temporary scratch buffer and 384KB for the fast scratch buffer (the
-# cache, applicable only for Ethos-U65 and Ethos-U85). Allow -D overrides.
-if(MEMORY_MODE MATCHES "Dedicated_Sram")
+# for the temporary scratch buffer and derive the fast scratch buffer size from
+# the memory mode suffix, e.g. Dedicated_Sram_384KB. Allow -D overrides.
+if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
   if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
   endif()
   if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+    set_ethosu_dedicated_sram_fast_scratch_size(
+      ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "${MEMORY_MODE}"
+    )
   endif()
 else()
   if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
@@ -289,7 +291,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 set(_arm_runner_linker_preprocessor_options ${COMPILER_PREPROCESSOR_OPTIONS})
-foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE)
+foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE ETHOSU_MODEL
+                                           ETHOSU_ARENA
+)
   if(DEFINED ${_arm_runner_linker_define})
     list(APPEND _arm_runner_linker_preprocessor_options
          "-D${_arm_runner_linker_define}=${${_arm_runner_linker_define}}"
