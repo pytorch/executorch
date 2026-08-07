@@ -556,6 +556,9 @@ void check_sdpa(int s) {
 constexpr int kK16Hq = 32;
 constexpr int kK16Hkv = 8;
 constexpr int kK16D = 64;
+constexpr int kQwen3Hq = 16;
+constexpr int kQwen3Hkv = 8;
+constexpr int kQwen3D = 128;
 
 bool k16_device_supported() {
   const auto* context = get_default_webgpu_context();
@@ -566,6 +569,21 @@ bool k16_device_supported() {
       limits.maxComputeWorkgroupSizeX >= 32u &&
       limits.maxComputeWorkgroupSizeY >= 4u &&
       limits.maxComputeWorkgroupStorageSize >= 14720u;
+}
+
+bool qwen3_q16_device_supported() {
+  constexpr uint32_t kQ16StorageBytes = 512u * 4u * sizeof(float) +
+      512u * 4u * sizeof(uint16_t) + 128u * 2u * sizeof(float) +
+      3u * 16u * sizeof(float);
+  const auto* context = get_default_webgpu_context();
+  WGPULimits limits = {};
+  return context != nullptr && context->shader_f16_supported &&
+      wgpuDeviceGetLimits(context->device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeWorkgroupSizeX >= 16u &&
+      limits.maxComputeWorkgroupSizeY >= 8u &&
+      limits.maxComputeInvocationsPerWorkgroup >= 128u &&
+      limits.maxComputeWorkgroupStorageSize >= kQ16StorageBytes &&
+      limits.maxStorageBuffersPerShaderStage >= 4u;
 }
 
 void load_sdpa_module(Module& module, bool f16_kv) {
@@ -587,9 +605,13 @@ void run_k16_sdpa(
     int hq = kK16Hq,
     int hkv = kK16Hkv,
     int d = kK16D,
-    bool prime = false) {
-  const std::string base = g_dir + "/" + prefix +
-      (prime ? ".prime." : ".S" + std::to_string(s) + ".");
+    bool prime = false,
+    float max_error_limit = 3e-3f,
+    bool initial = false) {
+  const std::string suffix = initial ? ".initial."
+      : prime                        ? ".prime."
+                                     : ".S" + std::to_string(s) + ".";
+  const std::string base = g_dir + "/" + prefix + suffix;
   auto q = read_bin(base + "q.bin");
   auto k = read_bin(base + "k.bin");
   auto v = read_bin(base + "v.bin");
@@ -614,8 +636,7 @@ void run_k16_sdpa(
   std::vector<float> got(
       output.const_data_ptr<float>(), output.const_data_ptr<float>() + numel);
   ASSERT_EQ(got.size(), golden.size());
-  constexpr float kMaxError = 3e-3f;
-  EXPECT_LT(max_err(got, golden), kMaxError)
+  EXPECT_LT(max_err(got, golden), max_error_limit)
       << prefix << " S=" << s << " full output";
   const std::set<int> tokens = {
       0, std::min(15, s - 1), std::min(16, s - 1), s - 1};
@@ -625,7 +646,7 @@ void run_k16_sdpa(
     for (size_t i = begin; i < begin + token_width; ++i) {
       token_error = std::fmax(token_error, std::fabs(got[i] - golden[i]));
     }
-    EXPECT_LT(token_error, kMaxError)
+    EXPECT_LT(token_error, max_error_limit)
         << prefix << " S=" << s << " causal token=" << token;
   }
 }
@@ -635,23 +656,22 @@ void prime_k16_sdpa(
     const char* prefix,
     int hq = kK16Hq,
     int hkv = kK16Hkv,
-    int d = kK16D) {
-  run_k16_sdpa(module, 12, prefix, hq, hkv, d, true);
+    int d = kK16D,
+    float max_error_limit = 3e-3f) {
+  run_k16_sdpa(module, 12, prefix, hq, hkv, d, true, max_error_limit);
 }
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void expect_sdpa_route(
     const std::vector<std::string>& names,
     int s,
-    bool expect_k16) {
+    bool expect_k16,
+    const char* k16_kernel_name = "sdpa_streaming_attention_k16_causal_bound") {
   const bool expect_fd = s == 1;
   const bool expect_materialized = !expect_fd && !expect_k16;
   EXPECT_EQ(std::count(names.begin(), names.end(), "update_cache"), 2);
   EXPECT_EQ(
-      std::count(
-          names.begin(),
-          names.end(),
-          "sdpa_streaming_attention_k16_causal_bound"),
+      std::count(names.begin(), names.end(), k16_kernel_name),
       expect_k16 ? 1 : 0);
   EXPECT_EQ(
       std::count(names.begin(), names.end(), "fd_split"), expect_fd ? 1 : 0);
@@ -1437,6 +1457,46 @@ TEST(DynamicShape, K16CausalNumericsReusedGraph) {
   }
 }
 
+TEST(DynamicShape, Qwen3K16CausalNumericsReusedGraph) {
+  if (!qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "Qwen3 Q16 K16 device limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module, "sdpa_k16_qwen3", kQwen3Hq, kQwen3Hkv, kQwen3D, kQwen3MaxError);
+  for (int s : {128, 1, 17, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+  }
+}
+
+TEST(DynamicShape, Qwen3InitializedConstantCachePreserved) {
+  if (!qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "Qwen3 Q16 K16 device limits unavailable";
+  }
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  run_k16_sdpa(
+      module,
+      17,
+      "sdpa_k16_qwen3",
+      kQwen3Hq,
+      kQwen3Hkv,
+      kQwen3D,
+      false,
+      1e-2f,
+      true);
+}
+
 TEST(DynamicShape, K16CacheHeadMismatchRejectedAtLoad) {
   executorch::runtime::BackendOptions<1> options;
   ASSERT_EQ(options.set_option("enable_f16_kv_cache", true), Error::Ok);
@@ -1484,6 +1544,65 @@ TEST(DynamicShape, K16CausalLiveRoutesProfile) {
   for (int s : {512, 128, 1, 508, 127, 1, 512}) {
     run_k16_sdpa(module, s, "sdpa_k16_llama");
     expect_sdpa_route(current_profile_names(), s, s > 1);
+  }
+}
+
+TEST(DynamicShape, Qwen3K16CausalLiveRoutesProfile) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or Qwen3 Q16 K16 limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  constexpr const char* kQwen3Kernel =
+      "sdpa_streaming_attention_qwen3_k16_causal_bound";
+  Module module(g_dir + "/sdpa_k16_qwen3.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module, "sdpa_k16_qwen3", kQwen3Hq, kQwen3Hkv, kQwen3D, kQwen3MaxError);
+  expect_sdpa_route(current_profile_names(), 12, true, kQwen3Kernel);
+  for (int s : {128, 1, 17, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+    expect_sdpa_route(current_profile_names(), s, s > 1, kQwen3Kernel);
+  }
+}
+
+TEST(DynamicShape, Qwen3NearScaleFallsBackToExistingRoutes) {
+  const auto* context = get_default_webgpu_context();
+  if (std::getenv("WEBGPU_TIMESTAMP_QUERY") == nullptr || context == nullptr ||
+      !context->timestamp_supported || !qwen3_q16_device_supported()) {
+    GTEST_SKIP() << "timestamp queries or Qwen3 Q16 K16 limits unavailable";
+  }
+  constexpr float kQwen3MaxError = 1e-2f;
+  Module module(g_dir + "/sdpa_k16_qwen3_near_scale.pte");
+  load_sdpa_module(module, true);
+  prime_k16_sdpa(
+      module,
+      "sdpa_k16_qwen3_near_scale",
+      kQwen3Hq,
+      kQwen3Hkv,
+      kQwen3D,
+      kQwen3MaxError);
+  expect_sdpa_route(current_profile_names(), 12, false);
+  for (int s : {128, 1, 128}) {
+    run_k16_sdpa(
+        module,
+        s,
+        "sdpa_k16_qwen3_near_scale",
+        kQwen3Hq,
+        kQwen3Hkv,
+        kQwen3D,
+        false,
+        kQwen3MaxError);
+    expect_sdpa_route(current_profile_names(), s, false);
   }
 }
 
