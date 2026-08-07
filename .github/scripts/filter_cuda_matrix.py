@@ -66,10 +66,6 @@ JETPACK_PYTHON_VERSIONS: List[str] = []
 JETPACK_CUDA_VERSIONS: List[str] = []
 JETPACK_CONTAINER_IMAGE: str = "nvcr.io/nvidia/l4t-jetpack:r36.4.0"
 
-# The generic aarch64 builder image predates the glibc that the CUDA wheels need, so the
-# aarch64 rows build in a newer manylinux image instead.
-SBSA_CONTAINER_IMAGE: str = "quay.io/pypa/manylinux_2_39_aarch64"
-
 
 def keep(item: Dict[str, Any], is_jetpack: bool) -> bool:
     """Whether this row should be built, adjusting its container image where needed."""
@@ -87,9 +83,6 @@ def keep(item: Dict[str, Any], is_jetpack: bool) -> bool:
 
     if item["desired_cuda"] not in SUPPORTED_CUDA_VERSIONS:
         return False
-
-    if item.get("gpu_arch_type") == "cuda-aarch64":
-        item["container_image"] = SBSA_CONTAINER_IMAGE
 
     return True
 
