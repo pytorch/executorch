@@ -9,7 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/binary/BinaryOp.h>
-#include <executorch/backends/webgpu/runtime/ops/floor_divide/binary_floor_divide_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_floor_divide_wgsl.h>
 
 #include <stdexcept>
 #include <vector>
