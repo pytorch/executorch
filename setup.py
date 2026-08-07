@@ -1138,6 +1138,10 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                    # The stream helper ships as its own library so a process has one
+                    # of it. Named because nothing else in a wheel build links it.
+                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1276,6 +1280,28 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # The CUDA delegate and the process-wide CUDA stream helper, for a
+                # wheel built from a CUDA index. Only present when the build asks for
+                # CUDA, so packaging requires that rather than looking for files a
+                # CPU-only build never produced.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                    src_name="libexecutorch_backend_cuda.so",
+                    dst="executorch/lib/libexecutorch_backend_cuda.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                    src_name="libextension_cuda.so",
+                    dst="executorch/lib/libextension_cuda.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
                     ],
                 ),
                 # The quantized kernels, as their own library rather than code
