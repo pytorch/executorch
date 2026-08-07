@@ -1,0 +1,15 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+to_copy_convert:
+  parameter_names_with_default_values:
+    IN_TYPE: f32
+    OUT_TYPE: i32
+  shader_variants:
+    - NAME: to_copy_float_to_int
+    - NAME: to_copy_int_to_float
+      IN_TYPE: i32
+      OUT_TYPE: f32

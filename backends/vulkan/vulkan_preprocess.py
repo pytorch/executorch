@@ -130,6 +130,9 @@ def parse_compile_spec(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
         if spec.key == "skip_memory_planning":
             options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
 
+        if spec.key == "alias_buffer_mutations":
+            options[spec.key] = bool.from_bytes(spec.value, byteorder="little")
+
         if spec.key == "external_constants_max_data_bytes":
             options[spec.key] = _parse_external_constants_max_data_bytes(spec.value)
 
@@ -172,6 +175,7 @@ class VulkanBackend(BackendDetails):
         )
         downcast_64_bit = compile_options.get("downcast_64_bit", True)
         force_fp16 = compile_options.get("force_fp16", False)
+        alias_buffer_mutations = compile_options.get("alias_buffer_mutations", False)
 
         program = unsafe_remove_auto_functionalized_pass(program)
 
@@ -258,6 +262,7 @@ class VulkanBackend(BackendDetails):
             DelegateMappingBuilder(generated_identifiers=True),
             downcast_64_bit=downcast_64_bit,
             force_fp16=force_fp16,
+            alias_buffer_mutations=alias_buffer_mutations,
         )
         vk_graph = graph_builder.build_graph()
         external_constants_max_data_bytes = compile_options.get(

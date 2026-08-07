@@ -9,9 +9,14 @@
 import ctypes
 import random
 import unittest
-from typing import List
+from types import SimpleNamespace
+from typing import List, Tuple
 
+import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
 import torch
+from executorch.backends.vulkan.serialization import (
+    vulkan_graph_builder as graph_builder_module,
+)
 
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     IntList,
@@ -30,6 +35,137 @@ from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
 
 
 class TestSerialization(unittest.TestCase):
+    def _build_mutation_program(
+        self, prepack: bool, shared_user_output: bool = False
+    ) -> Tuple[SimpleNamespace, torch.fx.Node, torch.fx.Node, torch.fx.Node]:
+        graph = torch.fx.Graph()
+        state = graph.placeholder("state")
+        user_input = graph.placeholder("user_input")
+        state.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(torch.zeros(4))
+        user_input.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+            torch.ones(4)
+        )
+
+        state_value = state
+        if prepack:
+            state_value = graph.call_function(
+                graph_builder_module.exir_ops.edge.et_vk.prepack.default,
+                (state,),
+            )
+            state_value.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+                torch.zeros(4)
+            )
+
+        mutation = graph.call_function(
+            torch.ops.aten.add.Tensor, (state_value, user_input)
+        )
+        mutation.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+            torch.ones(4)
+        )
+        user_output = mutation
+        if not shared_user_output:
+            user_output = graph.call_function(
+                torch.ops.aten.mul.Tensor, (user_input, 2.0)
+            )
+            user_output.meta["spec"] = graph_builder_module.TensorSpec.from_tensor(
+                torch.ones(4)
+            )
+        graph.output((mutation, user_output))
+
+        graph_module = torch.fx.GraphModule({}, graph)
+        signature = SimpleNamespace(
+            buffers_to_mutate={mutation.name: "state"},
+            inputs_to_buffers={state.name: "state"},
+            inputs_to_lifted_tensor_constants={},
+            inputs_to_parameters={},
+            non_persistent_buffers=set(),
+            user_outputs=(user_output.name,),
+        )
+        program = SimpleNamespace(
+            constants={},
+            graph_module=graph_module,
+            graph_signature=signature,
+            state_dict={"state": torch.zeros(4)},
+        )
+        return program, state_value, mutation, user_output
+
+    def test_alias_buffer_mutations_is_opt_in(self) -> None:
+        for prepack in (False, True):
+            with self.subTest(prepack=prepack):
+                program, state_value, mutation, user_output = (
+                    self._build_mutation_program(prepack)
+                )
+
+                default_builder = graph_builder_module.VkGraphBuilder(
+                    program,
+                    graph_builder_module.DelegateMappingBuilder(
+                        generated_identifiers=True
+                    ),
+                )
+                default_graph = default_builder.build_graph()
+                self.assertNotEqual(
+                    default_builder.node_to_value_ids[mutation],
+                    default_builder.node_to_value_ids[state_value],
+                )
+                self.assertEqual(
+                    default_graph.output_ids,
+                    [
+                        default_builder.node_to_value_ids[mutation],
+                        default_builder.node_to_value_ids[user_output],
+                    ],
+                )
+
+                explicit_false_builder = graph_builder_module.VkGraphBuilder(
+                    program,
+                    graph_builder_module.DelegateMappingBuilder(
+                        generated_identifiers=True
+                    ),
+                    alias_buffer_mutations=False,
+                )
+                self.assertEqual(default_graph, explicit_false_builder.build_graph())
+
+                aliasing_builder = graph_builder_module.VkGraphBuilder(
+                    program,
+                    graph_builder_module.DelegateMappingBuilder(
+                        generated_identifiers=True
+                    ),
+                    alias_buffer_mutations=True,
+                )
+                aliasing_graph = aliasing_builder.build_graph()
+                self.assertEqual(
+                    aliasing_builder.node_to_value_ids[mutation],
+                    aliasing_builder.node_to_value_ids[state_value],
+                )
+                self.assertEqual(
+                    aliasing_graph.output_ids,
+                    [aliasing_builder.node_to_value_ids[user_output]],
+                )
+
+    def test_alias_buffer_mutations_preserves_shared_user_output(self) -> None:
+        for prepack in (False, True):
+            with self.subTest(prepack=prepack):
+                program, state_value, mutation, _ = self._build_mutation_program(
+                    prepack, shared_user_output=True
+                )
+                builder = graph_builder_module.VkGraphBuilder(
+                    program,
+                    graph_builder_module.DelegateMappingBuilder(
+                        generated_identifiers=True
+                    ),
+                    alias_buffer_mutations=True,
+                )
+
+                graph = builder.build_graph()
+
+                self.assertEqual(
+                    builder.node_to_value_ids[mutation],
+                    builder.node_to_value_ids[state_value],
+                )
+                self.assertEqual(
+                    graph.output_ids,
+                    [builder.node_to_value_ids[mutation]],
+                )
+
     def _generate_random_const_tensors(self, num_tensors: int) -> List[torch.Tensor]:
         """
         Helper function to generate `num_tensor` buffers of random sizes and random contents,
