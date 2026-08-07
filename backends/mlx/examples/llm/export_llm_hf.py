@@ -184,13 +184,15 @@ def _export_with_custom_components(
     # Gemma 4 keep transformer attributes under text_config.
     text_config = model.config.get_text_config()
     sliding_window = getattr(text_config, "sliding_window", None)
+    # Full-attention layers retain all history, so they cannot be bounded by the
+    # sliding window. Sizing every layer to the window truncates them and the
+    # model loses its context past `sliding_window` tokens.
+    effective_cache_len = max_seq_len
     if sliding_window is not None:
-        logger.info(f"Model has sliding_window={sliding_window}")
-        # Cap max_seq_len to sliding window size for cache allocation
-        effective_cache_len = min(max_seq_len, sliding_window)
-        logger.info(f"  Capping cache length to sliding window: {effective_cache_len}")
-    else:
-        effective_cache_len = max_seq_len
+        logger.info(
+            f"Model has sliding_window={sliding_window}; "
+            f"cache length {effective_cache_len}"
+        )
 
     # The HF ExecuTorch cache wrappers validate both generation_config.use_cache
     # and the text config's use_cache flag before constructing static caches.
@@ -228,26 +230,52 @@ def _export_with_custom_components(
         )
 
     if use_custom_kv_cache:
-        from executorch.backends.mlx.llm.source_transformation import (
-            replace_hf_cache_with_mlx,
-        )
-
         if sliding_window is not None:
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_hf_cache_with_mlx_ring_buffer,
+            )
+
             logger.info(
-                "Replacing HuggingFace StaticCache with HFStaticCache "
-                f"(capped to sliding window: {effective_cache_len})..."
+                "Replacing HuggingFace HybridCache with MLX ring buffers "
+                f"(window {sliding_window}, cache length {effective_cache_len})..."
+            )
+            replace_hf_cache_with_mlx_ring_buffer(
+                exportable,
+                model.config,
+                max_batch_size=1,
+                window_size=sliding_window,
+                max_cache_len=effective_cache_len,
+                dtype=torch_dtype,
             )
         else:
-            logger.info("Replacing HuggingFace StaticCache with HFStaticCache...")
+            from executorch.backends.mlx.llm.source_transformation import (
+                replace_hf_cache_with_mlx,
+            )
 
-        replace_hf_cache_with_mlx(
-            exportable,
-            model.config,
-            max_batch_size=1,
-            max_cache_len=effective_cache_len,
-            dtype=torch_dtype,
-        )
-        logger.info("  HFStaticCache installed successfully")
+            logger.info(
+                "Replacing HuggingFace StaticCache with HFStaticCache "
+                f"(cache length {effective_cache_len})..."
+            )
+            replace_hf_cache_with_mlx(
+                exportable,
+                model.config,
+                max_batch_size=1,
+                max_cache_len=effective_cache_len,
+                dtype=torch_dtype,
+            )
+        logger.info("  MLX cache installed successfully")
+
+        if use_custom_sdpa and sliding_window is not None:
+            from executorch.backends.mlx.llm.hf_attention import (
+                register_mlx_sliding_window_attention,
+            )
+
+            # Registered after the wrapper exists: the SDPA closure captures it
+            # to reach the ring buffers when building masks.
+            register_mlx_sliding_window_attention(exportable)
+            model.config._attn_implementation = "mlx_sliding_window"
+            text_config._attn_implementation = "mlx_sliding_window"
+            logger.info("Registered MLX sliding-window SDPA")
 
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
@@ -266,7 +294,13 @@ def _export_with_custom_components(
     example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
     example_cache_position = torch.arange(seq_length, dtype=torch.long)
 
-    seq_len_dim = torch.export.Dim("seq_length_dim", max=effective_cache_len - 1)
+    # A sliding layer holds `sliding_window` cells, so it cannot absorb a single
+    # step longer than that -- a separate limit from how much history the caches
+    # retain.
+    max_step_len = (
+        min(max_seq_len, sliding_window) if sliding_window is not None else max_seq_len
+    )
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_step_len - 1)
     dynamic_shapes = {
         "input_ids": {1: seq_len_dim},
         "cache_position": {0: seq_len_dim},
