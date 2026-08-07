@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
 )
 from executorch.backends.qualcomm.builders.utils import is_graph_output
 from executorch.backends.qualcomm.export_utils import make_quantizer
+from executorch.backends.qualcomm.quantizer.custom_annotation import annotate_kv_8bit_hf
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_PASS_ACTIVATE_KEY,
@@ -42,6 +43,9 @@ from transformers import AutoConfig, AutoModelForCausalLM, GenerationConfig
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+# Use this method name so we can reuse qnn_llama_runner
+KV_FORWARD = "kv_forward"
 
 HUGGING_FACE_REPO_IDS = {
     "llama3_2-1b": "NousResearch/Llama-3.2-1B",
@@ -126,13 +130,13 @@ class QnnLLMEdgeManager:
         return self
 
     def _tag_ios(self, node, fixed_point_type, config):
-        # shape of k caches and v caches
+        past_len = config.max_seq_len - config.ar_len
         kv_cache_shape = {
-            # single head, kv input
-            (config.head_dim, config.max_seq_len),
-            (config.max_seq_len, config.head_dim),
-            # single head, kv output
+            # K (head_dim, seq)
+            (config.head_dim, past_len),
             (config.head_dim, config.ar_len),
+            # V (seq, head_dim)
+            (past_len, config.head_dim),
             (config.ar_len, config.head_dim),
         }
 
@@ -147,10 +151,7 @@ class QnnLLMEdgeManager:
         quant_io_type = None
 
         if node.op == "placeholder":
-            if (
-                len(users := list(node.users)) == 1
-                and users[0].meta["val"].size()[-2:] in kv_cache_shape
-            ):
+            if node.meta["val"].size()[-2:] in kv_cache_shape:
                 quant_io_type = fixed_point_type["kv_type"]
         if is_graph_output(node):
             if node.meta["val"].size()[-2:] in kv_cache_shape:
@@ -161,6 +162,8 @@ class QnnLLMEdgeManager:
         return quant_io_type
 
     def export(self):
+        self.graph_module(*self.model_wrapper.get_example_inputs())
+
         with torch.no_grad():
             self.graph_module = torch.export.export(
                 self.graph_module,
@@ -181,17 +184,67 @@ class QnnLLMEdgeManager:
             f"Calibrating with tasks: {calibration_tasks}, limit: {calibration_limit}, calibration_data: {calibration_data}, tokenizer_path: {tokenizer_path}, seq_length: {self.config.max_seq_len}"
         )
 
+        def _empty_past():
+            # K is transposed (seq last) to match static_llama:
+            #   K: [1, H, head_dim, past_len]   V: [1, H, past_len, head_dim]
+            past_k = [
+                torch.zeros(
+                    1,
+                    self.model_wrapper.num_kv_heads,
+                    self.model_wrapper.head_dim,
+                    self.model_wrapper.past_len,
+                )
+                for _ in range(self.model_wrapper.num_layers)
+            ]
+            past_v = [
+                torch.zeros(
+                    1,
+                    self.model_wrapper.num_kv_heads,
+                    self.model_wrapper.past_len,
+                    self.model_wrapper.head_dim,
+                )
+                for _ in range(self.model_wrapper.num_layers)
+            ]
+            return past_k, past_v
+
+        def _build_mask(n_past, past_len, context_len):
+            # Prefix layout additive mask [1, 1, ar_len=1, context_len]:
+            # attend to real past [0, n_past), mask the pad [n_past, past_len),
+            # attend to the new token at column past_len.
+            mask = torch.full((1, 1, 1, context_len), -65535.0)
+            mask[..., :n_past] = 0.0
+            mask[..., past_len:] = 0.0
+            return mask
+
         def calibrate_template(
             module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
         ):
-            # TODO: change criteria & support batch inputs if necessary
             pos = 0
             token_list = tokenizer.encode(prompts, bos=True, eos=False)
+            past_k, past_v = _empty_past()
+            past_len = self.model_wrapper.past_len
+            context_len = self.model_wrapper.max_seq_len
+            # The prefix buffer holds at most past_len slots, so we can advance
+            # the position at most past_len times (matching the runner, whose
+            # seq_len is clamped to context_len).
+            max_len = min(max_len, past_len)
 
             with torch.no_grad():
                 while token_list[-1] != tokenizer.eos_id and pos < max_len:
-                    cur_pos = torch.tensor([pos], dtype=torch.long)
-                    logits = module(torch.full((1, 1), token_list[pos]), cur_pos)
+                    n_past = min(pos, past_len)
+                    atten_mask = _build_mask(n_past, past_len, context_len)
+                    input_pos = torch.tensor([[n_past]], dtype=torch.int32)
+                    logits, new_k, new_v = module(
+                        torch.full((1, 1), token_list[pos], dtype=torch.int32),
+                        atten_mask,
+                        input_pos,
+                        past_k,
+                        past_v,
+                    )
+                    # Prefix append: write the new slot into buffer at slot n_past.
+                    for layer in range(self.model_wrapper.num_layers):
+                        past_k[layer][..., :, n_past] = new_k[layer][..., :, 0]
+                        past_v[layer][..., n_past, :] = new_v[layer][..., 0, :]
                     pos += 1
                     if pos >= len(token_list):
                         token_list.append(torch.argmax(logits, dim=-1).item())
@@ -253,6 +306,7 @@ class QnnLLMEdgeManager:
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
+            custom_annotations=(partial(annotate_kv_8bit_hf, is_qat=False),),
             per_channel_linear=True,
             per_channel_conv=True,
             act_observer=MinMaxObserver,
@@ -297,11 +351,12 @@ class QnnLLMEdgeManager:
         compiler_spec = generate_qnn_executorch_compiler_spec(
             soc_model=get_soc_to_chipset_map()[soc_model],
             backend_options=backend_options,
+            use_mha2sha=True,
         )
         with torch.no_grad():
             self.edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
-                self.graph_module,
-                self.model_wrapper.get_example_inputs(),
+                {KV_FORWARD: self.graph_module},
+                {KV_FORWARD: self.model_wrapper.get_example_inputs()},
                 compiler_spec,
                 constant_methods=self.model_wrapper.get_metadata(),
                 passes_job=self.passes_job,
@@ -310,7 +365,9 @@ class QnnLLMEdgeManager:
                 convert_linear_to_conv2d=True,
             )
 
-        print_delegation_info(self.edge_prog_mgr.exported_program().graph_module)
+        print_delegation_info(
+            self.edge_prog_mgr.exported_program(KV_FORWARD).graph_module
+        )
         if not self.use_fp16:
             logit_out_shape = {
                 (
@@ -319,7 +376,7 @@ class QnnLLMEdgeManager:
                     self.config.vocab_size,
                 )
             }
-            for n in self.edge_prog_mgr.exported_program().graph.nodes:
+            for n in self.edge_prog_mgr.exported_program(KV_FORWARD).graph.nodes:
                 if n.op == "output":
                     for node, output_encoding in n.meta[QCOM_QUANT_ATTRS_MAP].items():
                         if node.meta["val"].size() in logit_out_shape:
@@ -332,6 +389,7 @@ class QnnLLMEdgeManager:
         executorch_config = ExecutorchBackendConfig(
             memory_planning_pass=MemoryPlanningPass(
                 alloc_graph_input=False,
+                alloc_graph_output=False,
             ),
             passes=[BuildQuantIo()],
         )

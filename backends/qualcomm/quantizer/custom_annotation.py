@@ -276,6 +276,273 @@ def annotate_kv_8bit(  # noqa: C901
             annotate_matmul_input1(node.args[1], is_qat=is_qat)
 
 
+def annotate_kv_8bit_hf(  # noqa: C901
+    gm: torch.fx.GraphModule,
+    is_qat=False,
+) -> None:
+    """
+    Demo purpose only, could possibly be merged into annotate_kv_8bit in future.
+    Main idea is to tag io as 8bit here.
+    Will ensure all ops are properly tagged like annotate_kv_8bit during official PR.
+    """
+
+    def annotate_matmul(node: Node, quantization_config: QuantizationConfig):
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_qspec_map[input_act] = quantization_config.input_activation
+        input_act1 = node.args[1]
+        input_qspec_map[input_act1] = quantization_config.weight
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    def annotate_cat(node: Node, quantization_config: QuantizationConfig):
+        input_nodes = node.args[0]
+        first_input_node = input_nodes[0]
+        input_qspec_map = {}
+        input_qspec_map[first_input_node] = quantization_config.input_activation
+        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+            (first_input_node, node)
+        )
+        for input_node in input_nodes[1:]:
+            if input_node not in input_qspec_map:
+                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=share_qparams_with_input_act0_qspec,
+            _annotated=True,
+        )
+
+    def annotate_single_in_single_out(
+        node: Node, quantization_config: QuantizationConfig
+    ) -> None:
+        input_qspec_map = {}
+        input_qspec_map[node.args[0]] = quantization_config.input_activation
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
+
+    def annotate_single_in_share_out(
+        node: Node, quantization_config: QuantizationConfig
+    ) -> None:
+        input_qspec_map = {}
+        input_act = node.args[0]
+        input_qspec_map[input_act] = quantization_config.input_activation
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((input_act, node)),
+            _annotated=True,
+        )
+
+    # repeat_kv (GQA) ops: walk advances through them WITHOUT annotating, so they
+    # stay 16-bit and QNN can delegate the 5D reshape.
+    kv_repeat_passthrough = [
+        torch.ops.aten.view.default,
+        torch.ops.aten.reshape.default,
+        torch.ops.aten.expand.default,
+        torch.ops.aten.unsqueeze.default,
+    ]
+
+    def annotate_past_kv_branch(node: Node, quantization_config: QuantizationConfig):
+        # Walk the past-KV side of the cat back through pass-through ops (transpose,
+        # view, reshape, etc.) tagging each 8-bit until we reach the graph
+        # placeholder (or a non-passthrough op). The final placeholder inherits an
+        # 8-bit input_activation qspec via annotate_single_in_share_out on the
+        # closest pass-through op, so BuildQuantIo emits an 8-bit boundary at the
+        # graph input — matching the QNN graph's expected uint8 KV dtype.
+        share_out_ops = {
+            torch.ops.aten.permute.default,
+            torch.ops.aten.squeeze.dim,
+            torch.ops.aten.transpose.int,
+            torch.ops.aten.view.default,
+            torch.ops.aten.reshape.default,
+            torch.ops.aten.expand.default,
+            torch.ops.aten.unsqueeze.default,
+            torch.ops.aten.flatten.using_ints,
+        }
+        for _ in range(16):
+            if not (isinstance(node, Node) and node.op == "call_function"):
+                return
+            if node.target in share_out_ops:
+                annotate_single_in_share_out(node, quantization_config)
+                node = node.args[0]
+                continue
+            return
+
+    def annotate_new_kv_output_branch(
+        node: Node, quantization_config: QuantizationConfig
+    ):
+        # Walk FORWARD from the cat's new-KV input through pass-through ops that
+        # feed the graph output, tagging each 8-bit. Mirrors annotate_past_kv_branch
+        # but on the output boundary. Stops when it hits a non-passthrough user or
+        # a node with multiple call_function users (branch ambiguity).
+        share_out_ops = {
+            torch.ops.aten.permute.default,
+            torch.ops.aten.squeeze.dim,
+            torch.ops.aten.transpose.int,
+            torch.ops.aten.view.default,
+            torch.ops.aten.reshape.default,
+            torch.ops.aten.expand.default,
+            torch.ops.aten.unsqueeze.default,
+            torch.ops.aten.flatten.using_ints,
+        }
+        for _ in range(16):
+            # Find the single pass-through user that reaches a graph output.
+            passthrough_users = [
+                u
+                for u in node.users
+                if u.op == "call_function" and u.target in share_out_ops
+            ]
+            if len(passthrough_users) != 1:
+                return
+            nxt = passthrough_users[0]
+            annotate_single_in_share_out(nxt, quantization_config)
+            node = nxt
+
+    def annotate_matmul_input1(node: Node, is_qat: bool):
+        if is_qat:
+            quantization_config_8a8w = get_8a8w_qnn_qat_config(
+                act_symmetric=True, act_observer=MinMaxObserver
+            )
+        else:
+            quantization_config_8a8w = get_8a8w_qnn_ptq_config(
+                act_symmetric=True, act_observer=MinMaxObserver
+            )
+        while isinstance(node, Node) and node.op == "call_function":
+            if node.target in [
+                torch.ops.aten.select.int,
+                torch.ops.aten.slice.Tensor,
+            ]:
+                annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target in kv_repeat_passthrough:
+                # Pass through repeat_kv without tagging (stays 16-bit).
+                node = node.args[0]
+            elif node.target in [
+                torch.ops.aten.permute.default,
+                torch.ops.aten.squeeze.dim,
+                torch.ops.aten.transpose.int,
+                torch.ops.aten.flatten.using_ints,
+            ]:
+                annotate_single_in_share_out(node, quantization_config_8a8w)
+                node = node.args[0]
+            elif node.target == torch.ops.aten.cat.default:
+                annotate_cat(node, quantization_config_8a8w)
+                # Also walk the past-KV branch (args[0][0]) through pass-through
+                # ops to tag them 8-bit, so the graph placeholder inherits the
+                # 8-bit input_activation qspec and BuildQuantIo emits an 8-bit
+                # boundary at the K/V graph input.
+                annotate_past_kv_branch(node.args[0][0], quantization_config_8a8w)
+                # And walk the new-KV branch FORWARD from the cat input, tagging
+                # any pass-through ops that lead to the graph output (e.g., the
+                # boundary transpose in QnnCausalLMExportableModule.forward), so
+                # the K/V graph output is also 8-bit.
+                annotate_new_kv_output_branch(node.args[0][1], quantization_config_8a8w)
+                # Follow the new-kv branch (past kv is args[0][0]).
+                node = node.args[0][1]
+            elif node.target in [
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.matmul.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.linear.default,
+            ]:
+                break
+            else:
+                print(f"The node ({node}) is not expected in the input1 of the matmul")
+                node = node.args[0]
+
+    if is_qat:
+        quantization_config_16a8w = get_16a8w_qnn_qat_config(
+            act_observer=MinMaxObserver
+        )
+    else:
+        quantization_config_16a8w = get_16a8w_qnn_ptq_config(
+            act_observer=MinMaxObserver
+        )
+
+    def _is_4d(node: Node) -> bool:
+        val = node.meta.get("val")
+        return val is not None and hasattr(val, "dim") and val.dim() == 4
+
+    def _arg1_reaches_kv_cat(arg1: Node) -> bool:
+        # Walk arg1 backward following the same ops annotate_matmul_input1 does,
+        # and return True if we hit a cat.default (the KV-cache concat). This
+        # picks up KV-cache matmuls even when their arg0 is a 2D constant (e.g.
+        # R3 spinquant's hadamard rotation matmul(hadamard, cat_K), which fails
+        # a purely 4D-both-args classifier).
+        pass_through = {
+            torch.ops.aten.select.int,
+            torch.ops.aten.slice.Tensor,
+            torch.ops.aten.permute.default,
+            torch.ops.aten.squeeze.dim,
+            torch.ops.aten.transpose.int,
+            torch.ops.aten.view.default,
+            torch.ops.aten.reshape.default,
+            torch.ops.aten.expand.default,
+            torch.ops.aten.unsqueeze.default,
+            torch.ops.aten.flatten.using_ints,
+        }
+        node = arg1
+        for _ in range(16):  # bounded, prevents runaway walks
+            if not (isinstance(node, Node) and node.op == "call_function"):
+                return False
+            if node.target == torch.ops.aten.cat.default:
+                return True
+            if node.target in pass_through and node.args:
+                node = node.args[0]
+                continue
+            return False
+        return False
+
+    # Debug bisect: restrict annotation to K-only, V-only, or both branches.
+    # Env override: ANNOTATE_KV_HF_BRANCH = "both" | "k" | "v".
+    import os as _os
+
+    branch_sel = _os.environ.get("ANNOTATE_KV_HF_BRANCH", "both").lower()
+
+    def _branch_of(arg1: Node) -> str:
+        # HF Q @ K^T matmul: arg[1] = transpose(K...).
+        # HF attn @ V matmul: arg[1] = reshape/view(V...).
+        # HF+R3 K-rotation matmul: arg[1] = cat.default (the K cache).
+        if arg1.op == "call_function":
+            if arg1.target in (
+                torch.ops.aten.transpose.int,
+                torch.ops.aten.cat.default,
+            ):
+                return "k"
+            if arg1.target in (
+                torch.ops.aten.reshape.default,
+                torch.ops.aten.view.default,
+            ):
+                return "v"
+        return "?"
+
+    for node in gm.graph.nodes:
+        if not (
+            node.op == "call_function"
+            and node.target == torch.ops.aten.matmul.default
+            and all(arg.op == "call_function" for arg in node.args)
+            # Only 4D matmul.default whose arg1 reaches a KV-cache cat are the
+            # attention matmuls we care about. This filter (arg1 reaches cat)
+            # replaces the earlier "all args are 4D" filter, which incorrectly
+            # excluded R3 spinquant's matmul(hadamard, cat_K) whose arg0 is a
+            # 2D constant. Also excludes HF's 3D RoPE inv_freq matmul.
+            and _is_4d(node)
+            and _arg1_reaches_kv_cat(node.args[1])
+        ):
+            continue
+        br = _branch_of(node.args[1])
+        if branch_sel != "both" and br != branch_sel:
+            continue
+        annotate_matmul(node, quantization_config_16a8w)
+        annotate_matmul_input1(node.args[1], is_qat=is_qat)
+
+
 def custom_annotate_llama_matmul_16a8w(gm: torch.fx.GraphModule) -> None:  # noqa: C901
     """
     This function is specific for llama matmul op 16a8w.
