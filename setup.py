@@ -225,10 +225,21 @@ def _cuda_dependencies() -> List[str]:
     return list(_CUDA_RUNTIME_PACKAGES.get(train, ()))
 
 
-# Directories inside the wheel that hold libraries a shipped library links, relative to the
-# directory holding the linking library. The CUDA delegate lives in executorch/lib/ and the shims
-# library it links is installed under executorch/backends/cuda/, so one hop up and across reaches it.
-_SIBLING_LIBRARY_SEARCH_PATHS = ("$ORIGIN/../backends/cuda",)
+# Directories inside the wheel that hold libraries a shipped library links, relative to the directory
+# holding the linking library.
+#
+# The CUDA libraries are split across two directories and reference each other in both directions:
+# the delegate in lib/ links the shims library in backends/cuda/, and the shims library links the
+# stream helper back in lib/. So both hops are needed.
+#
+# Applied to every shipped library rather than mapping each library to the directories it happens to
+# need. An unused hop costs nothing at load time, while a missing one produces a wheel that installs
+# and then fails to load, and a per-library mapping would have to be revisited every time a library
+# moves.
+_SIBLING_LIBRARY_SEARCH_PATHS = (
+    "$ORIGIN/../backends/cuda",
+    "$ORIGIN/../../lib",
+)
 
 
 def _cuda_runtime_search_paths() -> List[str]:
