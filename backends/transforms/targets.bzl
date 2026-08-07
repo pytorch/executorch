@@ -409,6 +409,7 @@ def define_common_targets():
         srcs = ["remove_permutes_around_elementwise_ops.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             ":permute_pass_utils",

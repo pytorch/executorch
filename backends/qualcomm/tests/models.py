@@ -2119,6 +2119,24 @@ class ReflectionPad2dAsymmetric(torch.nn.Module):
         return self.pad(x)
 
 
+class ReflectionPad3d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad3d((1, 1, 1, 1, 1, 1))
+
+    def forward(self, x):
+        return self.pad(x)
+
+
+class ReflectionPad3dAsymmetric(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pad = torch.nn.ReflectionPad3d((2, 1, 2, 1, 2, 1))
+
+    def forward(self, x):
+        return self.pad(x)
+
+
 class Relu(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -2330,6 +2348,16 @@ class ScatterSrc(torch.nn.Module):
 
     def forward(self, data, index, src):
         return torch.scatter(data, self.dim, index, src)
+
+
+class ScatterValue(torch.nn.Module):
+    def __init__(self, dim=1, value=0.5):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+
+    def forward(self, data, index):
+        return torch.scatter(data, self.dim, index, self.value)
 
 
 class SelectCopy(torch.nn.Module):
