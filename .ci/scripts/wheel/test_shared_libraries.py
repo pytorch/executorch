@@ -25,12 +25,12 @@ The properties verified here are the ones the split exists to create:
    the machine that built it.
 """
 
+import importlib.metadata
 import importlib.util
 import json
 import os
 import re
 import shutil
-import importlib.metadata
 import subprocess
 import sys
 import tempfile
