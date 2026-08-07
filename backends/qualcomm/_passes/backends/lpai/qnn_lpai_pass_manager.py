@@ -70,14 +70,11 @@ class QnnLpaiPassManager(QnnPassManager):
         return passes
 
     @classmethod
-    def get_export_passes(
-        cls,
-        convert_linear_to_conv2d: bool = False,
-    ):
+    def get_export_passes(cls):
         # Both DecomposeHardSigmoid and DecomposeReciprocal should be placed in the export
         # pipeline, as they rely on LiftConstantScalarOperands to lift the scalar operand.
         passes = [DecomposeHardsigmoid, DecomposeReciprocal]
-        passes.extend(super().get_export_passes(convert_linear_to_conv2d))
+        passes.extend(super().get_export_passes())
         return passes
 
     @classmethod

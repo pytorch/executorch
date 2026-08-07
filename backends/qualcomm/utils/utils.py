@@ -464,10 +464,7 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(
-            ep,
-            convert_linear_to_conv2d=convert_linear_to_conv2d,
-        )
+        aten_programs[graph_name] = pass_manager.transform_for_export_pipeline(ep)
         transform_passes[graph_name] = pass_manager.get_to_edge_transform_passes(
             ep,
             passes_job=passes_job[graph_name],
@@ -475,6 +472,7 @@ def to_edge_transform_and_lower_to_qnn(
             compiler_specs=compiler_specs[graph_name],
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
         )
     with QnnManagerContext(compiler_specs):
         return to_edge_transform_and_lower(
