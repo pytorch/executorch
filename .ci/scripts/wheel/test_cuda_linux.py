@@ -20,6 +20,7 @@ everything that can be checked from the artifact, and the release gate runs a mo
 hardware.
 """
 
+import pathlib
 import platform
 import subprocess
 import tempfile
@@ -121,12 +122,72 @@ def test_cuda_libraries_resolve_relatively() -> None:
         print(f"✓ {name} resolves the CUDA runtime relatively ({relative[0]})")
 
 
+def _row_architectures() -> list[str]:
+    """The architectures this row claims, from the same script the build uses."""
+    script = pathlib.Path(__file__).parent / "cuda_arch_list.sh"
+    if not script.is_file():
+        return []
+    result = subprocess.run(
+        ["bash", "-c", f"source {script}; executorch_cuda_arch_list"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    # "8.0 9.0" describes sm_80 and sm_90.
+    return ["sm_" + value.replace(".", "") for value in result.stdout.split()]
+
+
+def test_device_code_covers_the_row() -> None:
+    """Every GPU the row claims must have device code in the shipped libraries.
+
+    A row that promises a GPU it did not compile for produces a wheel that installs and then dies
+    at the first kernel launch, which is the worst failure to publish.
+    """
+    expected = _row_architectures()
+    if not expected:
+        print("- this row claims no GPU architectures, nothing to check")
+        return
+
+    cuobjdump = test_shared_libraries._tool("cuobjdump")
+    if cuobjdump is None:
+        raise AssertionError(
+            "cuobjdump is required to check device code, and this is a CUDA row. Without it a "
+            "wheel missing code for a claimed GPU would ship unnoticed."
+        )
+
+    lib_dir = _package_dir() / "lib"
+    delegate = lib_dir / "libexecutorch_backend_cuda.so"
+    assert (
+        delegate.is_file()
+    ), f"{delegate.name} is not in the wheel, so there is no device code to check"
+
+    listed = subprocess.run(
+        [cuobjdump, "--list-elf", str(delegate)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    present = {
+        token for token in listed.replace(".", " ").split() if token.startswith("sm_")
+    }
+    missing = sorted(set(expected) - present)
+    assert not missing, (
+        f"the row claims {expected} but {delegate.name} carries no device code for {missing}. "
+        f"Present: {sorted(present)}. A user with one of those GPUs would install this wheel and "
+        "fail at the first kernel launch."
+    )
+    print(f"✓ device code covers every architecture the row claims ({sorted(present)})")
+
+
 if __name__ == "__main__":
     assert platform.system() == "Linux", "the CUDA rows are Linux only"
 
     test_cuda_libraries_are_shipped()
     test_cuda_runtime_is_declared()
     test_cuda_libraries_resolve_relatively()
+    test_device_code_covers_the_row()
 
     # Everything a CPU wheel is held to still applies: one owner per component, no
     # build-tree paths, and a C++ application able to link what the wheel ships.
