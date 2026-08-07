@@ -189,13 +189,30 @@ _CUDA_LIBRARY_DIRECTORIES = {
 def _cuda_train() -> str:
     """The CUDA major version this wheel is being built for, or "" for a CPU wheel.
 
-    A CPU wheel built on a machine that happens to have a CUDA toolkit must not declare
-    CUDA dependencies, so this reads the release matrix field rather than probing the
+    The release row's own field wins when it is set, because a row states the train it
+    targets and that is more authoritative than whichever toolkit happens to sit on the
     builder. The wheel build exports CU_VERSION; DESIRED_CUDA is the matrix field name.
+
+    Falling back to the installed toolkit matters for every build that is not a release
+    job. The build turns CUDA on by detecting a toolkit, so keying only off the release
+    field produced a wheel that carried the CUDA libraries with no dependency declarations
+    and no way to find the CUDA runtime.
+
+    Returns "" when the build did not enable CUDA, so a CPU wheel declares nothing even on
+    a machine that has a toolkit installed.
     """
     raw = os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or ""
     digits = raw.lstrip("cu").replace(".", "")
-    return digits[:2] if digits[:2] in _CUDA_RUNTIME_PACKAGES else ""
+    if digits[:2] in _CUDA_RUNTIME_PACKAGES:
+        return digits[:2]
+
+    if not install_utils.is_cuda_available():
+        return ""
+    try:
+        major, _ = install_utils._get_cuda_version()
+    except Exception:
+        return ""
+    return str(major) if str(major) in _CUDA_RUNTIME_PACKAGES else ""
 
 
 def _cuda_dependencies() -> List[str]:
