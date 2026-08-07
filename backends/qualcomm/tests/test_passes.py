@@ -491,19 +491,9 @@ class TestPasses(unittest.TestCase):
         module = IndexPutInt64Value().eval()
         sample_input = (torch.randn(4),)
 
-        ran = 0
-        for backend in (
-            QnnExecuTorchBackendType.kHtpBackend,
-            QnnExecuTorchBackendType.kLpaiBackend,
-        ):
-            try:
-                quantizer = QnnQuantizer(backend=backend)
-            except Exception:
-                # LPAI needs quantized_aot_lib; skip only this backend's leg if it
-                # isn't available so the other backend's coverage is preserved.
-                continue
+        def run_backend(backend):
+            quantizer = QnnQuantizer(backend=backend)
             quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
-
             gm = (
                 torch.export.export(module, sample_input)
                 .run_decompositions({})
@@ -516,10 +506,17 @@ class TestPasses(unittest.TestCase):
             # guard this raised "Expecting input to have dtype torch.float32" on the
             # int64 value.
             torch.export.export(converted, sample_input)
-            ran += 1
 
-        if ran == 0:
-            self.skipTest("no QNN quantizer backend available (HTP/LPAI)")
+        # HTP is the core QNN quantizer backend; a failure here is a real regression,
+        # not something to swallow. LPAI additionally needs quantized_aot_lib, so only
+        # that missing optional dependency is allowed to skip the LPAI leg.
+        run_backend(QnnExecuTorchBackendType.kHtpBackend)
+        try:
+            run_backend(QnnExecuTorchBackendType.kLpaiBackend)
+        except Exception as e:
+            if "quantized_aot_lib" in str(e):
+                self.skipTest(f"LPAI quantizer unavailable: {e}")
+            raise
 
 
 if __name__ == "__main__":
