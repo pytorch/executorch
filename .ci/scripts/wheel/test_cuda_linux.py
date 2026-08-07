@@ -157,28 +157,38 @@ def test_device_code_covers_the_row() -> None:
             "wheel missing code for a claimed GPU would ship unnoticed."
         )
 
-    lib_dir = _package_dir() / "lib"
-    delegate = lib_dir / "libexecutorch_backend_cuda.so"
-    assert (
-        delegate.is_file()
-    ), f"{delegate.name} is not in the wheel, so there is no device code to check"
+    # Searched across every shipped library rather than a named one. The kernels are compiled
+    # into their own library, not into the delegate, and which library holds them is an internal
+    # detail. What the row promises is that the wheel covers those GPUs.
+    present: set[str] = set()
+    inspected = []
+    for library in sorted(_package_dir().rglob("*.so")):
+        listed = subprocess.run(
+            [cuobjdump, "--list-elf", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        found = {
+            token
+            for token in listed.replace(".", " ").split()
+            if token.startswith("sm_")
+        }
+        if found:
+            inspected.append(f"{library.name} ({', '.join(sorted(found))})")
+            present |= found
 
-    listed = subprocess.run(
-        [cuobjdump, "--list-elf", str(delegate)],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    present = {
-        token for token in listed.replace(".", " ").split() if token.startswith("sm_")
-    }
+    assert inspected, (
+        "no shipped library contains any GPU device code, so this wheel cannot run a model on any "
+        f"GPU, while the row claims {expected}"
+    )
     missing = sorted(set(expected) - present)
     assert not missing, (
-        f"the row claims {expected} but {delegate.name} carries no device code for {missing}. "
-        f"Present: {sorted(present)}. A user with one of those GPUs would install this wheel and "
-        "fail at the first kernel launch."
+        f"the row claims {expected} but the wheel carries no device code for {missing}. "
+        f"Found: {inspected}. A user with one of those GPUs would install this wheel and fail at "
+        "the first kernel launch."
     )
-    print(f"✓ device code covers every architecture the row claims ({sorted(present)})")
+    print(f"✓ device code covers the row: {inspected}")
 
 
 if __name__ == "__main__":
