@@ -38,10 +38,13 @@ jobs:
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: coreml
+      # The heavier coreml_static_int8 macOS matrix saturates the shared
+      # macOS runner pool, so run it only on the nightly schedule. Every-commit
+      # events (push, pull_request) run the lighter coreml flow only.
       flows: >-
-        ${{ github.event_name == 'pull_request'
-            && '["coreml"]'
-            || '["coreml", "coreml_static_int8"]' }}
+        ${{ github.event_name == 'schedule'
+            && '["coreml", "coreml_static_int8"]'
+            || '["coreml"]' }}
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       run-macos: true
