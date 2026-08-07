@@ -13,6 +13,7 @@ def define_common_targets():
       package_style = "inplace",
       deps = [
           "//executorch/codegen:gen_lib",
+          "//executorch/codegen/tools:gen_oplist_lib",
           "fbsource//third-party/pypi/expecttest:expecttest",
       ],
       external_deps = [

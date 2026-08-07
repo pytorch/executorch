@@ -6,7 +6,7 @@
 
 import copy
 
-from typing import cast, Optional, Set, Type
+from typing import cast, ClassVar, Optional, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
@@ -127,12 +127,36 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         InsertTableOpsPass,
         RemoveNoopPass,
     }
+    _default_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+    )
+    _mixed_profile_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        *_default_partial_binary_qdq_targets,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.mm.default,
+        exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.grid_sampler_2d.default,
+    )
 
     def __init__(
-        self, exported_program: Optional[ExportedProgram] = None, *args, **kwargs
+        self,
+        exported_program: Optional[ExportedProgram] = None,
+        *args,
+        preserve_partial_binary_tensor_qdq: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+        self.preserve_partial_binary_tensor_qdq = preserve_partial_binary_tensor_qdq
 
     def _extract_input_params(
         self, arg_list: list[Node]
@@ -177,8 +201,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         index: int,
         input_qparams: QuantArgs,
         nodes_to_remove: set[Node],
+        remove_qdq: bool = True,
     ) -> None:
         node.meta["input_qparams"][index] = input_qparams
+
+        if not remove_qdq:
+            return
 
         for dq in nodes_to_remove:
             if dq.target not in DQ_OPS:
@@ -200,6 +228,35 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         self._annotate_input_params(
             graph_module, node, i, input_qparams, nodes_to_remove
         )
+
+    def _extract_arg_input_params(
+        self, arg: object
+    ) -> tuple[Optional[QuantArgs], set[Node]]:
+        if isinstance(arg, (list, tuple)):
+            return self._extract_input_params(list(arg))
+        if isinstance(arg, Node):
+            return self._extract_input_params([arg])
+        return None, set()
+
+    def _has_partial_binary_tensor_qdq_inputs(
+        self, node: Node, input_qparams: dict[int, QuantArgs]
+    ) -> bool:
+        targets = (
+            self._mixed_profile_partial_binary_qdq_targets
+            if self.preserve_partial_binary_tensor_qdq
+            else self._default_partial_binary_qdq_targets
+        )
+        if node.target not in targets:
+            return False
+
+        lhs_idx, rhs_idx = 0, 1
+        if lhs_idx >= len(node.args) or rhs_idx >= len(node.args):
+            return False
+        if not isinstance(node.args[lhs_idx], Node) or not isinstance(
+            node.args[rhs_idx], Node
+        ):
+            return False
+        return (lhs_idx in input_qparams) != (rhs_idx in input_qparams)
 
     def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
         """Fold outmost quant nodes inside submodule.
@@ -327,12 +384,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
-        modified = False
+        graph_modified = False
+        metadata_modified = False
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if not FoldAndAnnotateQParamsPass.is_foldable(n):
                 continue
-            modified = True
 
             # Make sure we haven't already set qparams meta information on the node
             if "input_qparams" in n.meta:
@@ -346,17 +403,32 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                     "output_qparams should not have been set at this point"
                 )
 
+            input_qparams: dict[int, QuantArgs] = {}
+            input_nodes_to_remove: dict[int, set[Node]] = {}
+            for i, arg in enumerate(n.args):
+                qparams, nodes_to_remove = self._extract_arg_input_params(arg)
+                if qparams is not None:
+                    input_qparams[i] = qparams
+                    input_nodes_to_remove[i] = nodes_to_remove
+
+            preserve_qdq = self._has_partial_binary_tensor_qdq_inputs(n, input_qparams)
+            graph_modified = graph_modified or not preserve_qdq
+            metadata_modified = True
+
             # for the inputs and outputs search the graph for quantization info and
             # store the information in a dict with order of the _tensor_ inputs as key,
             # ignoring any other arguments to the target node.
             n.meta["input_qparams"] = {}
             n.meta["output_qparams"] = {}
-            for i, arg in enumerate(n.args):
-                if isinstance(arg, (list, tuple)):
-                    self.fold_and_annotate_arg(graph_module, n, arg, i)  # type: ignore
-
-                elif isinstance(arg, Node):
-                    self.fold_and_annotate_arg(graph_module, n, [arg], i)
+            for i, qparams in input_qparams.items():
+                self._annotate_input_params(
+                    graph_module,
+                    n,
+                    i,
+                    qparams,
+                    input_nodes_to_remove[i],
+                    remove_qdq=not preserve_qdq,
+                )
 
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
@@ -369,8 +441,9 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                     user.target, user.args
                 )
 
-                user.replace_all_uses_with(n)
-                graph_module.graph.erase_node(user)
+                if not preserve_qdq:
+                    user.replace_all_uses_with(n)
+                    graph_module.graph.erase_node(user)
 
             # Some op(s) contain a "dtype" key in their node kwargs. Set this
             # to the type of output qparams.
@@ -383,10 +456,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 self._handle_control_flow_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
-        if modified:
+        if graph_modified:
             graph_module = super().call(graph_module).graph_module
 
-        return PassResult(graph_module, modified)
+        return PassResult(graph_module, metadata_modified or graph_modified)
 
 
 class QuantizeClampArgumentsPass(ArmPass):
