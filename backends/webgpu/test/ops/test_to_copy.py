@@ -13,18 +13,30 @@ int `[1, 2, 3]` -> float `[1.0, 2.0, 3.0]`, NOT the byte-reinterpretation
 lvp golden (yolo11n / Depth-Anything-V2).
 """
 
+import math
 import unittest
 
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 
 
 class ToCopyIntToFloatModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # int32 -> fp32 dtype cast (the numeric-convert path).
         return x.to(torch.float32)
+
+
+class ToCopyFloatToIntModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.to(torch.int32)
+
+
+class ToCopyFloatToIntToFloatModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.to(torch.int32).to(torch.float32)
 
 
 class ToCopyFloatModule(torch.nn.Module):
@@ -34,11 +46,30 @@ class ToCopyFloatModule(torch.nn.Module):
         return x.to(torch.float32, copy=True)
 
 
-def _export(model: torch.nn.Module, x: torch.Tensor):
+def to_copy_int_input(shape: tuple[int, ...]) -> torch.Tensor:
+    n = math.prod(shape)
+    return (torch.arange(n, dtype=torch.int32) - n // 2).reshape(shape)
+
+
+def to_copy_float_input(shape: tuple[int, ...]) -> torch.Tensor:
+    n = math.prod(shape)
+    pattern = torch.tensor(
+        [-8.75, -3.0, -1.5, -0.25, 0.0, 0.25, 1.5, 3.0, 8.75],
+        dtype=torch.float32,
+    )
+    repeats = (n + pattern.numel() - 1) // pattern.numel()
+    return pattern.repeat(repeats)[:n].reshape(shape)
+
+
+def _lower(model: torch.nn.Module, x: torch.Tensor):
     ep = torch.export.export(model.eval(), (x,))
-    return to_edge_transform_and_lower(
-        ep, partitioner=[VulkanPartitioner()]
-    ).to_executorch()
+    edge = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+    return ep, edge
+
+
+def _export(model: torch.nn.Module, x: torch.Tensor):
+    _, edge = _lower(model, x)
+    return edge.to_executorch()
 
 
 def _delegated(et) -> bool:
@@ -49,6 +80,29 @@ def _delegated(et) -> bool:
     )
 
 
+def _prepartition_cast_dtypes(ep) -> list[torch.dtype]:
+    return [
+        node.args[1]
+        for node in ep.graph_module.graph.nodes
+        if node.op == "call_function" and node.target == torch.ops.aten.to.dtype
+    ]
+
+
+def _delegated_cast_dtypes(edge) -> list[torch.dtype]:
+    graph_module = edge.exported_program().graph_module
+    if any(
+        "_to_dim_order_copy" in str(getattr(node, "target", ""))
+        for node in graph_module.graph.nodes
+    ):
+        return []
+    return [
+        node.kwargs["dtype"]
+        for _, lowered, _ in get_lowered_submodules(graph_module)
+        for node in lowered.original_module.graph_module.graph.nodes
+        if "_to_dim_order_copy" in str(getattr(node, "target", ""))
+    ]
+
+
 class ToCopyTest(unittest.TestCase):
     def test_int_to_float_delegates(self) -> None:
         x = torch.tensor([1, 2, 3], dtype=torch.int32)
@@ -56,6 +110,31 @@ class ToCopyTest(unittest.TestCase):
         self.assertTrue(
             _delegated(et), "Expected a VulkanBackend delegate (to_copy int->float)"
         )
+
+    def test_float_to_int_delegates(self) -> None:
+        x = torch.tensor([-3.75, -1.0, 0.0, 1.9, 63.0], dtype=torch.float32)
+        et = _export(ToCopyFloatToIntModule(), x)
+        self.assertTrue(
+            _delegated(et), "Expected a VulkanBackend delegate (to_copy float->int)"
+        )
+
+    def test_roundtrip_keeps_both_casts_in_delegate(self) -> None:
+        x = torch.tensor([-3.75, -1.0, 0.0, 1.9, 63.0], dtype=torch.float32)
+        ep, edge = _lower(ToCopyFloatToIntToFloatModule(), x)
+        expected = [torch.int32, torch.float32]
+        self.assertEqual(_prepartition_cast_dtypes(ep), expected)
+        self.assertEqual(_delegated_cast_dtypes(edge), expected)
+        self.assertTrue(_delegated(edge.to_executorch()))
+
+        for module, one_direction_input in (
+            (ToCopyFloatToIntModule(), x),
+            (
+                ToCopyIntToFloatModule(),
+                torch.tensor([-3, -1, 0, 1, 63], dtype=torch.int32),
+            ),
+        ):
+            _, one_direction_edge = _lower(module, one_direction_input)
+            self.assertNotEqual(_delegated_cast_dtypes(one_direction_edge), expected)
 
     def test_float_passthrough_delegates(self) -> None:
         x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
