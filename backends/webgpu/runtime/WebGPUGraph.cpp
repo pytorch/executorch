@@ -1482,6 +1482,21 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
       continue;
     }
 
+    // Require an explicit fp32 host dtype, not merely "not int64": inferring
+    // the narrow from the 2:1 byte ratio alone would silently reinterpret a
+    // same-sized non-fp32 host buffer (e.g. a stale int32) as fp32.
+    if (in.host_is_fp32 && buffer_is_fp16 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / sizeof(uint16_t);
+      const float* src = static_cast<const float*>(in.data);
+      std::vector<executorch::runtime::etensor::Half> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+        narrowed[e] = executorch::runtime::etensor::Half(src[e]);
+      }
+      wgpuQueueWriteBuffer(
+          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
+      continue;
+    }
+
     throw std::runtime_error(
         "WebGPU: unsupported input copy for input " + std::to_string(i) +
         " (host " + std::to_string(in.nbytes) + " bytes" +

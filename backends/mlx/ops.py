@@ -159,6 +159,7 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
     TransposeNode,
     TrilNode,
     TriuNode,
+    UpdateAndAttendNode,
     VarNode,
     VidOrTid,
     WhereNode,
@@ -169,6 +170,12 @@ from executorch.backends.mlx.serialization.mlx_graph_schema import (
 # For ops that are not in aten (e.g., dim order ops), directly register on exir_ops
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.passes.reinplace import _derive_edge_inplace_overload
+
+# Registers kvcache::update_and_attend, the neutral off-graph KV-cache op this
+# backend lowers below.
+from executorch.extension.llm.cache import (  # noqa: F401
+    update_and_attend as _kvcache_op,
+)
 from torch.fx.node import Node
 
 _LEAKY_RELU_DEFAULT_NEGATIVE_SLOPE = 0.01
@@ -2840,6 +2847,36 @@ def _rope_handler(P: MLXProgramBuilder, n: Node) -> Slot:
         )
     )
 
+    return out
+
+
+@REGISTRY.register(target=[torch.ops.kvcache.update_and_attend.default])
+def _update_and_attend_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    """Handle kvcache.update_and_attend: append this step's K/V, then attend.
+
+    The cache itself is off-graph runtime state, so nothing about it is
+    serialized: the node carries only the tensor operands plus the three
+    per-call-site constants the runtime handler needs.
+    """
+    args = P.args(n)
+    require_args(args, 7, 7, "kvcache.update_and_attend")
+    require_kwargs(P.kwargs(n), set(), "kvcache.update_and_attend")
+    q, k, v, position, layer_id, scale, out_dtype = args
+    require_static_int(layer_id, "layer_id", "kvcache.update_and_attend")
+    require_static_float(scale, "scale", "kvcache.update_and_attend")
+    out = P.make_or_get_slot(n)
+    P.emit(
+        UpdateAndAttendNode(
+            q=P.slot_to_tid(q),
+            k=P.slot_to_tid(k),
+            v=P.slot_to_tid(v),
+            position=P.slot_to_tid(position),
+            out=P.slot_to_tid(out),
+            layer_id=layer_id,
+            scale=float(scale),
+            out_dtype=torch_dtype_to_scalar_type(out_dtype),
+        )
+    )
     return out
 
 
