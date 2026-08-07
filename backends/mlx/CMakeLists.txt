@@ -185,7 +185,7 @@ message(
 # mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
 # each patch file under patches/ for its rationale.
 set(_mlx_patches
-    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_has_include.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
     ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
 )
@@ -296,8 +296,12 @@ target_include_directories(
 # Link against MLX and executorch. mlx is an imported static lib (built by
 # mlx_external); it is only consumed at build time here, not re-exported, so
 # downstream consumers must link to mlx separately via the package config.
+# extension_llm_cache carries the off-graph KV-cache registry the backend binds
+# to in init(); it is defined under EXECUTORCH_BUILD_EXTENSION_LLM, which the
+# mlx preset enables.
 target_link_libraries(
-  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+  mlxdelegate PRIVATE mlx_schema executorch_core extension_llm_cache
+                      $<BUILD_INTERFACE:mlx>
 )
 
 executorch_target_link_options_shared_lib(mlxdelegate)

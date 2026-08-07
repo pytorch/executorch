@@ -24,6 +24,7 @@ import os
 import numpy as np
 import soundfile as sf
 import torch
+
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
@@ -32,6 +33,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 )
 from executorch.examples.models.mlperf_tiny.ds_cnn import DSCNNKWS
 from executorch.exir import EdgeCompileConfig, to_edge
+from pte_to_header import to_header
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -169,17 +171,6 @@ def export_model(
     return et.buffer
 
 
-def buffer_to_header(buffer: bytes) -> str:
-    """Convert .pte bytes to a C header string."""
-    h = "#pragma once\n#include <cstdint>\n#include <cstddef>\n\n"
-    h += "alignas(16) static const uint8_t model_pte[] = {\n"
-    for i in range(0, len(buffer), 16):
-        h += "    " + ",".join(f"0x{b:02x}" for b in buffer[i : i + 16]) + ",\n"
-    h += "};\n"
-    h += f"static const size_t model_pte_size = {len(buffer)};\n"
-    return h
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="Export DS-CNN keyword spotting model for Arduino"
@@ -216,7 +207,7 @@ def main():
         torch.save(model.state_dict(), args.output.replace(".h", ".pth"))
 
     buffer = export_model(model, args.data_dir, args.target)
-    header = buffer_to_header(buffer)
+    header = to_header(buffer, source="the exported DS-CNN")
 
     with open(args.output, "w") as f:
         f.write(header)
