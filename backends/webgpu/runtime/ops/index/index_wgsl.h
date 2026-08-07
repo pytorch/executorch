@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from index.wgsl - DO NOT EDIT.
-// wgsl-sha256: daed48e60bfcf2b7420d277576d794137d3bff383aef4f68464c98c8a7235c8e
+// wgsl-sha256: 56798b45b5ee8cdf295d305f08528698ca3e6847223c846ceabcfb9524ab0e3e
 inline constexpr const char* kIndexWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -27,8 +27,10 @@ struct Params {
 override wg_size: u32 = 64;
 
 @compute @workgroup_size(wg_size)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let out_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let out_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (out_bufi >= params.numel) {
         return;
     }

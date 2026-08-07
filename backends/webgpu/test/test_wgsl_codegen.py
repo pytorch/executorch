@@ -165,6 +165,12 @@ class WgslCodegenTest(unittest.TestCase):
         )
         self.assertEqual(g.parse_workgroup_size(src), (64, 1, 1))
 
+    def test_scatter_unique_indices_workgroup_size(self) -> None:
+        source = (
+            g.BACKEND_ROOT / "runtime/ops/scatter/scatter_unique_indices.wgsl"
+        ).read_text()
+        self.assertEqual(g.parse_workgroup_size(source), (64, 1, 1))
+
     def test_render_header_shape(self) -> None:
         wgsl = "@compute @workgroup_size(64, 1, 1)\nfn main(){}\n"
         h = g.render_header(Path("runtime/ops/update_cache/update_cache.wgsl"), wgsl)
@@ -240,14 +246,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 144)
+        self.assertEqual(len(outputs), 149)
         self.assertEqual(
             digest.hexdigest(),
-            "b4a5a79ea7cdd1f18867106365da79b6faaa5f1065409cadec8bab2d64f3139e",
+            "8b2879a6ba11b57fd67aa961793ef9ff5142fdefaa7d9dcf41ab26276331f546",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "2717f916578362e00727dabd1d7e91a28c8cada0c238fa6dc323511cd672369a",
+            "1c26ac3f0671aeec5c648f78c9f2cbeb02b65f79478712a4f4de5c7e75446e8c",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -950,12 +956,12 @@ class WgslTemplateEngineTest(unittest.TestCase):
             "to_copy_float_to_int": (
                 "f32",
                 "i32",
-                "c331e00e3171eecbe6317ac9df0a5f9cd6d25da26a9a587250f1cc6086dc3c8f",
+                "241d51293095623126da4f106092bd2d7327c26e00c9cad39bdb8dc546f48149",
             ),
             "to_copy_int_to_float": (
                 "i32",
                 "f32",
-                "e18dd733a3838f83eded4977a2a2b21119099c8409b234f12474fae5acc9b195",
+                "9506570f98b9888a65603157f75d380f7784539205610ccbcc459d6afb6629c5",
             ),
         }
         self.assertEqual(set(variants), set(expected))
