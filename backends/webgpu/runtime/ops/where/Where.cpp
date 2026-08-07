@@ -75,7 +75,7 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const size_t cond_bind_size = (cond_tensor.nbytes + 3) & ~size_t(3);
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, kWhereWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, out_meta.numel, wg_size, "where");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -120,8 +120,12 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "where",
+       workgroup_count.y});
 
   // Dynamic shapes: rebuild the 4 broadcast TensorMeta UBOs + dispatch count.
   WGPUBuffer o_buf = out_meta_buf, c_buf = cond_meta_buf, a_buf = a_meta_buf,
@@ -170,9 +174,10 @@ void where_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     wgpuQueueWriteBuffer(g.queue(), c_buf, 0, &cm, sizeof(cm));
     wgpuQueueWriteBuffer(g.queue(), a_buf, 0, &am, sizeof(am));
     wgpuQueueWriteBuffer(g.queue(), bb_buf, 0, &bm, sizeof(bm));
-    g.dispatch_at(dispatch_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            g.device(), om.numel, wg_size, "where(resize)");
+    const utils::WgCount workgroups = utils::compute_2d_workgroup_count(
+        g.device(), om.numel, wg_size, "where(resize)");
+    g.dispatch_at(dispatch_idx).workgroup_count_x = workgroups.x;
+    g.dispatch_at(dispatch_idx).workgroup_count_y = workgroups.y;
   };
   graph.add_tensor_resize_hook(cond_id, where_resize);
   graph.add_tensor_resize_hook(a_id, where_resize);

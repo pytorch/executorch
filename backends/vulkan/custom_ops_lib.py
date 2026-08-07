@@ -350,6 +350,42 @@ torch.library.register_autograd(
     setup_context=linear_q4gsw_setup_context,
 )
 
+########################
+## scatter_src_unique ##
+########################
+
+
+def scatter_src_unique_impl(
+    self: torch.Tensor,
+    dim: int,
+    index: torch.Tensor,
+    src: torch.Tensor,
+) -> torch.Tensor:
+    normalized_dim = dim if dim >= 0 else dim + self.dim()
+    if normalized_dim != self.dim() - 1:
+        raise ValueError("scatter_src_unique requires the final dimension")
+    if not isinstance(index, FakeTensor):
+        flattened = index.detach().reshape(-1)
+        if torch.unique(flattened).numel() != flattened.numel():
+            raise ValueError("scatter_src_unique requires unique destinations")
+    return torch.scatter(self, dim, index, src)
+
+
+def scatter_src_unique_meta(
+    self: torch.Tensor,
+    dim: int,
+    index: torch.Tensor,
+    src: torch.Tensor,
+) -> torch.Tensor:
+    return torch.empty_like(self)
+
+
+name = "scatter_src_unique"
+lib.define(f"{name}(Tensor self, int dim, Tensor index, Tensor src) -> Tensor")
+lib.impl(name, scatter_src_unique_impl, "CompositeExplicitAutograd")
+lib.impl(name, scatter_src_unique_meta, "Meta")
+scatter_src_unique_op = getattr(getattr(torch.ops, namespace), name)
+
 name = "linear_dq8ca_q4gsw"
 lib.define(
     f"""

@@ -12,6 +12,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/QuantizedLinear.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_m3_shared_bicol_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
@@ -56,6 +57,9 @@ constexpr uint32_t kQ4gswSteelTile = 64u;
 constexpr uint32_t kQ4gswSteelBK = 16u;
 constexpr uint32_t kQ4gswSteelBK64 = 64u;
 constexpr uint32_t kQ4gswSteelInvocations = 256u;
+constexpr uint32_t kQ4gswM3Invocations = 64u;
+constexpr uint32_t kQ4gswM3StorageBytes =
+    6u * kQ4gswM3Invocations * sizeof(float);
 
 constexpr const char* kQ4gswLinearShader = "q4gsw_linear";
 constexpr const char* kQ4gswBicolShader = "q4gsw_linear_coop4_bicol";
@@ -94,6 +98,14 @@ bool steel_supported(WGPUDevice device) {
   WGPULimits limits = {};
   return wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
       limits.maxComputeInvocationsPerWorkgroup >= kQ4gswSteelInvocations;
+}
+
+bool m3_shared_supported(WGPUDevice device) {
+  WGPULimits limits = {};
+  return wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success &&
+      limits.maxComputeInvocationsPerWorkgroup >= kQ4gswM3Invocations &&
+      limits.maxComputeWorkgroupSizeX >= kQ4gswM3Invocations &&
+      limits.maxComputeWorkgroupStorageSize >= kQ4gswM3StorageBytes;
 }
 
 bool steel_bk64_eligible(
@@ -148,6 +160,7 @@ uint32_t steel_bk64_workgroup_count(
 uint32_t compute_q4gsw_workgroup_count(
     WGPUDevice device,
     bool use_gemv,
+    bool use_m3_shared,
     bool use_bk64,
     bool use_steel,
     bool use_shmem_gemm,
@@ -169,6 +182,20 @@ uint32_t compute_q4gsw_workgroup_count(
     if (wgc == 0u) {
       throw std::runtime_error(
           std::string("WebGPU ") + op_name + ": zero GEMV dispatch");
+    }
+    return wgc;
+  }
+  if (use_m3_shared) {
+    const uint64_t pairs = (static_cast<uint64_t>(n) + 1u) / 2u;
+    if (pairs == 0u || pairs > UINT32_MAX) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name + ": M=3 N/2 out of range");
+    }
+    const uint32_t wgc =
+        utils::clamp_workgroup_count(device, static_cast<uint32_t>(pairs));
+    if (wgc == 0u) {
+      throw std::runtime_error(
+          std::string("WebGPU ") + op_name + ": zero M=3 dispatch");
     }
     return wgc;
   }
@@ -218,11 +245,6 @@ struct Q4gswExecutionState {
 };
 
 constexpr size_t kQ4gswBicolRoute = 0;
-constexpr size_t kQ4gswBk64Route = 1;
-constexpr size_t kQ4gswPrefillRoute = 2;
-// 2-route (bicol + prefill) layout, used when the BK64 route is not recorded:
-// the prefill dispatch sits at index 1, not kQ4gswPrefillRoute (the 3-route 2).
-constexpr size_t kQ4gswPrefillRoute2Way = 1;
 
 Q4gswExecutionState make_q4gsw_execution_state(
     WGPUDevice device,
@@ -237,6 +259,8 @@ Q4gswExecutionState make_q4gsw_execution_state(
     uint32_t wg_size,
     bool use_single_gemv,
     bool use_dual_route,
+    bool m3_eligible,
+    bool record_m3_route,
     bool record_bk64_route,
     bool bk64_eligible,
     bool prefill_use_steel,
@@ -259,15 +283,17 @@ Q4gswExecutionState make_q4gsw_execution_state(
   }
   const uint32_t m = static_cast<uint32_t>(live_m);
   const bool use_gemv = use_single_gemv || (use_dual_route && m == 1u);
-  const bool use_bk64 = !use_gemv && bk64_eligible &&
+  const bool use_m3_shared = !use_gemv && m3_eligible && m == 3u;
+  const bool use_bk64 = !use_gemv && !use_m3_shared && bk64_eligible &&
       utils::is_q4gsw_bk64_live_m(m) &&
       steel_bk64_workgroup_count(device, m, N, K) > 0u;
   const uint32_t workgroup_count = compute_q4gsw_workgroup_count(
       device,
       use_gemv,
+      use_m3_shared,
       use_bk64,
-      !use_gemv && !use_bk64 && prefill_use_steel,
-      !use_gemv && !use_bk64 && prefill_use_shmem_gemm,
+      !use_gemv && !use_m3_shared && !use_bk64 && prefill_use_steel,
+      !use_gemv && !use_m3_shared && !use_bk64 && prefill_use_shmem_gemm,
       m,
       N,
       K,
@@ -284,12 +310,16 @@ Q4gswExecutionState make_q4gsw_execution_state(
   state.params.has_bias = has_bias;
   state.output_dims = input_dims;
   state.output_dims.back() = static_cast<int64_t>(N);
-  state.active_route = use_dual_route
-      ? (use_gemv ? kQ4gswBicolRoute
-                  : (record_bk64_route
-                         ? (use_bk64 ? kQ4gswBk64Route : kQ4gswPrefillRoute)
-                         : kQ4gswPrefillRoute2Way))
-      : 0u;
+  if (!use_dual_route || use_gemv) {
+    state.active_route = kQ4gswBicolRoute;
+  } else if (record_m3_route && use_m3_shared) {
+    state.active_route = 1u;
+  } else {
+    const size_t bk64_route = record_m3_route ? 2u : 1u;
+    state.active_route = record_bk64_route && use_bk64
+        ? bk64_route
+        : bk64_route + (record_bk64_route ? 1u : 0u);
+  }
   state.active_grid = {workgroup_count, 1u};
   return state;
 }
@@ -307,6 +337,8 @@ struct Q4gswResizeContext {
   uint32_t wg_size;
   bool use_single_gemv;
   bool use_dual_route;
+  bool m3_eligible;
+  bool record_m3_route;
   bool record_bk64_route;
   bool bk64_eligible;
   bool prefill_use_steel;
@@ -330,6 +362,8 @@ void resize_q4gsw(WebGPUGraph& graph, const Q4gswResizeContext& context) {
       context.wg_size,
       context.use_single_gemv,
       context.use_dual_route,
+      context.m3_eligible,
+      context.record_m3_route,
       context.record_bk64_route,
       context.bk64_eligible,
       context.prefill_use_steel,
@@ -456,16 +490,19 @@ void q4gsw_linear_impl_with_input_buffer_internal(
   const uint32_t wg_size = utils::clamp_workgroup_size(
       device, get_webgpu_shader_info(kQ4gswLinearShader).workgroup_size_x);
   const bool bicol_eligible = K % 8u == 0u && gs % 8u == 0u;
+  const bool m3_eligible = bicol_eligible && m3_shared_supported(device);
   const bool use_gemv = M == 1u && bicol_eligible;
+  const bool use_m3_shared = !use_gemv && M == 3u && m3_eligible;
   const bool use_dual_route = utils::should_record_q4gsw_dual_route(
       M,
       bicol_eligible,
       graph.has_dynamic_shapes(),
       graph.config().record_q4gsw_decode_route);
+  const bool record_m3_route = use_dual_route && M >= 3u && m3_eligible;
   const bool bk64_eligible =
       steel_bk64_eligible(device, K, N, gs, has_bias != 0u);
   const bool record_bk64_route = use_dual_route && bk64_eligible && M >= 128u;
-  const bool use_bk64 = !use_gemv && bk64_eligible &&
+  const bool use_bk64 = !use_gemv && !use_m3_shared && bk64_eligible &&
       utils::is_q4gsw_bk64_live_m(M) &&
       steel_bk64_workgroup_count(device, M, N, K) > 0u;
   // GEMV (bicol) is a pow2 tree reduction; compute its size only when used.
@@ -474,13 +511,13 @@ void q4gsw_linear_impl_with_input_buffer_internal(
             device, get_webgpu_shader_info(kQ4gswBicolShader).workgroup_size_x)
       : 0u;
   // steel (256-thread) is the preferred M>1 prefill GEMM; 0 count = ineligible.
-  const bool use_steel = !use_gemv && steel_supported(device) &&
-      steel_workgroup_count(device, M, N, K) > 0u;
+  const bool use_steel = !use_gemv && !use_m3_shared &&
+      steel_supported(device) && steel_workgroup_count(device, M, N, K) > 0u;
   // shmem GEMM is now a FALLBACK, not dead: steel shadows it whenever eligible,
   // so shmem only wins when steel is ineligible (K % 16 != 0, or a
   // <256-invocation device such as SwiftShader) and the shape still hits the
   // large K/N thresholds; otherwise the register-tiled path handles it.
-  const bool use_shmem_gemm = !use_gemv && !use_steel &&
+  const bool use_shmem_gemm = !use_gemv && !use_m3_shared && !use_steel &&
       (K >= kQ4gswShmemMinDim || N >= kQ4gswShmemNMinDim);
   const char* prefill_shader_name = use_steel ? kQ4gswSteelShader
       : use_shmem_gemm                        ? kQ4gswShmemShader
@@ -535,6 +572,8 @@ void q4gsw_linear_impl_with_input_buffer_internal(
       wg_size,
       use_gemv,
       use_dual_route,
+      m3_eligible,
+      record_m3_route,
       record_bk64_route,
       bk64_eligible,
       use_steel,
@@ -590,6 +629,17 @@ void q4gsw_linear_impl_with_input_buffer_internal(
          initial_state.active_grid.x,
          "linear_q4gsw_coop4_bicol",
          initial_state.active_grid.y});
+    size_t m3_idx = 0;
+    if (record_m3_route) {
+      utils::ComputePipelineBundle m3_bundle = make_shared_bundle(
+          kQ4gswLinearM3SharedBicolWGSL, bicol_bundle, true, 0u);
+      m3_idx = graph.add_dispatch(
+          {m3_bundle.pipeline,
+           m3_bundle.bind_group,
+           initial_state.active_grid.x,
+           "linear_q4gsw_m3_shared_bicol",
+           initial_state.active_grid.y});
+    }
     size_t bk64_idx = 0;
     if (record_bk64_route) {
       utils::ComputePipelineBundle bk64_bundle = make_shared_bundle(
@@ -615,7 +665,18 @@ void q4gsw_linear_impl_with_input_buffer_internal(
          initial_state.active_grid.x,
          prefill_label,
          initial_state.active_grid.y});
-    if (record_bk64_route) {
+    if (record_m3_route && record_bk64_route) {
+      route_group = graph.register_dispatch_route_group(
+          {{bicol_idx, bicol_idx + 1},
+           {m3_idx, m3_idx + 1},
+           {bk64_idx, bk64_idx + 1},
+           {prefill_idx, prefill_idx + 1}});
+    } else if (record_m3_route) {
+      route_group = graph.register_dispatch_route_group(
+          {{bicol_idx, bicol_idx + 1},
+           {m3_idx, m3_idx + 1},
+           {prefill_idx, prefill_idx + 1}});
+    } else if (record_bk64_route) {
       route_group = graph.register_dispatch_route_group(
           {{bicol_idx, bicol_idx + 1},
            {bk64_idx, bk64_idx + 1},
@@ -627,17 +688,21 @@ void q4gsw_linear_impl_with_input_buffer_internal(
     graph.select_dispatch_route(
         route_group, initial_state.active_route, {initial_state.active_grid});
   } else {
-    const bool fixed_wg = use_gemv ? false : (use_bk64 || fixed_prefill_wg);
-    utils::ComputePipelineBundle bundle = make_bundle(
-        get_webgpu_shader_info(shader_name).source,
-        fixed_wg,
-        use_gemv ? gemv_wg_size : wg_size);
+    const bool fixed_wg =
+        use_m3_shared || use_bk64 || (!use_gemv && fixed_prefill_wg);
+    const char* shader_source = use_m3_shared
+        ? kQ4gswLinearM3SharedBicolWGSL
+        : get_webgpu_shader_info(shader_name).source;
+    utils::ComputePipelineBundle bundle =
+        make_bundle(shader_source, fixed_wg, use_gemv ? gemv_wg_size : wg_size);
     dispatch_idx = graph.add_dispatch(
         {bundle.pipeline,
          bundle.bind_group,
          initial_state.active_grid.x,
          use_gemv ? "linear_q4gsw_coop4_bicol"
-                  : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label),
+                  : (use_m3_shared
+                         ? "linear_q4gsw_m3_shared_bicol"
+                         : (use_bk64 ? "linear_q4gsw_bk64" : prefill_label)),
          initial_state.active_grid.y});
   }
 
@@ -656,6 +721,8 @@ void q4gsw_linear_impl_with_input_buffer_internal(
       wg_size,
       use_gemv,
       use_dual_route,
+      m3_eligible,
+      record_m3_route,
       record_bk64_route,
       bk64_eligible,
       use_steel,

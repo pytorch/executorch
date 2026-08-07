@@ -75,7 +75,7 @@ void gather_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   }
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, kGatherWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, out_meta.numel, wg_size, "gather");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -116,7 +116,12 @@ void gather_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "gather",
+       workgroup_count.y});
 
   wgpuBufferRelease(out_meta_buf);
   wgpuBufferRelease(self_meta_buf);

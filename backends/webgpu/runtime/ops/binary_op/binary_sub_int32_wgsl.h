@@ -1,6 +1,23 @@
-@group(0) @binding(0) var<storage, read> input1: array<${SCALAR_TYPE}>;
-@group(0) @binding(1) var<storage, read> input2: array<${SCALAR_TYPE}>;
-@group(0) @binding(2) var<storage, read_write> output: array<${SCALAR_TYPE}>;
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from binary_op.wgsl - DO NOT EDIT.
+// wgsl-sha256: 134151da070a891e539f6ede5974310c623a9a7d379c90e69f91bec56ddc9b29
+inline constexpr const char* kBinarySubInt32WGSL = R"(
+@group(0) @binding(0) var<storage, read> input1: array<i32>;
+@group(0) @binding(1) var<storage, read> input2: array<i32>;
+@group(0) @binding(2) var<storage, read_write> output: array<i32>;
 
 struct TensorMeta {
   ndim: u32,
@@ -13,17 +30,13 @@ struct TensorMeta {
 @group(0) @binding(5) var<uniform> in2_meta: TensorMeta;
 
 override wg_size: u32 = 64u;
-$if USE_ALPHA:
-  override alpha: ${ALPHA_TYPE} = ${ALPHA_DEFAULT};
+override alpha: i32 = 1i;
 
-$if INLINE:
-  @compute @workgroup_size(wg_size, 1, 1)
-$else:
-  fn op(a: ${SCALAR_TYPE}, b: ${SCALAR_TYPE}) -> ${SCALAR_TYPE} {
-    return ${OP_EXPR};
-  }
+fn op(a: i32, b: i32) -> i32 {
+  return bitcast<i32>(bitcast<u32>(a) - bitcast<u32>(alpha) * bitcast<u32>(b));
+}
 
-  @compute @workgroup_size(wg_size, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
@@ -33,8 +46,6 @@ fn main(
         return;
     }
 
-    $if INLINE:
-      // Fast path: every input dim matches the output dim -> elementwise.
     var same = true;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
         if (in1_meta.sizes[d >> 2u][d & 3u] != out_meta.sizes[d >> 2u][d & 3u] ||
@@ -43,15 +54,10 @@ fn main(
         }
     }
     if (same) {
-        $if INLINE:
-          output[idx] = ${SAME_EXPR};
-        $else:
-          output[idx] = op(input1[idx], input2[idx]);
+        output[idx] = op(input1[idx], input2[idx]);
         return;
     }
 
-    $if INLINE:
-      // Broadcast: out idx -> per-input coord (clamp size-1 dims), relinearize.
     var rem = idx;
     var l1: u32 = 0u;
     var l2: u32 = 0u;
@@ -61,8 +67,12 @@ fn main(
         l1 = l1 + min(coord, in1_meta.sizes[d >> 2u][d & 3u] - 1u) * in1_meta.strides[d >> 2u][d & 3u];
         l2 = l2 + min(coord, in2_meta.sizes[d >> 2u][d & 3u] - 1u) * in2_meta.strides[d >> 2u][d & 3u];
     }
-    $if INLINE:
-      output[idx] = ${BROADCAST_EXPR};
-    $else:
-      output[idx] = op(input1[l1], input2[l2]);
+    output[idx] = op(input1[l1], input2[l2]);
 }
+)";
+
+inline constexpr uint32_t kBinarySubInt32WorkgroupSizeX = 64;
+inline constexpr uint32_t kBinarySubInt32WorkgroupSizeY = 1;
+inline constexpr uint32_t kBinarySubInt32WorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
