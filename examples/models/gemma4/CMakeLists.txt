@@ -82,3 +82,24 @@ target_include_directories(
 )
 target_link_libraries(gemma4_e2e_runner PUBLIC ${link_libraries})
 target_compile_options(gemma4_e2e_runner PUBLIC ${_common_compile_options})
+
+if(TARGET webgpu_backend AND TARGET webgpu_model_loader)
+  add_library(gemma4_spec_runner runner/gemma4_spec_runner.cpp)
+  target_include_directories(
+    gemma4_spec_runner PUBLIC ${_common_include_directories}
+  )
+  target_link_libraries(
+    gemma4_spec_runner PUBLIC webgpu_backend webgpu_model_loader
+                              extension_tensor
+  )
+  target_compile_options(gemma4_spec_runner PRIVATE -fexceptions)
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      gemma4_spec_runner PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
+
+  add_executable(gemma4_spec_runner_cli runner/gemma4_spec_main.cpp)
+  target_link_libraries(gemma4_spec_runner_cli PRIVATE gemma4_spec_runner)
+  target_compile_options(gemma4_spec_runner_cli PRIVATE -fexceptions)
+endif()

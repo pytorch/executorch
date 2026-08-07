@@ -38,6 +38,7 @@ def define_webgpu_python_targets():
             "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
             "//executorch/backends/vulkan/patterns:vulkan_patterns",
             "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
+            "//executorch/examples/models/gemma4:target_prefill_contract",
             "//executorch/exir:lib",
         ],
     )
@@ -85,6 +86,42 @@ def define_common_targets():
             "//executorch/extension/llm/runner:runner_lib",
             "//pytorch/tokenizers:headers",
         ],
+    )
+
+    runtime.cxx_library(
+        name = "gemma4_spec_runner",
+        srcs = ["runner/gemma4_spec_runner.cpp"],
+        exported_headers = ["runner/gemma4_spec_runner.h"],
+        compiler_flags = ["-fexceptions"],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+        deps = [
+            "//executorch/backends/webgpu:webgpu_backend",
+            "//executorch/backends/webgpu:webgpu_model_loader",
+            "//executorch/extension/module:module",
+            "//executorch/extension/tensor:tensor",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "gemma4_spec_wasm_adapter",
+        srcs = ["runner/gemma4_spec_wasm.cpp"],
+        compiler_flags = ["-fexceptions"],
+        visibility = ["PUBLIC"],
+        deps = [
+            ":gemma4_spec_runner",
+            "//executorch/backends/webgpu:webgpu_backend",
+        ],
+    )
+
+    runtime.cxx_binary(
+        name = "gemma4_spec_runner_cli",
+        srcs = ["runner/gemma4_spec_main.cpp"],
+        compiler_flags = ["-fexceptions"],
+        visibility = ["PUBLIC"],
+        deps = [":gemma4_spec_runner"],
     )
 
     runtime.cxx_binary(

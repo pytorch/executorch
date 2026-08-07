@@ -117,6 +117,19 @@ executorch_target_link_options_shared_lib(webgpu_backend)
 set_property(TARGET webgpu_backend PROPERTY CXX_STANDARD 17)
 
 if(EMSCRIPTEN)
+  include(cmake/ValidateGemma4WasmNames.cmake)
+  set(GEMMA4_SPEC_WASM_EXPORT_NAME
+      "createGemma4Mtp"
+      CACHE STRING "JavaScript factory exported by the Gemma 4 MTP WASM module"
+  )
+  set(GEMMA4_SPEC_WASM_OUTPUT_NAME
+      "gemma4_mtp"
+      CACHE STRING "Output file stem for the Gemma 4 MTP WASM module"
+  )
+  validate_gemma4_wasm_names(
+    GEMMA4_SPEC_WASM_EXPORT_NAME GEMMA4_SPEC_WASM_OUTPUT_NAME
+  )
+
   add_executable(
     gemma4_plain_wasm
     ${EXECUTORCH_ROOT}/examples/models/gemma4/runner/gemma4_plain_wasm.cpp
@@ -125,7 +138,8 @@ if(EMSCRIPTEN)
     gemma4_plain_wasm PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
   )
   target_link_libraries(
-    gemma4_plain_wasm PRIVATE webgpu_backend webgpu_model_loader extension_tensor
+    gemma4_plain_wasm PRIVATE webgpu_backend webgpu_model_loader
+                              extension_tensor
   )
   target_compile_options(
     gemma4_plain_wasm PRIVATE -fexceptions "--use-port=emdawnwebgpu"
@@ -157,6 +171,48 @@ if(EMSCRIPTEN)
     PROPERTIES OUTPUT_NAME "webgpu_llama"
                RUNTIME_OUTPUT_DIRECTORY
                "${CMAKE_CURRENT_BINARY_DIR}/browser_gemma4_plain"
+               CXX_STANDARD 17
+  )
+  add_executable(
+    gemma4_spec_browser
+    ${EXECUTORCH_ROOT}/examples/models/gemma4/runner/gemma4_spec_runner.cpp
+    ${EXECUTORCH_ROOT}/examples/models/gemma4/runner/gemma4_spec_wasm.cpp
+  )
+  target_include_directories(
+    gemma4_spec_browser PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+  target_link_libraries(
+    gemma4_spec_browser PRIVATE webgpu_backend webgpu_model_loader
+                                extension_tensor
+  )
+  target_compile_options(gemma4_spec_browser PRIVATE -fexceptions)
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      gemma4_spec_browser PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
+  target_link_options(
+    gemma4_spec_browser
+    PRIVATE
+    -fexceptions
+    "--use-port=emdawnwebgpu"
+    "-sASYNCIFY"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sMAXIMUM_MEMORY=4GB"
+    "-sFORCE_FILESYSTEM=1"
+    "--no-entry"
+    "-sEXPORTED_FUNCTIONS=['_et_init','_et_load','_et_unload','_et_reset','_et_prefill_batch','_et_prefill_step','_et_step','_et_mtp_execute_count','_et_mtp_accepted_drafts','_et_mtp_buffered_tokens','_et_mtp_execute','_et_mtp_execution_attestation','_et_profile_enable','_et_profile','_malloc','_free']"
+    "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS','HEAP32']"
+    "-sSTACK_SIZE=8388608"
+    "-sASYNCIFY_STACK_SIZE=1048576"
+    "-sMODULARIZE=1"
+    "-sEXPORT_NAME=${GEMMA4_SPEC_WASM_EXPORT_NAME}"
+  )
+  set_target_properties(
+    gemma4_spec_browser
+    PROPERTIES OUTPUT_NAME "${GEMMA4_SPEC_WASM_OUTPUT_NAME}"
+               RUNTIME_OUTPUT_DIRECTORY
+               "${CMAKE_CURRENT_BINARY_DIR}/browser_gemma4_mtp"
                CXX_STANDARD 17
   )
 endif()
