@@ -40,6 +40,93 @@ Running a model using the low-level runtime APIs allows for a high-degree of con
 
 ## Building with CMake
 
+There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip
+package needs no source checkout and is the quicker option. Building from source gives
+you every option the project has, and is what you need for a platform the wheel does not
+cover.
+
+### Using the prebuilt libraries from the pip package
+
+On Linux, `pip install executorch` includes prebuilt shared libraries, the public
+headers, and a CMake package, so a C++ application can link the runtime without building
+ExecuTorch itself:
+
+```cmake
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.28)
+project(my_app CXX)
+
+find_package(executorch REQUIRED COMPONENTS kernels_optimized)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE executorch::runtime
+                                     executorch::kernels_optimized)
+```
+
+Point CMake at the installed package when you configure:
+
+```
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
+cmake --build build
+```
+
+The application uses the same `Module` and `TensorPtr` APIs described above:
+
+```cpp
+// main.cpp
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
+
+#include <cstdio>
+#include <vector>
+
+using namespace executorch::extension;
+
+int main() {
+  Module module("model.pte");
+
+  std::vector<float> data(2 * 8, 1.0f);
+  auto input = make_tensor_ptr({2, 8}, data.data());
+
+  const auto result = module.forward(input);
+  if (!result.ok()) {
+    std::printf("forward failed: 0x%x\n", (unsigned)result.error());
+    return 1;
+  }
+  std::printf("ok, %zu outputs\n", result->size());
+  return 0;
+}
+```
+
+#### What each component provides
+
+Ask for the components your model needs. A component the wheel was not built with is
+reported while CMake configures, rather than failing later at link time.
+
+| Component | What it provides |
+| --- | --- |
+| `executorch::runtime` | the program loader and executor. Always present. |
+| `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
+| `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. |
+| `executorch::backend_xnnpack` | the XNNPACK delegate. |
+| `executorch::threadpool` | the shared thread pool. |
+| `executorch::etdump` | the profiler. |
+
+The runtime on its own loads a program but registers no operators, so a model that is
+not fully delegated needs a kernel component too. Linking a delegate is what registers
+it: a program delegated to XNNPACK fails to load in an application that did not link
+`executorch::backend_xnnpack`.
+
+To require a minimum version, pass it to `find_package`:
+
+```cmake
+find_package(executorch 1.0 REQUIRED)
+```
+
+### Building from source
+
+
 ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the `EXECUTORCH_BUILD_EXTENSION_MODULE` and `EXECUTORCH_BUILD_EXTENSION_TENSOR` CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the `executorch` target as a CMake dependency, along with `executorch_backends`, `executorch_extensions`, and `extension_kernels`, to link all configured backends, extensions, and kernels.
 
 ```

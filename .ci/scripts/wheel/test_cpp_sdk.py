@@ -685,8 +685,82 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     )
 
 
+def test_documented_example_compiles(work_dir: Path) -> None:
+    """The C++ example in the documentation must compile against the installed wheel.
+
+    Extracted from the documentation rather than copied here, so the two cannot drift. A
+    reader who follows the documentation gets code that builds, and a dangling include or
+    a renamed entry point fails this check instead of shipping.
+    """
+    here = Path(__file__).resolve()
+    root = here.parents[3] if len(here.parents) > 3 else here.parent
+    documentation = root / "docs" / "source" / "using-executorch-cpp.md"
+    if not documentation.is_file():
+        print("- the documentation is not present, skipping the example check")
+        return
+
+    # The first fenced cpp block after the prebuilt-package heading. Anchored on the
+    # heading so an unrelated example elsewhere on the page is not picked up.
+    text = documentation.read_text()
+    marker = "### Using the prebuilt libraries from the pip package"
+    assert marker in text, (
+        f"{documentation.name} no longer documents the prebuilt package, so a reader has "
+        "no instructions for the libraries this wheel ships"
+    )
+    section = text[text.index(marker) :]
+    blocks = re.findall(r"```cpp\n(.*?)```", section, re.S)
+    assert blocks, (
+        f"{documentation.name} documents the prebuilt package but shows no C++ example, "
+        "so nothing proves the documented usage compiles"
+    )
+
+    source_dir = work_dir / "documented"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "main.cpp").write_text(blocks[0])
+    # The components the documentation itself tells a reader to ask for.
+    (source_dir / "CMakeLists.txt").write_text(
+        _consumer_cmake(["runtime", "kernels_optimized"]).replace(
+            "consumer.cpp", "main.cpp"
+        )
+    )
+
+    package_dir = _installed_package_dir()
+    config = package_dir / "share" / "cmake" / "executorch-config.cmake"
+    build_dir = work_dir / "documented-build"
+    configured = subprocess.run(
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={config.parent}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert configured.returncode == 0, (
+        "the documented example does not configure against the installed package:\n"
+        f"{configured.stdout[-1500:]}{configured.stderr[-1500:]}"
+    )
+    built = subprocess.run(
+        [_tool("cmake"), "--build", str(build_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, (
+        "the documented example does not build against the installed package, so a "
+        f"reader following the documentation gets code that fails:\n"
+        f"{built.stdout[-2500:]}{built.stderr[-2500:]}"
+    )
+    print("✓ the C++ example in the documentation compiles against the wheel")
+
+
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
+    test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_has_no_kernels(work_dir)
     test_kernels_component_runs_a_model(work_dir)
     test_delegated_model_needs_the_delegate_component(work_dir)

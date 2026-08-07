@@ -753,7 +753,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
 
     configure = subprocess.run(
         [
-            "cmake",
+            _tool("cmake"),
             "-S",
             str(source_dir),
             "-B",
