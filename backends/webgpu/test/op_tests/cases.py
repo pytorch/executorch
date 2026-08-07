@@ -59,6 +59,10 @@ from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
     GENERAL_CONFIGS as _CONV1D_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
+from executorch.backends.webgpu.test.ops.test_expand_copy import (
+    CONFIGS as _EXPAND_COPY_CONFIGS,
+    ExpandCopyModule,
+)
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_grid_priors import GridPriorsModule
@@ -667,8 +671,7 @@ def _conv1d_dw_suite() -> WebGPUTestSuite:
 
 @register_op_test("conv1d")
 def _conv1d_suite() -> WebGPUTestSuite:
-    # General groups=1 NCL conv1d; fp64 oracle. The neighboring pointwise and
-    # depthwise suites remain routing controls for the two retained fast paths.
+    # General NCL conv1d; neighboring suites cover the retained fast paths.
     def case(name, cfg):
         n, ic, oc, length, kernel, stride, padding, dilation, bias = cfg
         return Case(
@@ -1083,10 +1086,34 @@ from executorch.backends.webgpu.test.ops.test_gelu import (
     N as _GELU_N,
 )
 
+_GELU_2D_DISPATCH_BOUNDARY = 4 * 64 * 65535 + 1
+_EXPAND_COPY_2D_DISPATCH_BOUNDARY = 64 * 65535 + 1
+
 
 def _gelu_full_range(_shape) -> torch.Tensor:
     # Reuse the deterministic linspace(-6, 6) spanning negatives/zero/positives.
     return _gelu_det_input()
+
+
+@register_op_test("expand_copy")
+def _expand_copy_suite() -> WebGPUTestSuite:
+    cases = [
+        Case(name=name, construct={"shape": out_shape}, inputs=(in_shape,))
+        for name, (in_shape, out_shape) in _EXPAND_COPY_CONFIGS.items()
+    ]
+    cases.append(
+        Case(
+            name="dispatch_2d_boundary",
+            construct={"shape": (_EXPAND_COPY_2D_DISPATCH_BOUNDARY,)},
+            inputs=((1,),),
+            heavy=True,
+        )
+    )
+    return WebGPUTestSuite(
+        module_factory=ExpandCopyModule,
+        cases=cases,
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("gelu")
@@ -1109,6 +1136,12 @@ def _gelu_suite() -> WebGPUTestSuite:
                 name="erf_range",
                 construct={"approximate": "none"},
                 inputs=(InputSpec(shape=(_GELU_N,), gen=_gelu_full_range),),
+            ),
+            Case(
+                name="erf_dispatch_2d_boundary",
+                construct={"approximate": "none"},
+                inputs=(InputSpec(shape=(_GELU_2D_DISPATCH_BOUNDARY,), gen="ramp"),),
+                heavy=True,
             ),
         ],
         atol=1e-4,

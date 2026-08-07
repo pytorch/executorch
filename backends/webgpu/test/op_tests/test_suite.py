@@ -58,8 +58,7 @@ class Case:
     required: bool = True
     heavy: bool = False
     golden_fn: Callable | None = None
-    # Optional upper-bound inputs and shape constraints for a dynamic export.
-    # `inputs` remain the live tensors written to the runtime manifest.
+    # Optional upper-bound export inputs; `inputs` stay live manifest tensors.
     export_inputs: tuple[Input, ...] | None = None
     dynamic_shapes: object | None = None
 

@@ -85,9 +85,7 @@ void compare_impl(
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUBuffer uniform_buffer =
-      utils::make_uniform(device, &params, sizeof(CompareParams));
-  graph.add_uniform_buffer_bytes(sizeof(CompareParams));
+  WGPUBuffer uniform_buffer = graph.create_params_buffer(params);
 
   // out (rw storage) + in1/in2 (ro storage) + params (uniform).
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
@@ -142,8 +140,6 @@ void compare_impl(
   };
   graph.add_tensor_resize_hook(in1_id, resize);
   graph.add_tensor_resize_hook(in2_id, resize);
-
-  graph.own_uniform_buffer(uniform_buffer);
 }
 
 void eq_op(WebGPUGraph& graph, const std::vector<int>& args) {
