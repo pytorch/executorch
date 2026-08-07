@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from logical_and.wgsl - DO NOT EDIT.
+// @generated from logical_binary.wgsl - DO NOT EDIT.
 // wgsl-sha256: cf7c1d1dbba94e429120796c9c25a6717786cca03c08f3bd1e291d5627089c20
 inline constexpr const char* kLogicalAndWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<u32>;
