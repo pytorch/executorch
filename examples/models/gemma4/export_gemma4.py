@@ -27,6 +27,7 @@ Usage:
 import argparse
 import functools
 import gc
+import json
 import logging
 from pathlib import Path
 
@@ -34,6 +35,16 @@ import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class _GreedyTokenOutput(torch.nn.Module):
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids: torch.Tensor, input_pos: torch.Tensor) -> torch.Tensor:
+        logits = self.model(input_ids, input_pos=input_pos)
+        return torch.argmax(logits, dim=-1).to(torch.long)
 
 
 def _export_speech_transform(checkpoint_path: str):
@@ -452,6 +463,9 @@ def _export_text_decoder(
     variant: str = "e2b",
     quantize_kv_cache: bool = False,
     use_custom_sdpa: bool = True,
+    backend: str = "xnnpack",
+    max_input_len: int = 512,
+    compact_output: bool = True,
 ):
     """Export text decoder. Returns ExportedProgram."""
     from executorch.examples.models.gemma4.quant_utils import (
@@ -523,19 +537,29 @@ def _export_text_decoder(
         model = apply_linear_quantization(model, linear_quant, group_size=group_size)
         model.eval()
 
-    # Export with audio embeds + dynamic shapes
-    example_inputs = model_wrapper.get_example_inputs_with_audio(seq_len=770)
-    dynamic_shapes = model_wrapper.get_dynamic_shapes(with_audio_embeds=True)
+    if backend == "webgpu":
+        example_inputs = model_wrapper.get_example_inputs_prefill(seq_len=max_input_len)
+        dynamic_shapes = model_wrapper.get_dynamic_shapes(max_input_len=max_input_len)
+        if compact_output:
+            model = _GreedyTokenOutput(model)
+            model.eval()
+        args = (example_inputs[0],)
+        kwargs = {"input_pos": example_inputs[1]}
+    else:
+        example_inputs = model_wrapper.get_example_inputs_with_audio(seq_len=770)
+        dynamic_shapes = model_wrapper.get_dynamic_shapes(with_audio_embeds=True)
+        args = (example_inputs[0],)
+        kwargs = {
+            "input_pos": example_inputs[1],
+            "inputs_embeds": example_inputs[2],
+        }
 
     with torch.nn.attention.sdpa_kernel([torch.nn.attention.SDPBackend.MATH]):
         with torch.no_grad():
             ep = torch.export.export(
                 model,
-                (example_inputs[0],),
-                kwargs={
-                    "input_pos": example_inputs[1],
-                    "inputs_embeds": example_inputs[2],
-                },
+                args,
+                kwargs=kwargs,
                 dynamic_shapes=dynamic_shapes,
             )
 
@@ -559,6 +583,9 @@ def _export_components(
     include_audio: bool,
     include_vision: bool,
     use_custom_sdpa: bool,
+    backend: str = "xnnpack",
+    max_input_len: int = 512,
+    compact_output: bool = True,
 ) -> dict:
     """Export each requested component to an ExportedProgram."""
     components = []
@@ -605,19 +632,34 @@ def _export_components(
         variant=variant,
         quantize_kv_cache=quantize_kv_cache,
         use_custom_sdpa=use_custom_sdpa,
+        backend=backend,
+        max_input_len=max_input_len,
+        compact_output=compact_output,
     )
 
     return programs
 
 
-def _build_partitioners(
+def build_partitioners(
+    backend: str,
     include_audio: bool,
     include_vision: bool,
     audio_quantize: str,
     vision_quantize: str,
     text_quantize: str,
 ) -> dict:
-    """Build per-method XNNPACK partitioner lists."""
+    """Build per-method partitioners for the selected backend."""
+    if backend == "webgpu":
+        from executorch.examples.models.gemma4.webgpu_partitioner import (
+            build_webgpu_partitioner,
+        )
+
+        return {
+            "text_decoder": [build_webgpu_partitioner(text_quantize)],
+        }
+    if backend != "xnnpack":
+        raise ValueError(f"Unsupported backend: {backend}")
+
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackDynamicallyQuantizedPartitioner,
         XnnpackPartitioner,
@@ -639,8 +681,14 @@ def _build_partitioners(
     return partitioners
 
 
-def _build_transform_passes(include_audio: bool, include_vision: bool) -> dict:
-    """Build per-method transform passes (text decoder gets bitwise lowering)."""
+def _build_transform_passes(
+    include_audio: bool, include_vision: bool, backend: str = "xnnpack"
+) -> dict:
+    """Build per-method transform passes (text decoder gets bitwise lowering).
+
+    WebGPU additionally runs its edge rewrites here: the partitioner may not
+    mutate the graph, so they must land before partitioning.
+    """
     from executorch.exir.dialects._ops import ops as exir_ops
     from executorch.exir.pass_base import ExportPass
 
@@ -681,7 +729,66 @@ def _build_transform_passes(include_audio: bool, include_vision: bool) -> dict:
     if include_vision:
         transform_passes["vision_encoder"] = []
     transform_passes["text_decoder"] = [_ReplaceBitwiseScalarPass(bitwise_ops)]
+    if backend == "webgpu":
+        from executorch.examples.models.gemma4.webgpu_partitioner import (
+            build_webgpu_transform_passes,
+        )
+
+        transform_passes["text_decoder"].extend(build_webgpu_transform_passes())
     return transform_passes
+
+
+def _rewrite_webgpu_negative_select_as_symint(
+    program: torch.export.ExportedProgram,
+) -> int:
+    """Preserve a negative input select across decomposition."""
+    import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+    graph = program.graph_module.graph
+    item_targets = {
+        torch.ops.aten.item.default,
+        torch.ops.aten._local_scalar_dense.default,
+    }
+    replacements = 0
+    for item_node in list(graph.nodes):
+        if item_node.op != "call_function" or item_node.target not in item_targets:
+            continue
+        if len(item_node.args) != 1 or not isinstance(item_node.args[0], torch.fx.Node):
+            continue
+        select_node = item_node.args[0]
+        if (
+            select_node.op != "call_function"
+            or select_node.target != torch.ops.aten.select.int
+            or len(select_node.args) < 3
+            or not isinstance(select_node.args[2], int)
+            or select_node.args[2] >= 0
+        ):
+            continue
+        source = select_node.args[0]
+        if not isinstance(source, torch.fx.Node) or source.op != "placeholder":
+            raise ValueError(
+                "WebGPU negative select_as_symint source must be a graph input"
+            )
+        source_dtype = getattr(source.meta.get("val"), "dtype", None)
+        if source_dtype not in {torch.int32, torch.int64}:
+            raise ValueError(
+                "WebGPU negative select_as_symint requires an integral input"
+            )
+        with graph.inserting_before(item_node):
+            replacement = graph.call_function(
+                torch.ops.et_vk.select_as_symint.default,
+                args=(source, select_node.args[1], select_node.args[2]),
+            )
+        replacement.meta = item_node.meta.copy()
+        item_node.replace_all_uses_with(replacement)
+        graph.erase_node(item_node)
+        if not select_node.users:
+            graph.erase_node(select_node)
+        replacements += 1
+
+    if replacements:
+        program.graph_module.recompile()
+    return replacements
 
 
 def export_single_pte(
@@ -699,6 +806,11 @@ def export_single_pte(
     include_audio: bool = True,
     include_vision: bool = True,
     use_custom_sdpa: bool = True,
+    backend: str = "xnnpack",
+    max_input_len: int = 512,
+    compact_output: bool = True,
+    artifact_manifest_output: str | None = None,
+    source_receipt_path: str | None = None,
 ) -> Path:
     """Export components into a single PTE.
 
@@ -712,6 +824,37 @@ def export_single_pte(
     from executorch.exir.passes.sym_shape_eval_pass import (
         ConstraintBasedSymShapeEvalPass,
     )
+
+    if backend == "webgpu":
+        if variant != "e2b":
+            raise ValueError("WebGPU export currently supports only Gemma 4 E2B")
+        if include_audio or include_vision:
+            raise ValueError("WebGPU export is text-only; disable audio and vision")
+        if not use_custom_sdpa:
+            raise ValueError("WebGPU export requires Gemma 4 custom SDPA")
+        if max_seq_len != 8960 or max_input_len != 512:
+            raise ValueError(
+                "WebGPU production export requires max_seq_len=8960 and "
+                "max_input_len=512"
+            )
+        if text_quantize != "8da4w+emb4" or group_size != 128:
+            raise ValueError(
+                "WebGPU production export requires 8da4w+emb4 with group_size=128"
+            )
+        if tied_embedding or quantize_kv_cache or not compact_output:
+            raise ValueError(
+                "WebGPU production export requires untied embeddings, fp32 KV cache, "
+                "and compact greedy output"
+            )
+        from executorch.examples.models.gemma4.webgpu_artifact_manifest import (
+            validate_export_identity,
+        )
+
+        validate_export_identity(Path(checkpoint_path))
+        if (artifact_manifest_output is None) != (source_receipt_path is None):
+            raise ValueError(
+                "WebGPU artifact manifest output and source receipt must be provided together"
+            )
 
     programs = _export_components(
         checkpoint_path=checkpoint_path,
@@ -727,16 +870,34 @@ def export_single_pte(
         include_audio=include_audio,
         include_vision=include_vision,
         use_custom_sdpa=use_custom_sdpa,
+        backend=backend,
+        max_input_len=max_input_len,
+        compact_output=compact_output,
     )
+
+    if backend == "webgpu":
+        for name, program in programs.items():
+            replacements = _rewrite_webgpu_negative_select_as_symint(program)
+            if replacements:
+                logger.info(
+                    "Rewrote %d negative select-as-SymInt path(s) in %s",
+                    replacements,
+                    name,
+                )
 
     logger.info("Combining into single PTE...")
     for name in programs:
         programs[name] = programs[name].run_decompositions({})
 
-    partitioners = _build_partitioners(
-        include_audio, include_vision, audio_quantize, vision_quantize, text_quantize
+    partitioners = build_partitioners(
+        backend,
+        include_audio,
+        include_vision,
+        audio_quantize,
+        vision_quantize,
+        text_quantize,
     )
-    transform_passes = _build_transform_passes(include_audio, include_vision)
+    transform_passes = _build_transform_passes(include_audio, include_vision, backend)
 
     edge_manager = to_edge_transform_and_lower(
         programs,
@@ -753,7 +914,7 @@ def export_single_pte(
         )
     )
 
-    output_path = Path(output_path)
+    output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "wb") as f:
         et_program.write_to_file(f)
@@ -762,6 +923,45 @@ def export_single_pte(
         tensor_data_dir = str(output_path.parent)
         et_program.write_tensor_data_to_file(tensor_data_dir)
         logger.info(f"Tensor data written to: {tensor_data_dir}")
+
+    if backend == "webgpu" and artifact_manifest_output is not None:
+        assert source_receipt_path is not None
+        from executorch.examples.models.gemma4.webgpu_artifact_manifest import (
+            create_plain_manifest,
+            validate_plain_manifest,
+        )
+
+        manifest_output = Path(artifact_manifest_output).resolve()
+        try:
+            manifest_output.relative_to(output_path.parent)
+        except ValueError:
+            pass
+        else:
+            raise ValueError(
+                "Artifact manifest output must be outside the staging root"
+            )
+        tensor_data = et_program._tensor_data
+        if tensor_data is None:
+            raise ValueError("WebGPU export did not produce external constants")
+        ptd_paths = [
+            Path(name if name.endswith(".ptd") else f"{name}.ptd")
+            for name in tensor_data
+        ]
+        manifest = create_plain_manifest(
+            output_path.parent,
+            {
+                "pte": output_path,
+                "source": Path(source_receipt_path).resolve(),
+            },
+            ptd_paths,
+        )
+        validate_plain_manifest(output_path.parent, manifest)
+        manifest_output.parent.mkdir(parents=True, exist_ok=True)
+        manifest_output.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        logger.info(f"WebGPU artifact manifest written to: {manifest_output}")
 
     size_mb = output_path.stat().st_size / 1024 / 1024
     logger.info(f"Single PTE exported: {output_path} ({size_mb:.1f} MB)")
@@ -784,6 +984,13 @@ def main():
         help="Model variant (default: e2b)",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        default="xnnpack",
+        choices=["xnnpack", "webgpu"],
+        help="Delegate backend (default: xnnpack)",
+    )
+    parser.add_argument(
         "--output_path",
         type=str,
         default="/tmp/gemma4.pte",
@@ -794,6 +1001,12 @@ def main():
         type=int,
         default=1024,
         help="Maximum sequence length for text decoder KV cache",
+    )
+    parser.add_argument(
+        "--max_input_len",
+        type=int,
+        default=512,
+        help="Maximum per-call input length for dynamic WebGPU export",
     )
     parser.add_argument(
         "--quantize",
@@ -860,6 +1073,22 @@ def main():
         help="Route attention through llama::custom_sdpa (tiled flash attention). "
         "Pass --no-use_custom_sdpa to fall back to matmul attention.",
     )
+    parser.add_argument(
+        "--compact_output",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Return the Long[1,1] greedy token for WebGPU export.",
+    )
+    parser.add_argument(
+        "--artifact_manifest_output",
+        type=str,
+        help="Write a byte-validated WebGPU manifest outside the artifact root.",
+    )
+    parser.add_argument(
+        "--source_receipt_path",
+        type=str,
+        help="Final-source receipt staged beside the WebGPU PTE and PTDs.",
+    )
     args = parser.parse_args()
 
     export_single_pte(
@@ -877,6 +1106,11 @@ def main():
         include_audio=not args.no_audio,
         include_vision=not args.no_vision,
         use_custom_sdpa=args.use_custom_sdpa,
+        backend=args.backend,
+        max_input_len=args.max_input_len,
+        compact_output=args.compact_output,
+        artifact_manifest_output=args.artifact_manifest_output,
+        source_receipt_path=args.source_receipt_path,
     )
 
 

@@ -116,6 +116,51 @@ executorch_target_link_options_shared_lib(webgpu_backend)
 
 set_property(TARGET webgpu_backend PROPERTY CXX_STANDARD 17)
 
+if(EMSCRIPTEN)
+  add_executable(
+    gemma4_plain_wasm
+    ${EXECUTORCH_ROOT}/examples/models/gemma4/runner/gemma4_plain_wasm.cpp
+  )
+  target_include_directories(
+    gemma4_plain_wasm PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+  )
+  target_link_libraries(
+    gemma4_plain_wasm PRIVATE webgpu_backend webgpu_model_loader extension_tensor
+  )
+  target_compile_options(
+    gemma4_plain_wasm PRIVATE -fexceptions "--use-port=emdawnwebgpu"
+  )
+  if(EXECUTORCH_BUILD_WEBGPU_PROFILING)
+    target_compile_definitions(
+      gemma4_plain_wasm PRIVATE WGPU_BACKEND_ENABLE_PROFILING
+    )
+  endif()
+  target_link_options(
+    gemma4_plain_wasm
+    PRIVATE
+    -fexceptions
+    "--use-port=emdawnwebgpu"
+    -sASYNCIFY
+    -sALLOW_MEMORY_GROWTH=1
+    -sMAXIMUM_MEMORY=4GB
+    -sFORCE_FILESYSTEM=1
+    --no-entry
+    "-sEXPORTED_FUNCTIONS=_et_init,_et_load,_et_unload,_et_reset,_et_prefill_batch,_et_prefill_step,_et_step,_et_profile_enable,_et_profile,_et_get_last_prefill_token_count,_et_get_route_contract_version,_et_get_last_route_mask,_et_get_last_route_conflict_count,_malloc,_free"
+    "-sEXPORTED_RUNTIME_METHODS=ccall,cwrap,FS,HEAP32"
+    -sSTACK_SIZE=8388608
+    -sASYNCIFY_STACK_SIZE=1048576
+    -sMODULARIZE=1
+    -sEXPORT_NAME=createWebGPULlama
+  )
+  set_target_properties(
+    gemma4_plain_wasm
+    PROPERTIES OUTPUT_NAME "webgpu_llama"
+               RUNTIME_OUTPUT_DIRECTORY
+               "${CMAKE_CURRENT_BINARY_DIR}/browser_gemma4_plain"
+               CXX_STANDARD 17
+  )
+endif()
+
 install(
   TARGETS webgpu_backend
   EXPORT ExecuTorchTargets
