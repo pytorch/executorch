@@ -53,8 +53,16 @@ from executorch.backends.webgpu.test.ops.test_compare import (
     CompareModule,
 )
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
-from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dPwModule
+from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
+    Conv1dModule,
+    Conv1dPwModule,
+    GENERAL_CONFIGS as _CONV1D_CONFIGS,
+)
 from executorch.backends.webgpu.test.ops.test_conv_with_clamp import ConvWithClampModule
+from executorch.backends.webgpu.test.ops.test_expand_copy import (
+    CONFIGS as _EXPAND_COPY_CONFIGS,
+    ExpandCopyModule,
+)
 from executorch.backends.webgpu.test.ops.test_flip import FlipModule
 from executorch.backends.webgpu.test.ops.test_floor_divide import FloorDivideModule
 from executorch.backends.webgpu.test.ops.test_grid_priors import GridPriorsModule
@@ -153,8 +161,13 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
 )
 
 from executorch.backends.webgpu.test.ops.test_to_copy import (
+    bool_tail_input,
+    compare_to_copy_input_a,
+    compare_to_copy_input_b,
+    CompareToCopyBoolToFloatModule,
     to_copy_float_input,
     to_copy_int_input,
+    ToCopyBoolToFloatModule,
     ToCopyFloatToIntToFloatModule,
     ToCopyIntToFloatModule,
 )
@@ -189,6 +202,39 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
         "self": AddSelfModule,
         "chained": AddChainedModule,
     }[variant]()
+
+
+@register_op_test("to_copy_bool_to_float")
+def _to_copy_bool_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=CompareToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(
+                    InputSpec((n,), gen=compare_to_copy_input_a),
+                    InputSpec((n,), gen=compare_to_copy_input_b),
+                ),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("to_copy_bool_input_to_float")
+def _to_copy_bool_input_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=ToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(InputSpec((n,), gen=bool_tail_input),),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("add")
@@ -295,10 +341,7 @@ def _minimum_suite() -> WebGPUTestSuite:
 
 
 def _compare_suite(op: str) -> WebGPUTestSuite:
-    # Elementwise fp32 comparison -> bool (byte-exact golden). The two inputs use
-    # DIFFERENT discrete-range seeds so a!=b (real lt/gt mix) while colliding
-    # often (eq/le/ge ties); all shapes have numel % 4 == 0 (bool output packs 4
-    # bytes/word). Same-shape only (flat kernel; broadcast=smoke).
+    # Distinct inputs and tail shapes cover byte-exact packed BOOL output.
     def case(name, shape):
         return Case(
             name=name,
@@ -310,7 +353,14 @@ def _compare_suite(op: str) -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda: CompareModule(op),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        cases=[
+            case("tail_1", (1,)),
+            case("tail_5", (5,)),
+            case("tail_67", (67,)),
+            case("2d", (4, 8)),
+            case("3d", (2, 3, 8)),
+            case("sq", (16, 16)),
+        ],
         golden_dtype="bool",
     )
 
@@ -612,6 +662,54 @@ def _conv1d_dw_suite() -> WebGPUTestSuite:
             case("k3s2p1", 4, 8, 3, 2, 1, 1, True),
             case("dil2", 3, 10, 3, 1, 2, 2, True),
             case("k5_nobias", 5, 7, 5, 1, 0, 1, False),
+            case("single_channel_route", 1, 8, 3, 1, 1, 1, True),
+        ],
+        atol=1e-3,
+        rtol=1e-3,
+    )
+
+
+@register_op_test("conv1d")
+def _conv1d_suite() -> WebGPUTestSuite:
+    # General NCL conv1d; neighboring suites cover the retained fast paths.
+    def case(name, cfg):
+        n, ic, oc, length, kernel, stride, padding, dilation, bias = cfg
+        return Case(
+            name=name,
+            construct={
+                "in_channels": ic,
+                "out_channels": oc,
+                "kernel_size": kernel,
+                "stride": stride,
+                "padding": padding,
+                "dilation": dilation,
+                "bias": bias,
+            },
+            inputs=((n, ic, length),),
+        )
+
+    dynamic_cfg = _CONV1D_CONFIGS["voxtral_stride1"]
+    n, ic, oc, length, kernel, stride, padding, dilation, bias = dynamic_cfg
+    dynamic_length = torch.export.Dim("manifest_conv1d_length", min=7, max=length)
+    return WebGPUTestSuite(
+        module_factory=Conv1dModule,
+        cases=[
+            *[case(name, cfg) for name, cfg in _CONV1D_CONFIGS.items()],
+            Case(
+                name="dynamic_length_10_to_7",
+                construct={
+                    "in_channels": ic,
+                    "out_channels": oc,
+                    "kernel_size": kernel,
+                    "stride": stride,
+                    "padding": padding,
+                    "dilation": dilation,
+                    "bias": bias,
+                },
+                export_inputs=((n, ic, length),),
+                inputs=((n, ic, 7),),
+                dynamic_shapes=({2: dynamic_length},),
+            ),
         ],
         atol=1e-3,
         rtol=1e-3,
@@ -988,10 +1086,34 @@ from executorch.backends.webgpu.test.ops.test_gelu import (
     N as _GELU_N,
 )
 
+_GELU_2D_DISPATCH_BOUNDARY = 4 * 64 * 65535 + 1
+_EXPAND_COPY_2D_DISPATCH_BOUNDARY = 64 * 65535 + 1
+
 
 def _gelu_full_range(_shape) -> torch.Tensor:
     # Reuse the deterministic linspace(-6, 6) spanning negatives/zero/positives.
     return _gelu_det_input()
+
+
+@register_op_test("expand_copy")
+def _expand_copy_suite() -> WebGPUTestSuite:
+    cases = [
+        Case(name=name, construct={"shape": out_shape}, inputs=(in_shape,))
+        for name, (in_shape, out_shape) in _EXPAND_COPY_CONFIGS.items()
+    ]
+    cases.append(
+        Case(
+            name="dispatch_2d_boundary",
+            construct={"shape": (_EXPAND_COPY_2D_DISPATCH_BOUNDARY,)},
+            inputs=((1,),),
+            heavy=True,
+        )
+    )
+    return WebGPUTestSuite(
+        module_factory=ExpandCopyModule,
+        cases=cases,
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("gelu")
@@ -1014,6 +1136,12 @@ def _gelu_suite() -> WebGPUTestSuite:
                 name="erf_range",
                 construct={"approximate": "none"},
                 inputs=(InputSpec(shape=(_GELU_N,), gen=_gelu_full_range),),
+            ),
+            Case(
+                name="erf_dispatch_2d_boundary",
+                construct={"approximate": "none"},
+                inputs=(InputSpec(shape=(_GELU_2D_DISPATCH_BOUNDARY,), gen="ramp"),),
+                heavy=True,
             ),
         ],
         atol=1e-4,

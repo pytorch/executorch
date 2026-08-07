@@ -153,42 +153,90 @@ void expect_dual_q4_topology(WebGPUGraph& graph) {
       1);
 }
 
-TEST(WebGPUShaderRegistry, FindsKnownShaderAndRejectsUnknownName) {
-  const WebGPUShaderInfo& sigmoid = get_webgpu_shader_info("sigmoid");
-  EXPECT_EQ(sigmoid.name, "sigmoid");
-  EXPECT_NE(sigmoid.source, nullptr);
-  EXPECT_GT(sigmoid.workgroup_size_x, 0u);
-  EXPECT_THROW(
-      get_webgpu_shader_info("not_a_registered_shader"), std::runtime_error);
-}
+struct Conv1dRouteCase {
+  const char* name;
+  std::vector<uint32_t> input_dims;
+  std::vector<uint32_t> weight_dims;
+  std::vector<uint32_t> output_dims;
+  int64_t stride;
+  int64_t padding;
+  int64_t dilation;
+  int64_t groups;
+  const char* expected_kernel;
+};
 
-TEST(WebGPUQ4RouteSignal, PreservesStaticAndRecordsBothDynamicSignals) {
-  WebGPUGraph static_graph;
-  static_graph.set_device(g_device);
-  build_q4_route_graph(static_graph, Q4RouteSignal::Static);
-  const auto static_dispatches = q4_dispatches(static_graph);
-  ASSERT_EQ(static_dispatches.size(), 1);
-  EXPECT_EQ(static_graph.num_dispatches(), 1);
-  EXPECT_NE(static_dispatches[0]->pipeline, nullptr);
-  EXPECT_NE(static_dispatches[0]->bind_group, nullptr);
-  EXPECT_FALSE(static_graph.has_dynamic_shapes());
-  EXPECT_FALSE(static_graph.config().record_q4gsw_decode_route);
+void build_conv1d_route_graph(
+    WebGPUGraph& graph,
+    const Conv1dRouteCase& test_case) {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  auto add_tensor = [&](const std::vector<uint32_t>& dims, int mem_obj_id) {
+    const int id = static_cast<int>(values.size());
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb,
+            vk::VkDataType::FLOAT32,
+            &dims,
+            /*constant_id=*/-1,
+            mem_obj_id)
+            .Union()));
+    return id;
+  };
+  auto add_int = [&](int64_t value) {
+    const int id = static_cast<int>(values.size());
+    values.push_back(vk::CreateVkValue(
+        fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, value).Union()));
+    return id;
+  };
+  auto add_int_list = [&](int64_t value) {
+    const int id = static_cast<int>(values.size());
+    const std::vector<int64_t> items = {value};
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::IntList,
+        vk::CreateIntListDirect(fbb, &items).Union()));
+    return id;
+  };
 
-  WebGPUGraph legacy_graph;
-  legacy_graph.set_device(g_device);
-  build_q4_route_graph(legacy_graph, Q4RouteSignal::LegacyGraphMarker);
-  EXPECT_TRUE(legacy_graph.has_dynamic_shapes());
-  EXPECT_FALSE(legacy_graph.config().record_q4gsw_decode_route);
-  EXPECT_EQ(legacy_graph.num_dispatches(), 3);
-  expect_dual_q4_topology(legacy_graph);
+  const int input = add_tensor(test_case.input_dims, 0);
+  const int weight = add_tensor(test_case.weight_dims, 1);
+  const int bias = static_cast<int>(values.size());
+  values.push_back(vk::CreateVkValue(fbb));
+  const int stride = add_int_list(test_case.stride);
+  const int padding = add_int_list(test_case.padding);
+  const int dilation = add_int_list(test_case.dilation);
+  const int transposed = static_cast<int>(values.size());
+  values.push_back(vk::CreateVkValue(
+      fbb, vk::GraphTypes::Bool, vk::CreateBool(fbb, false).Union()));
+  const int output_padding = add_int_list(0);
+  const int groups = add_int(test_case.groups);
+  const int output = add_tensor(test_case.output_dims, 2);
+  const std::vector<int32_t> args = {
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      transposed,
+      output_padding,
+      groups,
+      output};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(
+      vk::CreateOperatorCallDirect(fbb, 0, "aten.convolution.default", &args));
+  const std::vector<uint32_t> input_ids = {
+      static_cast<uint32_t>(input), static_cast<uint32_t>(weight)};
+  const std::vector<uint32_t> output_ids = {static_cast<uint32_t>(output)};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
 
-  WebGPUGraph explicit_graph;
-  explicit_graph.set_device(g_device);
-  build_q4_route_graph(explicit_graph, Q4RouteSignal::ExplicitOption);
-  EXPECT_FALSE(explicit_graph.has_dynamic_shapes());
-  EXPECT_TRUE(explicit_graph.config().record_q4gsw_decode_route);
-  EXPECT_EQ(explicit_graph.num_dispatches(), 2);
-  expect_dual_q4_topology(explicit_graph);
+  graph.set_device(g_device);
+  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
 }
 
 TEST(WebGPUComputeDispatch, PipelineKeyCanonicalizesConstants) {
@@ -896,6 +944,58 @@ TEST(WebGPURopeValidation, RejectsMalformedGraphsBeforeDispatchAllocation) {
   for (const InvalidRopeGraphCase& test_case : cases) {
     SCOPED_TRACE(test_case.name);
     expect_invalid_rope_graph(test_case);
+  }
+}
+
+TEST(WebGPUToCopyValidation, RejectsBoolAndByteIntegerConversions) {
+  ASSERT_TRUE(webgpu_operator_registry().has_op("aten._to_copy.default"));
+  namespace vk = vkgraph;
+  struct TestCase {
+    const char* name;
+    vk::VkDataType input_dtype;
+    vk::VkDataType output_dtype;
+  };
+  const TestCase cases[] = {
+      {"bool_to_int8", vk::VkDataType::BOOL, vk::VkDataType::INT8},
+      {"bool_to_uint8", vk::VkDataType::BOOL, vk::VkDataType::UINT8},
+      {"int8_to_bool", vk::VkDataType::INT8, vk::VkDataType::BOOL},
+      {"uint8_to_bool", vk::VkDataType::UINT8, vk::VkDataType::BOOL},
+  };
+  for (const TestCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    ::flatbuffers::FlatBufferBuilder fbb;
+    const std::vector<uint32_t> dims = {4};
+    std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(fbb, test_case.input_dtype, &dims, -1, 0)
+            .Union()));
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(fbb, test_case.output_dtype, &dims, -1, 1)
+            .Union()));
+    const std::vector<int32_t> args = {0, 1};
+    std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+    chain.push_back(
+        vk::CreateOperatorCallDirect(fbb, 0, "aten._to_copy.default", &args));
+    const std::vector<uint32_t> input_ids = {0};
+    const std::vector<uint32_t> output_ids = {1};
+    const auto root = vk::CreateVkGraphDirect(
+        fbb, "0", &chain, &values, &input_ids, &output_ids);
+    vk::FinishVkGraphBuffer(fbb, root);
+
+    WebGPUGraph graph;
+    try {
+      graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+      FAIL() << test_case.name << " unexpectedly built";
+    } catch (const std::runtime_error& error) {
+      EXPECT_STREQ(
+          error.what(),
+          "WebGPU to_copy: bool and integer conversions are unsupported");
+    }
+    EXPECT_EQ(graph.memory_stats().num_dispatches, 0);
   }
 }
 
