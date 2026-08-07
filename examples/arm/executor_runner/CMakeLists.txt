@@ -178,14 +178,16 @@ message(STATUS "MEMORY_MODE is ${MEMORY_MODE}")
 message(STATUS "ET_NUM_INFERENCES is ${ET_NUM_INFERENCES}")
 
 # By default, use 2MB of temporary scratch buffer. For Dedicated_Sram, use 64MB
-# for the temporary scratch buffer and 384KB for the fast scratch buffer (the
-# cache, applicable only for Ethos-U65 and Ethos-U85). Allow -D overrides.
-if(MEMORY_MODE MATCHES "Dedicated_Sram")
+# for the temporary scratch buffer and derive the fast scratch buffer size from
+# the memory mode suffix, e.g. Dedicated_Sram_384KB. Allow -D overrides.
+if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
   if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     set(ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x4000000)
   endif()
   if(NOT DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+    set_ethosu_dedicated_sram_fast_scratch_size(
+      ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "${MEMORY_MODE}"
+    )
   endif()
 else()
   if(NOT DEFINED ET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
@@ -289,7 +291,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 set(_arm_runner_linker_preprocessor_options ${COMPILER_PREPROCESSOR_OPTIONS})
-foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE)
+foreach(_arm_runner_linker_define IN ITEMS HEAP_SIZE STACK_SIZE ETHOSU_MODEL
+                                           ETHOSU_ARENA
+)
   if(DEFINED ${_arm_runner_linker_define})
     list(APPEND _arm_runner_linker_preprocessor_options
          "-D${_arm_runner_linker_define}=${${_arm_runner_linker_define}}"
@@ -320,100 +324,112 @@ list(
   ethosu_target_init
   -Wl,--whole-archive
   executorch
-  quantized_ops_lib
-  cortex_m_ops_lib
   executorch_delegate_ethos_u
   -Wl,--no-whole-archive
-  quantized_kernels
-  cortex_m_kernels
-  portable_kernels
-  cmsis-nn
-  kernels_util_all_deps
   -Wl,--end-group
   -Xlinker
   -Map=arm_executor_runner.map
 )
 
-# Figure out which ops to include: For semihosting build, use
-# (user-set)SELECT_OPS_MODEL variable. For normal build, use
-# EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
-# no undelegated ops, use neither.
-set(FOUND_OPS_IN_FILE FALSE)
-if(NOT ET_MODEL_PTE_ADDR
-   AND NOT "${ET_PTE_FILE_PATH}" STREQUAL ""
-   AND EXISTS "${ET_PTE_FILE_PATH}"
+# Create ops libraries from included operators. Handle portable, cortex_m, and
+# quantized ops.
+set(_arm_runner_dtype_selective_build
+    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
 )
-  execute_process(
-    COMMAND
-      ${PYTHON_EXECUTABLE} "${EXECUTORCH_ROOT}/codegen/tools/gen_oplist.py"
-      --model_file_path=${ET_PTE_FILE_PATH}
-      --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
-    OUTPUT_VARIABLE CMD_RESULT
-  )
-
-  if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-    set(FOUND_OPS_IN_FILE TRUE)
-  endif()
+if(NOT ET_PTE_FILE_PATH)
+  set(_arm_runner_dtype_selective_build "")
 endif()
 
-if(SEMIHOSTING AND "${ET_PTE_FILE_PATH}" STREQUAL "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: Building with semihosting, no model is used to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
-  )
-elseif(FOUND_OPS_IN_FILE)
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
-  message(
-    "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-else()
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
-  )
-endif()
+set(_arm_runner_selected_ops_libs)
+set(_arm_runner_normal_archive_libs)
 
-# Ensure that either executorch_select_ops_list or executorch_select_ops_model
-# is set - otherwise assume no kernels needs to be registered
-if(NOT ("${EXECUTORCH_SELECT_OPS_LIST}" STREQUAL ""
-        AND "${EXECUTORCH_SELECT_OPS_MODEL}" STREQUAL "")
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "arm_portable_ops_lib"
+  FUNCTIONS_YAML
+  "${EXECUTORCH_ROOT}/kernels/portable/functions.yaml"
+  OP_LIST
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  DTYPE_SELECTIVE_BUILD
+  "${_arm_runner_dtype_selective_build}"
+  KERNEL_LIBS
+  portable_kernels
+  DEPS
+  executorch
 )
-  gen_selected_ops(
-    LIB_NAME
-    "arm_portable_ops_lib"
-    OPS_SCHEMA_YAML
-    ""
-    ROOT_OPS
-    "${EXECUTORCH_SELECT_OPS_LIST}"
-    INCLUDE_ALL_OPS
-    ""
-    OPS_FROM_MODEL
-    "${EXECUTORCH_SELECT_OPS_MODEL}"
-    DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
-  )
+list(APPEND _arm_runner_selected_ops_libs arm_portable_ops_lib)
+set(_arm_runner_portable_archive_libs portable_kernels kernels_util_all_deps)
+verify_targets_exist(
+  CONTEXT arm_executor_runner TARGETS ${_arm_runner_portable_archive_libs}
+)
+list(APPEND _arm_runner_normal_archive_libs
+     ${_arm_runner_portable_archive_libs}
+)
 
-  generate_bindings_for_kernels(
-    LIB_NAME "arm_portable_ops_lib" FUNCTIONS_YAML
-    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
-  )
-  gen_operators_lib(
-    LIB_NAME
-    "arm_portable_ops_lib"
-    KERNEL_LIBS
-    portable_kernels
-    DEPS
-    executorch
-    DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
-  )
-  list(FIND arm_executor_runner_link -Wl,--no-whole-archive
-       _arm_runner_no_whole_archive_idx
-  )
-  list(INSERT arm_executor_runner_link ${_arm_runner_no_whole_archive_idx}
-       arm_portable_ops_lib
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "arm_quantized_ops_lib"
+  CUSTOM_OPS_YAML
+  "${EXECUTORCH_ROOT}/kernels/quantized/quantized.yaml"
+  OP_LIST
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  KERNEL_LIBS
+  quantized_kernels
+  DEPS
+  executorch_core
+)
+list(APPEND _arm_runner_selected_ops_libs arm_quantized_ops_lib)
+set(_arm_runner_quantized_archive_libs quantized_kernels portable_kernels
+                                       kernels_util_all_deps
+)
+verify_targets_exist(
+  CONTEXT arm_executor_runner TARGETS ${_arm_runner_quantized_archive_libs}
+)
+list(APPEND _arm_runner_normal_archive_libs
+     ${_arm_runner_quantized_archive_libs}
+)
+
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "arm_cortex_m_ops_lib"
+  CUSTOM_OPS_YAML
+  "${EXECUTORCH_ROOT}/backends/cortex_m/ops/operators.yaml"
+  OP_LIST
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  KERNEL_LIBS
+  cortex_m_kernels
+  DEPS
+  executorch
+)
+list(APPEND _arm_runner_selected_ops_libs arm_cortex_m_ops_lib)
+set(_arm_runner_cortex_m_archive_libs cortex_m_kernels portable_kernels
+                                      cmsis-nn kernels_util_all_deps
+)
+verify_targets_exist(
+  CONTEXT arm_executor_runner TARGETS ${_arm_runner_cortex_m_archive_libs}
+)
+list(APPEND _arm_runner_normal_archive_libs
+     ${_arm_runner_cortex_m_archive_libs}
+)
+
+list(FIND arm_executor_runner_link -Wl,--no-whole-archive
+     _arm_runner_no_whole_archive_idx
+)
+list(INSERT arm_executor_runner_link ${_arm_runner_no_whole_archive_idx}
+     ${_arm_runner_selected_ops_libs}
+)
+
+if(_arm_runner_normal_archive_libs)
+  list(REMOVE_DUPLICATES _arm_runner_normal_archive_libs)
+  list(FIND arm_executor_runner_link -Wl,--end-group _arm_runner_end_group_idx)
+  list(INSERT arm_executor_runner_link ${_arm_runner_end_group_idx}
+       ${_arm_runner_normal_archive_libs}
   )
 endif()
 
@@ -475,12 +491,9 @@ endif()
 # link list rather than through INTERFACE_LINK_OPTIONS. The latter is emitted
 # before this target's objects and before the runner's dependency closure, which
 # breaks bare-metal archive resolution for the runner.
-set(_arm_runner_whole_archive_targets
-    executorch quantized_ops_lib cortex_m_ops_lib executorch_delegate_ethos_u
+set(_arm_runner_whole_archive_targets executorch executorch_delegate_ethos_u
+                                      ${_arm_runner_selected_ops_libs}
 )
-if(TARGET arm_portable_ops_lib)
-  list(APPEND _arm_runner_whole_archive_targets arm_portable_ops_lib)
-endif()
 foreach(_arm_runner_whole_archive_target IN
         LISTS _arm_runner_whole_archive_targets
 )
@@ -492,8 +505,7 @@ foreach(_arm_runner_whole_archive_target IN
   endif()
 endforeach()
 
-# Need whole-archive to ensure C++ ctors are called. This may be wasteful for
-# binary size as we link in a number of other symbols.
+# Need whole-archive to ensure C++ ctors are called for registration targets.
 target_link_libraries(arm_executor_runner PUBLIC ${arm_executor_runner_link})
 
 # Ensure the ELF lands next to the CMake build tree so run.sh (and downstream

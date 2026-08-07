@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -51,6 +51,7 @@ PHDRS
     rom_boot PT_LOAD;
     rom_exec PT_LOAD;
     rom_dram PT_LOAD;
+    rom_model PT_LOAD;
     null     PT_NULL;
 }
 
@@ -188,11 +189,6 @@ SECTIONS
 
   .sram : AT(__etext)
   {
-#if (ETHOSU_MODEL == 0)
-    . = ALIGN(16);
-    *(network_model_sec)
-#endif
-
     . = ALIGN(16);
     *(.sram.data)
 
@@ -219,29 +215,32 @@ SECTIONS
     KEEP(*(.jcr*))
   } > SRAM :rom_dram
 
-  .sram.bss :
+#if (ETHOSU_MODEL == 0)
+  .sram.rodata :
+  {
+    . = ALIGN(16);
+    *(network_model_sec)
+  } > SRAM :rom_model
+#else
+  .ddr.rodata :
+  {
+    . = ALIGN(16);
+    *(network_model_sec)
+  } > DDR :rom_model
+#endif
+
+  .sram.bss (NOLOAD) :
   {
 #if (ETHOSU_ARENA == 0)
     . = ALIGN(32);
     *(.bss.tensor_arena)
 #endif
-
     . = ALIGN(16);
     *(.bss.ethosu_scratch);
   } > SRAM :null
 
   .ddr :
   {
-#if (ETHOSU_ARENA == 1)
-    . = ALIGN(32);
-    *(.bss.tensor_arena)
-#endif
-
-#if (ETHOSU_MODEL == 1)
-    . = ALIGN(16);
-    *(network_model_sec)
-#endif
-
     . = ALIGN(4);
     *(input_data_sec)
     *(expected_output_data_sec)
@@ -259,11 +258,15 @@ SECTIONS
     KEEP(*(.asan_shadow))
     __asan_shadow_end = .;
   } > DDR :null
-  .ddr_noload (NOLOAD) :
+
+  .ddr.bss (NOLOAD) :
   {
-    . = ALIGN(16);
-    *(input_data_sec)
+#if (ETHOSU_ARENA == 1)
+    . = ALIGN(32);
+    *(.bss.tensor_arena)
+#endif
   } > DDR :null
+
   .bss :
   {
     . = ALIGN(4);
@@ -277,7 +280,7 @@ SECTIONS
     __bss_end__ = .;
   } > BRAM :null
 
-  .heap (ORIGIN(BRAM) + LENGTH(BRAM) - __HEAP_SIZE) (COPY) :
+  .heap (ORIGIN(BRAM) + LENGTH(BRAM) - __HEAP_SIZE) (NOLOAD) :
   {
     . = ALIGN(8);
     __end__ = .;
@@ -287,7 +290,7 @@ SECTIONS
     __HeapLimit = .;
   } > BRAM :null
 
-  .stack (ORIGIN(DTCM) + LENGTH(DTCM) - __STACK_SIZE) (COPY) :
+  .stack (ORIGIN(DTCM) + LENGTH(DTCM) - __STACK_SIZE) (NOLOAD) :
   {
     . = ALIGN(8);
     __StackLimit = .;
