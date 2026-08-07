@@ -400,6 +400,18 @@ if(TARGET executorch::runtime)
     APPEND
     PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
   )
+  # The definition selects a declaration, and the thread pool library holds the
+  # only definition of what it declares, so a consumer linking just the runtime
+  # would fail to link. Carried on the runtime rather than left to the caller,
+  # since the caller cannot see which header a compile definition on an imported
+  # target switched.
+  if(TARGET executorch::threadpool)
+    set_property(
+      TARGET executorch::runtime
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES executorch::threadpool
+    )
+  endif()
 endif()
 
 executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
