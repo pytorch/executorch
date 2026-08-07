@@ -35,6 +35,16 @@ def _skip_casts(node: torch.fx.Node) -> torch.fx.Node:
     return node
 
 
+def _is_rstd_node(node: torch.fx.Node) -> bool:
+    node = _skip_casts(node)
+    if node.target == exir_ops.edge.aten.rsqrt.default:
+        return True
+    if node.target != exir_ops.edge.aten.pow.Tensor_Scalar or len(node.args) < 2:
+        return False
+    exponent = node.args[1]
+    return isinstance(exponent, (int, float)) and exponent == -0.5
+
+
 class RmsNormMatch(PatternMatch):
     """
     Detects the decomposed RMSNorm pattern, including variants where dtype
@@ -73,17 +83,18 @@ class RmsNormMatch(PatternMatch):
         self.all_nodes.append(norm_mul_node)
 
         # norm_mul: mul(x_f32, rstd_f32)
-        rsqrt_node, x_for_norm = self._identify_rsqrt_and_input(norm_mul_node)
-        if rsqrt_node is None:
+        rstd_node, x_for_norm = self._identify_rstd_and_input(norm_mul_node)
+        if rstd_node is None:
             return
 
-        self.all_nodes.append(rsqrt_node)
+        self.all_nodes.append(rstd_node)
 
-        # rsqrt -> add(mean_sq, eps) -> mean(x_sq, dim=-1, keepdim=True)
-        add_node = self._get_single_arg_node(
-            rsqrt_node, exir_ops.edge.aten.rsqrt.default
-        )
-        if add_node is None or add_node.target != exir_ops.edge.aten.add.Tensor:
+        # rstd -> add(mean_sq, eps) -> mean(x_sq, dim=-1, keepdim=True)
+        add_node = rstd_node.args[0] if rstd_node.args else None
+        if (
+            not isinstance(add_node, torch.fx.Node)
+            or add_node.target != exir_ops.edge.aten.add.Tensor
+        ):
             return
 
         self.all_nodes.append(add_node)
@@ -182,48 +193,36 @@ class RmsNormMatch(PatternMatch):
             if (
                 isinstance(norm_candidate, torch.fx.Node)
                 and norm_candidate.target == exir_ops.edge.aten.mul.Tensor
-                and self._has_rsqrt_ancestor(norm_candidate)
+                and self._has_rstd_ancestor(norm_candidate)
             ):
                 return norm_candidate, weight_candidate_raw
 
         return None, None
 
-    def _has_rsqrt_ancestor(self, mul_node):
-        """Check if one of mul_node's args is an rsqrt node (possibly through casts)."""
+    def _has_rstd_ancestor(self, mul_node):
+        """Check if one arg computes reciprocal root mean square."""
         for arg in mul_node.args[:2]:
             if not isinstance(arg, torch.fx.Node):
                 continue
-            if _skip_casts(arg).target == exir_ops.edge.aten.rsqrt.default:
+            if _is_rstd_node(arg):
                 return True
         return False
 
-    def _identify_rsqrt_and_input(self, norm_mul_node):
-        """From mul(x, rstd), find the rsqrt node and the input x.
-        The rsqrt may be wrapped in a cast node."""
+    def _identify_rstd_and_input(self, norm_mul_node):
+        """From mul(x, rstd), find the rstd node and input x."""
         if len(norm_mul_node.args) < 2:
             return None, None
 
         a, b = norm_mul_node.args[0], norm_mul_node.args[1]
 
-        for rsqrt_candidate_raw, input_candidate in [(a, b), (b, a)]:
-            if not isinstance(rsqrt_candidate_raw, torch.fx.Node):
+        for rstd_candidate_raw, input_candidate in [(a, b), (b, a)]:
+            if not isinstance(rstd_candidate_raw, torch.fx.Node):
                 continue
-            rsqrt_candidate = _skip_casts(rsqrt_candidate_raw)
-            if (
-                isinstance(rsqrt_candidate, torch.fx.Node)
-                and rsqrt_candidate.target == exir_ops.edge.aten.rsqrt.default
-            ):
-                return rsqrt_candidate, input_candidate
+            rstd_candidate = _skip_casts(rstd_candidate_raw)
+            if _is_rstd_node(rstd_candidate):
+                return rstd_candidate, input_candidate
 
         return None, None
-
-    def _get_single_arg_node(self, node, expected_target):
-        """Get the single input arg of a unary op node."""
-        if node.target != expected_target:
-            return None
-        if len(node.args) < 1 or not isinstance(node.args[0], torch.fx.Node):
-            return None
-        return node.args[0]
 
 
 @register_pattern_detector("rms_norm")

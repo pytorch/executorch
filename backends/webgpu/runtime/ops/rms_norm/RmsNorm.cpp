@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/RmsNormFusion.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 
@@ -52,16 +53,15 @@ void resize_rms_norm(
   if (rows == 0) {
     throw std::runtime_error("WebGPU rms_norm: zero rows");
   }
-  if (rows > utils::queried_max_workgroups(g.device())) {
-    throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
-  }
   RmsNormParams p = {};
   p.num_rows = rows;
   p.row_width = row_width;
   p.epsilon = epsilon;
   wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-  g.dispatch_at(dispatch_idx).workgroup_count_x = rows;
+  const utils::WgCount wg =
+      utils::compute_2d_workgroup_count(g.device(), rows, 1, "rms_norm");
+  g.dispatch_at(dispatch_idx).workgroup_count_x = wg.x;
+  g.dispatch_at(dispatch_idx).workgroup_count_y = wg.y;
   g.set_cur_dims(out_id, d);
 }
 
@@ -84,30 +84,32 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // row_width = last dim; num_rows = product of the rest (PyTorch NCHW order)
   const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+  const auto& weight_tensor = graph.get_tensor(weight_id);
   if (in_tensor.dims.empty() || in_tensor.nbytes == 0) {
     throw std::runtime_error("WebGPU rms_norm: empty input");
   }
+  if (in_tensor.dims.back() <= 0 ||
+      static_cast<uint64_t>(in_tensor.dims.back()) > UINT32_MAX) {
+    throw std::runtime_error("WebGPU rms_norm: invalid row width");
+  }
   const uint32_t row_width = static_cast<uint32_t>(in_tensor.dims.back());
-  if (row_width == 0) {
-    throw std::runtime_error("WebGPU rms_norm: zero row width");
+  const uint64_t in_numel = utils::numel_of(in_tensor.dims);
+  if (!utils::is_fp32_tensor(in_tensor) || !utils::is_fp32_tensor(out_tensor) ||
+      !utils::is_fp32_tensor(weight_tensor) ||
+      out_tensor.dims != in_tensor.dims ||
+      utils::numel_of(weight_tensor.dims) != row_width) {
+    throw std::runtime_error(
+        "WebGPU rms_norm: expected fp32 input/output and row-width weight");
   }
-  uint64_t in_numel = 1;
-  for (int64_t d : in_tensor.dims) {
-    in_numel *= static_cast<uint64_t>(d);
-  }
-  // fp32-only shader: bail if the bytes don't match an fp32 element count.
-  if (in_tensor.nbytes != in_numel * sizeof(float)) {
-    throw std::runtime_error("WebGPU rms_norm: fp32-only (byte-size mismatch)");
+  if (in_numel % row_width != 0u || in_numel / row_width == 0u ||
+      in_numel / row_width > UINT32_MAX) {
+    throw std::runtime_error("WebGPU rms_norm: invalid row count");
   }
   const uint32_t num_rows = static_cast<uint32_t>(in_numel / row_width);
-  if (num_rows == 0) {
-    throw std::runtime_error("WebGPU rms_norm: zero rows");
-  }
-  // Validate the 1D dispatch limit before allocating any GPU objects.
-  if (num_rows > utils::queried_max_workgroups(device)) {
-    throw std::runtime_error(
-        "WebGPU rms_norm: num_rows exceeds the 1D dispatch limit");
-  }
+  // Rows can exceed the per-dim grid cap (QK-norm at prefill), so fold x/y.
+  const utils::WgCount wg_count =
+      utils::compute_2d_workgroup_count(device, num_rows, 1, "rms_norm");
 
   // Create uniform buffer for params
   RmsNormParams params = {};
@@ -144,8 +146,6 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  const auto& out_tensor = graph.get_tensor(out_id);
-  const auto& weight_tensor = graph.get_tensor(weight_id);
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
       shader_src,
@@ -177,8 +177,24 @@ void rms_norm_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   static_assert(
       kRmsNormVec4WorkgroupSizeX == 64,
       "kRmsNormVec4WorkgroupSizeX must match override wg_size default (64)");
-  const size_t dispatch_idx =
-      graph.add_dispatch({bundle.pipeline, bundle.bind_group, num_rows});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, wg_count.x, "rms_norm", wg_count.y});
+
+  // Offer this dispatch to the add/mul merge; vec4 at 64-wide only.
+  if (use_vec4 && wg_size == kRmsNormVec4WorkgroupSizeX) {
+    fusion::record_rms_norm(
+        graph,
+        in_id,
+        weight_id,
+        out_id,
+        num_rows,
+        row_width,
+        dispatch_idx,
+        uniform_buffer,
+        bundle.bind_group);
+  } else {
+    fusion::invalidate_record(graph);
+  }
 
   // Dynamic shapes: recompute num_rows + rewrite the UBO for the live input.
   WGPUBuffer params_buf = uniform_buffer;

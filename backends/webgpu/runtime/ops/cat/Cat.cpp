@@ -10,6 +10,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/cat/CatDispatch.h>
 #include <executorch/backends/webgpu/runtime/ops/cat/cat_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -71,7 +72,7 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   // Validate + cache input meta/wgc BEFORE any GPU alloc (no leak on throw).
   std::vector<TensorMeta> in_metas(ids.size());
-  std::vector<uint32_t> wg_counts(ids.size());
+  std::vector<utils::WgCount> wg_counts(ids.size());
   int64_t concat_sum = 0;
   for (size_t k = 0; k < ids.size(); k++) {
     const int id = ids[k];
@@ -92,7 +93,7 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
         static_cast<size_t>(in_metas[k].numel) * sizeof(float)) {
       throw std::runtime_error("cat: non-fp32 input (nbytes != numel * 4)");
     }
-    wg_counts[k] = utils::compute_1d_workgroup_count(
+    wg_counts[k] = utils::compute_2d_workgroup_count(
         device, in_metas[k].numel, wg_size, "cat");
     concat_sum += in_tensor.dims[dim];
   }
@@ -158,8 +159,8 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
     in_meta_bufs[k] = in_meta_buf;
     params_bufs[k] = params_buf;
-    dispatch_idxs[k] =
-        graph.add_dispatch({bundle.pipeline, bundle.bind_group, wg_counts[k]});
+    dispatch_idxs[k] = graph.add_dispatch_2d(
+        bundle.pipeline, bundle.bind_group, wg_counts[k].x, wg_counts[k].y);
     if (!shared_resources.has_value()) {
       shared_resources.emplace(std::move(bundle));
     }
@@ -211,9 +212,11 @@ void cat_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       params.off_k = off;
       wgpuQueueWriteBuffer(
           g.queue(), params_bufs[k], 0, &params, sizeof(params));
-      g.dispatch_at(dispatch_idxs[k]).workgroup_count_x =
-          utils::compute_1d_workgroup_count(
-              g.device(), in_meta.numel, wg_size, "cat(resize)");
+      set_cat_dispatch_grid(
+          g,
+          dispatch_idxs[k],
+          utils::compute_2d_workgroup_count(
+              g.device(), in_meta.numel, wg_size, "cat(resize)"));
       off += static_cast<uint32_t>(in_dims[cdim]);
     }
   };

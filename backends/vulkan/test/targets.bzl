@@ -34,6 +34,10 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "test_vulkan_passes.py",
             ],
+            preload_deps = [
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+                "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+            ],
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan/_passes:vulkan_passes",
@@ -86,6 +90,17 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//caffe2:torch",
                 "//executorch/backends/vulkan:vulkan_preprocess",
+            ],
+        )
+
+        python_unittest(
+            name = "test_vulkan_partitioner_extra_ops",
+            srcs = [
+                "test_vulkan_partitioner_extra_ops.py",
+            ],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
             ],
         )
 

@@ -94,7 +94,18 @@ def replace_select_local_scalar_dense_with_select_as_symint(
             ),
         )
 
-    new_node.meta["val"] = match.anchor_node.meta["val"]
+    anchor_value = match.anchor_node.meta["val"]
+    new_node.meta["val"] = anchor_value
+    value_range = anchor_value.node.shape_env.bound_sympy(anchor_value.node.expr)
+    try:
+        lower_bound = int(value_range.lower)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        lower_bound = None
+    try:
+        upper_bound = int(value_range.upper)
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        upper_bound = None
+    new_node.meta["et_vk_value_range"] = (lower_bound, upper_bound)
     match.anchor_node.replace_all_uses_with(new_node)
 
     # # Remove both the local_scalar_dense and select_copy nodes

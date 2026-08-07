@@ -13,6 +13,8 @@
 #include <executorch/backends/webgpu/runtime/ops/adamw/adamw_step_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/addmm/addmm_tiled_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_final_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_partial_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
@@ -48,6 +50,7 @@
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_conv2d/conv_transpose2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_av_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_exact_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/expand_copy/expand_copy_wgsl.h>
@@ -89,6 +92,7 @@
 #include <executorch/backends/webgpu/runtime/ops/q8ta_pixel_shuffle/q8ta_pixel_shuffle_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/q8ta_relu/q8ta_relu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantize/quantize_per_tensor_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/choose_qparams_dq8ca_fused_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/linear_dW_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_backward_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_coop4_bicol_wgsl.h>
@@ -101,9 +105,12 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_qkv_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_requant_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_steel_bk64_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/quantize_dequantize_per_row_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/reduce/reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/relu/relu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/repeat/repeat_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_add_scale_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_vec4_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rms_norm/rms_norm_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/apply_rotary_emb_interleaved_wgsl.h>
@@ -122,6 +129,7 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/select/select_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sigmoid/sigmoid_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/slice/slice_dual_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/slice/slice_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/log_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/softmax_wgsl.h>
@@ -153,7 +161,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -202,6 +210,20 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kArgReduceWorkgroupSizeX,
         kArgReduceWorkgroupSizeY,
         kArgReduceWorkgroupSizeZ,
+    },
+    {
+        "arg_reduce_final",
+        kArgReduceFinalWGSL,
+        kArgReduceFinalWorkgroupSizeX,
+        kArgReduceFinalWorkgroupSizeY,
+        kArgReduceFinalWorkgroupSizeZ,
+    },
+    {
+        "arg_reduce_partial",
+        kArgReducePartialWGSL,
+        kArgReducePartialWorkgroupSizeX,
+        kArgReducePartialWorkgroupSizeY,
+        kArgReducePartialWorkgroupSizeZ,
     },
     {
         "avg_pool2d",
@@ -300,6 +322,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kChooseQparamsAffineWorkgroupSizeX,
         kChooseQparamsAffineWorkgroupSizeY,
         kChooseQparamsAffineWorkgroupSizeZ,
+    },
+    {
+        "choose_qparams_dq8ca_fused",
+        kChooseQparamsDq8caFusedWGSL,
+        kChooseQparamsDq8caFusedWorkgroupSizeX,
+        kChooseQparamsDq8caFusedWorkgroupSizeY,
+        kChooseQparamsDq8caFusedWorkgroupSizeZ,
     },
     {
         "clamp",
@@ -468,6 +497,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kEtVkSdpaQkEntryWorkgroupSizeX,
         kEtVkSdpaQkEntryWorkgroupSizeY,
         kEtVkSdpaQkEntryWorkgroupSizeZ,
+    },
+    {
+        "et_vk_sdpa_qk_entry_exact",
+        kEtVkSdpaQkEntryExactWGSL,
+        kEtVkSdpaQkEntryExactWorkgroupSizeX,
+        kEtVkSdpaQkEntryExactWorkgroupSizeY,
+        kEtVkSdpaQkEntryExactWorkgroupSizeZ,
     },
     {
         "exp",
@@ -841,6 +877,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kQcs4wLinearWorkgroupSizeZ,
     },
     {
+        "quantize_dequantize_per_row",
+        kQuantizeDequantizePerRowWGSL,
+        kQuantizeDequantizePerRowWorkgroupSizeX,
+        kQuantizeDequantizePerRowWorkgroupSizeY,
+        kQuantizeDequantizePerRowWorkgroupSizeZ,
+    },
+    {
         "quantize_per_tensor",
         kQuantizePerTensorWGSL,
         kQuantizePerTensorWorkgroupSizeX,
@@ -881,6 +924,20 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kRmsNormVec4WorkgroupSizeX,
         kRmsNormVec4WorkgroupSizeY,
         kRmsNormVec4WorkgroupSizeZ,
+    },
+    {
+        "rms_norm_vec4_add",
+        kRmsNormVec4AddWGSL,
+        kRmsNormVec4AddWorkgroupSizeX,
+        kRmsNormVec4AddWorkgroupSizeY,
+        kRmsNormVec4AddWorkgroupSizeZ,
+    },
+    {
+        "rms_norm_vec4_add_scale",
+        kRmsNormVec4AddScaleWGSL,
+        kRmsNormVec4AddScaleWorkgroupSizeX,
+        kRmsNormVec4AddScaleWorkgroupSizeY,
+        kRmsNormVec4AddScaleWorkgroupSizeZ,
     },
     {
         "rotary_embedding",
@@ -1000,6 +1057,13 @@ constexpr std::array<WebGPUShaderInfo, 135> kShaderRegistry = {{
         kSliceWorkgroupSizeX,
         kSliceWorkgroupSizeY,
         kSliceWorkgroupSizeZ,
+    },
+    {
+        "slice_dual",
+        kSliceDualWGSL,
+        kSliceDualWorkgroupSizeX,
+        kSliceDualWorkgroupSizeY,
+        kSliceDualWorkgroupSizeZ,
     },
     {
         "softmax",

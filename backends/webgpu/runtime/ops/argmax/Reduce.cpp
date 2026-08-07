@@ -9,11 +9,15 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_final_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_multiwg_route.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_partial_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -34,6 +38,151 @@ struct ArgReduceParams {
 static_assert(
     kArgReduceWorkgroupSizeX <= 256,
     "arg_reduce workgroup size exceeds the 256-wide shared partials");
+
+struct ArgReduceMultiWgParams {
+  uint32_t num_rows;
+  uint32_t reduce_size;
+  uint32_t is_argmin;
+  uint32_t num_parts;
+};
+static_assert(sizeof(ArgReduceMultiWgParams) == 16);
+
+static_assert(
+    kArgReducePartialWorkgroupSizeX == kArgReduceFinalWorkgroupSizeX,
+    "arg_reduce stage workgroup widths must match");
+
+void arg_reduce_multiwg_impl(
+    WebGPUGraph& graph,
+    int in_id,
+    int out_id,
+    uint32_t num_rows,
+    uint32_t reduce_size,
+    uint32_t is_argmin,
+    uint32_t parts,
+    bool keepdim) {
+  WGPUDevice device = graph.device();
+  const WebGPUTensor& in_tensor = graph.get_tensor(in_id);
+  const WebGPUTensor& out_tensor = graph.get_tensor(out_id);
+  const uint32_t max_parts = parts;
+  const uint64_t max_partial_slots =
+      static_cast<uint64_t>(num_rows) * max_parts;
+  const size_t partials_bytes =
+      static_cast<size_t>(max_partial_slots) * 2u * sizeof(uint32_t);
+  WGPUBuffer partials = graph.acquire_scratch(partials_bytes);
+  WebGPUGraph::ScopedScratch partials_guard(&graph, partials);
+
+  ArgReduceMultiWgParams params = {num_rows, reduce_size, is_argmin, parts};
+  WGPUBuffer uniform_buffer =
+      graph.make_uniform_buffer(&params, sizeof(params));
+  graph.own_uniform_buffer(uniform_buffer);
+  const utils::WgCount partial_grid = utils::compute_2d_workgroup_count(
+      device, num_rows * parts, 1u, "arg_reduce_partial");
+  const utils::WgCount final_grid = utils::compute_2d_workgroup_count(
+      device, num_rows, 1u, "arg_reduce_final");
+
+  utils::ComputePipelineBundle partial_bundle = utils::make_compute_pipeline(
+      device,
+      kArgReducePartialWGSL,
+      {
+          {0,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           in_tensor.buffer,
+           in_tensor.nbytes},
+          {1, WGPUBufferBindingType_Storage, partials, partials_bytes},
+          {2, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(params)},
+      });
+  const size_t partial_dispatch = graph.add_dispatch(
+      {partial_bundle.pipeline,
+       partial_bundle.bind_group,
+       partial_grid.x,
+       "arg_reduce_partial",
+       partial_grid.y});
+  utils::ComputePipelineBundle final_bundle = utils::make_compute_pipeline(
+      device,
+      kArgReduceFinalWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, partials, partials_bytes},
+          {1,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+          {2, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(params)},
+      });
+  const size_t final_dispatch = graph.add_dispatch(
+      {final_bundle.pipeline,
+       final_bundle.bind_group,
+       final_grid.x,
+       "arg_reduce_final",
+       final_grid.y});
+
+  WGPUBuffer params_buffer = uniform_buffer;
+  graph.add_tensor_resize_hook(
+      in_id,
+      [in_id,
+       out_id,
+       keepdim,
+       is_argmin,
+       max_parts,
+       max_partial_slots,
+       partial_dispatch,
+       final_dispatch,
+       params_buffer](WebGPUGraph& resized_graph) {
+        const auto& dims = resized_graph.cur_dims(in_id);
+        if (dims.empty() || dims.back() <= 0 ||
+            static_cast<uint64_t>(dims.back()) >
+                std::numeric_limits<uint32_t>::max()) {
+          throw std::runtime_error(
+              "arg_reduce(resize): reduce dim is out of range");
+        }
+        const uint32_t live_reduce_size = static_cast<uint32_t>(dims.back());
+        const uint64_t total = utils::numel_of(dims);
+        const uint64_t live_rows = total / live_reduce_size;
+        if (live_rows == 0u ||
+            live_rows > std::numeric_limits<uint32_t>::max()) {
+          throw std::runtime_error(
+              "arg_reduce(resize): row count is out of range");
+        }
+        const uint32_t rows = static_cast<uint32_t>(live_rows);
+        uint32_t live_parts = select_arg_reduce_parts(
+            rows,
+            live_reduce_size,
+            utils::queried_max_workgroups(resized_graph.device()));
+        live_parts = std::max(1u, std::min(live_parts, max_parts));
+        if (!arg_reduce_partial_slots_fit(
+                max_partial_slots, rows, live_parts)) {
+          throw std::runtime_error(
+              "arg_reduce(resize): partial scratch capacity exceeded");
+        }
+        std::vector<int64_t> output_dims = dims;
+        if (keepdim) {
+          output_dims.back() = 1;
+        } else {
+          output_dims.pop_back();
+        }
+        resized_graph.set_cur_dims(out_id, output_dims);
+        ArgReduceMultiWgParams live_params = {
+            rows, live_reduce_size, is_argmin, live_parts};
+        wgpuQueueWriteBuffer(
+            resized_graph.queue(),
+            params_buffer,
+            0,
+            &live_params,
+            sizeof(live_params));
+        const utils::WgCount partial_count = utils::compute_2d_workgroup_count(
+            resized_graph.device(),
+            static_cast<uint32_t>(live_rows * live_parts),
+            1u,
+            "arg_reduce_partial");
+        auto& partial = resized_graph.dispatch_at(partial_dispatch);
+        partial.workgroup_count_x = partial_count.x;
+        partial.workgroup_count_y = partial_count.y;
+        const utils::WgCount final_count = utils::compute_2d_workgroup_count(
+            resized_graph.device(), rows, 1u, "arg_reduce_final");
+        auto& final = resized_graph.dispatch_at(final_dispatch);
+        final.workgroup_count_x = final_count.x;
+        final.workgroup_count_y = final_count.y;
+      });
+}
 
 // Last-dim argmax/argmin -> int32 index; mirrors Vulkan arg_reduce_impl.
 void arg_reduce_impl(
@@ -76,6 +225,15 @@ void arg_reduce_impl(
       in_tensor.nbytes / sizeof(float) !=
           static_cast<size_t>(num_rows) * reduce_size) {
     throw std::runtime_error("arg_reduce: shape mismatch (rows * reduce_size)");
+  }
+
+  const bool keepdim = graph.get_bool(args.at(2));
+  const uint32_t parts = select_arg_reduce_parts(
+      num_rows, reduce_size, utils::queried_max_workgroups(device));
+  if (parts != 0u) {
+    arg_reduce_multiwg_impl(
+        graph, in_id, out_id, num_rows, reduce_size, is_argmin, parts, keepdim);
+    return;
   }
 
   uint32_t wg_size =
@@ -125,7 +283,6 @@ void arg_reduce_impl(
        workgroup_count.y});
 
   // Dynamic shapes: recompute reduce_size (last dim) + num_rows + dispatch.
-  const bool keepdim = graph.get_bool(args.at(2));
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
       in_id,

@@ -39,8 +39,10 @@ $if VEC == 4:
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {
-  let row_idx = wid.x;
+  // 2D-fold: rows can exceed the 65535 per-dim cap (QK-norm at prefill).
+  let row_idx = wid.x + wid.y * num_workgroups.x;
   let worker_id = lid.x;
 
   if (row_idx >= params.num_rows) {

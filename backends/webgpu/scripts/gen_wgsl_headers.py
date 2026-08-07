@@ -414,8 +414,30 @@ def _resolve_dim(tok: str, src: str) -> int:
     return int(m.group(1))
 
 
+def strip_wgsl_comments(src: str) -> str:
+    """Blank comments while preserving source offsets and line structure."""
+    out = []
+    i = 0
+    while i < len(src):
+        if src.startswith("//", i):
+            end = src.find("\n", i)
+            end = len(src) if end < 0 else end
+            out.append(" " * (end - i))
+            i = end
+        elif src.startswith("/*", i):
+            end = src.find("*/", i + 2)
+            end = len(src) if end < 0 else end + 2
+            out.append("".join(c if c == "\n" else " " for c in src[i:end]))
+            i = end
+        else:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
 def parse_workgroup_size(src: str) -> tuple[int, int, int]:
     """Resolve the (x, y, z) dims of @workgroup_size; y and z default to 1."""
+    src = strip_wgsl_comments(src)
     m = re.search(r"@workgroup_size\s*\(([^)]*)\)", src)
     if not m:
         raise ValueError("no @workgroup_size found")

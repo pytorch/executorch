@@ -9,10 +9,13 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
-#include <executorch/backends/webgpu/runtime/ops/linear_dq8ca_q4gsw/linear_dq8ca_q4gsw_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/QuantizedLinear.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/choose_qparams_dq8ca_fused_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/quantize_dequantize_per_row_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -21,198 +24,231 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-struct Dq8caParams {
-  uint32_t M;
-  uint32_t N;
-  uint32_t K;
-  uint32_t K_packed;
-  uint32_t group_size;
-  uint32_t padded_N;
-  uint32_t has_bias;
+struct QuantizeDequantizeParams {
+  uint32_t num_elements;
+  uint32_t num_rows;
+  uint32_t row_width;
   uint32_t _pad;
 };
-static_assert(sizeof(Dq8caParams) == 32, "Dq8caParams must be 32 bytes");
+static_assert(sizeof(QuantizeDequantizeParams) == 16);
+static_assert(
+    kChooseQparamsDq8caFusedWorkgroupSizeX == utils::kCqpQdqFusedInvocations);
 
-constexpr int64_t kTileM = 4; // MUST match TM in linear_dq8ca_q4gsw.wgsl
-constexpr int64_t kTileN = 4; // MUST match TN
+struct QuantizeDequantizeState {
+  QuantizeDequantizeParams params;
+  utils::WgCount grid;
+};
 
-// et_vk.linear_dq8ca_q4gsw args (mirrors Vulkan QuantizedLinear.cpp:760):
-// [in, input_scale, input_zp, weight, weight_sums, weight_scales, group_size,
-//  bias, out]. Dynamic per-row int8 activation quant x 4-bit-group symmetric
-// weight. weight_sums (arg 4) is a perf shortcut; this v1 recomputes the sum
-// inline so it is intentionally unused. Static-shape only (no resize hook yet).
+QuantizeDequantizeState make_quantize_dequantize_state(
+    WGPUDevice device,
+    const std::vector<int64_t>& input_dims,
+    uint32_t max_rows,
+    uint32_t row_width,
+    uint32_t workgroup_size) {
+  if (input_dims.empty() || input_dims.back() != row_width) {
+    throw std::runtime_error(
+        "WebGPU linear_dq8ca_q4gsw: live row width mismatch");
+  }
+  const uint64_t numel = utils::numel_of(input_dims);
+  if (numel == 0u || numel % row_width != 0u || numel > UINT32_MAX) {
+    throw std::runtime_error(
+        "WebGPU linear_dq8ca_q4gsw: invalid live input numel");
+  }
+  const uint64_t rows = numel / row_width;
+  if (rows == 0u || rows > max_rows) {
+    throw std::runtime_error(
+        "WebGPU linear_dq8ca_q4gsw: live rows exceed the build-time max");
+  }
+
+  QuantizeDequantizeState state = {};
+  state.params = {
+      static_cast<uint32_t>(numel), static_cast<uint32_t>(rows), row_width, 0u};
+  state.grid = utils::compute_2d_workgroup_count(
+      device,
+      state.params.num_elements,
+      workgroup_size,
+      "linear_dq8ca_q4gsw_qdq");
+  return state;
+}
+
+utils::WgCount make_cqp_fused_grid(
+    WGPUDevice device,
+    const QuantizeDequantizeParams& params) {
+  const uint32_t grid_x = utils::clamp_workgroup_count(device, params.num_rows);
+  if (grid_x == 0u) {
+    throw std::runtime_error("WebGPU linear_dq8ca_q4gsw(fused): zero dispatch");
+  }
+  return {grid_x, 1u};
+}
+
+WebGPUGraph::CqpFusionSite claim_cqp_fusion_site(
+    WebGPUGraph& graph,
+    int input_id,
+    int input_scales_id,
+    int input_zero_points_id,
+    uint32_t rows,
+    uint32_t row_width,
+    uint64_t numel) {
+  WebGPUGraph::CqpFusionSite site = graph.claim_cqp_fusion_site(
+      input_id, input_scales_id, input_zero_points_id, rows, row_width);
+  if (!site.valid) {
+    return site;
+  }
+  WGPULimits limits = {};
+  if (wgpuDeviceGetLimits(graph.device(), &limits) != WGPUStatus_Success ||
+      !utils::is_cqp_qdq_fusion_eligible(
+          rows,
+          row_width,
+          numel,
+          site.quant_min,
+          site.quant_max,
+          true,
+          true,
+          false,
+          limits.maxComputeInvocationsPerWorkgroup,
+          limits.maxComputeWorkgroupSizeX,
+          limits.maxComputeWorkgroupStorageSize)) {
+    return WebGPUGraph::CqpFusionSite{};
+  }
+  return site;
+}
+
 void linear_dq8ca_q4gsw_impl(WebGPUGraph& graph, const std::vector<int>& args) {
-  const int in_id = args.at(0);
-  const int input_scale_id = args.at(1);
-  const int input_zp_id = args.at(2);
+  const int input_id = args.at(0);
+  const int input_scales_id = args.at(1);
+  const int input_zero_points_id = args.at(2);
   const int weight_id = args.at(3);
-  const int scales_id = args.at(5);
+  const int weight_scales_id = args.at(5);
   const int group_size_id = args.at(6);
   const int bias_id = args.at(7);
-  const int out_id = args.at(8);
+  const int output_id = args.at(8);
 
-  WGPUDevice device = graph.device();
-  const auto& in = graph.get_tensor(in_id);
-  const auto& input_scale = graph.get_tensor(input_scale_id);
-  const auto& input_zp = graph.get_tensor(input_zp_id);
-  const auto& weight = graph.get_tensor(weight_id);
-  const auto& scales = graph.get_tensor(scales_id);
-  const auto& out = graph.get_tensor(out_id);
-
-  if (in.dims.empty() || weight.dims.size() < 2 || scales.dims.size() < 2) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: malformed dims");
+  const auto& input = graph.get_tensor(input_id);
+  const auto& input_scales = graph.get_tensor(input_scales_id);
+  const auto& input_zero_points = graph.get_tensor(input_zero_points_id);
+  if (input.buffer == nullptr || input.dims.empty() || input.is_int ||
+      !utils::is_fp32_tensor(input)) {
+    throw std::runtime_error("WebGPU linear_dq8ca_q4gsw: expected fp32 input");
   }
-  if (in.buffer == nullptr || input_scale.buffer == nullptr ||
-      input_zp.buffer == nullptr || weight.buffer == nullptr ||
-      scales.buffer == nullptr || out.buffer == nullptr) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: null buffer binding");
+  if (input.dims.back() <= 0 ||
+      static_cast<uint64_t>(input.dims.back()) > UINT32_MAX) {
+    throw std::runtime_error("WebGPU linear_dq8ca_q4gsw: invalid row width");
   }
-
-  const uint32_t K = static_cast<uint32_t>(in.dims.back());
-  if (K == 0) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: K == 0");
+  const uint32_t row_width = static_cast<uint32_t>(input.dims.back());
+  const uint64_t input_numel = utils::numel_of(input.dims);
+  if (row_width == 0u || input_numel % row_width != 0u) {
+    throw std::runtime_error("WebGPU linear_dq8ca_q4gsw: invalid input shape");
   }
-  uint64_t in_numel = 1;
-  for (int64_t d : in.dims) {
-    in_numel *= static_cast<uint64_t>(d);
+  const uint64_t max_rows64 = input_numel / row_width;
+  if (max_rows64 == 0u || max_rows64 > UINT32_MAX) {
+    throw std::runtime_error("WebGPU linear_dq8ca_q4gsw: rows out of range");
   }
-  if (in_numel % K != 0) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: input numel % K != 0");
-  }
-  const uint32_t M = static_cast<uint32_t>(in_numel / K);
-  const uint32_t N = static_cast<uint32_t>(weight.dims[0]);
-  const uint32_t K_packed = static_cast<uint32_t>(weight.dims[1]);
-  const uint32_t num_groups = static_cast<uint32_t>(scales.dims[0]);
-  const uint32_t padded_N = static_cast<uint32_t>(scales.dims[1]);
-  if (M == 0 || N == 0) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: M or N == 0");
-  }
-  if (K_packed != (K + 1) / 2) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: K_packed must be ceil(K/2)");
-  }
-  if ((static_cast<uint64_t>(N) * K_packed) % 4u != 0u) {
+  const uint32_t max_rows = static_cast<uint32_t>(max_rows64);
+  if (input_scales.buffer == nullptr || input_zero_points.buffer == nullptr ||
+      input_scales.is_int || input_scales.elem_size != sizeof(float) ||
+      !input_zero_points.is_int8 ||
+      input_zero_points.elem_size != sizeof(int8_t) ||
+      input_scales.dims != input_zero_points.dims ||
+      utils::numel_of(input_scales.dims) != max_rows ||
+      input_scales.nbytes != max_rows * sizeof(float) ||
+      input_zero_points.nbytes != max_rows) {
     throw std::runtime_error(
-        "linear_dq8ca_q4gsw: N*K_packed must be a multiple of 4 (u32-packed)");
+        "WebGPU linear_dq8ca_q4gsw: invalid per-row qparams");
   }
 
-  int64_t group_size = 0;
-  if (graph.get_value_type(group_size_id) == WebGPUGraph::ValueType::Int) {
-    group_size = graph.get_int(group_size_id);
-  }
-  if (group_size <= 0) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: group_size <= 0");
-  }
-  const uint32_t gs = static_cast<uint32_t>(group_size);
+  WebGPUGraph::ScopedScratch scratch(
+      &graph, graph.acquire_scratch(input.nbytes));
+  const WebGPUGraph::CqpFusionSite fusion = claim_cqp_fusion_site(
+      graph,
+      input_id,
+      input_scales_id,
+      input_zero_points_id,
+      max_rows,
+      row_width,
+      input_numel);
+  const bool use_fused = fusion.valid;
+  const uint32_t workgroup_size = utils::clamp_workgroup_size(
+      graph.device(), kQuantizeDequantizePerRowWorkgroupSizeX);
+  const QuantizeDequantizeState initial_state = make_quantize_dequantize_state(
+      graph.device(), input.dims, max_rows, row_width, workgroup_size);
+  const utils::WgCount initial_grid = use_fused
+      ? make_cqp_fused_grid(graph.device(), initial_state.params)
+      : initial_state.grid;
+  WGPUBuffer uniform = graph.make_uniform_buffer(
+      &initial_state.params, sizeof(QuantizeDequantizeParams));
 
-  // fp32-only byte guards; per-row scale (f32[M]) + zp (int8[M]).
-  if (in.nbytes != in_numel * sizeof(float) ||
-      out.nbytes != static_cast<uint64_t>(M) * N * sizeof(float) ||
-      scales.nbytes !=
-          static_cast<uint64_t>(num_groups) * padded_N * sizeof(float) ||
-      weight.nbytes != static_cast<uint64_t>(N) * K_packed) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: fp32/byte-size mismatch");
-  }
-  // Per-row activation scale (fp32[M]) + zp (int8[M], packed 4/word in-shader).
-  if (input_scale.nbytes != static_cast<uint64_t>(M) * sizeof(float) ||
-      !input_zp.is_int8 || input_zp.nbytes != static_cast<uint64_t>(M)) {
-    throw std::runtime_error(
-        "linear_dq8ca_q4gsw: input scale fp32[M] / zp int8[M] required");
-  }
-  // int8 zp is bound word-aligned over a max(nbytes,4) buffer; M in {5,6,7,...}
-  // would bind past the buffer. Mirrors the choose_qparams_affine producer
-  // guard.
-  if (M > 4u && M % 4u != 0u) {
-    throw std::runtime_error(
-        "linear_dq8ca_q4gsw: num_rows must be <=4 or a multiple of 4");
-  }
-  if (num_groups < (K + gs - 1u) / gs || padded_N < N) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: scales dims too small");
-  }
-
-  uint32_t has_bias = 0;
-  WGPUBuffer bias_buffer = nullptr;
-  uint64_t bias_size = 4;
-  if (graph.get_value_type(bias_id) == WebGPUGraph::ValueType::Tensor) {
-    const auto& bias = graph.get_tensor(bias_id);
-    if (bias.buffer != nullptr && bias.nbytes >= N * sizeof(float)) {
-      has_bias = 1;
-      bias_buffer = bias.buffer;
-      bias_size = bias.nbytes;
-    }
-  }
-  if (bias_buffer == nullptr) {
-    bias_buffer = graph.create_scratch_buffer(4);
-  }
-
-  Dq8caParams params = {};
-  params.M = M;
-  params.N = N;
-  params.K = K;
-  params.K_packed = K_packed;
-  params.group_size = gs;
-  params.padded_N = padded_N;
-  params.has_bias = has_bias;
-
-  const int64_t total_tiles =
-      utils::div_up<int64_t>(M, kTileM) * utils::div_up<int64_t>(N, kTileN);
-  if (total_tiles > static_cast<int64_t>(UINT32_MAX)) {
-    throw std::runtime_error("linear_dq8ca_q4gsw: tile count exceeds u32");
-  }
-  const uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kLinearDq8caQ4gswWorkgroupSizeX);
-  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
-      device,
-      static_cast<uint32_t>(total_tiles),
-      wg_size,
-      "linear_dq8ca_q4gsw");
-
-  WGPUConstantEntry wg_size_constant = {};
-  wg_size_constant.key = {"wg_size", WGPU_STRLEN};
-  wg_size_constant.value = static_cast<double>(wg_size);
-
-  WGPUBuffer params_buf =
-      utils::make_uniform(device, &params, sizeof(Dq8caParams));
-  graph.add_uniform_buffer_bytes(sizeof(Dq8caParams));
-
-  // 0 out(rw), 1 in, 2 input_scale, 3 input_zp, 4 weight, 5 scales, 6 bias
-  // (ro), 7 uniform.
+  WGPUConstantEntry workgroup_constant = {};
+  workgroup_constant.key = {"wg_size", WGPU_STRLEN};
+  workgroup_constant.value = static_cast<double>(workgroup_size);
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
-      device,
-      kLinearDq8caQ4gswWGSL,
+      graph.device(),
+      use_fused ? kChooseQparamsDq8caFusedWGSL : kQuantizeDequantizePerRowWGSL,
       {
-          {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
-          {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+          {0, WGPUBufferBindingType_Storage, scratch.buf, input.nbytes},
+          {1,
+           WGPUBufferBindingType_ReadOnlyStorage,
+           input.buffer,
+           input.nbytes},
           {2,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           input_scale.buffer,
-           input_scale.nbytes},
-          // int8 zp bound as array<u32>; round to a multiple of 4 (buffer is
-          // >=4 bytes).
+           use_fused ? WGPUBufferBindingType_Storage
+                     : WGPUBufferBindingType_ReadOnlyStorage,
+           input_scales.buffer,
+           input_scales.nbytes},
           {3,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           input_zp.buffer,
-           ((input_zp.nbytes + 3u) / 4u) * 4u},
+           use_fused ? WGPUBufferBindingType_Storage
+                     : WGPUBufferBindingType_ReadOnlyStorage,
+           input_zero_points.buffer,
+           std::max(((input_zero_points.nbytes + 3u) / 4u) * 4u, size_t(4))},
           {4,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           weight.buffer,
-           weight.nbytes},
-          {5,
-           WGPUBufferBindingType_ReadOnlyStorage,
-           scales.buffer,
-           scales.nbytes},
-          {6, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
-          {7, WGPUBufferBindingType_Uniform, params_buf, sizeof(Dq8caParams)},
+           WGPUBufferBindingType_Uniform,
+           uniform,
+           sizeof(QuantizeDequantizeParams)},
       },
-      &wg_size_constant,
-      1);
+      use_fused ? nullptr : &workgroup_constant,
+      use_fused ? 0u : 1u);
 
-  graph.add_dispatch(
+  const size_t dispatch_index = graph.add_dispatch(
       {bundle.pipeline,
        bundle.bind_group,
-       workgroup_count.x,
-       "linear_dq8ca_q4gsw",
-       workgroup_count.y});
-  graph.own_uniform_buffer(params_buf);
+       initial_grid.x,
+       use_fused ? "linear_dq8ca_q4gsw_cqp_fused" : "linear_dq8ca_q4gsw_qdq",
+       initial_grid.y});
+  graph.add_tensor_resize_hook(
+      input_id,
+      [input_id,
+       max_rows,
+       row_width,
+       workgroup_size,
+       use_fused,
+       dispatch_index,
+       uniform](WebGPUGraph& g) {
+        const QuantizeDequantizeState state = make_quantize_dequantize_state(
+            g.device(),
+            g.cur_dims(input_id),
+            max_rows,
+            row_width,
+            workgroup_size);
+        wgpuQueueWriteBuffer(
+            g.queue(), uniform, 0, &state.params, sizeof(state.params));
+        const utils::WgCount grid = use_fused
+            ? make_cqp_fused_grid(g.device(), state.params)
+            : state.grid;
+        auto& dispatch = g.dispatch_at(dispatch_index);
+        dispatch.workgroup_count_x = grid.x;
+        dispatch.workgroup_count_y = grid.y;
+      });
+  if (use_fused) {
+    auto& producer = graph.dispatch_at(fusion.dispatch_index);
+    producer.workgroup_count_x = 0u;
+    producer.workgroup_count_y = 0u;
+    *fusion.producer_elided = true;
+  }
+
+  graph.own_uniform_buffer(uniform);
+  const std::vector<int> q4_args = {
+      input_id, weight_id, weight_scales_id, group_size_id, bias_id, output_id};
+  q4gsw_linear_impl_with_input_buffer(
+      graph, q4_args, scratch.buf, input.nbytes);
 }
 
 } // namespace

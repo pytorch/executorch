@@ -44,6 +44,16 @@ using executorch::runtime::resize_tensor;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 
+namespace {
+thread_local WebGPUGraph* last_execution_graph = nullptr;
+} // namespace
+
+std::string webgpu_backend_execution_attestation_json() {
+  return last_execution_graph == nullptr
+      ? "{\"schemaVersion\":1,\"unavailable\":true}"
+      : last_execution_graph->execution_attestation_json();
+}
+
 Result<WebGPUGraphConfig> parse_webgpu_graph_config(
     ArrayRef<CompileSpec> compile_specs) {
   WebGPUGraphConfig config;
@@ -228,6 +238,7 @@ Error WebGPUBackend::execute(
   // the backend boundary.
   try {
     const WebGPUExecutionPlan plan = graph->make_execution_plan(graph_options);
+    last_execution_graph = graph;
     graph->execute(plan);
 
     // Copy outputs from GPU staging buffers to EValue tensor data pointers
@@ -242,7 +253,9 @@ Error WebGPUBackend::execute(
           {tensor.mutable_data_ptr(), tensor.nbytes(), host_is_fp32});
     }
     graph->copy_outputs(outputs, plan);
+    graph->complete_execution_attestation();
   } catch (const std::exception& e) {
+    graph->fail_execution_attestation(e.what());
     ET_LOG(Error, "WebGPU execute / output copy failed: %s", e.what());
     return Error::Internal;
   }
@@ -253,6 +266,9 @@ Error WebGPUBackend::execute(
 void WebGPUBackend::destroy(DelegateHandle* handle) const {
   if (handle != nullptr) {
     WebGPUGraph* graph = static_cast<WebGPUGraph*>(handle);
+    if (last_execution_graph == graph) {
+      last_execution_graph = nullptr;
+    }
     graph->~WebGPUGraph();
   }
 }
