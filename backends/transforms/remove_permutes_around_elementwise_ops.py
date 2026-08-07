@@ -144,6 +144,19 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Adapts from input-rank to output-rank space (downstream direction).
         Returns the adjusted permutation, or None if not possible.
         """
+        inp = node.args[0]
+        assert isinstance(inp, torch.fx.Node)
+        inp_val = inp.meta.get("val")
+        if inp_val is None:
+            return None
+        in_shape = inp_val.shape
+        # ``permute`` must live in the view's input-rank space. It does not when
+        # the view is reached by upstream traversal, where the permutation is
+        # expressed at the view's output rank; bail out so the caller drops the
+        # subgraph instead of indexing out of range or silently mis-adapting.
+        if len(permute) != len(in_shape):
+            return None
+
         # Handle explicit unsqueeze_copy(dim)
         if node.target in self._UNSQUEEZE_OPS:
             dim = cast(int, node.args[1])
@@ -176,9 +189,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return new_perm
 
         # Handle view_copy (squeeze/unsqueeze-like reshape)
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-        in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
 
         if len(out_shape) == len(in_shape) + 1:
@@ -294,6 +304,18 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         if node in processed_nodes or not self.is_node_permutable(node):
             return False
+        # A permutable op can still change rank via broadcasting (e.g.
+        # [8, 1] + [1, 1, 1] -> [1, 8, 1]), which would leave the node carrying
+        # a permutation of the wrong rank. Downstream rewrites index the
+        # permutation by dim (update_cat / update_mean_dim / update_slice_copy),
+        # so bail out rather than mis-permute or index out of range.
+        # Squeeze/unsqueeze views are exempt: they intentionally carry their
+        # input-rank permutation and are rank-checked in
+        # _adapt_permute_across_view.
+        if not self._is_squeeze_unsqueeze_view(node):
+            node_shape = getattr(node.meta.get("val"), "shape", None)
+            if node_shape is not None and len(node_shape) != len(current_start_permute):
+                return False
         subgraph.nodes.add(node)
         subgraph.node_end_permute[node] = current_end_permute
         subgraph.node_start_permute[node] = current_start_permute

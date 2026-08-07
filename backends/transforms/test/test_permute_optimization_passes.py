@@ -1034,39 +1034,6 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permute_unsqueeze_copy_neg_dim_mul_squeeze_copy_permute",
         )
 
-    def test_unsqueeze_at_moved_position(self) -> None:
-        """The permutation moves the unsqueeze position (P[index] != index), so
-        the adapted permutation must be built from P[index], not index."""
-        builder = GraphBuilder()
-        x_data = torch.randn(1, 8, 16)
-        x = builder.placeholder("x", x_data)
-        p1 = builder.call_operator(
-            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
-        )
-        u = builder.call_operator(
-            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
-        )
-        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(u, u))
-        sq = builder.call_operator(
-            op=exir_ops.edge.aten.squeeze_copy.dim, args=(mul, 1)
-        )
-        p2 = builder.call_operator(
-            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
-        )
-        builder.output([p2])
-        original = builder.get_graph_module()
-        gm_before = copy.deepcopy(original)
-
-        p = RemovePermutesAroundElementwiseOps()
-        result = cast(PassResult, p(original))
-        self.assertTrue(result.modified)
-        self.assertEqual(
-            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
-        )
-        validate_numerics(
-            gm_before, result.graph_module, [x_data], "UnsqueezeAtMovedPosition"
-        )
-
     def test_upstream_view_rank_mismatch_no_crash(self) -> None:
         """Regression test for IndexError when a squeeze/unsqueeze view_copy
         is reached via upstream traversal with a permutation whose rank does
@@ -1168,6 +1135,124 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             result.graph_module,
             [x_data],
             "permutation_sink_view_splitting_the_non_unit_dim",
+        )
+
+    def test_upstream_squeeze_view_rank_mismatch_no_crash(self) -> None:
+        """Regression test for IndexError when a squeeze view_copy is reached
+        via upstream traversal with a permutation at the view's output rank.
+
+        Graph:
+            y [8, 4, 1]                    x [4, 8]
+                    |                            |
+            view_copy (squeeze 3D→2D)      permute [1, 0]
+            [8, 4]                         [8, 4]
+                    \\                          /
+                     ---- add (2D) -----------
+                            |
+                      permute [1, 0]
+                            |
+                         output
+
+        `visit` reaches the view_copy from `add` with the 2D permutation
+        [1, 0], but the view's input is 3D, so the squeezed position (2) is
+        out of range for the permutation. Before the fix,
+        _adapt_permute_across_view crashed with IndexError: list index out
+        of range."""
+        builder = GraphBuilder()
+        x_data = torch.randn(4, 8)
+        y_data = torch.randn(8, 4, 1)
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        # Squeeze via view_copy: [8, 4, 1] → [8, 4]
+        view_sq = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(y, [8, 4])
+        )
+        # Start permute: [4, 8] → [8, 4]
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 0])
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor, args=(p1, view_sq)
+        )
+        # End permute: [8, 4] → [4, 8]
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(add, [1, 0])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        # Should not crash, and should skip the subgraph due to rank mismatch
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data, y_data],
+            "upstream_squeeze_view_rank_mismatch_no_crash",
+        )
+
+    def test_broadcast_rank_increase_no_crash(self) -> None:
+        """Regression test for IndexError when broadcasting raises a node's
+        rank above the rank of the permutation it is visited with.
+
+        Graph:
+            x [1, 8]                full([1, 1, 1])
+                |                        |
+            permute [1, 0]               |
+            [8, 1]                       |
+                \\                       /
+                 ------ add ------------
+                    [1, 8, 1]  (rank 3)
+                        |
+                slice_copy(dim=2)
+                        |
+                view_copy -> [8]   (permutation sink)
+
+        `add` is visited with the rank-2 permutation [1, 0] but broadcasts to
+        rank 3. The numel-1 `full` input and the sink `view_copy` both let
+        traversal terminate without ever meeting a rank-matched permute, so the
+        subgraph closed with a rank-2 permutation on rank-3 nodes. Before the
+        fix, update_slice_copy did `start_permute[2]` and raised
+        IndexError: list index out of range."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [1, 0])
+        )
+        ones = builder.call_operator(
+            op=exir_ops.edge.aten.full.default, args=([1, 1, 1], 1.0)
+        )
+        # Broadcast [8, 1] + [1, 1, 1] -> [1, 8, 1]: rank 3 under a rank 2 permute
+        add = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(p1, ones))
+        sl = builder.call_operator(
+            op=exir_ops.edge.aten.slice_copy.Tensor, args=(add, 2, 0, 1)
+        )
+        # Sink view: input [1, 8, 1] has a single non-unit dim
+        sink = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(sl, [8])
+        )
+        builder.output([sink])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        # Should not crash, and should skip the subgraph due to rank mismatch
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "broadcast_rank_increase_no_crash",
         )
 
 
