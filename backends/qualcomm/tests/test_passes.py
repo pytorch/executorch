@@ -512,6 +512,53 @@ class TestPasses(unittest.TestCase):
         except RuntimeError as e:
             if "QNN" in str(e) or "qnn" in str(e):
                 self.skipTest(f"QNN SDK not available: {e}")
+
+    def test_index_put_int64_value_not_quantized(self):
+        """QNN's IndexPut annotator must skip a non-float (int64) value arg.
+
+        Regression for MoE (Mixtral) routing, where index_put's value is an int64
+        arange: annotating it makes quantize_per_tensor assert a float input, so
+        to_executorch() fails. Only float tensors may be annotated.
+        Exercised on both the HTP and LPAI annotators, which share the guard.
+        """
+
+        class IndexPutInt64Value(torch.nn.Module):
+            def forward(self, x):
+                buf = torch.zeros(4, dtype=torch.long)
+                idx = torch.arange(
+                    4, dtype=torch.int64
+                )  # int64 value written by index_put
+                buf = buf.index_put((torch.tensor([0, 1, 2, 3]),), idx)
+                return x + buf.to(torch.float32)
+
+        module = IndexPutInt64Value().eval()
+        sample_input = (torch.randn(4),)
+
+        def run_backend(backend):
+            quantizer = QnnQuantizer(backend=backend)
+            quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+            gm = (
+                torch.export.export(module, sample_input)
+                .run_decompositions({})
+                .module()
+            )
+            prepared = prepare_pt2e(gm, quantizer)
+            prepared(*sample_input)
+            converted = convert_pt2e(prepared)
+            # Re-export runs the quantize_per_tensor meta kernel; before the dtype
+            # guard this raised "Expecting input to have dtype torch.float32" on the
+            # int64 value.
+            torch.export.export(converted, sample_input)
+
+        # HTP is the core QNN quantizer backend; a failure here is a real regression,
+        # not something to swallow. LPAI additionally needs quantized_aot_lib, so only
+        # that missing optional dependency is allowed to skip the LPAI leg.
+        run_backend(QnnExecuTorchBackendType.kHtpBackend)
+        try:
+            run_backend(QnnExecuTorchBackendType.kLpaiBackend)
+        except Exception as e:
+            if "quantized_aot_lib" in str(e):
+                self.skipTest(f"LPAI quantizer unavailable: {e}")
             raise
 
     def test_expand_broadcast_preserves_rank0_input_mutation(self):
