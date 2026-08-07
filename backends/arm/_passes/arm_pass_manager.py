@@ -69,6 +69,7 @@ from executorch.backends.arm._passes import (
     DecomposeIndexSelectToGatherPass,
     DecomposeIndexTensorToGatherPass,
     DecomposeIntPowPass,
+    DecomposeLargeStrideMaxPool2dForU55Pass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinalgVectorNormPass,
@@ -507,7 +508,13 @@ class ArmPassManager(ExportedProgramPassManager):
         # Fold Q/DQ nodes, insert INT8/INT32 rescales, decompose quantization nodes.
         self.add_passes(
             [
-                FoldAndAnnotateQParamsPass(exported_program),
+                FoldAndAnnotateQParamsPass(
+                    exported_program,
+                    preserve_partial_binary_tensor_qdq=(
+                        self.tosa_spec.support_float()
+                        or self.compile_spec._get_output_format() == "vgf"
+                    ),
+                ),
                 # Both hardtanh and relu are normalized to clamp by
                 # ConvertToClampPass; after q/dq folding above, adjacent clamps
                 # (e.g. from HardTanh+ReLU) are directly connected and can be
@@ -612,6 +619,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
                 DecomposeMaxPool2dPass(),
+                DecomposeLargeStrideMaxPool2dForU55Pass(),
                 SizeAdjustInputPass(),
                 DecomposeUnsupportedBilinearResizePass(self.tosa_spec),
                 RewriteAdaptiveAvgPool2dPass(),
