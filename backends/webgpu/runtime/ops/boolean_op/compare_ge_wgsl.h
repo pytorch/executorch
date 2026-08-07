@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from boolean_op.wgsl - DO NOT EDIT.
-// wgsl-sha256: 5fb319a54ed666644f118119639dd8cd33256ea5e5163c4c1392ce6e84b369cc
+// wgsl-sha256: d080502cc35fe57711b986bf0abca83bf365de59d9180601717836c35cab37da
 inline constexpr const char* kCompareGeWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<u32>;
@@ -35,8 +35,10 @@ fn elem_bool(i: u32) -> bool {
 
 // One thread per output u32 word packs 4 bool bytes -> no inter-thread race.
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let word_idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let word_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     let n_words = (params.num_elements + 3u) / 4u;
     if (word_idx >= n_words) {
         return;

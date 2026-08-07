@@ -12,8 +12,10 @@ struct Params {
 @group(0) @binding(2) var<uniform> params: Params;
 
 @compute @workgroup_size(wg_size)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+  let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
   if (idx >= params.num_elements) {
     return;
   }

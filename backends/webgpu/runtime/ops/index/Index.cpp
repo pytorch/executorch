@@ -95,8 +95,8 @@ void index_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   uint32_t num_elements = static_cast<uint32_t>(out_numel);
   uint32_t wg_size = utils::clamp_workgroup_size(device, kIndexWorkgroupSizeX);
-  uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, num_elements, wg_size, "index");
+  const utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, num_elements, wg_size, "index");
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -134,7 +134,12 @@ void index_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "index",
+       workgroup_count.y});
 
   // The bind group keeps the uniform buffer alive until release.
   wgpuBufferRelease(uniform_buffer);

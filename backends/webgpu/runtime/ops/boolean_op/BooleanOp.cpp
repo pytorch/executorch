@@ -72,8 +72,8 @@ void dispatch_bool_op(
   const uint32_t n_words = (numel + 3u) / 4u;
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
-  uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, n_words, wg_size, op_name);
+  const utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, n_words, wg_size, op_name);
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -98,8 +98,12 @@ void dispatch_bool_op(
       &wg_size_constant,
       1);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       op_name,
+       workgroup_count.y});
 
   WGPUBuffer p_buf = params_buf;
   auto resize =
@@ -114,8 +118,10 @@ void dispatch_bool_op(
         BoolOpParams p = {n, scalar, 0u, 0u};
         wgpuQueueWriteBuffer(g.queue(), p_buf, 0, &p, sizeof(p));
         const uint32_t nw = (n + 3u) / 4u;
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(g.device(), nw, wg_size, op_name);
+        const utils::WgCount workgroups =
+            utils::compute_2d_workgroup_count(g.device(), nw, wg_size, op_name);
+        g.dispatch_at(dispatch_idx).workgroup_count_x = workgroups.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = workgroups.y;
       };
   graph.add_tensor_resize_hook(self_id, resize);
 

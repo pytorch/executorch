@@ -23,6 +23,7 @@
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_minimum_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_mul_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_pow_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_int32_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bitwise_not/bitwise_not_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/bmm/bmm_tiled_wgsl.h>
@@ -101,6 +102,7 @@
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_pwdq_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_gemm_steel_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_m3_shared_bicol_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_linear_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_qkv_bk64_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/quantized_linear/q4gsw_requant_wgsl.h>
@@ -116,6 +118,8 @@
 #include <executorch/backends/webgpu/runtime/ops/rope/apply_rotary_emb_interleaved_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_hf_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/rope/rotary_embedding_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/scatter/scatter_unique_indices_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/scatter/scatter_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_attn_weights_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/sdpa_compute_out_half_wgsl.h>
@@ -136,6 +140,7 @@
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_bool_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/topk/topk_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/clamp_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/cos_wgsl.h>
@@ -161,7 +166,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 148> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -287,6 +292,13 @@ constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
         kBinarySubWorkgroupSizeX,
         kBinarySubWorkgroupSizeY,
         kBinarySubWorkgroupSizeZ,
+    },
+    {
+        "binary_sub_int32",
+        kBinarySubInt32WGSL,
+        kBinarySubInt32WorkgroupSizeX,
+        kBinarySubInt32WorkgroupSizeY,
+        kBinarySubInt32WorkgroupSizeZ,
     },
     {
         "bitwise_not",
@@ -793,6 +805,13 @@ constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
         kQ4gswLinearGemmSteelHalfPwdqF16accWorkgroupSizeZ,
     },
     {
+        "q4gsw_linear_m3_shared_bicol",
+        kQ4gswLinearM3SharedBicolWGSL,
+        kQ4gswLinearM3SharedBicolWorkgroupSizeX,
+        kQ4gswLinearM3SharedBicolWorkgroupSizeY,
+        kQ4gswLinearM3SharedBicolWorkgroupSizeZ,
+    },
+    {
         "q4gsw_qkv_bk64",
         kQ4gswQkvBk64WGSL,
         kQ4gswQkvBk64WorkgroupSizeX,
@@ -968,6 +987,20 @@ constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
         kRsqrtWorkgroupSizeZ,
     },
     {
+        "scatter",
+        kScatterWGSL,
+        kScatterWorkgroupSizeX,
+        kScatterWorkgroupSizeY,
+        kScatterWorkgroupSizeZ,
+    },
+    {
+        "scatter_unique_indices",
+        kScatterUniqueIndicesWGSL,
+        kScatterUniqueIndicesWorkgroupSizeX,
+        kScatterUniqueIndicesWorkgroupSizeY,
+        kScatterUniqueIndicesWorkgroupSizeZ,
+    },
+    {
         "sdpa_compute_attn_weights",
         kSdpaComputeAttnWeightsWGSL,
         kSdpaComputeAttnWeightsWorkgroupSizeX,
@@ -1127,6 +1160,13 @@ constexpr std::array<WebGPUShaderInfo, 143> kShaderRegistry = {{
         kToCopyIntToFloatWorkgroupSizeX,
         kToCopyIntToFloatWorkgroupSizeY,
         kToCopyIntToFloatWorkgroupSizeZ,
+    },
+    {
+        "topk",
+        kTopkWGSL,
+        kTopkWorkgroupSizeX,
+        kTopkWorkgroupSizeY,
+        kTopkWorkgroupSizeZ,
     },
     {
         "update_cache",
