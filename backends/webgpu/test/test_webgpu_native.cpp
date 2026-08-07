@@ -1316,6 +1316,92 @@ const SdpaConfig kSdpaConfigs[] = {
      /*required=*/true,
      /*expect_reject=*/false,
      /*kv_f16=*/true},
+    {"qwen3_fd_splits_1",
+     16,
+     8,
+     128,
+     1,
+     1,
+     0,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_2",
+     16,
+     8,
+     128,
+     1,
+     129,
+     128,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_63",
+     16,
+     8,
+     128,
+     1,
+     7937,
+     7936,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_64",
+     16,
+     8,
+     128,
+     1,
+     8192,
+     8191,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_65",
+     16,
+     8,
+     128,
+     1,
+     8193,
+     8192,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_70",
+     16,
+     8,
+     128,
+     1,
+     8960,
+     8959,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_splits_128",
+     16,
+     8,
+     128,
+     1,
+     16385,
+     16384,
+     10.0f,
+     /*required=*/true,
+     /*expect_reject=*/false,
+     /*kv_f16=*/true},
+    {"qwen3_fd_fallback_fp32",
+     16,
+     8,
+     128,
+     1,
+     8192,
+     8191,
+     10.0f,
+     /*required=*/true},
 };
 
 // Ramp denominator; mirror of test_sdpa.py::_RAMP_DENOM (keep in sync).
@@ -2036,26 +2122,31 @@ void test_symint_input_narrowing() {
   ::flatbuffers::FlatBufferBuilder fbb;
   const std::vector<uint32_t> dims = {1u};
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::INT32,
-          &dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/0)
-          .Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::SymInt, vk::CreateSymInt(fbb, 0).Union()));
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::INT32,
+              &dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/0)
+              .Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::SymInt, vk::CreateSymInt(fbb, 0).Union()));
   const std::vector<int32_t> args = {0, 1, 2, 3};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
-  chain.push_back(vk::CreateOperatorCallDirect(
-      fbb, 0, "et_vk.select_as_symint.default", &args));
+  chain.push_back(
+      vk::CreateOperatorCallDirect(
+          fbb, 0, "et_vk.select_as_symint.default", &args));
   const std::vector<uint32_t> input_ids = {0};
   const std::vector<uint32_t> output_ids = {0};
   const auto root = vk::CreateVkGraphDirect(
@@ -2108,23 +2199,25 @@ void finish_inline_constant_graph(
   for (int i = 0; i < tensor_count; i++) {
     const bool is_cache = mark_as_kv_cache && i >= 3;
     const bool is_constant = !mark_as_kv_cache || is_cache;
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::VkTensor,
-        vk::CreateVkTensorDirect(
+    values.push_back(
+        vk::CreateVkValue(
             fbb,
-            vk::VkDataType::FLOAT32,
-            &dims,
-            is_constant ? (is_cache ? i - 3 : 0) : -1,
-            is_constant ? -1 : i)
-            .Union()));
+            vk::GraphTypes::VkTensor,
+            vk::CreateVkTensorDirect(
+                fbb,
+                vk::VkDataType::FLOAT32,
+                &dims,
+                is_constant ? (is_cache ? i - 3 : 0) : -1,
+                is_constant ? -1 : i)
+                .Union()));
   }
 
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
   if (mark_as_kv_cache) {
     const std::vector<int32_t> args = {0, 1, 2, 3, 4};
-    chain.push_back(vk::CreateOperatorCallDirect(
-        fbb, 0, "sdpa_with_kv_cache.default", &args));
+    chain.push_back(
+        vk::CreateOperatorCallDirect(
+            fbb, 0, "sdpa_with_kv_cache.default", &args));
   }
   std::vector<::flatbuffers::Offset<vk::VkBytes>> constants;
   constants.push_back(
@@ -2605,39 +2698,45 @@ static bool test_slice_double_start_case(double start_d, int out_len) {
   std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(out_len)};
 
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &in_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/0)
-          .Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &in_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/0)
+              .Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
   // The value under test: `start` serialized as a Double, not an Int.
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::Double,
-      vk::CreateDouble(fbb, /*double_val=*/start_d).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::Int,
-      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &out_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/1)
-          .Union()));
+          vk::GraphTypes::Double,
+          vk::CreateDouble(fbb, /*double_val=*/start_d).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::Int,
+          vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &out_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/1)
+              .Union()));
 
   std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
@@ -2705,38 +2804,44 @@ static bool test_slice_double_start_rejects(double bad_start) {
   std::vector<uint32_t> out_dims = {1u, static_cast<uint32_t>(kInLen)};
 
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &in_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/0)
-          .Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::Double,
-      vk::CreateDouble(fbb, /*double_val=*/bad_start).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::Int,
-      vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &in_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/0)
+              .Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &out_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/1)
-          .Union()));
+          vk::GraphTypes::Double,
+          vk::CreateDouble(fbb, /*double_val=*/bad_start).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::Int,
+          vk::CreateInt(fbb, /*int_val=*/kInLen).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, /*int_val=*/1).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &out_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/1)
+              .Union()));
 
   std::vector<int32_t> args = {0, 1, 2, 3, 4, 5};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
@@ -2789,41 +2894,46 @@ static void finish_select_scalar_graph(
   std::vector<uint32_t> out_dims = {out_len};
 
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &in_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/0)
-          .Union()));
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &in_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/0)
+              .Union()));
   if (symint_dim) {
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::SymInt,
-        vk::CreateSymInt(fbb, /*value=*/0).Union()));
+    values.push_back(
+        vk::CreateVkValue(
+            fbb,
+            vk::GraphTypes::SymInt,
+            vk::CreateSymInt(fbb, /*value=*/0).Union()));
   } else {
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::Double,
-        vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
+    values.push_back(
+        vk::CreateVkValue(
+            fbb,
+            vk::GraphTypes::Double,
+            vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
   }
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::Double,
-      vk::CreateDouble(fbb, /*double_val=*/index).Union()));
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::VkTensor,
-      vk::CreateVkTensorDirect(
+  values.push_back(
+      vk::CreateVkValue(
           fbb,
-          vk::VkDataType::FLOAT32,
-          &out_dims,
-          /*constant_id=*/-1,
-          /*mem_obj_id=*/1)
-          .Union()));
+          vk::GraphTypes::Double,
+          vk::CreateDouble(fbb, /*double_val=*/index).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::VkTensor,
+          vk::CreateVkTensorDirect(
+              fbb,
+              vk::VkDataType::FLOAT32,
+              &out_dims,
+              /*constant_id=*/-1,
+              /*mem_obj_id=*/1)
+              .Union()));
 
   std::vector<int32_t> args = {0, 1, 2, 3};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
@@ -2969,35 +3079,39 @@ void expect_rope_hf_resize_numel_overflow(uint32_t q_heads, uint32_t k_heads) {
   const std::vector<uint32_t> freqs_dims = {2u, 2u};
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
   const auto add_tensor = [&](const std::vector<uint32_t>& dims, int mem_id) {
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::VkTensor,
-        vk::CreateVkTensorDirect(
+    values.push_back(
+        vk::CreateVkValue(
             fbb,
-            vk::VkDataType::FLOAT32,
-            &dims,
-            /*constant_id=*/-1,
-            /*mem_obj_id=*/mem_id)
-            .Union()));
+            vk::GraphTypes::VkTensor,
+            vk::CreateVkTensorDirect(
+                fbb,
+                vk::VkDataType::FLOAT32,
+                &dims,
+                /*constant_id=*/-1,
+                /*mem_obj_id=*/mem_id)
+                .Union()));
   };
   add_tensor(q_dims, 0);
   add_tensor(k_dims, 1);
   add_tensor(freqs_dims, 2);
   add_tensor(freqs_dims, 3);
-  values.push_back(vk::CreateVkValue(
-      fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
   add_tensor(q_dims, 4);
   add_tensor(k_dims, 5);
   const std::vector<int32_t> output_items = {5, 6};
-  values.push_back(vk::CreateVkValue(
-      fbb,
-      vk::GraphTypes::ValueList,
-      vk::CreateValueListDirect(fbb, &output_items).Union()));
+  values.push_back(
+      vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::ValueList,
+          vk::CreateValueListDirect(fbb, &output_items).Union()));
 
   const std::vector<int32_t> args = {0, 1, 2, 3, 4, 7};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
-  chain.push_back(vk::CreateOperatorCallDirect(
-      fbb, 0, "et_vk.apply_rotary_emb_hf.default", &args));
+  chain.push_back(
+      vk::CreateOperatorCallDirect(
+          fbb, 0, "et_vk.apply_rotary_emb_hf.default", &args));
   const std::vector<uint32_t> input_ids = {0, 1, 2, 3};
   const std::vector<uint32_t> output_ids = {5, 6};
   const auto root = vk::CreateVkGraphDirect(
@@ -3319,6 +3433,42 @@ TEST(WebGPUNative, Qwen3SdpaFixtureContract) {
       std::vector<int>({16, 8, 128, 17, 64, 31}));
   EXPECT_TRUE(prefill->kv_f16 && boundary->kv_f16);
 
+  struct ExpectedFdContext {
+    const char* name;
+    int context;
+  };
+  constexpr ExpectedFdContext kExpectedFdContexts[] = {
+      {"qwen3_fd_splits_1", 1},
+      {"qwen3_fd_splits_2", 129},
+      {"qwen3_fd_splits_63", 7937},
+      {"qwen3_fd_splits_64", 8192},
+      {"qwen3_fd_splits_65", 8193},
+      {"qwen3_fd_splits_70", 8960},
+      {"qwen3_fd_splits_128", 16385},
+  };
+  for (const auto& expected : kExpectedFdContexts) {
+    const auto cfg = find_config(expected.name);
+    ASSERT_NE(cfg, std::end(kSdpaConfigs));
+    EXPECT_EQ(
+        std::vector<int>(
+            {cfg->hq, cfg->hkv, cfg->d, cfg->s, cfg->cmax, cfg->input_pos}),
+        std::vector<int>(
+            {16, 8, 128, 1, expected.context, expected.context - 1}));
+    EXPECT_TRUE(cfg->kv_f16);
+  }
+  const auto fallback = find_config("qwen3_fd_fallback_fp32");
+  ASSERT_NE(fallback, std::end(kSdpaConfigs));
+  EXPECT_EQ(
+      std::vector<int>(
+          {fallback->hq,
+           fallback->hkv,
+           fallback->d,
+           fallback->s,
+           fallback->cmax,
+           fallback->input_pos}),
+      std::vector<int>({16, 8, 128, 1, 8192, 8191}));
+  EXPECT_FALSE(fallback->kv_f16);
+
   const auto replay = std::find_if(
       std::begin(kSdpaSequences),
       std::end(kSdpaSequences),
@@ -3363,7 +3513,7 @@ TEST(WebGPUNative, Qwen3SdpaRoutes) {
   // the partial final workgroup's row mask is covered. Unsupported Q32 devices
   // intentionally fall back to the already-qualified Q16 route.
   for (const auto& cfg : kSdpaConfigs) {
-    if (std::strncmp(cfg.name, "qwen3_", 6) != 0) {
+    if (std::strncmp(cfg.name, "qwen3_", 6) != 0 || cfg.s == 1) {
       continue;
     }
     const std::string base = g_sdpa_dir + "sdpa_" + cfg.name;

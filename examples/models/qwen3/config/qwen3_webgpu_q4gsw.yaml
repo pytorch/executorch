@@ -1,0 +1,32 @@
+# Qwen3-0.6B group-symmetric 4-bit weight export for the WebGPU delegate.
+#
+# The WebGPU delegate consumes the Vulkan-partitioner program and registers
+# under the Vulkan backend id, so `backend.vulkan` is how a WebGPU-consumable
+# program is selected today; `LlmConfig.BackendConfig` exposes no `webgpu`
+# field. `webgpu_artifact_manifest.py` enforces the WebGPU contract on the
+# resulting artifact (single VulkanBackend delegate, no portable operators).
+
+base:
+  model_class: "qwen3_0_6b"
+  params: "examples/models/qwen3/config/0_6b_config.json"
+  metadata: '{"get_bos_id": 151644, "get_eos_ids":[151645]}'
+
+model:
+  use_kv_cache: true
+  use_sdpa_with_kv_cache: true
+  enable_dynamic_shape: true
+  dtype_override: fp32
+
+quantization:
+  qmode: "4w"
+  group_size: 64
+  embedding_quantize: "4,64"
+
+export:
+  output_name: qwen3_0_6b_webgpu_q4gsw.pte
+  max_seq_length: 512
+  max_context_length: 8960
+
+backend:
+  vulkan:
+    enabled: true

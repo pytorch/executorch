@@ -119,7 +119,9 @@
 #include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_k16_causal_bound_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_qwen3_k16_causal_bound_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa/streaming_attention_qwen3_q32_k16_causal_bound_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_gqa2_f16_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_gqa2_f16_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/select/select_wgsl.h>
@@ -155,7 +157,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 137> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 139> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -962,11 +964,25 @@ constexpr std::array<WebGPUShaderInfo, 137> kShaderRegistry = {{
         kSdpaFdReduceWorkgroupSizeZ,
     },
     {
+        "sdpa_fd_reduce_gqa2_f16",
+        kSdpaFdReduceGqa2F16WGSL,
+        kSdpaFdReduceGqa2F16WorkgroupSizeX,
+        kSdpaFdReduceGqa2F16WorkgroupSizeY,
+        kSdpaFdReduceGqa2F16WorkgroupSizeZ,
+    },
+    {
         "sdpa_fd_split",
         kSdpaFdSplitWGSL,
         kSdpaFdSplitWorkgroupSizeX,
         kSdpaFdSplitWorkgroupSizeY,
         kSdpaFdSplitWorkgroupSizeZ,
+    },
+    {
+        "sdpa_fd_split_gqa2_f16",
+        kSdpaFdSplitGqa2F16WGSL,
+        kSdpaFdSplitGqa2F16WorkgroupSizeX,
+        kSdpaFdSplitGqa2F16WorkgroupSizeY,
+        kSdpaFdSplitGqa2F16WorkgroupSizeZ,
     },
     {
         "sdpa_fd_split_half",
