@@ -569,7 +569,9 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.package": True,
             "aot_inductor.package_constants_in_so": False,
             # Store weight constants on disk in a binary blob
-            "aot_inductor.package_constants_on_disk_format": "binary_blob",
+            "aot_inductor.package_constants_on_disk_format": cls._weights_format(
+                compile_specs
+            ),
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # Use TRITON for GEMM (General Matrix Multiply) operations tuning only to avoid using operators in libtorch
@@ -578,8 +580,6 @@ class CudaBackend(AotiBackend, BackendDetails):
             "max_autotune_conv_backends": "TRITON",
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
-        if cls._is_low_memory_mode(compile_specs):
-            options["aot_inductor.package_constants_on_disk_format"] = "pickle_weights"
 
         try:
             import torch
@@ -718,6 +718,14 @@ class CudaBackend(AotiBackend, BackendDetails):
             if spec.key == "low_memory_mode":
                 return spec.value.decode("utf-8").upper() == "ON"
         return False
+
+    @classmethod
+    def _weights_format(cls, compile_specs: List[CompileSpec]) -> str:
+        return (
+            "pickle_weights"
+            if cls._is_low_memory_mode(compile_specs)
+            else "binary_blob"
+        )
 
     @classmethod
     def move_program_to_device(
