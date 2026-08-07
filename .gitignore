@@ -37,6 +37,10 @@ tokenizer.json
 *.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
+# Arduino examples ship a model, so build_arduino_library.sh has something to
+# turn into the model.h their sketches include. 1.1 KB for the add models,
+# 53 KB for the keyword spotting DS-CNN.
+!examples/arduino/examples/*/model.pte
 
 # Editor temporaries
 *.idea
