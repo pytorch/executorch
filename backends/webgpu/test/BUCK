@@ -60,3 +60,22 @@ fbcode_target(
         "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_sdpa",
+    srcs = ["ops/test_sdpa.py"],
+    typing = True,
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib_mkl_noomp",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)

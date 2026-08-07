@@ -11,7 +11,9 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_gqa2_f16_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_reduce_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_gqa2_f16_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_half_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_wgsl.h>
 
@@ -27,14 +29,23 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
-// MUST match the .wgsl: MAX_SPLITS and WG_SIZE*MAX_D_PER_LANE.
-constexpr uint32_t kSdpaFdSplitTile = 64; // KV positions per split
-constexpr uint32_t kSdpaFdMaxSplits = 128; // == MAX_SPLITS in both .wgsl files
 // Public head-dim limit (kSdpaFdMaxHeadDim) must equal the kernel's lane-owns-D
 // reach; tie them so a WG_SIZE change can't silently desync the Sdpa.cpp gate.
 static_assert(
     kSdpaFdMaxHeadDim == kSdpaFdSplitWorkgroupSizeX * 2u,
     "kSdpaFdMaxHeadDim must match WG_SIZE * MAX_D_PER_LANE");
+static_assert(
+    kSdpaFdSplitGqa2F16WorkgroupSizeX == kSdpaFdSplitWorkgroupSizeX,
+    "Qwen GQA2 and generic split workgroup widths must match");
+static_assert(
+    kSdpaFdReduceGqa2F16WorkgroupSizeX == kSdpaFdReduceWorkgroupSizeX,
+    "Qwen GQA2 and generic reduce workgroup widths must match");
+static_assert(
+    kSdpaFdMaxHeadDim == kSdpaFdSplitGqa2F16WorkgroupSizeX * 2u,
+    "Qwen GQA2 split must reach D=128");
+static_assert(
+    kSdpaFdMaxSplits == 128u,
+    "MAX_SPLITS must match generic and GQA2 split/reduce shaders");
 
 struct FdSplitParams {
   uint32_t _pad0; // 16B-alignment pad (head index derived from workgroup_id)
@@ -138,7 +149,8 @@ SdpaFdDecodeState make_sdpa_fd_decode_state(
     int64_t D,
     int64_t context_len,
     int64_t g,
-    float scale) {
+    float scale,
+    bool kv_f16) {
   if (Hq <= 0 || Hkv <= 0 || D <= 0 || context_len <= 0 || g <= 0) {
     throw std::runtime_error(
         "WebGPU sdpa FlashDecoding: dimensions must be positive");
@@ -162,17 +174,24 @@ SdpaFdDecodeState make_sdpa_fd_decode_state(
         "WebGPU sdpa FlashDecoding: head dim must be a multiple of 4");
   }
 
-  uint32_t num_splits = static_cast<uint32_t>(
-      (context_len + kSdpaFdSplitTile - 1) / kSdpaFdSplitTile);
-  num_splits = std::min(num_splits, kSdpaFdMaxSplits);
+  const bool qwen_gqa2_f16 = is_qwen_gqa2_f16_fd_route(kv_f16, Hq, Hkv, D, g);
+  const uint32_t num_splits =
+      sdpa_fd_num_splits(static_cast<uint32_t>(context_len), qwen_gqa2_f16);
   const uint32_t split_len =
       static_cast<uint32_t>((context_len + num_splits - 1) / num_splits);
 
-  const uint64_t split_threads = static_cast<uint64_t>(Hq) *
+  const uint32_t split_heads = sdpa_fd_split_head_count(Hq, Hkv, qwen_gqa2_f16);
+  const uint32_t split_workgroup_size = qwen_gqa2_f16
+      ? kSdpaFdSplitGqa2F16WorkgroupSizeX
+      : kSdpaFdSplitWorkgroupSizeX;
+  const uint32_t reduce_workgroup_size = qwen_gqa2_f16
+      ? kSdpaFdReduceGqa2F16WorkgroupSizeX
+      : kSdpaFdReduceWorkgroupSizeX;
+  const uint64_t split_threads = static_cast<uint64_t>(split_heads) *
       static_cast<uint64_t>(num_splits) *
-      static_cast<uint64_t>(kSdpaFdSplitWorkgroupSizeX);
+      static_cast<uint64_t>(split_workgroup_size);
   const uint64_t reduce_threads =
-      static_cast<uint64_t>(Hq) * kSdpaFdReduceWorkgroupSizeX;
+      static_cast<uint64_t>(Hq) * reduce_workgroup_size;
   if (split_threads > UINT32_MAX || reduce_threads > UINT32_MAX) {
     throw std::runtime_error(
         "WebGPU sdpa FlashDecoding: thread count exceeds uint32 max");
@@ -181,12 +200,12 @@ SdpaFdDecodeState make_sdpa_fd_decode_state(
   const uint32_t split_wgc = utils::compute_1d_workgroup_count(
       device,
       static_cast<uint32_t>(split_threads),
-      kSdpaFdSplitWorkgroupSizeX,
+      split_workgroup_size,
       "fd_split");
   const uint32_t reduce_wgc = utils::compute_1d_workgroup_count(
       device,
       static_cast<uint32_t>(reduce_threads),
-      kSdpaFdReduceWorkgroupSizeX,
+      reduce_workgroup_size,
       "fd_reduce");
   return {
       static_cast<uint32_t>(Hq),
@@ -197,6 +216,7 @@ SdpaFdDecodeState make_sdpa_fd_decode_state(
       num_splits,
       split_len,
       scale,
+      qwen_gqa2_f16,
       {split_wgc, 1u},
       {reduce_wgc, 1u}};
 }
@@ -230,7 +250,11 @@ SdpaFdDecodeResources record_sdpa_fd_decode_dispatches(
       {k_cache.buffer, k_cache.nbytes},
       {v_cache.buffer, v_cache.nbytes}};
   const char* split_shader = kSdpaFdSplitWGSL;
-  if (graph.kv_f16()) {
+  const char* split_label = "fd_split";
+  if (state.qwen_gqa2_f16) {
+    split_shader = kSdpaFdSplitGqa2F16WGSL;
+    split_label = "fd_split_gqa2_f16";
+  } else if (graph.kv_f16()) {
     split_shader = kSdpaFdSplitHalfWGSL;
   }
   build_dispatch(
@@ -243,7 +267,7 @@ SdpaFdDecodeResources record_sdpa_fd_decode_dispatches(
       sizeof(sp),
       state.split_grid.x,
       true,
-      "fd_split");
+      split_label);
 
   // Pass 2: reduce (Hq WGs) -> reads part_o, part_ml; writes out.
   FdReduceParams rp = make_reduce_params(state);
@@ -252,9 +276,13 @@ SdpaFdDecodeResources record_sdpa_fd_decode_dispatches(
       {out.buffer, out.nbytes},
       {part_o, po_floats * sizeof(float)},
       {part_ml, pml_floats * sizeof(float)}};
+  const char* reduce_shader =
+      state.qwen_gqa2_f16 ? kSdpaFdReduceGqa2F16WGSL : kSdpaFdReduceWGSL;
+  const char* reduce_label =
+      state.qwen_gqa2_f16 ? "fd_reduce_gqa2_f16" : "fd_reduce";
   build_dispatch(
       graph,
-      kSdpaFdReduceWGSL,
+      reduce_shader,
       reduce_bindings,
       3,
       1,
@@ -262,7 +290,7 @@ SdpaFdDecodeResources record_sdpa_fd_decode_dispatches(
       sizeof(rp),
       state.reduce_grid.x,
       true,
-      "fd_reduce");
+      reduce_label);
 
   return {ub_split, ub_reduce, {dispatch_begin, graph.num_dispatches()}};
 }
