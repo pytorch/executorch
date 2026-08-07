@@ -32,6 +32,40 @@ CONFIGS = {
 }
 
 
+def int32_wrap_input_a(shape):
+    values = torch.tensor(
+        [
+            -(1 << 31),
+            (1 << 31) - 1,
+            0,
+            -1,
+            17,
+            -29,
+            1 << 30,
+            -(1 << 30),
+        ],
+        dtype=torch.int32,
+    )
+    return values[: torch.Size(shape).numel()].reshape(shape)
+
+
+def int32_wrap_input_b(shape):
+    values = torch.tensor(
+        [
+            1,
+            -1,
+            (1 << 31) - 1,
+            -(1 << 31),
+            -31,
+            37,
+            -(1 << 30),
+            1 << 30,
+        ],
+        dtype=torch.int32,
+    )
+    return values[: torch.Size(shape).numel()].reshape(shape)
+
+
 class SubModule(torch.nn.Module):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.sub(a, b)
@@ -94,6 +128,54 @@ class TestSub(unittest.TestCase):
         a, b = _det_inputs((4, 4), (4, 4))
         ref = (a.double() - alpha * b.double()).to(torch.float32)
         torch.testing.assert_close(SubAlphaModule(alpha)(a, b), ref)
+
+    def test_int32_wraps_at_signed_boundaries(self) -> None:
+        a = int32_wrap_input_a((2, 4))
+        b = int32_wrap_input_b((2, 4))
+        expected = torch.tensor(
+            [
+                (1 << 31) - 1,
+                -(1 << 31),
+                -((1 << 31) - 1),
+                (1 << 31) - 1,
+                48,
+                -66,
+                -(1 << 31),
+                -(1 << 31),
+            ],
+            dtype=torch.int32,
+        ).reshape(2, 4)
+        torch.testing.assert_close(SubAlphaModule(1)(a, b), expected, rtol=0, atol=0)
+
+    def test_int32_broadcast_is_exact(self) -> None:
+        a = torch.tensor(
+            [[-(1 << 31), 7, (1 << 31) - 1], [4, -5, 6]],
+            dtype=torch.int32,
+        )
+        b = torch.tensor([[1, -3, (1 << 31) - 1]], dtype=torch.int32)
+        expected = torch.tensor(
+            [[(1 << 31) - 1, 10, 0], [3, -2, -((1 << 31) - 7)]],
+            dtype=torch.int32,
+        )
+        torch.testing.assert_close(SubAlphaModule(1)(a, b), expected, rtol=0, atol=0)
+
+    def test_int32_alpha_wraps_multiply_and_subtract(self) -> None:
+        a = int32_wrap_input_a((2, 4))
+        b = int32_wrap_input_b((2, 4))
+        expected = torch.tensor(
+            [
+                (1 << 31) - 3,
+                -((1 << 31) - 2),
+                -((1 << 31) - 3),
+                (1 << 31) - 1,
+                110,
+                -140,
+                0,
+                0,
+            ],
+            dtype=torch.int32,
+        ).reshape(2, 4)
+        torch.testing.assert_close(SubAlphaModule(3)(a, b), expected, rtol=0, atol=0)
 
 
 def export_sub_model(pte_path: str, golden_path: str, input_path: str) -> None:

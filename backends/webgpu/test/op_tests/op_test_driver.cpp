@@ -135,6 +135,22 @@ class OpCase : public ::testing::Test {
       EXPECT_EQ(mism, -1) << "int8 mismatch at index " << mism
                           << ": out=" << (mism >= 0 ? int(out_p[mism]) : 0)
                           << " golden=" << (mism >= 0 ? int(golden[mism]) : 0);
+    } else if (e_.golden.dtype == "int32") {
+      auto golden = load_int32_bin(e_.golden.path, gn);
+      ASSERT_FALSE(golden.empty())
+          << "missing/short golden: " << e_.golden.path;
+      ASSERT_EQ(out_tensor.scalar_type(), executorch::aten::ScalarType::Int);
+      const int32_t* out_p = out_tensor.const_data_ptr<int32_t>();
+      int mism = -1;
+      for (size_t i = 0; i < gn; i++) {
+        if (out_p[i] != golden[i]) {
+          mism = static_cast<int>(i);
+          break;
+        }
+      }
+      EXPECT_EQ(mism, -1) << "int32 mismatch at index " << mism
+                          << ": out=" << (mism >= 0 ? out_p[mism] : 0)
+                          << " golden=" << (mism >= 0 ? golden[mism] : 0);
     } else if (e_.golden.dtype == "int64") {
       // int64-index ops (argmax/argmin) compare exact: indices are discrete.
       auto golden = load_int64_bin(e_.golden.path, gn);

@@ -447,6 +447,22 @@ validation, and the combined view remains pending
 cross-view GPU execution validation; source-bound bytes alone convey no
 correctness or performance claim.
 
+Generate the MTP replay oracle from the production manifest and the two
+content-verified checkpoint directories. The generator requires the production
+manifest to be the same MTP receipt staged in the combined runtime envelope.
+
+```bash
+PYTHONPATH="$FBSOURCE_ROOT/xplat" python \
+  "$FBSOURCE_ROOT/xplat/executorch/examples/models/gemma4/tests/generate_mtp_spec_oracle.py" \
+  --production-mtp-manifest "$MTP_MANIFEST" \
+  --target-checkpoint /tmp/gemma4-e2b-it \
+  --assistant-checkpoint /tmp/gemma4-e2b-assistant \
+  --combined-runtime-root staged \
+  --authority portable_eager \
+  --contexts 128,511,512,513,514,1024,2048,4096,4097,8192 \
+  --output gemma4-mtp-spec-oracle.json
+```
+
 The browser adapter exports load, reset, prefill, decode, profiling, and
 unload entry points through the `gemma4_spec_browser` CMake target. A reset
 clears controller state and unloads and reloads `k2_round`. Unload destroys

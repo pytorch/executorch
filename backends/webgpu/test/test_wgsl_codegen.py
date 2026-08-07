@@ -249,11 +249,11 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 149)
         self.assertEqual(
             digest.hexdigest(),
-            "8b2879a6ba11b57fd67aa961793ef9ff5142fdefaa7d9dcf41ab26276331f546",
+            "6854cdb9e33cdfe638edebe8ddc083cbf612e0a366870b275cd3b908b92555fc",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "1c26ac3f0671aeec5c648f78c9f2cbeb02b65f79478712a4f4de5c7e75446e8c",
+            "774ec59a0d1f17138b09090ea0bc76645f3d9fdd816fa988c7a4b9329fb77b43",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -1105,6 +1105,10 @@ class WgslTemplateEngineTest(unittest.TestCase):
                 0,
                 "63209ff70422a21fc340d9aadba0945bc259bba89bdf05db018a6507d01c7ae5",
             ),
+            "binary_sub_int32": (
+                0,
+                "134151da070a891e539f6ede5974310c623a9a7d379c90e69f91bec56ddc9b29",
+            ),
             "binary_minimum": (
                 1,
                 "929b7ba85936e3652baea9f4e5e7f049d232c7ae7a74814a536b4c2674897972",
@@ -1142,6 +1146,21 @@ class WgslTemplateEngineTest(unittest.TestCase):
                 entries[name].include,
                 f"runtime/ops/binary_op/{name}_wgsl.h",
             )
+
+        int32_params = variants["binary_sub_int32"]
+        self.assertEqual(int32_params["SCALAR_TYPE"], "i32")
+        self.assertEqual(int32_params["ALPHA_TYPE"], "i32")
+        self.assertEqual(int32_params["ALPHA_DEFAULT"], "1i")
+        self.assertEqual(
+            int32_params["OP_EXPR"],
+            "bitcast<i32>(bitcast<u32>(a) - bitcast<u32>(alpha) * bitcast<u32>(b))",
+        )
+        self.assertFalse(
+            (g.BACKEND_ROOT / "runtime/ops/sub/binary_sub_int32.wgsl").exists()
+        )
+        self.assertFalse(
+            (g.BACKEND_ROOT / "runtime/ops/sub/binary_sub_int32_wgsl.h").exists()
+        )
 
     def test_unary_template_roundtrip_byte_identical(self) -> None:
         unary_dir = g.BACKEND_ROOT / "runtime/ops/unary"
