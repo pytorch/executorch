@@ -117,6 +117,55 @@ _GEMMA_PRODUCTION_DIFF_SUMMARIES: tuple[str, ...] = (
     "[ExecuTorch][WebGPU] Add Gemma 4 plain export and artifact contract",
     "[ExecuTorch][WebGPU] Add plain Gemma 4 source-closure tests",
 )
+MTP_EXPORT_CONTRACT: dict[str, object] = {
+    "assistant_calls_per_round": 2,
+    "assistant_lm_head_bits": 4,
+    "assistant_quantization": "8da4w",
+    "backend": "webgpu",
+    "donor_length": {"min": 2, "max": 8960},
+    "max_input_len": 512,
+    "max_seq_len": 8960,
+    "methods": ["k2_round"],
+    "selection": {
+        "centroid_top_k": 32,
+        "num_centroids": 2048,
+        "raw_token_ordering_shape": [262144],
+        "logical_token_ordering_shape": [2048, 128],
+        "selected_token_count": 4096,
+        "tokens_per_centroid": 128,
+    },
+    "speculation_k": 2,
+    "target_quantization": "8da4w+emb4",
+}
+MTP_SOURCE_CONFIG: dict[str, object] = {
+    "path": "config/e2b_config.json",
+    "sha256": SOURCE_CONFIG_SHA256,
+}
+MTP_ACCEPTED_PROVENANCE: dict[str, object] = {
+    "artifact_status": "accepted_behavior_oracle",
+    "source_closure": "pending_final_source_rebuild",
+}
+MTP_PENDING_SOURCE_PROVENANCE: dict[str, object] = {
+    "artifact_status": "generated_from_current_source",
+    "source_closure": "pending_final_source_receipt",
+}
+MTP_SOURCE_VERIFIED_PROVENANCE: dict[str, object] = {
+    "artifact_status": "generated_from_current_source",
+    "source_closure": "source_verified",
+}
+MTP_PENDING_SOURCE_CLOSURES: frozenset[str] = frozenset(
+    {
+        str(MTP_ACCEPTED_PROVENANCE["source_closure"]),
+        str(MTP_PENDING_SOURCE_PROVENANCE["source_closure"]),
+    }
+)
+MTP_EDGE_CENSUS: dict[str, int] = {
+    "custom_scatter": 2,
+    "gemma_sdpa": 43,
+    "generic_scatter": 0,
+    "legacy_custom_sdpa": 0,
+    "topk": 2,
+}
 
 
 def _source_config_path() -> Path:
@@ -873,6 +922,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     validate = subparsers.add_parser("validate")
     validate.add_argument("--root", type=Path, required=True)
     validate.add_argument("--manifest", type=Path, required=True)
+    validate_mtp = subparsers.add_parser("validate-mtp")
+    validate_mtp.add_argument("--root", type=Path, required=True)
+    validate_mtp.add_argument("--manifest", type=Path, required=True)
     create_source = subparsers.add_parser("create-source-manifest")
     create_source.add_argument("--fbsource-root", type=Path, required=True)
     create_source.add_argument("--oss-root", type=Path, required=True)
