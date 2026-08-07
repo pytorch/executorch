@@ -29,6 +29,9 @@ test_data_suite = {
     "randn_pos": lambda: torch.randn(10) + 10,
     "randn_neg": lambda: torch.randn(10) - 10,
     "ramp": lambda: torch.arange(-16, 16, 0.2),
+    # Exact .5 ties: torch.round is round-half-to-even, so these must round to
+    # the nearest even integer (0.5 -> 0, 2.5 -> 2, -1.5 -> -2).
+    "halfway_ties": lambda: torch.arange(-8, 8, 0.5),
 }
 
 test_data_suite_bf16 = {
