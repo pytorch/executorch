@@ -66,14 +66,14 @@ class TestGenOpList(unittest.TestCase):
         temp_file.close()
 
     @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
-    def test_gen_op_list_with_valid_root_ops(
+    def test_gen_op_list_with_valid_select_ops_list(
         self,
         mock_dump_yaml: NonCallableMock,
     ) -> None:
         output_path = os.path.join(self.temp_dir.name, "output.yaml")
         args = [
             f"--output_path={output_path}",
-            "--root_ops=aten::add,aten::mul",
+            "--select_ops_list=aten::add,aten::mul",
         ]
         gen_oplist.main(args)
         mock_dump_yaml.assert_called_once_with(
@@ -85,7 +85,7 @@ class TestGenOpList(unittest.TestCase):
         )
 
     @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
-    def test_gen_op_list_with_root_ops_and_dtypes(
+    def test_gen_op_list_with_ops_dict_and_dtypes(
         self,
         mock_dump_yaml: NonCallableMock,
     ) -> None:
@@ -124,7 +124,7 @@ class TestGenOpList(unittest.TestCase):
         test_path = os.path.join(self.temp_dir.name, "test.yaml")
         args = [
             f"--output_path={output_path}",
-            "--root_ops=aten::relu.out",
+            "--select_ops_list=aten::relu.out",
             f"--ops_schema_yaml_path={self.ops_schema_yaml}",
         ]
         gen_oplist.main(args)
@@ -148,7 +148,7 @@ class TestGenOpList(unittest.TestCase):
         output_path = os.path.join(self.temp_dir.name, "output.yaml")
         args = [
             f"--output_path={output_path}",
-            "--root_ops=aten::add,aten::mul",
+            "--select_ops_list=aten::add,aten::mul",
             "--include_all_operators",
         ]
         gen_oplist.main(args)
@@ -173,7 +173,7 @@ class TestGenOpList(unittest.TestCase):
         self.assertEqual(len(ops), 2)
         self.assertSetEqual(set(ops.keys()), set(op_list))
 
-    def test_gen_oplist_generates_from_root_ops(
+    def test_gen_oplist_generates_from_select_ops_list(
         self,
     ) -> None:
         filename = os.path.join(self.temp_dir.name, "selected_operators.yaml")
@@ -181,7 +181,7 @@ class TestGenOpList(unittest.TestCase):
         comma = ","
         args = [
             f"--output_path={filename}",
-            f"--root_ops={comma.join(op_list)}",
+            f"--select_ops_list={comma.join(op_list)}",
         ]
         gen_oplist.main(args)
         self.assertTrue(os.path.isfile(filename))
