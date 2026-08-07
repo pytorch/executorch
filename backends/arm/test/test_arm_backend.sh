@@ -417,6 +417,55 @@ test_smaller_stories_llama_vkml() {
     _test_smaller_stories_llama vgf
 }
 
+_get_required_text_section_bytes() {
+    local elf=$1
+    local size_tool="arm-none-eabi-size"
+    local value
+
+    command -v "${size_tool}" >/dev/null \
+        || { echo "Could not find ${size_tool} on PATH" >&2; exit 1; }
+
+    value=$("${size_tool}" -A --radix=10 "${elf}" |
+        awk '$1 == ".text" { print $2; found=1 } END { exit !found }')
+    if [[ -z "${value}" ]]; then
+        echo "Could not read .text size from ${elf}" >&2
+        exit 1
+    fi
+
+    echo "${value}"
+}
+
+_test_runner_size_optimization() {
+    local output_root="arm_test/test_run"
+    local default_output="${output_root}/runner_size_default"
+    local optimized_output="${output_root}/runner_size_optimized"
+    local min_text_saving_bytes=$((50 * 1024))
+
+    echo "${TEST_SUITE_NAME}: Compare runner text size with EXECUTORCH_OPTIMIZE_SIZE"
+    backends/arm/scripts/build_executor_runner.sh \
+        --pte=semihosting \
+        --output="${default_output}"
+
+        backends/arm/scripts/build_executor_runner.sh \
+        --pte=semihosting \
+        --output="${optimized_output}" \
+        --extra_build_flags="-DEXECUTORCH_OPTIMIZE_SIZE=ON"
+
+    local default_text
+    local optimized_text
+    local text_saving
+    default_text=$(_get_required_text_section_bytes "${default_output}/arm_executor_runner")
+    optimized_text=$(_get_required_text_section_bytes "${optimized_output}/arm_executor_runner")
+    text_saving=$((default_text - optimized_text))
+
+    echo "${TEST_SUITE_NAME}: default .text=${default_text} bytes"
+    echo "${TEST_SUITE_NAME}: optimized .text=${optimized_text} bytes"
+    if (( text_saving < min_text_saving_bytes )); then
+        echo "Expected EXECUTORCH_OPTIMIZE_SIZE to reduce .text by at least ${min_text_saving_bytes} bytes, got default=${default_text} optimized=${optimized_text} saving=${text_saving}" >&2
+        exit 1
+    fi
+}
+
 test_memory_allocation() {
     echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
 
@@ -430,6 +479,8 @@ test_memory_allocation() {
             --require "method_allocator_loaded" "<= 1024 B" \
             --require "method_allocator_input" "<= 16 B" \
             --require "Total DRAM used" "<= 0.06 KiB"
+
+    _test_runner_size_optimization
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
