@@ -124,6 +124,14 @@ typedef struct {
   void (*wait)(uint32_t channel);
 } NeutronConfig;
 
+/// This structure contains a semantic version of the Neutron SDK in the form
+/// major.minor.patch.
+typedef struct {
+  uint32_t major;
+  uint32_t minor;
+  uint32_t patch;
+} NeutronSdkVersion;
+
 /* Invalid handle, returned by neutronModelPrepare() if an error occurred. */
 #define NEUTRON_INVALID_HANDLE NULL
 
@@ -223,6 +231,9 @@ NeutronError neutronSetConfig(NeutronConfig* config);
 
 /// - Used to get NeutronContext size.
 size_t neutronGetModelContextSize();
+
+/// - Used to get Neutron SDK version.
+NeutronSdkVersion neutronGetSdkVersion();
 
 /// - Allocates size bytes and returns a pointer to the allocated memory.
 ///   The returned pointer address will be a multiple of the alignment.

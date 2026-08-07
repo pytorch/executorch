@@ -7,7 +7,16 @@
 
 from typing import Any, Union
 
+from executorch.backends.nxp.tests.profiling_utils import (
+    get_neutron_converter_version,
+    get_neutron_driver_version,
+    get_neutron_kernel_kinds,
+)
+
 from executorch.devtools import Inspector
+
+# Global mapping of Neutron kernel IDs to names used by the delegate metadata parser.
+kernel_kinds = {}
 
 
 def parse_delegate_metadata(
@@ -26,7 +35,13 @@ def parse_delegate_metadata(
             if function_code == 0:
                 metadata_list.append("Profiling dump")
             else:
-                metadata_list.append("Neutron kernel " + str(function_code))
+                metadata_list.append(
+                    kernel_kinds.get(
+                        function_code, "Neutron kernel " + str(function_code)
+                    )
+                )
+        elif len(metadata_bytes) == 2:
+            metadata_list.append("Profiling dump")
         else:
             metadata_list.append("Invalid metadata size")
     return metadata_list
@@ -37,6 +52,12 @@ if __name__ == "__main__":
     try:
         etrecord_path = "etrecord/etrecord.bin"
         etdump_path = "etdump/trace.etdump"
+
+        driver_version = get_neutron_driver_version(etdump_path)
+        converter_version = get_neutron_converter_version()
+        if driver_version and driver_version == converter_version:
+            kernel_kinds = get_neutron_kernel_kinds()
+
         inspector = Inspector(
             etdump_path=etdump_path,
             etrecord=etrecord_path,
