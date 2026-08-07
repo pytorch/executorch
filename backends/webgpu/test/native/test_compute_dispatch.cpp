@@ -120,7 +120,7 @@ void build_q4_route_graph(WebGPUGraph& graph, Q4RouteSignal signal) {
   if (signal == Q4RouteSignal::ExplicitOption) {
     config.record_q4gsw_decode_route = true;
   }
-  graph.build(fbb.GetBufferPointer(), nullptr, nullptr, config);
+  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr, config);
 }
 
 std::vector<const WebGPUDispatch*> q4_dispatches(WebGPUGraph& graph) {
@@ -407,7 +407,7 @@ void build_resize_test_graph(WebGPUGraph& graph) {
   vk::FinishVkGraphBuffer(fbb, root);
 
   graph.set_device(g_device);
-  graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
 }
 
 WebGPUComputeDispatchDescriptor make_dynamic_test_descriptor(
@@ -707,7 +707,7 @@ void expect_invalid_rope_graph(const InvalidRopeGraphCase& test_case) {
   WebGPUGraph graph;
   std::string error;
   try {
-    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
   } catch (const std::exception& exception) {
     error = exception.what();
   }
@@ -801,7 +801,7 @@ TEST(WebGPUExecution, RejectsPlanOutputCountMismatch) {
   WebGPUGraph graph;
   WebGPUExecutionPlan plan;
   plan.copy_outputs = {true};
-  std::vector<std::pair<void*, size_t>> outputs;
+  std::vector<OutputData> outputs;
 
   EXPECT_THROW(graph.execute(plan), std::runtime_error);
   EXPECT_THROW(graph.copy_outputs(outputs, plan), std::runtime_error);

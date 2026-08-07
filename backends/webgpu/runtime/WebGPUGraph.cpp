@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/serialization/schema_generated.h>
 #include <executorch/runtime/core/named_data_map.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
@@ -33,6 +34,19 @@ namespace executorch::backends::webgpu {
 // header
 
 namespace {
+
+const uint8_t* checked_inline_constant(
+    const uint8_t* data,
+    size_t data_size,
+    uint64_t offset,
+    size_t required_size,
+    const char* error_message) {
+  if (data == nullptr || offset > data_size ||
+      required_size > data_size - static_cast<size_t>(offset)) {
+    throw std::runtime_error(error_message);
+  }
+  return data + static_cast<size_t>(offset);
+}
 
 class ScopedBindGroupLayout final {
  public:
@@ -713,6 +727,7 @@ WebGPUGraph::~WebGPUGraph() {
 void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
+    size_t constant_data_size,
     const executorch::runtime::NamedDataMap* named_data_map,
     WebGPUGraphConfig config) {
   if (!device_) {
@@ -733,6 +748,7 @@ void WebGPUGraph::build(
 
   // .pte byte sources for prepack-time constant materialization (build-only).
   constant_data_ = constant_data;
+  constant_data_size_ = constant_data_size;
   named_data_map_ = named_data_map;
 
   // f16 KV cache (runtime opt-in): store K/V caches as f16 iff the opt-in is
@@ -817,10 +833,26 @@ void WebGPUGraph::build(
         continue;
       }
       for (unsigned j = 0; j < a->size(); j++) {
-        if (kv_cache_ids_.count(static_cast<int>(a->Get(j))) != 0) {
+        const int id = static_cast<int>(a->Get(j));
+        if (kv_cache_ids_.count(id) != 0) {
           throw std::runtime_error(
               "WebGPU f16 KV: cache tensor consumed by non-sdpa op '" + nm +
               "' would misread the f16 buffer");
+        }
+        const auto* value = values ? values->Get(id) : nullptr;
+        if (value && value->value_type() == vkgraph::GraphTypes::ValueList) {
+          const auto* items = value->value_as_ValueList()->items();
+          if (!items) {
+            continue;
+          }
+          for (unsigned k = 0; k < items->size(); k++) {
+            if (kv_cache_ids_.count(static_cast<int>(items->Get(k))) != 0) {
+              throw std::runtime_error(
+                  "WebGPU f16 KV: cache tensor consumed through a ValueList "
+                  "by non-sdpa op '" +
+                  nm + "' would misread the f16 buffer");
+            }
+          }
         }
       }
     }
@@ -843,11 +875,20 @@ void WebGPUGraph::build(
         size_t numel = 1;
         if (dims) {
           for (unsigned j = 0; j < dims->size(); j++) {
-            tensor.dims.push_back(static_cast<int64_t>(dims->Get(j)));
-            numel *= dims->Get(j);
+            const uint32_t dim = dims->Get(j);
+            tensor.dims.push_back(static_cast<int64_t>(dim));
+            if (dim != 0 && numel > std::numeric_limits<size_t>::max() / dim) {
+              throw std::runtime_error(
+                  "WebGPU: tensor element count overflows");
+            }
+            numel *= dim;
           }
         }
         tensor.elem_size = vk_datatype_size(vk_tensor->datatype());
+        if (tensor.elem_size != 0 &&
+            numel > std::numeric_limits<size_t>::max() / tensor.elem_size) {
+          throw std::runtime_error("WebGPU: tensor byte size overflows");
+        }
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
         tensor.is_int8 = vk_tensor->datatype() == vkgraph::VkDataType::INT8;
         tensor.nbytes = numel * tensor.elem_size;
@@ -860,6 +901,11 @@ void WebGPUGraph::build(
         // zero-initializes freshly-created buffers, so no explicit clear is
         // needed. Inert unless kv_f16_ (runtime opt-in) is set.
         if (kv_f16_ && kv_cache_ids_.count(i) != 0) {
+          if (tensor.is_int || tensor.elem_size != sizeof(float) ||
+              tensor.nbytes != numel * sizeof(float)) {
+            throw std::runtime_error(
+                "WebGPU f16 KV: serialized cache tensor must be fp32");
+          }
           tensor.elem_size = 2;
           tensor.nbytes = numel * 2;
           tensor.cur_nbytes = tensor.nbytes;
@@ -870,6 +916,63 @@ void WebGPUGraph::build(
               WGPUBufferUsage_CopySrc;
           buf_desc.mappedAtCreation = false;
           tensor.buffer = wgpuDeviceCreateBuffer(device_, &buf_desc);
+
+          // Mutable caches normally start empty. If the serialized graph owns
+          // an initialized cache constant, preserve it while changing storage
+          // representation instead of silently replacing it with zeros.
+          const int cache_constant_id = vk_tensor->constant_id();
+          if (cache_constant_id >= 0) {
+            const auto* constants = graph->constants();
+            if (!constants ||
+                cache_constant_id >= static_cast<int>(constants->size())) {
+              throw std::runtime_error(
+                  "WebGPU f16 KV: cache constant id is out of range");
+            }
+            const auto* bytes = constants->Get(cache_constant_id);
+            auto write_fp16_cache = [&](const uint8_t* src) {
+              std::vector<executorch::runtime::etensor::Half> converted(numel);
+              for (size_t e = 0; e < numel; e++) {
+                float value = 0.0f;
+                std::memcpy(&value, src + e * sizeof(float), sizeof(float));
+                converted[e] = executorch::runtime::etensor::Half(value);
+              }
+              wgpuQueueWriteBuffer(
+                  queue_,
+                  tensor.buffer,
+                  0,
+                  converted.data(),
+                  converted.size() * sizeof(converted[0]));
+            };
+            if (bytes->offset() != UINT64_MAX) {
+              write_fp16_cache(checked_inline_constant(
+                  constant_data_,
+                  constant_data_size_,
+                  bytes->offset(),
+                  numel * sizeof(float),
+                  "WebGPU f16 KV: inline cache constant exceeds constant "
+                  "data"));
+            } else if (
+                bytes->named_key() != nullptr && named_data_map_ != nullptr) {
+              const std::string key = bytes->named_key()->str();
+              auto data = named_data_map_->get_data(key.c_str());
+              if (!data.ok()) {
+                throw std::runtime_error(
+                    "WebGPU f16 KV: named cache constant '" + key +
+                    "' not found");
+              }
+              if (data->size() < numel * sizeof(float)) {
+                data->Free();
+                throw std::runtime_error(
+                    "WebGPU f16 KV: named cache constant '" + key +
+                    "' is undersized");
+              }
+              write_fp16_cache(static_cast<const uint8_t*>(data->data()));
+              data->Free();
+            } else {
+              throw std::runtime_error(
+                  "WebGPU f16 KV: cache constant has no readable source");
+            }
+          }
           break;
         }
 
@@ -1190,6 +1293,7 @@ void WebGPUGraph::build(
   // The .pte bytes are freed right after build() returns (WebGPUBackend
   // processed->Free()), so clear the build-only source pointers.
   constant_data_ = nullptr;
+  constant_data_size_ = 0;
   named_data_map_ = nullptr;
 }
 
@@ -1201,15 +1305,18 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
         std::to_string(const_value_id));
   }
   const ConstantSource& cs = it->second;
-  if (cs.nbytes == 0) {
-    return;
-  }
   if (cs.inline_offset != UINT64_MAX) {
-    if (constant_data_ == nullptr) {
-      throw std::runtime_error("WebGPU: inline constant data is null");
+    const uint8_t* data = checked_inline_constant(
+        constant_data_,
+        constant_data_size_,
+        cs.inline_offset,
+        cs.nbytes,
+        "WebGPU: inline constant exceeds constant data");
+    if (cs.nbytes != 0) {
+      wgpuQueueWriteBuffer(queue_, dst, 0, data, cs.nbytes);
     }
-    wgpuQueueWriteBuffer(
-        queue_, dst, 0, constant_data_ + cs.inline_offset, cs.nbytes);
+  } else if (cs.nbytes == 0) {
+    return;
   } else if (!cs.named_key.empty() && named_data_map_ != nullptr) {
     auto buf = named_data_map_->get_data(cs.named_key.c_str());
     if (!buf.ok()) {
@@ -1304,6 +1411,11 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
     // Upload only the live (cur) bytes, not the max allocation; cur_nbytes ==
     // nbytes on a static graph, so this is byte-identical there.
     const size_t live_nbytes = tensor.cur_nbytes;
+    const bool buffer_is_fp16 = !tensor.is_int && tensor.elem_size == 2;
+    if (buffer_is_fp16 && !in.host_is_fp32) {
+      throw std::runtime_error(
+          "WebGPU: fp16 device input requires an fp32 host tensor");
+    }
 
     // Fast path: host and GPU element types match byte-for-byte.
     if (in.nbytes == live_nbytes) {
@@ -1326,6 +1438,21 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
         }
 #endif
         narrowed[e] = static_cast<int32_t>(src[e]);
+      }
+      wgpuQueueWriteBuffer(
+          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
+      continue;
+    }
+
+    // Require an explicit fp32 host dtype, not merely "not int64": inferring
+    // the narrow from the 2:1 byte ratio alone would silently reinterpret a
+    // same-sized non-fp32 host buffer (e.g. a stale int32) as fp32.
+    if (in.host_is_fp32 && buffer_is_fp16 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / sizeof(uint16_t);
+      const float* src = static_cast<const float*>(in.data);
+      std::vector<executorch::runtime::etensor::Half> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+        narrowed[e] = executorch::runtime::etensor::Half(src[e]);
       }
       wgpuQueueWriteBuffer(
           queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
@@ -1366,6 +1493,8 @@ constexpr uint32_t kRouteGenericFallback = 1u << 8;
 constexpr uint32_t kRouteFlashDecoding = 1u << 10;
 constexpr uint32_t kRouteK16CausalBound = 1u << 11;
 constexpr uint32_t kRouteBicolSubgroup = 1u << 12;
+constexpr uint32_t kRouteQwen3Q16K16 = 1u << 13;
+constexpr uint32_t kRouteQwen3Q32K16 = 1u << 14;
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
 // Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
@@ -1382,7 +1511,13 @@ bool should_timestamp_query() {
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 void WebGPUGraph::record_active_route(const std::string& kernel_name) {
   uint32_t bits = 0;
-  if (kernel_name == "sdpa_streaming_attention_k16_causal_bound") {
+  if (kernel_name == "sdpa_streaming_attention_qwen3_q32_k16_causal_bound") {
+    bits = kRoutePrefill | kRouteK16CausalBound | kRouteQwen3Q32K16;
+  } else if (kernel_name == "sdpa_streaming_attention_qwen3_k16_causal_bound") {
+    bits = kRoutePrefill | kRouteK16CausalBound | kRouteQwen3Q16K16;
+  } else if (
+      kernel_name.rfind("sdpa_streaming_attention_", 0) == 0 &&
+      kernel_name.find("k16_causal_bound") != std::string::npos) {
     bits = kRoutePrefill | kRouteK16CausalBound;
   } else if (kernel_name == "sdpa_streaming_attention_k16") {
     bits = kRoutePrefill | kRouteK16;
@@ -1665,28 +1800,59 @@ void buffer_map_callback(
 } // namespace
 
 void WebGPUGraph::copy_outputs(
-    std::vector<std::pair<void*, size_t>>& outputs,
+    std::vector<OutputData>& outputs,
     const WebGPUExecutionPlan& plan) {
   if (plan.copy_outputs.size() != output_copies_.size()) {
     throw std::runtime_error("WebGPU: execution plan output count mismatch");
   }
   const size_t count = std::min(outputs.size(), output_staging_buffers_.size());
 
+  // Reject all dtype/size mismatches before issuing an asynchronous map.
   for (size_t i = 0; i < count; i++) {
-    if (!plan.copy_outputs[i] || outputs[i].second == 0) {
+    if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
       continue;
     }
-    const size_t map_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+    const auto& tensor = tensors_[output_ids_[i]];
+    const size_t map_nbytes = tensor.cur_nbytes;
     if (map_nbytes == 0) {
       continue;
     }
-    const size_t dst_nbytes = outputs[i].second;
-    const bool widen_int32 = dst_nbytes == 2 * map_nbytes &&
-        tensors_[output_ids_[i]].is_int &&
-        tensors_[output_ids_[i]].elem_size == 4;
-    if (dst_nbytes != map_nbytes && !widen_int32) {
+    const size_t dst_nbytes = outputs[i].nbytes;
+    const bool is_double_width =
+        dst_nbytes % 2 == 0 && dst_nbytes / 2 == map_nbytes;
+    const bool widen_fp16 =
+        is_double_width && !tensor.is_int && tensor.elem_size == 2;
+    const bool widen_int32 =
+        is_double_width && tensor.is_int && tensor.elem_size == 4;
+    const bool buffer_is_fp16 = !tensor.is_int && tensor.elem_size == 2;
+    if (buffer_is_fp16 && !outputs[i].host_is_fp32) {
+      throw std::runtime_error(
+          "WebGPU: fp16 device output requires an fp32 host tensor");
+    }
+    if (outputs[i].host_is_fp32 && buffer_is_fp16 && !widen_fp16) {
+      throw std::runtime_error("WebGPU: fp16 output buffer size mismatch");
+    }
+    if (dst_nbytes != map_nbytes && !widen_fp16 && !widen_int32) {
       throw std::runtime_error("WebGPU: output buffer size mismatch");
     }
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    if (!plan.copy_outputs[i] || outputs[i].nbytes == 0) {
+      continue;
+    }
+    const auto& tensor = tensors_[output_ids_[i]];
+    const size_t map_nbytes = tensor.cur_nbytes;
+    if (map_nbytes == 0) {
+      continue;
+    }
+    const size_t dst_nbytes = outputs[i].nbytes;
+    const bool is_double_width =
+        dst_nbytes % 2 == 0 && dst_nbytes / 2 == map_nbytes;
+    const bool widen_fp16 =
+        is_double_width && !tensor.is_int && tensor.elem_size == 2;
+    const bool widen_int32 =
+        is_double_width && tensor.is_int && tensor.elem_size == 4;
 
     const auto cb_data = std::make_shared<MapCallbackData>();
     WGPUBufferMapCallbackInfo cb_info = {};
@@ -1717,16 +1883,24 @@ void WebGPUGraph::copy_outputs(
       wgpuBufferUnmap(output_staging_buffers_[i]);
       throw std::runtime_error("WebGPU mapped output range is null");
     }
-    if (!widen_int32) {
-      std::memcpy(outputs[i].first, mapped, map_nbytes);
-    } else {
+    if (widen_fp16) {
+      const auto* src =
+          static_cast<const executorch::runtime::etensor::Half*>(mapped);
+      auto* dst = static_cast<float*>(outputs[i].data);
+      const size_t n = map_nbytes / sizeof(*src);
+      for (size_t k = 0; k < n; k++) {
+        dst[k] = static_cast<float>(src[k]);
+      }
+    } else if (widen_int32) {
       // int64 host output backed by an int32 GPU buffer: widen (sign-extend).
       const int32_t* src = static_cast<const int32_t*>(mapped);
-      int64_t* dst = static_cast<int64_t*>(outputs[i].first);
+      int64_t* dst = static_cast<int64_t*>(outputs[i].data);
       const size_t n = map_nbytes / sizeof(int32_t);
       for (size_t k = 0; k < n; k++) {
         dst[k] = static_cast<int64_t>(src[k]);
       }
+    } else {
+      std::memcpy(outputs[i].data, mapped, map_nbytes);
     }
     wgpuBufferUnmap(output_staging_buffers_[i]);
   }
