@@ -38,10 +38,10 @@ from executorch.backends.webgpu.test.ops.test_argmax import (
 )
 from executorch.backends.webgpu.test.ops.test_avg_pool2d import AvgPool2dModule
 from executorch.backends.webgpu.test.ops.test_bitwise import (
+    BITWISE_NOT_SHAPES,
     BitwiseAndModule,
     BitwiseNotModule,
     bw_gen_a,
-    bw_gen_b,
 )
 from executorch.backends.webgpu.test.ops.test_cat import (
     CatModule,
@@ -71,14 +71,13 @@ from executorch.backends.webgpu.test.ops.test_linear_qcs4w import (
     make_qcs4w_linear_module,
 )
 from executorch.backends.webgpu.test.ops.test_logical_and import (
-    la_gen_a,
-    la_gen_b,
+    LOGICAL_BINARY_CASES,
+    logical_binary_gen_a,
+    logical_binary_gen_b,
     LogicalAndModule,
 )
 from executorch.backends.webgpu.test.ops.test_logical_or import (
     BitwiseOrModule,
-    lo_gen_a,
-    lo_gen_b,
     LogicalOrModule,
 )
 from executorch.backends.webgpu.test.ops.test_minimum import MinimumModule
@@ -253,7 +252,7 @@ def _rms_norm_suite() -> WebGPUTestSuite:
 
 @register_op_test("mul")
 def _mul_suite() -> WebGPUTestSuite:
-    # Full numeric coverage incl. broadcast (binary_mul.wgsl over a TensorMeta UBO); fp64 golden.
+    # Full binary_op-family numeric coverage, including broadcast.
     return WebGPUTestSuite(
         module_factory=lambda: MulModule(),
         cases=[
@@ -278,12 +277,19 @@ def _fn_config_suite(module_cls, configs) -> WebGPUTestSuite:
 
 @register_op_test("minimum")
 def _minimum_suite() -> WebGPUTestSuite:
-    # Same-shape numeric coverage (flat binary kernel; broadcast stays smoke).
+    # Same-shape and mixed-rank broadcast numeric coverage.
     return WebGPUTestSuite(
         module_factory=lambda: MinimumModule(),
         cases=[
             Case(name="2d", inputs=((M1, M2), (M1, M2))),
             Case(name="3d", inputs=((S, S1, S2), (S, S1, S2))),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-3.0, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 4.0)),
+                ),
+            ),
         ],
     )
 
@@ -334,49 +340,33 @@ def _ge_suite() -> WebGPUTestSuite:
     return _compare_suite("ge")
 
 
-@register_op_test("logical_and")
-def _logical_and_suite() -> WebGPUTestSuite:
-    # out = (a>0) && (b>0): two bool masks derived on-GPU from float inputs via
-    # gt.Tensor (baked zeros), AND'd -> bool. Distinct a/b seeds so the masks
-    # differ (AND ~25% True, a real mix an OR mutant fails); all shapes numel %
-    # 4 == 0 (bool packs 4/word). float32 oracle (byte-exact bool golden).
+def _logical_binary_suite(module_factory) -> WebGPUTestSuite:
+    # Every packed u32 receives all four Boolean pairs in byte order.
     def case(name, shape):
         return Case(
             name=name,
             construct={"shape": shape},
             inputs=(
-                InputSpec(shape=shape, gen=la_gen_a),
-                InputSpec(shape=shape, gen=la_gen_b),
+                InputSpec(shape=shape, gen=logical_binary_gen_a),
+                InputSpec(shape=shape, gen=logical_binary_gen_b),
             ),
         )
 
     return WebGPUTestSuite(
-        module_factory=lambda shape: LogicalAndModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        module_factory=module_factory,
+        cases=[case(name, shape) for name, shape in LOGICAL_BINARY_CASES],
         golden_dtype="float32",
     )
+
+
+@register_op_test("logical_and")
+def _logical_and_suite() -> WebGPUTestSuite:
+    return _logical_binary_suite(lambda shape: LogicalAndModule(shape))
 
 
 @register_op_test("bitwise_and")
 def _bitwise_and_suite() -> WebGPUTestSuite:
-    # bool bitwise AND == logical_and for canonical 0/1 (shares the handler).
-    # Two masks derived on-GPU from float inputs via gt.Tensor (baked zeros),
-    # distinct a/b seeds (AND ~25% True); all shapes numel % 4 == 0.
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=bw_gen_a),
-                InputSpec(shape=shape, gen=bw_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: BitwiseAndModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: BitwiseAndModule(shape))
 
 
 @register_op_test("bitwise_not")
@@ -392,52 +382,22 @@ def _bitwise_not_suite() -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda shape: BitwiseNotModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        cases=[
+            case(name, shape)
+            for name, shape in zip(("2d", "3d", "sq"), BITWISE_NOT_SHAPES)
+        ],
         golden_dtype="float32",
     )
 
 
 @register_op_test("logical_or")
 def _logical_or_suite() -> WebGPUTestSuite:
-    # out = (a>0) || (b>0): two bool masks derived on-GPU from float inputs via
-    # gt.Tensor (baked zeros), OR'd -> bool. Distinct a/b seeds (~50% each,
-    # independent -> OR ~75% True, a real mix an AND mutant fails); all shapes
-    # numel % 4 == 0. float32 oracle (byte-exact bool golden).
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=lo_gen_a),
-                InputSpec(shape=shape, gen=lo_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: LogicalOrModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: LogicalOrModule(shape))
 
 
 @register_op_test("bitwise_or")
 def _bitwise_or_suite() -> WebGPUTestSuite:
-    # bool bitwise OR == logical_or for canonical 0/1 (shares the handler).
-    def case(name, shape):
-        return Case(
-            name=name,
-            construct={"shape": shape},
-            inputs=(
-                InputSpec(shape=shape, gen=lo_gen_a),
-                InputSpec(shape=shape, gen=lo_gen_b),
-            ),
-        )
-
-    return WebGPUTestSuite(
-        module_factory=lambda shape: BitwiseOrModule(shape),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
-        golden_dtype="float32",
-    )
+    return _logical_binary_suite(lambda shape: BitwiseOrModule(shape))
 
 
 @register_op_test("pow")
@@ -458,6 +418,13 @@ def _pow_suite() -> WebGPUTestSuite:
                 inputs=(
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.1, 3.0)),
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-2.0, 3.0)),
+                ),
+            ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(0.1, 3.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(-2.0, 3.0)),
                 ),
             ),
         ],
@@ -490,6 +457,14 @@ def _floor_divide_suite() -> WebGPUTestSuite:
                 inputs=(
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(-8.0, 8.0)),
                     InputSpec(shape=(S, S1, S2), gen=_unary_lin(0.5, 4.0)),
+                ),
+                golden_fn=_floor_div_golden,
+            ),
+            Case(
+                name="broadcast_3d_2d",
+                inputs=(
+                    InputSpec(shape=(2, 3, 8), gen=_unary_lin(-8.0, 8.0)),
+                    InputSpec(shape=(3, 1), gen=_unary_lin(0.5, 4.0)),
                 ),
                 golden_fn=_floor_div_golden,
             ),
