@@ -225,6 +225,12 @@ def _cuda_dependencies() -> List[str]:
     return list(_CUDA_RUNTIME_PACKAGES.get(train, ()))
 
 
+# Directories inside the wheel that hold libraries a shipped library links, relative to the
+# directory holding the linking library. The CUDA delegate lives in executorch/lib/ and the shims
+# library it links is installed under executorch/backends/cuda/, so one hop up and across reaches it.
+_SIBLING_LIBRARY_SEARCH_PATHS = ("$ORIGIN/../backends/cuda",)
+
+
 def _cuda_runtime_search_paths() -> List[str]:
     """Loader paths that reach the CUDA wheels installed beside this one.
 
@@ -755,6 +761,18 @@ class InstallerBuildExt(build_ext):
             os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
 
 
+def _append_relative_search_paths(entries: List[str]) -> None:
+    """Add the relative hops a shipped library needs, skipping any already present.
+
+    Two kinds, both relative so the wheel works wherever the environment lives:
+    the CUDA runtime, which arrives in its own wheel installed beside this one, and a sibling
+    ExecuTorch library that the wheel installs in a different directory from the library linking it.
+    """
+    for search_path in (*_cuda_runtime_search_paths(), *_SIBLING_LIBRARY_SEARCH_PATHS):
+        if search_path not in entries:
+            entries.append(search_path)
+
+
 def _strip_absolute_runtime_paths(library: Path) -> None:
     """Remove unusable runtime search paths from a library the wheel ships.
 
@@ -820,9 +838,7 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
     # resolves the runtime only through the absolute toolkit path the linker recorded,
     # which names the build machine and will not exist for a user who installed from an
     # index. Appended, so a path already present keeps its position.
-    for search_path in _cuda_runtime_search_paths():
-        if search_path not in entries:
-            entries.append(search_path)
+    _append_relative_search_paths(entries)
     rewritten = ":".join(entries)
     if rewritten == original:
         return
