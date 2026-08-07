@@ -124,6 +124,7 @@
 #include <executorch/backends/webgpu/runtime/ops/slice/slice_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/log_softmax_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/softmax/softmax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_bool_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_float_to_int_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/to_copy/to_copy_int_to_float_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/unary/abs_wgsl.h>
@@ -151,7 +152,7 @@
 namespace executorch::backends::webgpu {
 namespace {
 
-constexpr std::array<WebGPUShaderInfo, 133> kShaderRegistry = {{
+constexpr std::array<WebGPUShaderInfo, 134> kShaderRegistry = {{
     {
         "abs",
         kAbsWGSL,
@@ -1033,6 +1034,13 @@ constexpr std::array<WebGPUShaderInfo, 133> kShaderRegistry = {{
         kTanhWorkgroupSizeX,
         kTanhWorkgroupSizeY,
         kTanhWorkgroupSizeZ,
+    },
+    {
+        "to_copy_bool_to_float",
+        kToCopyBoolToFloatWGSL,
+        kToCopyBoolToFloatWorkgroupSizeX,
+        kToCopyBoolToFloatWorkgroupSizeY,
+        kToCopyBoolToFloatWorkgroupSizeZ,
     },
     {
         "to_copy_float_to_int",
