@@ -63,6 +63,43 @@ class HfRotaryEmbeddingPattern(torch.nn.Module):
         return torch.cat((-x2, x1), dim=-1)
 
 
+class HfRotaryEmbeddingSinglePattern(torch.nn.Module):
+    """HuggingFace-style rotate-half RoPE for one BSHD tensor."""
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ) -> torch.Tensor:
+        cos = freqs_cos.unsqueeze(1)
+        sin = freqs_sin.unsqueeze(1)
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return (x * cos) + (torch.cat((-x2, x1), dim=-1) * sin)
+
+
+class HfRotaryEmbeddingFullTablePattern(torch.nn.Module):
+    """Rotate Q and K using full-width, possibly zero-padded tables."""
+
+    def forward(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        cos = freqs_cos.unsqueeze(1)
+        sin = freqs_sin.unsqueeze(1)
+        q1 = xq[..., : xq.shape[-1] // 2]
+        q2 = xq[..., xq.shape[-1] // 2 :]
+        k1 = xk[..., : xk.shape[-1] // 2]
+        k2 = xk[..., xk.shape[-1] // 2 :]
+        q = (xq * cos) + (torch.cat((-q2, q1), dim=-1) * sin)
+        k = (xk * cos) + (torch.cat((-k2, k1), dim=-1) * sin)
+        return q, k
+
+
 @lru_cache(maxsize=2)
 @register_pattern_graph("hf_rope")
 def get_hf_rope_graphs() -> List[torch.fx.GraphModule]:
@@ -114,6 +151,46 @@ def get_hf_rope_graphs() -> List[torch.fx.GraphModule]:
     return graphs
 
 
+@lru_cache(maxsize=1)
+@register_pattern_graph("hf_rope_full_table")
+def get_hf_rope_full_table_graphs() -> List[torch.fx.GraphModule]:
+    xq = torch.randn(1, 1, 4, 32, dtype=torch.float32)
+    xk = torch.randn(1, 1, 2, 32, dtype=torch.float32)
+    freqs_cos = torch.randn(1, 32, dtype=torch.float32)
+    freqs_sin = torch.randn(1, 32, dtype=torch.float32)
+    static_edge = to_edge(
+        export(
+            HfRotaryEmbeddingFullTablePattern(),
+            (xq, xk, freqs_cos, freqs_sin),
+            strict=True,
+        ),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    xq_dynamic = torch.randn(1, 2, 4, 32, dtype=torch.float32)
+    xk_dynamic = torch.randn(1, 2, 2, 32, dtype=torch.float32)
+    freqs_cos_dynamic = torch.randn(2, 32, dtype=torch.float32)
+    freqs_sin_dynamic = torch.randn(2, 32, dtype=torch.float32)
+    seq_dim = torch.export.Dim("hf_rope_full_table_seq", min=1, max=4)
+    dynamic_edge = to_edge(
+        export(
+            HfRotaryEmbeddingFullTablePattern(),
+            (xq_dynamic, xk_dynamic, freqs_cos_dynamic, freqs_sin_dynamic),
+            dynamic_shapes=(
+                {1: seq_dim},
+                {1: seq_dim},
+                {0: seq_dim},
+                {0: seq_dim},
+            ),
+            strict=True,
+        ),
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    return [
+        static_edge.exported_program().graph_module,
+        dynamic_edge.exported_program().graph_module,
+    ]
+
+
 def identify_hf_rotary_emb_io_nodes(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
@@ -134,6 +211,7 @@ def identify_hf_rotary_emb_io_nodes(
     return [xq, xk, freqs_cos, freqs_sin, xq_out, xk_out]
 
 
+@register_pattern_replacement("hf_rope_full_table")
 @register_pattern_replacement("hf_rope")
 def create_hf_rotary_emb_custom_op(
     ep: ExportedProgram,
@@ -152,6 +230,12 @@ def create_hf_rotary_emb_custom_op(
         freqs_cos.op == "call_function"
         and freqs_cos.target == exir_ops.edge.aten.slice_copy.Tensor
     ):
+        if (
+            freqs_sin.op != "call_function"
+            or freqs_sin.target != exir_ops.edge.aten.slice_copy.Tensor
+            or freqs_cos.args[2:] != freqs_sin.args[2:]
+        ):
+            return
         full_freqs_cos = freqs_cos.args[0]
         start_pos = freqs_cos.args[2]
         full_freqs_sin = freqs_sin.args[0]
@@ -186,3 +270,34 @@ def create_hf_rotary_emb_custom_op(
 
     xq_out.replace_all_uses_with(getitem_0)
     xk_out.replace_all_uses_with(getitem_1)
+
+
+def create_hf_rotary_emb_single_custom_op(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: PatternMatch,
+):
+    """Build the single-tensor replacement when a caller explicitly enables it."""
+    if len(match.input_nodes) != 3 or len(match.output_nodes) != 1:
+        return
+
+    x, freqs_cos, freqs_sin = match.input_nodes
+    if (
+        freqs_cos.op != "call_function"
+        or freqs_cos.target != exir_ops.edge.aten.slice_copy.Tensor
+        or freqs_sin.op != "call_function"
+        or freqs_sin.target != exir_ops.edge.aten.slice_copy.Tensor
+        or freqs_cos.args[2:] != freqs_sin.args[2:]
+    ):
+        return
+
+    x_out = match.output_nodes[0]
+    with graph_module.graph.inserting_before(x_out):
+        rotary_emb_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.et_vk.apply_rotary_emb_hf_single.default,
+            args=(x, freqs_cos.args[0], freqs_sin.args[0], freqs_cos.args[2]),
+        )
+    if "val" in x_out.meta:
+        rotary_emb_node.meta["val"] = x_out.meta["val"]
+    x_out.replace_all_uses_with(rotary_emb_node)
