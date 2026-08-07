@@ -47,6 +47,17 @@ list(APPEND WEBGPU_SRCS ${WEBGPU_OP_SRCS})
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
+add_library(webgpu_model_loader runner/webgpu_model_loader.cpp)
+target_include_directories(
+  webgpu_model_loader PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+)
+target_link_libraries(webgpu_model_loader PUBLIC extension_module_static)
+target_compile_options(webgpu_model_loader PRIVATE -fexceptions)
+target_compile_definitions(
+  webgpu_model_loader PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
+)
+set_property(TARGET webgpu_model_loader PROPERTY CXX_STANDARD 17)
+
 # Verify committed *_wgsl.h match their *.wgsl (drift fails the build).
 resolve_python_executable()
 add_custom_target(
@@ -165,8 +176,8 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
       PRIVATE "${EXECUTORCH_ROOT}/third-party/json/single_include"
     )
 
-    # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
-    # + dispatch-grid-math helpers), so it does NOT use the native-test helper.
+    # Device-free util unit test. WebGPUUtils.h needs Dawn declarations, but the
+    # test calls only pure helpers and does not link the Dawn implementation.
     add_executable(
       webgpu_op_test_util_test
       test/op_tests/test_driver_util.cpp test/op_tests/driver_util.cpp
@@ -178,7 +189,13 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
               "${EXECUTORCH_ROOT}/third-party/json/single_include"
     )
     target_link_libraries(
-      webgpu_op_test_util_test PRIVATE GTest::gtest GTest::gtest_main
+      webgpu_op_test_util_test PRIVATE executorch_core GTest::gtest
+                                       GTest::gtest_main
+    )
+    target_include_directories(
+      webgpu_op_test_util_test
+      PRIVATE
+        "$<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>"
     )
     target_compile_options(webgpu_op_test_util_test PRIVATE -fexceptions)
     set_property(TARGET webgpu_op_test_util_test PROPERTY CXX_STANDARD 17)
@@ -235,5 +252,16 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
       webgpu_compute_dispatch_test test/native/test_compute_dispatch.cpp
     )
     target_link_libraries(webgpu_compute_dispatch_test PRIVATE GTest::gtest)
+
+    add_executable(webgpu_model_loader_test test/native/test_model_loader.cpp)
+    target_include_directories(
+      webgpu_model_loader_test PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    )
+    target_link_libraries(
+      webgpu_model_loader_test PRIVATE webgpu_model_loader GTest::gtest
+                                       GTest::gtest_main
+    )
+    target_compile_options(webgpu_model_loader_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_model_loader_test PROPERTY CXX_STANDARD 17)
   endif()
 endif()
