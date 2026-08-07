@@ -9,7 +9,6 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <stdexcept>
@@ -28,10 +27,9 @@ void select_as_symint_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   if (graph.get_value_type(out_id) != WebGPUGraph::ValueType::SymInt) {
     throw std::runtime_error("select_as_symint: output is not a SymInt");
   }
-  const std::vector<int>& inputs = graph.input_ids();
-  if (std::find(inputs.begin(), inputs.end(), x_id) == inputs.end()) {
-    throw std::runtime_error(
-        "select_as_symint: source tensor is not a graph input");
+  if (graph.get_value_type(dim_id) != WebGPUGraph::ValueType::Int ||
+      graph.get_value_type(index_id) != WebGPUGraph::ValueType::Int) {
+    throw std::runtime_error("select_as_symint: dim/index must be static Ints");
   }
   graph.add_symint_source(
       out_id,

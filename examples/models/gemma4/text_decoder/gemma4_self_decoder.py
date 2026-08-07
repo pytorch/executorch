@@ -119,12 +119,15 @@ class Gemma4SelfDecoder(nn.Module):
         per_layer_proj = self.per_layer_projection_norm(per_layer_proj)
 
         # Get per-layer token embeddings
-        per_layer_mask = torch.logical_and(
-            input_ids >= 0, input_ids < self.config.vocab_size_per_layer_input
-        )
-        per_layer_tokens = torch.where(
-            per_layer_mask, input_ids, torch.zeros_like(input_ids)
-        )
+        if self.config.vocab_size == self.config.vocab_size_per_layer_input:
+            per_layer_tokens = input_ids
+        else:
+            per_layer_mask = torch.logical_and(
+                input_ids >= 0, input_ids < self.config.vocab_size_per_layer_input
+            )
+            per_layer_tokens = torch.where(
+                per_layer_mask, input_ids, torch.zeros_like(input_ids)
+            )
         per_layer_embed = (
             self.embed_tokens_per_layer(per_layer_tokens) * self.embed_scale_per_layer
         )

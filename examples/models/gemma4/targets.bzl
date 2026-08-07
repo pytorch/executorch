@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
 
 GEN_KERNEL_BACKEND_DEPS = [
     "//executorch/configurations:optimized_native_cpu_ops",
@@ -14,6 +15,37 @@ def _get_torchao_lowbit_deps():
             "//xplat/pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_executorch",
         ],
     })
+
+def define_webgpu_python_targets():
+    fbcode_target(_kind = runtime.python_library,
+        name = "webgpu_support",
+        srcs = [
+            "webgpu_artifact_manifest.py",
+            "webgpu_partitioner.py",
+        ],
+        _is_external_target = True,
+        base_module = "executorch.examples.models.gemma4",
+        resources = {
+            "config/e2b_config.json": "config/e2b_config.json",
+            "manifests/gemma4_e2b_webgpu.json": "manifests/gemma4_e2b_webgpu.json",
+        },
+        typing = True,
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/vulkan:op_registry",
+            "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+            "//executorch/backends/vulkan/patterns:vulkan_patterns",
+            "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    fbcode_target(_kind = runtime.python_binary,
+        name = "webgpu_artifact_manifest",
+        main_function = "executorch.examples.models.gemma4.webgpu_artifact_manifest.main",
+        deps = [":webgpu_support"],
+    )
 
 def define_common_targets():
     _KERNEL_BACKEND_DEPS = [
@@ -72,4 +104,16 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         compiler_flags = ["-Wno-global-constructors"],
         preprocessor_flags = ["-DET_USE_THREADPOOL"],
+    )
+
+    runtime.cxx_binary(
+        name = "gemma4_plain_wasm",
+        srcs = ["runner/gemma4_plain_wasm.cpp"],
+        compiler_flags = ["-fexceptions"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//executorch/backends/webgpu:webgpu_backend",
+            "//executorch/backends/webgpu:webgpu_model_loader",
+            "//executorch/extension/tensor:tensor",
+        ],
     )
