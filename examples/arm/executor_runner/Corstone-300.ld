@@ -49,6 +49,7 @@ PHDRS
 {
     rom_exec PT_LOAD;
     rom_dram PT_LOAD;
+    rom_model PT_LOAD;
     null     PT_NULL;
 }
 
@@ -208,35 +209,35 @@ SECTIONS
     __data_end__ = .;
   } > DTCM :rom_exec
 
-  .sram.bss :
+#if (ETHOSU_MODEL == 0)
+  .sram.rodata :
   {
     . = ALIGN(16);
-#if (ETHOSU_MODEL == 0)
-  * (network_model_sec)
+    *(network_model_sec)
+  } > SRAM :rom_model
+#else
+  .ddr.rodata :
+  {
+    . = ALIGN(16);
+    *(network_model_sec)
+  } > DDR :rom_model
 #endif
 
+  .sram.bss (NOLOAD) :
+  {
 #if (ETHOSU_ARENA == 0)
     . = ALIGN(32);
     *(.bss.tensor_arena)
 #endif
     . = ALIGN(16);
     *(.bss.ethosu_scratch);
-    *.(output_data_sec)
   } > SRAM :null
 
   .ddr :
   {
-#if (ETHOSU_ARENA == 1)
-    . = ALIGN(32);
-    *(.bss.tensor_arena)
-#endif
-
     . = ALIGN(4);
     *(input_data_sec)
     . = ALIGN(16);
-#if (ETHOSU_MODEL == 1)
-    *(network_model_sec)
-#endif
     * (expected_output_data_sec)
     . = ALIGN(16);
     * (sec_command_stream, sec_weight_data, sec_input_data)
@@ -252,12 +253,15 @@ SECTIONS
     KEEP(*(.asan_shadow))
     __asan_shadow_end = .;
   } > DDR :null
-  .ddr_noload (NOLOAD) :
+
+  .ddr.bss (NOLOAD) :
   {
-    . = ALIGN(16);
-    *(input_data_sec)
-    . = ALIGN(16);
+#if (ETHOSU_ARENA == 1)
+    . = ALIGN(32);
+    *(.bss.tensor_arena)
+#endif
   } > DDR :null
+
   __eddr_data = ALIGN(4);
   .sram.data :
   {
@@ -288,7 +292,7 @@ SECTIONS
     __bss_end__ = .;
   } > DTCM :null
 
-  .heap (COPY) :
+  .heap (NOLOAD) :
   {
     . = ALIGN(8);
     __end__ = .;
@@ -298,7 +302,7 @@ SECTIONS
     __HeapLimit = .;
   } > DTCM :null
 
-  .stack (ORIGIN(DTCM) + LENGTH(DTCM) - __STACK_SIZE) (COPY) :
+  .stack (ORIGIN(DTCM) + LENGTH(DTCM) - __STACK_SIZE) (NOLOAD) :
   {
     . = ALIGN(8);
     __StackLimit = .;
