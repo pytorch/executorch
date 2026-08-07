@@ -15,6 +15,9 @@ fp32 approximation. The native test (test_webgpu_native.cpp) mirrors the same
 CONFIGS table and reconstructs the identical deterministic ramp input bit-for-bit.
 """
 
+import hashlib
+import hmac
+import json
 import os
 import unittest
 from dataclasses import dataclass
@@ -22,8 +25,10 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from executorch.backends.vulkan import VulkanPartitioner
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
+from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
+from executorch.exir.passes import MemoryPlanningPass
 from torchao.quantization.granularity import PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 
@@ -127,6 +132,149 @@ def _export(m: torch.nn.Module, x: torch.Tensor):
     ).to_executorch()
 
 
+OUTPUT_SUPPRESSION_K = 64
+OUTPUT_SUPPRESSION_N = 64
+OUTPUT_SUPPRESSION_GROUP = 32
+
+
+class _DirectFinalQ4(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q4 = _make_quantized_model(
+            OUTPUT_SUPPRESSION_K,
+            OUTPUT_SUPPRESSION_N,
+            OUTPUT_SUPPRESSION_GROUP,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.q4(x)
+
+
+class _Q4ThenAdd(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q4 = _make_quantized_model(
+            OUTPUT_SUPPRESSION_K,
+            OUTPUT_SUPPRESSION_N,
+            OUTPUT_SUPPRESSION_GROUP,
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        q4 = self.q4(x)
+        return q4, q4 + q4
+
+
+class _UnrelatedThenFinalQ4(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q4 = _make_quantized_model(
+            OUTPUT_SUPPRESSION_K,
+            OUTPUT_SUPPRESSION_N,
+            OUTPUT_SUPPRESSION_GROUP,
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        unrelated = x + x
+        return unrelated, self.q4(unrelated)
+
+
+class _DuplicateFinalQ4(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q4 = _make_quantized_model(
+            OUTPUT_SUPPRESSION_K,
+            OUTPUT_SUPPRESSION_N,
+            OUTPUT_SUPPRESSION_GROUP,
+        )
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        q4 = self.q4(x)
+        return q4, q4
+
+
+class _Q4ThenPortableSum(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q4 = _make_quantized_model(
+            OUTPUT_SUPPRESSION_K,
+            OUTPUT_SUPPRESSION_N,
+            OUTPUT_SUPPRESSION_GROUP,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.q4(x).sum()
+
+
+def _output_suppression_cases() -> list[tuple[str, torch.nn.Module]]:
+    return [
+        ("direct_final_q4", _DirectFinalQ4()),
+        ("q4_then_add", _Q4ThenAdd()),
+        ("unrelated_then_final_q4", _UnrelatedThenFinalQ4()),
+    ]
+
+
+def _verify_output_suppression_certificate(
+    certificate: dict[str, object], pte: bytes, method: str = "forward"
+) -> None:
+    if certificate.get("schema") != 1:
+        raise ValueError("invalid output-suppression certificate schema")
+    if certificate.get("method") != method:
+        raise ValueError("output-suppression certificate method mismatch")
+    if certificate.get("delegate_count") != 1:
+        raise ValueError("output suppression requires exactly one delegate")
+    if certificate.get("portable_node_count") != 0:
+        raise ValueError("output suppression rejects portable nodes")
+    outputs = certificate.get("method_output_nodes")
+    if not isinstance(outputs, list) or not outputs:
+        raise ValueError("output-suppression certificate has no method outputs")
+    if len(set(outputs)) != len(outputs):
+        raise ValueError("aliased method outputs cannot be suppressed")
+    actual_hash = hashlib.sha256(pte).hexdigest()
+    expected_hash = certificate.get("pte_sha256")
+    if not isinstance(expected_hash, str) or not hmac.compare_digest(
+        actual_hash, expected_hash
+    ):
+        raise ValueError("output-suppression certificate PTE hash mismatch")
+
+
+def _lower_and_certify(model: torch.nn.Module, x: torch.Tensor):
+    edge = to_edge_transform_and_lower(
+        torch.export.export(model, (x,)), partitioner=[VulkanPartitioner()]
+    )
+    graph = edge.exported_program().graph_module.graph
+    delegates = get_delegates(graph)
+    non_lowered = get_non_lowered_nodes(graph)
+    output_node = next(node for node in graph.nodes if node.op == "output")
+    method_outputs = output_node.args[0]
+    if not isinstance(method_outputs, (tuple, list)):
+        method_outputs = (method_outputs,)
+    if len(delegates) != 1:
+        raise ValueError(f"expected one delegate, got {len(delegates)}")
+    if non_lowered:
+        raise ValueError(f"non-lowered nodes: {non_lowered}")
+    if len({id(output) for output in method_outputs}) != len(method_outputs):
+        raise ValueError("aliased method outputs cannot be suppressed")
+    et = edge.to_executorch(
+        ExecutorchBackendConfig(
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_output=False)
+        )
+    )
+    certificate = {
+        "schema": 1,
+        "method": "forward",
+        "pte_sha256": hashlib.sha256(et.buffer).hexdigest(),
+        "delegate_count": len(delegates),
+        "portable_node_count": len(non_lowered),
+        "method_output_nodes": [output.name for output in method_outputs],
+    }
+    _verify_output_suppression_certificate(certificate, et.buffer)
+    return et, certificate
+
+
+def _lower_fully_delegated(model: torch.nn.Module, x: torch.Tensor):
+    return _lower_and_certify(model, x)[0]
+
+
 class TestQuantizedLinear(unittest.TestCase):
     def test_export_delegates(self) -> None:
         # Each (non-heavy) config must fuse to a VulkanBackend delegate (q4gsw);
@@ -143,6 +291,37 @@ class TestQuantizedLinear(unittest.TestCase):
                     for d in plan.delegates
                 )
                 self.assertTrue(found, f"no VulkanBackend delegate in {cfg.name}")
+
+    def test_output_suppression_models_are_fully_delegated(self) -> None:
+        x = _ramp_input(1, OUTPUT_SUPPRESSION_K)
+        for name, model in _output_suppression_cases():
+            with self.subTest(case=name):
+                et = _lower_fully_delegated(model, x)
+                delegate_ids = [
+                    delegate.id
+                    for plan in et.executorch_program.execution_plan
+                    for delegate in plan.delegates
+                ]
+                self.assertEqual(delegate_ids, ["VulkanBackend"])
+
+    def test_output_suppression_rejects_aliased_method_outputs(self) -> None:
+        x = _ramp_input(1, OUTPUT_SUPPRESSION_K)
+        with self.assertRaisesRegex(ValueError, "aliased method outputs"):
+            _lower_fully_delegated(_DuplicateFinalQ4(), x)
+
+    def test_output_suppression_rejects_portable_continuation(self) -> None:
+        x = _ramp_input(1, OUTPUT_SUPPRESSION_K)
+        with self.assertRaisesRegex(ValueError, "non-lowered nodes"):
+            _lower_fully_delegated(_Q4ThenPortableSum(), x)
+
+    def test_output_suppression_certificate_binds_exact_pte(self) -> None:
+        x = _ramp_input(1, OUTPUT_SUPPRESSION_K)
+        et, certificate = _lower_and_certify(_DirectFinalQ4(), x)
+        _verify_output_suppression_certificate(certificate, et.buffer)
+        with self.assertRaises(ValueError):
+            _verify_output_suppression_certificate(
+                certificate, et.buffer + b"different"
+            )
 
     def test_golden_matches_eager(self) -> None:
         # Dual oracle (mirrors SDPA test_golden_matches_eager_op): the fp64 dequant-
@@ -187,6 +366,38 @@ def export_all_quantized_linear_models(
         pte = os.path.join(out_dir, f"q4gsw_{cfg.name}.pte")
         golden = os.path.join(out_dir, f"q4gsw_{cfg.name}.golden.bin")
         export_quantized_linear_model(cfg, pte, golden)
+
+
+def export_output_suppression_models(out_dir: str) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    x = _ramp_input(1, OUTPUT_SUPPRESSION_K)
+    x.numpy().astype("<f4").tofile(os.path.join(out_dir, "input.bin"))
+
+    for name, model in _output_suppression_cases():
+        et, certificate = _lower_and_certify(model, x)
+        with open(os.path.join(out_dir, f"{name}.pte"), "wb") as f:
+            f.write(et.buffer)
+        with open(
+            os.path.join(out_dir, f"{name}.output_suppression.json"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(certificate, f, sort_keys=True)
+            f.write("\n")
+
+        if name == "direct_final_q4":
+            goldens = (_fp64_golden(model.q4, x),)
+        elif name == "q4_then_add":
+            q4 = _fp64_golden(model.q4, x)
+            goldens = (q4, q4 + q4)
+        else:
+            unrelated = x + x
+            goldens = (
+                unrelated.numpy().astype("<f4"),
+                _fp64_golden(model.q4, unrelated),
+            )
+        for ordinal, golden in enumerate(goldens):
+            golden.tofile(os.path.join(out_dir, f"{name}.output{ordinal}.golden.bin"))
 
 
 if __name__ == "__main__":
