@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Arm Limited and/or its affiliates.
+ * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -31,6 +31,10 @@ using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
+
+// newlib-nano printf does not reliably handle the z length modifier. Values
+// logged by this app use unsigned long with %lu instead of size_t with %zu.
+using printf_size_t = unsigned long;
 
 #include "arm_memory_allocator.h"
 
@@ -95,11 +99,32 @@ unsigned char __attribute__((
     section(".bss.tensor_arena"),
     aligned(16))) temp_allocation_pool[temp_allocation_pool_size];
 
+// cppcheck-suppress unusedFunction
+void et_pal_emit_log_message(
+    ET_UNUSED et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    ET_UNUSED size_t length) {
+  printf_size_t log_line = line;
+  fprintf(
+      stderr,
+      "%c [executorch:%s:%lu %s()] %s\n",
+      level,
+      filename,
+      log_line,
+      function,
+      message);
+}
+
 int main() {
   executorch::runtime::runtime_init();
   ET_LOG(Info, "Runtime initialized");
-  BufferDataLoader loader(model_pte, sizeof(model_pte));
-  ET_LOG(Info, "Size of the model = %d", sizeof(model_pte));
+  printf_size_t model_pte_size = sizeof(model_pte);
+  BufferDataLoader loader(model_pte, model_pte_size);
+  ET_LOG(Info, "Size of the model = %lu", model_pte_size);
   Result<Program> program = Program::load(&loader);
   ET_CHECK_MSG(program.ok(), "Program::load failed: 0x%x", program.error());
 
@@ -121,20 +146,20 @@ int main() {
 
   std::vector<uint8_t*> planned_buffers; // Owns the memory
   std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
-  size_t num_memory_planned_buffers =
+  printf_size_t num_memory_planned_buffers =
       method_meta_result->num_memory_planned_buffers();
-  ET_LOG(Info, "num_memory_planned_buffers = %zu", num_memory_planned_buffers);
-  for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
-    size_t buffer_size =
+  ET_LOG(Info, "num_memory_planned_buffers = %lu", num_memory_planned_buffers);
+  for (printf_size_t id = 0; id < num_memory_planned_buffers; ++id) {
+    printf_size_t buffer_size =
         method_meta_result->memory_planned_buffer_size(id).get();
-    ET_LOG(Info, "Planned memory buffer_size %zu %zu bytes", id, buffer_size);
+    ET_LOG(Info, "Planned memory buffer_size %lu %lu bytes", id, buffer_size);
 
     uint8_t* buffer = reinterpret_cast<uint8_t*>(
         method_allocator.allocate(buffer_size, 16UL));
 
     ET_CHECK_MSG(
         buffer != nullptr,
-        "Could not allocate memory for memory planned buffer size %zu",
+        "Could not allocate memory for memory planned buffer size %lu",
         buffer_size);
     planned_buffers.push_back(buffer);
     planned_spans.push_back({planned_buffers.back(), buffer_size});
@@ -147,8 +172,8 @@ int main() {
 
   Result<Method> method = program->load_method(method_name, &memory_manager);
 
-  size_t num_inputs = method->inputs_size();
-  ET_LOG(Info, "Number of input tensors = %zu", num_inputs);
+  printf_size_t num_inputs = method->inputs_size();
+  ET_LOG(Info, "Number of input tensors = %lu", num_inputs);
   ET_CHECK_MSG(
       num_inputs == 1,
       "DEiT-Tiny has a single input tensor, but the provided model has more input tensors");
@@ -158,13 +183,13 @@ int main() {
   ET_CHECK_MSG(err == Error::Ok, "Get inputs failed");
   Tensor& tensor =
       input_evalues[0].toTensor(); // DEiT-Tiny has a single input tensor.
-  size_t expected_elems = tensor.numel();
+  printf_size_t expected_elems = tensor.numel();
 
-  size_t image_elements = sizeof(image_data) /
+  printf_size_t image_elements = sizeof(image_data) /
       sizeof(image_data[0]); // number of elements of the array in image.h
   ET_CHECK_MSG(
       expected_elems == image_elements,
-      "Input tensor expects %zu elements, but image_data has %zu elements",
+      "Input tensor expects %lu elements, but image_data has %lu elements",
       expected_elems,
       image_elements);
 
@@ -196,7 +221,7 @@ int main() {
       "get_outputs failed 0x%" PRIx32,
       status_outputs);
 
-  std::set<std::pair<float, size_t>> set_confidence_idx;
+  std::set<std::pair<float, printf_size_t>> set_confidence_idx;
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (!outputs[i].isTensor())
       continue;
@@ -208,7 +233,7 @@ int main() {
         // operator). Therefore, we only handle the float32 case in the
         // application logic.
         const float* data = out.const_data_ptr<float>();
-        for (size_t j = 0; j < out.numel(); ++j)
+        for (printf_size_t j = 0; j < out.numel(); ++j)
           set_confidence_idx.insert({data[j], j});
         break;
       }
@@ -218,22 +243,22 @@ int main() {
         break;
     }
   }
-  size_t printed = 0;
-  size_t topK = 5;
-  size_t num_labels = sizeof(labels) / sizeof(labels[0]);
+  printf_size_t printed = 0;
+  printf_size_t topK = 5;
+  printf_size_t num_labels = sizeof(labels) / sizeof(labels[0]);
   ET_LOG(
       Info,
-      "Top %zu classes in descending order(highest probability is at the top)",
+      "Top %lu classes in descending order(highest probability is at the top)",
       topK);
   for (auto it = set_confidence_idx.rbegin();
        it != set_confidence_idx.rend() && printed < topK;
        ++it, ++printed) {
-    size_t class_id = it->second;
+    printf_size_t class_id = it->second;
     const char* class_name =
         (class_id < num_labels) ? labels[class_id] : "unknown";
     ET_LOG(
         Info,
-        "Class %zu ( %s ) with score of %f",
+        "Class %lu ( %s ) with score of %f",
         class_id,
         class_name,
         it->first);

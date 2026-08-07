@@ -210,11 +210,13 @@ class ServingChat:
     def _log_generation_stats(
         session_id: Optional[str], stats: GenStats, finish: str
     ) -> None:
-        logger.info(
+        message = (
             "llm_turn_stats session_id=%s reason=%s prompt_tokens=%d "
             "reused_prompt_tokens=%d prefilled_prompt_tokens=%d "
             "completion_tokens=%d prefill_ms=%.1f prefill_tok_s=%.1f "
-            "decode_ms=%.1f decode_tok_s=%.1f total_ms=%.1f finish=%s",
+            "decode_ms=%.1f decode_tok_s=%.1f total_ms=%.1f finish=%s"
+        )
+        args = (
             session_id or "<scratch>",
             stats.session_reset_reason,
             stats.prompt_tokens,
@@ -228,6 +230,10 @@ class ServingChat:
             stats.total_ms,
             finish,
         )
+        if stats.vision_encoder_ms is not None:
+            message += " vision_encoder_ms=%.1f"
+            args += (stats.vision_encoder_ms,)
+        logger.info(message, *args)
 
     async def _clean(
         self, stream: AsyncIterator[str], stops: list[str], on_stop=None
@@ -266,6 +272,9 @@ class ServingChat:
         return GenerationOptions(
             max_new_tokens=req.resolved_max_tokens(),
             temperature=req.temperature if req.temperature is not None else 0.0,
+            top_p=req.top_p if req.top_p is not None else 1.0,
+            top_k=req.top_k if req.top_k is not None else 0,
+            seed=req.seed if req.seed is not None else 0,
             # Worker stop set, chosen per path in create() (see __init__ for the
             # two sets); the server re-applies it in _clean/_collect_until_stop.
             stop=stops,
@@ -347,6 +356,29 @@ class ServingChat:
                 "invalid_request_error",
                 "invalid_value",
             )
+        if req.top_p is not None and (
+            not math.isfinite(req.top_p) or req.top_p <= 0.0 or req.top_p > 1.0
+        ):
+            raise APIError(
+                400,
+                f"top_p must be between 0 (exclusive) and 1 (got {req.top_p}).",
+                "invalid_request_error",
+                "invalid_value",
+            )
+        if req.top_k is not None and not (0 <= req.top_k <= 2**31 - 1):
+            raise APIError(
+                400,
+                f"top_k must be between 0 and {2**31 - 1} (got {req.top_k}).",
+                "invalid_request_error",
+                "invalid_value",
+            )
+        if req.seed is not None and not (0 < req.seed <= 2**63 - 1):
+            raise APIError(
+                400,
+                f"seed must be between 1 and {2**63 - 1} (got {req.seed}).",
+                "invalid_request_error",
+                "invalid_value",
+            )
         # max_tokens / max_completion_tokens, if given, must be positive integers
         # (OpenAI rejects 0 and negatives; our -1 sentinel means "unset/auto").
         for field_name in ("max_tokens", "max_completion_tokens"):
@@ -362,20 +394,17 @@ class ServingChat:
     @staticmethod
     def _reject_unsupported_params(req: ChatCompletionRequest) -> None:
         """Reject params we don't honor rather than silently ignoring them (a
-        client relying on e.g. top_p/seed/logprobs would otherwise get wrong
-        behavior). Only the no-op/default value of each passes: top_p exactly
-        1.0; penalties 0; response_format type "text"; tool_choice none/auto/
-        unset; parallel_tool_calls true (false can't be guaranteed without
+        client relying on e.g. penalties/logprobs would otherwise get wrong
+        behavior). Only the no-op/default value of each passes: penalties 0;
+        response_format type "text"; tool_choice none/auto/unset;
+        parallel_tool_calls true (false can't be guaranteed without
         constraining); logprobs are not returned at all."""
         rf = req.response_format
         flags = [
             (req.n != 1, "n>1"),
-            (req.top_p is not None and req.top_p != 1.0, "top_p"),
-            (req.seed is not None, "seed"),
             (req.reasoning_effort is not None, "reasoning_effort"),
             (bool(req.frequency_penalty), "frequency_penalty"),
             (bool(req.presence_penalty), "presence_penalty"),
-            (req.top_k is not None, "top_k"),
             (bool(req.logit_bias), "logit_bias"),
             (
                 bool(rf) and rf.get("type", "text") != "text",
@@ -394,8 +423,8 @@ class ServingChat:
             raise APIError(
                 400,
                 f"Unsupported parameter(s): {', '.join(unsupported)}. This server honors "
-                "temperature, max_tokens/max_completion_tokens, stop, and tools for the "
-                "configured tool-call format.",
+                "temperature, top_p, top_k, seed, max_tokens/max_completion_tokens, "
+                "stop, and tools for the configured tool-call format.",
                 "invalid_request_error",
                 "unsupported_parameter",
             )
