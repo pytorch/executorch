@@ -318,6 +318,7 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
 
     # 2e) Fused SDPA with a DYNAMIC seq-len S (prefill, input_pos=0).
     _export_dynamic_sdpa(out_dir)
+    _export_dynamic_k16_sdpa_cases(out_dir)
     _export_combined_routes(out_dir)
     _export_dynamic_qkv_routes(out_dir)
     _export_dynamic_sdpa_wide(out_dir)
@@ -771,6 +772,17 @@ SD_D = 16
 SD_CMAX = 64
 SD_MAXS = 64
 
+K16_HQ = 32
+K16_HKV = 8
+K16_D = 64
+K16_CMAX = 525
+K16_MAXS = 512
+K16_INPUT_POS = 13
+K16_PRIME_POS = 1
+K16_PRIME_S = K16_INPUT_POS - K16_PRIME_POS
+K16_POS_CONTROL = K16_INPUT_POS
+K16_LIVE_S = (K16_MAXS, 508, 128, 127, 16, 1)
+
 
 def _export_dynamic_sdpa(out_dir: str) -> None:
     from executorch.backends.webgpu.test.ops.test_sdpa import (
@@ -808,6 +820,191 @@ def _export_dynamic_sdpa(out_dir: str) -> None:
                 os.path.join(out_dir, f"sdpa_dyn.S{s}.{name}.bin")
             )
         print(f"  golden sdpa_dyn S={s} (golden shape {tuple(g.shape)})")
+
+
+def _write_f32_tensors(base, tensors) -> None:
+    for name, tensor in tensors:
+        tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
+
+
+def _export_dynamic_k16_sdpa_case(
+    out_dir: str,
+    prefix: str,
+    hq: int,
+    hkv: int,
+    live_s,
+    d: int = K16_D,
+    scale: float | None = None,
+    cache_hkv: int | None = None,
+    expect_runtime_reject: bool = False,
+) -> None:
+    from executorch.backends.webgpu.test.ops.test_sdpa import (
+        _det_inputs,
+        _golden,
+        SdpaConfig,
+    )
+
+    def cfg(s: int) -> "SdpaConfig":
+        return SdpaConfig(
+            prefix,
+            hq,
+            hkv,
+            d,
+            s,
+            K16_CMAX,
+            K16_INPUT_POS,
+        )
+
+    q, k, v, kc, vc = _det_inputs(cfg(K16_MAXS))
+    if cache_hkv is not None:
+        kc = torch.zeros(1, K16_CMAX, cache_hkv, d)
+        vc = torch.zeros_like(kc)
+    kc.zero_()
+    vc.zero_()
+
+    class K16SdpaModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.register_buffer("k_cache", kc)
+            self.register_buffer("v_cache", vc)
+
+        def forward(self, q, k, v, pos_control):
+            input_pos = pos_control.shape[1]
+            return torch.ops.llama.sdpa_with_kv_cache(
+                q,
+                k,
+                v,
+                self.k_cache,
+                self.v_cache,
+                input_pos,
+                q.shape[1],
+                None,
+                0.0,
+                True,
+                scale,
+            )
+
+    model = K16SdpaModule().eval()
+    inputs = (q, k, v, torch.zeros(1, K16_POS_CONTROL))
+    s_dim = torch.export.Dim(f"{prefix}_s", min=1, max=K16_MAXS)
+    pos_dim = torch.export.Dim(f"{prefix}_pos_control", min=1, max=K16_POS_CONTROL)
+    ep = torch.export.export(
+        model,
+        inputs,
+        dynamic_shapes=({1: s_dim}, {1: s_dim}, {1: s_dim}, {1: pos_dim}),
+    )
+    sym_sizes = [
+        node for node in ep.graph.nodes if node.target == torch.ops.aten.sym_size.int
+    ]
+    if len(sym_sizes) < 2:
+        raise RuntimeError(f"{prefix}: dynamic K16 fixture lost S/position symbols")
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+    print(f"Exported {prefix}.pte")
+    if expect_runtime_reject:
+        return
+
+    def reference(live_cfg, q, k, v, kc, vc):
+        if scale is None:
+            return _golden(live_cfg, q, k, v, kc, vc)
+        context_len = live_cfg.s + live_cfg.input_pos
+        g = hq // hkv
+        k_full = torch.cat((kc[0, : live_cfg.input_pos].double(), k[0].double()), dim=0)
+        v_full = torch.cat((vc[0, : live_cfg.input_pos].double(), v[0].double()), dim=0)
+        q_heads = q[0].double().transpose(0, 1)
+        k_heads = k_full.repeat_interleave(g, dim=1).transpose(0, 1)
+        v_heads = v_full.repeat_interleave(g, dim=1).transpose(0, 1)
+        mask = torch.full((live_cfg.s, context_len), float("-inf"), dtype=torch.float64)
+        for token in range(live_cfg.s):
+            mask[token, : live_cfg.input_pos + token + 1] = 0.0
+        golden = torch.nn.functional.scaled_dot_product_attention(
+            q_heads, k_heads, v_heads, attn_mask=mask, scale=scale
+        )
+        return golden.transpose(0, 1).reshape(1, live_cfg.s, hq, d).float().contiguous()
+
+    prime_cfg = SdpaConfig(prefix, hq, hkv, d, K16_PRIME_S, K16_CMAX, K16_PRIME_POS)
+    prime_q, prime_k, prime_v, prime_kc, prime_vc = _det_inputs(prime_cfg)
+    prime_kc.zero_()
+    prime_vc.zero_()
+    prime_golden = reference(prime_cfg, prime_q, prime_k, prime_v, prime_kc, prime_vc)
+    prime_base = os.path.join(out_dir, f"{prefix}.prime.")
+    _write_f32_tensors(
+        prime_base,
+        (
+            ("q", prime_q),
+            ("k", prime_k),
+            ("v", prime_v),
+            ("control", torch.zeros(1, 1)),
+            ("golden", prime_golden),
+        ),
+    )
+
+    for s in live_s:
+        live_cfg = cfg(s)
+        q, k, v, kc, vc = _det_inputs(live_cfg)
+        kc.zero_()
+        vc.zero_()
+        kc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_k[0]
+        vc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_v[0]
+        golden = reference(live_cfg, q, k, v, kc, vc)
+        base = os.path.join(out_dir, f"{prefix}.S{s}.")
+        _write_f32_tensors(
+            base,
+            (
+                ("q", q),
+                ("k", k),
+                ("v", v),
+                ("control", torch.zeros(1, K16_POS_CONTROL)),
+                ("kc", kc),
+                ("vc", vc),
+                ("golden", golden),
+            ),
+        )
+        print(f"  golden {prefix} S={s}")
+
+
+def _export_dynamic_k16_sdpa_cases(out_dir: str) -> None:
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_llama",
+        K16_HQ,
+        K16_HKV,
+        K16_LIVE_S,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_wrong_geometry",
+        14,
+        2,
+        (128, 1),
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_wrong_d",
+        K16_HQ,
+        K16_HKV,
+        (128, 1),
+        d=128,
+        scale=0.125,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_wrong_scale",
+        K16_HQ,
+        K16_HKV,
+        (128, 1),
+        scale=0.25,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_bad_cache_heads",
+        K16_HQ,
+        K16_HKV,
+        (),
+        cache_hkv=K16_HKV - 1,
+        expect_runtime_reject=True,
+    )
 
 
 def _export_combined_routes(out_dir: str) -> None:
@@ -1249,10 +1446,32 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_qkv_bk64_bias.pte",
                 "dyn_qkv_bk64_wrong_width.pte",
                 "dyn_qkv_bk64_different_input.pte",
+                "sdpa_k16_bad_cache_heads.pte",
             ]
             for name in expected:
                 with self.subTest(artifact=name):
                     self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
+            for prefix, live_s in (
+                ("sdpa_k16_llama", K16_LIVE_S),
+                ("sdpa_k16_wrong_geometry", (128, 1)),
+                ("sdpa_k16_wrong_d", (128, 1)),
+                ("sdpa_k16_wrong_scale", (128, 1)),
+            ):
+                with self.subTest(artifact=f"{prefix}.pte"):
+                    self.assertGreater(
+                        os.path.getsize(os.path.join(d, f"{prefix}.pte")), 0
+                    )
+                for kind in ("q", "k", "v", "control", "golden"):
+                    name = f"{prefix}.prime.{kind}.bin"
+                    with self.subTest(artifact=name):
+                        self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
+                for s in live_s:
+                    for kind in ("q", "k", "v", "control", "golden"):
+                        name = f"{prefix}.S{s}.{kind}.bin"
+                        with self.subTest(artifact=name):
+                            self.assertGreater(
+                                os.path.getsize(os.path.join(d, name)), 0
+                            )
 
 
 if __name__ == "__main__":
