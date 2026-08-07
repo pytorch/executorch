@@ -64,3 +64,12 @@ class TestNativeCIContract(unittest.TestCase):
             "${OUTPUT_SUPPRESSION_DIR}/input.bin",
         ):
             self.assertIn(f'require_file "{fixture}"', script)
+
+    def test_requires_dynamic_rope_fixture(self) -> None:
+        script = (
+            pathlib.Path(__file__).parents[1] / "scripts/test_webgpu_native_ci.sh"
+        ).read_text()
+
+        self.assertIn("export_rope_hf_dynamic('${ROPE_HF_DIR}')", script)
+        self.assertIn('WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}"', script)
+        self.assertIn('require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"', script)

@@ -178,6 +178,28 @@ class WgslCodegenTest(unittest.TestCase):
                     got, want, f"{header.name} stale; run scripts/gen_wgsl_headers.py"
                 )
 
+    def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
+        shader = (
+            g.BACKEND_ROOT / "runtime" / "ops" / "rope" / "rotary_embedding_hf.wgsl"
+        ).read_text()
+        self.assertIn("@builtin(num_workgroups) num_workgroups", shader)
+        self.assertIn(
+            "gid.x + gid.y * (num_workgroups.x * wg_size)",
+            shader,
+        )
+        self.assertIn("let freqs_b_idx = freqs_a_idx + half_dim;", shader)
+        self.assertIn("t_out[b_idx] = x_b * c_b + x_a * si_b;", shader)
+
+        wg_size = 2
+        workgroups_x = 2
+        indices = [
+            group_x * wg_size + lane + group_y * (workgroups_x * wg_size)
+            for group_y in range(2)
+            for group_x in range(workgroups_x)
+            for lane in range(wg_size)
+        ]
+        self.assertEqual(indices, list(range(8)))
+
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
         self.assertEqual(
