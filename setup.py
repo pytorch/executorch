@@ -189,6 +189,7 @@ def _base_dependencies() -> List[str]:
         "ruamel.yaml",
         "sympy",
         "tabulate",
+        "torch>=2.13.0a0",
         "torchao>=0.18.0",
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
