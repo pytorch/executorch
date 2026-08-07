@@ -10,9 +10,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import operator
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -27,9 +25,8 @@ from executorch.examples.models.gemma4.export_assistant_webgpu_artifacts import 
     validate_assistant_checkpoint,
 )
 from executorch.examples.models.gemma4.webgpu_artifact_manifest import (
-    create_mtp_manifest,
+    finalize_mtp_export,
     validate_export_identity,
-    validate_mtp_manifest,
     WEBGPU_EXTERNAL_CONSTANTS_MAX_DATA_BYTES,
 )
 from executorch.examples.models.gemma4.webgpu_partitioner import (
@@ -295,9 +292,7 @@ def export_speculative(  # noqa: C901
 
     with tempfile.TemporaryDirectory(
         prefix=f".{output_path.stem}.", dir=output_path.parent.parent
-    ) as staging_directory, tempfile.TemporaryDirectory(
-        prefix=f".{receipt_path.stem}.", dir=receipt_path.parent
-    ) as receipt_staging_directory:
+    ) as staging_directory:
         staging = Path(staging_directory)
         staged_pte = staging / output_path.name
         with staged_pte.open("xb") as output:
@@ -313,61 +308,22 @@ def export_speculative(  # noqa: C901
         if staged_pte.stat().st_size == 0:
             raise ValueError("K=2 export produced an empty PTE")
 
-        role_paths: dict[str, Path] = {"pte": staged_pte}
-        staged_source: Path | None = None
-        if source_receipt_path is not None:
-            if source_receipt_path.is_symlink() or not source_receipt_path.is_file():
-                raise ValueError("Gemma 4 MTP source receipt must be a regular file")
-            staged_source = staging / source_receipt_path.name
-            if staged_source.exists() or staged_source.is_symlink():
-                raise ValueError(
-                    "Gemma 4 MTP source receipt basename collides with an artifact"
-                )
-            destination = output_path.parent / staged_source.name
-            if destination.exists() or destination.is_symlink():
-                raise ValueError(f"refusing to overwrite existing artifact: {destination}")
-            shutil.copyfile(source_receipt_path, staged_source)
-            role_paths["source"] = staged_source
-        receipt = create_mtp_manifest(staging, role_paths, staged_tensor_paths)
-        receipt["evidence"] = {
+        evidence = {
             "assistant_checkpoint": assistant_checkpoint_evidence,
             "k2_abi": k2_abi_evidence,
             "lowering": lowering_evidence,
             "qat_selection": qat_selection_evidence,
             "target_checkpoint": target_checkpoint_evidence,
         }
-        validate_mtp_manifest(staging, receipt)
-        staged_receipt = Path(receipt_staging_directory) / receipt_path.name
-        staged_receipt.write_text(
-            json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        return finalize_mtp_export(
+            staging,
+            output_path,
+            receipt_path,
+            staged_pte,
+            staged_tensor_paths,
+            source_receipt_path,
+            evidence,
         )
-
-        publications = [
-            (path, output_path.parent / path.name) for path in staged_tensor_paths
-        ]
-        if staged_source is not None:
-            publications.append(
-                (staged_source, output_path.parent / staged_source.name)
-            )
-        publications.append((staged_pte, output_path))
-        published: list[Path] = []
-        try:
-            for staged, destination in publications:
-                staged.replace(destination)
-                published.append(destination)
-            validate_mtp_manifest(output_path.parent, receipt)
-            staged_receipt.replace(receipt_path)
-            published.append(receipt_path)
-            final_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            if not isinstance(final_receipt, dict):
-                raise ValueError("Gemma 4 MTP receipt must be a JSON object")
-            validate_mtp_manifest(output_path.parent, final_receipt)
-        except (OSError, ValueError):
-            for destination in reversed(published):
-                destination.unlink(missing_ok=True)
-            raise
-    return receipt_path
 
 
 def main() -> int:
