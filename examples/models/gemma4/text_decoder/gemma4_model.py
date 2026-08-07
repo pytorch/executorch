@@ -153,7 +153,9 @@ class Gemma4Model:
             return (input_ids, inputs_embeds)
 
     def get_dynamic_shapes(
-        self, with_audio_embeds: bool = False
+        self,
+        with_audio_embeds: bool = False,
+        max_input_len: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Get dynamic shape specifications for export."""
         if not self.config.enable_dynamic_shape:
@@ -161,7 +163,16 @@ class Gemma4Model:
 
         from torch.export import Dim
 
-        seq_len = Dim("seq_len", min=1, max=self.config.max_seq_len - 1)
+        input_limit = (
+            self.config.max_seq_len - 1
+            if max_input_len is None
+            else max_input_len
+        )
+        if input_limit < 2 or input_limit >= self.config.max_seq_len:
+            raise ValueError(
+                "max_input_len must be at least 2 and less than max_seq_len"
+            )
+        seq_len = Dim("seq_len", min=1, max=input_limit)
 
         if self.config.use_kv_cache:
             if with_audio_embeds:

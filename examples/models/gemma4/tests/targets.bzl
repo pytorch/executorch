@@ -13,3 +13,18 @@ def define_common_targets(is_fbcode = False):
             "fbsource//third-party/pypi/transformers:transformers",
         ],
     )
+
+    fbcode_target(_kind = runtime.python_test,
+        name = "test_webgpu_rewrite_pass",
+        srcs = ["test_webgpu_rewrite_pass.py"],
+        preload_deps = [
+            "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+            "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/vulkan:custom_ops_lib",
+            "//executorch/examples/models/gemma4:webgpu_support",
+            "//executorch/exir:lib",
+        ],
+    )
