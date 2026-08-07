@@ -94,8 +94,10 @@ CONFIGS = [
 ]
 
 
-def _make_quantized_model(k: int, n: int, group_size: int) -> torch.nn.Module:
-    torch.manual_seed(0)  # load-bearing: fixes the weights the golden derives from
+def _make_quantized_model(
+    k: int, n: int, group_size: int, seed: int = 0
+) -> torch.nn.Module:
+    torch.manual_seed(seed)  # load-bearing: fixes the weights used by the golden
     m = torch.nn.Linear(k, n, bias=False).eval()
     quantize_(
         m,
