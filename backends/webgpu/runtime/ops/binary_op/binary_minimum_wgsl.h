@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from binary_op.wgsl - DO NOT EDIT.
+// wgsl-sha256: 929b7ba85936e3652baea9f4e5e7f049d232c7ae7a74814a536b4c2674897972
+inline constexpr const char* kBinaryMinimumWGSL = R"(
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
 @group(0) @binding(1) var<storage, read> input2: array<f32>;
 @group(0) @binding(2) var<storage, read_write> output: array<f32>;
@@ -33,7 +50,7 @@ fn main(
         }
     }
     if (same) {
-        output[idx] = floor(input1[idx] / input2[idx]);
+        output[idx] = min(input1[idx], input2[idx]);
         return;
     }
 
@@ -47,5 +64,12 @@ fn main(
         l1 = l1 + min(coord, in1_meta.sizes[d >> 2u][d & 3u] - 1u) * in1_meta.strides[d >> 2u][d & 3u];
         l2 = l2 + min(coord, in2_meta.sizes[d >> 2u][d & 3u] - 1u) * in2_meta.strides[d >> 2u][d & 3u];
     }
-    output[idx] = floor(input1[l1] / input2[l2]);
+    output[idx] = min(input1[l1], input2[l2]);
 }
+)";
+
+inline constexpr uint32_t kBinaryMinimumWorkgroupSizeX = 64;
+inline constexpr uint32_t kBinaryMinimumWorkgroupSizeY = 1;
+inline constexpr uint32_t kBinaryMinimumWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
