@@ -12,11 +12,15 @@
 
 #include <cstdint>
 #include <functional>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <executorch/backends/webgpu/runtime/WebGPUDispatchMath.h>
 #include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/runtime/core/named_data_map.h>
 
@@ -60,6 +64,37 @@ struct WebGPUDispatch {
   size_t copy_nbytes = 0;
 };
 
+struct WebGPUBufferBinding {
+  WGPUBuffer buffer = nullptr;
+  uint64_t offset = 0;
+  uint64_t size = 0;
+};
+
+struct WebGPUSpecializationConstant {
+  std::string name;
+  double value = 0.0;
+};
+
+struct WebGPUDispatchGrid {
+  uint32_t x = 1;
+  uint32_t y = 1;
+};
+
+struct WebGPUComputeDispatchDescriptor {
+  std::string shader_name;
+  std::string entry_point = "main";
+  std::string kernel_name;
+  std::vector<WebGPUBufferBinding> bindings;
+  std::vector<WebGPUSpecializationConstant> constants;
+  WebGPUDispatchGrid grid;
+};
+
+std::string make_compute_pipeline_key(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
+void validate_compute_dispatch_descriptor(
+    const WebGPUComputeDispatchDescriptor& descriptor);
+
 struct OutputCopy {
   WGPUBuffer src_buffer = nullptr;
   WGPUBuffer staging_buffer = nullptr;
@@ -92,6 +127,12 @@ struct WebGPUMemoryStats {
   }
 };
 
+struct WebGPUGraphConfig {
+  bool f16_kv_cache = false;
+  bool f16_accumulate_gemm = false;
+  bool record_q4gsw_decode_route = false;
+};
+
 class WebGPUGraph {
  public:
   WebGPUGraph();
@@ -103,8 +144,7 @@ class WebGPUGraph {
       const void* flatbuffer_data,
       const uint8_t* constant_data,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
-      bool f16_kv_cache = false,
-      bool f16_accumulate_gemm = false);
+      WebGPUGraphConfig config = {});
 
   // Copy input tensor data from host pointers into GPU buffers.
   void copy_inputs(const std::vector<InputData>& inputs);
@@ -199,12 +239,41 @@ class WebGPUGraph {
     symint_dim_sources_.push_back({symint_id, tensor_id, dim});
   }
 
+  bool tensor_has_dynamic_dims(int tensor_id) const {
+    return dynamic_tensor_ids_.count(tensor_id) != 0;
+  }
+
+  bool has_dynamic_shapes() const {
+    return !dynamic_tensor_ids_.empty();
+  }
+
   // Execute-time select_as_symint read; mirrors Vulkan select_as_symint_impl.
   void update_symints_from_inputs(const std::vector<InputData>& inputs);
 
   // Per-SymInt resize hook; mirrors Vulkan DynamicDispatchNode::trigger_resize.
   void add_resize_hook(int symint_id, std::function<void(WebGPUGraph&)> fn) {
+    if (symint_id < 0 || symint_id >= num_values() ||
+        get_value_type(symint_id) != ValueType::SymInt) {
+      throw std::runtime_error("WebGPU resize: trigger must be a SymInt");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
     resize_hooks_.push_back({symint_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_resize_hook(
+      int symint_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null SymInt resize hook");
+    }
+    add_resize_hook(
+        symint_id, [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Set a graph input's live dims (<= max) + dirty it; static path stays inert.
@@ -221,7 +290,29 @@ class WebGPUGraph {
   void add_tensor_resize_hook(
       int trigger_tensor_id,
       std::function<void(WebGPUGraph&)> fn) {
+    if (trigger_tensor_id < 0 || trigger_tensor_id >= num_values() ||
+        get_value_type(trigger_tensor_id) != ValueType::Tensor) {
+      throw std::runtime_error("WebGPU resize: trigger must be a Tensor");
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
     tensor_resize_hooks_.push_back({trigger_tensor_id, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_tensor_resize_hook(
+      int trigger_tensor_id,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null tensor resize hook");
+    }
+    add_tensor_resize_hook(
+        trigger_tensor_id,
+        [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
   }
 
   // Run hooks for changed SymInts and tensors, then clear; call before execute.
@@ -233,6 +324,26 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  size_t register_dispatch_route_group(
+      const std::vector<utils::DispatchRange>& ranges) {
+    validate_dynamic_dispatch_route_ranges(ranges);
+    return dispatch_routes_.register_group(
+        dispatches_.size(), ranges, [&](size_t i) {
+          return dispatches_[i].kind == WebGPUDispatch::Kind::Compute;
+        });
+  }
+
+  void select_dispatch_route(
+      size_t group,
+      size_t active_route,
+      const std::vector<utils::WgCount>& active_grids) {
+    dispatch_routes_.select(
+        group, active_route, active_grids, [&](size_t i, utils::WgCount grid) {
+          dispatches_[i].workgroup_count_x = grid.x;
+          dispatches_[i].workgroup_count_y = grid.y;
+        });
   }
 
   WGPUDevice device() const {
@@ -288,6 +399,24 @@ class WebGPUGraph {
     owned_uniform_buffers_.push_back(buffer);
   }
 
+  template <typename Block>
+  WGPUBuffer create_params_buffer(const Block& data) {
+    static_assert(
+        std::is_trivially_copyable<Block>::value,
+        "WebGPU parameter blocks must be trivially copyable");
+    static_assert(
+        sizeof(Block) % 4u == 0u,
+        "WebGPU parameter blocks must have a 4-byte-aligned size");
+    WGPUBuffer buffer = make_uniform_buffer(&data, sizeof(Block));
+    try {
+      own_uniform_buffer(buffer);
+    } catch (...) {
+      wgpuBufferRelease(buffer);
+      throw;
+    }
+    return buffer;
+  }
+
   // Graph-owned scratch storage buffer for fused-op intermediates (e.g. SDPA).
   WGPUBuffer create_scratch_buffer(size_t nbytes);
 
@@ -323,6 +452,26 @@ class WebGPUGraph {
   // Create a mapped-at-creation uniform buffer from `size` bytes and track it
   // in the memory stats. Shared helper for ops needing a uniform Params buffer.
   WGPUBuffer make_uniform_buffer(const void* data, size_t size);
+
+  size_t add_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor);
+
+  template <typename Context>
+  size_t add_dynamic_compute_dispatch(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      WebGPUDispatchGrid (*pick_grid)(const WebGPUGraph&, const Context&),
+      Context context) {
+    if (pick_grid == nullptr) {
+      throw std::runtime_error("WebGPU dynamic dispatch: null grid picker");
+    }
+    return add_dynamic_compute_dispatch_impl(
+        descriptor,
+        trigger_tensor_id,
+        [pick_grid, context = std::move(context)](const WebGPUGraph& graph) {
+          return pick_grid(graph, context);
+        });
+  }
 
   WGPUShaderModule get_or_create_shader(
       const std::string& key,
@@ -376,13 +525,17 @@ class WebGPUGraph {
   // True when the q4gsw steel prefill GEMM uses the lossy f16-accumulate kernel
   // (runtime opt-in; perplexity-gated, not bit-exact).
   bool f16_accumulate_gemm() const {
-    return f16_accumulate_gemm_;
+    return config_.f16_accumulate_gemm;
+  }
+
+  const WebGPUGraphConfig& config() const {
+    return config_;
   }
 
  private:
   bool kv_f16_ = false;
   std::unordered_set<int> kv_cache_ids_;
-  bool f16_accumulate_gemm_ = false;
+  WebGPUGraphConfig config_;
 
  private:
   WGPUInstance instance_ = nullptr;
@@ -408,6 +561,7 @@ class WebGPUGraph {
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
   std::vector<SymIntDimSource> symint_dim_sources_;
+  std::unordered_set<int> dynamic_tensor_ids_;
 
   // Resize hooks + the set of SymInts changed since the last propagate_resize.
   struct ResizeHook {
@@ -425,6 +579,29 @@ class WebGPUGraph {
   };
   std::vector<TensorResizeHook> tensor_resize_hooks_;
   std::unordered_set<int> dirty_tensors_;
+
+  // Dynamic grids are stored separately so ordinary dispatches remain compact.
+  // The graph owns each dispatch index and picker; ops only provide typed
+  // context and a named grid function.
+  struct DynamicDispatchGrid {
+    size_t dispatch_index;
+    int trigger_tensor_id;
+    std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid;
+  };
+  std::vector<DynamicDispatchGrid> dynamic_dispatch_grids_;
+
+  struct PendingDynamicDispatchGrid {
+    size_t dispatch_index;
+    WebGPUDispatchGrid grid;
+  };
+  std::vector<PendingDynamicDispatchGrid> pending_dynamic_dispatch_grids_;
+
+  size_t add_dynamic_compute_dispatch_impl(
+      const WebGPUComputeDispatchDescriptor& descriptor,
+      int trigger_tensor_id,
+      std::function<WebGPUDispatchGrid(const WebGPUGraph&)> pick_grid);
+  void validate_dynamic_dispatch_route_ranges(
+      const std::vector<utils::DispatchRange>& ranges) const;
 
   std::vector<int> input_ids_;
   std::vector<int> output_ids_;
@@ -459,6 +636,7 @@ class WebGPUGraph {
   std::vector<SuppressibleOutput> suppressible_outputs_;
 
   std::vector<WebGPUDispatch> dispatches_;
+  utils::DispatchRouteRegistry dispatch_routes_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
