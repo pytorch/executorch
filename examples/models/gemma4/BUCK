@@ -1,12 +1,14 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load(":targets.bzl", "define_common_targets")
+load(":targets.bzl", "define_common_targets", "define_webgpu_python_targets")
 
 oncall("executorch")
 
 non_fbcode_target(_kind = define_common_targets,)
 
 fbcode_target(_kind = define_common_targets,)
+
+define_webgpu_python_targets()
 
 # Text decoder module
 fbcode_target(_kind = runtime.python_library,
@@ -77,6 +79,7 @@ fbcode_target(_kind = runtime.python_binary,
         "//executorch/kernels/quantized:aot_lib",
     ],
     deps = [
+        ":webgpu_support",
         ":text_decoder",
         ":speech_transform",
         ":quant_utils",
