@@ -1006,12 +1006,55 @@ WebGPUGraph::~WebGPUGraph() {
   }
 }
 
+void WebGPUGraph::offer_cqp_fusion_site(CqpFusionSite site) {
+  site.valid = true;
+  cqp_fusion_site_ = std::move(site);
+}
+
+WebGPUGraph::CqpFusionSite WebGPUGraph::claim_cqp_fusion_site(
+    int input_id,
+    int scales_id,
+    int zero_points_id,
+    uint32_t rows,
+    uint32_t row_width) {
+  const CqpFusionSite& site = cqp_fusion_site_;
+  const bool producer_is_choose_qparams =
+      site.dispatch_index < dispatches_.size() &&
+      dispatches_[site.dispatch_index].kernel_name == "choose_qparams_affine";
+  const bool matches = site.valid && site.input_id == input_id &&
+      site.scales_id == scales_id && site.zero_points_id == zero_points_id &&
+      site.rows == rows && site.row_width == row_width &&
+      site.input_buffer == get_tensor(input_id).buffer &&
+      site.scales_buffer == get_tensor(scales_id).buffer &&
+      site.zero_points_buffer == get_tensor(zero_points_id).buffer &&
+      site.dispatch_index + 1u == dispatches_.size() &&
+      producer_is_choose_qparams && site.producer_elided != nullptr;
+  if (!matches) {
+    return CqpFusionSite{};
+  }
+  CqpFusionSite claimed = site;
+  cqp_fusion_site_ = CqpFusionSite{};
+  return claimed;
+}
+
 void WebGPUGraph::build(
     const void* flatbuffer_data,
     const uint8_t* constant_data,
     size_t constant_data_size,
     const executorch::runtime::NamedDataMap* named_data_map,
     WebGPUGraphConfig config) {
+  clear_cqp_fusion_site();
+  clear_rms_fusion_site();
+  clear_slice_chain();
+  struct ClearFusionSitesOnExit {
+    WebGPUGraph* graph;
+    ~ClearFusionSitesOnExit() {
+      graph->clear_cqp_fusion_site();
+      graph->clear_rms_fusion_site();
+      graph->clear_slice_chain();
+    }
+  } clear_fusion_sites_on_exit{this};
+
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {

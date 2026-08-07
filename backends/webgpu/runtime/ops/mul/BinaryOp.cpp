@@ -11,6 +11,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_mul_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/RmsNormFusion.h>
 
 #include <webgpu/webgpu.h>
 
@@ -27,6 +28,10 @@ void mul_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   const int in1_id = args.at(0);
   const int in2_id = args.at(1);
   const int out_id = args.at(2);
+
+  if (fusion::try_fuse_scale(graph, in1_id, in2_id, out_id)) {
+    return;
+  }
 
   WGPUDevice device = graph.device();
 

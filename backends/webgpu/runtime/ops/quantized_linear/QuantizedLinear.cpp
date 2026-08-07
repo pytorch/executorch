@@ -11,6 +11,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/quantized_linear/QuantizedLinear.h>
 
 #include <webgpu/webgpu.h>
 
@@ -351,7 +352,11 @@ void resize_q4gsw(WebGPUGraph& graph, const Q4gswResizeContext& context) {
 }
 
 // et_vk.linear_q4gsw args: [in, weight, scales, group_size, bias, out].
-void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+void q4gsw_linear_impl_with_input_buffer_internal(
+    WebGPUGraph& graph,
+    const std::vector<int>& args,
+    WGPUBuffer input_buffer,
+    uint64_t input_nbytes) {
   const int in_id = args.at(0);
   const int weight_id = args.at(1);
   const int scales_id = args.at(2);
@@ -406,7 +411,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       static_cast<uint64_t>(num_groups) * static_cast<uint64_t>(padded_N);
   const uint64_t weight_numel =
       static_cast<uint64_t>(N) * static_cast<uint64_t>(K_packed);
-  if (in.nbytes != in_numel * sizeof(float) ||
+  if (input_buffer == nullptr || input_nbytes != in_numel * sizeof(float) ||
       out.nbytes != static_cast<uint64_t>(M) * N * sizeof(float) ||
       scales.nbytes != scales_numel * sizeof(float) ||
       weight.nbytes != weight_numel) {
@@ -538,7 +543,7 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   WGPUBuffer params_buffer = graph.create_params_buffer(initial_state.params);
   const std::vector<utils::BindingSpec> bindings = {
       {0, WGPUBufferBindingType_Storage, out.buffer, out.nbytes},
-      {1, WGPUBufferBindingType_ReadOnlyStorage, in.buffer, in.nbytes},
+      {1, WGPUBufferBindingType_ReadOnlyStorage, input_buffer, input_nbytes},
       {2, WGPUBufferBindingType_ReadOnlyStorage, weight.buffer, weight.nbytes},
       {3, WGPUBufferBindingType_ReadOnlyStorage, scales.buffer, scales.nbytes},
       {4, WGPUBufferBindingType_ReadOnlyStorage, bias_buffer, bias_size},
@@ -664,6 +669,20 @@ void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 }
 
 } // namespace
+
+void q4gsw_linear_impl_with_input_buffer(
+    WebGPUGraph& graph,
+    const std::vector<int>& args,
+    WGPUBuffer input_buffer,
+    uint64_t input_nbytes) {
+  q4gsw_linear_impl_with_input_buffer_internal(
+      graph, args, input_buffer, input_nbytes);
+}
+
+void q4gsw_linear_impl(WebGPUGraph& graph, const std::vector<int>& args) {
+  const auto& input = graph.get_tensor(args.at(0));
+  q4gsw_linear_impl_with_input_buffer(graph, args, input.buffer, input.nbytes);
+}
 
 WEBGPU_REGISTER_OPERATORS {
   WEBGPU_REGISTER_OP(et_vk.linear_q4gsw.default, q4gsw_linear_impl);

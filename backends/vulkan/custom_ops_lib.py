@@ -900,6 +900,44 @@ lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
 lib.impl(name, apply_rotary_emb_hf_meta, "Meta")
 apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
 
+################################
+## apply_rotary_emb_hf_single ##
+################################
+
+
+def apply_rotary_emb_hf_single_impl(
+    x: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
+    start_pos: int,
+):
+    seq_len = x.shape[1]
+    freqs_cos = freqs_cos[start_pos : start_pos + seq_len]
+    freqs_sin = freqs_sin[start_pos : start_pos + seq_len]
+    pattern = vk_patterns.HfRotaryEmbeddingSinglePattern()
+    return pattern.forward(x, freqs_cos, freqs_sin)
+
+
+def apply_rotary_emb_hf_single_meta(
+    x: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
+    start_pos: int,
+):
+    output_dtype = torch.promote_types(
+        torch.promote_types(x.dtype, freqs_cos.dtype), freqs_sin.dtype
+    )
+    return torch.empty_like(x, dtype=output_dtype)
+
+
+name = "apply_rotary_emb_hf_single"
+lib.define(
+    f"{name}(Tensor x, Tensor freqs_cos, Tensor freqs_sin, SymInt start_pos) -> Tensor"
+)
+lib.impl(name, apply_rotary_emb_hf_single_impl, "CompositeExplicitAutograd")
+lib.impl(name, apply_rotary_emb_hf_single_meta, "Meta")
+apply_rotary_emb_hf_single_op = getattr(getattr(torch.ops, namespace), name)
+
 ##################################
 ## apply_rotary_emb_interleaved ##
 ##################################
@@ -1148,6 +1186,66 @@ lib.define(
 )
 lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
 sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
+#################
+## gemma4_sdpa ##
+#################
+
+
+def gemma4_sdpa_impl(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    start_pos: int,
+    attn_mask: torch.Tensor,
+    dropout_p: float,
+    is_causal: bool,
+    scale: float,
+) -> torch.Tensor:
+    del start_pos
+    if dropout_p != 0.0 or is_causal or scale != 1.0:
+        raise ValueError("gemma4_sdpa requires dropout=0, causal=false, scale=1")
+    if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
+        raise ValueError("gemma4_sdpa requires BSHD query, key, and value")
+    if key.shape != value.shape or query.shape[0] != key.shape[0]:
+        raise ValueError("gemma4_sdpa query, key, and value shapes do not match")
+    if query.shape[-1] != key.shape[-1] or query.shape[2] % key.shape[2] != 0:
+        raise ValueError("gemma4_sdpa requires grouped-query compatible heads")
+    if attn_mask.dim() != 2 or tuple(attn_mask.shape) != (
+        query.shape[1],
+        key.shape[1],
+    ):
+        raise ValueError("gemma4_sdpa requires a rank-2 [S_q, S_kv] mask")
+
+    group_size = query.shape[2] // key.shape[2]
+    query_bhsd = query.transpose(1, 2)
+    key_bhsd = key.transpose(1, 2).repeat_interleave(group_size, dim=1)
+    value_bhsd = value.transpose(1, 2).repeat_interleave(group_size, dim=1)
+    scores = torch.matmul(query_bhsd, key_bhsd.transpose(-2, -1))
+    scores = scores + attn_mask
+    return torch.matmul(torch.softmax(scores, dim=-1), value_bhsd).transpose(1, 2)
+
+
+def gemma4_sdpa_meta(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    start_pos: int,
+    attn_mask: torch.Tensor,
+    dropout_p: float,
+    is_causal: bool,
+    scale: float,
+) -> torch.Tensor:
+    return torch.empty_like(query)
+
+
+name = "gemma4_sdpa"
+lib.define(
+    f"{name}(Tensor query, Tensor key, Tensor value, SymInt start_pos, Tensor attn_mask, float dropout_p, bool is_causal, float scale) -> Tensor"
+)
+lib.impl(name, gemma4_sdpa_impl, "CompositeExplicitAutograd")
+lib.impl(name, gemma4_sdpa_meta, "Meta")
+gemma4_sdpa_op = getattr(getattr(torch.ops, namespace), name)
 
 ################
 ## rms_norm ##

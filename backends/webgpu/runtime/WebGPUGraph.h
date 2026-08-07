@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -147,6 +148,36 @@ struct WebGPUGraphConfig {
 
 class WebGPUGraph {
  public:
+  struct CqpFusionSite {
+    bool valid = false;
+    int input_id = -1;
+    int scales_id = -1;
+    int zero_points_id = -1;
+    uint32_t rows = 0u;
+    uint32_t row_width = 0u;
+    int64_t quant_min = 0;
+    int64_t quant_max = 0;
+    size_t dispatch_index = 0u;
+    WGPUBuffer input_buffer = nullptr;
+    WGPUBuffer scales_buffer = nullptr;
+    WGPUBuffer zero_points_buffer = nullptr;
+    std::shared_ptr<bool> producer_elided;
+  };
+
+  struct RmsFusionSite {
+    bool valid = false;
+    bool add_fused = false;
+    int in_id = -1;
+    int weight_id = -1;
+    int out_id = -1;
+    int resid_id = -1;
+    int addout_id = -1;
+    uint32_t num_rows = 0u;
+    uint32_t row_width = 0u;
+    size_t dispatch_index = 0u;
+    WGPUBuffer params_buffer = nullptr;
+  };
+
   WebGPUGraph();
   ~WebGPUGraph();
 
@@ -408,6 +439,55 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  void offer_cqp_fusion_site(CqpFusionSite site);
+  CqpFusionSite claim_cqp_fusion_site(
+      int input_id,
+      int scales_id,
+      int zero_points_id,
+      uint32_t rows,
+      uint32_t row_width);
+  void clear_cqp_fusion_site() {
+    cqp_fusion_site_ = CqpFusionSite{};
+  }
+
+  void offer_rms_fusion_site(RmsFusionSite site) {
+    site.valid = true;
+    rms_fusion_site_ = std::move(site);
+  }
+  const RmsFusionSite& rms_fusion_site() const {
+    return rms_fusion_site_;
+  }
+  void clear_rms_fusion_site() {
+    rms_fusion_site_ = RmsFusionSite{};
+  }
+
+  // Dual-store slice merge: the preceding slice offers its dispatch so a
+  // following whole-extent copy can re-bind it to a second destination.
+  // Graph-instance state, so two graphs can never observe each other's
+  // dispatch indices or buffer handles.
+  struct SliceChain {
+    bool valid = false;
+    int out_id = -1;
+    size_t dispatch_idx = 0;
+    WGPUBuffer in_buffer = nullptr;
+    size_t in_nbytes = 0;
+    WGPUBuffer out_buffer = nullptr;
+    size_t out_nbytes = 0;
+    WGPUBuffer out_meta_buf = nullptr;
+    WGPUBuffer in_meta_buf = nullptr;
+    WGPUBuffer params_buf = nullptr;
+  };
+
+  void offer_slice_chain(SliceChain chain) {
+    slice_chain_ = chain;
+  }
+  const SliceChain& slice_chain() const {
+    return slice_chain_;
+  }
+  void clear_slice_chain() {
+    slice_chain_ = SliceChain{};
   }
 
   size_t register_dispatch_route_group(
@@ -761,6 +841,9 @@ class WebGPUGraph {
 
   std::vector<WebGPUDispatch> dispatches_;
   utils::DispatchRouteRegistry dispatch_routes_;
+  CqpFusionSite cqp_fusion_site_;
+  RmsFusionSite rms_fusion_site_;
+  SliceChain slice_chain_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
