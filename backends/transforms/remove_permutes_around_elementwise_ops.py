@@ -116,6 +116,26 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return self._find_extra_one(in_shape, out_shape) != -1
         return False
 
+    def _is_permutation_sink_view(self, node: torch.fx.Node) -> bool:
+        """True if ``node`` is a reshape whose input has at most one non-unit dim.
+
+        Flattening such a tensor -- e.g. the ``[1, C, 1, 1] -> [1, C]`` after a
+        global pool -- is permutation-invariant: every layout of the input
+        produces the identical output (the single non-unit run of elements is
+        contiguous regardless of which axis holds it). A permutation propagating
+        into it therefore simply dies, so the region can terminate here with no
+        compensating permute.
+        """
+        if node.target not in self._VIEW_OPS:
+            return False
+        inp = node.args[0]
+        assert isinstance(inp, torch.fx.Node)
+        shape = inp.meta["val"].shape
+        # Count a dim as non-unit unless it is a concrete size-1 (symbolic dims
+        # are treated as non-unit, i.e. conservatively not a sink).
+        non_unit = [d for d in shape if not (isinstance(d, int) and d == 1)]
+        return len(non_unit) <= 1
+
     def _adapt_permute_across_view(
         self, permute: list[int], node: torch.fx.Node
     ) -> list[int] | None:
@@ -124,13 +144,33 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Adapts from input-rank to output-rank space (downstream direction).
         Returns the adjusted permutation, or None if not possible.
         """
+        inp = node.args[0]
+        assert isinstance(inp, torch.fx.Node)
+        inp_val = inp.meta.get("val")
+        if inp_val is None:
+            return None
+        in_shape = inp_val.shape
+        # ``permute`` must live in the view's input-rank space. It does not when
+        # the view is reached by upstream traversal, where the permutation is
+        # expressed at the view's output rank; bail out so the caller drops the
+        # subgraph instead of indexing out of range or silently mis-adapting.
+        if len(permute) != len(in_shape):
+            return None
+
         # Handle explicit unsqueeze_copy(dim)
         if node.target in self._UNSQUEEZE_OPS:
             dim = cast(int, node.args[1])
             rank = len(permute)
             index = dim if dim >= 0 else dim + rank + 1
-            new_perm = [x + 1 if x >= index else x for x in permute]
-            new_perm.insert(index, index)
+            # `index` is a POSITION in the permuted output; the un-permuted
+            # position the new dim lands at is the permutation VALUE there
+            # (or the end, when appending). permute_subgraph rewrites the dim
+            # arg to exactly this value, so the two must agree -- using `index`
+            # here instead silently desynchronises them whenever
+            # permute[index] != index.
+            inserted_value = permute[index] if index < rank else rank
+            new_perm = [x + 1 if x >= inserted_value else x for x in permute]
+            new_perm.insert(index, inserted_value)
             return new_perm
 
         # Handle explicit squeeze_copy(dim)
@@ -149,9 +189,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return new_perm
 
         # Handle view_copy (squeeze/unsqueeze-like reshape)
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-        in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
 
         if len(out_shape) == len(in_shape) + 1:
@@ -267,6 +304,18 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         if node in processed_nodes or not self.is_node_permutable(node):
             return False
+        # A permutable op can still change rank via broadcasting (e.g.
+        # [8, 1] + [1, 1, 1] -> [1, 8, 1]), which would leave the node carrying
+        # a permutation of the wrong rank. Downstream rewrites index the
+        # permutation by dim (update_cat / update_mean_dim / update_slice_copy),
+        # so bail out rather than mis-permute or index out of range.
+        # Squeeze/unsqueeze views are exempt: they intentionally carry their
+        # input-rank permutation and are rank-checked in
+        # _adapt_permute_across_view.
+        if not self._is_squeeze_unsqueeze_view(node):
+            node_shape = getattr(node.meta.get("val"), "shape", None)
+            if node_shape is not None and len(node_shape) != len(current_start_permute):
+                return False
         subgraph.nodes.add(node)
         subgraph.node_end_permute[node] = current_end_permute
         subgraph.node_start_permute[node] = current_start_permute
@@ -321,6 +370,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     return False
             elif user.op == "output":
                 return False
+            elif not self._is_squeeze_unsqueeze_view(
+                user
+            ) and self._is_permutation_sink_view(user):
+                # The permutation dies at this reshape (see
+                # _is_permutation_sink_view), so terminate the region here with
+                # no compensating permute and no further downstream traversal.
+                continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
             ):
@@ -332,6 +388,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 if self.get_permutation(inp) != current_start_permute:
                     return False
                 subgraph.edges_in.add((inp, node))
+            elif (inp_val := inp.meta.get("val")) is not None and inp_val.numel() == 1:
+                # A numel-1 input (per-tensor quant scale / zero_point, scalar
+                # constant, ...) is layout-invariant: it broadcasts identically
+                # under any permutation, so it needs no compensating permute and
+                # stays wired directly. Notably this keeps lifted per-tensor
+                # qparam placeholders as placeholders, which lowering requires.
+                continue
             elif self._is_constant(inp):
                 const_rank = self._get_node_rank(inp)
                 permute_rank = len(current_end_permute)
