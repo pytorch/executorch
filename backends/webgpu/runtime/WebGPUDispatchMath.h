@@ -101,6 +101,34 @@ constexpr bool should_record_sdpa_dual_route(
   return fd_eligible && (has_dynamic_sequence || has_dynamic_position);
 }
 
+constexpr uint32_t kCqpQdqFusedInvocations = 256u;
+constexpr uint32_t kCqpQdqFusedStorageBytes =
+    2u * kCqpQdqFusedInvocations * sizeof(float);
+
+constexpr bool is_cqp_qdq_fusion_eligible(
+    uint32_t rows,
+    uint32_t row_width,
+    uint64_t numel,
+    int64_t quant_min,
+    int64_t quant_max,
+    bool asymmetric,
+    bool per_row_block,
+    bool keepdim,
+    uint32_t max_invocations,
+    uint32_t max_workgroup_size_x,
+    uint32_t max_workgroup_storage_bytes) {
+  return rows > 0u && row_width > 0u &&
+      numel == static_cast<uint64_t>(rows) * row_width && asymmetric &&
+      per_row_block && !keepdim && quant_min == -128 && quant_max == 127 &&
+      max_invocations >= kCqpQdqFusedInvocations &&
+      max_workgroup_size_x >= kCqpQdqFusedInvocations &&
+      max_workgroup_storage_bytes >= kCqpQdqFusedStorageBytes;
+}
+
+constexpr uint32_t cqp_resize_workgroups(bool producer_elided, uint32_t grid) {
+  return producer_elided ? 0u : grid;
+}
+
 constexpr bool is_q4gsw_bk64_eligible(
     uint32_t k,
     uint32_t n,

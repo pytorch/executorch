@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from rms_norm.wgsl - DO NOT EDIT.
-// wgsl-sha256: 62fdfe03fc67eb44fa17ca5e91e433b3a45a96c76151777856d6f557fd829919
+// wgsl-sha256: 7c8ddd078f5c53d9ff6823b11244fd0f23b93373e2eff80601925e7ac9c753ed
 inline constexpr const char* kRmsNormVec4WGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> t_in: array<vec4<f32>>;
@@ -53,8 +53,10 @@ fn reduce_shared(worker_id: u32) {
 @compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {
-  let row_idx = wid.x;
+  // 2D-fold: rows can exceed the 65535 per-dim cap (QK-norm at prefill).
+  let row_idx = wid.x + wid.y * num_workgroups.x;
   let worker_id = lid.x;
 
   if (row_idx >= params.num_rows) {
