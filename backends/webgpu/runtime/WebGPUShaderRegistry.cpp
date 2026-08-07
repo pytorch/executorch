@@ -13,6 +13,8 @@
 #include <executorch/backends/webgpu/runtime/ops/adamw/adamw_step_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/addmm/addmm_tiled_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/amax/amax_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/amin/amin_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/avg_pool2d/avg_pool2d_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/batch_norm/batch_norm_wgsl.h>
@@ -46,8 +48,6 @@
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_entry_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/et_vk_sdpa/et_vk_sdpa_qk_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/expand_copy/expand_copy_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/extrema/amax_wgsl.h>
-#include <executorch/backends/webgpu/runtime/ops/extrema/amin_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/fill/fill_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/flip/flip_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/floor_divide/binary_floor_divide_wgsl.h>

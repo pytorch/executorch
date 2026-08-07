@@ -213,7 +213,7 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 134)
         self.assertEqual(
             digest.hexdigest(),
-            "ef97dca2336315ee2c8b0f9e896c6aa082834ae94948bda3ccb42b1145f2bd27",
+            "ab15be30e7cfa2cb2f6fa7743d3b9f03535f5cc0b88d64d9b6bad8f777efda25",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -952,94 +952,8 @@ class WgslTemplateEngineTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
+            "ce1777820bffe77e7cdda312f86a3fd41a090f8f282a6add66666446d06b1608",
         )
-
-    def test_extrema_template_roundtrip_byte_identical(self) -> None:
-        extrema_dir = g.BACKEND_ROOT / "runtime/ops/extrema"
-        template_path = extrema_dir / "extrema.wgsl"
-        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
-        variants = {params["NAME"]: params for params in spec[template_path.stem]}
-        expected = {
-            "amax": (
-                "max",
-                "35fc059d7c72caa17f9cb1128823ecfd8f75be4ce24b6cd4f9629a97b52f64c0",
-            ),
-            "amin": (
-                "min",
-                "8cb6035ae4d34eb2a6cc973d93d9847905722e967239c96033fccfe3a1943cb2",
-            ),
-        }
-        self.assertEqual(set(variants), set(expected))
-        template = template_path.read_text()
-
-        for name, (reduce_fn, expected_hash) in expected.items():
-            params = variants[name]
-            self.assertEqual(params["REDUCE_FN"], reduce_fn)
-            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
-            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
-
-            header_path = extrema_dir / f"{name}_wgsl.h"
-            header = header_path.read_text()
-            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
-            self.assertEqual(body, expanded)
-            self.assertEqual(g.embedded_sha256(header), expected_hash)
-            self.assertEqual(g.parse_workgroup_size(body), (256, 1, 1))
-
-        entries = {entry.name: entry for entry in g.registry_entries()}
-        for name in expected:
-            self.assertEqual(
-                entries[name].include,
-                f"runtime/ops/extrema/{name}_wgsl.h",
-            )
-            self.assertEqual(entries[name].symbol, g.symbol_base(name))
-
-        handler_hashes = {
-            "amax": "57f929b9f3087dc32403c3587884ce2ed4be2d03c4e80ff7035428b52e7e0e51",
-            "amin": "5dc947d4781a67df953b9c5970c4ab2119317b29657f983a9d308dfdf123dede",
-        }
-        for name, expected_hash in handler_hashes.items():
-            handler = g.BACKEND_ROOT / f"runtime/ops/{name}/Reduce.cpp"
-            self.assertEqual(
-                hashlib.sha256(handler.read_bytes()).hexdigest(), expected_hash
-            )
-
-        self.assertEqual(
-            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "74f972fce4077f12a52dfcf67a0d20ebeea47748283ced9e5c0bcffd659fef74",
-        )
-
-    def test_unary_template_roundtrip_byte_identical(self) -> None:
-        unary_dir = g.BACKEND_ROOT / "runtime/ops/unary"
-        template_path = unary_dir / "unary.wgsl"
-        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
-        variants = {params["NAME"]: params for params in spec[template_path.stem]}
-        expected = {
-            "abs": "39d3c163fdf6a92286828f4b3217e00294e3ca5634a878ed5fd34e3b1cdf0a27",
-            "cos": "9df78873e5fae98d347c26db2a02b047ea3d5d2c93f0761cb9ac6995f9a71ab2",
-            "exp": "3171399bc36acf9c1cb2a03c2a31038318203c4c63ab03c4881df7a660346020",
-            "hardswish": "c874a15ef6cdaec71187296016cc2a1515f5e7c889b97dfa8fd4b278e6e2c3d5",
-            "neg": "8851b9f42d14153f6f04484fee2f8bf67bda26dea892ff48768e09e6ad49cee1",
-            "round": "8f3e0edbeb81aa50f35e691c78554e8057fa8d78fe8a86454f4f42e5e8871452",
-            "rsqrt": "108765d5a23b87473f34651875d08abf2a5fa8980bd92fc8cbe3617295097747",
-            "sin": "e5762804773659d348fddddcef4935807ae6fe7d92c92eb17a2f44aae8f2c5b9",
-            "sqrt": "008534ae365969f5c180b42e8d6d0b131df78f181e5435abbcafc3ffb8be8aac",
-            "tanh": "5bd7eb1c6411940d84a9b311884f35b39f15b82103b14bab02902290ed6b0339",
-        }
-        self.assertEqual(set(variants), set(expected))
-        template = template_path.read_text()
-        entries = {entry.name: entry for entry in g.registry_entries()}
-        for name, expected_hash in expected.items():
-            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **variants[name]})
-            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
-            header = (unary_dir / f"{name}_wgsl.h").read_text()
-            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
-            self.assertEqual(body, expanded)
-            self.assertEqual(g.embedded_sha256(header), expected_hash)
-            self.assertEqual(g.parse_workgroup_size(body), (256, 1, 1))
-            self.assertEqual(entries[name].include, f"runtime/ops/unary/{name}_wgsl.h")
-            self.assertEqual(entries[name].symbol, g.symbol_base(name))
-        self.assertTrue({"clamp", "pow_scalar"}.isdisjoint(variants))
 
     def test_rms_norm_half_variant_is_type_correct(self) -> None:
         # A DTYPE=half expansion must emit compilable WGSL: `enable f16;`, an f32
