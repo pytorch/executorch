@@ -30,6 +30,7 @@ import json
 import os
 import re
 import shutil
+import importlib.metadata
 import subprocess
 import sys
 import tempfile
@@ -1394,6 +1395,38 @@ def test_model_matches_eager_pytorch(work_dir: Path) -> None:
         print(f"✓ the {mode} model matches eager PyTorch")
 
 
+def test_declared_dependencies_match_the_wheel_tag() -> None:
+    """A CPU wheel must not declare the CUDA runtime, and a CUDA wheel must declare it.
+
+    The tag is what a user resolves against, so a mismatch is a promise the wheel cannot keep in
+    either direction: a CPU wheel that pulls the CUDA packages costs a user hundreds of megabytes it
+    never loads, and a CUDA wheel that declares nothing leaves the runtime unresolvable.
+
+    This is metadata only, so no library check can see it. A CPU wheel that wrongly declared the CUDA
+    runtime passed every other check in this file.
+    """
+    requirements = importlib.metadata.requires("executorch") or []
+    cuda = sorted(r.split()[0] for r in requirements if r.lower().startswith("nvidia"))
+
+    # The local version segment of the installed version states what the wheel was built for.
+    version = importlib.metadata.version("executorch")
+    local = version.partition("+")[2]
+    is_cuda_wheel = local.startswith("cu")
+
+    if is_cuda_wheel:
+        assert cuda, (
+            f"version {version} says this is a CUDA wheel, but it declares no CUDA runtime "
+            "packages, so nothing resolves the runtime it links"
+        )
+        print(f"✓ this CUDA wheel declares the runtime ({len(cuda)} packages)")
+    else:
+        assert not cuda, (
+            f"version {version} is not a CUDA wheel, yet it declares {cuda}. A user installing it "
+            "would download the CUDA runtime this wheel never loads."
+        )
+        print("✓ this non-CUDA wheel declares no CUDA runtime")
+
+
 def run_tests(work_dir: Path) -> None:
     # Ordered by what a failure tells you, because these run in sequence and the
     # first failure stops the rest. The checks that prove the split behaves
@@ -1405,6 +1438,7 @@ def run_tests(work_dir: Path) -> None:
     # check in the file hid the three strongest.
     test_each_component_has_one_owner()
     test_python_extensions_import()
+    test_declared_dependencies_match_the_wheel_tag()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
     test_shipped_libraries_load()
