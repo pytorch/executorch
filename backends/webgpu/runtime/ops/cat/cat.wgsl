@@ -19,8 +19,10 @@ struct Params {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let in_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let in_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (in_bufi >= in_meta.numel) {
         return;
     }

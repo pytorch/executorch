@@ -1,6 +1,6 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
 
 oncall("executorch")
 
@@ -16,6 +16,15 @@ fbcode_target(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/exir:lib",
+    ],
+)
+
+non_fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_webgpu_artifact_manifest",
+    srcs = ["test_webgpu_artifact_manifest.py"],
+    deps = [
+        "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
     ],
 )
 
@@ -40,5 +49,14 @@ fbcode_target(
     deps = [
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_webgpu_artifact_manifest",
+    srcs = ["test_webgpu_artifact_manifest.py"],
+    deps = [
+        "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
     ],
 )

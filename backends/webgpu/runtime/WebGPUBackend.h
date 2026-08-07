@@ -19,6 +19,8 @@ executorch::runtime::Result<WebGPUGraphConfig> parse_webgpu_graph_config(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec>
         compile_specs);
 
+std::string webgpu_backend_execution_attestation_json();
+
 class WebGPUBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~WebGPUBackend() override = default;
