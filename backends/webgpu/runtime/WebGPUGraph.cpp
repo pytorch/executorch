@@ -1739,12 +1739,13 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     return 1;
   }
 
-  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   if (should_timestamp_query()) {
     throw std::runtime_error(
         "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
         "(multi-submit); disable chunking to use GPU timestamp queries");
   }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
   for (size_t chunk_index = 0; chunk_index < plan.dispatch_chunks.size();
        chunk_index++) {
