@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+
+namespace executorch::backends::webgpu {
+
+// @generated from extrema.wgsl - DO NOT EDIT.
+// wgsl-sha256: 35fc059d7c72caa17f9cb1128823ecfd8f75be4ce24b6cd4f9629a97b52f64c0
+inline constexpr const char* kAmaxWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
 
@@ -47,3 +64,10 @@ fn main(
         output[row] = m;
     }
 }
+)";
+
+inline constexpr uint32_t kAmaxWorkgroupSizeX = 256;
+inline constexpr uint32_t kAmaxWorkgroupSizeY = 1;
+inline constexpr uint32_t kAmaxWorkgroupSizeZ = 1;
+
+} // namespace executorch::backends::webgpu
