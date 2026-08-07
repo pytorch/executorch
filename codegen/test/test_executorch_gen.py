@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,19 +8,26 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
+
+from argparse import Namespace
+from pathlib import Path
+
+import executorch.codegen.tools.gen_oplist as gen_oplist
 
 import yaml
 from executorch.codegen.gen import (
     ComputeCodegenUnboxedKernels,
     gen_functions_declarations,
+    gen_unboxing,
     parse_yaml_files,
     translate_native_yaml,
 )
 
-from executorch.codegen.model import ETKernelIndex, ETKernelKey
-from torchgen.gen import LineLoader
+from executorch.codegen.model import ETKernelIndex, ETKernelKey, ETParsedYaml
+from torchgen.gen import get_custom_build_selector, LineLoader, make_file_manager
 from torchgen.model import (
     BackendIndex,
     BackendMetadata,
@@ -453,6 +461,149 @@ TORCH_API inline at::Tensor & op_3(torch::executor::KernelRuntimeContext & conte
         """
             in declarations
         )
+
+
+class TestGenUnboxing(unittest.TestCase):
+    EXPECTED_EMPTY_SELECTION_CPP = [
+        """
+#include "NativeFunctions.h" // Generated Function import headers
+""",
+        """
+static Kernel kernels_to_register[] = {
+ // Generated kernels
+};
+""",
+    ]
+
+    def _write_codegen_inputs(self, temp_dir: str) -> tuple[str, str, str]:
+        aten_yaml_path = os.path.join(temp_dir, "native_functions.yaml")
+        with open(aten_yaml_path, "w") as f:
+            f.write(TEST_YAML)
+        included_ops_yaml_path = os.path.join(temp_dir, "included_ops.yaml")
+        with open(included_ops_yaml_path, "w") as f:
+            f.write(
+                """
+- op: add.out
+  dispatch:
+    CPU: torch::executor::add_out_kernel
+
+- op: mul.out
+  dispatch:
+    CPU: torch::executor::mul_out_kernel
+"""
+            )
+        tags_yaml_path = os.path.join(temp_dir, "tags.yaml")
+        with open(tags_yaml_path, "w") as f:
+            f.write(
+                """
+- tag: core
+  desc: test
+"""
+            )
+        return aten_yaml_path, included_ops_yaml_path, tags_yaml_path
+
+    def _assert_selection_generates_empty_buildable_cpp(
+        self,
+        temp_dir: str,
+        selector: SelectiveBuilder,
+        parsed_yaml: ETParsedYaml,
+    ) -> None:
+        self.assertEqual([], parsed_yaml.native_functions)
+        main_module = sys.modules["__main__"]
+        old_main_file = getattr(main_module, "__file__", None)
+        main_module.__file__ = __file__
+        try:
+            options = Namespace(
+                source_path=str(Path(__file__).parents[1]),
+                install_dir=temp_dir,
+                dry_run=False,
+            )
+            gen_unboxing(
+                native_functions=parsed_yaml.native_functions,
+                cpu_fm=make_file_manager(options=options),
+                selector=selector,
+                use_aten_lib=False,
+                kernel_index=parsed_yaml.kernel_index,
+                manual_registration=False,
+            )
+
+            actual_cpp = (
+                Path(temp_dir) / "RegisterCodegenUnboxedKernelsEverything.cpp"
+            ).read_text()
+        finally:
+            if old_main_file is None:
+                delattr(main_module, "__file__")
+            else:
+                main_module.__file__ = old_main_file
+
+        for expected in self.EXPECTED_EMPTY_SELECTION_CPP:
+            self.assertIn(expected, actual_cpp)
+        self.assertNotIn("${", actual_cpp)
+
+    def test_empty_operator_selection_generates_buildable_cpp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (
+                aten_yaml_path,
+                included_ops_yaml_path,
+                tags_yaml_path,
+            ) = self._write_codegen_inputs(temp_dir)
+            selected_ops_yaml_path = os.path.join(temp_dir, "selected_operators.yaml")
+            gen_oplist.main([f"--output_path={selected_ops_yaml_path}"])
+            selector = get_custom_build_selector(None, selected_ops_yaml_path)
+            parsed_yaml, _ = parse_yaml_files(
+                aten_yaml_path=aten_yaml_path,
+                tags_yaml_path=tags_yaml_path,
+                native_yaml_path=included_ops_yaml_path,
+                custom_ops_yaml_path=None,
+                selector=selector,
+                use_aten_lib=False,
+            )
+
+            self._assert_selection_generates_empty_buildable_cpp(
+                temp_dir, selector, parsed_yaml
+            )
+
+    def test_operator_selection_from_missing_library_generates_buildable_cpp(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            (
+                aten_yaml_path,
+                included_ops_yaml_path,
+                tags_yaml_path,
+            ) = self._write_codegen_inputs(temp_dir)
+            selector = SelectiveBuilder.from_yaml_dict(
+                {
+                    "operators": {
+                        "not_included::op.out": {
+                            "is_root_operator": True,
+                            "is_used_for_training": True,
+                            "include_all_overloads": False,
+                            "debug_info": [],
+                        },
+                    },
+                    "custom_classes": [],
+                    "build_features": [],
+                    "include_all_non_op_selectives": False,
+                    "include_all_operators": False,
+                    "kernel_metadata": {},
+                    "et_kernel_metadata": {
+                        "not_included::op.out": ["default"],
+                    },
+                }
+            )
+            parsed_yaml, _ = parse_yaml_files(
+                aten_yaml_path=aten_yaml_path,
+                tags_yaml_path=tags_yaml_path,
+                native_yaml_path=included_ops_yaml_path,
+                custom_ops_yaml_path=None,
+                selector=selector,
+                use_aten_lib=False,
+            )
+
+            self._assert_selection_generates_empty_buildable_cpp(
+                temp_dir, selector, parsed_yaml
+            )
 
 
 class TestComputeCodegenUnboxedKernels(unittest.TestCase):
