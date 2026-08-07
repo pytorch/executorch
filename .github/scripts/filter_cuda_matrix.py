@@ -101,16 +101,26 @@ def keep(item: Dict[str, Any], is_jetpack: bool) -> bool:
 
 
 def only_pull_request_row(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """One representative row, so a pull request does not build the whole matrix."""
-    for item in items:
-        if (
-            item["python_version"] == PR_PYTHON_VERSION
-            and item["desired_cuda"] == PR_CUDA_VERSION
-        ):
-            return [item]
-    # Falling back to the first row rather than to nothing: an empty matrix would make the
-    # build job vanish, which reads as a pass.
-    return items[:1]
+    """One representative row, so a pull request does not build the whole matrix.
+
+    Chosen by preference rather than by exact match. An exact request degrades quietly when the
+    generator does not offer that combination: asking for a python version it did not emit once left
+    a pull request building the OLDEST CUDA version instead of the newest, which still passed and
+    tested the wrong thing.
+    """
+    if not items:
+        return []
+
+    def rank(item: Dict[str, Any]) -> tuple:
+        # Newest supported CUDA version first, since that is the row most likely to break, then the
+        # requested python version when it is available.
+        try:
+            cuda = SUPPORTED_CUDA_VERSIONS.index(item["desired_cuda"])
+        except ValueError:
+            cuda = -1
+        return (cuda, item["python_version"] == PR_PYTHON_VERSION)
+
+    return [max(items, key=rank)]
 
 
 def main(argv: List[str]) -> None:
