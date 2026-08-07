@@ -213,7 +213,7 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(len(outputs), 134)
         self.assertEqual(
             digest.hexdigest(),
-            "19a0baf9345bec02fe2091a0e6320b81d966724bedc33feb0779c6a824925972",
+            "ab15be30e7cfa2cb2f6fa7743d3b9f03535f5cc0b88d64d9b6bad8f777efda25",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -906,6 +906,54 @@ class WgslTemplateEngineTest(unittest.TestCase):
             self.assertEqual(
                 got, want, f"{header_name} not reproduced from rms_norm.wgsl template"
             )
+
+    def test_to_copy_convert_template_roundtrip_byte_identical(self) -> None:
+        to_copy_dir = g.BACKEND_ROOT / "runtime/ops/to_copy"
+        template_path = to_copy_dir / "to_copy_convert.wgsl"
+        spec = g.parse_template_spec(template_path.with_suffix(".yaml"))
+        variants = {params["NAME"]: params for params in spec[template_path.stem]}
+        expected = {
+            "to_copy_float_to_int": (
+                "f32",
+                "i32",
+                "c331e00e3171eecbe6317ac9df0a5f9cd6d25da26a9a587250f1cc6086dc3c8f",
+            ),
+            "to_copy_int_to_float": (
+                "i32",
+                "f32",
+                "e18dd733a3838f83eded4977a2a2b21119099c8409b234f12474fae5acc9b195",
+            ),
+        }
+        self.assertEqual(set(variants), set(expected))
+        template = template_path.read_text()
+
+        for name, (in_type, out_type, expected_hash) in expected.items():
+            params = variants[name]
+            self.assertEqual(
+                (params["IN_TYPE"], params["OUT_TYPE"]), (in_type, out_type)
+            )
+            expanded = g.preprocess(template, {**g.WGSL_HELPERS, **params})
+            self.assertEqual(g.wgsl_sha256(expanded), expected_hash)
+
+            header = (to_copy_dir / f"{name}_wgsl.h").read_text()
+            body = header.split('R"(', 1)[1].split(')";', 1)[0][1:]
+            self.assertEqual(body, expanded)
+            self.assertEqual(g.embedded_sha256(header), expected_hash)
+            self.assertEqual(g.parse_workgroup_size(body), (64, 1, 1))
+
+        entries = {entry.name: entry for entry in g.registry_entries()}
+        self.assertEqual(
+            entries["to_copy_float_to_int"].include,
+            "runtime/ops/to_copy/to_copy_float_to_int_wgsl.h",
+        )
+        self.assertEqual(
+            entries["to_copy_int_to_float"].include,
+            "runtime/ops/to_copy/to_copy_int_to_float_wgsl.h",
+        )
+        self.assertEqual(
+            hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
+            "ce1777820bffe77e7cdda312f86a3fd41a090f8f282a6add66666446d06b1608",
+        )
 
     def test_rms_norm_half_variant_is_type_correct(self) -> None:
         # A DTYPE=half expansion must emit compilable WGSL: `enable f16;`, an f32
