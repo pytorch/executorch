@@ -61,6 +61,27 @@ def test_generate_case_writes_artifacts(tmp_path):
     assert entry["golden"]["output_index"] == 0
 
 
+def test_export_case_separates_upper_bound_from_runtime_inputs(monkeypatch):
+    suite = op_test_registry["conv1d"]
+    case = next(c for c in suite.cases if c.name == "dynamic_length_10_to_7")
+    export_shapes = []
+    exported_dynamic_shapes = []
+    real_export = torch.export.export
+
+    def capture_export(module, inputs, **kwargs):
+        export_shapes.append(tuple(inputs[0].shape))
+        exported_dynamic_shapes.append(kwargs.get("dynamic_shapes"))
+        return real_export(module, inputs, **kwargs)
+
+    monkeypatch.setattr(torch.export, "export", capture_export)
+    _module, runtime_inputs, prog = g.export_case(suite, case)
+
+    assert export_shapes == [(1, 4, 10)]
+    assert exported_dynamic_shapes == [case.dynamic_shapes]
+    assert tuple(runtime_inputs[0].shape) == (1, 4, 7)
+    assert g._has_vulkan_delegate(prog)
+
+
 def test_generate_manifest(tmp_path):
     g.generate(str(tmp_path), ops=["add"])
     manifest = tmp_path / "manifest.json"
