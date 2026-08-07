@@ -167,6 +167,61 @@ def _minimal_packages() -> List[str]:
     )
 
 
+# The published project names for the CUDA runtime components a CUDA wheel links but
+# does not bundle, keyed by CUDA major version. Not derivable from a suffix rule: the
+# CUDA 12 wheels carry a "-cu12" suffix while the CUDA 13 ones are published under
+# unsuffixed names. A train with no entry here declares nothing rather than guessing a
+# name that may not exist.
+_CUDA_RUNTIME_PACKAGES = {
+    "12": ("nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12", "nvidia-curand-cu12"),
+    "13": ("nvidia-cuda-runtime", "nvidia-cublas", "nvidia-curand"),
+}
+
+# Where each train installs its libraries under site-packages. CUDA 13 collects them in
+# one directory while CUDA 12 gives each component its own, so the search path differs by
+# train and cannot be a single literal.
+_CUDA_LIBRARY_DIRECTORIES = {
+    "12": ("nvidia/cuda_runtime/lib", "nvidia/cublas/lib", "nvidia/curand/lib"),
+    "13": ("nvidia/cu13/lib",),
+}
+
+
+def _cuda_train() -> str:
+    """The CUDA major version this wheel is being built for, or "" for a CPU wheel.
+
+    A CPU wheel built on a machine that happens to have a CUDA toolkit must not declare
+    CUDA dependencies, so this reads the release matrix field rather than probing the
+    builder. The wheel build exports CU_VERSION; DESIRED_CUDA is the matrix field name.
+    """
+    raw = os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or ""
+    digits = raw.lstrip("cu").replace(".", "")
+    return digits[:2] if digits[:2] in _CUDA_RUNTIME_PACKAGES else ""
+
+
+def _cuda_dependencies() -> List[str]:
+    """Runtime libraries a CUDA wheel needs but does not bundle.
+
+    Declared rather than vendored, the way the PyTorch CUDA wheels do it, so one copy is
+    shared with torch instead of shipping a second one.
+    """
+    train = _cuda_train()
+    return list(_CUDA_RUNTIME_PACKAGES.get(train, ()))
+
+
+def _cuda_runtime_search_paths() -> List[str]:
+    """Loader paths that reach the CUDA wheels installed beside this one.
+
+    Two levels up from `executorch/lib` is the directory those wheels install into, so a
+    relative hop finds them wherever the environment lives. Without this the delegate
+    resolves the CUDA runtime only where the build machine had it.
+    """
+    train = _cuda_train()
+    return [
+        f"$ORIGIN/../../{directory}"
+        for directory in _CUDA_LIBRARY_DIRECTORIES.get(train, ())
+    ]
+
+
 def _base_dependencies() -> List[str]:
     """Runtime dependencies for the full wheel.
 
@@ -742,7 +797,16 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
             marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")
         )
 
-    rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
+    entries = [entry for entry in original.split(":") if keep(entry)]
+    # A CUDA wheel links the CUDA runtime from a separate wheel installed beside this
+    # one, so the loader needs a relative hop to reach it. Without this the library
+    # resolves the runtime only through the absolute toolkit path the linker recorded,
+    # which names the build machine and will not exist for a user who installed from an
+    # index. Appended, so a path already present keeps its position.
+    for search_path in _cuda_runtime_search_paths():
+        if search_path not in entries:
+            entries.append(search_path)
+    rewritten = ":".join(entries)
     if rewritten == original:
         return
     subprocess.run(
@@ -1141,6 +1205,10 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                    # The stream helper ships as its own library so a process has one
+                    # of it. Named because nothing else in a wheel build links it.
+                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1192,7 +1260,9 @@ if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
     setup_kwargs["install_requires"] = _minimal_dependencies()
 else:
-    setup_kwargs["install_requires"] = _base_dependencies()
+    # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
+    # carry it are declared here. A CPU wheel adds nothing.
+    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
 
 
 setup(
@@ -1279,6 +1349,28 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # The CUDA delegate and the process-wide CUDA stream helper, for a
+                # wheel built from a CUDA index. Only present when the build asks for
+                # CUDA, so packaging requires that rather than looking for files a
+                # CPU-only build never produced.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                    src_name="libexecutorch_backend_cuda.so",
+                    dst="executorch/lib/libexecutorch_backend_cuda.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
+                ),
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/",
+                    src_name="libexecutorch_extension_cuda.so",
+                    dst="executorch/lib/libexecutorch_extension_cuda.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
                     ],
                 ),
                 # The quantized kernels, as their own library rather than code

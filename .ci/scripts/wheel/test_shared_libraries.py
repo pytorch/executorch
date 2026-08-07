@@ -54,6 +54,16 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # The quantized kernels, whose own library the wheel ships when they are built.
 # A separate group because they have a separate owner, and because a wheel built
 # without them ships neither the library nor these symbols.
+# The CUDA delegate and its stream helper, for a wheel built from a CUDA index. The
+# stream helper matters most: two copies means two notions of the caller's stream, so
+# work queued through one is invisible to the other.
+# A strongly defined symbol, chosen by reading the built library rather than guessed.
+# The CudaBackend methods are emitted weak, and the definer count only looks at strong
+# definitions, so naming one of those would report zero definers for a library that is
+# plainly present.
+_CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
+_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+
 _QUANTIZED_KERNEL_SYMBOLS = (
     "torch::executor::native::quantize_per_tensor_out",
     "torch::executor::native::dequantize_per_tensor_out",
@@ -359,6 +369,18 @@ _OWNED_COMPONENTS = (
         "set of quantized kernels",
         _QUANTIZED_KERNEL_SYMBOLS,
         "libexecutorch_kernels_quantized.so",
+        False,
+    ),
+    (
+        "CUDA delegate",
+        _CUDA_BACKEND_SYMBOLS,
+        "libexecutorch_backend_cuda.so",
+        False,
+    ),
+    (
+        "CUDA stream helper",
+        _CUDA_STREAM_SYMBOLS,
+        "libexecutorch_extension_cuda.so",
         False,
     ),
     # The third-party code these libraries bundle, checked separately from the
@@ -1240,6 +1262,8 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_backend_cuda",
+        "libexecutorch_extension_cuda",
         "libexecutorch_backend_xnnpack",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",

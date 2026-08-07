@@ -23,6 +23,15 @@ find_package(CUDAToolkit REQUIRED)
 # copy linked into multiple shared libraries would create multiple thread-locals
 # and silently break the caller-stream handshake.
 add_library(extension_cuda SHARED caller_stream.cpp)
+if(EXECUTORCH_BUILD_SHARED)
+  # Named after what it provides rather than after the target, matching the
+  # other libraries the wheel ships. The target name stays as it is because the
+  # rest of the build already refers to it.
+  set_target_properties(
+    extension_cuda PROPERTIES OUTPUT_NAME executorch_extension_cuda
+  )
+  executorch_target_soname_policy(extension_cuda)
+endif()
 target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})
 target_compile_options(
