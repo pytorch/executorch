@@ -32,6 +32,8 @@ jobs:
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
   link-check:
+    # Whole tree scans only. Pull requests get the same check from lint.yml.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: update-pytorch-commit-hash
     uses: ./.github/workflows/_link_check.yml
     with:
