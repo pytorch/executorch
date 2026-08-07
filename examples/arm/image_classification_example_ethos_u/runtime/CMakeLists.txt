@@ -77,6 +77,8 @@ find_package(
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
 
 add_executable(img_class_example main.cpp)
+include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
+arm_runner_link_minimal_specs(img_class_example)
 
 target_sources(
   img_class_example
