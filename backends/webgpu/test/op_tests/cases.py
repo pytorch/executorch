@@ -153,8 +153,13 @@ from executorch.backends.webgpu.test.ops.test_squeeze import (
 )
 
 from executorch.backends.webgpu.test.ops.test_to_copy import (
+    bool_tail_input,
+    compare_to_copy_input_a,
+    compare_to_copy_input_b,
+    CompareToCopyBoolToFloatModule,
     to_copy_float_input,
     to_copy_int_input,
+    ToCopyBoolToFloatModule,
     ToCopyFloatToIntToFloatModule,
     ToCopyIntToFloatModule,
 )
@@ -189,6 +194,39 @@ def _add_factory(variant: str = "regular") -> torch.nn.Module:
         "self": AddSelfModule,
         "chained": AddChainedModule,
     }[variant]()
+
+
+@register_op_test("to_copy_bool_to_float")
+def _to_copy_bool_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=CompareToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(
+                    InputSpec((n,), gen=compare_to_copy_input_a),
+                    InputSpec((n,), gen=compare_to_copy_input_b),
+                ),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("to_copy_bool_input_to_float")
+def _to_copy_bool_input_to_float_suite() -> WebGPUTestSuite:
+    return WebGPUTestSuite(
+        module_factory=ToCopyBoolToFloatModule,
+        cases=[
+            Case(
+                inputs=(InputSpec((n,), gen=bool_tail_input),),
+                name=f"length_{n}",
+            )
+            for n in (1, 4, 5, 67)
+        ],
+        golden_dtype="float32",
+    )
 
 
 @register_op_test("add")
@@ -295,10 +333,7 @@ def _minimum_suite() -> WebGPUTestSuite:
 
 
 def _compare_suite(op: str) -> WebGPUTestSuite:
-    # Elementwise fp32 comparison -> bool (byte-exact golden). The two inputs use
-    # DIFFERENT discrete-range seeds so a!=b (real lt/gt mix) while colliding
-    # often (eq/le/ge ties); all shapes have numel % 4 == 0 (bool output packs 4
-    # bytes/word). Same-shape only (flat kernel; broadcast=smoke).
+    # Distinct inputs and tail shapes cover byte-exact packed BOOL output.
     def case(name, shape):
         return Case(
             name=name,
@@ -310,7 +345,14 @@ def _compare_suite(op: str) -> WebGPUTestSuite:
 
     return WebGPUTestSuite(
         module_factory=lambda: CompareModule(op),
-        cases=[case("2d", (4, 8)), case("3d", (2, 3, 8)), case("sq", (16, 16))],
+        cases=[
+            case("tail_1", (1,)),
+            case("tail_5", (5,)),
+            case("tail_67", (67,)),
+            case("2d", (4, 8)),
+            case("3d", (2, 3, 8)),
+            case("sq", (16, 16)),
+        ],
         golden_dtype="bool",
     )
 
