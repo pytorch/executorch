@@ -175,6 +175,20 @@ class WebGPUGraph {
       std::vector<OutputData>& outputs,
       const WebGPUExecutionPlan& plan);
 
+  std::string execution_attestation_json() const;
+
+  void complete_execution_attestation() {
+    execution_attestation_.completed = true;
+    execution_attestation_.error_reason.clear();
+  }
+
+  void fail_execution_attestation(const std::string& reason) {
+    execution_attestation_.completed = false;
+    if (execution_attestation_.error_reason.empty()) {
+      execution_attestation_.error_reason = reason;
+    }
+  }
+
   const std::vector<int>& input_ids() const {
     return input_ids_;
   }
@@ -230,13 +244,21 @@ class WebGPUGraph {
   struct SymIntSource {
     int symint_id;
     int input_tensor_id;
-    int dim;
-    int index;
+    std::vector<int64_t> indices;
+    int64_t bias = 0;
   };
   void
-  add_symint_source(int symint_id, int input_tensor_id, int dim, int index) {
-    symint_sources_.push_back({symint_id, input_tensor_id, dim, index});
-  }
+  add_symint_source(int symint_id, int source_tensor_id, int dim, int index);
+  void add_input_select_projection(
+      int output_tensor_id,
+      int input_tensor_id,
+      int dim,
+      int index);
+  void add_input_bias_projection(
+      int output_tensor_id,
+      int input_tensor_id,
+      int64_t bias);
+  bool try_read_prepacked_int32_scalar(int value_id, int32_t& out) const;
   const std::vector<SymIntSource>& symint_sources() const {
     return symint_sources_;
   }
@@ -323,6 +345,55 @@ class WebGPUGraph {
     }
     add_tensor_resize_hook(
         trigger_tensor_id,
+        [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
+  }
+
+  // Terminal notification after the SymInt DAG and tensor-shape fixpoint.
+  // Callbacks may refresh complete derived state, but cannot start another
+  // propagation wave through set_symint or set_cur_dims.
+  void add_post_resize_hook(
+      const std::vector<int>& tensor_trigger_ids,
+      const std::vector<int>& symint_trigger_ids,
+      std::function<void(WebGPUGraph&)> fn) {
+    if (tensor_trigger_ids.empty() && symint_trigger_ids.empty()) {
+      throw std::runtime_error(
+          "WebGPU resize: post hook requires at least one trigger");
+    }
+    for (int id : tensor_trigger_ids) {
+      if (id < 0 || id >= num_values() ||
+          get_value_type(id) != ValueType::Tensor) {
+        throw std::runtime_error(
+            "WebGPU resize: post-hook tensor trigger must be a Tensor");
+      }
+    }
+    for (int id : symint_trigger_ids) {
+      if (id < 0 || id >= num_values() ||
+          get_value_type(id) != ValueType::SymInt) {
+        throw std::runtime_error(
+            "WebGPU resize: post-hook SymInt trigger must be a SymInt");
+      }
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null post-resize hook");
+    }
+    post_resize_hooks_.push_back(
+        {tensor_trigger_ids, symint_trigger_ids, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_post_resize_hook(
+      const std::vector<int>& tensor_trigger_ids,
+      const std::vector<int>& symint_trigger_ids,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null post-resize hook");
+    }
+    add_post_resize_hook(
+        tensor_trigger_ids,
+        symint_trigger_ids,
         [fn, context = std::move(context)](WebGPUGraph& graph) {
           fn(graph, context);
         });
@@ -565,6 +636,9 @@ class WebGPUGraph {
   }
 
  private:
+  bool try_read_constant_bytes(int const_value_id, std::vector<uint8_t>& out)
+      const;
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
   void record_active_route(const std::string& kernel_name);
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -596,6 +670,12 @@ class WebGPUGraph {
   };
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
+  struct InputSelectProjection {
+    int input_tensor_id;
+    int dim;
+    int index;
+  };
+  std::unordered_map<int, InputSelectProjection> input_select_projections_;
   std::vector<SymIntDimSource> symint_dim_sources_;
   std::unordered_set<int> dynamic_tensor_ids_;
 
@@ -615,6 +695,14 @@ class WebGPUGraph {
   };
   std::vector<TensorResizeHook> tensor_resize_hooks_;
   std::unordered_set<int> dirty_tensors_;
+
+  struct PostResizeHook {
+    std::vector<int> tensor_trigger_ids;
+    std::vector<int> symint_trigger_ids;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<PostResizeHook> post_resize_hooks_;
+  bool in_post_resize_phase_ = false;
 
   // Dynamic grids are stored separately so ordinary dispatches remain compact.
   // The graph owns each dispatch index and picker; ops only provide typed
@@ -683,6 +771,8 @@ class WebGPUGraph {
   std::unordered_map<int, ConstantSource> constant_sources_;
 
   ExecuteConfig execute_config_;
+  uint64_t execution_ordinal_ = 0;
+  WebGPUExecutionAttestation execution_attestation_;
 
   // Caches for reusing GPU objects across dispatches.
   std::unordered_map<std::string, WGPUShaderModule> shader_cache_;

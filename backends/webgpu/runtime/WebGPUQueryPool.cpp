@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -25,13 +26,16 @@ struct MapCallbackData {
   WGPUMapAsyncStatus status = WGPUMapAsyncStatus_Error;
 };
 
+using MapCallbackDataPtr = std::shared_ptr<MapCallbackData>;
+
 void map_callback(
     WGPUMapAsyncStatus status,
     WGPUStringView /*message*/,
     void* userdata1,
     void* /*userdata2*/) {
-  auto* data = static_cast<MapCallbackData*>(userdata1);
-  data->status = status;
+  std::unique_ptr<MapCallbackDataPtr> data_owner(
+      static_cast<MapCallbackDataPtr*>(userdata1));
+  (*data_owner)->status = status;
 }
 
 constexpr uint64_t kTimestampBytes = sizeof(uint64_t);
@@ -88,6 +92,7 @@ void WebGPUQueryPool::reset(uint32_t num_dispatches) {
   }
   num_pairs_ = num_dispatches;
   durations_.clear();
+  result_state_.invalidate();
 }
 
 WGPUPassTimestampWrites WebGPUQueryPool::writes_for(uint32_t i) {
@@ -154,33 +159,65 @@ void fill_shader_durations(
   }
 }
 
+bool WebGPUQueryPool::finalize_extraction(
+    WGPUWaitStatus wait_status,
+    WGPUMapAsyncStatus map_status,
+    const uint64_t* ticks) {
+  result_state_.invalidate();
+  if (!detail::query_result_extraction_succeeded(
+          num_pairs_, wait_status, map_status, ticks)) {
+    return false;
+  }
+  if (num_pairs_ != 0) {
+    fill_shader_durations(durations_, ticks, ns_per_tick_);
+  }
+  result_state_.complete();
+  return true;
+}
+
 void WebGPUQueryPool::extract_results(WGPUInstance instance) {
+  result_state_.invalidate();
   if (num_pairs_ == 0) {
+    (void)finalize_extraction(
+        WGPUWaitStatus_Success, WGPUMapAsyncStatus_Success, nullptr);
     return;
   }
   const uint32_t count = 2 * num_pairs_;
   const uint64_t bytes = static_cast<uint64_t>(count) * kTimestampBytes;
 
-  MapCallbackData cb;
+  const auto cb_data = std::make_shared<MapCallbackData>();
   WGPUBufferMapCallbackInfo cb_info = {};
   cb_info.mode = WGPUCallbackMode_WaitAnyOnly;
   cb_info.callback = map_callback;
-  cb_info.userdata1 = &cb;
-  webgpu_wait(
-      instance,
-      wgpuBufferMapAsync(readback_buf_, WGPUMapMode_Read, 0, bytes, cb_info));
+  cb_info.userdata1 = new MapCallbackDataPtr(cb_data);
+  const WGPUFuture map_future =
+      wgpuBufferMapAsync(readback_buf_, WGPUMapMode_Read, 0, bytes, cb_info);
+  const WGPUWaitStatus wait_status = webgpu_wait(instance, map_future);
 
-  if (cb.status != WGPUMapAsyncStatus_Success) {
+  if (wait_status != WGPUWaitStatus_Success) {
+    wgpuBufferUnmap(readback_buf_);
+    (void)webgpu_wait(instance, map_future);
+    (void)finalize_extraction(wait_status, cb_data->status, nullptr);
     printf(
-        "WebGPUQueryPool: readback map failed (status %d)\n", (int)cb.status);
+        "WebGPUQueryPool: readback wait failed (status %d)\n",
+        (int)wait_status);
+    return;
+  }
+  if (cb_data->status != WGPUMapAsyncStatus_Success) {
+    (void)finalize_extraction(wait_status, cb_data->status, nullptr);
+    printf(
+        "WebGPUQueryPool: readback map failed (status %d)\n",
+        (int)cb_data->status);
     return;
   }
   const uint64_t* ticks = static_cast<const uint64_t*>(
       wgpuBufferGetConstMappedRange(readback_buf_, 0, bytes));
-  if (ticks != nullptr) {
-    fill_shader_durations(durations_, ticks, ns_per_tick_);
-  }
+  const bool valid =
+      finalize_extraction(wait_status, cb_data->status, ticks);
   wgpuBufferUnmap(readback_buf_);
+  if (!valid) {
+    printf("WebGPUQueryPool: readback mapped range is null\n");
+  }
 }
 
 void WebGPUQueryPool::print_results(bool tsv) const {
