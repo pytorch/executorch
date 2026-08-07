@@ -16,6 +16,11 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch._ops import OpOverload
 
 from torch.fx.node import Argument
+from torch.fx.experimental.symbolic_shapes import (
+    statically_known_false,
+    statically_known_true,
+    sym_and,
+)
 
 OpType = Union[str, OpOverload, EdgeOpOverload]
 
@@ -26,21 +31,47 @@ class SqueezeUnsqueezeInputs(ExportPass):
         exir_ops.edge.aten.gelu.default,
     }
 
+    @staticmethod
+    def _first_static_one(shape: List[int]) -> Union[int, None]:  # pyre-ignore
+        for index, dim in enumerate(shape):
+            if statically_known_true(dim == 1):
+                return index
+        return None
+
+    def _squeezed_shape(self, shape: List[int]) -> List[int]:  # pyre-ignore
+        squeezed_shape = list(shape)
+        while len(squeezed_shape) > 2:
+            index = self._first_static_one(squeezed_shape)
+            if index is None:
+                break
+            squeezed_shape.pop(index)
+        return squeezed_shape
+
     def should_squeeze(self, op, shape: List[int]) -> bool:  # pyre-ignore
         if len(shape) == 3:
-            return shape[1] == 1 and shape[0] > 1
+            return statically_known_true(sym_and(shape[1] == 1, shape[0] > 1))
         if len(shape) == 4:
-            # No need to squeeze if all dims are 1 except the width dim
-            if shape[0] == shape[1] == shape[2] == 1:
+            excluded_shapes = (
+                sym_and(shape[0] == 1, shape[1] == 1, shape[2] == 1),
+                sym_and(
+                    shape[0] == 1,
+                    shape[1] == 1,
+                    shape[2] > 1,
+                    shape[3] > 1,
+                ),
+                sym_and(
+                    shape[0] == 1,
+                    shape[1] > 1,
+                    shape[2] > 1,
+                    shape[3] > 1,
+                ),
+            )
+            if any(
+                not statically_known_false(excluded_shape)
+                for excluded_shape in excluded_shapes
+            ):
                 return False
-            # No need to squeeze if batch and channel dims are 1 and height and width are > 1
-            if shape[0] == shape[1] == 1 and shape[2] > 1 and shape[3] > 1:
-                return False
-            # No need to squeeze if batch dim is 1 and channel, height and width are > 1
-            if shape[0] == 1 and shape[1] > 1 and shape[2] > 1 and shape[3] > 1:
-                return False
-            # Otherwise, check for squeezable dim
-            return 1 in shape[:-1]
+            return self._first_static_one(shape[:-1]) is not None
 
         # Prefer not to introduce additional orchestration ops by default
         return False
@@ -61,18 +92,13 @@ class SqueezeUnsqueezeInputs(ExportPass):
         if not self.should_squeeze(op, input_shape):
             return super().call_operator(op, args, kwargs, meta)
 
-        def _squeezable(shape: List[int]) -> bool:
-            return len(shape) > 2 and 1 in shape
-
         # squeeze input tensor
-        squeeze_shape = list(input_shape)
-        while _squeezable(squeeze_shape):
-            squeeze_shape.remove(1)
+        squeeze_shape = self._squeezed_shape(input_shape)
 
         squeeze_out = super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (args[0], squeeze_shape),
-            kwargs,
+            {},
             meta,
         )
         # call linear on squeezed output
@@ -88,6 +114,6 @@ class SqueezeUnsqueezeInputs(ExportPass):
         return super().call_operator(
             exir_ops.edge.aten.view_copy.default,
             (linear_out, unsqueeze_shape),
-            kwargs,
+            {},
             meta,
         )

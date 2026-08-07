@@ -43,10 +43,15 @@ from executorch.backends.vulkan.patterns.pattern_registry import (
 )
 
 from executorch.backends.vulkan.patterns.rope import RotaryEmbeddingPattern
-from executorch.backends.vulkan.patterns.rope_hf import HfRotaryEmbeddingPattern
+from executorch.backends.vulkan.patterns.rope_hf import (
+    HfRotaryEmbeddingPattern,
+    HfRotaryEmbeddingSinglePattern,
+)
 
 from executorch.exir import ExportedProgram
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
+from torch._library.utils import is_impure
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
 
 
@@ -57,11 +62,20 @@ __all__ = [
     "CreateReplacementFn",
     "RotaryEmbeddingPattern",
     "HfRotaryEmbeddingPattern",
+    "HfRotaryEmbeddingSinglePattern",
     "fusable_patterns",
     "register_pattern_graph",
     "register_pattern_detector",
     "register_pattern_replacement",
 ]
+
+
+def _is_impure_node(node: torch.fx.Node) -> bool:
+    if node.is_impure():
+        return True
+    if isinstance(node.target, EdgeOpOverload):
+        return is_impure(node.target._op, args=node.args, kwargs=node.kwargs)
+    return False
 
 
 def all_fusable_graph_patterns() -> List[torch.fx.GraphModule]:
@@ -112,7 +126,7 @@ def create_replacement_for_pattern(
             create_replacement_func(ep, graph_module, pattern)
             total_replaced += 1
             # Remove dead code so they won't be matched again
-            graph_module.graph.eliminate_dead_code()
+            graph_module.graph.eliminate_dead_code(_is_impure_node)
 
     return total_replaced
 
@@ -147,5 +161,5 @@ def replace_all_fusable_subgraphs(
                     entry.create_replacement_fn(ep, graph_module, maybe_match)
                     total_replaced += 1
 
-    graph_module.graph.eliminate_dead_code()
+    graph_module.graph.eliminate_dead_code(_is_impure_node)
     return total_replaced
