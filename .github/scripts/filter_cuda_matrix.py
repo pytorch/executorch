@@ -62,6 +62,19 @@ PR_CUDA_VERSION: str = "cu130"
 # Kept empty on purpose. Published PyTorch stopped shipping sm_87 device code after 2.8.0,
 # so a Jetson row today would produce a wheel whose PyTorch dependency cannot execute on the
 # device. Populate this when that changes.
+# Windows CUDA is deliberately absent, and not because the matrix cannot express it: the generator
+# offers a Windows CUDA row, PyTorch publishes Windows CUDA wheels, and the CUDA backend already
+# handles Windows in its build.
+#
+# The blocker is that the separate shared libraries this wheel exists to ship are Linux only today.
+# On Windows the runtime stays fused into the Python extension, so a Windows CUDA wheel would carry a
+# delegate that a C++ application still could not link, which is the thing a GPU wheel is for.
+#
+# Splitting the libraries on Windows is the prerequisite. Once that lands, this row is a small change:
+# add "windows" to the architectures below and give it the same CUDA versions as Linux.
+WINDOWS_CUDA_PYTHON_VERSIONS: List[str] = []
+WINDOWS_CUDA_VERSIONS: List[str] = []
+
 JETPACK_PYTHON_VERSIONS: List[str] = []
 JETPACK_CUDA_VERSIONS: List[str] = []
 JETPACK_CONTAINER_IMAGE: str = "nvcr.io/nvidia/l4t-jetpack:r36.4.0"

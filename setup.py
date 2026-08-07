@@ -206,6 +206,17 @@ def _cuda_train() -> str:
     if digits[:2] in _CUDA_RUNTIME_PACKAGES:
         return digits[:2]
 
+    # Fall back to the installed toolkit only when the build was asked for CUDA. A release builder can
+    # have a toolkit installed while building a CPU row, and asking the machine there made a CPU wheel
+    # declare a CUDA runtime it never loads, which is several hundred megabytes a user does not need.
+    if os.environ.get("EXECUTORCH_BUILD_CUDA", "").strip() not in (
+        "1",
+        "ON",
+        "on",
+        "true",
+        "TRUE",
+    ):
+        return ""
     if not install_utils.is_cuda_available():
         return ""
     try:
