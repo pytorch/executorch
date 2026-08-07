@@ -50,7 +50,6 @@ model_explorer=false
 perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
-model_converter=false
 specify_ethosu_scratch=false
 extra_build_flags=""
 preset_file="${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake"
@@ -257,10 +256,9 @@ function check_setup () {
         hash arm-none-eabi-gcc \
             || { echo "Could not find arm-none-eabi-gcc on PATH, ${_setup_msg}"; return 1; }
     elif [[ ${target} =~ "vgf" ]]; then
-        model_converter=$(which model-converter || true)
-        echo "${model_converter}"
-        [[ -z "${model_converter}" || "${model_converter}" == "model-converter not found" ]] \
-            && { echo "Could not find model-converter, ${_setup_msg}"; return 1; }
+        if ! python3 -m executorch.backends.arm.vgf.check_env --aot; then
+            return 1
+        fi
     fi
 
     return 0
