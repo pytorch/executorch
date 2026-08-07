@@ -295,28 +295,42 @@ function(executorch_target_retain_shared_library target_name library_target)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
   endif()
-  # A static library cannot carry this. PRIVATE link options on a static target
-  # are dropped entirely, because a static library has no link step of its own,
-  # while PRIVATE link libraries still propagate to whatever links it as
-  # $<LINK_ONLY:...>. The consumer therefore gets the shared runtime with no
+  # A target with no link step of its own cannot carry this. PRIVATE link
+  # options are dropped on both static and object libraries, because neither
+  # links, while PRIVATE link libraries still propagate to whatever consumes
+  # them as $<LINK_ONLY:...>. The consumer then gets the shared runtime with no
   # --no-as-needed around it, which is the precise condition this function
-  # exists to prevent, and it fails silently: the library links, and its
+  # exists to prevent, and it fails silently: the build succeeds and the
   # registrations land in a table nothing else reads.
   #
-  # Fatal rather than a warning, because the symptom is an operator reported
-  # missing at run time in a program that built cleanly, and the caller has to
-  # choose whether to make the target shared or to retain the runtime from
-  # whatever links it.
+  # Written as the set of types that CAN link rather than a list of types to
+  # reject, so a target kind added later does not quietly escape.
   get_target_property(_target_type ${target_name} TYPE)
-  if(_target_type STREQUAL "STATIC_LIBRARY")
+  if(NOT ${_target_type} MATCHES "^(SHARED_LIBRARY|MODULE_LIBRARY|EXECUTABLE)$")
     message(
       FATAL_ERROR
         "executorch_target_retain_shared_library(${target_name}) cannot work on a "
-        "static library: PRIVATE link options are dropped on a static target, so "
-        "${library_target} would reach a consumer without --no-as-needed and its "
-        "registrations would go into a private table. Make ${target_name} SHARED, or "
-        "retain ${library_target} from the target that links it."
+        "${_target_type}: it has no link step, so PRIVATE link options are dropped and "
+        "${library_target} would reach a consumer without --no-as-needed, leaving its "
+        "registrations in a private table. Make ${target_name} SHARED, or retain "
+        "${library_target} from the target that links it."
     )
+  endif()
+  # The library being retained has to be one the loader can drop, or the option
+  # says nothing. Only checked when it is already defined: CMake resolves link
+  # libraries lazily, and a caller may legitimately name a library created later
+  # in the configure, which several call sites here do.
+  if(TARGET ${library_target})
+    get_target_property(_library_type ${library_target} TYPE)
+    if(NOT ${_library_type} STREQUAL "SHARED_LIBRARY")
+      message(
+        FATAL_ERROR
+          "executorch_target_retain_shared_library(${target_name} ${library_target}): "
+          "${library_target} is a ${_library_type}, and --no-as-needed only affects a shared "
+          "library. A static or object library is linked by extraction instead, "
+          "so use executorch_target_whole_archive."
+      )
+    endif()
   endif()
   # Scoped per library for the same reason as whole-archive above: unique option
   # text, so nothing is de-duplicated out of the retention scope. Without this a
@@ -384,6 +398,16 @@ function(executorch_add_shared_library target_name)
   add_library(
     ${target_name} SHARED "${CMAKE_CURRENT_BINARY_DIR}/${empty_source_name}"
   )
+  # The dependencies are linked plainly, without a retention option, because
+  # each one already carries its own INTERFACE whole-archive option and so pulls
+  # its registration objects in when linked. The empty source above exists only
+  # to give this library a translation unit.
+  #
+  # Nothing here can verify that invariant: CMake cannot tell at configure time
+  # whether every transitive dependency carries the option. It is checked where
+  # it is observable instead, by the release checks asserting exactly one owner
+  # per component in the shipped artifact, which is what fails if extraction
+  # stops working.
   if(ARGN)
     target_link_libraries(${target_name} PRIVATE ${ARGN})
   endif()
