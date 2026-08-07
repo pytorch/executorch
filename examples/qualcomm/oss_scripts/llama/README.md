@@ -371,9 +371,9 @@ python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android
 ```
 
 #### SmolVLM 256M
-Default example using kv mode. Encoder quantization is skipped (FP16 on HTP) to preserve vision feature quality.
+Default example using hybrid mode. Encoder quantization is skipped (FP16 on HTP) to preserve vision feature quality.
 ```bash
-python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smolvlm_256m_instruct --model_mode kv --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/vision.json
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --decoder_model smolvlm_256m_instruct --model_mode hybrid --prefill_ar_len 16 --max_seq_len 1024 --prompt "Can you describe this image?" --image_path "https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg" --calib_samples examples/qualcomm/oss_scripts/llama/assets/samples/vision.json
 ```
 
 #### InternVL 1B
