@@ -316,9 +316,18 @@ function(gen_operators_lib)
   # Resolve the runtime from the shared library rather than from the static core
   # in GEN_DEPS. Linking the static core gives this library its own copy of the
   # operator table, so its static initializer registers into a table nothing
-  # else reads and the operators appear missing at run time. A no-op unless the
-  # shared runtime exists, so it needs no guard here.
-  executorch_target_link_shared_runtime(${GEN_LIB_NAME})
+  # else reads and the operators appear missing at run time.
+  #
+  # Only when this target is itself shared. On a static target the retention
+  # helper cannot work: PRIVATE link options are dropped on a static library, so
+  # the --no-as-needed scope never reaches whatever links it, and the helper is
+  # fatal on that rather than pretending. A static operators library is
+  # extracted whole into its consumer, and the consumer is what retains the
+  # runtime, so there is nothing to do here. It still needs the runtime's
+  # headers, which come through GEN_DEPS.
+  if(GEN_SHARED)
+    executorch_target_link_shared_runtime(${GEN_LIB_NAME})
+  endif()
   set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
 

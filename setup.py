@@ -184,6 +184,10 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
+        # backends/qualcomm/__init__.py raises ImportError without this, so the
+        # extension the wheel ships could not be imported from a clean install. It
+        # reads the CPU vendor to disable an mkldnn path on AMD.
+        "py-cpuinfo",
         "pytorch-tokenizers",
         "pyyaml",
         "ruamel.yaml",

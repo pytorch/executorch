@@ -60,6 +60,15 @@ function(executorch_target_whole_archive target_name archive_target)
   # its text is unique, which matters because CMake removes a duplicate option
   # and that would leave every archive after the first outside the scope,
   # silently dropping its registration objects.
+  #
+  # The cost, measured rather than assumed: CMake splits a comma-joined LINKER:
+  # list at every comma, so an archive whose path contains one reaches the
+  # linker as two broken arguments and the link fails. Accepted, because the
+  # alternative of giving the path its own option reintroduces the
+  # de-duplication problem above, and because this file's pre-existing
+  # SHELL:LINKER: helpers already break on a path containing a space, which is
+  # the more common case. Both fail loudly at link time rather than producing a
+  # binary whose registrations are quietly missing.
   target_link_options(
     ${target_name}
     PRIVATE
@@ -285,6 +294,29 @@ endfunction()
 function(executorch_target_retain_shared_library target_name library_target)
   if(NOT EXECUTORCH_BUILD_SHARED)
     return()
+  endif()
+  # A static library cannot carry this. PRIVATE link options on a static target
+  # are dropped entirely, because a static library has no link step of its own,
+  # while PRIVATE link libraries still propagate to whatever links it as
+  # $<LINK_ONLY:...>. The consumer therefore gets the shared runtime with no
+  # --no-as-needed around it, which is the precise condition this function
+  # exists to prevent, and it fails silently: the library links, and its
+  # registrations land in a table nothing else reads.
+  #
+  # Fatal rather than a warning, because the symptom is an operator reported
+  # missing at run time in a program that built cleanly, and the caller has to
+  # choose whether to make the target shared or to retain the runtime from
+  # whatever links it.
+  get_target_property(_target_type ${target_name} TYPE)
+  if(_target_type STREQUAL "STATIC_LIBRARY")
+    message(
+      FATAL_ERROR
+        "executorch_target_retain_shared_library(${target_name}) cannot work on a "
+        "static library: PRIVATE link options are dropped on a static target, so "
+        "${library_target} would reach a consumer without --no-as-needed and its "
+        "registrations would go into a private table. Make ${target_name} SHARED, or "
+        "retain ${library_target} from the target that links it."
+    )
   endif()
   # Scoped per library for the same reason as whole-archive above: unique option
   # text, so nothing is de-duplicated out of the retention scope. Without this a

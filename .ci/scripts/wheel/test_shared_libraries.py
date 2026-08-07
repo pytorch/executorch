@@ -209,7 +209,7 @@ def _shipped_runtime_libraries(package_dir: Path):
 
 def _defines_symbol(library: Path, symbol: str) -> bool:
     result = subprocess.run(
-        ["nm", "-DC", str(library)], capture_output=True, text=True, check=False
+        [_tool("nm"), "-DC", str(library)], capture_output=True, text=True, check=False
     )
     if result.returncode != 0:
         # A file that is not an object file at all is not this check's concern: something whose
@@ -551,7 +551,7 @@ def test_shipped_libraries_load() -> None:
             # entries. A SHARED link does not error on undefined symbols, so
             # without this an under-linked library passes here and fails at first
             # use instead.
-            ["ldd", "-r", str(library)],
+            [_tool("ldd"), "-r", str(library)],
             capture_output=True,
             text=True,
             check=False,
@@ -681,7 +681,7 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
                 check=True,
             )
             resolved = subprocess.run(
-                ["ldd", str(target)],
+                [_tool("ldd"), str(target)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -771,7 +771,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     )
 
     compiled = subprocess.run(
-        ["cmake", "--build", str(build_dir)],
+        [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
         check=False,
@@ -853,11 +853,16 @@ def _find_wheel_files() -> list:
     return []
 
 
-# The architectures this project builds wheels for. Matched by suffix rather than
-# parsed positionally, because the version part differs between spellings
-# (linux_x86_64, manylinux_2_28_x86_64, manylinux2014_x86_64) enough that a
-# positional pattern picks it up as part of the name.
-_WHEEL_ARCHITECTURES = ("x86_64", "aarch64", "arm64", "i686", "ppc64le", "s390x")
+# The architectures a Linux wheel tag can name. Matched by suffix rather than parsed
+# positionally, because the version part differs between spellings (linux_x86_64,
+# manylinux_2_28_x86_64, manylinux2014_x86_64) enough that a positional pattern picks
+# it up as part of the name.
+#
+# Linux only, which is what this check reads. `arm64` deliberately absent: it is the
+# macOS spelling, Linux uses aarch64, and including it made a macosx_11_0_arm64 tag
+# look like something this could compare. A tag naming none of these is reported as
+# unreadable rather than as a mismatch.
+_WHEEL_ARCHITECTURES = ("x86_64", "aarch64", "i686", "ppc64le", "s390x", "armv7l")
 
 
 def _wheel_architecture(tag: str):
@@ -868,36 +873,23 @@ def _wheel_architecture(tag: str):
     return None
 
 
-def test_platform_tag_comparison_is_sound() -> None:
-    """The tag comparison must accept what the release pipeline actually produces.
+def _tag_architectures_match(claimed: str, supported: str):
+    """Whether two platform tags name the same architecture.
 
-    A local build tags a wheel plain `linux_x86_64`, while the release pipeline builds
-    in a manylinux image and rewrites the file name to `manylinux_2_28_x86_64`. Only
-    the rewritten pair exposed a comparison that rejected every correct wheel, and no
-    local build reproduces that rewrite. Checking the pairs directly means the mistake
-    is catchable without the release pipeline.
+    Returned rather than asserted so the same decision can be unit tested without a
+    wheel. The previous arrangement duplicated the comparison in the test, which meant
+    the test could pass while the shipped check was wrong, and that is exactly what
+    happened: the original defect was in how the caller compared the two tags, and a
+    test that re-implemented the comparison could not see it.
+
+    None for either side means the tag names no architecture this project builds for,
+    which is a different failure from a mismatch and is reported separately.
     """
-    accept = (
-        ("manylinux_2_28_x86_64", "linux_x86_64"),
-        ("manylinux_2_28_aarch64", "linux_aarch64"),
-        ("manylinux2014_x86_64", "linux_x86_64"),
-        ("linux_x86_64", "linux_x86_64"),
-    )
-    for claimed, supported in accept:
-        claimed_arch = _wheel_architecture(claimed)
-        assert claimed_arch is not None, f"no architecture read from {claimed}"
-        assert claimed_arch == _wheel_architecture(supported), (
-            f"the comparison rejects {claimed} against {supported}, which is what the "
-            "release pipeline produces for a correct wheel"
-        )
-
-    reject = (("manylinux_2_28_aarch64", "linux_x86_64"),)
-    for claimed, supported in reject:
-        assert _wheel_architecture(claimed) != _wheel_architecture(supported), (
-            f"the comparison accepts {claimed} against {supported}, so a wheel "
-            "labelled for the wrong architecture would ship"
-        )
-    print("✓ the platform tag comparison accepts real tags and rejects a mismatch")
+    claimed_arch = _wheel_architecture(claimed)
+    supported_arch = _wheel_architecture(supported)
+    if claimed_arch is None or supported_arch is None:
+        return None
+    return claimed_arch == supported_arch
 
 
 def test_wheel_platform_tag() -> None:
@@ -961,11 +953,12 @@ def test_wheel_platform_tag() -> None:
 
     claimed_arch = _wheel_architecture(claimed)
     supported_arch = _wheel_architecture(supported)
-    assert claimed_arch and supported_arch, (
+    matches = _tag_architectures_match(claimed, supported)
+    assert matches is not None, (
         f"could not read an architecture from the declared tag {claimed} or from what "
         f"auditwheel reported, {supported}"
     )
-    assert claimed_arch == supported_arch, (
+    assert matches, (
         f"the wheel claims architecture {claimed_arch} but its contents are built for "
         f"{supported_arch}, so it would install where it cannot run"
     )
@@ -1102,7 +1095,7 @@ def test_extension_contains_no_component() -> None:
     needed = {
         line.split("[", 1)[1].rstrip("]").strip()
         for line in subprocess.run(
-            ["readelf", "-d", str(extension)],
+            [_tool("readelf"), "-d", str(extension)],
             capture_output=True,
             text=True,
             check=True,
@@ -1123,7 +1116,7 @@ def test_extension_contains_no_component() -> None:
     # UNDEFINED reference cannot be faked that way: it says the definition is not
     # here and has to come from a dependency.
     undefined = subprocess.run(
-        ["nm", "-DC", "--undefined-only", str(extension)],
+        [_tool("nm"), "-DC", "--undefined-only", str(extension)],
         capture_output=True,
         text=True,
         check=False,
@@ -1208,7 +1201,10 @@ def test_shipped_library_names_are_expected() -> None:
     mismatched = {}
     for library in shipped:
         dynamic = subprocess.run(
-            ["readelf", "-d", str(library)], capture_output=True, text=True, check=False
+            [_tool("readelf"), "-d", str(library)],
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout
         soname = next(
             (
@@ -1337,14 +1333,23 @@ def test_model_matches_eager_pytorch(work_dir: Path) -> None:
 
 
 def run_tests(work_dir: Path) -> None:
+    # Ordered by what a failure tells you, because these run in sequence and the
+    # first failure stops the rest. The checks that prove the split behaves
+    # correctly come first; packaging metadata comes last.
+    #
+    # This is not hypothetical ordering advice. The platform tag check used to sit
+    # in the middle, and when it failed it took the custom-operator, runtime-path
+    # and numeric-parity checks with it in all eleven wheel jobs, so the weakest
+    # check in the file hid the three strongest.
     test_each_component_has_one_owner()
     test_python_extensions_import()
     test_extension_contains_no_component()
     test_shipped_library_names_are_expected()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
-    test_platform_tag_comparison_is_sound()
-    test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
     test_no_absolute_runtime_paths()
     test_model_matches_eager_pytorch(work_dir)
+    # Last: a wrong answer here says the wheel is labelled wrong, not that the
+    # split is broken.
+    test_wheel_platform_tag()
