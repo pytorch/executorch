@@ -77,6 +77,16 @@ def _function_source(text: str, name: str) -> str:
 
 
 class WgslCodegenTest(unittest.TestCase):
+    def test_compare_word_count_does_not_overflow_u32(self) -> None:
+        source = (g.BACKEND_ROOT / "runtime/ops/compare/compare.wgsl").read_text()
+        expression = "(params.num_elements - 1u) / 4u + 1u"
+        self.assertIn(expression, source)
+        for num_elements in (1, 4, 5, (1 << 32) - 3, (1 << 32) - 2, (1 << 32) - 1):
+            self.assertEqual(
+                (num_elements - 1) // 4 + 1,
+                (num_elements + 3) // 4,
+            )
+
     def test_registry_entries_match_concrete_headers(self) -> None:
         entries = g.registry_entries()
         names = [entry.name for entry in entries]
@@ -210,14 +220,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 134)
+        self.assertEqual(len(outputs), 136)
         self.assertEqual(
             digest.hexdigest(),
-            "e502196846f0f8100f468e5d9f8f9c006b67e08df54e1e2e667daa2fc50d8844",
+            "0512f8d258952e446ffaedcb653b6a3a720eccf8a6b5327d95fd454a912214a3",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "492535b396833ad6ebfed29b093057e38f40b1182b5c7d6b3eb2f3577cab024e",
+            "28aaa7a8d3e916df43e407120e91d487d0d51cbc5ca93c56bd822d25d109890e",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
