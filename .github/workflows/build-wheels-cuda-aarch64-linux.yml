@@ -91,3 +91,7 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      # Required for aarch64. Without it the shared build workflow prepares an x86_64 job
+      # and skips the aarch64 conda install, so the first build step fails on a missing
+      # conda.
+      architecture: aarch64
