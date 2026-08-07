@@ -232,6 +232,7 @@ TEST(WebGPUGraphConfig, ParsesExactBooleanCompileOption) {
   EXPECT_FALSE(absent->record_q4gsw_decode_route);
   EXPECT_FALSE(absent->f16_kv_cache);
   EXPECT_FALSE(absent->f16_accumulate_gemm);
+  EXPECT_EQ(absent->sdpa_query_tile, 0);
 
   uint8_t false_value = 0;
   CompileSpec false_spec = {

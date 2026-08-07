@@ -158,6 +158,22 @@ class WgslCodegenTest(unittest.TestCase):
         self.assertEqual(g.embedded_sha256(h), want)
         self.assertEqual(g.wgsl_sha256(wgsl), want)
 
+    def test_render_header_long_name_is_clang_format_stable(self) -> None:
+        stem = "streaming_attention_qwen3_q32_k16_causal_bound"
+        wgsl = "@compute @workgroup_size(32, 8, 1)\nfn main(){}\n"
+        h = g.render_header(Path(f"runtime/ops/sdpa/{stem}.wgsl"), wgsl)
+
+        self.assertIn(
+            f"// @generated from {stem}.wgsl\n// DO NOT EDIT.",
+            h,
+        )
+        self.assertIn(
+            "inline constexpr uint32_t\n"
+            "    kStreamingAttentionQwen3Q32K16CausalBoundWorkgroupSizeX = 32;",
+            h,
+        )
+        self.assertEqual(g.embedded_sha256(h), g.wgsl_sha256(wgsl))
+
     def test_embedded_sha256_missing_returns_empty(self) -> None:
         self.assertEqual(g.embedded_sha256("no sha line here\n"), "")
 
@@ -199,6 +215,33 @@ class WgslCodegenTest(unittest.TestCase):
             for lane in range(wg_size)
         ]
         self.assertEqual(indices, list(range(8)))
+
+    def test_qwen3_runtime_eligibility_is_exact(self) -> None:
+        sdpa = (g.BACKEND_ROOT / "runtime/ops/sdpa/Sdpa.cpp").read_text()
+        self.assertIn("q/k/v/output must be fp32", sdpa)
+        self.assertIn("cache dtype does not match the selected storage mode", sdpa)
+        self.assertIn("scale == qwen3_expected_scale", sdpa)
+        self.assertNotIn("std::fabs(scale - qwen3_expected_scale)", sdpa)
+
+    def test_fp16_kv_graph_guards_transfer_and_topology(self) -> None:
+        graph = (g.BACKEND_ROOT / "runtime/WebGPUGraph.cpp").read_text()
+        self.assertIn("serialized cache tensor must be fp32", graph)
+        self.assertIn("consumed through a ValueList", graph)
+        self.assertIn("preserve it while changing storage", graph)
+
+        copy_inputs = graph.index("void WebGPUGraph::copy_inputs")
+        input_guard = graph.index(
+            "fp16 device input requires an fp32 host tensor", copy_inputs
+        )
+        fast_path = graph.index("// Fast path", copy_inputs)
+        self.assertLess(input_guard, fast_path)
+
+        copy_outputs = graph.index("void WebGPUGraph::copy_outputs")
+        output_guard = graph.index(
+            "fp16 device output requires an fp32 host tensor", copy_outputs
+        )
+        map_request = graph.index("wgpuBufferMapAsync", copy_outputs)
+        self.assertLess(output_guard, map_request)
 
     def test_parse_workgroup_allows_space(self) -> None:
         # @workgroup_size (64) — the spec-legal spaced form must still parse.
