@@ -1867,12 +1867,13 @@ class ReplaceFullLikeWithFullPass(RemoveOrReplacePassInterface):
         assert isinstance(input_arg, torch.fx.Node)
         shape = input_arg.meta["val"].shape
         fill_value = node.args[1]
+        dtype = node.meta["val"].dtype
 
         with node.graph.inserting_before(node):
             new_node = node.graph.call_function(
                 exir_ops.edge.aten.full.default,
                 args=(shape, fill_value),
-                kwargs={},
+                kwargs={"dtype": dtype},
             )
             new_node.meta = node.meta
         node.replace_all_uses_with(new_node)
