@@ -29,6 +29,7 @@ set(WEBGPU_SRCS
     runtime/WebGPUBackend.cpp
     runtime/WebGPUExecutionOptions.cpp
     runtime/WebGPUGraph.cpp
+    runtime/passes/SwiGLU.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
     runtime/WebGPUQueryPool.cpp
