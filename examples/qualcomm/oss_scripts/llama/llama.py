@@ -122,7 +122,10 @@ def compile(
             # In multi‑image scenarios, we skip encoder quantization by default to preserve modality feature quality,
             # because the encoder is quite sensitive and quantization can make it harder for the model to distinguish
             # between images within the same conversation.
-            to_skip = len(args.image_path) > 1
+            # Also skip if the model config explicitly requests it (e.g. small models sensitive to quantization).
+            to_skip = len(args.image_path) > 1 or getattr(
+                decoder_model_config, "skip_encoder_quantize", False
+            )
             if args.backend == "htp":
                 backend_options = generate_htp_compiler_spec(
                     use_fp16=to_skip,

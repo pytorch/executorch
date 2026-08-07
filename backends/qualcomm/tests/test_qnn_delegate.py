@@ -9268,6 +9268,16 @@ class TestExampleMultimodalityScript(TestQNN):
                 image_path="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg",  # New York Bay
                 golden_image_feature="city",
             ),
+            "smolvlm_256m_instruct": TestExampleMultimodalityScript.VLMSpecs(
+                max_seq_len=1024,
+                sm8650_token_rate=40,
+                sm8750_token_rate=45,
+                encoder_pte_size=200_000_000,  # 200MB (encoder FP16 on HTP)
+                tok_embedding_pte_size=60_000_000,  # 60MB
+                decoder_pte_size=150_000_000,  # 150MB
+                image_path="https://cdn.britannica.com/61/93061-050-99147DCE/Statue-of-Liberty-Island-New-York-Bay.jpg",  # New York Bay
+                golden_image_feature="Liberty",
+            ),
             "internvl3_1b": TestExampleMultimodalityScript.VLMSpecs(
                 max_seq_len=1024,
                 sm8650_token_rate=11,

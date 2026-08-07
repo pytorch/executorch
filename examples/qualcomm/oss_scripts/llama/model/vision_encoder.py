@@ -74,8 +74,15 @@ class CustomIdefics3VisionEmbeddings(Idefics3VisionEmbeddings):
         w_idx = torch.arange(W, dtype=torch.float32).unsqueeze(0)  # [1, W]
 
         # Calculate fractional positions
-        frac_h = (h_idx / nb_h_clamped.unsqueeze(1)) * (1.0 - 1e-6)  # [B, H]
-        frac_w = (w_idx / nb_w_clamped.unsqueeze(1)) * (1.0 - 1e-6)  # [B, W]
+        # Align with HF Idefics3VisionEmbeddings.forward():
+        #   fractional_coords = h_indices * step_h → clamp(max=1-1e-6)
+        # Original ET multiplied every value by (1-1e-6), which incorrectly shifted
+        # boundary patches (e.g. h_idx=8 → frac=0.25) into the wrong bucket.
+        # Using clamp only caps values that reach 1.0, which never happens for valid patches.
+        frac_h = h_idx / nb_h_clamped.unsqueeze(1)  # [B, H]
+        frac_w = w_idx / nb_w_clamped.unsqueeze(1)  # [B, W]
+        frac_h = torch.clamp(frac_h, max=(1.0 - 1e-6))
+        frac_w = torch.clamp(frac_w, max=(1.0 - 1e-6))
 
         # Bucketize to get position indices
         bucket_h = torch.bucketize(frac_h, boundaries, right=True)  # [B, H]

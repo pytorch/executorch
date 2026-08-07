@@ -103,6 +103,7 @@ LLM_VARIANT_ARCHS: Dict[str, LlamaModel] = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
     "granite_speech_3_3-2b": LlamaModelWithoutEmbedding,
     "smolvlm_500m_instruct": LlamaModelWithoutEmbedding,
+    "smolvlm_256m_instruct": LlamaModelWithoutEmbedding,
     "internvl3_1b": LlamaModelWithoutEmbedding,
     "gemma2-2b": MultiScopeAwareLlamaModel,
 }
@@ -630,3 +631,26 @@ class Gemma4_E2B(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = Gemma4QuantRecipe
+
+
+@register_llm_model(
+    "smolvlm_256m_instruct",
+    modality_encoders=SmolVLMEncoder,
+)
+@dataclass(init=False, frozen=True)
+class SmolVLM_256M(LLMModelConfig):
+    repo_id: str = "HuggingFaceTB/SmolVLM-256M-Instruct"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/smolvlm/256M_config.json"
+    )
+    convert_weights = convert_smolvlm_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 1
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = SmolVLMQuantRecipe
+    skip_encoder_quantize: bool = True
