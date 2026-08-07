@@ -24,7 +24,7 @@ namespace executorch::backends::webgpu::utils {
 // Ceiling division for non-negative integers (mirrors Vulkan's utils::div_up).
 template <typename T>
 inline T div_up(T a, T b) {
-  return (a + b - 1) / b;
+  return a / b + (a % b != 0);
 }
 
 // Product of a tensor's dims; the same accumulation was duplicated per-op.
