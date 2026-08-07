@@ -112,7 +112,15 @@ from executorch.backends.webgpu.test.ops.test_quant import (
     DequantizeConstModule,
     QuantizeModule,
 )
-from executorch.backends.webgpu.test.ops.test_reduce import AmaxModule, AminModule
+from executorch.backends.webgpu.test.ops.test_reduce import (
+    amax_sign_trap_input,
+    amax_tie_input,
+    AmaxModule,
+    amin_sign_trap_input,
+    amin_tie_input,
+    AminModule,
+    EXTREMA_CONFIGS,
+)
 from executorch.backends.webgpu.test.ops.test_repeat import RepeatModule
 from executorch.backends.webgpu.test.ops.test_rms_norm import (
     _CASES,
@@ -489,35 +497,42 @@ def _floor_divide_suite() -> WebGPUTestSuite:
     )
 
 
-def _reduce_suite(module_cls) -> WebGPUTestSuite:
-    # Last-dim reduction; both keepdim variants over a 2d and a 3d shape.
+def _reduce_suite(module_cls, op: str) -> WebGPUTestSuite:
+    generators = {
+        ("amax", "sign_trap"): amax_sign_trap_input,
+        ("amax", "tie"): amax_tie_input,
+        ("amin", "sign_trap"): amin_sign_trap_input,
+        ("amin", "tie"): amin_tie_input,
+    }
+    cases = []
+    for name, shape, dim, keepdim, input_class in EXTREMA_CONFIGS:
+        inputs = (shape,)
+        kwargs = {}
+        if input_class != "default":
+            inputs = (InputSpec(shape=shape, gen=generators[(op, input_class)]),)
+            kwargs = {"atol": 0.0, "rtol": 0.0}
+        cases.append(
+            Case(
+                name=name,
+                construct={"keepdim": keepdim, "dim": dim},
+                inputs=inputs,
+                **kwargs,
+            )
+        )
     return WebGPUTestSuite(
-        module_factory=lambda keepdim: module_cls(keepdim),
-        cases=[
-            Case(name="keepdim_2d", construct={"keepdim": True}, inputs=((M1, M2),)),
-            Case(name="nodim_2d", construct={"keepdim": False}, inputs=((M1, M2),)),
-            Case(
-                name="keepdim_3d",
-                construct={"keepdim": True},
-                inputs=((S, S1, S2),),
-            ),
-            Case(
-                name="nodim_3d",
-                construct={"keepdim": False},
-                inputs=((S, S1, S2),),
-            ),
-        ],
+        module_factory=module_cls,
+        cases=cases,
     )
 
 
 @register_op_test("amax")
 def _amax_suite() -> WebGPUTestSuite:
-    return _reduce_suite(AmaxModule)
+    return _reduce_suite(AmaxModule, "amax")
 
 
 @register_op_test("amin")
 def _amin_suite() -> WebGPUTestSuite:
-    return _reduce_suite(AminModule)
+    return _reduce_suite(AminModule, "amin")
 
 
 @register_op_test("flip")
