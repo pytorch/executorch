@@ -212,6 +212,31 @@ bool vk_datatype_is_int(vkgraph::VkDataType dtype) {
   }
 }
 
+size_t storage_buffer_size(size_t nbytes) {
+  const size_t at_least_four = std::max(nbytes, size_t(4));
+  if (at_least_four > std::numeric_limits<size_t>::max() - 3u) {
+    throw std::runtime_error("WebGPU: storage buffer size overflows alignment");
+  }
+  return (at_least_four + 3u) & ~size_t(3);
+}
+
+void write_storage_buffer(
+    WGPUQueue queue,
+    WGPUBuffer buffer,
+    const void* data,
+    size_t nbytes) {
+  if (nbytes == 0u) {
+    return;
+  }
+  if (nbytes % 4u == 0u) {
+    wgpuQueueWriteBuffer(queue, buffer, 0, data, nbytes);
+    return;
+  }
+  std::vector<uint8_t> padded(storage_buffer_size(nbytes), 0u);
+  std::memcpy(padded.data(), data, nbytes);
+  wgpuQueueWriteBuffer(queue, buffer, 0, padded.data(), padded.size());
+}
+
 // Normalize a possibly-negative dim against rank; throws (fail-loud) if OOR.
 int normalize_dim(int dim, int rank, const char* op) {
   if (dim < 0) {
@@ -276,7 +301,7 @@ WebGPUGraph::WebGPUGraph() = default;
 
 WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
   WGPUBufferDescriptor buf_desc = {};
-  buf_desc.size = nbytes > 0 ? nbytes : 4;
+  buf_desc.size = storage_buffer_size(nbytes);
   buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
       WGPUBufferUsage_CopySrc;
   buf_desc.mappedAtCreation = false;
@@ -286,7 +311,7 @@ WGPUBuffer WebGPUGraph::create_scratch_buffer(size_t nbytes) {
 }
 
 WGPUBuffer WebGPUGraph::acquire_scratch(size_t nbytes) {
-  nbytes = nbytes > 0 ? nbytes : 4;
+  nbytes = storage_buffer_size(nbytes);
   // Best-fit reuse: smallest free slot with size in [nbytes, 2*nbytes] -- the
   // 2x cap stops a large Cmax-sized buffer from backing a tiny request. Never
   // reuse an in_use slot (co-live safety).
@@ -890,6 +915,7 @@ void WebGPUGraph::build(
           throw std::runtime_error("WebGPU: tensor byte size overflows");
         }
         tensor.is_int = vk_datatype_is_int(vk_tensor->datatype());
+        tensor.is_bool = vk_tensor->datatype() == vkgraph::VkDataType::BOOL;
         tensor.is_int8 = vk_tensor->datatype() == vkgraph::VkDataType::INT8;
         tensor.nbytes = numel * tensor.elem_size;
         // Live dims start == max (serialized upper bound); resize_input shrinks
@@ -911,7 +937,7 @@ void WebGPUGraph::build(
           tensor.cur_nbytes = tensor.nbytes;
           tensor_mem_obj_ids_[i] = -1;
           WGPUBufferDescriptor buf_desc = {};
-          buf_desc.size = std::max(tensor.nbytes, size_t(4));
+          buf_desc.size = storage_buffer_size(tensor.nbytes);
           buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
               WGPUBufferUsage_CopySrc;
           buf_desc.mappedAtCreation = false;
@@ -936,10 +962,9 @@ void WebGPUGraph::build(
                 std::memcpy(&value, src + e * sizeof(float), sizeof(float));
                 converted[e] = executorch::runtime::etensor::Half(value);
               }
-              wgpuQueueWriteBuffer(
+              write_storage_buffer(
                   queue_,
                   tensor.buffer,
-                  0,
                   converted.data(),
                   converted.size() * sizeof(converted[0]));
             };
@@ -1013,7 +1038,7 @@ void WebGPUGraph::build(
               prepack_src_ids.count(i) != 0 && direct_use_ids.count(i) == 0;
           if (!defer) {
             WGPUBufferDescriptor buf_desc = {};
-            buf_desc.size = std::max(tensor.nbytes, size_t(4));
+            buf_desc.size = storage_buffer_size(tensor.nbytes);
             buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
                 WGPUBufferUsage_CopySrc;
             buf_desc.mappedAtCreation = false;
@@ -1110,7 +1135,7 @@ void WebGPUGraph::build(
   shared_buffers_.resize(shared_buffer_sizes_.size(), nullptr);
   for (size_t id = 0; id < shared_buffer_sizes_.size(); id++) {
     WGPUBufferDescriptor buf_desc = {};
-    buf_desc.size = std::max(shared_buffer_sizes_[id], size_t(4));
+    buf_desc.size = storage_buffer_size(shared_buffer_sizes_[id]);
     buf_desc.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst |
         WGPUBufferUsage_CopySrc;
     buf_desc.mappedAtCreation = false;
@@ -1138,7 +1163,7 @@ void WebGPUGraph::build(
 
       // Create staging buffer for output readback
       WGPUBufferDescriptor staging_desc = {};
-      staging_desc.size = std::max(tensors_[oid].nbytes, size_t(4));
+      staging_desc.size = storage_buffer_size(tensors_[oid].nbytes);
       staging_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
       staging_desc.mappedAtCreation = false;
       output_staging_buffers_.push_back(
@@ -1313,7 +1338,7 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
         cs.nbytes,
         "WebGPU: inline constant exceeds constant data");
     if (cs.nbytes != 0) {
-      wgpuQueueWriteBuffer(queue_, dst, 0, data, cs.nbytes);
+      write_storage_buffer(queue_, dst, data, cs.nbytes);
     }
   } else if (cs.nbytes == 0) {
     return;
@@ -1327,7 +1352,7 @@ void WebGPUGraph::materialize_constant(int const_value_id, WGPUBuffer dst) {
       throw std::runtime_error(
           "WebGPU: named constant '" + cs.named_key + "' undersized");
     }
-    wgpuQueueWriteBuffer(queue_, dst, 0, buf->data(), cs.nbytes);
+    write_storage_buffer(queue_, dst, buf->data(), cs.nbytes);
     buf->Free();
   } else {
     throw std::runtime_error("WebGPU: constant has no source");
@@ -1419,7 +1444,7 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
 
     // Fast path: host and GPU element types match byte-for-byte.
     if (in.nbytes == live_nbytes) {
-      wgpuQueueWriteBuffer(queue_, tensor.buffer, 0, in.data, live_nbytes);
+      write_storage_buffer(queue_, tensor.buffer, in.data, live_nbytes);
       continue;
     }
 
@@ -1439,8 +1464,21 @@ void WebGPUGraph::copy_inputs(const std::vector<InputData>& inputs) {
 #endif
         narrowed[e] = static_cast<int32_t>(src[e]);
       }
-      wgpuQueueWriteBuffer(
-          queue_, tensor.buffer, 0, narrowed.data(), live_nbytes);
+      write_storage_buffer(queue_, tensor.buffer, narrowed.data(), live_nbytes);
+      continue;
+    }
+
+    // Require an explicit fp32 host dtype, not merely "not int64": inferring
+    // the narrow from the 2:1 byte ratio alone would silently reinterpret a
+    // same-sized non-fp32 host buffer (e.g. a stale int32) as fp32.
+    if (in.host_is_fp32 && buffer_is_fp16 && in.nbytes == live_nbytes * 2) {
+      const size_t numel = live_nbytes / sizeof(uint16_t);
+      const float* src = static_cast<const float*>(in.data);
+      std::vector<executorch::runtime::etensor::Half> narrowed(numel);
+      for (size_t e = 0; e < numel; e++) {
+        narrowed[e] = executorch::runtime::etensor::Half(src[e]);
+      }
+      write_storage_buffer(queue_, tensor.buffer, narrowed.data(), live_nbytes);
       continue;
     }
 
@@ -1684,10 +1722,11 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     }
 
     for (size_t i = 0; i < output_copies_.size(); i++) {
-      const size_t copy_nbytes = tensors_[output_ids_[i]].cur_nbytes;
-      if (!plan.copy_outputs[i] || copy_nbytes == 0) {
+      const size_t logical_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+      if (!plan.copy_outputs[i] || logical_nbytes == 0) {
         continue;
       }
+      const size_t copy_nbytes = storage_buffer_size(logical_nbytes);
       const auto& copy = output_copies_[i];
       wgpuCommandEncoderCopyBufferToBuffer(
           encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy_nbytes);
@@ -1715,12 +1754,13 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     return 1;
   }
 
-  // GPU timestamp queries assume one submit; chunked execute is multi-submit.
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
   if (should_timestamp_query()) {
     throw std::runtime_error(
         "WebGPU: WEBGPU_TIMESTAMP_QUERY is incompatible with chunked execute "
         "(multi-submit); disable chunking to use GPU timestamp queries");
   }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
 
   for (size_t chunk_index = 0; chunk_index < plan.dispatch_chunks.size();
        chunk_index++) {
@@ -1759,10 +1799,11 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
 
     if (chunk_index + 1 == plan.dispatch_chunks.size()) {
       for (size_t i = 0; i < output_copies_.size(); i++) {
-        const size_t copy_nbytes = tensors_[output_ids_[i]].cur_nbytes;
-        if (!plan.copy_outputs[i] || copy_nbytes == 0) {
+        const size_t logical_nbytes = tensors_[output_ids_[i]].cur_nbytes;
+        if (!plan.copy_outputs[i] || logical_nbytes == 0) {
           continue;
         }
+        const size_t copy_nbytes = storage_buffer_size(logical_nbytes);
         const auto& copy = output_copies_[i];
         wgpuCommandEncoderCopyBufferToBuffer(
             encoder, copy.src_buffer, 0, copy.staging_buffer, 0, copy_nbytes);
@@ -1813,13 +1854,13 @@ void WebGPUGraph::copy_outputs(
       continue;
     }
     const auto& tensor = tensors_[output_ids_[i]];
-    const size_t map_nbytes = tensor.cur_nbytes;
-    if (map_nbytes == 0) {
+    const size_t logical_nbytes = tensor.cur_nbytes;
+    if (logical_nbytes == 0) {
       continue;
     }
     const size_t dst_nbytes = outputs[i].nbytes;
     const bool is_double_width =
-        dst_nbytes % 2 == 0 && dst_nbytes / 2 == map_nbytes;
+        dst_nbytes % 2 == 0 && dst_nbytes / 2 == logical_nbytes;
     const bool widen_fp16 =
         is_double_width && !tensor.is_int && tensor.elem_size == 2;
     const bool widen_int32 =
@@ -1832,7 +1873,7 @@ void WebGPUGraph::copy_outputs(
     if (outputs[i].host_is_fp32 && buffer_is_fp16 && !widen_fp16) {
       throw std::runtime_error("WebGPU: fp16 output buffer size mismatch");
     }
-    if (dst_nbytes != map_nbytes && !widen_fp16 && !widen_int32) {
+    if (dst_nbytes != logical_nbytes && !widen_fp16 && !widen_int32) {
       throw std::runtime_error("WebGPU: output buffer size mismatch");
     }
   }
@@ -1842,13 +1883,14 @@ void WebGPUGraph::copy_outputs(
       continue;
     }
     const auto& tensor = tensors_[output_ids_[i]];
-    const size_t map_nbytes = tensor.cur_nbytes;
-    if (map_nbytes == 0) {
+    const size_t logical_nbytes = tensor.cur_nbytes;
+    if (logical_nbytes == 0) {
       continue;
     }
+    const size_t map_nbytes = storage_buffer_size(logical_nbytes);
     const size_t dst_nbytes = outputs[i].nbytes;
     const bool is_double_width =
-        dst_nbytes % 2 == 0 && dst_nbytes / 2 == map_nbytes;
+        dst_nbytes % 2 == 0 && dst_nbytes / 2 == logical_nbytes;
     const bool widen_fp16 =
         is_double_width && !tensor.is_int && tensor.elem_size == 2;
     const bool widen_int32 =
@@ -1887,7 +1929,7 @@ void WebGPUGraph::copy_outputs(
       const auto* src =
           static_cast<const executorch::runtime::etensor::Half*>(mapped);
       auto* dst = static_cast<float*>(outputs[i].data);
-      const size_t n = map_nbytes / sizeof(*src);
+      const size_t n = logical_nbytes / sizeof(*src);
       for (size_t k = 0; k < n; k++) {
         dst[k] = static_cast<float>(src[k]);
       }
@@ -1895,12 +1937,12 @@ void WebGPUGraph::copy_outputs(
       // int64 host output backed by an int32 GPU buffer: widen (sign-extend).
       const int32_t* src = static_cast<const int32_t*>(mapped);
       int64_t* dst = static_cast<int64_t*>(outputs[i].data);
-      const size_t n = map_nbytes / sizeof(int32_t);
+      const size_t n = logical_nbytes / sizeof(int32_t);
       for (size_t k = 0; k < n; k++) {
         dst[k] = static_cast<int64_t>(src[k]);
       }
     } else {
-      std::memcpy(outputs[i].data, mapped, map_nbytes);
+      std::memcpy(outputs[i].data, mapped, logical_nbytes);
     }
     wgpuBufferUnmap(output_staging_buffers_[i]);
   }
