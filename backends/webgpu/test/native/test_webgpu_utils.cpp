@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Device-free unit tests for the dispatch-grid math (WebGPUDispatchMath.h has
-// zero WebGPU/Dawn dependency, unlike WebGPUUtils.h which needs a WGPUDevice
-// for its other helpers).
+// Device-free unit tests for pure WebGPU utility math. The shared utility
+// header also exposes device-taking helpers, but these tests do not call them.
 
-#include <executorch/backends/webgpu/runtime/WebGPUDispatchMath.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_multiwg_route.h>
 
 #include <gtest/gtest.h>
 
@@ -69,4 +69,81 @@ TEST(WebGPUUtils, DispatchGridThrowsPastCapacity) {
       utils::compute_dispatch_grid_from_limits(
           static_cast<uint32_t>(max_dim) * max_dim + 1u, 1u, max_dim, "test"),
       std::runtime_error);
+}
+
+TEST(WebGPUUtils, RowChunkingKeepsFittingRowsTogether) {
+  const utils::RowChunking chunking =
+      utils::compute_row_chunking(1024u, 256u, 10u, "test");
+  EXPECT_EQ(chunking.rows_per_chunk, 4u);
+  EXPECT_EQ(chunking.num_chunks, 3u);
+}
+
+TEST(WebGPUUtils, BindingSpecCarriesExplicitBufferOffset) {
+  const utils::BindingSpec binding = {
+      3u, WGPUBufferBindingType_Storage, nullptr, 64u, 256u};
+  const WGPUBindGroupEntry entry = utils::make_bind_group_entry(binding);
+  EXPECT_EQ(entry.binding, 3u);
+  EXPECT_EQ(entry.buffer, nullptr);
+  EXPECT_EQ(entry.size, 64u);
+  EXPECT_EQ(entry.offset, 256u);
+}
+
+TEST(WebGPUUtils, BindingSpecDefaultsBufferOffsetToZero) {
+  const utils::BindingSpec binding = {
+      3u, WGPUBufferBindingType_Storage, nullptr, 64u};
+  const WGPUBindGroupEntry entry = utils::make_bind_group_entry(binding);
+  EXPECT_EQ(entry.offset, 0u);
+}
+
+TEST(WebGPUUtils, RowChunkingUsesOneChunkWhenAllRowsFit) {
+  const utils::RowChunking chunking =
+      utils::compute_row_chunking(1024u, 16u, 8u, "test");
+  EXPECT_EQ(chunking.rows_per_chunk, 8u);
+  EXPECT_EQ(chunking.num_chunks, 1u);
+}
+
+TEST(WebGPUUtils, RowChunkingRejectsInvalidArguments) {
+  EXPECT_THROW(
+      utils::compute_row_chunking(0u, 1u, 1u, "test"), std::runtime_error);
+  EXPECT_THROW(
+      utils::compute_row_chunking(1u, 0u, 1u, "test"), std::runtime_error);
+  EXPECT_THROW(
+      utils::compute_row_chunking(1u, 1u, 0u, "test"), std::runtime_error);
+  EXPECT_THROW(
+      utils::compute_row_chunking(1u, 2u, 1u, "test"), std::runtime_error);
+}
+
+TEST(WebGPUUtils, RowChunkingRejectsChunkCountsAboveUint32) {
+  EXPECT_THROW(
+      utils::compute_row_chunking(
+          1u,
+          1u,
+          static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) + 1u,
+          "test"),
+      std::runtime_error);
+}
+
+TEST(WebGPUUtils, ArgReduceRouteKeepsShortRowsOnGenericKernel) {
+  EXPECT_EQ(select_arg_reduce_parts(1u, 4095u, 65535u), 0u);
+  EXPECT_EQ(select_arg_reduce_parts(0u, 262144u, 65535u), 0u);
+}
+
+TEST(WebGPUUtils, ArgReduceRouteSelectsLongVocabularyRows) {
+  EXPECT_EQ(select_arg_reduce_parts(1u, 4096u, 65535u), 4u);
+  EXPECT_EQ(select_arg_reduce_parts(1u, 262144u, 65535u), 256u);
+  EXPECT_EQ(
+      select_arg_reduce_parts(1u, std::numeric_limits<uint32_t>::max(), 65535u),
+      256u);
+}
+
+TEST(WebGPUUtils, ArgReduceRouteFailsClosedWhenScratchOrGridWouldOverflow) {
+  EXPECT_EQ(select_arg_reduce_parts(4097u, 262144u, 65535u), 0u);
+  EXPECT_EQ(select_arg_reduce_parts(1u, 262144u, 1u), 0u);
+}
+
+TEST(WebGPUUtils, ArgReduceResizeRejectsScratchGrowth) {
+  EXPECT_TRUE(arg_reduce_partial_slots_fit(256u, 1u, 256u));
+  EXPECT_TRUE(arg_reduce_partial_slots_fit(256u, 256u, 1u));
+  EXPECT_FALSE(arg_reduce_partial_slots_fit(256u, 257u, 1u));
+  EXPECT_FALSE(arg_reduce_partial_slots_fit(256u, 129u, 2u));
 }

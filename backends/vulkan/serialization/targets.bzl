@@ -26,6 +26,7 @@ def define_common_targets(is_fbcode = False):
         name = "vk_delegate_schema",
         srcs = [],
         visibility = [
+            "//executorch/backends/webgpu/...",
             "//executorch/backends/vulkan/...",
         ],
         exported_headers = {
