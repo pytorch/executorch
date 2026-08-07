@@ -13,6 +13,7 @@ are checked in the native test; this verifies the dynamic export side + writes
 goldens.
 """
 
+import math
 import os
 import unittest
 
@@ -782,6 +783,10 @@ K16_PRIME_POS = 1
 K16_PRIME_S = K16_INPUT_POS - K16_PRIME_POS
 K16_POS_CONTROL = K16_INPUT_POS
 K16_LIVE_S = (K16_MAXS, 508, 128, 127, 16, 1)
+QWEN3_HQ = 16
+QWEN3_HKV = 8
+QWEN3_D = 128
+QWEN3_LIVE_S = (128, 17, 1)
 
 
 def _export_dynamic_sdpa(out_dir: str) -> None:
@@ -827,6 +832,12 @@ def _write_f32_tensors(base, tensors) -> None:
         tensor.detach().numpy().astype("<f4").tofile(base + name + ".bin")
 
 
+def _zero_uninitialized_cache(initialized_cache, k_cache, v_cache) -> None:
+    if not initialized_cache:
+        k_cache.zero_()
+        v_cache.zero_()
+
+
 def _export_dynamic_k16_sdpa_case(
     out_dir: str,
     prefix: str,
@@ -837,10 +848,14 @@ def _export_dynamic_k16_sdpa_case(
     scale: float | None = None,
     cache_hkv: int | None = None,
     expect_runtime_reject: bool = False,
+    denom: float = 16.0,
+    kv_f16_golden: bool = False,
+    initialized_cache: bool = False,
 ) -> None:
     from executorch.backends.webgpu.test.ops.test_sdpa import (
         _det_inputs,
         _golden,
+        _round_kv_for_storage,
         SdpaConfig,
     )
 
@@ -853,14 +868,15 @@ def _export_dynamic_k16_sdpa_case(
             s,
             K16_CMAX,
             K16_INPUT_POS,
+            denom,
+            kv_f16=kv_f16_golden,
         )
 
     q, k, v, kc, vc = _det_inputs(cfg(K16_MAXS))
     if cache_hkv is not None:
         kc = torch.zeros(1, K16_CMAX, cache_hkv, d)
         vc = torch.zeros_like(kc)
-    kc.zero_()
-    vc.zero_()
+    _zero_uninitialized_cache(initialized_cache, kc, vc)
 
     class K16SdpaModule(torch.nn.Module):
         def __init__(self) -> None:
@@ -908,6 +924,8 @@ def _export_dynamic_k16_sdpa_case(
     def reference(live_cfg, q, k, v, kc, vc):
         if scale is None:
             return _golden(live_cfg, q, k, v, kc, vc)
+        k, v, kc, vc = _round_kv_for_storage(live_cfg, k, v, kc, vc)
+        runtime_scale = float(torch.tensor(scale, dtype=torch.float32).item())
         context_len = live_cfg.s + live_cfg.input_pos
         g = hq // hkv
         k_full = torch.cat((kc[0, : live_cfg.input_pos].double(), k[0].double()), dim=0)
@@ -919,14 +937,48 @@ def _export_dynamic_k16_sdpa_case(
         for token in range(live_cfg.s):
             mask[token, : live_cfg.input_pos + token + 1] = 0.0
         golden = torch.nn.functional.scaled_dot_product_attention(
-            q_heads, k_heads, v_heads, attn_mask=mask, scale=scale
+            q_heads, k_heads, v_heads, attn_mask=mask, scale=runtime_scale
         )
         return golden.transpose(0, 1).reshape(1, live_cfg.s, hq, d).float().contiguous()
 
-    prime_cfg = SdpaConfig(prefix, hq, hkv, d, K16_PRIME_S, K16_CMAX, K16_PRIME_POS)
+    if initialized_cache:
+        initial_cfg = cfg(17)
+        initial_q, initial_k, initial_v, initial_kc, initial_vc = _det_inputs(
+            initial_cfg
+        )
+        initial_golden = reference(
+            initial_cfg,
+            initial_q,
+            initial_k,
+            initial_v,
+            initial_kc,
+            initial_vc,
+        )
+        initial_base = os.path.join(out_dir, f"{prefix}.initial.")
+        _write_f32_tensors(
+            initial_base,
+            (
+                ("q", initial_q),
+                ("k", initial_k),
+                ("v", initial_v),
+                ("control", torch.zeros(1, K16_POS_CONTROL)),
+                ("golden", initial_golden),
+            ),
+        )
+
+    prime_cfg = SdpaConfig(
+        prefix,
+        hq,
+        hkv,
+        d,
+        K16_PRIME_S,
+        K16_CMAX,
+        K16_PRIME_POS,
+        denom,
+        kv_f16=kv_f16_golden,
+    )
     prime_q, prime_k, prime_v, prime_kc, prime_vc = _det_inputs(prime_cfg)
-    prime_kc.zero_()
-    prime_vc.zero_()
+    _zero_uninitialized_cache(initialized_cache, prime_kc, prime_vc)
     prime_golden = reference(prime_cfg, prime_q, prime_k, prime_v, prime_kc, prime_vc)
     prime_base = os.path.join(out_dir, f"{prefix}.prime.")
     _write_f32_tensors(
@@ -943,8 +995,7 @@ def _export_dynamic_k16_sdpa_case(
     for s in live_s:
         live_cfg = cfg(s)
         q, k, v, kc, vc = _det_inputs(live_cfg)
-        kc.zero_()
-        vc.zero_()
+        _zero_uninitialized_cache(initialized_cache, kc, vc)
         kc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_k[0]
         vc[0, K16_PRIME_POS:K16_INPUT_POS] = prime_v[0]
         golden = reference(live_cfg, q, k, v, kc, vc)
@@ -971,6 +1022,28 @@ def _export_dynamic_k16_sdpa_cases(out_dir: str) -> None:
         K16_HQ,
         K16_HKV,
         K16_LIVE_S,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_qwen3",
+        QWEN3_HQ,
+        QWEN3_HKV,
+        QWEN3_LIVE_S,
+        d=QWEN3_D,
+        denom=10.0,
+        kv_f16_golden=True,
+        initialized_cache=True,
+    )
+    _export_dynamic_k16_sdpa_case(
+        out_dir,
+        "sdpa_k16_qwen3_near_scale",
+        QWEN3_HQ,
+        QWEN3_HKV,
+        (128, 1),
+        d=QWEN3_D,
+        scale=1.0 / math.sqrt(float(QWEN3_D)) + 5e-7,
+        denom=10.0,
+        kv_f16_golden=True,
     )
     _export_dynamic_k16_sdpa_case(
         out_dir,
@@ -1447,12 +1520,16 @@ class TestDynamicShapeExport(unittest.TestCase):
                 "dyn_qkv_bk64_wrong_width.pte",
                 "dyn_qkv_bk64_different_input.pte",
                 "sdpa_k16_bad_cache_heads.pte",
+                "sdpa_k16_qwen3.pte",
+                "sdpa_k16_qwen3_near_scale.pte",
             ]
             for name in expected:
                 with self.subTest(artifact=name):
                     self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
             for prefix, live_s in (
                 ("sdpa_k16_llama", K16_LIVE_S),
+                ("sdpa_k16_qwen3", QWEN3_LIVE_S),
+                ("sdpa_k16_qwen3_near_scale", (128, 1)),
                 ("sdpa_k16_wrong_geometry", (128, 1)),
                 ("sdpa_k16_wrong_d", (128, 1)),
                 ("sdpa_k16_wrong_scale", (128, 1)),
@@ -1472,6 +1549,10 @@ class TestDynamicShapeExport(unittest.TestCase):
                             self.assertGreater(
                                 os.path.getsize(os.path.join(d, name)), 0
                             )
+            for kind in ("q", "k", "v", "control", "golden"):
+                name = f"sdpa_k16_qwen3.initial.{kind}.bin"
+                with self.subTest(artifact=name):
+                    self.assertGreater(os.path.getsize(os.path.join(d, name)), 0)
 
 
 if __name__ == "__main__":
