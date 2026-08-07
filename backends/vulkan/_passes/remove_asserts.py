@@ -28,6 +28,7 @@ class RemoveAssertsTransform(ExportPass):
 
     assert_ops: Set[OpType] = {
         torch.ops.aten._assert_scalar.default,
+        torch.ops.aten.sym_constrain_range.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
     }
 

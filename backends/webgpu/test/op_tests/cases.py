@@ -1051,7 +1051,16 @@ def _unsqueeze_suite() -> WebGPUTestSuite:
 
 @register_op_test("slice")
 def _slice_suite() -> WebGPUTestSuite:
-    return _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    suite = _fn_config_suite(SliceModule, _SLICE_CONFIGS)
+    suite.cases.append(
+        Case(
+            name="folded_2d_65536_workgroups",
+            construct={"fn": lambda x: x[:, 1:65]},
+            inputs=((65536, 65),),
+            heavy=True,
+        )
+    )
+    return suite
 
 
 @register_op_test("permute")
@@ -1070,7 +1079,7 @@ def _permute_suite() -> WebGPUTestSuite:
 @register_op_test("cat")
 def _cat_suite() -> WebGPUTestSuite:
     # CONFIGS: name -> (list_of_input_shapes, dim). Variadic input count per case.
-    return WebGPUTestSuite(
+    suite = WebGPUTestSuite(
         module_factory=lambda dim: CatModule(dim),
         cases=[
             Case(name=n, construct={"dim": dim}, inputs=tuple(shapes))
@@ -1078,6 +1087,15 @@ def _cat_suite() -> WebGPUTestSuite:
         ],
         golden_dtype="float32",  # concatenation copies values; fp64 bit-identical
     )
+    suite.cases.append(
+        Case(
+            name="folded_2d_full_output",
+            construct={"dim": 1},
+            inputs=((65536, 65), (65536, 1)),
+            heavy=True,
+        )
+    )
+    return suite
 
 
 from executorch.backends.webgpu.test.ops.test_gelu import (

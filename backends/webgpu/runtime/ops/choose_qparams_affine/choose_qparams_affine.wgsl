@@ -21,6 +21,12 @@ var<workgroup> part_max: array<f32, 256>;
 
 const SMALL_SCALE_THRESHOLD: f32 = 6.1e-5;
 
+fn reciprocal_is_infinite(value: f32) -> bool {
+  // WGSL has no portable isinf builtin. This exponent/mantissa check is the
+  // exact f32 equivalent used for Vulkan's isinf(1.0 / scale) condition.
+  return (bitcast<u32>(1.0 / value) & 0x7fffffffu) == 0x7f800000u;
+}
+
 @compute @workgroup_size(wg_size)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
@@ -68,7 +74,7 @@ fn main(
       mn = min(mn, 0.0);
       mx = max(mx, 0.0);
       var scale = (mx - mn) / (qmax - qmin);
-      if (scale == 0.0) {
+      if (scale == 0.0 || reciprocal_is_infinite(scale)) {
         scale = 0.1;
       }
       if (scale < SMALL_SCALE_THRESHOLD) {

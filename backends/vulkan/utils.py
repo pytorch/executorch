@@ -24,6 +24,7 @@ from torch._subclasses.fake_tensor import FakeTensor, FakeTensorConverter
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind
 from torch.export.graph_signature import TensorArgument
+from torch.fx.experimental.symbolic_shapes import statically_known_true
 
 TorchOpType = Union[EdgeOpOverload, torch._ops.OpOverload, str]
 
@@ -840,7 +841,10 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
 
 
 def extents_are_valid(extents: ImageExtents, limits: ImageExtents) -> bool:
-    return all(extents[i] <= limits[i] for i in range(len(extents)))
+    return all(
+        statically_known_true(extents[index] <= limits[index])
+        for index in range(len(extents))
+    )
 
 
 def valid_texture_memory_layouts(

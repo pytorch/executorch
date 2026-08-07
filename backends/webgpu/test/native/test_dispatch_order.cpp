@@ -7,10 +7,13 @@
  */
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
+#include <executorch/backends/webgpu/runtime/WebGPUExecutionOptions.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -66,32 +69,96 @@ void run_case(const char* name, const std::vector<int32_t>& sizes) {
   ASSERT_EQ(input.size(), expected)
       << "input numel " << input.size() << " != expected " << expected
       << " for " << name;
-  auto x = make_tensor_ptr(sizes, std::vector<float>(input));
-  auto result = module.forward({EValue(x)});
-  ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
-                           << ")";
-  const auto& outputs = result.get();
-  ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor()) << "no tensor output";
-  const auto& out_tensor = outputs[0].toTensor();
-  ASSERT_EQ(static_cast<size_t>(out_tensor.numel()), golden.size())
-      << "output numel " << (size_t)out_tensor.numel() << " != golden "
-      << golden.size();
-  const float* out_data = out_tensor.const_data_ptr<float>();
+  struct Mode {
+    bool single_compute_pass;
+    size_t cap;
+  };
+  const std::vector<Mode> modes = {
+      {false, 0}, {true, 0}, {true, 2}, {false, 0}};
+  std::string command_inventory;
+  uint64_t prior_ordinal = 0;
+  for (const Mode mode : modes) {
+    auto x = make_tensor_ptr(sizes, std::vector<float>(input));
+    WebGPUExecutionOptions options;
+    options.single_compute_pass = mode.single_compute_pass;
+    options.max_compute_dispatches_per_pass = mode.cap;
+    auto result = with_webgpu_execution_options(
+        options, [&]() { return module.forward({EValue(x)}); });
+    ASSERT_TRUE(result.ok()) << "forward failed (error " << (int)result.error()
+                             << ")";
+    const auto& outputs = result.get();
+    ASSERT_TRUE(!outputs.empty() && outputs[0].isTensor())
+        << "no tensor output";
+    const auto& out_tensor = outputs[0].toTensor();
+    ASSERT_EQ(static_cast<size_t>(out_tensor.numel()), golden.size());
+    const float* out_data = out_tensor.const_data_ptr<float>();
 
-  float max_abs_err = 0.0f;
-  float max_rel_err = 0.0f;
-  for (size_t i = 0; i < golden.size(); i++) {
-    const float abs_err = std::abs(out_data[i] - golden[i]);
-    max_abs_err = std::max(max_abs_err, abs_err);
-    const float denom = std::max(std::abs(golden[i]), 1e-6f);
-    max_rel_err = std::max(max_rel_err, abs_err / denom);
+    float max_abs_err = 0.0f;
+    float max_rel_err = 0.0f;
+    for (size_t i = 0; i < golden.size(); i++) {
+      const float abs_err = std::abs(out_data[i] - golden[i]);
+      max_abs_err = std::max(max_abs_err, abs_err);
+      const float denom = std::max(std::abs(golden[i]), 1e-6f);
+      max_rel_err = std::max(max_rel_err, abs_err / denom);
+    }
+    EXPECT_FALSE(max_abs_err > 1e-3f && max_rel_err > 1e-3f)
+        << "dispatch_order[" << name
+        << "] exceeds tolerance 1e-3 (max_abs_err=" << max_abs_err
+        << " max_rel_err=" << max_rel_err << ")";
+
+    const auto attestation = nlohmann::json::parse(
+        webgpu_backend_execution_attestation_json());
+    EXPECT_EQ(
+        attestation.at("requested").get<bool>(), mode.single_compute_pass);
+    EXPECT_EQ(
+        attestation.at("applied").get<bool>(), mode.single_compute_pass);
+    EXPECT_TRUE(attestation.at("completed").get<bool>());
+    EXPECT_EQ(attestation.at("queueSubmitCount").get<size_t>(), 1u);
+    const size_t active =
+        attestation.at("activeComputeCount").get<size_t>();
+    const size_t runs =
+        attestation.at("maximalComputeRuns").get<size_t>();
+    ASSERT_GT(active, 0u);
+    ASSERT_GT(runs, 0u);
+    size_t expected_passes = 0;
+    size_t dispatches_in_pass = 0;
+    for (const auto& command :
+         attestation.at("canonicalCommands").at("commands")) {
+      if (command.at("kind") != "compute") {
+        if (command.at("enabled").get<bool>()) {
+          dispatches_in_pass = 0;
+        }
+        continue;
+      }
+      if (!command.at("enabled").get<bool>() ||
+          command.at("zeroGrid").get<bool>()) {
+        continue;
+      }
+      if (!mode.single_compute_pass || dispatches_in_pass == 0) {
+        ++expected_passes;
+      }
+      ++dispatches_in_pass;
+      if (!mode.single_compute_pass ||
+          (mode.cap != 0 && dispatches_in_pass >= mode.cap)) {
+        dispatches_in_pass = 0;
+      }
+    }
+    EXPECT_EQ(
+        attestation.at("encodedComputePasses").get<size_t>(), expected_passes);
+    EXPECT_EQ(
+        attestation.at("maxComputeDispatchesPerPass").get<size_t>(), mode.cap);
+    const uint64_t ordinal =
+        attestation.at("executionOrdinal").get<uint64_t>();
+    EXPECT_EQ(ordinal, prior_ordinal + 1);
+    prior_ordinal = ordinal;
+    const std::string current_inventory =
+        attestation.at("canonicalCommands").dump();
+    if (command_inventory.empty()) {
+      command_inventory = current_inventory;
+    } else {
+      EXPECT_EQ(current_inventory, command_inventory);
+    }
   }
-  // Lenient gate: pass iff abs<=tol OR rel<=tol (near-zero goldens).
-  EXPECT_FALSE(max_abs_err > 1e-3f && max_rel_err > 1e-3f)
-      << "dispatch_order[" << name
-      << "] exceeds tolerance 1e-3 (max_abs_err=" << max_abs_err
-      << " max_rel_err=" << max_rel_err << ", " << golden.size()
-      << " elements)";
 }
 
 } // namespace

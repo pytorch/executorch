@@ -1,6 +1,6 @@
-@group(0) @binding(0) var<storage, read> input1: array<f32>;
-@group(0) @binding(1) var<storage, read> input2: array<f32>;
-@group(0) @binding(2) var<storage, read_write> output: array<f32>;
+@group(0) @binding(0) var<storage, read> input1: array<${SCALAR_TYPE}>;
+@group(0) @binding(1) var<storage, read> input2: array<${SCALAR_TYPE}>;
+@group(0) @binding(2) var<storage, read_write> output: array<${SCALAR_TYPE}>;
 
 struct TensorMeta {
   ndim: u32,
@@ -14,12 +14,12 @@ struct TensorMeta {
 
 override wg_size: u32 = 64u;
 $if USE_ALPHA:
-  override alpha: f32 = 1.0;
+  override alpha: ${ALPHA_TYPE} = ${ALPHA_DEFAULT};
 
 $if INLINE:
   @compute @workgroup_size(wg_size, 1, 1)
 $else:
-  fn op(a: f32, b: f32) -> f32 {
+  fn op(a: ${SCALAR_TYPE}, b: ${SCALAR_TYPE}) -> ${SCALAR_TYPE} {
     return ${OP_EXPR};
   }
 
