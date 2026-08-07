@@ -115,6 +115,11 @@
 #include "arm_memory_allocator.h"
 #include "arm_perf_monitor.h"
 
+// newlib-nano printf does not reliably handle the z length modifier. Values
+// logged or printed by this runner use unsigned long with %lu instead of size_t
+// with %zu.
+using printf_size_t = unsigned long;
+
 #if defined(ET_BUNDLE_IO)
 #include <executorch/devtools/bundled_program/bundled_program.h>
 #endif
@@ -336,12 +341,13 @@ unsigned char* ethosu_fast_scratch = dedicated_sram;
     size_t line,
     const char* message,
     ET_UNUSED size_t length) {
+  printf_size_t log_line = line;
   fprintf(
       stderr,
       "%c [executorch:%s:%lu %s()] %s\n",
       level,
       filename,
-      static_cast<unsigned long>(line),
+      log_line,
       function,
       message);
 }
@@ -459,14 +465,12 @@ Error prepare_input_tensors(
   ET_CHECK_OK_OR_RETURN_ERROR(err);
 
   for (size_t i = 0; i < num_inputs; i++) {
+    printf_size_t input_idx = i;
     auto tag = method_meta.input_tag(i);
     ET_CHECK_OK_OR_RETURN_ERROR(tag.error());
 
     if (tag.get() != Tag::Tensor) {
-      ET_LOG(
-          Debug,
-          "Skipping non-tensor input %lu",
-          static_cast<unsigned long>(i));
+      ET_LOG(Debug, "Skipping non-tensor input %lu", input_idx);
       continue;
     }
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
@@ -476,11 +480,13 @@ Error prepare_input_tensors(
     if (input_buffers.size() > 0) {
       auto [buffer, buffer_size] = input_buffers.at(i);
       if (buffer_size != tensor_meta->nbytes()) {
+        printf_size_t input_buffer_size = buffer_size;
+        printf_size_t tensor_size = tensor_meta->nbytes();
         ET_LOG(
             Error,
-            "input size (%d) and tensor size (%d) mismatch!",
-            buffer_size,
-            tensor_meta->nbytes());
+            "input size (%lu) and tensor size (%lu) mismatch!",
+            input_buffer_size,
+            tensor_size);
         err = Error::InvalidArgument;
       } else if (input_evalues[i].isTensor()) {
         // Copy the data from the input buffer to the tensor
@@ -509,7 +515,7 @@ Error prepare_input_tensors(
             break;
         }
       } else {
-        printf("Input[%zu]: Not Tensor\n", i);
+        printf("Input[%lu]: Not Tensor\n", input_idx);
       }
     }
   }
@@ -538,20 +544,19 @@ std::pair<char*, size_t> read_binary_file(
 
   char* buffer = static_cast<char*>(allocator.allocate(file_size));
   if (buffer == nullptr) {
-    ET_LOG(
-        Fatal,
-        "Failed to allocate input file size:%lu",
-        static_cast<unsigned long>(file_size));
+    printf_size_t input_file_size = file_size;
+    ET_LOG(Fatal, "Failed to allocate input file size:%lu", input_file_size);
     fclose(fp);
     return std::make_pair(nullptr, 0);
   }
   auto read_size = fread(buffer, 1, file_size, fp);
   if (read_size != file_size) {
+    printf_size_t input_read_size = read_size;
     ET_LOG(
         Info,
-        "Failed to read whole file (%), read %lu bytes!",
+        "Failed to read whole file (%s), read %lu bytes!",
         filename,
-        static_cast<unsigned long>(read_size));
+        input_read_size);
   }
   fclose(fp);
   return std::make_pair(buffer, read_size);
@@ -1308,10 +1313,10 @@ int main(int argc, const char* argv[]) {
     if (std::strcmp(argv[i], "-i") == 0) {
       // input file, read the data into memory
       const char* input_tensor_filename = argv[++i];
-      const size_t nbr_inputs = input_buffers.size() + 1;
+      const printf_size_t nbr_inputs = input_buffers.size() + 1;
       ET_LOG(
           Info,
-          "Reading input tensor %zu from file %s",
+          "Reading input tensor %lu from file %s",
           nbr_inputs,
           input_tensor_filename);
       auto [buffer, buffer_size] = read_binary_file(
@@ -1319,7 +1324,7 @@ int main(int argc, const char* argv[]) {
       if (buffer == nullptr) {
         ET_LOG(
             Error,
-            "Reading input tensor %zu from file %s failed.",
+            "Reading input tensor %lu from file %s failed.",
             nbr_inputs,
             input_tensor_filename);
         _exit(1);
