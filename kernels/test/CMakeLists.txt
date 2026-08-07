@@ -184,6 +184,7 @@ set(all_test_sources
     "op_bitwise_right_shift_test.cpp"
     "op_bitwise_xor_test.cpp"
     "op_bmm_test.cpp"
+    "op_bucketize_test.cpp"
     "op_cat_test.cpp"
     "op_cdist_forward_test.cpp"
     "op_ceil_test.cpp"
