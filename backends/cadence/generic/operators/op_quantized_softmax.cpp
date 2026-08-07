@@ -118,7 +118,6 @@ void updatePositionMaskIncremental(
 template <typename T>
 void quantized_softmax_per_tensor_(
     const Tensor& input,
-    ET_UNUSED const Tensor& mask,
     int64_t dim,
     int64_t mask_type,
     const Tensor& pos,
@@ -280,7 +279,6 @@ void quantized_softmax_per_tensor_(
 template <typename T>
 void quantized_softmax_(
     const Tensor& input,
-    const Tensor& mask,
     const int64_t dim,
     int64_t mask_type,
     const Tensor& pos,
@@ -296,7 +294,6 @@ void quantized_softmax_(
   int64_t output_zero_point = out_zero_point.const_data_ptr<int64_t>()[0];
   quantized_softmax_per_tensor_<T>(
       input,
-      mask,
       dim,
       mask_type,
       pos,
@@ -312,7 +309,6 @@ void quantized_softmax_(
 Tensor& quantized_softmax_out(
     ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
-    const Tensor& mask,
     int64_t dim,
     int64_t mask_type,
     const Tensor& pos,
@@ -325,7 +321,6 @@ Tensor& quantized_softmax_out(
   case ScalarType::dtype: {                   \
     quantized_softmax_<ctype>(                \
         input,                                \
-        mask,                                 \
         dim,                                  \
         mask_type,                            \
         pos,                                  \
@@ -352,7 +347,6 @@ Tensor& quantized_softmax_out(
 Tensor& quantized_softmax_per_tensor_out(
     ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
-    const Tensor& mask,
     int64_t dim,
     int64_t mask_type,
     const Tensor& pos,
@@ -365,7 +359,6 @@ Tensor& quantized_softmax_per_tensor_out(
   case ScalarType::dtype: {                   \
     quantized_softmax_per_tensor_<ctype>(     \
         input,                                \
-        mask,                                 \
         dim,                                  \
         mask_type,                            \
         pos,                                  \
