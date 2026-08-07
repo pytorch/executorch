@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024-2025 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,16 +12,19 @@ import executorch.backends.test.harness.stages as BaseStages
 
 import torch
 from executorch.backends.test.harness import Tester as TesterBase
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import StageType
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     QuantizationConfig,
+)
+from executorch.backends.xnnpack.test.tester.performance import (
+    maybe_run_performance_test,
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import EdgeCompileConfig
@@ -132,3 +135,38 @@ class Tester(TesterBase):
             dynamic_shapes=dynamic_shapes,
             **kwargs,
         )
+
+    def run_method_and_compare_outputs(
+        self,
+        stage: Optional[StageType] = None,
+        inputs: Optional[Tuple[torch.Tensor]] = None,
+        num_runs=1,
+        atol=1e-03,
+        rtol=1e-03,
+        qtol=0,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
+        artifact_dir: Optional[str] = None,
+        artifact_name: Optional[str] = None,
+        xnnpack_perf: bool = False,
+        xnnpack_perf_results_path: Optional[str] = None,
+    ):
+        super().run_method_and_compare_outputs(
+            stage=stage,
+            inputs=inputs,
+            num_runs=num_runs,
+            atol=atol,
+            rtol=rtol,
+            qtol=qtol,
+            statistics_callback=statistics_callback,
+            artifact_dir=artifact_dir,
+            artifact_name=artifact_name,
+        )
+
+        if xnnpack_perf:
+            stage = stage or self.cur
+            maybe_run_performance_test(
+                serialized_buffer=self.stages[stage].artifact,
+                inputs=inputs if inputs is not None else self.example_inputs,
+                results_path=xnnpack_perf_results_path,
+            )
+        return self
