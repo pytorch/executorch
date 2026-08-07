@@ -9,7 +9,7 @@ def define_common_targets(is_fbcode = False):
     python_unittest(
         name = "test_add",
         srcs = [
-            "ops/add/test_add.py",
+            "ops/test_add.py",
         ],
         deps = [
             "//caffe2:torch",
@@ -43,4 +43,10 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
             "//executorch/backends/vulkan:vulkan_preprocess",
         ],
+    )
+
+    runtime.python_library(
+        name = "test_native_ci_contract",
+        srcs = ["test_native_ci_contract.py"],
+        typing = True,
     )

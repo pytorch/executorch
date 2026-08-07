@@ -35,17 +35,37 @@ fi
 
 cd "${EXECUTORCH_ROOT}"
 
+bash "${SCRIPT_DIR}/test_gemma4_wasm_factory_contract.sh" --validate-names
+buck2 test fbcode//executorch/backends/webgpu/test:test_wgsl_codegen
+
 # ── Exports for the model-driven executables ─────────────────────────────────
 if ! "${PYTHON_EXECUTABLE}" -c "import executorch" 2>/dev/null; then
   echo "ERROR: executorch wheel unavailable; required fixture exports cannot run" >&2
   exit 1
 fi
 
+# ── Source contracts: no Buck target, they read across packages ──────────────
+$PYTHON_EXECUTABLE -m unittest \
+    executorch.backends.webgpu.test.test_native_ci_contract
+$PYTHON_EXECUTABLE -m unittest \
+    executorch.examples.models.gemma4.tests.test_oss_source_closure
+
 require_file() {
   if [[ ! -f "$1" ]]; then
     echo "ERROR: required WebGPU fixture missing: $1" >&2
     exit 1
   fi
+}
+
+recreate_exact_directory() {
+  local target="$1"
+  local expected="$2"
+  if [[ "${target}" != "${expected}" ]]; then
+    echo "ERROR: refusing to recreate unexpected directory: ${target}" >&2
+    return 1
+  fi
+  rm -rf -- "${target}"
+  mkdir -p -- "${target}"
 }
 
 run_with_required_device() {
@@ -84,7 +104,7 @@ run_required_gtests() {
     echo "ERROR: required WebGPU run did not pass exactly three tests" >&2
     return 1
   fi
-  if grep -Eq '^\\[  SKIPPED \\]' <<<"${output}"; then
+  if grep -Eq '^\[  SKIPPED \]' <<<"${output}"; then
     echo "ERROR: required WebGPU run skipped a test" >&2
     return 1
   fi
@@ -93,6 +113,9 @@ run_required_gtests() {
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 UPDATE_CACHE_DIR="/tmp/update_cache"
 INDEX_DIR="/tmp/index"
+TOPK_DIR="/tmp/topk"
+TOPK_AUTHORITY="/tmp/topk_eager_authority.json"
+SCATTER_DIR="/tmp/scatter"
 DYNAMIC_SHAPE_DIR="/tmp/dynamic_shape"
 ROPE_HF_DIR="/tmp/webgpu_rope_hf"
 SYMINT_BLOB="/tmp/sdpa_dyn_small.pte"
@@ -115,6 +138,8 @@ PREPACK2_MODEL="/tmp/webgpu_prepack_two_const.pte"
 PREPACK2_GOLDEN="/tmp/webgpu_prepack_two_const_golden.bin"
 PREPACK_TIED_MODEL="/tmp/webgpu_prepack_tied_const.pte"
 PREPACK_TIED_GOLDEN="/tmp/webgpu_prepack_tied_const_golden.bin"
+
+recreate_exact_directory "${UPDATE_CACHE_DIR}" "/tmp/update_cache"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_quantized_linear import export_all_quantized_linear_models, export_output_suppression_models
@@ -153,6 +178,8 @@ export_dispatch_order_cases('${DISPATCH_ORDER_DIR}')
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_update_cache import (
+    export_dynamic_update_cache,
+    export_intermediate_dynamic_update_cache,
     export_update_cache_cases,
     export_update_cache_replay,
     export_update_cache_negative,
@@ -160,18 +187,38 @@ from executorch.backends.webgpu.test.ops.test_update_cache import (
 export_update_cache_cases('${UPDATE_CACHE_DIR}')
 export_update_cache_replay('${UPDATE_CACHE_DIR}')
 export_update_cache_negative('${UPDATE_CACHE_DIR}')
+export_dynamic_update_cache('${UPDATE_CACHE_DIR}/dynamic.pte')
+export_intermediate_dynamic_update_cache('${UPDATE_CACHE_DIR}/dynamic_intermediate.pte')
 "
+require_file "${UPDATE_CACHE_DIR}/dynamic.pte"
+require_file "${UPDATE_CACHE_DIR}/dynamic_intermediate.pte"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.index.test_index import export_all_index_models
 export_all_index_models('${INDEX_DIR}')
 "
 
+# The exporter validates this receipt against the committed authority digest.
+EAGLE_TOPK_EAGER_RECEIPT="${TOPK_AUTHORITY}" $PYTHON_EXECUTABLE -m unittest \
+    executorch.backends.webgpu.test.ops.topk.test_topk.TestEagleTopKCpu.test_eager_reference_is_repeatable
+
+$PYTHON_EXECUTABLE -m executorch.backends.webgpu.test.ops.topk.export_topk_artifacts \
+    "${TOPK_DIR}" "${TOPK_AUTHORITY}"
+
+$PYTHON_EXECUTABLE -m executorch.backends.webgpu.test.ops.scatter.export_scatter_artifacts \
+    "${SCATTER_DIR}"
+
+recreate_exact_directory "${DYNAMIC_SHAPE_DIR}" "/tmp/dynamic_shape"
 WEBGPU_TEST_HEAVY=1 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dynamic_shape.test_dynamic_shape_export import export_dynamic_shape_cases
 export_dynamic_shape_cases('${DYNAMIC_SHAPE_DIR}')
 "
 require_file "${DYNAMIC_SHAPE_DIR}/dyn_cat_2d.pte"
+require_file "${DYNAMIC_SHAPE_DIR}/dyn_slice_2d.pte"
+require_file "${DYNAMIC_SHAPE_DIR}/slice_dual_store.pte"
+require_file "${DYNAMIC_SHAPE_DIR}/slice_dual_store.input.bin"
+require_file "${DYNAMIC_SHAPE_DIR}/slice_dual_store.out0.golden.bin"
+require_file "${DYNAMIC_SHAPE_DIR}/slice_dual_store.out1.golden.bin"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_sdpa import (
@@ -189,6 +236,10 @@ export_incache_decode('/tmp')
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"
 require_file "${SYMINT_BLOB}"
 require_file "${OUTPUT_SUPPRESSION_DIR}/input.bin"
+require_file "${TOPK_AUTHORITY}"
+require_file "${TOPK_DIR}/cases.txt"
+require_file "${SCATTER_DIR}/cases.txt"
+require_file "${SCATTER_DIR}/base.bin"
 
 # ── Configure (Dawn-only: no -DWEBGPU_IMPL; Dawn is the sole backend) ─────────
 echo "=== Configure WebGPU native tests on Dawn ==="
@@ -209,7 +260,7 @@ cmake \
     "${EXECUTORCH_ROOT}"
 
 # ── Build + run every fixed native test target in this tree ──────────────────
-REQUIRED_TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_index_test webgpu_dynamic_shape_test webgpu_dispatch_2d_test webgpu_compute_dispatch_test webgpu_execution_options_test webgpu_output_suppression_test webgpu_op_test_util_test)
+REQUIRED_TARGETS=(webgpu_native_test webgpu_dispatch_order_test webgpu_scratch_buffer_test webgpu_update_cache_test webgpu_update_cache_state_test webgpu_index_test webgpu_dynamic_shape_test webgpu_dispatch_2d_test webgpu_compute_dispatch_test webgpu_execution_options_test webgpu_output_suppression_test webgpu_op_test_util_test webgpu_topk_test webgpu_scatter_test webgpu_q4gsw_m3_test)
 BIN_DIR="${BUILD_DIR}/backends/webgpu"
 
 DEFINED_TARGETS="$(cmake --build "${BUILD_DIR}" --target help 2>/dev/null || true)"
@@ -224,6 +275,7 @@ for t in "${REQUIRED_TARGETS[@]}"; do
 done
 
 echo "=== Run native tests on Dawn + SwiftShader ==="
+"${BIN_DIR}/webgpu_update_cache_state_test"
 run_with_required_device env WEBGPU_TEST_SDPA_DIR=/tmp/ \
     WEBGPU_TEST_QUANTIZED_LINEAR_DIR=/tmp/ \
     WEBGPU_TEST_EMBEDDING_Q4GSW_MODEL="${EMBEDDING_MODEL}" \
@@ -247,9 +299,14 @@ run_with_required_device env WEBGPU_TEST_SDPA_DIR=/tmp/ \
     WEBGPU_TEST_PREPACK_TIED_MODEL="${PREPACK_TIED_MODEL}" \
     WEBGPU_TEST_PREPACK_TIED_GOLDEN="${PREPACK_TIED_GOLDEN}" \
     "${BIN_DIR}/webgpu_native_test"
-"${BIN_DIR}/webgpu_update_cache_test" "${UPDATE_CACHE_DIR}"
+run_with_required_device env WEBGPU_REQUIRE_DEVICE=1 \
+    WEBGPU_UPDATE_CACHE_DIR="${UPDATE_CACHE_DIR}" \
+    "${BIN_DIR}/webgpu_update_cache_test" "${UPDATE_CACHE_DIR}"
 "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
 "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
+"${BIN_DIR}/webgpu_topk_test" "${TOPK_DIR}"
+"${BIN_DIR}/webgpu_scatter_test" "${SCATTER_DIR}"
+"${BIN_DIR}/webgpu_q4gsw_m3_test"
 "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}"
 run_required_gtests env WEBGPU_REQUIRE_DEVICE=1 WEBGPU_TEST_HEAVY=1 \
     "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}" \

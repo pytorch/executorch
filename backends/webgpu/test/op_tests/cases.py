@@ -48,9 +48,14 @@ from executorch.backends.webgpu.test.ops.test_cat import (
     CONFIGS as _CAT_CONFIGS,
 )
 from executorch.backends.webgpu.test.ops.test_compare import (
+    _det_input as _scalar_compare_input,
     compare_gen_a,
     compare_gen_b,
     CompareModule,
+    SCALAR,
+    SCALAR_OPS,
+    SCALAR_SHAPES,
+    ScalarCompareModule,
 )
 from executorch.backends.webgpu.test.ops.test_conv1d_dw import Conv1dDWModule
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import (
@@ -168,6 +173,7 @@ from executorch.backends.webgpu.test.ops.test_to_copy import (
     to_copy_float_input,
     to_copy_int_input,
     ToCopyBoolToFloatModule,
+    ToCopyFloatToInt64Module,
     ToCopyFloatToIntToFloatModule,
     ToCopyIntToFloatModule,
 )
@@ -1773,6 +1779,9 @@ def _relu_suite() -> WebGPUTestSuite:
 
 from executorch.backends.webgpu.test.ops.test_sub import (
     CONFIGS as _SUB_CONFIGS,
+    int32_wrap_input_a,
+    int32_wrap_input_b,
+    SubAlphaModule,
     SubModule,
 )
 
@@ -1783,9 +1792,38 @@ def _sub_suite() -> WebGPUTestSuite:
     # over a TensorMeta UBO); fp64 golden. Mirrors _mul_suite. alpha is a
     # construct kwarg baked into the .pte, never a serialized input.
     return WebGPUTestSuite(
-        module_factory=lambda: SubModule(),
+        module_factory=lambda alpha=None: (
+            SubModule() if alpha is None else SubAlphaModule(alpha)
+        ),
         cases=[
-            Case(name=name, inputs=(sa, sb)) for name, (sa, sb) in _SUB_CONFIGS.items()
+            *[
+                Case(name=name, inputs=(sa, sb))
+                for name, (sa, sb) in _SUB_CONFIGS.items()
+            ],
+            Case(
+                name="int32_wrap",
+                construct={"alpha": 1},
+                inputs=(
+                    InputSpec(shape=(2, 4), gen=int32_wrap_input_a),
+                    InputSpec(shape=(2, 4), gen=int32_wrap_input_b),
+                ),
+            ),
+            Case(
+                name="int32_broadcast",
+                construct={"alpha": 1},
+                inputs=(
+                    InputSpec(shape=(2, 3), gen=int32_wrap_input_a),
+                    InputSpec(shape=(1, 3), gen=int32_wrap_input_b),
+                ),
+            ),
+            Case(
+                name="int32_alpha",
+                construct={"alpha": 3},
+                inputs=(
+                    InputSpec(shape=(2, 4), gen=int32_wrap_input_a),
+                    InputSpec(shape=(2, 4), gen=int32_wrap_input_b),
+                ),
+            ),
         ],
     )
 
@@ -2215,6 +2253,148 @@ def _argmin_suite() -> WebGPUTestSuite:
             Case(name="2d", inputs=((M1, M2),)),
             Case(name="3d", inputs=((S, S1, S2),)),
             Case(name="tie", inputs=(InputSpec(shape=(3, 6), gen=argmin_tie_gen),)),
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("to_copy_f2i")
+def _to_copy_f2i_suite() -> WebGPUTestSuite:
+    # Terminal float->int cast; i32() truncates toward zero, so the .75 magnitudes bite.
+    return WebGPUTestSuite(
+        module_factory=ToCopyFloatToInt64Module,
+        cases=[
+            Case(
+                name=f"length_{n}",
+                inputs=(InputSpec(shape=(n,), gen=to_copy_float_input),),
+            )
+            for n in (63, 64, 65, 257)
+        ],
+        golden_dtype="float32",
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_gather import (
+    CONFIGS as _GATHER_CONFIGS,
+    gather_index_gen,
+    gather_self_gen,
+    GatherModule,
+)
+
+
+@register_op_test("gather")
+def _gather_suite() -> WebGPUTestSuite:
+    # out/index share a shape; rank3_neg's dim=-1 pins the handler's dim normalization.
+    return WebGPUTestSuite(
+        module_factory=lambda dim: GatherModule(dim),
+        cases=[
+            Case(
+                name=name,
+                construct={"dim": dim},
+                inputs=(
+                    InputSpec(shape=self_shape, gen=gather_self_gen),
+                    InputSpec(shape=index_shape, gen=gather_index_gen(self_shape[dim])),
+                ),
+            )
+            for name, (self_shape, dim, index_shape) in _GATHER_CONFIGS.items()
+        ],
+        golden_dtype="float32",
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_where import (
+    CONFIGS as _WHERE_CONFIGS,
+    where_a_gen,
+    where_b_gen,
+    where_cond_gen,
+    WhereModule,
+)
+
+
+@register_op_test("where")
+def _where_suite() -> WebGPUTestSuite:
+    # bool cond + fp32 a/b, all broadcast; a>0 and b<0 so a wrong pick flips sign.
+    return WebGPUTestSuite(
+        module_factory=lambda: WhereModule(),
+        cases=[
+            Case(
+                name=name,
+                inputs=(
+                    InputSpec(shape=cond_shape, gen=where_cond_gen),
+                    InputSpec(shape=a_shape, gen=where_a_gen),
+                    InputSpec(shape=b_shape, gen=where_b_gen),
+                ),
+            )
+            for name, (cond_shape, a_shape, b_shape) in _WHERE_CONFIGS.items()
+        ],
+        golden_dtype="float32",
+    )
+
+
+@register_op_test("compare_scalar")
+def _compare_scalar_suite() -> WebGPUTestSuite:
+    # All six <op>.Scalar variants vs 0.0; tail numel 15 hits the partial bool word.
+    return WebGPUTestSuite(
+        module_factory=lambda op, scalar: ScalarCompareModule(op, scalar),
+        cases=[
+            Case(
+                name=f"{op}_{shape_name}",
+                construct={"op": op, "scalar": SCALAR},
+                inputs=(InputSpec(shape=shape, gen=_scalar_compare_input),),
+            )
+            for op in SCALAR_OPS
+            for shape_name, shape in SCALAR_SHAPES.items()
+        ],
+        golden_dtype="bool",
+    )
+
+
+from executorch.backends.webgpu.test.ops.test_logical_not import (
+    _det_input as _logical_not_input,
+    CONFIGS as _LOGICAL_NOT_CONFIGS,
+    LogicalNotModule,
+)
+
+
+@register_op_test("logical_not")
+def _logical_not_suite() -> WebGPUTestSuite:
+    # not(x >= 0) over a GPU-derived mask; tail3x7 numel 21 hits the partial bool word.
+    return WebGPUTestSuite(
+        module_factory=lambda threshold: LogicalNotModule(threshold),
+        cases=[
+            Case(
+                name=name,
+                construct={"threshold": 0.0},
+                inputs=(InputSpec(shape=shape, gen=_logical_not_input),),
+            )
+            for name, shape in _LOGICAL_NOT_CONFIGS.items()
+        ],
+        golden_dtype="bool",
+    )
+
+
+from executorch.backends.webgpu.test.ops.index.test_index import (
+    CONFIGS as _INDEX_CONFIGS,
+    index_idx_gen,
+    index_self_gen,
+    IndexModule,
+)
+
+
+@register_op_test("index")
+def _index_suite() -> WebGPUTestSuite:
+    # 1D-self index out[i]=self[idx[i]]; repeat/reverse idx exposes a bad gather.
+    return WebGPUTestSuite(
+        module_factory=lambda: IndexModule(),
+        cases=[
+            Case(
+                name=name,
+                inputs=(
+                    InputSpec(shape=(self_len,), gen=index_self_gen),
+                    InputSpec(shape=(len(idx),), gen=index_idx_gen(idx)),
+                ),
+            )
+            for name, (self_len, idx) in _INDEX_CONFIGS.items()
         ],
         golden_dtype="float32",
     )

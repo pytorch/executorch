@@ -15,6 +15,7 @@ native test reconstructs the deterministic inputs bit-for-bit.
 
 from __future__ import annotations
 
+import math
 import os
 import unittest
 
@@ -40,18 +41,24 @@ class GatherModule(torch.nn.Module):
         return torch.gather(x, self.dim, index)
 
 
+def gather_self_gen(shape: tuple[int, ...]) -> torch.Tensor:
+    """Distinct fp32 source values, so a wrong pick is visible."""
+    return torch.arange(math.prod(shape), dtype=torch.float32).reshape(shape)
+
+
+def gather_index_gen(bound: int):
+    """Index generator for a given self.size(dim); cycles so rows differ."""
+
+    def gen(shape: tuple[int, ...]) -> torch.Tensor:
+        m = math.prod(shape)
+        return (torch.arange(m, dtype=torch.int64) % bound).reshape(shape)
+
+    return gen
+
+
 def _det_inputs(self_shape, dim: int, index_shape):
     """Distinct fp32 source (a wrong pick is visible) + in-range int64 index."""
-    n = 1
-    for s in self_shape:
-        n *= s
-    x = torch.arange(n, dtype=torch.float32).reshape(self_shape)
-    bound = self_shape[dim]
-    m = 1
-    for s in index_shape:
-        m *= s
-    index = (torch.arange(m, dtype=torch.int64) % bound).reshape(index_shape)
-    return x, index
+    return gather_self_gen(self_shape), gather_index_gen(self_shape[dim])(index_shape)
 
 
 def _lower(m: torch.nn.Module, x: torch.Tensor, index: torch.Tensor):

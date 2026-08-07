@@ -34,6 +34,12 @@ class ToCopyFloatToIntModule(torch.nn.Module):
         return x.to(torch.int32)
 
 
+class ToCopyFloatToInt64Module(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # int64 EValue over the int32 delegate buffer (downcast_64_bit + widen).
+        return x.to(torch.int64)
+
+
 class ToCopyFloatToIntToFloatModule(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x.to(torch.int32).to(torch.float32)
