@@ -307,6 +307,9 @@ execute_process(
           ${LINK_FILE_OUT} ${LINK_FILE_IN}
 )
 target_link_options(arm_executor_runner PRIVATE "-T" "${LINK_FILE_OUT}")
+if(EXECUTORCH_OPTIMIZE_SIZE)
+  arm_runner_link_minimal_specs(arm_executor_runner)
+endif()
 
 set(arm_executor_runner_link)
 list(
