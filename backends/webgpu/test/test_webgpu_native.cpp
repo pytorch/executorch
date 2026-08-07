@@ -2417,10 +2417,140 @@ void test_resize_hook(const std::string& blob_path) {
       << "after set(8)+propagate run_count=" << run_count
       << " last_seen=" << last_seen << " (want 2,8)";
 
+  int tid = -1;
+  for (int id : graph.input_ids()) {
+    if (graph.get_value_type(id) == WebGPUGraph::ValueType::Tensor &&
+        graph.tensor_has_dynamic_dims(id) &&
+        graph.cur_dims(id).size() >= 2) {
+      tid = id;
+      break;
+    }
+  }
+  ASSERT_GE(tid, 0) << "no dynamic tensor input deserialized";
+  const std::vector<int64_t> max_dims = graph.cur_dims(tid);
+  std::vector<int64_t> small_dims = max_dims;
+  ASSERT_GT(small_dims[small_dims.size() - 2], 1);
+  small_dims[small_dims.size() - 2] = 1;
+
+  ASSERT_THROW(
+      graph.add_post_resize_hook({}, {}, [](WebGPUGraph&) {}),
+      std::runtime_error);
+  ASSERT_THROW(
+      graph.add_post_resize_hook({sid}, {}, [](WebGPUGraph&) {}),
+      std::runtime_error);
+  ASSERT_THROW(
+      graph.add_post_resize_hook({}, {tid}, [](WebGPUGraph&) {}),
+      std::runtime_error);
+
+  int post_count = 0;
+  graph.add_post_resize_hook({tid}, {sid}, [&](WebGPUGraph& g) {
+    ++post_count;
+    EXPECT_EQ(g.read_symint(sid), last_seen);
+  });
+
+  // A tensor-only change reaches the terminal phase exactly once.
+  graph.resize_input(tid, small_dims);
+  graph.propagate_resize();
+  ASSERT_EQ(post_count, 1);
+  ASSERT_EQ(graph.cur_dims(tid), small_dims);
+
+  // Simultaneous tensor + SymInt changes still invoke the post hook once.
+  last_seen = 9;
+  graph.set_symint(sid, last_seen);
+  graph.resize_input(tid, max_dims);
+  graph.propagate_resize();
+  ASSERT_EQ(post_count, 2);
+  ASSERT_EQ(graph.cur_dims(tid), max_dims);
+
+  // A failed post hook restores every trigger. Retrying without a setter must
+  // execute it again, while a clean third call must remain inert.
+  bool fail_post_once = true;
+  int fail_post_count = 0;
+  graph.add_post_resize_hook({tid}, {sid}, [&](WebGPUGraph&) {
+    ++fail_post_count;
+    if (fail_post_once) {
+      fail_post_once = false;
+      throw std::runtime_error("injected post-hook failure");
+    }
+  });
+  last_seen = 10;
+  graph.set_symint(sid, last_seen);
+  ASSERT_THROW(graph.propagate_resize(), std::runtime_error);
+  ASSERT_EQ(fail_post_count, 1);
+  graph.propagate_resize();
+  ASSERT_EQ(fail_post_count, 2);
+  graph.propagate_resize();
+  ASSERT_EQ(fail_post_count, 2);
+
+  // Terminal callbacks cannot start another propagation wave, including by
+  // writing the same value (which would otherwise leave no dirty-set trace).
+  bool attack_symint_once = true;
+  graph.add_post_resize_hook({}, {sid}, [&](WebGPUGraph& g) {
+    if (attack_symint_once) {
+      attack_symint_once = false;
+      g.set_symint(sid, g.read_symint(sid));
+    }
+  });
+  last_seen = 11;
+  graph.set_symint(sid, last_seen);
+  ASSERT_THROW(graph.propagate_resize(), std::runtime_error);
+  graph.propagate_resize();
+
+  bool attack_tensor_once = true;
+  graph.add_post_resize_hook({tid}, {}, [&](WebGPUGraph& g) {
+    if (attack_tensor_once) {
+      attack_tensor_once = false;
+      g.set_cur_dims(tid, g.cur_dims(tid));
+    }
+  });
+  graph.resize_input(tid, small_dims);
+  ASSERT_THROW(graph.propagate_resize(), std::runtime_error);
+  graph.propagate_resize();
+
+  // A tensor-hook failure also restores its direct trigger for a setter-free
+  // retry, and the terminal-phase guard is reset on every exception path.
+  bool fail_tensor_once = true;
+  int fail_tensor_count = 0;
+  graph.add_tensor_resize_hook(tid, [&](WebGPUGraph&) {
+    ++fail_tensor_count;
+    if (fail_tensor_once) {
+      fail_tensor_once = false;
+      throw std::runtime_error("injected tensor-hook failure");
+    }
+  });
+  graph.resize_input(tid, max_dims);
+  ASSERT_THROW(graph.propagate_resize(), std::runtime_error);
+  ASSERT_EQ(fail_tensor_count, 1);
+  graph.propagate_resize();
+  ASSERT_EQ(fail_tensor_count, 2);
+
+  // A non-converging hook restores both the original and cascading tensor
+  // triggers. Disarming it permits a retry without another resize_input call.
+  bool oscillate = true;
+  graph.add_tensor_resize_hook(tid, [&](WebGPUGraph& g) {
+    if (!oscillate) {
+      return;
+    }
+    std::vector<int64_t> dims = g.cur_dims(tid);
+    dims[dims.size() - 2] = dims[dims.size() - 2] == 1 ? 2 : 1;
+    g.set_cur_dims(tid, dims);
+  });
+  graph.resize_input(tid, small_dims);
+  ASSERT_THROW(graph.propagate_resize(), std::runtime_error);
+  oscillate = false;
+  graph.propagate_resize();
+
+  // A normal setter still works after both post-phase failures.
+  last_seen = 12;
+  graph.set_symint(sid, last_seen);
+  graph.propagate_resize();
+  ASSERT_EQ(graph.read_symint(sid), 12);
+
   printf(
-      "PASS: resize-hook dirty-gating (SymInt %d: runs only on change, "
-      "once per change; saw 3 then 8)\n",
-      sid);
+      "PASS: resize hooks (SymInt %d, Tensor %d: dirty gating, terminal "
+      "coherence, retry, and setter guards)\n",
+      sid,
+      tid);
 }
 
 // q4gsw embedding_q4gsw on-GPU configs: small + llama1b (env-gated,

@@ -61,6 +61,35 @@ run_with_required_device() {
   fi
 }
 
+run_required_gtests() {
+  local output
+  if ! output="$(run_with_required_device "$@" 2>&1)"; then
+    printf '%s\n' "${output}"
+    return 1
+  fi
+  printf '%s\n' "${output}"
+
+  local test_name
+  for test_name in \
+    DynamicShape.SliceCrosses2dDispatchBoundary \
+    DynamicShape.CatCrosses2dDispatchBoundary \
+    DynamicShape.SliceDualStoreWritesBothDestinations; do
+    if ! grep -Eq "^\\[       OK \\] ${test_name}( \\([0-9]+ ms\\))?$" \
+        <<<"${output}"; then
+      echo "ERROR: required WebGPU test did not pass: ${test_name}" >&2
+      return 1
+    fi
+  done
+  if ! grep -Fxq '[  PASSED  ] 3 tests.' <<<"${output}"; then
+    echo "ERROR: required WebGPU run did not pass exactly three tests" >&2
+    return 1
+  fi
+  if grep -Eq '^\\[  SKIPPED \\]' <<<"${output}"; then
+    echo "ERROR: required WebGPU run skipped a test" >&2
+    return 1
+  fi
+}
+
 DISPATCH_ORDER_DIR="/tmp/dispatch_order"
 UPDATE_CACHE_DIR="/tmp/update_cache"
 INDEX_DIR="/tmp/index"
@@ -138,10 +167,11 @@ from executorch.backends.webgpu.test.ops.index.test_index import export_all_inde
 export_all_index_models('${INDEX_DIR}')
 "
 
-$PYTHON_EXECUTABLE -c "
+WEBGPU_TEST_HEAVY=1 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.dynamic_shape.test_dynamic_shape_export import export_dynamic_shape_cases
 export_dynamic_shape_cases('${DYNAMIC_SHAPE_DIR}')
 "
+require_file "${DYNAMIC_SHAPE_DIR}/dyn_cat_2d.pte"
 
 $PYTHON_EXECUTABLE -c "
 from executorch.backends.webgpu.test.ops.test_sdpa import (
@@ -221,6 +251,9 @@ run_with_required_device env WEBGPU_TEST_SDPA_DIR=/tmp/ \
 "${BIN_DIR}/webgpu_dispatch_order_test" "${DISPATCH_ORDER_DIR}"
 "${BIN_DIR}/webgpu_index_test" "${INDEX_DIR}"
 "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}"
+run_required_gtests env WEBGPU_REQUIRE_DEVICE=1 WEBGPU_TEST_HEAVY=1 \
+    "${BIN_DIR}/webgpu_dynamic_shape_test" "${DYNAMIC_SHAPE_DIR}" \
+    --gtest_filter=DynamicShape.SliceCrosses2dDispatchBoundary:DynamicShape.CatCrosses2dDispatchBoundary:DynamicShape.SliceDualStoreWritesBothDestinations
 "${BIN_DIR}/webgpu_scratch_buffer_test"
 "${BIN_DIR}/webgpu_dispatch_2d_test"
 "${BIN_DIR}/webgpu_compute_dispatch_test"
@@ -238,4 +271,11 @@ $PYTHON_EXECUTABLE -m executorch.backends.webgpu.test.op_tests.generate_op_tests
   --output "${OP_TEST_DIR}"
 cmake --build "${BUILD_DIR}" --target webgpu_op_test -j"${NPROC}"
 "${BIN_DIR}/webgpu_op_test" --manifest "${OP_TEST_DIR}/manifest.json"
+CAT_2D_TEST_DIR="/tmp/webgpu_cat_2d_test"
+WEBGPU_TEST_HEAVY=1 $PYTHON_EXECUTABLE \
+  -m executorch.backends.webgpu.test.op_tests.generate_op_tests \
+  --output "${CAT_2D_TEST_DIR}" --ops cat
+run_with_required_device env WEBGPU_REQUIRE_DEVICE=1 \
+  "${BIN_DIR}/webgpu_op_test" \
+  --manifest "${CAT_2D_TEST_DIR}/manifest.json"
 echo "=== WebGPU op-test framework on Dawn: passed ==="

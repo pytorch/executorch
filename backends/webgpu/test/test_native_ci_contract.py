@@ -73,3 +73,43 @@ class TestNativeCIContract(unittest.TestCase):
         self.assertIn("export_rope_hf_dynamic('${ROPE_HF_DIR}')", script)
         self.assertIn('WEBGPU_TEST_ROPE_HF_DIR="${ROPE_HF_DIR}"', script)
         self.assertIn('require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"', script)
+
+    def test_cat_2d_regressions_are_heavy_and_fail_closed(self) -> None:
+        backend = pathlib.Path(__file__).parents[1]
+        script = (backend / "scripts/test_webgpu_native_ci.sh").read_text()
+        dynamic_test = (backend / "test/native/test_dynamic_shape.cpp").read_text()
+        dispatch_test = (backend / "test/native/test_dispatch_2d.cpp").read_text()
+        cases = (backend / "test/op_tests/cases.py").read_text()
+        driver = (backend / "test/op_tests/op_test_driver.cpp").read_text()
+
+        self.assertIn('require_file "${DYNAMIC_SHAPE_DIR}/dyn_cat_2d.pte"', script)
+        self.assertIn(
+            'WEBGPU_TEST_HEAVY=1 $PYTHON_EXECUTABLE -c "\n'
+            "from executorch.backends.webgpu.test.ops.dynamic_shape."
+            "test_dynamic_shape_export import export_dynamic_shape_cases",
+            script,
+        )
+        self.assertIn("DynamicShape.CatCrosses2dDispatchBoundary", script)
+        self.assertIn("[  PASSED  ] 3 tests.", script)
+        self.assertIn('CAT_2D_TEST_DIR="/tmp/webgpu_cat_2d_test"', script)
+        self.assertIn("WEBGPU_TEST_HEAVY=1 $PYTHON_EXECUTABLE", script)
+        self.assertIn('--output "${CAT_2D_TEST_DIR}" --ops cat', script)
+        self.assertIn(
+            "run_with_required_device env WEBGPU_REQUIRE_DEVICE=1", script
+        )
+
+        self.assertIn("TEST(DynamicShape, CatCrosses2dDispatchBoundary)", dynamic_test)
+        self.assertIn(
+            "{kCat2dRows, kCat1dRows, kCat2dRows, kCat1dRows, kCat2dRows}",
+            dynamic_test,
+        )
+        self.assertIn(
+            "TEST(CatDispatchGrid, RestoresBothDimensionsAcrossResize)",
+            dispatch_test,
+        )
+        self.assertIn('name="folded_2d_full_output"', cases)
+        self.assertIn("inputs=((65536, 65), (65536, 1))", cases)
+        self.assertIn("heavy=True", cases)
+        self.assertIn('std::getenv("WEBGPU_REQUIRE_DEVICE")', driver)
+        self.assertIn("required_device_failure_exit_code", driver)
+        self.assertIn('std::printf("WebGPU device acquired (native)\\n")', driver)

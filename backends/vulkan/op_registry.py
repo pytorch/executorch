@@ -152,6 +152,15 @@ def update_features(aten_op):
 # =============================================================================
 
 
+@update_features(exir_ops.edge.et_vk.select_as_symint.default)
+def register_select_as_symint_op():
+    return OpFeatures(
+        inputs_dtypes=utils.INT_T,
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
 @update_features(
     [
         operator.getitem,
@@ -161,6 +170,7 @@ def update_features(aten_op):
         operator.sub,
         operator.floordiv,
         operator.mul,
+        operator.and_,
         operator.lt,
         operator.gt,
         operator.ge,

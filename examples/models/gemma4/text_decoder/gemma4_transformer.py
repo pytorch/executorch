@@ -20,6 +20,7 @@ from typing import Optional
 import torch
 from torch import nn
 
+from .gemma4_attention import Gemma4Attention, precompute_freqs_cis
 from .gemma4_config import Gemma4Config
 from .gemma4_cross_decoder import Gemma4CrossDecoder
 from .gemma4_self_decoder import Gemma4SelfDecoder
@@ -70,6 +71,7 @@ class Gemma4TextModel(nn.Module):
 
         # Create shared masks (one copy each, referenced by all attention layers)
         self._share_masks(config)
+        self._share_rope_tables(config)
 
     def _share_masks(self, config: Gemma4Config) -> None:
         """Create causal and sliding window masks once, share across all attention layers.
@@ -100,6 +102,26 @@ class Gemma4TextModel(nn.Module):
                 ):
                     module.sliding_window_mask = sw_mask
 
+    def _share_rope_tables(self, config: Gemma4Config) -> None:
+        local_tables = precompute_freqs_cis(
+            config.head_dim,
+            config.head_dim,
+            config.max_seq_len,
+            config.rope_local_base_freq,
+        )
+        global_tables = precompute_freqs_cis(
+            config.global_head_dim,
+            int(config.global_head_dim * config.partial_rotary_factor),
+            config.max_seq_len,
+            config.rope_theta,
+        )
+
+        for module in self.modules():
+            if not isinstance(module, Gemma4Attention):
+                continue
+            tables = local_tables if module.is_sliding else global_tables
+            module.freqs_cos, module.freqs_sin = tables
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -123,19 +145,26 @@ class Gemma4TextModel(nn.Module):
             inputs_embeds=inputs_embeds,
         )
 
+        query_start_pos = None
+        if input_pos is not None:
+            query_start_pos = input_pos[-1].item()
+            hidden_states = hidden_states[:, -1:, :]
+            per_layer_inputs = per_layer_inputs[:, :, -1:, :]
+
         # Cross-decoder (with shared K/V from self-decoder for YOCO)
         hidden_states = self.cross_decoder(
             hidden_states=hidden_states,
             per_layer_inputs=per_layer_inputs,
             shared_kv=shared_kv,
             input_pos=input_pos,
+            query_start_pos=query_start_pos,
         )
 
         # Final normalization
         hidden_states = self.norm(hidden_states)
 
-        # Only compute lm_head for the last token during prefill
-        hidden_states = hidden_states[:, -1:, :]
+        if input_pos is None:
+            hidden_states = hidden_states[:, -1:, :]
 
         # Output projection
         logits = self.lm_head(hidden_states)
