@@ -103,6 +103,92 @@ No additional steps are necessary to use the backend beyond linking the target. 
 
 ----
 
+## Activation memory: who owns the GPU copies
+
+A CUDA model has to get its input data onto the GPU somehow. There are two ways, and you pick
+one at export time.
+
+**Default: the runtime copies for you.** Export inserts a host-to-device copy in front of each
+delegate input and a device-to-host copy after each delegate output. You pass ordinary CPU
+tensors and the runtime moves the data:
+
+```python
+exec_program = et_program.to_executorch()
+```
+
+```python
+# CPU tensors. The runtime copies them to the GPU and copies results back.
+outputs = method([torch.randn(4, 64)])
+```
+
+This is the simplest option and the right default. The cost is a copy in each direction on
+every call.
+
+**Opt out: you hand over GPU memory directly.** If your data is already on the device, those
+copies are wasted. Turn them off and the input placeholders are treated as device memory
+instead:
+
+```python
+from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
+
+exec_program = et_program.to_executorch(
+    ExecutorchBackendConfig(
+        propagate_device_config=PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True,
+            skip_d2h_for_method_outputs=True,
+        ),
+        enable_non_cpu_memory_planning=True,
+    )
+)
+```
+
+```python
+# Now the tensors must already be on the GPU. Passing CPU tensors is a caller error.
+outputs = method([torch.randn(4, 64, device="cuda")])
+```
+
+Outputs also stay on the device, which is what you want when the next stage of your pipeline is
+also on the GPU.
+
+### Things worth knowing
+
+**The two flags are independent.** Skip only the input copies if you produce data on the GPU but
+want results back on the host, or only the output copies for the reverse.
+
+**Both flags require `enable_non_cpu_memory_planning=True`.** Setting one without it raises a
+`ValueError`, because copy insertion happens during device-aware memory planning. The error
+message says as much.
+
+**You can choose per method.** Each flag also accepts a dict keyed by method name, so one
+program can have a GPU-resident fast path and a host-copying convenience path:
+
+```python
+PropagateDeviceConfig(
+    skip_h2d_for_method_inputs={"forward": True, "forward_from_host": False},
+)
+```
+
+**The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
+exported without them expects device tensors. Passing the wrong kind is a caller error, not
+something the runtime corrects, so the two are not interchangeable at run time.
+
+**From C++ it is the same contract.** With the copies skipped, build the input tensor over a
+device pointer:
+
+```cpp
+void* device = nullptr;
+cudaMalloc(&device, count * sizeof(float));
+cudaMemcpy(device, host.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+auto input = from_blob(device, {rows, columns}, ScalarType::Float);
+auto result = module.forward(input);
+```
+
+With the default export, pass a host pointer instead and the runtime handles the transfer.
+
+----
+
 ## Examples
 
 For complete end-to-end examples of exporting and running models with the CUDA backend, see:
