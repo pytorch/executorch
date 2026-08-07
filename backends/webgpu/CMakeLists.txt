@@ -327,6 +327,12 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     target_link_libraries(webgpu_dynamic_shape_test PRIVATE GTest::gtest)
     add_webgpu_native_test(webgpu_index_test test/native/test_index.cpp)
     target_link_libraries(webgpu_index_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_topk_test test/native/test_topk.cpp)
+    target_link_libraries(webgpu_topk_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_scatter_test test/native/test_scatter.cpp)
+    target_link_libraries(webgpu_scatter_test PRIVATE GTest::gtest)
+    add_webgpu_native_test(webgpu_q4gsw_m3_test test/native/test_q4gsw_m3.cpp)
+    target_link_libraries(webgpu_q4gsw_m3_test PRIVATE GTest::gtest)
 
     # Device-free fold unit test (gtest_main provides main; no device needed).
     add_webgpu_native_test(

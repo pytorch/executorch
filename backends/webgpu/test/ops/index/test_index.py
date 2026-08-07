@@ -15,6 +15,8 @@ indices make a wrong-gather bug visible. Each config writes `index_<name>.pte`,
 `index_<name>.golden.bin` so the native `test_index` self-discovers them.
 """
 
+from __future__ import annotations
+
 import os
 import unittest
 
@@ -37,11 +39,23 @@ class IndexModule(torch.nn.Module):
         return x[idx]
 
 
+def index_self_gen(shape: tuple[int, ...]) -> torch.Tensor:
+    """Distinct self values so a wrong-index gather is visible."""
+    return torch.arange(shape[0], dtype=torch.float32) * 3.0 + 0.5
+
+
+def index_idx_gen(index_values):
+    """Index generator for one config's index list (int64, downcast at export)."""
+
+    def gen(shape: tuple[int, ...]) -> torch.Tensor:
+        return torch.tensor(index_values, dtype=torch.int64).reshape(shape)
+
+    return gen
+
+
 def _inputs(self_len, index_values):
-    # Distinct self values so a wrong-index gather is visible.
-    x = torch.arange(self_len, dtype=torch.float32) * 3.0 + 0.5
-    idx = torch.tensor(index_values, dtype=torch.int64)
-    return x, idx
+    idx_shape = (len(index_values),)
+    return index_self_gen((self_len,)), index_idx_gen(index_values)(idx_shape)
 
 
 def _lower(x, idx):

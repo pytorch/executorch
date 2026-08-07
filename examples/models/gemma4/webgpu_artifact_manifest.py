@@ -156,6 +156,7 @@ _GEMMA_PRODUCTION_DIFF_SUMMARIES: tuple[str, ...] = (
     "[ExecuTorch][WebGPU] Add Gemma 4 MTP operator and route support",
     "[ExecuTorch][WebGPU] Add Gemma 4 MTP export path",
     "[ExecuTorch][WebGPU] Add Gemma 4 speculative decode runtime",
+    "[ExecuTorch][WebGPU] Add Gemma 4 MTP and speculative-decode source-closure tests",
 )
 MTP_EXPORT_CONTRACT: dict[str, object] = {
     "assistant_calls_per_round": 2,

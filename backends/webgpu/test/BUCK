@@ -59,6 +59,90 @@ fbcode_target(
 
 fbcode_target(
     _kind = python_unittest,
+    name = "test_to_copy",
+    srcs = [
+        "ops/test_to_copy.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_gather",
+    srcs = [
+        "ops/test_gather.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_where",
+    srcs = [
+        "ops/test_where.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
+# Pure-stdlib CPU authority for the top-k route; no torch, no GPU.
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_topk_cpu",
+    srcs = [
+        "ops/topk/test_topk.py",
+    ],
+)
+
+# Pure-stdlib CPU authority for the scatter route; no torch, no GPU.
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_scatter_cpu",
+    srcs = [
+        "ops/scatter/test_scatter.py",
+    ],
+)
+
+# Source contract over the op-test driver; reads its inputs, so they ship as resources.
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_typed_input_contract",
+    srcs = [
+        "op_tests/test_typed_input_contract.py",
+    ],
+    resources = [
+        "op_tests/cases.py",
+        "op_tests/generate_op_tests.py",
+        "op_tests/op_test_driver.cpp",
+        "ops/test_to_copy.py",
+        "ops/test_where.py",
+    ],
+)
+
+# The native CI contract reads four Buck packages; test_webgpu_native_ci.sh runs it.
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "test_native_ci_contract",
+    srcs = ["test_native_ci_contract.py"],
+    typing = True,
+)
+
+fbcode_target(
+    _kind = python_unittest,
     name = "test_rope_hf_single",
     srcs = [
         "ops/test_rope_hf_single.py",

@@ -9,11 +9,15 @@
 `where(cond, a, b) -> cond ? a : b`, with cond a 1-byte bool and a/b fp32
 (broadcast across all three operands). The kernel reads cond byte-packed as
 `array<u32>` and relinearizes each out coord onto every operand. Configs cover
-the equal-shape path plus broadcasts that exercise the size-1 clamp on cond, a,
-and b. The native binary has no ATen, so the golden is computed with torch here
+the equal-shape path, broadcasts that exercise the size-1 clamp on cond, a, and
+b, and a numel-15 tail whose cond byte buffer is not a whole number of u32
+words. The native binary has no ATen, so the golden is computed with torch here
 and checked in etvk CI.
 """
 
+from __future__ import annotations
+
+import math
 import unittest
 
 import torch
@@ -26,6 +30,7 @@ CONFIGS = {
     "equal": ((4, 8), (4, 8), (4, 8)),
     "broadcast": ((4, 1), (4, 8), (1, 8)),
     "cond_row": ((8,), (4, 8), (4, 8)),
+    "tail": ((3, 5), (3, 5), (3, 5)),
 }
 
 
@@ -36,13 +41,28 @@ class WhereModule(torch.nn.Module):
         return torch.where(cond, a, b)
 
 
+def where_cond_gen(shape: tuple[int, ...]) -> torch.Tensor:
+    """Repeating 7-long bool mask: every u32 word sees both True and False."""
+    n = math.prod(shape)
+    pattern = torch.tensor([1, 0, 0, 1, 1, 1, 0], dtype=torch.bool)
+    repeats = (n + pattern.numel() - 1) // pattern.numel()
+    return pattern.repeat(repeats)[:n].reshape(shape)
+
+
+def where_a_gen(shape: tuple[int, ...]) -> torch.Tensor:
+    """Strictly positive; `b` is strictly negative, so a wrong pick flips sign."""
+    n = math.prod(shape)
+    return (torch.arange(n, dtype=torch.float32) + 1.0).reshape(shape)
+
+
+def where_b_gen(shape: tuple[int, ...]) -> torch.Tensor:
+    n = math.prod(shape)
+    return (-torch.arange(n, dtype=torch.float32) - 1.0).reshape(shape)
+
+
 def _det_inputs(cond_shape, a_shape, b_shape):
     """Deterministic (bool cond, fp32 a, fp32 b) for a config."""
-    g = torch.Generator().manual_seed(0)
-    cond = torch.rand(cond_shape, generator=g) > 0.5
-    a = torch.randn(*a_shape, generator=g, dtype=torch.float32)
-    b = torch.randn(*b_shape, generator=g, dtype=torch.float32)
-    return cond, a, b
+    return where_cond_gen(cond_shape), where_a_gen(a_shape), where_b_gen(b_shape)
 
 
 def _fp64_golden(cond, a, b):

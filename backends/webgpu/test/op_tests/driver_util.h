@@ -24,7 +24,7 @@ struct GoldenRef {
   std::string path;
   std::vector<int> shape;
   int output_index = 0;
-  std::string dtype = "float32"; // "float32" | "int8" | "int64" (argmax index)
+  std::string dtype = "float32"; // "float32" | "int8" | "int32" | "int64"
 };
 
 struct ManifestEntry {

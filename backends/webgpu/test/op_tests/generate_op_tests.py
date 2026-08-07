@@ -92,6 +92,10 @@ def _write_int64(t: torch.Tensor, path: str) -> None:
     t.detach().contiguous().cpu().numpy().astype("<i8").tofile(path)
 
 
+def _write_int32(t: torch.Tensor, path: str) -> None:
+    t.detach().contiguous().cpu().numpy().astype("<i4").tofile(path)
+
+
 def _write_golden_output(
     raw: torch.Tensor,
     eager: torch.Tensor,
@@ -109,10 +113,14 @@ def _write_golden_output(
         # int8-output ops (quantize): byte-exact golden, no fp32 cast/oracle.
         out_t = raw
         out_dtype = "int8"
-    elif raw.dtype in (torch.int64, torch.int32):
+    elif raw.dtype == torch.int64:
         # int64-index ops (argmax/argmin): exact golden, no fp32 cast/oracle.
         out_t = raw.to(torch.int64)
         out_dtype = "int64"
+    elif raw.dtype == torch.int32:
+        # Integer arithmetic is exact modulo 2^32; preserve the output width.
+        out_t = raw
+        out_dtype = "int32"
     else:
         out_t = raw.to(torch.float32)
         out_dtype = "float32"
@@ -128,6 +136,8 @@ def _write_golden_output(
 
     if out_dtype in ("bool", "int8"):
         _write_int8(out_t, path)
+    elif out_dtype == "int32":
+        _write_int32(out_t, path)
     elif out_dtype == "int64":
         _write_int64(out_t, path)
     else:
