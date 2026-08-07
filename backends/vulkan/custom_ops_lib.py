@@ -882,11 +882,22 @@ def apply_rotary_emb_hf_impl(
     return pattern.forward(xq, xk, freqs_cos, freqs_sin)
 
 
+def apply_rotary_emb_hf_meta(
+    xq: torch.Tensor,
+    xk: torch.Tensor,
+    freqs_cos: torch.Tensor,
+    freqs_sin: torch.Tensor,
+    start_pos: int,
+):
+    return torch.empty_like(xq), torch.empty_like(xk)
+
+
 name = "apply_rotary_emb_hf"
 lib.define(
     f"{name}(Tensor xq, Tensor xk, Tensor freqs_cos, Tensor freqs_sin, SymInt start_pos) -> (Tensor, Tensor)"
 )
 lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
+lib.impl(name, apply_rotary_emb_hf_meta, "Meta")
 apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
 
 ##################################
@@ -1074,7 +1085,7 @@ def embedding_q4gsw_impl(
     scales = (
         weight_scales.unsqueeze(-1)
         if weight_scales.dim() > 1
-        else weight_scales.reshape(1, 1, 1)
+        else weight_scales.reshape(weight.shape[0], 1, 1)
     )
     dequantized = unpacked_groups.float() * scales.float()
     dequantized = dequantized.reshape(weight.shape[0], -1)
@@ -1098,8 +1109,15 @@ def select_as_symint_impl(x: torch.Tensor, dim: int, index: int):
     return x.fake_mode.shape_env.create_unbacked_symint()
 
 
+def select_as_symint_eager_impl(x: torch.Tensor, dim: int, index: int):
+    if x.dtype not in {torch.int32, torch.int64}:
+        raise ValueError("select_as_symint requires an integral input")
+    return x.select(dim, index).item()
+
+
 name = "select_as_symint"
 lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
+lib.impl(name, select_as_symint_eager_impl, "CompositeExplicitAutograd")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
 

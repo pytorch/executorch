@@ -39,7 +39,7 @@ class CausalSDPAMatch(PatternMatch):
 
         # llama.custom_sdpa has signature:
         # custom_sdpa(query, key_cache, value_cache, start_pos, attn_mask, dropout_p, is_causal, scale) -> output
-        if len(custom_sdpa_node.args) < 4:
+        if len(custom_sdpa_node.args) < 7:
             return
 
         self.query_node = custom_sdpa_node.args[0]
@@ -75,6 +75,13 @@ class CausalSDPAMatch(PatternMatch):
         self.value_projection_node = None
         if self.update_value_cache_node is not None:
             self.value_projection_node = self.update_value_cache_node.args[0]
+
+        if (
+            self.update_key_cache_node is None
+            or self.update_value_cache_node is None
+            or self.update_key_cache_node is self.update_value_cache_node
+        ):
+            return
 
         # We have additional optional arguments but we don't need to capture them
         # since the new op doesn't use them
