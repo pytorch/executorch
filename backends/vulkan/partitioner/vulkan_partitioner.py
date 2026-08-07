@@ -7,6 +7,7 @@
 # pyre-strict
 
 import logging
+import operator
 from typing import Any, Callable, Dict, final, List, Mapping, Optional, Set, Tuple
 
 import executorch.backends.vulkan.patterns as vk_patterns
@@ -54,6 +55,58 @@ ops_not_to_decompose = [
 logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
 
+FP_T = utils.FP_T
+INT_T = utils.INT_T
+NONE_T = utils.NONE_T
+CONTIGUOUS_BUFFER = utils.CONTIGUOUS_BUFFER
+NO_STORAGE = utils.NO_STORAGE
+
+
+_GUARD_ONLY_SYMBOLIC_OPS: Set[Any] = {torch.sym_min, torch.sym_max}
+_GUARD_ONLY_EXPRESSION_OPS: Set[Any] = _GUARD_ONLY_SYMBOLIC_OPS | {
+    operator.add,
+    operator.sub,
+    operator.floordiv,
+    operator.mul,
+    operator.and_,
+    operator.lt,
+    operator.gt,
+    operator.ge,
+    operator.le,
+    operator.eq,
+}
+_GUARD_ONLY_SINK_OPS: Set[Any] = {
+    torch.ops.aten._assert_scalar.default,
+    torch.ops.aten.sym_constrain_range_for_size.default,
+}
+
+
+def _is_guard_only_symbolic_node(node: torch.fx.Node) -> bool:
+    if node.target not in _GUARD_ONLY_SYMBOLIC_OPS or not node.users:
+        return False
+
+    pending = list(node.users)
+    visited: Set[torch.fx.Node] = set()
+    reached_sink = False
+    while pending:
+        user = pending.pop()
+        if user in visited:
+            continue
+        visited.add(user)
+
+        if user.op != "call_function" or utils.is_tensor_node(user):
+            return False
+        if user.target in _GUARD_ONLY_SINK_OPS:
+            if user.users:
+                return False
+            reached_sink = True
+            continue
+        if user.target not in _GUARD_ONLY_EXPRESSION_OPS or not user.users:
+            return False
+        pending.extend(user.users)
+
+    return reached_sink
+
 
 class VulkanSupportedOperators(OperatorSupportBase):
     def __init__(
@@ -67,6 +120,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
         nn_module_blocklist: Optional[Set[str]] = None,
         nn_module_allowlist: Optional[Set[str]] = None,
+        extra_op_features: Optional[Mapping[OpKey, OpFeatures]] = None,
     ) -> None:
         super().__init__()
         self.texture_limits: utils.ImageExtents = texture_limits
@@ -87,6 +141,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         self.nn_module_blocklist = nn_module_blocklist
         self.nn_module_allowlist = nn_module_allowlist
+        self.extra_op_features: Dict[OpKey, OpFeatures] = dict(extra_op_features or {})
 
     def op_node_is_compatible(  # noqa: C901: Function is too complex
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
@@ -147,11 +202,23 @@ class VulkanSupportedOperators(OperatorSupportBase):
     def node_is_compatible(
         self, node: torch.fx.Node, features: Optional[OpFeatures] = None
     ) -> Tuple[bool, str]:
+        # Guard-only symbolic nodes (sym_min/sym_max feeding only asserts or
+        # range constraints) are non-tensor, so this must run before the
+        # is_tensor_node dispatch below or it is unreachable.
+        if getattr(node, "target", None) in _GUARD_ONLY_SYMBOLIC_OPS:
+            if _is_guard_only_symbolic_node(node):
+                return True, "guard-only symbolic node"
+            self.log_skip(node, "symbolic result has a live non-guard user")
+            return False, "symbolic result has a live non-guard user"
+
         if utils.is_tensor_node(node):
             return self.op_node_is_compatible(node, features=features)
         # For non-tensor nodes, just check if the op is registered
         elif hasattr(node, "target"):
-            return node.target in vulkan_supported_ops, "Op is compatible"
+            return (
+                features is not None or node.target in vulkan_supported_ops,
+                "Op is compatible",
+            )
 
         return False, f"Unsupported node type: {node.format_node()}"
 
@@ -244,17 +311,22 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        features = None
-        if target not in vulkan_supported_ops:
+        features: Optional[OpFeatures] = None
+        if target in vulkan_supported_ops:
+            features = vulkan_supported_ops[target]
+        elif target in self.extra_op_features:
+            features = self.extra_op_features[target]
+        else:
             # For some ops, i.e. custom ops the name is registered instead of the
             # OpOverload object.
-            if hasattr(target, "name") and target.name() in vulkan_supported_ops:
-                features = vulkan_supported_ops[target.name()]
+            target_name = target.name() if hasattr(target, "name") else None
+            if target_name in vulkan_supported_ops:
+                features = vulkan_supported_ops[target_name]
+            elif target_name in self.extra_op_features:
+                features = self.extra_op_features[target_name]
             else:
                 self.log_skip(node, "no operator implementation")
                 return False
-        else:
-            features = vulkan_supported_ops[target]
 
         assert features is not None
 
@@ -341,6 +413,7 @@ class VulkanPartitioner(Partitioner):
         operator_allowlist: Optional[List[OpKey]] = None,
         nn_module_blocklist: Optional[List[str]] = None,
         nn_module_allowlist: Optional[List[str]] = None,
+        extra_op_features: Optional[Mapping[OpKey, OpFeatures]] = None,
     ) -> None:
         self.options: Dict[str, Any] = {}
         if compile_options is not None:
@@ -348,6 +421,14 @@ class VulkanPartitioner(Partitioner):
 
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
+
+        self.extra_op_features: Dict[OpKey, OpFeatures] = dict(extra_op_features or {})
+        overlapping_ops = self.extra_op_features.keys() & vulkan_supported_ops.keys()
+        if overlapping_ops:
+            raise ValueError(
+                "extra_op_features contains operators already registered globally: "
+                f"{sorted(str(op) for op in overlapping_ops)}"
+            )
 
         self.operator_blocklist: Set[OpKey] = set()
         if operator_blocklist is not None:
@@ -415,6 +496,7 @@ class VulkanPartitioner(Partitioner):
                 fusable_subgraphs=fusable_subgraphs,
                 nn_module_blocklist=self.nn_module_blocklist,
                 nn_module_allowlist=self.nn_module_allowlist,
+                extra_op_features=self.extra_op_features,
             ),
             allows_single_node_partition=True,
         )
