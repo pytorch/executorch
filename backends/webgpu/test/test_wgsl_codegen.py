@@ -145,6 +145,32 @@ class WgslCodegenTest(unittest.TestCase):
         )
         self.assertEqual(g.parse_workgroup_size(src), (64, 1, 1))
 
+    def test_parse_workgroup_ignores_commented_attributes(self) -> None:
+        line = (
+            "// prose mentioning @workgroup_size(1) inline\n"
+            "@compute @workgroup_size(64, 1, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(line), (64, 1, 1))
+
+        block = (
+            "/* banner\n * @workgroup_size(1)\n */\n"
+            "@compute @workgroup_size(32, 2, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(block), (32, 2, 1))
+
+    def test_parse_workgroup_ignores_commented_constants(self) -> None:
+        src = (
+            "// const WG: u32 = 1u;\nconst WG: u32 = 64u;\n"
+            "@compute @workgroup_size(WG, 1, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(src), (64, 1, 1))
+
+    def test_scatter_unique_indices_workgroup_size(self) -> None:
+        source = (
+            g.BACKEND_ROOT / "runtime/ops/scatter/scatter_unique_indices.wgsl"
+        ).read_text()
+        self.assertEqual(g.parse_workgroup_size(source), (64, 1, 1))
+
     def test_render_header_shape(self) -> None:
         wgsl = "@compute @workgroup_size(64, 1, 1)\nfn main(){}\n"
         h = g.render_header(Path("runtime/ops/update_cache/update_cache.wgsl"), wgsl)
@@ -220,14 +246,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 136)
+        self.assertEqual(len(outputs), 149)
         self.assertEqual(
             digest.hexdigest(),
-            "0512f8d258952e446ffaedcb653b6a3a720eccf8a6b5327d95fd454a912214a3",
+            "8b2879a6ba11b57fd67aa961793ef9ff5142fdefaa7d9dcf41ab26276331f546",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "28aaa7a8d3e916df43e407120e91d487d0d51cbc5ca93c56bd822d25d109890e",
+            "1c26ac3f0671aeec5c648f78c9f2cbeb02b65f79478712a4f4de5c7e75446e8c",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
@@ -930,12 +956,12 @@ class WgslTemplateEngineTest(unittest.TestCase):
             "to_copy_float_to_int": (
                 "f32",
                 "i32",
-                "c331e00e3171eecbe6317ac9df0a5f9cd6d25da26a9a587250f1cc6086dc3c8f",
+                "241d51293095623126da4f106092bd2d7327c26e00c9cad39bdb8dc546f48149",
             ),
             "to_copy_int_to_float": (
                 "i32",
                 "f32",
-                "e18dd733a3838f83eded4977a2a2b21119099c8409b234f12474fae5acc9b195",
+                "9506570f98b9888a65603157f75d380f7784539205610ccbcc459d6afb6629c5",
             ),
         }
         self.assertEqual(set(variants), set(expected))

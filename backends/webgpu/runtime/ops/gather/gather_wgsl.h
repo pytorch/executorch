@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from gather.wgsl - DO NOT EDIT.
-// wgsl-sha256: c0811711f4603f840241a9cdd458f7b941dcf32336ff84f2b6f1333b8d6f4cfb
+// wgsl-sha256: 52a0eb48a4d7f128c60da9e26c0e35c830608317be553c22b536627756bc2ca0
 inline constexpr const char* kGatherWGSL = R"(
 @group(0) @binding(0) var<storage, read> self_: array<f32>;
 @group(0) @binding(1) var<storage, read> indices: array<i32>;
@@ -36,8 +36,10 @@ struct GatherParams {
 override wg_size: u32 = 256;
 
 @compute @workgroup_size(wg_size)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let o = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let o = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (o >= out_meta.numel) {
         return;
     }

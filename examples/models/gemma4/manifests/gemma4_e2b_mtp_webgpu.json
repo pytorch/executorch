@@ -1,0 +1,161 @@
+{
+  "acquisition": {
+    "assistant": {
+      "files": {
+        "config.json": {
+          "bytes": 2356,
+          "sha256": "5d01e9f3f8e969aa8147201a26e849c05446c7c746fa918101ed0622b201db15"
+        },
+        "model.safetensors": {
+          "bytes": 157565344,
+          "sha256": "28b11aa1fef73e655107984e0024ed1b149df4b8b36dcb95f27cca603eabc960"
+        }
+      },
+      "repo_id": "google/gemma-4-E2B-it-qat-q4_0-unquantized-assistant",
+      "revision": "ebc7e1a211354561464cb82ed6d886792138dcb6"
+    },
+    "target": {
+      "files": {
+        ".gitattributes": {
+          "bytes": 1570,
+          "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+        },
+        "README.md": {
+          "bytes": 29351,
+          "sha256": "aaab87052837925e0fb400bb20700553b11088fa5b3ae21fa0c1ec5da53637a4"
+        },
+        "chat_template.jinja": {
+          "bytes": 18569,
+          "sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"
+        },
+        "config.json": {
+          "bytes": 4946,
+          "sha256": "bbeff1e2fd3fe282536e7ace02309d43e0dbd9b6ac4b6a149b97e3ab6942a878"
+        },
+        "generation_config.json": {
+          "bytes": 203,
+          "sha256": "b69207f9be617e982d13cc273cce6fd88c98dda99a4bdc5e2d52ffe0a0d9f0a9"
+        },
+        "model.safetensors": {
+          "bytes": 10208852878,
+          "sha256": "33fe0cece08fb527ffefbd1a3a9ce73bd71073727993a283506293e5c6bf0137"
+        },
+        "processor_config.json": {
+          "bytes": 1689,
+          "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+        },
+        "tokenizer.json": {
+          "bytes": 32169626,
+          "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3729,
+          "sha256": "3ab5c7b94dc97d65ca7064496fa69b88ff875378e1cb7ee3e43070c3a8170999"
+        }
+      },
+      "repo_id": "google/gemma-4-E2B-it-qat-q4_0-unquantized",
+      "revision": "6befbaca7398925921802abd1f277b495b78b738"
+    }
+  },
+  "artifacts": [
+    {
+      "bytes": 902378944,
+      "path": "gemma4_eagle_webgpu_k2.pte",
+      "role": "pte",
+      "sha256": "bee968d30b0628d9492ac4a115e14856ca7b12b25932ad3ec49eecec1af01ac4"
+    },
+    {
+      "bytes": 492608256,
+      "path": "vulkan_constants_1836442febaaa50dec351c5ca511bf3ce2278cfcd985ae51a7edb9bfbd1c2ad5.ptd",
+      "role": "ptd",
+      "sha256": "70a884869849e0620f8558c8ea8ec588464e06a2a79e626f5defd70d57782d22"
+    },
+    {
+      "bytes": 1499599876,
+      "path": "vulkan_constants_6216f54d076cc6c0f123eb27824ed18bbd2ab8b730b3e0405582d4273a16f4fb.ptd",
+      "role": "ptd",
+      "sha256": "f622f44e0fa06aa8b53b58da4ee8f56b55a4f36d9f68c91683780e10582a7e0c"
+    },
+    {
+      "bytes": 1442537472,
+      "path": "vulkan_constants_965014fd4d8400017a16e2582285050b23961e7a9cf0f1b9a9073c957a24e992.ptd",
+      "role": "ptd",
+      "sha256": "f6c14986727ea812c6863823627e93204aff852d9ece6b49cc1d843b6504c47c"
+    }
+  ],
+  "export": {
+    "assistant_calls_per_round": 2,
+    "assistant_lm_head_bits": 4,
+    "assistant_quantization": "8da4w",
+    "backend": "webgpu",
+    "donor_length": {
+      "max": 8960,
+      "min": 2
+    },
+    "max_input_len": 512,
+    "max_seq_len": 8960,
+    "methods": [
+      "k2_round"
+    ],
+    "selection": {
+      "centroid_top_k": 32,
+      "logical_token_ordering_shape": [
+        2048,
+        128
+      ],
+      "num_centroids": 2048,
+      "raw_token_ordering_shape": [
+        262144
+      ],
+      "selected_token_count": 4096,
+      "tokens_per_centroid": 128
+    },
+    "speculation_k": 2,
+    "target_quantization": "8da4w+emb4"
+  },
+  "model": {
+    "architecture": {
+      "global_head_dim": 512,
+      "head_dim": 256,
+      "hidden_size": 1536,
+      "intermediate_size": 6144,
+      "layer_types": [
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention"
+      ],
+      "model_type": "gemma4",
+      "num_attention_heads": 8,
+      "num_hidden_layers": 35,
+      "num_key_value_heads": 1,
+      "num_kv_shared_layers": 20,
+      "vocab_size": 262144
+    },
+    "assistant": {
+      "architecture": "Gemma4AssistantForCausalLM",
+      "backboneHiddenSize": 1536,
+      "hiddenSize": 256,
+      "modelType": "gemma4_assistant",
+      "numHiddenLayers": 4,
+      "vocabSize": 262144
+    },
+    "source_config": {
+      "path": "config/e2b_config.json",
+      "sha256": "526e9fd34a8a489c35952535335a4b8556e9169d851187a895f80286e7466206"
+    }
+  },
+  "provenance": {
+    "artifact_status": "accepted_behavior_oracle",
+    "source_closure": "pending_final_source_rebuild"
+  },
+  "ptd_order": [
+    "vulkan_constants_1836442febaaa50dec351c5ca511bf3ce2278cfcd985ae51a7edb9bfbd1c2ad5.ptd",
+    "vulkan_constants_6216f54d076cc6c0f123eb27824ed18bbd2ab8b730b3e0405582d4273a16f4fb.ptd",
+    "vulkan_constants_965014fd4d8400017a16e2582285050b23961e7a9cf0f1b9a9073c957a24e992.ptd"
+  ],
+  "schema_version": 1
+}

@@ -10,6 +10,9 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/slice/SliceDispatch.h>
+#include <executorch/backends/webgpu/runtime/ops/slice/slice_dual_guard.h>
+#include <executorch/backends/webgpu/runtime/ops/slice/slice_dual_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/slice/slice_wgsl.h>
 
 #include <webgpu/webgpu.h>
@@ -107,6 +110,156 @@ int64_t norm_clamp(int64_t idx, int64_t size) {
   return idx < 0 ? 0 : (idx > size ? size : idx);
 }
 
+// ---------------------------------------------------------------------------
+// Dual-store dispatch merge.
+//
+// In the sealed Gemma4 decode graph, 67 of the 250 aten.slice_copy.Tensor calls
+// take the output of the IMMEDIATELY preceding slice_copy and re-slice it over
+// its whole extent -- a pure elementwise copy, 126 of the 250 slices are such
+// full-span copies overall. Instead of a second gather dispatch, the preceding
+// slice's dispatch is re-bound to store its gathered value to BOTH
+// destinations. The first destination is still written, so no consumer of it is
+// assumed dead, nothing is reordered, and no buffer is aliased: it is a pure
+// dispatch merge.
+// ---------------------------------------------------------------------------
+
+// True when read_index would return a value rather than throw. Eligibility is
+// a "no" here, never a build-time throw: `end` is otherwise read only by the
+// resize hook, which never runs on a static graph.
+bool is_static_index(WebGPUGraph& graph, int id) {
+  switch (graph.get_value_type(id)) {
+    case WebGPUGraph::ValueType::Int:
+    case WebGPUGraph::ValueType::Null:
+      return true;
+    case WebGPUGraph::ValueType::Double: {
+      const double d = graph.get_double(id);
+      return !std::isnan(d) && d >= -9223372036854775808.0 &&
+          d < 9223372036854775808.0 &&
+          static_cast<double>(static_cast<int64_t>(d)) == d;
+    }
+    default:
+      return false;
+  }
+}
+
+// Resolve the slice bounds at the serialized maximum shape and hand them to the
+// pure slice_dual_full_span predicate (unit-tested by slice_dual_guard_test).
+bool is_static_full_span(
+    WebGPUGraph& graph,
+    int start_id,
+    int end_id,
+    int64_t step,
+    int64_t dim_size) {
+  SliceDualSpan s;
+  s.step = step;
+  s.start_is_symint =
+      graph.get_value_type(start_id) == WebGPUGraph::ValueType::SymInt;
+  s.end_is_symint =
+      graph.get_value_type(end_id) == WebGPUGraph::ValueType::SymInt;
+  s.dim_size = dim_size;
+  if (!s.start_is_symint) {
+    if (!is_static_index(graph, start_id)) {
+      return false;
+    }
+    s.start = read_index(graph, start_id, 0);
+  }
+  if (!s.end_is_symint) {
+    if (!is_static_index(graph, end_id)) {
+      return false;
+    }
+    s.end = read_index(graph, end_id, dim_size);
+  }
+  return slice_dual_full_span(s);
+}
+
+// Re-bind the recorded dispatch to slice_dual.wgsl with `out2` appended.
+// Returns false (leaving the graph untouched) unless every guard holds.
+bool try_dual_store(
+    WebGPUGraph& graph,
+    int in_id,
+    int out_id,
+    int start_id,
+    int end_id,
+    int64_t dim,
+    int64_t step) {
+  const WebGPUGraph::SliceChain& c = graph.slice_chain();
+  if (!c.valid || c.out_id != in_id ||
+      c.dispatch_idx + 1 != graph.num_dispatches()) {
+    return false;
+  }
+
+  const auto& in_tensor = graph.get_tensor(in_id);
+  const auto& out_tensor = graph.get_tensor(out_id);
+  // Pure copy: identical extents on every dim, full static span on the sliced
+  // dim, and a distinct destination buffer from both operands of the gather.
+  if (in_tensor.dims != out_tensor.dims ||
+      in_tensor.nbytes != out_tensor.nbytes) {
+    return false;
+  }
+  if (!is_static_full_span(
+          graph, start_id, end_id, step, in_tensor.dims[dim])) {
+    return false;
+  }
+  if (!slice_dual_buffers_ok(out_tensor.buffer, c.out_buffer, c.in_buffer)) {
+    return false;
+  }
+  uint64_t out_numel = 1;
+  for (int64_t d : out_tensor.dims) {
+    out_numel *= static_cast<uint64_t>(d);
+  }
+  if (out_tensor.nbytes != out_numel * sizeof(float)) {
+    return false;
+  }
+
+  WGPUDevice device = graph.device();
+
+  // No override constants: slice_dual declares @workgroup_size(64, 1, 1).
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kSliceDualWGSL,
+      {
+          {0, WGPUBufferBindingType_ReadOnlyStorage, c.in_buffer, c.in_nbytes},
+          {1, WGPUBufferBindingType_Storage, c.out_buffer, c.out_nbytes},
+          {2,
+           WGPUBufferBindingType_Uniform,
+           c.out_meta_buf,
+           sizeof(TensorMeta)},
+          {3, WGPUBufferBindingType_Uniform, c.in_meta_buf, sizeof(TensorMeta)},
+          {4, WGPUBufferBindingType_Uniform, c.params_buf, sizeof(SliceParams)},
+          {5,
+           WGPUBufferBindingType_Storage,
+           out_tensor.buffer,
+           out_tensor.nbytes},
+      });
+
+  // The graph owns a dispatch's pipeline/bind group (released in its dtor), so
+  // the ones being replaced are released here. bundle.pipeline/bind_group are
+  // deliberately NOT released by ~ComputePipelineBundle: they move to the
+  // dispatch, exactly as add_dispatch takes them everywhere else.
+  WebGPUDispatch& d = graph.dispatch_at(c.dispatch_idx);
+  if (d.pipeline) {
+    wgpuComputePipelineRelease(d.pipeline);
+  }
+  if (d.bind_group) {
+    wgpuBindGroupRelease(d.bind_group);
+  }
+  d.pipeline = bundle.pipeline;
+  d.bind_group = bundle.bind_group;
+
+  // The recorded slice's own hook already rewrites the metas/params and the
+  // workgroup count and sets cur_dims(in_id). This mirrors the extent onto the
+  // second destination -- the exact trigger and result the skipped slice's own
+  // recompute would have produced, registered later so it runs after it.
+  graph.add_tensor_resize_hook(in_id, [in_id, out_id](WebGPUGraph& g) {
+    g.set_cur_dims(out_id, g.cur_dims(in_id));
+  });
+
+  // slice_dual has exactly two destinations; a third chained copy must not try
+  // to attach to this dispatch.
+  graph.clear_slice_chain();
+  return true;
+}
+
 void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   // args: [self, dim, start, end, step, out]. start/end may be dynamic SymInts;
   // a resize hook recomputes the live extent on `dim` (out[dim] / cur_dims).
@@ -151,8 +304,15 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   params.start = static_cast<uint32_t>(start);
   params.step = static_cast<uint32_t>(step);
 
+  // Dispatch merge: when this slice is a whole-extent copy of the slice
+  // emitted immediately before it, re-bind that dispatch to store into this
+  // output too instead of emitting a second gather.
+  if (try_dual_store(graph, in_id, out_id, start_id, end_id, dim, step)) {
+    return;
+  }
+
   uint32_t wg_size = utils::clamp_workgroup_size(device, kSliceWorkgroupSizeX);
-  uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, out_meta.numel, wg_size, "slice");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -186,8 +346,9 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
-  const size_t dispatch_idx = graph.num_dispatches() - 1;
+  const size_t dispatch_idx =
+      graph.add_dispatch({bundle.pipeline, bundle.bind_group, 1u, "slice"});
+  set_slice_dispatch_grid(graph, dispatch_idx, workgroup_count);
 
   // Dynamic shapes: live start/end -> out[dim] len + meta/params/dispatch.
   auto recompute = [in_id,
@@ -228,9 +389,9 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     p.start = static_cast<uint32_t>(start);
     p.step = static_cast<uint32_t>(step);
     wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-    g.dispatch_at(dispatch_idx).workgroup_count_x =
-        utils::compute_1d_workgroup_count(
-            g.device(), om.numel, wg_size, "slice(resize)");
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+        g.device(), om.numel, wg_size, "slice(resize)");
+    set_slice_dispatch_grid(g, dispatch_idx, wgc);
   };
   if (is_symint(graph, start_id)) {
     graph.add_resize_hook(start_id, recompute);
@@ -244,6 +405,20 @@ void slice_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   graph.own_uniform_buffer(out_meta_buf);
   graph.own_uniform_buffer(in_meta_buf);
   graph.own_uniform_buffer(params_buf);
+
+  // Offer this dispatch to a following whole-extent copy of `out`.
+  WebGPUGraph::SliceChain chain;
+  chain.valid = (wg_size == kSliceDualWorkgroupSizeX);
+  chain.out_id = out_id;
+  chain.dispatch_idx = dispatch_idx;
+  chain.in_buffer = in_tensor.buffer;
+  chain.in_nbytes = in_tensor.nbytes;
+  chain.out_buffer = out_tensor.buffer;
+  chain.out_nbytes = out_tensor.nbytes;
+  chain.out_meta_buf = out_meta_buf;
+  chain.in_meta_buf = in_meta_buf;
+  chain.params_buf = params_buf;
+  graph.offer_slice_chain(chain);
 }
 
 } // namespace

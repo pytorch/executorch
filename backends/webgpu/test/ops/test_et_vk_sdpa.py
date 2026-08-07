@@ -27,7 +27,7 @@ import executorch.backends.vulkan.custom_ops_lib  # noqa: F401  registers et_vk.
 
 import torch
 import torch.nn.functional as F
-from executorch.backends.vulkan import VulkanPartitioner
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.exir import to_edge_transform_and_lower
 
 NEG_INF = -1e30
@@ -102,6 +102,34 @@ def _lower(cfg: SdpaConfig, q, k, v):
 
 
 class TestEtVkSdpa(unittest.TestCase):
+    def test_negative_infinity_mask_matches_eager(self) -> None:
+        # Exercises the production op, not a local reimplementation: masked
+        # positions must contribute nothing and must not leak NaN. An exact
+        # -inf (0xff800000) is the value the QK elision keys on.
+        for cfg in CONFIGS:
+            with self.subTest(config=cfg.name):
+                q, k, v = _qkv(cfg)
+                scale = 1.0 / math.sqrt(cfg.d)
+                mask = torch.zeros(cfg.s_q, cfg.s_kv)
+                # Mask the strict upper triangle, leaving every row with at
+                # least one unmasked position so softmax stays well defined.
+                mask.masked_fill_(
+                    torch.triu(
+                        torch.ones(cfg.s_q, cfg.s_kv, dtype=torch.bool), diagonal=1
+                    ),
+                    float("-inf"),
+                )
+                self.assertEqual(
+                    torch.tensor(float("-inf")).view(torch.int32).item(),
+                    -0x800000,
+                )
+                got = torch.ops.et_vk.sdpa.default(q, k, v, mask, scale)
+                ref = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask, scale=scale
+                )
+                self.assertFalse(torch.isnan(got).any())
+                torch.testing.assert_close(got, ref, atol=1e-4, rtol=1e-3)
+
     def test_export_delegates(self) -> None:
         for cfg in CONFIGS:
             with self.subTest(config=cfg.name):

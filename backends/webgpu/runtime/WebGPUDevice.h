@@ -41,6 +41,13 @@ void destroy_webgpu_context(WebGPUContext& ctx);
 
 // Global context used by WebGPUGraph::build() when no device is pre-set.
 void set_default_webgpu_context(WebGPUContext* ctx);
+// Returns only a caller-installed context, never the native lazy fallback.
+WebGPUContext* get_explicit_default_webgpu_context();
+// Replaces the explicit context only when its current pointer equals expected.
+// Registration is non-owning; the caller keeps the installed context alive.
+bool compare_and_set_default_webgpu_context(
+    WebGPUContext* expected,
+    WebGPUContext* desired);
 WebGPUContext* get_default_webgpu_context();
 
 } // namespace webgpu

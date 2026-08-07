@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from to_copy_bool_to_float.wgsl - DO NOT EDIT.
-// wgsl-sha256: 29fd43b2f638489e9b8d72b2cc9140d07174c750cbdc291e63793319a2fa5961
+// wgsl-sha256: e8ad49a183e13cdef81e5ee374a12ca6f15b265f16eff1e33506b47f0e49522b
 inline constexpr const char* kToCopyBoolToFloatWGSL = R"(
 override wg_size: u32 = 256u;
 
@@ -29,8 +29,10 @@ struct Params {
 @group(0) @binding(2) var<uniform> params: Params;
 
 @compute @workgroup_size(wg_size)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+  let idx = gid.x + gid.y * (num_workgroups.x * wg_size);
   if (idx >= params.num_elements) {
     return;
   }

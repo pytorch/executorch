@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -147,6 +148,36 @@ struct WebGPUGraphConfig {
 
 class WebGPUGraph {
  public:
+  struct CqpFusionSite {
+    bool valid = false;
+    int input_id = -1;
+    int scales_id = -1;
+    int zero_points_id = -1;
+    uint32_t rows = 0u;
+    uint32_t row_width = 0u;
+    int64_t quant_min = 0;
+    int64_t quant_max = 0;
+    size_t dispatch_index = 0u;
+    WGPUBuffer input_buffer = nullptr;
+    WGPUBuffer scales_buffer = nullptr;
+    WGPUBuffer zero_points_buffer = nullptr;
+    std::shared_ptr<bool> producer_elided;
+  };
+
+  struct RmsFusionSite {
+    bool valid = false;
+    bool add_fused = false;
+    int in_id = -1;
+    int weight_id = -1;
+    int out_id = -1;
+    int resid_id = -1;
+    int addout_id = -1;
+    uint32_t num_rows = 0u;
+    uint32_t row_width = 0u;
+    size_t dispatch_index = 0u;
+    WGPUBuffer params_buffer = nullptr;
+  };
+
   WebGPUGraph();
   ~WebGPUGraph();
 
@@ -174,6 +205,20 @@ class WebGPUGraph {
   void copy_outputs(
       std::vector<OutputData>& outputs,
       const WebGPUExecutionPlan& plan);
+
+  std::string execution_attestation_json() const;
+
+  void complete_execution_attestation() {
+    execution_attestation_.completed = true;
+    execution_attestation_.error_reason.clear();
+  }
+
+  void fail_execution_attestation(const std::string& reason) {
+    execution_attestation_.completed = false;
+    if (execution_attestation_.error_reason.empty()) {
+      execution_attestation_.error_reason = reason;
+    }
+  }
 
   const std::vector<int>& input_ids() const {
     return input_ids_;
@@ -230,13 +275,21 @@ class WebGPUGraph {
   struct SymIntSource {
     int symint_id;
     int input_tensor_id;
-    int dim;
-    int index;
+    std::vector<int64_t> indices;
+    int64_t bias = 0;
   };
   void
-  add_symint_source(int symint_id, int input_tensor_id, int dim, int index) {
-    symint_sources_.push_back({symint_id, input_tensor_id, dim, index});
-  }
+  add_symint_source(int symint_id, int source_tensor_id, int dim, int index);
+  void add_input_select_projection(
+      int output_tensor_id,
+      int input_tensor_id,
+      int dim,
+      int index);
+  void add_input_bias_projection(
+      int output_tensor_id,
+      int input_tensor_id,
+      int64_t bias);
+  bool try_read_prepacked_int32_scalar(int value_id, int32_t& out) const;
   const std::vector<SymIntSource>& symint_sources() const {
     return symint_sources_;
   }
@@ -328,6 +381,55 @@ class WebGPUGraph {
         });
   }
 
+  // Terminal notification after the SymInt DAG and tensor-shape fixpoint.
+  // Callbacks may refresh complete derived state, but cannot start another
+  // propagation wave through set_symint or set_cur_dims.
+  void add_post_resize_hook(
+      const std::vector<int>& tensor_trigger_ids,
+      const std::vector<int>& symint_trigger_ids,
+      std::function<void(WebGPUGraph&)> fn) {
+    if (tensor_trigger_ids.empty() && symint_trigger_ids.empty()) {
+      throw std::runtime_error(
+          "WebGPU resize: post hook requires at least one trigger");
+    }
+    for (int id : tensor_trigger_ids) {
+      if (id < 0 || id >= num_values() ||
+          get_value_type(id) != ValueType::Tensor) {
+        throw std::runtime_error(
+            "WebGPU resize: post-hook tensor trigger must be a Tensor");
+      }
+    }
+    for (int id : symint_trigger_ids) {
+      if (id < 0 || id >= num_values() ||
+          get_value_type(id) != ValueType::SymInt) {
+        throw std::runtime_error(
+            "WebGPU resize: post-hook SymInt trigger must be a SymInt");
+      }
+    }
+    if (!fn) {
+      throw std::runtime_error("WebGPU resize: null post-resize hook");
+    }
+    post_resize_hooks_.push_back(
+        {tensor_trigger_ids, symint_trigger_ids, std::move(fn)});
+  }
+
+  template <typename Context>
+  void add_post_resize_hook(
+      const std::vector<int>& tensor_trigger_ids,
+      const std::vector<int>& symint_trigger_ids,
+      void (*fn)(WebGPUGraph&, const Context&),
+      Context context) {
+    if (fn == nullptr) {
+      throw std::runtime_error("WebGPU resize: null post-resize hook");
+    }
+    add_post_resize_hook(
+        tensor_trigger_ids,
+        symint_trigger_ids,
+        [fn, context = std::move(context)](WebGPUGraph& graph) {
+          fn(graph, context);
+        });
+  }
+
   // Run hooks for changed SymInts and tensors, then clear; call before execute.
   void propagate_resize();
 
@@ -337,6 +439,55 @@ class WebGPUGraph {
   }
   size_t num_dispatches() const {
     return dispatches_.size();
+  }
+
+  void offer_cqp_fusion_site(CqpFusionSite site);
+  CqpFusionSite claim_cqp_fusion_site(
+      int input_id,
+      int scales_id,
+      int zero_points_id,
+      uint32_t rows,
+      uint32_t row_width);
+  void clear_cqp_fusion_site() {
+    cqp_fusion_site_ = CqpFusionSite{};
+  }
+
+  void offer_rms_fusion_site(RmsFusionSite site) {
+    site.valid = true;
+    rms_fusion_site_ = std::move(site);
+  }
+  const RmsFusionSite& rms_fusion_site() const {
+    return rms_fusion_site_;
+  }
+  void clear_rms_fusion_site() {
+    rms_fusion_site_ = RmsFusionSite{};
+  }
+
+  // Dual-store slice merge: the preceding slice offers its dispatch so a
+  // following whole-extent copy can re-bind it to a second destination.
+  // Graph-instance state, so two graphs can never observe each other's
+  // dispatch indices or buffer handles.
+  struct SliceChain {
+    bool valid = false;
+    int out_id = -1;
+    size_t dispatch_idx = 0;
+    WGPUBuffer in_buffer = nullptr;
+    size_t in_nbytes = 0;
+    WGPUBuffer out_buffer = nullptr;
+    size_t out_nbytes = 0;
+    WGPUBuffer out_meta_buf = nullptr;
+    WGPUBuffer in_meta_buf = nullptr;
+    WGPUBuffer params_buf = nullptr;
+  };
+
+  void offer_slice_chain(SliceChain chain) {
+    slice_chain_ = chain;
+  }
+  const SliceChain& slice_chain() const {
+    return slice_chain_;
+  }
+  void clear_slice_chain() {
+    slice_chain_ = SliceChain{};
   }
 
   size_t register_dispatch_route_group(
@@ -565,6 +716,9 @@ class WebGPUGraph {
   }
 
  private:
+  bool try_read_constant_bytes(int const_value_id, std::vector<uint8_t>& out)
+      const;
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
   void record_active_route(const std::string& kernel_name);
 #endif // WGPU_BACKEND_ENABLE_PROFILING
@@ -596,6 +750,12 @@ class WebGPUGraph {
   };
   std::unordered_map<int, SymIntSlot> symints_;
   std::vector<SymIntSource> symint_sources_;
+  struct InputSelectProjection {
+    int input_tensor_id;
+    int dim;
+    int index;
+  };
+  std::unordered_map<int, InputSelectProjection> input_select_projections_;
   std::vector<SymIntDimSource> symint_dim_sources_;
   std::unordered_set<int> dynamic_tensor_ids_;
 
@@ -615,6 +775,14 @@ class WebGPUGraph {
   };
   std::vector<TensorResizeHook> tensor_resize_hooks_;
   std::unordered_set<int> dirty_tensors_;
+
+  struct PostResizeHook {
+    std::vector<int> tensor_trigger_ids;
+    std::vector<int> symint_trigger_ids;
+    std::function<void(WebGPUGraph&)> fn;
+  };
+  std::vector<PostResizeHook> post_resize_hooks_;
+  bool in_post_resize_phase_ = false;
 
   // Dynamic grids are stored separately so ordinary dispatches remain compact.
   // The graph owns each dispatch index and picker; ops only provide typed
@@ -673,6 +841,9 @@ class WebGPUGraph {
 
   std::vector<WebGPUDispatch> dispatches_;
   utils::DispatchRouteRegistry dispatch_routes_;
+  CqpFusionSite cqp_fusion_site_;
+  RmsFusionSite rms_fusion_site_;
+  SliceChain slice_chain_;
 
   // Prepack-routed constant sources (offset/named-key + size); the prepack node
   // materializes these once. constant_data_/named_data_map_ point at the .pte
@@ -683,6 +854,8 @@ class WebGPUGraph {
   std::unordered_map<int, ConstantSource> constant_sources_;
 
   ExecuteConfig execute_config_;
+  uint64_t execution_ordinal_ = 0;
+  WebGPUExecutionAttestation execution_attestation_;
 
   // Caches for reusing GPU objects across dispatches.
   std::unordered_map<std::string, WGPUShaderModule> shader_cache_;

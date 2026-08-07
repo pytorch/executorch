@@ -26,6 +26,37 @@
 
 namespace executorch::backends::webgpu::utils {
 
+struct RowChunking {
+  uint64_t rows_per_chunk;
+  uint32_t num_chunks;
+};
+
+inline RowChunking compute_row_chunking(
+    uint64_t max_binding_bytes,
+    uint64_t bytes_per_row,
+    uint64_t total_rows,
+    const char* label) {
+  const std::string name = label == nullptr ? "row chunking" : label;
+  if (max_binding_bytes == 0 || bytes_per_row == 0 || total_rows == 0) {
+    throw std::runtime_error(
+        "WebGPU " + name + ": row chunking arguments must be nonzero");
+  }
+  if (bytes_per_row > max_binding_bytes) {
+    throw std::runtime_error(
+        "WebGPU " + name + ": one row exceeds the storage binding limit");
+  }
+
+  const uint64_t rows_per_chunk =
+      std::min(total_rows, max_binding_bytes / bytes_per_row);
+  const uint64_t num_chunks = total_rows / rows_per_chunk +
+      static_cast<uint64_t>(total_rows % rows_per_chunk != 0);
+  if (num_chunks > std::numeric_limits<uint32_t>::max()) {
+    throw std::runtime_error(
+        "WebGPU " + name + ": row chunk count exceeds uint32_t");
+  }
+  return {rows_per_chunk, static_cast<uint32_t>(num_chunks)};
+}
+
 // Product of dims (live element count); used by dynamic-resize hooks. Delegates
 // to numel (single impl; keeps the negative-dim guard, no caller churn).
 inline uint64_t numel_of(const std::vector<int64_t>& dims) {
@@ -332,7 +363,17 @@ struct BindingSpec {
   WGPUBufferBindingType type;
   WGPUBuffer buffer;
   uint64_t size;
+  uint64_t offset = 0;
 };
+
+inline WGPUBindGroupEntry make_bind_group_entry(const BindingSpec& binding) {
+  WGPUBindGroupEntry entry = {};
+  entry.binding = binding.binding;
+  entry.buffer = binding.buffer;
+  entry.offset = binding.offset;
+  entry.size = binding.size;
+  return entry;
+}
 
 // Owns the shader module, bind-group layout, and pipeline layout, releasing
 // them on destruction. `pipeline` and `bind_group` are NOT released here —
@@ -411,10 +452,7 @@ inline ComputePipelineBundle make_compute_pipeline(
     layout_entries[i].visibility = WGPUShaderStage_Compute;
     layout_entries[i].buffer.type = bindings[i].type;
 
-    bind_entries[i] = {};
-    bind_entries[i].binding = bindings[i].binding;
-    bind_entries[i].buffer = bindings[i].buffer;
-    bind_entries[i].size = bindings[i].size;
+    bind_entries[i] = make_bind_group_entry(bindings[i]);
   }
 
   WGPUBindGroupLayoutDescriptor bgl_desc = {};
@@ -488,10 +526,7 @@ inline ComputePipelineBundle make_compute_pipeline(
 
   std::vector<WGPUBindGroupEntry> bind_entries(bindings.size());
   for (size_t i = 0; i < bindings.size(); i++) {
-    bind_entries[i] = {};
-    bind_entries[i].binding = bindings[i].binding;
-    bind_entries[i].buffer = bindings[i].buffer;
-    bind_entries[i].size = bindings[i].size;
+    bind_entries[i] = make_bind_group_entry(bindings[i]);
   }
 
   WGPUComputePipelineDescriptor pipeline_desc = {};

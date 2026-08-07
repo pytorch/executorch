@@ -5,6 +5,9 @@ binary_op:
     INLINE: 0
     SAME_EXPR: input1[idx] + input2[idx]
     BROADCAST_EXPR: input1[l1] + input2[l2]
+    SCALAR_TYPE: f32
+    ALPHA_TYPE: f32
+    ALPHA_DEFAULT: 1.0
   shader_variants:
     - NAME: binary_div
       OP_EXPR: a / b
@@ -12,6 +15,12 @@ binary_op:
     - NAME: binary_sub
       OP_EXPR: a - alpha * b
       USE_ALPHA: 1
+    - NAME: binary_sub_int32
+      OP_EXPR: bitcast<i32>(bitcast<u32>(a) - bitcast<u32>(alpha) * bitcast<u32>(b))
+      USE_ALPHA: 1
+      SCALAR_TYPE: i32
+      ALPHA_TYPE: i32
+      ALPHA_DEFAULT: 1i
     - NAME: binary_minimum
       USE_ALPHA: 0
       INLINE: 1

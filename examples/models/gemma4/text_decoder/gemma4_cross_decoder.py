@@ -52,6 +52,7 @@ class Gemma4CrossDecoder(nn.Module):
         per_layer_inputs: torch.Tensor,
         shared_kv: Dict[int, Tuple[torch.Tensor, torch.Tensor]],
         input_pos: Optional[torch.Tensor] = None,
+        query_start_pos: Optional[int] = None,
     ) -> torch.Tensor:
         """Forward pass through cross-decoder.
 
@@ -60,6 +61,7 @@ class Gemma4CrossDecoder(nn.Module):
             per_layer_inputs: Remaining per-layer inputs from self-decoder
             shared_kv: Dict mapping donor layer indices to (k, v) tuples
             input_pos: Current position(s) for KV cache
+            query_start_pos: Optional absolute position for a selected query row
 
         Returns:
             hidden_states: [batch, seq_len, hidden_size]
@@ -78,6 +80,7 @@ class Gemma4CrossDecoder(nn.Module):
                 per_layer_input=per_layer_input,
                 input_pos=input_pos,
                 shared_kv=layer_shared_kv,
+                query_start_pos=query_start_pos,
             )
 
         return hidden_states
