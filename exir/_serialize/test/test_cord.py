@@ -70,16 +70,15 @@ class TestCord(unittest.TestCase):
             with open(source_path, "wb") as f:
                 f.write(b"FileBacked")
 
-            data = FileBackedData.move_from(source_path)
-            self.assertFalse(os.path.exists(source_path))
-            self.assertEqual(10, len(data))
+            with FileBackedData.move_from(source_path) as data:
+                self.assertFalse(os.path.exists(source_path))
+                self.assertEqual(10, len(data))
 
-            cord = Cord(b"Prefix")
-            cord.append(data)
-            outfile = io.BytesIO()
-            cord.write_to_file(outfile)
-            self.assertEqual(b"PrefixFileBacked", outfile.getvalue())
-            self.assertEqual(b"PrefixFileBacked", bytes(cord))
+                cord = Cord(b"Prefix")
+                cord.append(data)
+                outfile = io.BytesIO()
+                cord.write_to_file(outfile)
+                self.assertEqual(b"PrefixFileBacked", outfile.getvalue())
+                self.assertEqual(b"PrefixFileBacked", bytes(cord))
 
-            data.close()
             self.assertEqual([], os.listdir(directory))

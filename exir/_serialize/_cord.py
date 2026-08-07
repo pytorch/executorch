@@ -9,19 +9,29 @@ import io
 import os
 import shutil
 import tempfile
+import weakref
 from typing import List, Optional, Union
 
 
 class FileBackedData:
-    """A byte buffer that stays on disk until a Cord writes it."""
+    """A byte buffer that stays on disk until explicitly closed."""
 
     _COPY_CHUNK_SIZE = 8 * 1024 * 1024
 
     def __init__(self, path: str, cleanup: bool = False) -> None:
         self._path = path
         self._size = os.path.getsize(path)
-        self._cleanup = cleanup
         self._sha256: Optional[bytes] = None
+        self._finalizer = (
+            weakref.finalize(self, self._remove, path) if cleanup else None
+        )
+
+    @staticmethod
+    def _remove(path: str) -> None:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
     @classmethod
     def move_from(cls, path: str) -> "FileBackedData":
@@ -63,14 +73,13 @@ class FileBackedData:
             shutil.copyfileobj(f, outfile, length=self._COPY_CHUNK_SIZE)
 
     def close(self) -> None:
-        if self._cleanup:
-            self._cleanup = False
-            try:
-                os.remove(self._path)
-            except FileNotFoundError:
-                pass
+        if self._finalizer is not None:
+            self._finalizer()
 
-    def __del__(self) -> None:
+    def __enter__(self) -> "FileBackedData":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.close()
 
 

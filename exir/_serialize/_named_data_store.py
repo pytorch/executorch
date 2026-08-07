@@ -304,37 +304,21 @@ class NamedDataStore:
         """
         # Merge the pte_data.
         for key, data_entry in other.pte_data.items():
-            source = other.buffers[data_entry.buffer_index]
             self.add_named_data(
                 key,
-                source,
+                other.buffers[data_entry.buffer_index],
                 data_entry.alignment,
                 external_tag=None,
                 tensor_layout=data_entry.tensor_layout,
             )
-            self._release_duplicate_file(source, other, data_entry, key)
 
         # Merge the external_data.
         for filename, key_to_data_entry in other.external_data.items():
             for key, data_entry in key_to_data_entry.items():
-                source = other.buffers[data_entry.buffer_index]
                 self.add_named_data(
                     key,
-                    source,
+                    other.buffers[data_entry.buffer_index],
                     data_entry.alignment,
                     external_tag=filename,
                     tensor_layout=data_entry.tensor_layout,
                 )
-                self._release_duplicate_file(source, other, data_entry, key)
-
-    def _release_duplicate_file(
-        self,
-        source: CordBuffer,
-        other: NamedDataStoreOutput,
-        data_entry: DataEntry,
-        key: str,
-    ) -> None:
-        retained = self.buffers[self.key_to_buffer_idx[key]]
-        if isinstance(source, FileBackedData) and source is not retained:
-            source.close()
-            other.buffers[data_entry.buffer_index] = retained

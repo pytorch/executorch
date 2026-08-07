@@ -6,10 +6,10 @@
 
 # pyre-strict
 
-import os
-import tempfile
 import copy
 import hashlib
+import os
+import tempfile
 import unittest
 from typing import Any, cast
 
@@ -411,18 +411,26 @@ class TestNamedDataStore(unittest.TestCase):
                 with open(path, "wb") as f:
                     f.write(b"file-backed data")
 
-            store1 = NamedDataStore()
-            file1 = FileBackedData.move_from(paths[0])
-            store1.add_named_data("key1", file1, external_tag="model")
+            with (
+                FileBackedData.move_from(paths[0]) as file1,
+                FileBackedData.move_from(paths[1]) as file2,
+            ):
+                store1 = NamedDataStore()
+                store1.add_named_data("key1", file1, external_tag="model")
 
-            store2 = NamedDataStore()
-            file2 = FileBackedData.move_from(paths[1])
-            store2.add_named_data("key2", file2, external_tag="model")
-            output2 = store2.get_named_data_store_output()
+                store2 = NamedDataStore()
+                store2.add_named_data("key2", file2, external_tag="model")
+                output2 = store2.get_named_data_store_output()
 
-            store1.merge_named_data_store(output2)
-            output1 = store1.get_named_data_store_output()
-            self.assertEqual(1, len(output1.buffers))
-            self.assertIs(output1.buffers[0], output2.buffers[0])
-            self.assertIs(output1.buffers[0], file1)
-            self.assertEqual(1, len(os.listdir(directory)))
+                store1.merge_named_data_store(output2)
+                output1 = store1.get_named_data_store_output()
+                self.assertEqual(1, len(output1.buffers))
+                self.assertIs(output1.buffers[0], file1)
+                self.assertIs(output2.buffers[0], file2)
+                self.assertEqual(2, len(os.listdir(directory)))
+
+                store3 = NamedDataStore()
+                store3.merge_named_data_store(output2)
+                self.assertIs(store3.buffers[0], file2)
+
+            self.assertEqual([], os.listdir(directory))
