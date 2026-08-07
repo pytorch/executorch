@@ -11,6 +11,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUShaderRegistry.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/relu/relu_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/sigmoid/sigmoid_wgsl.h>
 
@@ -20,6 +21,8 @@
 #include <cstdio>
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace executorch::backends::webgpu {
 namespace {
@@ -651,6 +654,140 @@ TEST(WebGPUDynamicDispatch, RejectsRouteOverlapWithoutPoisoningRegistry) {
   graph.select_dispatch_route(group, 1, {{13u, 17u}});
   expect_dispatch_grid(graph, 1u, 0u, 0u);
   expect_dispatch_grid(graph, 2u, 13u, 17u);
+}
+
+struct InvalidRopeGraphCase {
+  const char* name;
+  std::vector<uint32_t> xq_dims;
+  std::vector<uint32_t> xk_dims;
+  std::vector<uint32_t> cos_dims;
+  std::vector<uint32_t> sin_dims;
+  std::vector<uint32_t> xq_out_dims;
+  std::vector<uint32_t> xk_out_dims;
+  vkgraph::VkDataType xq_dtype;
+  const char* expected_error;
+};
+
+void expect_invalid_rope_graph(const InvalidRopeGraphCase& test_case) {
+  namespace vk = vkgraph;
+  ::flatbuffers::FlatBufferBuilder fbb;
+  std::vector<::flatbuffers::Offset<vk::VkValue>> values;
+  auto add_tensor = [&](vk::VkDataType dtype,
+                        const std::vector<uint32_t>& dims,
+                        int mem_obj_id) {
+    values.push_back(vk::CreateVkValue(
+        fbb,
+        vk::GraphTypes::VkTensor,
+        vk::CreateVkTensorDirect(
+            fbb, dtype, &dims, /*constant_id=*/-1, mem_obj_id)
+            .Union()));
+  };
+  add_tensor(test_case.xq_dtype, test_case.xq_dims, 0);
+  add_tensor(vk::VkDataType::FLOAT32, test_case.xk_dims, 1);
+  add_tensor(vk::VkDataType::FLOAT32, test_case.cos_dims, 2);
+  add_tensor(vk::VkDataType::FLOAT32, test_case.sin_dims, 3);
+  add_tensor(vk::VkDataType::FLOAT32, test_case.xq_out_dims, 4);
+  add_tensor(vk::VkDataType::FLOAT32, test_case.xk_out_dims, 5);
+  std::vector<int32_t> output_value_ids = {4, 5};
+  values.push_back(vk::CreateVkValue(
+      fbb,
+      vk::GraphTypes::ValueList,
+      vk::CreateValueListDirect(fbb, &output_value_ids).Union()));
+
+  std::vector<int32_t> args = {0, 1, 2, 3, 6};
+  std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  chain.push_back(vk::CreateOperatorCallDirect(
+      fbb, 0, "et_vk.apply_rotary_emb.default", &args));
+  std::vector<uint32_t> input_ids = {0, 1, 2, 3};
+  std::vector<uint32_t> output_ids = {4, 5};
+  const auto root = vk::CreateVkGraphDirect(
+      fbb, "0", &chain, &values, &input_ids, &output_ids);
+  vk::FinishVkGraphBuffer(fbb, root);
+
+  WebGPUGraph graph;
+  std::string error;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, nullptr);
+  } catch (const std::exception& exception) {
+    error = exception.what();
+  }
+  EXPECT_FALSE(error.empty()) << test_case.name << " unexpectedly built";
+  EXPECT_EQ(error, test_case.expected_error)
+      << test_case.name << " rejected for the wrong reason";
+  const WebGPUMemoryStats stats = graph.memory_stats();
+  EXPECT_EQ(stats.num_dispatches, 0) << test_case.name;
+  EXPECT_EQ(stats.uniform_buffer_bytes, 0u) << test_case.name;
+  EXPECT_EQ(stats.num_cached_shaders, 0) << test_case.name;
+  EXPECT_EQ(stats.num_cached_pipelines, 0) << test_case.name;
+}
+
+TEST(WebGPURopeValidation, RejectsMalformedGraphsBeforeDispatchAllocation) {
+  ASSERT_TRUE(
+      webgpu_operator_registry().has_op("et_vk.apply_rotary_emb.default"));
+  const std::vector<uint32_t> xq = {1, 2, 2, 4};
+  const std::vector<uint32_t> xk = {1, 2, 1, 4};
+  const std::vector<uint32_t> freqs = {2, 2};
+  const InvalidRopeGraphCase cases[] = {
+      {"query rank",
+       {2, 4},
+       xk,
+       freqs,
+       freqs,
+       {2, 4},
+       xk,
+       vkgraph::VkDataType::FLOAT32,
+       "WebGPU apply_rotary_emb: malformed dims"},
+      {"sequence mismatch",
+       xq,
+       {1, 3, 1, 4},
+       freqs,
+       freqs,
+       xq,
+       {1, 3, 1, 4},
+       vkgraph::VkDataType::FLOAT32,
+       "WebGPU apply_rotary_emb: xq/xk head_dim and seq must match"},
+      {"head dimension mismatch",
+       xq,
+       {1, 2, 1, 6},
+       freqs,
+       freqs,
+       xq,
+       {1, 2, 1, 6},
+       vkgraph::VkDataType::FLOAT32,
+       "WebGPU apply_rotary_emb: xq/xk head_dim and seq must match"},
+      {"frequency width mismatch",
+       xq,
+       xk,
+       {2, 3},
+       {2, 3},
+       xq,
+       xk,
+       vkgraph::VkDataType::FLOAT32,
+       "WebGPU apply_rotary_emb: head_dim != 2 * freqs_cos last dim"},
+      {"cosine/sine shape mismatch",
+       xq,
+       xk,
+       freqs,
+       {2, 1},
+       xq,
+       xk,
+       vkgraph::VkDataType::FLOAT32,
+       "WebGPU apply_rotary_emb: freqs_cos and freqs_sin shapes differ"},
+      {"query byte size mismatch",
+       xq,
+       xk,
+       freqs,
+       freqs,
+       xq,
+       xk,
+       vkgraph::VkDataType::INT64,
+       "WebGPU apply_rotary_emb: dtype/byte-size mismatch (all fp32) or "
+       "freqs shape != [seq, head_dim/2]"},
+  };
+  for (const InvalidRopeGraphCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    expect_invalid_rope_graph(test_case);
+  }
 }
 
 TEST(WebGPUExecution, FullySuppressedPlanPerformsNoQueueSubmission) {
