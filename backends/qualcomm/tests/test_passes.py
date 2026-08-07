@@ -37,7 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export.graph_signature import OutputKind
+from torch.export.exported_program import OutputKind
 from torch.library import Library
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
