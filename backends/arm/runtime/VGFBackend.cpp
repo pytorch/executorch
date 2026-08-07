@@ -100,21 +100,6 @@ VkResult vkml_allocate_basics(
     VkCommandPool* command_pool,
     uint32_t* queue_family_index);
 
-void vkml_free_basics(
-    VkInstance* instance,
-    VkDevice* device,
-    VkCommandPool* command_pool) {
-  if (*device != VK_NULL_HANDLE && *command_pool != VK_NULL_HANDLE) {
-    vkDestroyCommandPool(*device, *command_pool, nullptr);
-  }
-  // Note: These primitives are used by the emulation layer for vulkan
-  //       object allocation, the vulkan objects are freed in in library
-  //       shutdown, so we can't yet destroy these here without causing
-  //       a crash there.
-  //  vkDestroyDevice(*device, nullptr);
-  //  vkDestroyInstance(*instance, nullptr);
-}
-
 // Helper functions to dump VGF Delegate Boundary Inputs
 constexpr const char* kVgfDumpInputsDirEnv = "EXECUTORCH_VGF_DUMP_INPUTS_DIR";
 constexpr const char* kVgfDumpInputsAndExitEnv =
@@ -456,9 +441,8 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
 
     is_initialized_ = true;
   }
-  ~VGFBackend() {
-    vkml_free_basics(&vk_instance, &vk_device, &vk_command_pool);
-  }
+
+  ~VGFBackend() = default;
 
   bool is_available() const override {
     ET_LOG(Info, "Checking VGFBackend is available");
@@ -621,12 +605,10 @@ class VGFBackend final : public ::executorch::runtime::BackendInterface {
          ++input_arg_idx) {
       const int io_idx = repr->model_input_io_index[input_arg_idx];
       if (io_idx < 0) {
-#ifdef ET_EVENT_TRACER_ENABLED
-        event_tracer_end_profiling_delegate(event_tracer, copy_inputs_event);
-        event_tracer_end_profiling_delegate(event_tracer, vgf_execute_event);
-#endif
-        ET_LOG(Error, "Missing IO mapping for input %zu", input_arg_idx);
-        return Error::InvalidArgument;
+        ET_LOG(Info, "Skipping eliminated VGF input %zu", input_arg_idx);
+        // See test_addmm_vgf_no_quant[beta_only]
+        // two inputs are eliminated from the graph by the converter
+        continue;
       }
       if (!args[input_arg_idx]->isTensor()) {
 #ifdef ET_EVENT_TRACER_ENABLED

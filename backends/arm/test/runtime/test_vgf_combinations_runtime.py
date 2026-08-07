@@ -253,7 +253,7 @@ def test_compute_graph_graph_sequence_executes(tmp_path):
     )
 
     assert torch.allclose(expected, actual, atol=1e-4, rtol=0.0)
-    assert segment_types(vgf_json) == ["GRAPH", "COMPUTE", "GRAPH"]
+    assert segment_types(vgf_json) == ["COMPUTE", "GRAPH"]
 
 
 # Covers the tensor/storage-buffer alias handoff used by graph-to-buffer custom shader execution.

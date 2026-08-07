@@ -5,4 +5,4 @@
 
 # Runtime build dependencies for the Arm VGF backend.
 
-ai_ml_sdk_vgf_library == 0.9.0
+ai_ml_sdk_vgf_library == 0.10.0
