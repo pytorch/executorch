@@ -13,6 +13,7 @@ are checked in the native test; this verifies the dynamic export side + writes
 goldens.
 """
 
+import dataclasses
 import math
 import os
 import unittest
@@ -21,8 +22,10 @@ import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.webgpu.test.ops.test_conv1d_pw import Conv1dModule
 from executorch.backends.webgpu.test.ops.test_gelu import GeluModule
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.webgpu.test.ops.test_slice import SliceModule
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.utils import get_delegates, get_non_lowered_nodes
+from executorch.exir.dialects._ops import ops as exir_ops
 
 MAXS = 128  # upper bound for the dynamic seq-len dim (within the 1D dispatch cap)
 HIDDEN = 64
@@ -197,6 +200,17 @@ class DynamicExpandCopyInferredModule(torch.nn.Module):
         return x.expand((4, -1)).clone()
 
 
+class SliceDualStoreModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        first = torch.ops.aten.slice_copy.Tensor(x, 1, 1, 8961, 1)
+        return first, first
+
+
+class DynamicCatModule(torch.nn.Module):
+    def forward(self, x: torch.Tensor, suffix: torch.Tensor) -> torch.Tensor:
+        return torch.cat((x, suffix), dim=1)
+
+
 def _ramp(shape) -> torch.Tensor:
     n = 1
     for d in shape:
@@ -312,6 +326,109 @@ def export_dynamic_gelu_boundary_cases(out_dir: str) -> None:
     )
 
 
+def export_dynamic_slice_boundary_case(out_dir: str) -> None:
+    """Write a reusable slice graph crossing the per-dimension grid cap."""
+    max_rows = 65536
+    model = SliceModule(lambda x: x[:, 1:65]).eval()
+    rows_dim = torch.export.Dim("slice_rows", min=1, max=max_rows)
+    _export(
+        model,
+        (torch.empty((max_rows, 65), dtype=torch.float32),),
+        {"x": {0: rows_dim}},
+        os.path.join(out_dir, "dyn_slice_2d.pte"),
+    )
+
+
+def export_dynamic_cat_boundary_case(out_dir: str) -> None:
+    """Write a reusable Cat graph crossing the per-dimension grid cap."""
+    max_rows = 65536
+    model = DynamicCatModule().eval()
+    rows_dim = torch.export.Dim("cat_rows", min=1, max=max_rows)
+    _export(
+        model,
+        (
+            torch.empty((max_rows, 65), dtype=torch.float32),
+            torch.empty((max_rows, 1), dtype=torch.float32),
+        ),
+        {"x": {0: rows_dim}, "suffix": {0: rows_dim}},
+        os.path.join(out_dir, "dyn_cat_2d.pte"),
+    )
+
+
+def export_slice_dual_store_case(out_dir: str) -> None:
+    """Write the retained two-slice edge graph used by the dual-store route."""
+    rows = 512
+    input_columns = 8961
+    output_columns = 8960
+    model = SliceDualStoreModule().eval()
+    input_tensor = (
+        torch.arange(rows * input_columns, dtype=torch.float32)
+        .remainder(4093)
+        .reshape(rows, input_columns)
+    )
+    exported = torch.export.export(model, (input_tensor,), strict=True)
+    edge = to_edge(
+        exported,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    edge_program = edge.exported_program()
+    graph = edge_program.graph_module.graph
+    first = next(
+        node
+        for node in graph.nodes
+        if node.target == exir_ops.edge.aten.slice_copy.Tensor
+    )
+    output = next(node for node in graph.nodes if node.op == "output")
+    with graph.inserting_after(first):
+        second = graph.call_function(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            args=(first, 1, 0, output_columns, 1),
+        )
+    second.meta = first.meta.copy()
+    output.args = ((first, second),)
+    edge_program.graph_signature.output_specs[1] = dataclasses.replace(
+        edge_program.graph_signature.output_specs[1],
+        arg=dataclasses.replace(
+            edge_program.graph_signature.output_specs[1].arg,
+            name=second.name,
+        ),
+    )
+    edge_program.graph_module.recompile()
+    if (
+        sum(node.target == exir_ops.edge.aten.slice_copy.Tensor for node in graph.nodes)
+        != 2
+    ):
+        raise RuntimeError("slice dual-store fixture must retain two slice_copy ops")
+    lowered = edge.to_backend(VulkanPartitioner())
+    lowered_graph = lowered.exported_program().graph_module.graph
+    delegates = get_delegates(lowered_graph)
+    portable = get_non_lowered_nodes(lowered_graph)
+    if len(delegates) != 1 or portable:
+        raise RuntimeError(
+            "slice dual-store fixture must be one fully delegated subgraph: "
+            f"delegates={len(delegates)}, portable={portable}"
+        )
+    program = lowered.to_executorch()
+    with open(os.path.join(out_dir, "slice_dual_store.pte"), "wb") as file:
+        file.write(program.buffer)
+    with torch.no_grad():
+        first_golden = torch.ops.aten.slice_copy.Tensor(
+            input_tensor, 1, 1, input_columns, 1
+        )
+        second_golden = torch.ops.aten.slice_copy.Tensor(
+            first_golden, 1, 0, output_columns, 1
+        )
+    input_tensor.numpy().astype("<f4").tofile(
+        os.path.join(out_dir, "slice_dual_store.input.bin")
+    )
+    first_golden.numpy().astype("<f4").tofile(
+        os.path.join(out_dir, "slice_dual_store.out0.golden.bin")
+    )
+    second_golden.numpy().astype("<f4").tofile(
+        os.path.join(out_dir, "slice_dual_store.out1.golden.bin")
+    )
+
+
 def export_dynamic_expand_copy_rejection_case(out_dir: str) -> None:
     """Write a dynamic expand_copy graph that the runtime must reject at load."""
     model = DynamicExpandCopyModule().eval()
@@ -337,6 +454,9 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     export_dynamic_expand_copy_rejection_case(out_dir)
     if os.environ.get("WEBGPU_TEST_HEAVY"):
         export_dynamic_gelu_boundary_cases(out_dir)
+        export_dynamic_slice_boundary_case(out_dir)
+        export_dynamic_cat_boundary_case(out_dir)
+        export_slice_dual_store_case(out_dir)
     s_dim = torch.export.Dim("s", min=1, max=MAXS)
 
     # 1) Single dynamic rms_norm, graph built at S=MAXS (upper bound).

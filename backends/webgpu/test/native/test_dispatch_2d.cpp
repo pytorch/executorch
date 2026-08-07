@@ -12,6 +12,9 @@
 #include <executorch/backends/webgpu/runtime/WebGPUBackend.h>
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/runtime/ops/cat/CatDispatch.h>
+#include <executorch/backends/webgpu/runtime/ops/slice/SliceDispatch.h>
+#include <executorch/backends/webgpu/test/native/RequiredDevicePolicy.h>
 
 #include <gtest/gtest.h>
 
@@ -20,6 +23,9 @@
 #include <utility>
 #include <vector>
 
+using executorch::backends::webgpu::required_device_failure_exit_code;
+using executorch::backends::webgpu::set_cat_dispatch_grid;
+using executorch::backends::webgpu::set_slice_dispatch_grid;
 using executorch::backends::webgpu::WebGPUDispatch;
 using executorch::backends::webgpu::WebGPUGraph;
 using executorch::backends::webgpu::utils::DispatchRange;
@@ -63,6 +69,38 @@ TEST(DispatchFold, NearSquareFold) {
 // count > max^2 needs a 3rd dispatch dimension -> throws (out of scope).
 TEST(DispatchFold, ThrowsWhenNeeds3rdDimension) {
   EXPECT_ANY_THROW(fold_workgroup_count_2d(kMax * kMax + 1u, kMax, "test"));
+}
+
+TEST(SliceDispatchGrid, RestoresBothDimensionsAcrossResize) {
+  WebGPUGraph graph;
+  const size_t dispatch_index = graph.add_dispatch(WebGPUDispatch{});
+
+  for (const WgCount grid :
+       {WgCount{256u, 256u}, WgCount{65535u, 1u}, WgCount{256u, 256u}}) {
+    set_slice_dispatch_grid(graph, dispatch_index, grid);
+    EXPECT_EQ(graph.dispatch_at(dispatch_index).workgroup_count_x, grid.x);
+    EXPECT_EQ(graph.dispatch_at(dispatch_index).workgroup_count_y, grid.y);
+  }
+}
+
+TEST(CatDispatchGrid, RestoresBothDimensionsAcrossResize) {
+  WebGPUGraph graph;
+  const size_t dispatch_index = graph.add_dispatch(WebGPUDispatch{});
+
+  for (const WgCount grid :
+       {WgCount{257u, 256u}, WgCount{65535u, 1u}, WgCount{257u, 256u}}) {
+    set_cat_dispatch_grid(graph, dispatch_index, grid);
+    EXPECT_EQ(graph.dispatch_at(dispatch_index).workgroup_count_x, grid.x);
+    EXPECT_EQ(graph.dispatch_at(dispatch_index).workgroup_count_y, grid.y);
+  }
+}
+
+TEST(RequiredDevicePolicy, DefaultDeviceFailureRemainsASkip) {
+  EXPECT_EQ(required_device_failure_exit_code(false), 0);
+}
+
+TEST(RequiredDevicePolicy, RequiredDeviceFailureIsAnError) {
+  EXPECT_NE(required_device_failure_exit_code(true), 0);
 }
 
 void expect_grid(const WgCount& grid, uint32_t x, uint32_t y) {

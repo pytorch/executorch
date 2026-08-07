@@ -10,6 +10,7 @@
 // per manifest case, runs forward() on the device, and compares vs golden.
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
+#include <executorch/backends/webgpu/test/native/RequiredDevicePolicy.h>
 #include <executorch/backends/webgpu/test/op_tests/driver_util.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
@@ -218,8 +219,10 @@ int main(int argc, char** argv) {
     ctx = create_webgpu_context();
   } catch (const std::exception& ex) {
     std::printf("SKIP: no WebGPU device (%s)\n", ex.what());
-    return 0;
+    return required_device_failure_exit_code(
+        std::getenv("WEBGPU_REQUIRE_DEVICE") != nullptr);
   }
+  std::printf("WebGPU device acquired (native)\n");
   set_default_webgpu_context(&ctx);
 
   auto entries = parse_manifest(manifest);
