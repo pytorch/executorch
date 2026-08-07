@@ -32,9 +32,9 @@ jobs:
       os: linux
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
-      with-cuda: enabled
-      with-cpu: disabled
-      with-rocm: disabled
+      with-cuda: enable
+      with-cpu: disable
+      with-rocm: disable
       python-versions: '["3.10", "3.11", "3.12", "3.13"]'
 
   # The generator emits every CUDA version it knows about. Publishing all of them would ship
