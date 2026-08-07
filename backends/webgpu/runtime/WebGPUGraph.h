@@ -48,6 +48,15 @@ struct InputData {
   const void* data = nullptr;
   size_t nbytes = 0;
   bool host_is_int64 = false;
+  bool host_is_fp32 = false;
+};
+
+// Host destination for a graph output. host_is_fp32 gates the fp16->fp32 widen
+// on readback (mirrors InputData's guard on the copy_inputs narrow path).
+struct OutputData {
+  void* data = nullptr;
+  size_t nbytes = 0;
+  bool host_is_fp32 = false;
 };
 
 struct WebGPUDispatch {
@@ -130,6 +139,7 @@ struct WebGPUMemoryStats {
 struct WebGPUGraphConfig {
   bool f16_kv_cache = false;
   bool f16_accumulate_gemm = false;
+  int sdpa_query_tile = 0;
   bool record_q4gsw_decode_route = false;
 };
 
@@ -143,6 +153,7 @@ class WebGPUGraph {
   void build(
       const void* flatbuffer_data,
       const uint8_t* constant_data,
+      size_t constant_data_size,
       const executorch::runtime::NamedDataMap* named_data_map = nullptr,
       WebGPUGraphConfig config = {});
 
@@ -159,7 +170,7 @@ class WebGPUGraph {
   // Copy output tensor data from GPU buffers back to host pointers.
   // Uses mapAsync + ASYNCIFY in Wasm.
   void copy_outputs(
-      std::vector<std::pair<void*, size_t>>& outputs,
+      std::vector<OutputData>& outputs,
       const WebGPUExecutionPlan& plan);
 
   const std::vector<int>& input_ids() const {
@@ -541,6 +552,12 @@ class WebGPUGraph {
     return config_.f16_accumulate_gemm;
   }
 
+  // Runtime-selected SDPA query-tile candidate; 0 = geometry default (Q16),
+  // 32 = Q32 candidate.
+  int sdpa_query_tile() const {
+    return config_.sdpa_query_tile;
+  }
+
   const WebGPUGraphConfig& config() const {
     return config_;
   }
@@ -659,6 +676,7 @@ class WebGPUGraph {
   // materializes these once. constant_data_/named_data_map_ point at the .pte
   // bytes and are valid only during build().
   const uint8_t* constant_data_ = nullptr;
+  size_t constant_data_size_ = 0;
   const executorch::runtime::NamedDataMap* named_data_map_ = nullptr;
   std::unordered_map<int, ConstantSource> constant_sources_;
 
