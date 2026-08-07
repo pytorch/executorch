@@ -297,7 +297,10 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     )
     _write_goldens(rmsmul, "dyn_rmsmul", out_dir, [MAXS, 32, 1])
 
-    # 2d) 4-bit quantized linear with a DYNAMIC rows (M) dim — prefill GEMM
+    # 2d) fp32 linear with a dynamic rows (M) dim.
+    export_dynamic_fp32_linear_cases(out_dir)
+
+    # 2d.1) 4-bit quantized linear with a DYNAMIC rows (M) dim — prefill GEMM
     # (register-tiled N=128) + a shmem-GEMM-routed variant (N=2048).
     _export_dynamic_linear(out_dir)
     _export_dynamic_linear(
@@ -327,7 +330,7 @@ def export_dynamic_shape_cases(out_dir: str) -> None:
     _export_static_sdpa(out_dir, 16, "static_sdpa_s16")
 
     # 2f) 4-bit embedding with a DYNAMIC token count (int64 indices).
-    _export_dynamic_embedding(out_dir)
+    export_dynamic_embedding_cases(out_dir)
 
     # 2g) Interleaved RoPE with a DYNAMIC seq-len S (two outputs xq/xk).
     _export_dynamic_rope(out_dir)
@@ -369,6 +372,10 @@ LIN_ALT_GROUP = 24
 LIN_SHMEM_N = 2048
 LIN_GROUP = 32
 LIN_MAXM = 128
+
+FP32_LINEAR_N = 32
+FP32_LINEAR_MAXM = 128
+FP32_LINEAR_M_VALUES = (FP32_LINEAR_MAXM, 32, 1)
 
 BK64_K = 2048
 BK64_N = 2048
@@ -531,6 +538,46 @@ def _export_dynamic_linear(
         )
         g.tofile(os.path.join(out_dir, f"{prefix}.S{m}.golden.bin"))
         print(f"  golden {prefix} M={m}")
+
+
+def _export_dynamic_fp32_linear_case(
+    out_dir: str,
+    *,
+    k: int,
+    bias: bool,
+    prefix: str,
+) -> None:
+    from executorch.backends.webgpu.test.ops.test_linear_fp32 import make_linear
+
+    model = make_linear(k, FP32_LINEAR_N, bias=bias).eval()
+    x = _ramp((FP32_LINEAR_MAXM, k))
+    m_dim = torch.export.Dim("m", min=1, max=FP32_LINEAR_MAXM)
+    ep = torch.export.export(model, (x,), dynamic_shapes=({0: m_dim},))
+    et = _lower_fully_delegated(ep, prefix)
+    with open(os.path.join(out_dir, f"{prefix}.pte"), "wb") as f:
+        f.write(et.buffer)
+
+    weight = model.fc.weight.detach().double()
+    bias_value = model.fc.bias.detach().double() if model.fc.bias is not None else None
+    for m in FP32_LINEAR_M_VALUES:
+        xm = _ramp((m, k))
+        golden = torch.nn.functional.linear(xm.double(), weight, bias_value)
+        base = os.path.join(out_dir, f"{prefix}.S{m}")
+        xm.detach().numpy().astype("<f4").tofile(base + ".input.bin")
+        golden.to(torch.float32).numpy().astype("<f4").tofile(base + ".golden.bin")
+
+
+def export_dynamic_fp32_linear_cases(out_dir: str) -> None:
+    os.makedirs(out_dir, exist_ok=True)
+    for route, k in (("vec4", 64), ("tiled", 63)):
+        for bias in (True, False):
+            suffix = "bias" if bias else "no_bias"
+            _export_dynamic_fp32_linear_case(
+                out_dir,
+                k=k,
+                bias=bias,
+                prefix=f"dyn_linear_fp32_{route}_{suffix}",
+            )
 
 
 def _make_bk64_model(
@@ -1306,21 +1353,6 @@ EMB_GROUP = 32
 EMB_MAXN = 16
 
 
-class _LinearPackedEmbedding(torch.nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        packed = torch.arange(EMB_VOCAB * (EMB_DIM // 2), dtype=torch.int64).reshape(
-            EMB_VOCAB, EMB_DIM // 2
-        )
-        self.register_buffer("weight", (packed % 256).to(torch.uint8))
-        self.register_buffer("scales", torch.ones(EMB_VOCAB, EMB_DIM // EMB_GROUP))
-
-    def forward(self, indices: torch.Tensor) -> torch.Tensor:
-        return torch.ops.et_vk.embedding_q4gsw.default(
-            self.weight, self.scales, EMB_GROUP, indices, True
-        )
-
-
 def _write_embedding_goldens(
     out_dir: str,
     prefix: str,
@@ -1334,14 +1366,6 @@ def _write_embedding_goldens(
         golden = torch.ops.et_vk.embedding_q4gsw.default(
             weight, scales, group_size, idx, is_linear
         )
-        if is_linear:
-            nonlinear_golden = torch.ops.et_vk.embedding_q4gsw.default(
-                weight, scales, group_size, idx, False
-            )
-            if torch.equal(golden, nonlinear_golden):
-                raise RuntimeError(
-                    "emb_dyn_linear fixture does not distinguish nibble packing"
-                )
         idx.detach().numpy().astype("<i8").tofile(
             os.path.join(out_dir, f"{prefix}.S{n}.idx.bin")
         )
@@ -1351,7 +1375,42 @@ def _write_embedding_goldens(
         print(f"  golden {prefix} N={n} (shape {tuple(golden.shape)})")
 
 
-def _export_dynamic_embedding(out_dir: str) -> None:
+class _PackedEmbedding(torch.nn.Module):
+    def __init__(self, is_linear_weight: bool) -> None:
+        super().__init__()
+        packed = torch.arange(EMB_VOCAB * (EMB_DIM // 2), dtype=torch.int64).reshape(
+            EMB_VOCAB, EMB_DIM // 2
+        )
+        self.register_buffer("weight", (packed % 256).to(torch.uint8))
+        self.register_buffer("scales", torch.ones(EMB_VOCAB, EMB_DIM // EMB_GROUP))
+        self.is_linear_weight = is_linear_weight
+
+    def forward(self, indices: torch.Tensor) -> torch.Tensor:
+        return torch.ops.et_vk.embedding_q4gsw.default(
+            self.weight,
+            self.scales,
+            EMB_GROUP,
+            indices,
+            self.is_linear_weight,
+        )
+
+
+def _write_packed_embedding_goldens(
+    out_dir: str, prefix: str, model: _PackedEmbedding
+) -> None:
+    for n in [EMB_MAXN, 8, 1]:
+        idx = (torch.arange(n, dtype=torch.long) * 7) % EMB_VOCAB
+        golden = model(idx)
+        idx.detach().numpy().astype("<i8").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.idx.bin")
+        )
+        golden.detach().numpy().astype("<f4").tofile(
+            os.path.join(out_dir, f"{prefix}.S{n}.golden.bin")
+        )
+
+
+def export_dynamic_embedding_cases(out_dir: str) -> None:
+    os.makedirs(out_dir, exist_ok=True)
     from executorch.backends.webgpu.test.ops.test_embedding_q4gsw import (
         _make_quantized_model,
         _quant_params,
@@ -1370,21 +1429,22 @@ def _export_dynamic_embedding(out_dir: str) -> None:
     weight, scales, group_size = _quant_params(qm)
     _write_embedding_goldens(out_dir, "emb_dyn", weight, scales, group_size, False)
 
-    linear_model = _LinearPackedEmbedding().eval()
-    _export(
-        linear_model,
-        (idx_max,),
-        ({0: n_dim},),
-        os.path.join(out_dir, "emb_dyn_linear.pte"),
-    )
-    _write_embedding_goldens(
-        out_dir,
-        "emb_dyn_linear",
-        linear_model.weight,
-        linear_model.scales,
-        EMB_GROUP,
-        True,
-    )
+    packed_models = {
+        "emb_dyn_linear": _PackedEmbedding(True).eval(),
+        "emb_dyn_nonlinear": _PackedEmbedding(False).eval(),
+    }
+    linear_golden = packed_models["emb_dyn_linear"](idx_max)
+    nonlinear_golden = packed_models["emb_dyn_nonlinear"](idx_max)
+    if torch.equal(linear_golden, nonlinear_golden):
+        raise RuntimeError("embedding layout fixtures must distinguish nibble order")
+    for prefix, model in packed_models.items():
+        _export(
+            model,
+            (idx_max,),
+            ({0: n_dim},),
+            os.path.join(out_dir, f"{prefix}.pte"),
+        )
+        _write_packed_embedding_goldens(out_dir, prefix, model)
 
 
 # Dynamic RoPE: xq/xk + freqs all share a dynamic seq-len S.

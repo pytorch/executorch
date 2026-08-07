@@ -133,6 +133,7 @@ constexpr int kLinK = 64;
 constexpr int kLinAltK = 72;
 constexpr int kLinN = 128;
 constexpr int kLinNShmem = 2048;
+constexpr int kFp32LinearN = 32;
 // Run <prefix> at [m_rows, kLinK] on an already-loaded module (so it can be
 // reused across M without a fresh load), and compare to the golden.
 void run_linear(
@@ -231,6 +232,14 @@ void check_linear_tiled(int m_rows) {
   Module m(g_dir + "/dyn_linear_tiled.pte");
   ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_linear_tiled.pte";
   run_linear(m, m_rows, "dyn_linear_tiled", kLinN, kLinAltK);
+}
+
+void check_fp32_linear_reused(const char* prefix, int k) {
+  Module module(g_dir + "/" + prefix + ".pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load " << prefix << ".pte";
+  for (int m_rows : {128, 32, 1, 128}) {
+    run_linear(module, m_rows, prefix, kFp32LinearN, k, 1e-3f);
+  }
 }
 
 constexpr int kQkvNq = 2048;
@@ -939,6 +948,23 @@ TEST(DynamicShape, RmsMul) {
     ASSERT_EQ(m.load_forward(), Error::Ok) << "load dyn_rmsmul.pte";
     check_s(m, "dyn_rmsmul", s);
   }
+}
+
+// I0: dynamic fp32 linear preserves bias across repeated resizes.
+TEST(DynamicShape, Fp32LinearVec4BiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_vec4_bias", 64);
+}
+
+TEST(DynamicShape, Fp32LinearVec4UnbiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_vec4_no_bias", 64);
+}
+
+TEST(DynamicShape, Fp32LinearTiledBiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_tiled_bias", 63);
+}
+
+TEST(DynamicShape, Fp32LinearTiledUnbiasedReusedGraph) {
+  check_fp32_linear_reused("dyn_linear_fp32_tiled_no_bias", 63);
 }
 
 // I: dynamic 4-bit quantized linear (prefill GEMM) at several M.
@@ -1670,12 +1696,14 @@ TEST(DynamicShape, EmbeddingReusedGraph) {
   }
 }
 
-// K3: linear-packed reuse must preserve nibble order across resizes.
-TEST(DynamicShape, LinearPackedEmbeddingReusedGraph) {
-  Module m(g_dir + "/emb_dyn_linear.pte");
-  ASSERT_EQ(m.load_forward(), Error::Ok) << "load emb_dyn_linear.pte";
-  for (int n : {16, 8, 1, 16}) {
-    run_embedding(m, n, "emb_dyn_linear");
+// K3: linear/nonlinear-packed reuse must preserve nibble order across resizes.
+TEST(DynamicShape, EmbeddingLayoutsReusedGraph) {
+  for (const char* prefix : {"emb_dyn_linear", "emb_dyn_nonlinear"}) {
+    Module m(g_dir + "/" + prefix + ".pte");
+    ASSERT_EQ(m.load_forward(), Error::Ok) << "load " << prefix << ".pte";
+    for (int n : {16, 8, 1, 16}) {
+      run_embedding(m, n, prefix);
+    }
   }
 }
 
