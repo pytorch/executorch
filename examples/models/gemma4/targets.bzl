@@ -20,6 +20,7 @@ def define_webgpu_python_targets():
     fbcode_target(_kind = runtime.python_library,
         name = "webgpu_support",
         srcs = [
+            "mtp_qat_contract.py",
             "webgpu_artifact_manifest.py",
             "webgpu_partitioner.py",
         ],

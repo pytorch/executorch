@@ -52,6 +52,64 @@ fbcode_target(_kind = runtime.python_binary,
 
 define_webgpu_python_targets()
 
+fbcode_target(_kind = runtime.python_library,
+    name = "mtp_export_lib",
+    srcs = [
+        "eagle_webgpu_round.py",
+        "export_assistant_webgpu_artifacts.py",
+        "export_speculative.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.gemma4",
+    resources = {
+        "manifests/gemma4_e2b_mtp_webgpu.json": "manifests/gemma4_e2b_mtp_webgpu.json",
+    },
+    typing = True,
+    deps = [
+        ":quant_utils",
+        ":text_decoder",
+        ":webgpu_support",
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:custom_ops_lib",
+        "//executorch/examples/models/llama:source_transformation",
+        "//executorch/exir:lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/llm/export:export_lib",
+        "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+        "fbsource//third-party/pypi/transformers:transformers",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_assistant_webgpu_artifacts",
+    main_function = "executorch.examples.models.gemma4.export_assistant_webgpu_artifacts.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_aten",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+    ],
+    deps = [":mtp_export_lib"],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_speculative",
+    main_function = "executorch.examples.models.gemma4.export_speculative.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/kernels/quantized:aot_lib",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/embedding_xbit:op_embedding_xbit_aten",
+        "//pytorch/ao/torchao/csrc/cpu/shared_kernels/linear_8bit_act_xbit_weight:op_linear_8bit_act_xbit_weight_aten",
+    ],
+    deps = [":mtp_export_lib"],
+)
+
 # Text decoder module
 fbcode_target(_kind = runtime.python_library,
     name = "text_decoder",
