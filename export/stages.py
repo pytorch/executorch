@@ -15,12 +15,12 @@ import torch
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
 from torch._export.pass_base import PassType
+from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import (
@@ -176,7 +176,12 @@ class EdgeTransformAndLowerStage(Stage):
         self,
         partitioners: Optional[List[Any]] = None,
         transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
@@ -229,7 +234,7 @@ class EdgeTransformAndLowerStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
@@ -514,10 +519,18 @@ class EdgeProgramManagerTransformStage(Stage):
     def __init__(
         self,
         edge_transform_passes: (
-            None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[
+                    [str, ExportedProgram], List[PassType] | GraphModulePassManager
+                ]
+            ]
         ) = None,
         edge_manager_transform_passes: (
-            None | List[Callable[[EdgeProgramManager], List[PassType] | PassManager]]
+            None
+            | List[
+                Callable[[EdgeProgramManager], List[PassType] | GraphModulePassManager]
+            ]
         ) = None,
     ) -> None:
         """
@@ -590,7 +603,7 @@ class EdgeProgramManagerTransformStage(Stage):
                         "Transform passes must be a callable that resolves to passes"
                     )
                 passes = pass_callable(method_name, ep)
-                if isinstance(passes, PassManager):
+                if isinstance(passes, GraphModulePassManager):
                     pass_manager = passes
                     break
                 else:
