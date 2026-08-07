@@ -27,6 +27,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceConvWithChannelLastConvPass,
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
+    ReplaceFullLikeWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
     ReplaceIm2RowWithViewPass,
     ReplaceLinearWithFullyConnectedOpPass,
@@ -121,6 +122,43 @@ class TestReplaceOpsPasses(unittest.TestCase):
         """Helper function to check the number of nodes of all types for a given target."""
         for target, expected_count in targets_and_counts:
             self.assertTargetCountEqual(graph_module, target, expected_count)
+
+    @torch.no_grad()
+    def test_replace_full_like_preserves_output_dtype(self) -> None:
+        builder = GraphBuilder()
+        x_tensor = torch.randn(2, 3, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        full_like = builder.call_operator(
+            op=exir_ops.edge.aten.full_like.default,
+            args=(x, 0),
+        )
+        builder.output([full_like])
+        original_gm = builder.get_graph_module()
+
+        gm_before = copy.deepcopy(original_gm)
+        result = cast(PassResult, ReplaceFullLikeWithFullPass()(original_gm))
+        self.assertTrue(result.modified)
+        graph_after_passes = result.graph_module
+
+        self.assertTargetCountsEqual(
+            graph_after_passes,
+            [
+                (exir_ops.edge.aten.full_like.default, 0),
+                (exir_ops.edge.aten.full.default, 1),
+            ],
+        )
+        full_node = next(
+            node
+            for node in graph_after_passes.graph.nodes
+            if node.target == exir_ops.edge.aten.full.default
+        )
+        self.assertEqual(full_node.kwargs["dtype"], torch.float32)
+        validate(
+            gm_before,
+            graph_after_passes,
+            (x_tensor,),
+            "ReplaceFullLikeWithFullPass",
+        )
 
     @expand(
         [
