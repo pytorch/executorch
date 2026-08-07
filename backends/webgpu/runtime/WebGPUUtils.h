@@ -16,8 +16,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,6 +30,18 @@ namespace executorch::backends::webgpu::utils {
 // to numel (single impl; keeps the negative-dim guard, no caller churn).
 inline uint64_t numel_of(const std::vector<int64_t>& dims) {
   return numel(dims);
+}
+
+// fp32, non-null-buffer tensor with byte size matching its element count;
+// the dtype/aliasing precondition fusion passes require of every operand.
+inline bool is_fp32_tensor(const WebGPUTensor& tensor) {
+  if (tensor.is_int || tensor.elem_size != sizeof(float) ||
+      tensor.buffer == nullptr) {
+    return false;
+  }
+  const uint64_t elems = numel_of(tensor.dims);
+  return elems <= std::numeric_limits<size_t>::max() / sizeof(float) &&
+      tensor.nbytes == static_cast<size_t>(elems) * sizeof(float);
 }
 
 // Clamp workgroup size to device limit (SwiftShader caps at 128).
@@ -49,11 +63,6 @@ inline uint32_t clamp_workgroup_size_pow2(WGPUDevice device, uint32_t desired) {
   }
   return p;
 }
-
-struct WgCount {
-  uint32_t x;
-  uint32_t y;
-};
 
 // Device's max workgroups per dispatch dimension; the WebGPU spec-default floor
 // (65535) if the query fails — never under-reports a real device's capacity.
@@ -511,6 +520,53 @@ inline ComputePipelineBundle make_compute_pipeline(
 
   bundle.pipeline = pipeline;
   bundle.bind_group = bind_group;
+  return bundle;
+}
+
+// Builds a pipeline for a different shader that uses the exact layout and
+// bind group of an earlier bundle. Multi-route ops use this when alternate
+// shaders have an identical binding contract: only the shader module and
+// pipeline are new; layout and bind-group construction stay single-copy.
+inline ComputePipelineBundle make_compute_pipeline(
+    WGPUDevice device,
+    const char* wgsl_source,
+    const ComputePipelineBundle& shared_resources,
+    const WGPUConstantEntry* constants = nullptr,
+    size_t constant_count = 0,
+    const char* entry_point = "main") {
+  if (shared_resources.bind_group_layout == nullptr ||
+      shared_resources.pipeline_layout == nullptr ||
+      shared_resources.bind_group == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: shared resources are not available");
+  }
+
+  ComputePipelineBundle bundle;
+  WGPUShaderSourceWGSL wgsl_desc = {};
+  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
+  wgsl_desc.code = {wgsl_source, WGPU_STRLEN};
+  WGPUShaderModuleDescriptor shader_desc = {};
+  shader_desc.nextInChain = &wgsl_desc.chain;
+  bundle.shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
+  if (bundle.shader == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: shader module creation failed");
+  }
+
+  WGPUComputePipelineDescriptor pipeline_desc = {};
+  pipeline_desc.layout = shared_resources.pipeline_layout;
+  pipeline_desc.compute.module = bundle.shader;
+  pipeline_desc.compute.entryPoint = {entry_point, WGPU_STRLEN};
+  pipeline_desc.compute.constantCount = constant_count;
+  pipeline_desc.compute.constants = constants;
+  bundle.pipeline = wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  if (bundle.pipeline == nullptr) {
+    throw std::runtime_error(
+        "make_compute_pipeline: compute pipeline creation failed");
+  }
+
+  wgpuBindGroupAddRef(shared_resources.bind_group);
+  bundle.bind_group = shared_resources.bind_group;
   return bundle;
 }
 
