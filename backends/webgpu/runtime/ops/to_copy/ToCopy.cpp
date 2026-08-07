@@ -60,8 +60,8 @@ void add_convert_op(
   uint32_t num_elements = static_cast<uint32_t>(out_tensor.nbytes / 4);
 
   uint32_t wg_size = utils::clamp_workgroup_size(device, wg_size_x);
-  uint32_t workgroup_count =
-      utils::compute_1d_workgroup_count(device, num_elements, wg_size, op_name);
+  const utils::WgCount workgroup_count =
+      utils::compute_2d_workgroup_count(device, num_elements, wg_size, op_name);
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -92,8 +92,12 @@ void add_convert_op(
       &wg_size_constant,
       1);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       op_name,
+       workgroup_count.y});
 
   // Dynamic shapes: recompute num_elements/dispatch for the live shape.
   WGPUBuffer params_buf = uniform_buffer;
@@ -106,12 +110,13 @@ void add_convert_op(
         ConvertParams p = {};
         p.num_elements = static_cast<uint32_t>(numel);
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(numel),
-                wg_size,
-                "to_copy(resize)");
+        const utils::WgCount workgroups = utils::compute_2d_workgroup_count(
+            g.device(),
+            static_cast<uint32_t>(numel),
+            wg_size,
+            "to_copy(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = workgroups.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = workgroups.y;
       });
 }
 
@@ -146,7 +151,7 @@ void add_bool_to_float_op(WebGPUGraph& graph, int in_id, int out_id) {
 
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kToCopyBoolToFloatWorkgroupSizeX);
-  const uint32_t workgroup_count = utils::compute_1d_workgroup_count(
+  const utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
       device, num_elements, wg_size, "to_copy_bool_to_float");
 
   WGPUConstantEntry wg_size_constant = {};
@@ -177,8 +182,12 @@ void add_bool_to_float_op(WebGPUGraph& graph, int in_id, int out_id) {
       &wg_size_constant,
       1);
 
-  const size_t dispatch_idx =
-      graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count});
+  const size_t dispatch_idx = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       workgroup_count.x,
+       "to_copy_bool_to_float",
+       workgroup_count.y});
 
   WGPUBuffer params_buf = uniform_buffer;
   graph.add_tensor_resize_hook(
@@ -194,12 +203,13 @@ void add_bool_to_float_op(WebGPUGraph& graph, int in_id, int out_id) {
         ConvertParams p = {};
         p.num_elements = static_cast<uint32_t>(numel);
         wgpuQueueWriteBuffer(g.queue(), params_buf, 0, &p, sizeof(p));
-        g.dispatch_at(dispatch_idx).workgroup_count_x =
-            utils::compute_1d_workgroup_count(
-                g.device(),
-                static_cast<uint32_t>(numel),
-                wg_size,
-                "to_copy_bool_to_float(resize)");
+        const utils::WgCount workgroups = utils::compute_2d_workgroup_count(
+            g.device(),
+            static_cast<uint32_t>(numel),
+            wg_size,
+            "to_copy_bool_to_float(resize)");
+        g.dispatch_at(dispatch_idx).workgroup_count_x = workgroups.x;
+        g.dispatch_at(dispatch_idx).workgroup_count_y = workgroups.y;
       });
 }
 

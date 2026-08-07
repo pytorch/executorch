@@ -27,6 +27,8 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 #include <executorch/backends/webgpu/runtime/WebGPUQueryPool.h>
+#include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
+#include <executorch/backends/webgpu/test/native/RequiredDevicePolicy.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/backend/backend_options_map.h>
@@ -169,6 +171,19 @@ void check_conv1d(Module& module, int length) {
 constexpr int kGeluOld1dDispatchCap = 4 * 64 * 65535;
 constexpr int kGelu2dDispatchBoundary = kGeluOld1dDispatchCap + 1;
 constexpr int kGeluPatternSize = 257;
+constexpr int kSliceInputColumns = 65;
+constexpr int kSliceOutputColumns = 64;
+constexpr int kSlice2dRows = 65536;
+constexpr int kSlice1dRows = 65535;
+constexpr int kSlicePatternSize = 4093;
+constexpr int kSliceDualRows = 512;
+constexpr int kSliceDualInputColumns = 8961;
+constexpr int kSliceDualOutputColumns = 8960;
+constexpr int kCatInputColumns = 65;
+constexpr int kCatOutputColumns = 66;
+constexpr int kCat2dRows = 64527;
+constexpr int kCat1dRows = 64526;
+constexpr int kCatPatternSize = 4091;
 
 void check_gelu_2d(Module& module, int elements) {
   std::array<float, kGeluPatternSize> golden = {};
@@ -196,6 +211,163 @@ void check_gelu_2d(Module& module, int elements) {
   }
   EXPECT_LT(error, 1e-4f) << "gelu elements=" << elements
                           << " max_err=" << error;
+}
+
+float slice_value(size_t linear_index, int salt) {
+  return static_cast<float>(
+      (linear_index * 17 + static_cast<size_t>(salt) * 101) %
+      kSlicePatternSize);
+}
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+bool slice_profile_available() {
+  const auto* context = get_default_webgpu_context();
+  return std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr &&
+      context != nullptr && context->timestamp_supported &&
+      context->querypool != nullptr;
+}
+
+void expect_slice_profile(int rows) {
+  const auto* context = get_default_webgpu_context();
+  ASSERT_NE(context, nullptr);
+  ASSERT_NE(context->querypool, nullptr);
+  const auto& profile = context->querypool->results();
+  const auto slice =
+      std::find_if(profile.begin(), profile.end(), [](const auto& duration) {
+        return duration.kernel_name == "slice";
+      });
+  ASSERT_NE(slice, profile.end()) << "missing slice dispatch for rows=" << rows;
+  const std::array<uint32_t, 3> expected = rows == kSlice2dRows
+      ? std::array<uint32_t, 3>{256, 256, 1}
+      : std::array<uint32_t, 3>{65535, 1, 1};
+  EXPECT_EQ(slice->global_wg, expected) << "slice rows=" << rows;
+}
+#endif
+
+void check_slice_2d(Module& module, int rows, int salt) {
+  const size_t input_numel = static_cast<size_t>(rows) * kSliceInputColumns;
+  std::vector<float> input(input_numel);
+  for (size_t i = 0; i < input.size(); ++i) {
+    input[i] = slice_value(i, salt);
+  }
+  auto tensor = make_tensor_ptr({rows, kSliceInputColumns}, std::move(input));
+  auto result = module.forward({EValue(tensor)});
+  ASSERT_TRUE(
+      result.ok() && result.get().size() == 1 && result.get()[0].isTensor())
+      << "slice rows=" << rows << " forward failed";
+  const auto& output = result.get()[0].toTensor();
+  ASSERT_EQ(output.dim(), 2);
+  ASSERT_EQ(output.size(0), rows);
+  ASSERT_EQ(output.size(1), kSliceOutputColumns);
+  const size_t output_numel = static_cast<size_t>(rows) * kSliceOutputColumns;
+  ASSERT_EQ(static_cast<size_t>(output.numel()), output_numel);
+  const float* data = output.const_data_ptr<float>();
+  for (size_t i = 0; i < output_numel; ++i) {
+    const size_t row = i / kSliceOutputColumns;
+    const size_t column = i % kSliceOutputColumns;
+    const size_t input_index = row * kSliceInputColumns + column + 1;
+    ASSERT_EQ(data[i], slice_value(input_index, salt))
+        << "slice rows=" << rows << " output index=" << i;
+  }
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  if (slice_profile_available()) {
+    expect_slice_profile(rows);
+  }
+#endif
+}
+
+void check_slice_dual_store() {
+  auto input = read_bin(g_dir + "/slice_dual_store.input.bin");
+  auto golden0 = read_bin(g_dir + "/slice_dual_store.out0.golden.bin");
+  auto golden1 = read_bin(g_dir + "/slice_dual_store.out1.golden.bin");
+  const size_t input_numel =
+      static_cast<size_t>(kSliceDualRows) * kSliceDualInputColumns;
+  const size_t output_numel =
+      static_cast<size_t>(kSliceDualRows) * kSliceDualOutputColumns;
+  ASSERT_EQ(input.size(), input_numel);
+  ASSERT_EQ(golden0.size(), output_numel);
+  ASSERT_EQ(golden1.size(), output_numel);
+
+  Module module(g_dir + "/slice_dual_store.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load slice_dual_store.pte";
+  auto tensor = make_tensor_ptr(
+      {kSliceDualRows, kSliceDualInputColumns}, std::move(input));
+  auto result = module.forward({EValue(tensor)});
+  ASSERT_TRUE(result.ok()) << "slice dual-store forward failed";
+  ASSERT_EQ(result.get().size(), 2u);
+  const std::array<const std::vector<float>*, 2> goldens = {&golden0, &golden1};
+  for (size_t output_index = 0; output_index < goldens.size(); ++output_index) {
+    ASSERT_TRUE(result.get()[output_index].isTensor());
+    const auto& output = result.get()[output_index].toTensor();
+    ASSERT_EQ(output.dim(), 2);
+    ASSERT_EQ(output.size(0), kSliceDualRows);
+    ASSERT_EQ(output.size(1), kSliceDualOutputColumns);
+    ASSERT_EQ(static_cast<size_t>(output.numel()), output_numel);
+    std::vector<float> actual(
+        output.const_data_ptr<float>(),
+        output.const_data_ptr<float>() + output_numel);
+    EXPECT_EQ(max_err(actual, *goldens[output_index]), 0.0f)
+        << "slice dual-store output " << output_index;
+  }
+
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  if (slice_profile_available()) {
+    const auto* context = get_default_webgpu_context();
+    const auto& profile = context->querypool->results();
+    const auto slice_count =
+        std::count_if(profile.begin(), profile.end(), [](const auto& duration) {
+          return duration.kernel_name == "slice";
+        });
+    EXPECT_EQ(slice_count, 1) << "dual-store must replace two slices with one";
+    const auto slice =
+        std::find_if(profile.begin(), profile.end(), [](const auto& duration) {
+          return duration.kernel_name == "slice";
+        });
+    ASSERT_NE(slice, profile.end());
+    EXPECT_EQ(slice->global_wg, (std::array<uint32_t, 3>{268, 268, 1}));
+  }
+#endif
+}
+
+float cat_value(size_t linear_index, int salt) {
+  return static_cast<float>(
+      (linear_index * 19 + static_cast<size_t>(salt) * 103) % kCatPatternSize);
+}
+
+void check_cat_2d(Module& module, int rows, int salt) {
+  const size_t main_numel = static_cast<size_t>(rows) * kCatInputColumns;
+  std::vector<float> main_input(main_numel);
+  std::vector<float> suffix(static_cast<size_t>(rows));
+  for (size_t i = 0; i < main_input.size(); ++i) {
+    main_input[i] = cat_value(i, salt);
+  }
+  for (size_t i = 0; i < suffix.size(); ++i) {
+    suffix[i] = cat_value(i, salt + 100);
+  }
+
+  auto main_tensor =
+      make_tensor_ptr({rows, kCatInputColumns}, std::move(main_input));
+  auto suffix_tensor = make_tensor_ptr({rows, 1}, std::move(suffix));
+  auto result = module.forward({EValue(main_tensor), EValue(suffix_tensor)});
+  ASSERT_TRUE(
+      result.ok() && result.get().size() == 1 && result.get()[0].isTensor())
+      << "cat rows=" << rows << " forward failed";
+  const auto& output = result.get()[0].toTensor();
+  ASSERT_EQ(output.dim(), 2);
+  ASSERT_EQ(output.size(0), rows);
+  ASSERT_EQ(output.size(1), kCatOutputColumns);
+  const size_t output_numel = static_cast<size_t>(rows) * kCatOutputColumns;
+  ASSERT_EQ(static_cast<size_t>(output.numel()), output_numel);
+  const float* data = output.const_data_ptr<float>();
+  for (size_t i = 0; i < output_numel; ++i) {
+    const size_t row = i / kCatOutputColumns;
+    const size_t column = i % kCatOutputColumns;
+    const float expected = column < kCatInputColumns
+        ? cat_value(row * kCatInputColumns + column, salt)
+        : cat_value(row, salt + 100);
+    ASSERT_EQ(data[i], expected)
+        << "cat rows=" << rows << " output index=" << i;
+  }
 }
 
 // Dynamic quantized linear: input [M, kLinK] -> output [M, n]. kLinN is the
@@ -984,6 +1156,55 @@ TEST(DynamicShape, GeluCrosses2dDispatchBoundary) {
         kGelu2dDispatchBoundary}) {
     check_gelu_2d(module, elements);
   }
+}
+
+TEST(DynamicShape, SliceCrosses2dDispatchBoundary) {
+  if (std::getenv("WEBGPU_TEST_HEAVY") == nullptr) {
+    GTEST_SKIP() << "WEBGPU_TEST_HEAVY not set";
+  }
+  const auto folded =
+      utils::fold_workgroup_count_2d(kSlice2dRows, 65535, "slice(test)");
+  EXPECT_EQ(folded.x, 256);
+  EXPECT_EQ(folded.y, 256);
+  const auto linear =
+      utils::fold_workgroup_count_2d(kSlice1dRows, 65535, "slice(test)");
+  EXPECT_EQ(linear.x, 65535);
+  EXPECT_EQ(linear.y, 1);
+
+  Module module(g_dir + "/dyn_slice_2d.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load dyn_slice_2d.pte";
+  int salt = 1;
+  for (int rows :
+       {kSlice2dRows, kSlice1dRows, kSlice2dRows, kSlice1dRows, kSlice2dRows}) {
+    check_slice_2d(module, rows, salt++);
+  }
+}
+
+TEST(DynamicShape, CatCrosses2dDispatchBoundary) {
+  if (std::getenv("WEBGPU_TEST_HEAVY") == nullptr) {
+    GTEST_SKIP() << "WEBGPU_TEST_HEAVY not set";
+  }
+  const auto folded = utils::fold_workgroup_count_2d(65536, 65535, "cat(test)");
+  EXPECT_EQ(folded.x, 256);
+  EXPECT_EQ(folded.y, 256);
+  const auto linear = utils::fold_workgroup_count_2d(65535, 65535, "cat(test)");
+  EXPECT_EQ(linear.x, 65535);
+  EXPECT_EQ(linear.y, 1);
+
+  Module module(g_dir + "/dyn_cat_2d.pte");
+  ASSERT_EQ(module.load_forward(), Error::Ok) << "load dyn_cat_2d.pte";
+  int salt = 1;
+  for (int rows :
+       {kCat2dRows, kCat1dRows, kCat2dRows, kCat1dRows, kCat2dRows}) {
+    check_cat_2d(module, rows, salt++);
+  }
+}
+
+TEST(DynamicShape, SliceDualStoreWritesBothDestinations) {
+  if (std::getenv("WEBGPU_TEST_HEAVY") == nullptr) {
+    GTEST_SKIP() << "WEBGPU_TEST_HEAVY not set";
+  }
+  check_slice_dual_store();
 }
 
 TEST(DynamicShape, ExpandCopyRejectsDynamicShapesAtLoad) {
@@ -2103,9 +2324,11 @@ int main(int argc, char** argv) {
     ctx = create_webgpu_context();
   } catch (const std::exception& e) {
     std::printf("SKIP: no WebGPU device (%s)\n", e.what());
-    return 0;
+    return required_device_failure_exit_code(
+        std::getenv("WEBGPU_REQUIRE_DEVICE") != nullptr);
   }
   set_default_webgpu_context(&ctx);
+  std::printf("WebGPU device acquired (native)\n");
 
   const int rc = RUN_ALL_TESTS();
   set_default_webgpu_context(nullptr);

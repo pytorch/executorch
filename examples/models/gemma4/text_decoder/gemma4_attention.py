@@ -34,6 +34,30 @@ def rotate_half(x: torch.Tensor) -> torch.Tensor:
     return torch.cat((-x2, x1), dim=-1)
 
 
+def precompute_freqs_cis(
+    head_dim: int,
+    rotary_dim: int,
+    end: int,
+    theta: float,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if head_dim <= 0 or rotary_dim <= 0 or rotary_dim > head_dim:
+        raise ValueError("RoPE dimensions must satisfy 0 < rotary_dim <= head_dim")
+    if head_dim % 2 != 0 or rotary_dim % 2 != 0:
+        raise ValueError("RoPE dimensions must be even")
+
+    inv_freq_rotated = 1.0 / (
+        theta ** (torch.arange(0, rotary_dim, 2).float() / head_dim)
+    )
+    nope_angles = head_dim // 2 - rotary_dim // 2
+    inv_freq = torch.cat(
+        (inv_freq_rotated, torch.zeros(nope_angles, dtype=torch.float32))
+    )
+    positions = torch.arange(end, dtype=torch.float32)
+    freqs = torch.outer(positions, inv_freq)
+    emb = torch.cat((freqs, freqs), dim=-1)
+    return torch.cos(emb), torch.sin(emb)
+
+
 def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
@@ -43,16 +67,16 @@ def apply_rotary_emb(
     """Apply rotary position embeddings to Q and K (HuggingFace style).
 
     Args:
-        xq: Query tensor of shape [batch, num_heads, seq_len, rotary_dim]
-        xk: Key tensor of shape [batch, num_kv_heads, seq_len, rotary_dim]
+        xq: Query tensor of shape [batch, seq_len, num_heads, head_dim]
+        xk: Key tensor of shape [batch, seq_len, num_kv_heads, head_dim]
         freqs_cos: Cosine frequencies [seq_len, rotary_dim]
         freqs_sin: Sine frequencies [seq_len, rotary_dim]
 
     Returns:
         Tuple of (rotated_q, rotated_k)
     """
-    freqs_cos = freqs_cos.unsqueeze(0).unsqueeze(0)
-    freqs_sin = freqs_sin.unsqueeze(0).unsqueeze(0)
+    freqs_cos = freqs_cos.unsqueeze(1)
+    freqs_sin = freqs_sin.unsqueeze(1)
 
     xq_out = (xq.float() * freqs_cos) + (rotate_half(xq.float()) * freqs_sin)
     xk_out = (xk.float() * freqs_cos) + (rotate_half(xk.float()) * freqs_sin)
@@ -66,8 +90,8 @@ def apply_rotary_emb_single(
     freqs_sin: torch.Tensor,
 ) -> torch.Tensor:
     """Apply rotary position embeddings to a single tensor (Q only)."""
-    freqs_cos = freqs_cos.unsqueeze(0).unsqueeze(0)
-    freqs_sin = freqs_sin.unsqueeze(0).unsqueeze(0)
+    freqs_cos = freqs_cos.unsqueeze(1)
+    freqs_sin = freqs_sin.unsqueeze(1)
 
     x_out = (x.float() * freqs_cos) + (rotate_half(x.float()) * freqs_sin)
 
@@ -95,8 +119,10 @@ class Gemma4KVCache(nn.Module):
         use_index_copy: bool = False,
     ):
         super().__init__()
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
         self.use_index_copy = use_index_copy
-        cache_shape = (max_batch_size, num_kv_heads, max_seq_len, head_dim)
+        cache_shape = (max_batch_size, max_seq_len, num_kv_heads, head_dim)
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False
         )
@@ -116,15 +142,26 @@ class Gemma4KVCache(nn.Module):
             Tuple of (full_k, full_v) - returns entire cache
         """
         if self.use_index_copy:
-            self.k_cache.index_copy_(2, input_pos, k_val)
-            self.v_cache.index_copy_(2, input_pos, v_val)
+            self.k_cache.index_copy_(1, input_pos, k_val)
+            self.v_cache.index_copy_(1, input_pos, v_val)
         else:
-            seq_len = k_val.size(2)
+            seq_len = k_val.size(1)
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
             torch._check(start_pos >= 0)
-            self.k_cache.narrow(2, start_pos, seq_len).copy_(k_val)
-            self.v_cache.narrow(2, start_pos, seq_len).copy_(v_val)
+            if not torch.compiler.is_compiling():
+                if start_pos + seq_len > self.k_cache.size(1):
+                    raise ValueError("Gemma4 KV update exceeds cache capacity")
+                expected_pos = torch.arange(
+                    start_pos,
+                    start_pos + seq_len,
+                    dtype=input_pos.dtype,
+                    device=input_pos.device,
+                )
+                if input_pos.dim() != 1 or not torch.equal(input_pos, expected_pos):
+                    raise ValueError("Gemma4 KV positions must be contiguous")
+            torch.ops.llama.update_cache.default(k_val, self.k_cache, start_pos)
+            torch.ops.llama.update_cache.default(v_val, self.v_cache, start_pos)
 
         return self.k_cache, self.v_cache
 
@@ -201,19 +238,8 @@ class Gemma4Attention(nn.Module):
         else:
             self.rotary_dim = self.head_dim
 
-        # RoPE: store only inv_freq; cos/sin computed on the fly per forward.
-        # Partial RoPE pads with zeros for non-rotated dims so rotate_half pairs correctly.
-        rope_angles = self.rotary_dim // 2
-        inv_freq_rotated = 1.0 / (
-            self.rope_theta
-            ** (torch.arange(0, self.rotary_dim, 2).float() / self.head_dim)
-        )
-        nope_angles = self.head_dim // 2 - rope_angles
-        if nope_angles > 0:
-            inv_freq = torch.cat([inv_freq_rotated, torch.zeros(nope_angles)])
-        else:
-            inv_freq = inv_freq_rotated
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
+        self.register_buffer("freqs_cos", None, persistent=False)
+        self.register_buffer("freqs_sin", None, persistent=False)
 
         # KV cache — skip allocation for shared layers (they use donor's KV)
         self.use_index_copy = config.use_index_copy_for_kv_cache
@@ -269,12 +295,32 @@ class Gemma4Attention(nn.Module):
         self,
         input_pos: Optional[torch.Tensor],
         seq_len: int,
+        query_start_pos: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute RoPE cos/sin from inv_freq for the current positions."""
-        pos = input_pos if input_pos is not None else torch.arange(seq_len)
-        freqs = torch.outer(pos.float(), self.inv_freq)
-        emb = torch.cat((freqs, freqs), dim=-1)
-        return torch.cos(emb), torch.sin(emb)
+        """Slice shared RoPE tables for the current contiguous positions."""
+        if self.freqs_cos is None or self.freqs_sin is None:
+            raise RuntimeError("Gemma4 RoPE tables were not initialized")
+        if (
+            self.use_index_copy
+            and query_start_pos is None
+            and input_pos is not None
+        ):
+            return (
+                torch.index_select(self.freqs_cos, 0, input_pos),
+                torch.index_select(self.freqs_sin, 0, input_pos),
+            )
+        start_pos = (
+            query_start_pos
+            if query_start_pos is not None
+            else (0 if input_pos is None else input_pos[0].item())
+        )
+        torch._check_is_size(start_pos)
+        torch._check(start_pos >= 0)
+        torch._check(start_pos + seq_len <= self.freqs_cos.size(0))
+        return (
+            self.freqs_cos.narrow(0, start_pos, seq_len),
+            self.freqs_sin.narrow(0, start_pos, seq_len),
+        )
 
     def _slice_cache_to_actual(
         self,
@@ -300,9 +346,9 @@ class Gemma4Attention(nn.Module):
         actual_kv_len = start_pos + seq_len
         torch._check_is_size(actual_kv_len)
         torch._check(actual_kv_len >= seq_len)
-        torch._check(actual_kv_len <= k.size(2))
-        k = k.narrow(2, 0, actual_kv_len)
-        v = v.narrow(2, 0, actual_kv_len)
+        torch._check(actual_kv_len <= k.size(1))
+        k = k.narrow(1, 0, actual_kv_len)
+        v = v.narrow(1, 0, actual_kv_len)
         if attn_mask is not None:
             attn_mask = attn_mask.narrow(1, 0, actual_kv_len)
         return k, v, attn_mask
@@ -313,8 +359,15 @@ class Gemma4Attention(nn.Module):
         input_pos: torch.Tensor,
         seq_len: int,
         kv_len: int,
+        query_start_pos: Optional[int] = None,
     ) -> torch.Tensor:
         """Slice a [max_seq_len, max_seq_len] mask to current query positions x cache."""
+        if query_start_pos is not None:
+            torch._check_is_size(query_start_pos)
+            torch._check(query_start_pos >= 0)
+            return base_mask.narrow(0, query_start_pos, seq_len).narrow(
+                1, 0, kv_len
+            )
         if self.use_index_copy:
             return torch.index_select(base_mask, 0, input_pos).narrow(1, 0, kv_len)
         start_pos = input_pos[0].item()
@@ -327,6 +380,7 @@ class Gemma4Attention(nn.Module):
         input_pos: Optional[torch.Tensor],
         seq_len: int,
         kv_len: int,
+        query_start_pos: Optional[int] = None,
     ) -> torch.Tensor:
         """Combined causal + sliding-window mask for the current step."""
         using_cached_kv = (
@@ -335,14 +389,20 @@ class Gemma4Attention(nn.Module):
             and kv_len > seq_len
         )
         if using_cached_kv:
-            mask = self._slice_mask(self.causal_mask, input_pos, seq_len, kv_len)
+            mask = self._slice_mask(
+                self.causal_mask, input_pos, seq_len, kv_len, query_start_pos
+            )
         else:
             mask = self.causal_mask[:seq_len, :seq_len]
 
         if self.sliding_window is not None and self.sliding_window_mask is not None:
             if using_cached_kv:
                 sw_mask = self._slice_mask(
-                    self.sliding_window_mask, input_pos, seq_len, kv_len
+                    self.sliding_window_mask,
+                    input_pos,
+                    seq_len,
+                    kv_len,
+                    query_start_pos,
                 )
             else:
                 sw_mask = self.sliding_window_mask[:seq_len, :seq_len]
@@ -355,6 +415,7 @@ class Gemma4Attention(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
         shared_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        query_start_pos: Optional[int] = None,
     ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """Forward pass for attention.
 
@@ -363,6 +424,7 @@ class Gemma4Attention(nn.Module):
             input_pos: Current position(s) for KV cache update
             mask: Optional attention mask
             shared_kv: Optional tuple of (k, v) from donor layer for YOCO
+            query_start_pos: Optional absolute position for a selected query row
 
         Returns:
             Tuple of:
@@ -373,32 +435,32 @@ class Gemma4Attention(nn.Module):
 
         # Compute Q projection
         q = self.q_proj(hidden_states)
-        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim)
         q = self.q_norm(q)
 
         # For KV shared layers, use shared K/V from donor layer
         if self.is_kv_shared_layer and shared_kv is not None:
             k, v = shared_kv
-            freqs_cos, freqs_sin = self._get_rope_freqs(input_pos, seq_len)
+            freqs_cos, freqs_sin = self._get_rope_freqs(
+                input_pos, seq_len, query_start_pos
+            )
             q = self._apply_rope_single(q, freqs_cos, freqs_sin)
         else:
             # Compute K, V projections
             k = self.k_proj(hidden_states)
             v = self.v_proj(hidden_states)
 
-            k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(
-                1, 2
-            )
-            v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(
-                1, 2
-            )
+            k = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
+            v = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
 
             # Apply KV norms
             k = self.k_norm(k)
             v = self.v_norm(v)
 
             # Get RoPE frequencies
-            freqs_cos, freqs_sin = self._get_rope_freqs(input_pos, seq_len)
+            freqs_cos, freqs_sin = self._get_rope_freqs(
+                input_pos, seq_len, query_start_pos
+            )
 
             # Apply RoPE (partial for full attention, full for sliding)
             q, k = self._apply_rope(q, k, freqs_cos, freqs_sin)
@@ -430,53 +492,66 @@ class Gemma4Attention(nn.Module):
             # and tiles attention so the [seq x seq] matrix never materializes.
             # Build mask with the static kv_len first (so _build_attn_mask sees
             # a constant), then slice K/V/mask to the actually-valid range.
-            full_kv_len = k.size(2)
-            start_pos = 0 if self.use_index_copy else input_pos[0].item()
-            attn_mask = self._build_attn_mask(input_pos, seq_len, full_kv_len)
+            full_kv_len = k.size(1)
+            start_pos = (
+                query_start_pos
+                if query_start_pos is not None
+                else (0 if self.use_index_copy else input_pos[0].item())
+            )
+            attn_mask = self._build_attn_mask(
+                input_pos, seq_len, full_kv_len, query_start_pos
+            )
             if not self.use_index_copy:
                 k, v, attn_mask = self._slice_cache_to_actual(
                     k, v, start_pos, seq_len, attn_mask
                 )
 
-            # custom_sdpa expects [bs, seq_len, n_heads, head_dim]
-            q_sdpa = q.transpose(1, 2)
-            k_sdpa = k.transpose(1, 2)
-            v_sdpa = v.transpose(1, 2)
-
             # custom_sdpa positional args: (q, k, v, start_pos, attn_mask, dropout, is_causal, scale).
             # The op schema has a typo (`drpout_p`); avoid kwargs.
             attn_output = torch.ops.llama.custom_sdpa(
-                q_sdpa,
-                k_sdpa,
-                v_sdpa,
+                q,
+                k,
+                v,
                 start_pos,
                 attn_mask,
                 0.0,
                 False,
                 self.scaling,
             )
-            attn_output = attn_output.view(batch_size, seq_len, -1)
+            attn_output = attn_output.view(
+                batch_size, seq_len, self.num_heads * self.head_dim
+            )
         else:
             # Same cache-slice optimization as the custom_sdpa branch above.
             # Build mask first with full kv_len (so _build_attn_mask sees a
             # constant), then slice K/V/mask to the actually-valid range.
             if mask is None:
-                mask = self._build_attn_mask(input_pos, seq_len, k.size(2))
-            if not self.use_index_copy and input_pos is not None:
-                k, v, mask = self._slice_cache_to_actual(
-                    k, v, input_pos[0].item(), seq_len, mask
+                mask = self._build_attn_mask(
+                    input_pos, seq_len, k.size(1), query_start_pos
                 )
-            k = self._repeat_kv(k)
-            v = self._repeat_kv(v)
-            attn_weights = torch.matmul(q, k.transpose(-2, -1)) * self.scaling
+            if not self.use_index_copy and input_pos is not None:
+                start_pos = (
+                    query_start_pos
+                    if query_start_pos is not None
+                    else input_pos[0].item()
+                )
+                k, v, mask = self._slice_cache_to_actual(
+                    k, v, start_pos, seq_len, mask
+                )
+            q_bhsd = q.transpose(1, 2)
+            k_bhsd = self._repeat_kv(k.transpose(1, 2))
+            v_bhsd = self._repeat_kv(v.transpose(1, 2))
+            attn_weights = torch.matmul(q_bhsd, k_bhsd.transpose(-2, -1)) * self.scaling
 
             attn_weights = attn_weights + mask.unsqueeze(0).unsqueeze(0)
             attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).type_as(
-                q
+                q_bhsd
             )
-            attn_output = torch.matmul(attn_weights, v)
+            attn_output = torch.matmul(attn_weights, v_bhsd)
             attn_output = attn_output.transpose(1, 2).contiguous()
-            attn_output = attn_output.view(batch_size, seq_len, -1)
+            attn_output = attn_output.view(
+                batch_size, seq_len, self.num_heads * self.head_dim
+            )
 
         attn_output = self.o_proj(attn_output)
 
@@ -513,8 +588,8 @@ class Gemma4QuantizedKVCache(nn.Module):
         self.use_index_copy = use_index_copy
         self.return_float_values = return_float_values
 
-        cache_shape = (max_batch_size, num_kv_heads, max_seq_len, head_dim)
-        scale_shape = (max_batch_size, num_kv_heads, max_seq_len, 1)
+        cache_shape = (max_batch_size, max_seq_len, num_kv_heads, head_dim)
+        scale_shape = (max_batch_size, max_seq_len, num_kv_heads, 1)
 
         self.register_buffer("k_cache", torch.zeros(cache_shape, dtype=torch.int8))
         self.register_buffer("v_cache", torch.zeros(cache_shape, dtype=torch.int8))
@@ -549,19 +624,19 @@ class Gemma4QuantizedKVCache(nn.Module):
         quantized_v, v_scales = self._quantize(v_val)
 
         if self.use_index_copy:
-            self.k_cache.index_copy_(2, input_pos, quantized_k)
-            self.v_cache.index_copy_(2, input_pos, quantized_v)
-            self.k_cache_scales.index_copy_(2, input_pos, k_scales)
-            self.v_cache_scales.index_copy_(2, input_pos, v_scales)
+            self.k_cache.index_copy_(1, input_pos, quantized_k)
+            self.v_cache.index_copy_(1, input_pos, quantized_v)
+            self.k_cache_scales.index_copy_(1, input_pos, k_scales)
+            self.v_cache_scales.index_copy_(1, input_pos, v_scales)
         else:
-            seq_len = k_val.size(2)
+            seq_len = k_val.size(1)
             start_pos = input_pos[0].item()
             torch._check_is_size(start_pos)
             torch._check(start_pos >= 0)
-            self.k_cache.narrow(2, start_pos, seq_len).copy_(quantized_k)
-            self.v_cache.narrow(2, start_pos, seq_len).copy_(quantized_v)
-            self.k_cache_scales.narrow(2, start_pos, seq_len).copy_(k_scales)
-            self.v_cache_scales.narrow(2, start_pos, seq_len).copy_(v_scales)
+            self.k_cache.narrow(1, start_pos, seq_len).copy_(quantized_k)
+            self.v_cache.narrow(1, start_pos, seq_len).copy_(quantized_v)
+            self.k_cache_scales.narrow(1, start_pos, seq_len).copy_(k_scales)
+            self.v_cache_scales.narrow(1, start_pos, seq_len).copy_(v_scales)
 
         if not self.return_float_values:
             return self.k_cache, self.v_cache
@@ -571,11 +646,11 @@ class Gemma4QuantizedKVCache(nn.Module):
         v_out = (self.v_cache.to(torch.float32) * self.v_cache_scales).to(self.dtype)
 
         if self.use_index_copy:
-            k_out.index_copy_(2, input_pos, k_val)
-            v_out.index_copy_(2, input_pos, v_val)
+            k_out.index_copy_(1, input_pos, k_val)
+            v_out.index_copy_(1, input_pos, v_val)
         else:
-            k_out.narrow(2, start_pos, seq_len).copy_(k_val)
-            v_out.narrow(2, start_pos, seq_len).copy_(v_val)
+            k_out.narrow(1, start_pos, seq_len).copy_(k_val)
+            v_out.narrow(1, start_pos, seq_len).copy_(v_val)
 
         return k_out, v_out
 
@@ -584,7 +659,7 @@ class Gemma4QuantizedKVCache(nn.Module):
         cls, kv_cache: Gemma4KVCache, return_float_values: bool = True
     ) -> "Gemma4QuantizedKVCache":
         """Create quantized KV cache from float KV cache."""
-        max_batch_size, num_kv_heads, max_seq_len, head_dim = kv_cache.k_cache.shape
+        max_batch_size, max_seq_len, num_kv_heads, head_dim = kv_cache.k_cache.shape
         dtype = kv_cache.k_cache.dtype
         return cls(
             max_batch_size,

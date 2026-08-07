@@ -18,8 +18,10 @@ fn elem_bool(i: u32) -> bool {
 
 // One thread per output u32 word packs 4 bool bytes -> no inter-thread race.
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let word_idx = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    let word_idx = gid.x + gid.y * (num_workgroups.x * wg_size);
     let n_words = (params.num_elements + 3u) / 4u;
     if (word_idx >= n_words) {
         return;

@@ -22,6 +22,8 @@ from executorch.backends.vulkan.utils import (
     CONTIGUOUS_ANY,
     CONTIGUOUS_BUFFER,
     DEFAULT_TEXTURE_LIMITS,
+    extents_are_valid,
+    filter_invalid_reprs,
     HEIGHT_PACKED_TEXTURE,
     make_tensor_repset,
     NO_STORAGE,
@@ -31,6 +33,7 @@ from executorch.backends.vulkan.utils import (
     PACKED_INT8_4W_BUFFER,
     PACKED_INT8_BUFFER,
     PACKED_INT8_CHANNELS_PACKED_BUFFER,
+    required_image_extents,
     TensorRepr,
     TensorReprList,
     TensorRepSet,
@@ -38,6 +41,7 @@ from executorch.backends.vulkan.utils import (
     WIDTH_PACKED_TEXTURE,
 )
 from torch._subclasses.fake_tensor import FakeTensorMode
+from torch.fx.experimental.symbolic_shapes import ShapeEnv
 
 
 def _make_fake_tensor(shape, dtype=torch.float32):
@@ -66,6 +70,94 @@ def _make_tensor_arg_node(shape, dtype=torch.float32):
     fake = _make_fake_tensor(shape, dtype)
     node.meta = {"val": fake}
     return node
+
+
+class _AddOne(torch.nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + 1
+
+
+def _make_backed_extent(maximum: int) -> torch.SymInt:
+    extent = torch.export.Dim(f"extent_{maximum}", min=1, max=maximum)
+    program = torch.export.export(
+        _AddOne(),
+        (torch.randn(10),),
+        dynamic_shapes={"x": {0: extent}},
+    )
+    placeholder = next(node for node in program.graph.nodes if node.op == "placeholder")
+    return placeholder.meta["val"].shape[0]
+
+
+class TestTextureExtentValidation(unittest.TestCase):
+    def test_concrete_texture_extents(self):
+        self.assertTrue(extents_are_valid((512, 1, 2048), DEFAULT_TEXTURE_LIMITS))
+        self.assertFalse(extents_are_valid((512, 1, 2049), DEFAULT_TEXTURE_LIMITS))
+
+    def test_unbacked_texture_extent_is_invalid(self):
+        unbacked = ShapeEnv().create_unbacked_symint()
+        self.assertFalse(
+            extents_are_valid((512, 1, unbacked + 1), DEFAULT_TEXTURE_LIMITS)
+        )
+
+    def test_symbolic_texture_extent_uses_declared_range(self):
+        self.assertTrue(
+            extents_are_valid(
+                (512, 1, _make_backed_extent(1024)), DEFAULT_TEXTURE_LIMITS
+            )
+        )
+        self.assertFalse(
+            extents_are_valid(
+                (512, 1, _make_backed_extent(4096)), DEFAULT_TEXTURE_LIMITS
+            )
+        )
+
+    def test_symbolic_texture_extents_after_packing(self):
+        width_within_limit = required_image_extents(
+            torch.Size((1, 1, 1, _make_backed_extent(65536))),
+            VkMemoryLayout.TENSOR_WIDTH_PACKED,
+        )
+        width_crossing_limit = required_image_extents(
+            torch.Size((1, 1, 1, _make_backed_extent(65537))),
+            VkMemoryLayout.TENSOR_WIDTH_PACKED,
+        )
+        channels_within_limit = required_image_extents(
+            torch.Size((2, _make_backed_extent(4096), 1, 1)),
+            VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+        )
+        channels_crossing_limit = required_image_extents(
+            torch.Size((2, _make_backed_extent(4097), 1, 1)),
+            VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+        )
+
+        self.assertTrue(extents_are_valid(width_within_limit, DEFAULT_TEXTURE_LIMITS))
+        self.assertFalse(
+            extents_are_valid(width_crossing_limit, DEFAULT_TEXTURE_LIMITS)
+        )
+        self.assertTrue(
+            extents_are_valid(channels_within_limit, DEFAULT_TEXTURE_LIMITS)
+        )
+        self.assertFalse(
+            extents_are_valid(channels_crossing_limit, DEFAULT_TEXTURE_LIMITS)
+        )
+
+    def test_unknown_texture_extent_preserves_only_buffer_layouts(self):
+        unbacked = ShapeEnv().create_unbacked_symint()
+        tensor_val = MagicMock()
+        tensor_val.shape = (1, unbacked + 1, 1, 512)
+
+        result = filter_invalid_reprs(
+            tensor_val, ANY_STORAGE, DEFAULT_TEXTURE_LIMITS
+        )
+        self.assertEqual(
+            result.valid_buffer_layouts,
+            ANY_STORAGE.valid_buffer_layouts,
+        )
+        self.assertFalse(result.valid_texture_layouts)
+
+        texture_only = filter_invalid_reprs(
+            tensor_val, ANY_TEXTURE, DEFAULT_TEXTURE_LIMITS
+        )
+        self.assertTrue(texture_only.is_empty())
 
 
 class TestTensorRepSet(unittest.TestCase):

@@ -9,6 +9,7 @@
 #include <executorch/backends/webgpu/runtime/WebGPUCompat.h>
 #include <executorch/backends/webgpu/runtime/WebGPUDevice.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -184,16 +185,31 @@ WebGPUContext create_webgpu_context() {
 }
 
 namespace {
-WebGPUContext* g_default_context = nullptr;
+std::atomic<WebGPUContext*> g_default_context{nullptr};
 } // namespace
 
 void set_default_webgpu_context(WebGPUContext* ctx) {
-  g_default_context = ctx;
+  g_default_context.store(ctx, std::memory_order_release);
+}
+
+WebGPUContext* get_explicit_default_webgpu_context() {
+  return g_default_context.load(std::memory_order_acquire);
+}
+
+bool compare_and_set_default_webgpu_context(
+    WebGPUContext* expected,
+    WebGPUContext* desired) {
+  return g_default_context.compare_exchange_strong(
+      expected,
+      desired,
+      std::memory_order_acq_rel,
+      std::memory_order_acquire);
 }
 
 WebGPUContext* get_default_webgpu_context() {
-  if (g_default_context) {
-    return g_default_context;
+  if (WebGPUContext* explicit_context =
+          get_explicit_default_webgpu_context()) {
+    return explicit_context;
   }
 #if !defined(__EMSCRIPTEN__)
   // Native-only lazy process-wide context, mirroring Vulkan api::context().

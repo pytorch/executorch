@@ -10,11 +10,14 @@
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
+#include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_int32_wgsl.h>
 #include <executorch/backends/webgpu/runtime/ops/binary_op/binary_sub_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/sub/SubStorage.h>
 
 #include <webgpu/webgpu.h>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -30,16 +33,39 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   WGPUDevice device = graph.device();
 
-  float alpha = 1.0f;
-  if (graph.get_value_type(alpha_id) == WebGPUGraph::ValueType::Int) {
-    alpha = static_cast<float>(graph.get_int(alpha_id));
-  } else if (graph.get_value_type(alpha_id) == WebGPUGraph::ValueType::Double) {
-    alpha = static_cast<float>(graph.get_double(alpha_id));
+  const auto alpha_type = graph.get_value_type(alpha_id);
+  int64_t alpha_int64 = 1;
+  float alpha_fp32 = 1.0f;
+  if (alpha_type == WebGPUGraph::ValueType::Int) {
+    alpha_int64 = graph.get_int(alpha_id);
+    alpha_fp32 = static_cast<float>(alpha_int64);
+  } else if (alpha_type == WebGPUGraph::ValueType::Double) {
+    alpha_fp32 = static_cast<float>(graph.get_double(alpha_id));
+  } else {
+    throw std::runtime_error("sub: alpha must be an int or double scalar");
   }
 
   const auto& in1_tensor = graph.get_tensor(in1_id);
   const auto& in2_tensor = graph.get_tensor(in2_id);
   const auto& out_tensor = graph.get_tensor(out_id);
+
+  const bool all_int32 =
+      classify_sub_storage(in1_tensor, in2_tensor, out_tensor) ==
+      SubStorage::Int32;
+  if (all_int32 &&
+      (alpha_type != WebGPUGraph::ValueType::Int ||
+       alpha_int64 < std::numeric_limits<int32_t>::min() ||
+       alpha_int64 > std::numeric_limits<int32_t>::max())) {
+    throw std::runtime_error("sub: int32 operands require an int32 alpha");
+  }
+
+  int32_t rhs = 0;
+  if (all_int32 && alpha_int64 == 1 && out_tensor.dims == in1_tensor.dims &&
+      in2_tensor.is_int && in2_tensor.elem_size == sizeof(int32_t) &&
+      in2_tensor.nbytes == sizeof(int32_t) &&
+      graph.try_read_prepacked_int32_scalar(in2_id, rhs)) {
+    graph.add_input_bias_projection(out_id, in1_id, -static_cast<int64_t>(rhs));
+  }
 
   // Rank guard (NCHW backend is <= 4 dims; 1D dispatch only).
   if (out_tensor.dims.size() > kTensorMetaMaxNdim ||
@@ -58,26 +84,27 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
   fill_tensor_meta_broadcast(in1_tensor, out_ndim, &in1_meta);
   fill_tensor_meta_broadcast(in2_tensor, out_ndim, &in2_meta);
 
-  // fp32-only: nbytes must equal numel * 4 for every operand.
-  if (out_tensor.nbytes !=
-          static_cast<size_t>(out_meta.numel) * sizeof(float) ||
-      in1_tensor.nbytes !=
-          static_cast<size_t>(in1_meta.numel) * sizeof(float) ||
-      in2_tensor.nbytes !=
-          static_cast<size_t>(in2_meta.numel) * sizeof(float)) {
-    throw std::runtime_error("sub: non-fp32 operand (nbytes != numel * 4)");
+  const size_t element_size = all_int32 ? sizeof(int32_t) : sizeof(float);
+  if (out_tensor.nbytes != static_cast<size_t>(out_meta.numel) * element_size ||
+      in1_tensor.nbytes != static_cast<size_t>(in1_meta.numel) * element_size ||
+      in2_tensor.nbytes != static_cast<size_t>(in2_meta.numel) * element_size) {
+    throw std::runtime_error("sub: operand byte size does not match dtype");
   }
 
-  uint32_t wg_size =
-      utils::clamp_workgroup_size(device, kBinarySubWorkgroupSizeX);
-  utils::WgCount workgroup_count =
-      utils::compute_2d_workgroup_count(device, out_meta.numel, wg_size, "sub");
+  const uint32_t default_wg_size =
+      all_int32 ? kBinarySubInt32WorkgroupSizeX : kBinarySubWorkgroupSizeX;
+  const char* shader = all_int32 ? kBinarySubInt32WGSL : kBinarySubWGSL;
+  const char* kernel_name = all_int32 ? "sub_int32" : "sub";
+  uint32_t wg_size = utils::clamp_workgroup_size(device, default_wg_size);
+  utils::WgCount workgroup_count = utils::compute_2d_workgroup_count(
+      device, out_meta.numel, wg_size, kernel_name);
 
   WGPUConstantEntry constants[2] = {};
   constants[0].key = {"wg_size", WGPU_STRLEN};
   constants[0].value = static_cast<double>(wg_size);
   constants[1].key = {"alpha", WGPU_STRLEN};
-  constants[1].value = static_cast<double>(alpha);
+  constants[1].value = all_int32 ? static_cast<double>(alpha_int64)
+                                 : static_cast<double>(alpha_fp32);
 
   WGPUBuffer out_meta_buf =
       utils::make_uniform(device, &out_meta, sizeof(TensorMeta));
@@ -89,7 +116,7 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
       device,
-      kBinarySubWGSL,
+      shader,
       {
           {0,
            WGPUBufferBindingType_ReadOnlyStorage,
@@ -114,45 +141,51 @@ void sub_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       {bundle.pipeline,
        bundle.bind_group,
        workgroup_count.x,
-       "sub",
+       kernel_name,
        workgroup_count.y});
 
   // Dynamic shapes: rebuild all 3 broadcast TensorMeta UBOs + dispatch.
   WGPUBuffer o_buf = out_meta_buf, a_buf = in1_meta_buf, b_buf = in2_meta_buf;
-  auto sub_resize =
-      [in1_id, in2_id, out_id, wg_size, dispatch_idx, o_buf, a_buf, b_buf](
-          WebGPUGraph& g) {
-        const auto& a = g.cur_dims(in1_id);
-        const auto& b = g.cur_dims(in2_id);
-        const size_t r = std::max(a.size(), b.size());
-        std::vector<int64_t> out_d(r, 1);
-        for (size_t i = 0; i < r; i++) {
-          const int64_t av = (i + a.size() < r) ? 1 : a[i - (r - a.size())];
-          const int64_t bv = (i + b.size() < r) ? 1 : b[i - (r - b.size())];
-          if (av != bv && av != 1 && bv != 1) {
-            throw std::runtime_error(
-                "sub(resize): operands are not broadcast-compatible");
-          }
-          out_d[i] = av > bv ? av : bv;
-        }
-        g.set_cur_dims(out_id, out_d);
-        const uint32_t out_ndim = static_cast<uint32_t>(r);
-        WebGPUTensor ta, tb, to;
-        ta.dims = a;
-        tb.dims = b;
-        to.dims = out_d;
-        TensorMeta om, am, bm;
-        fill_tensor_meta_broadcast(to, out_ndim, &om);
-        fill_tensor_meta_broadcast(ta, out_ndim, &am);
-        fill_tensor_meta_broadcast(tb, out_ndim, &bm);
-        wgpuQueueWriteBuffer(g.queue(), o_buf, 0, &om, sizeof(om));
-        wgpuQueueWriteBuffer(g.queue(), a_buf, 0, &am, sizeof(am));
-        wgpuQueueWriteBuffer(g.queue(), b_buf, 0, &bm, sizeof(bm));
-        const utils::WgCount wgc = utils::compute_2d_workgroup_count(
-            g.device(), om.numel, wg_size, "sub(resize)");
-        g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
-        g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
-      };
+  auto sub_resize = [in1_id,
+                     in2_id,
+                     out_id,
+                     wg_size,
+                     dispatch_idx,
+                     o_buf,
+                     a_buf,
+                     b_buf,
+                     kernel_name](WebGPUGraph& g) {
+    const auto& a = g.cur_dims(in1_id);
+    const auto& b = g.cur_dims(in2_id);
+    const size_t r = std::max(a.size(), b.size());
+    std::vector<int64_t> out_d(r, 1);
+    for (size_t i = 0; i < r; i++) {
+      const int64_t av = (i + a.size() < r) ? 1 : a[i - (r - a.size())];
+      const int64_t bv = (i + b.size() < r) ? 1 : b[i - (r - b.size())];
+      if (av != bv && av != 1 && bv != 1) {
+        throw std::runtime_error(
+            "sub(resize): operands are not broadcast-compatible");
+      }
+      out_d[i] = av > bv ? av : bv;
+    }
+    g.set_cur_dims(out_id, out_d);
+    const uint32_t out_ndim = static_cast<uint32_t>(r);
+    WebGPUTensor ta, tb, to;
+    ta.dims = a;
+    tb.dims = b;
+    to.dims = out_d;
+    TensorMeta om, am, bm;
+    fill_tensor_meta_broadcast(to, out_ndim, &om);
+    fill_tensor_meta_broadcast(ta, out_ndim, &am);
+    fill_tensor_meta_broadcast(tb, out_ndim, &bm);
+    wgpuQueueWriteBuffer(g.queue(), o_buf, 0, &om, sizeof(om));
+    wgpuQueueWriteBuffer(g.queue(), a_buf, 0, &am, sizeof(am));
+    wgpuQueueWriteBuffer(g.queue(), b_buf, 0, &bm, sizeof(bm));
+    const utils::WgCount wgc = utils::compute_2d_workgroup_count(
+        g.device(), om.numel, wg_size, kernel_name);
+    g.dispatch_at(dispatch_idx).workgroup_count_x = wgc.x;
+    g.dispatch_at(dispatch_idx).workgroup_count_y = wgc.y;
+  };
   graph.add_tensor_resize_hook(in1_id, sub_resize);
   graph.add_tensor_resize_hook(in2_id, sub_resize);
 

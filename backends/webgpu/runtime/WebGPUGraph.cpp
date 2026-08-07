@@ -35,6 +35,9 @@ namespace executorch::backends::webgpu {
 
 namespace {
 
+constexpr int kHostBiasProjectionDim = -2;
+constexpr int kIdentityPrepackConstantProjectionDim = -3;
+
 const uint8_t* checked_inline_constant(
     const uint8_t* data,
     size_t data_size,
@@ -520,29 +523,43 @@ void WebGPUGraph::update_symints_from_inputs(
     }
     // Live cur_dims: the source may be a dynamic-shape input.
     const auto& dims = tensors_[src.input_tensor_id].cur_dims;
-    int dim = normalize_dim(
-        src.dim, static_cast<int>(dims.size()), "select_as_symint");
-    int index = src.index;
-    if (index < 0) {
-      index += static_cast<int>(dims[dim]);
+    if (src.indices.size() != dims.size()) {
+      throw std::runtime_error("select_as_symint: source rank changed");
     }
-    if (index < 0 || index >= static_cast<int>(dims[dim])) {
-      throw std::runtime_error("select_as_symint: index out of range");
+    size_t offset = 0;
+    for (size_t dim = 0; dim < dims.size(); dim++) {
+      if (dims[dim] <= 0) {
+        throw std::runtime_error("select_as_symint: empty input tensor");
+      }
+      if (static_cast<uint64_t>(dims[dim]) >
+          std::numeric_limits<size_t>::max()) {
+        throw std::runtime_error("select_as_symint: dimension exceeds size_t");
+      }
+      int64_t index = src.indices[dim];
+      if (index < 0) {
+        index += dims[dim];
+      }
+      if (index < 0 || index >= dims[dim]) {
+        throw std::runtime_error("select_as_symint: index out of range");
+      }
+      const size_t dim_size = static_cast<size_t>(dims[dim]);
+      const size_t normalized_index = static_cast<size_t>(index);
+      if (offset >
+          (std::numeric_limits<size_t>::max() - normalized_index) / dim_size) {
+        throw std::runtime_error("select_as_symint: offset overflow");
+      }
+      offset = offset * dim_size + normalized_index;
     }
-    int64_t numel = 1;
-    for (int64_t d : dims) {
-      numel *= d;
-    }
-    if (numel <= 0) {
-      throw std::runtime_error("select_as_symint: empty input tensor");
-    }
-    int64_t stride = 1;
-    for (size_t i = static_cast<size_t>(dim) + 1; i < dims.size(); i++) {
-      stride *= dims[i];
-    }
-    // Reads the [0,..,index,..,0] element; symint sources are scalar-ish.
-    const int64_t offset = static_cast<int64_t>(index) * stride;
     const void* host = inputs[pos].data;
+    if (host == nullptr || inputs[pos].host_is_fp32) {
+      throw std::runtime_error("select_as_symint: source is not integral");
+    }
+    const size_t host_element_size =
+        inputs[pos].host_is_int64 ? sizeof(int64_t) : sizeof(int32_t);
+    if (inputs[pos].nbytes % host_element_size != 0 ||
+        offset >= inputs[pos].nbytes / host_element_size) {
+      throw std::runtime_error("select_as_symint: host source is too small");
+    }
     // Interpret the HOST buffer by its scalar type, not the tensor's serialized
     // elem_size: copy_inputs narrows an int64 host input to an int32 buffer, so
     // elem_size (buffer-derived) would misread int64 host data as int32.
@@ -558,6 +575,15 @@ void WebGPUGraph::update_symints_from_inputs(
     } else {
       val = static_cast<const int32_t*>(host)[offset];
     }
+    if (src.bias != 0) {
+      const int64_t adjusted = static_cast<int64_t>(val) + src.bias;
+      if (adjusted < std::numeric_limits<int32_t>::min() ||
+          adjusted > std::numeric_limits<int32_t>::max()) {
+        throw std::runtime_error(
+            "select_as_symint: bias result overflows int32");
+      }
+      val = static_cast<int32_t>(adjusted);
+    }
     set_symint(src.symint_id, val);
   }
   // sym_size.int: SymInt = a tensor's live dim (cur_dims). Usually unused (ops
@@ -570,7 +596,197 @@ void WebGPUGraph::update_symints_from_inputs(
   }
 }
 
+void WebGPUGraph::add_input_select_projection(
+    int output_tensor_id,
+    int input_tensor_id,
+    int dim,
+    int index) {
+  const auto& input = tensors_.at(input_tensor_id);
+  const auto& output = tensors_.at(output_tensor_id);
+  if (!input.is_int || input.elem_size != sizeof(int32_t) || !output.is_int ||
+      output.elem_size != sizeof(int32_t) || input.dims.empty() ||
+      output.dims.size() + 1 != input.dims.size()) {
+    return;
+  }
+  const int normalized_dim =
+      normalize_dim(dim, static_cast<int>(input.dims.size()), "select");
+  int64_t normalized_index = index;
+  if (normalized_index < 0) {
+    normalized_index += input.dims[normalized_dim];
+  }
+  if (normalized_index < 0 || normalized_index >= input.dims[normalized_dim]) {
+    return;
+  }
+  for (size_t in_dim = 0, out_dim = 0; in_dim < input.dims.size(); in_dim++) {
+    if (static_cast<int>(in_dim) == normalized_dim) {
+      continue;
+    }
+    if (output.dims[out_dim++] != input.dims[in_dim]) {
+      return;
+    }
+  }
+  input_select_projections_[output_tensor_id] = {
+      input_tensor_id, normalized_dim, index};
+}
+
+void WebGPUGraph::add_input_bias_projection(
+    int output_tensor_id,
+    int input_tensor_id,
+    int64_t bias) {
+  if (bias < std::numeric_limits<int>::min() ||
+      bias > std::numeric_limits<int>::max()) {
+    throw std::runtime_error("select_as_symint: host bias exceeds int");
+  }
+  input_select_projections_[output_tensor_id] = {
+      input_tensor_id, kHostBiasProjectionDim, static_cast<int>(bias)};
+}
+
+bool WebGPUGraph::try_read_constant_bytes(
+    int const_value_id,
+    std::vector<uint8_t>& out) const {
+  const auto it = constant_sources_.find(const_value_id);
+  if (it == constant_sources_.end() || it->second.nbytes == 0u) {
+    return false;
+  }
+  const ConstantSource& source = it->second;
+  if (source.inline_offset != UINT64_MAX) {
+    if (constant_data_ == nullptr ||
+        source.inline_offset > constant_data_size_ ||
+        source.nbytes >
+            constant_data_size_ - static_cast<size_t>(source.inline_offset)) {
+      return false;
+    }
+    const uint8_t* data =
+        constant_data_ + static_cast<size_t>(source.inline_offset);
+    out.assign(data, data + source.nbytes);
+    return true;
+  }
+  if (source.named_key.empty() || named_data_map_ == nullptr) {
+    return false;
+  }
+  auto data = named_data_map_->get_data(source.named_key.c_str());
+  if (!data.ok()) {
+    return false;
+  }
+  if (data->size() != source.nbytes) {
+    data->Free();
+    return false;
+  }
+  const auto* bytes = static_cast<const uint8_t*>(data->data());
+  out.assign(bytes, bytes + source.nbytes);
+  data->Free();
+  return true;
+}
+
+bool WebGPUGraph::try_read_prepacked_int32_scalar(int value_id, int32_t& out)
+    const {
+  const auto projection = input_select_projections_.find(value_id);
+  if (projection == input_select_projections_.end() ||
+      projection->second.dim != kIdentityPrepackConstantProjectionDim) {
+    return false;
+  }
+  const int source_id = projection->second.input_tensor_id;
+  if (source_id < 0 || value_id < 0 || source_id >= num_values() ||
+      value_id >= num_values()) {
+    return false;
+  }
+  const auto& source = tensors_[source_id];
+  const auto& prepacked = tensors_[value_id];
+  if (!source.is_int || source.elem_size != sizeof(int32_t) ||
+      source.nbytes != sizeof(int32_t) || !prepacked.is_int ||
+      prepacked.elem_size != sizeof(int32_t) ||
+      prepacked.nbytes != sizeof(int32_t) || source.dims != prepacked.dims) {
+    return false;
+  }
+  try {
+    if (utils::numel(source.dims) != 1u) {
+      return false;
+    }
+  } catch (const std::runtime_error&) {
+    return false;
+  }
+  std::vector<uint8_t> bytes;
+  if (!try_read_constant_bytes(source_id, bytes) ||
+      bytes.size() != sizeof(int32_t)) {
+    return false;
+  }
+  std::memcpy(&out, bytes.data(), sizeof(out));
+  return true;
+}
+
+void WebGPUGraph::add_symint_source(
+    int symint_id,
+    int source_tensor_id,
+    int dim,
+    int index) {
+  struct SelectStep {
+    int dim;
+    int index;
+  };
+  std::vector<SelectStep> reverse_steps;
+  int64_t bias = 0;
+  int root_id = source_tensor_id;
+  for (size_t hops = 0; hops <= input_select_projections_.size(); hops++) {
+    if (std::find(input_ids_.begin(), input_ids_.end(), root_id) !=
+        input_ids_.end()) {
+      break;
+    }
+    const auto projection = input_select_projections_.find(root_id);
+    if (projection == input_select_projections_.end()) {
+      throw std::runtime_error(
+          "select_as_symint: source is not a graph input or supported "
+          "projection");
+    }
+    const auto& current = projection->second;
+    if (current.dim == kHostBiasProjectionDim) {
+      if ((current.index > 0 &&
+           bias > std::numeric_limits<int64_t>::max() - current.index) ||
+          (current.index < 0 &&
+           bias < std::numeric_limits<int64_t>::min() - current.index)) {
+        throw std::runtime_error(
+            "select_as_symint: bias chain overflows int64");
+      }
+      bias += current.index;
+      root_id = current.input_tensor_id;
+      continue;
+    }
+    reverse_steps.push_back({current.dim, current.index});
+    root_id = current.input_tensor_id;
+  }
+  if (std::find(input_ids_.begin(), input_ids_.end(), root_id) ==
+      input_ids_.end()) {
+    throw std::runtime_error("select_as_symint: projection cycle");
+  }
+
+  const auto& root = tensors_.at(root_id);
+  if (!root.is_int || root.elem_size != sizeof(int32_t) || root.dims.empty()) {
+    throw std::runtime_error("select_as_symint: source is not int32");
+  }
+  std::vector<int64_t> indices(root.dims.size(), 0);
+  std::vector<int64_t> remaining_dims = root.dims;
+  std::vector<size_t> root_axes(root.dims.size());
+  for (size_t axis = 0; axis < root_axes.size(); axis++) {
+    root_axes[axis] = axis;
+  }
+  for (auto step = reverse_steps.rbegin(); step != reverse_steps.rend();
+       step++) {
+    const int selected_dim = normalize_dim(
+        step->dim, static_cast<int>(remaining_dims.size()), "select_as_symint");
+    indices[root_axes[selected_dim]] = step->index;
+    remaining_dims.erase(remaining_dims.begin() + selected_dim);
+    root_axes.erase(root_axes.begin() + selected_dim);
+  }
+  const int selected_dim = normalize_dim(
+      dim, static_cast<int>(remaining_dims.size()), "select_as_symint");
+  indices[root_axes[selected_dim]] = index;
+  symint_sources_.push_back({symint_id, root_id, std::move(indices), bias});
+}
+
 void WebGPUGraph::set_symint(int id, int32_t val) {
+  if (in_post_resize_phase_) {
+    throw std::runtime_error(
+        "WebGPU resize: post hook cannot set a SymInt");
+  }
   auto it = symints_.find(id);
   if (it == symints_.end()) {
     throw std::runtime_error("WebGPUGraph::set_symint: id is not a SymInt");
@@ -586,6 +802,10 @@ void WebGPUGraph::set_symint(int id, int32_t val) {
 void WebGPUGraph::set_cur_dims(
     int value_id,
     const std::vector<int64_t>& new_dims) {
+  if (in_post_resize_phase_) {
+    throw std::runtime_error(
+        "WebGPU resize: post hook cannot set tensor dimensions");
+  }
   auto& t = tensors_[value_id];
   if (new_dims.size() != t.dims.size()) {
     throw std::runtime_error("WebGPU resize: tensor rank changed");
@@ -625,23 +845,34 @@ void WebGPUGraph::propagate_resize() {
   if (dirty_symints_.empty() && dirty_tensors_.empty()) {
     return;
   }
-  // Hooks fire in registration (topological) order: operands update first.
-  for (auto& hook : resize_hooks_) {
-    if (dirty_symints_.count(hook.symint_id) != 0) {
-      hook.fn(*this);
+
+  std::unordered_set<int> retry_symints = dirty_symints_;
+  std::unordered_set<int> retry_tensors = dirty_tensors_;
+  std::unordered_set<int> changed_symints;
+  std::unordered_set<int> changed_tensors;
+
+  try {
+    // Hooks fire in registration (topological) order: operands update first.
+    for (auto& hook : resize_hooks_) {
+      if (dirty_symints_.count(hook.symint_id) != 0) {
+        hook.fn(*this);
+      }
     }
-  }
-  dirty_symints_.clear();
-  // Tensor hooks: bounded fixpoint. A hook may dirty its output (cascading to a
-  // consumer); each pass handles the currently-dirty set. A forward DAG
-  // converges in <= depth passes (set_cur_dims re-dirties only on a change).
-  for (size_t pass = 0;
-       !dirty_tensors_.empty() && pass <= tensor_resize_hooks_.size();
-       pass++) {
-    std::unordered_set<int> processing;
-    processing.swap(dirty_tensors_);
-    pending_dynamic_dispatch_grids_.clear();
-    try {
+    changed_symints.insert(dirty_symints_.begin(), dirty_symints_.end());
+    retry_symints.insert(dirty_symints_.begin(), dirty_symints_.end());
+    dirty_symints_.clear();
+
+    // Tensor hooks: bounded fixpoint. A hook may dirty its output (cascading
+    // to a consumer); each pass handles the currently-dirty set.
+    for (size_t pass = 0;
+         !dirty_tensors_.empty() && pass <= tensor_resize_hooks_.size();
+         pass++) {
+      std::unordered_set<int> processing;
+      processing.swap(dirty_tensors_);
+      changed_tensors.insert(processing.begin(), processing.end());
+      retry_tensors.insert(processing.begin(), processing.end());
+      pending_dynamic_dispatch_grids_.clear();
+
       for (auto& hook : tensor_resize_hooks_) {
         if (processing.count(hook.trigger_tensor_id) != 0) {
           hook.fn(*this);
@@ -662,28 +893,50 @@ void WebGPUGraph::propagate_resize() {
         pending_dynamic_dispatch_grids_.push_back(
             {dynamic_grid.dispatch_index, grid});
       }
-    } catch (...) {
+      for (const auto& pending : pending_dynamic_dispatch_grids_) {
+        auto& dispatch = dispatches_[pending.dispatch_index];
+        dispatch.workgroup_count_x = pending.grid.x;
+        dispatch.workgroup_count_y = pending.grid.y;
+      }
       pending_dynamic_dispatch_grids_.clear();
-      // Keep both the current triggers and any cascaded outputs dirty so the
-      // caller can fix the hook or picker and retry without rebuilding.
-      dirty_tensors_.insert(processing.begin(), processing.end());
-      throw;
     }
-    for (const auto& pending : pending_dynamic_dispatch_grids_) {
-      auto& dispatch = dispatches_[pending.dispatch_index];
-      dispatch.workgroup_count_x = pending.grid.x;
-      dispatch.workgroup_count_y = pending.grid.y;
+    if (!dirty_tensors_.empty()) {
+      throw std::runtime_error(
+          "WebGPU resize: tensor resize hooks did not converge");
     }
+    // Tensor hooks must not set_symint (dirty_symints_ already drained above).
+    if (!dirty_symints_.empty()) {
+      throw std::runtime_error(
+          "WebGPU resize: a tensor resize hook set a SymInt; not supported");
+    }
+
+    in_post_resize_phase_ = true;
+    for (auto& hook : post_resize_hooks_) {
+      bool matches = false;
+      for (int id : hook.tensor_trigger_ids) {
+        matches = matches || changed_tensors.count(id) != 0;
+      }
+      for (int id : hook.symint_trigger_ids) {
+        matches = matches || changed_symints.count(id) != 0;
+      }
+      if (!matches) {
+        continue;
+      }
+      hook.fn(*this);
+      if (!dirty_symints_.empty() || !dirty_tensors_.empty()) {
+        throw std::runtime_error(
+            "WebGPU resize: post hook started another propagation wave");
+      }
+    }
+    in_post_resize_phase_ = false;
+  } catch (...) {
     pending_dynamic_dispatch_grids_.clear();
-  }
-  if (!dirty_tensors_.empty()) {
-    throw std::runtime_error(
-        "WebGPU resize: tensor resize hooks did not converge");
-  }
-  // Tensor hooks must not set_symint (dirty_symints_ already drained above).
-  if (!dirty_symints_.empty()) {
-    throw std::runtime_error(
-        "WebGPU resize: a tensor resize hook set a SymInt; not supported");
+    in_post_resize_phase_ = false;
+    retry_symints.insert(dirty_symints_.begin(), dirty_symints_.end());
+    retry_tensors.insert(dirty_tensors_.begin(), dirty_tensors_.end());
+    dirty_symints_ = std::move(retry_symints);
+    dirty_tensors_ = std::move(retry_tensors);
+    throw;
   }
 }
 
@@ -747,6 +1000,41 @@ WebGPUGraph::~WebGPUGraph() {
       wgpuBindGroupLayoutRelease(bgl);
     }
   }
+  if (queue_) {
+    wgpuQueueRelease(queue_);
+    queue_ = nullptr;
+  }
+}
+
+void WebGPUGraph::offer_cqp_fusion_site(CqpFusionSite site) {
+  site.valid = true;
+  cqp_fusion_site_ = std::move(site);
+}
+
+WebGPUGraph::CqpFusionSite WebGPUGraph::claim_cqp_fusion_site(
+    int input_id,
+    int scales_id,
+    int zero_points_id,
+    uint32_t rows,
+    uint32_t row_width) {
+  const CqpFusionSite& site = cqp_fusion_site_;
+  const bool producer_is_choose_qparams =
+      site.dispatch_index < dispatches_.size() &&
+      dispatches_[site.dispatch_index].kernel_name == "choose_qparams_affine";
+  const bool matches = site.valid && site.input_id == input_id &&
+      site.scales_id == scales_id && site.zero_points_id == zero_points_id &&
+      site.rows == rows && site.row_width == row_width &&
+      site.input_buffer == get_tensor(input_id).buffer &&
+      site.scales_buffer == get_tensor(scales_id).buffer &&
+      site.zero_points_buffer == get_tensor(zero_points_id).buffer &&
+      site.dispatch_index + 1u == dispatches_.size() &&
+      producer_is_choose_qparams && site.producer_elided != nullptr;
+  if (!matches) {
+    return CqpFusionSite{};
+  }
+  CqpFusionSite claimed = site;
+  cqp_fusion_site_ = CqpFusionSite{};
+  return claimed;
 }
 
 void WebGPUGraph::build(
@@ -755,6 +1043,18 @@ void WebGPUGraph::build(
     size_t constant_data_size,
     const executorch::runtime::NamedDataMap* named_data_map,
     WebGPUGraphConfig config) {
+  clear_cqp_fusion_site();
+  clear_rms_fusion_site();
+  clear_slice_chain();
+  struct ClearFusionSitesOnExit {
+    WebGPUGraph* graph;
+    ~ClearFusionSitesOnExit() {
+      graph->clear_cqp_fusion_site();
+      graph->clear_rms_fusion_site();
+      graph->clear_slice_chain();
+    }
+  } clear_fusion_sites_on_exit{this};
+
   if (!device_) {
     auto* ctx = get_default_webgpu_context();
     if (ctx) {
@@ -810,6 +1110,15 @@ void WebGPUGraph::build(
       const auto* a = oc->args();
       if (!a) {
         continue;
+      }
+      if (is_prepack && a->size() >= 2) {
+        // This projection is valid only for et_vk.prepack.default: its handler
+        // verifies identical shape, dtype, and byte size, then materializes the
+        // source bytes unchanged. Layout-transforming prepacks must not use it.
+        input_select_projections_[static_cast<int>(a->Get(1))] = {
+            static_cast<int>(a->Get(0)),
+            kIdentityPrepackConstantProjectionDim,
+            0};
       }
       if (oc->name()->str() == "sym_size.int" && a->size() >= 3 && values) {
         const auto* out = values->Get(a->Get(2));
@@ -1593,6 +1902,42 @@ void WebGPUGraph::record_active_route(const std::string& kernel_name) {
 }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
 
+namespace {
+
+class ScopedComputePass final {
+ public:
+  ~ScopedComputePass() {
+    close();
+  }
+
+  WGPUComputePassEncoder get() const {
+    return pass_;
+  }
+
+  void reset(WGPUComputePassEncoder pass) {
+    close();
+    pass_ = pass;
+  }
+
+  void close() {
+    if (pass_ == nullptr) {
+      return;
+    }
+    wgpuComputePassEncoderEnd(pass_);
+    wgpuComputePassEncoderRelease(pass_);
+    pass_ = nullptr;
+  }
+
+ private:
+  WGPUComputePassEncoder pass_ = nullptr;
+};
+
+} // namespace
+
+std::string WebGPUGraph::execution_attestation_json() const {
+  return serialize_webgpu_execution_attestation(execution_attestation_);
+}
+
 WebGPUExecutionPlan WebGPUGraph::make_execution_plan(
     const WebGPUGraphExecutionOptions& options) const {
   const size_t n = dispatches_.size();
@@ -1624,17 +1969,82 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
 #endif // WGPU_BACKEND_ENABLE_PROFILING
   const size_t n = dispatches_.size();
   const size_t chunk = execute_config_.chunk_size;
+  execution_attestation_ = {};
+  execution_attestation_.execution_ordinal = ++execution_ordinal_;
+  execution_attestation_.requested = plan.single_compute_pass;
+  execution_attestation_.max_compute_dispatches_per_pass =
+      plan.max_compute_dispatches_per_pass;
   if (plan.copy_outputs.size() != output_copies_.size()) {
+    execution_attestation_.error_reason =
+        "execution plan output count mismatch";
     throw std::runtime_error("WebGPU: execution plan output count mismatch");
   }
+  std::vector<bool> selected_dispatches(n, false);
   for (const auto& dispatch_chunk : plan.dispatch_chunks) {
     for (size_t dispatch_index : dispatch_chunk) {
       if (dispatch_index >= n) {
+        execution_attestation_.error_reason =
+            "execution plan dispatch index out of range";
         throw std::runtime_error(
             "WebGPU: execution plan dispatch index out of range");
       }
+      selected_dispatches[dispatch_index] = true;
     }
   }
+
+  std::vector<WebGPUCommandRecord> command_records;
+  command_records.reserve(dispatches_.size() + output_copies_.size());
+  for (size_t i = 0; i < dispatches_.size(); i++) {
+    const auto& dispatch = dispatches_[i];
+    WebGPUCommandRecord record;
+    record.static_dispatch_index = i;
+    record.enabled = selected_dispatches[i];
+    if (dispatch.kind == WebGPUDispatch::Kind::Compute) {
+      record.identity = dispatch.kernel_name;
+      record.workgroup_count_x = dispatch.workgroup_count_x;
+      record.workgroup_count_y = dispatch.workgroup_count_y;
+      record.zero_grid =
+          dispatch.workgroup_count_x == 0 || dispatch.workgroup_count_y == 0;
+    } else {
+      record.kind = WebGPUCommandKind::GraphCopy;
+      record.byte_count = dispatch.copy_nbytes;
+    }
+    command_records.push_back(std::move(record));
+  }
+  for (size_t i = 0; i < output_copies_.size(); i++) {
+    WebGPUCommandRecord record;
+    record.kind = WebGPUCommandKind::OutputCopy;
+    record.output_ordinal = i;
+    record.source_identity = output_ids_[i];
+    record.destination_identity = static_cast<int64_t>(i);
+    record.byte_count = output_copies_[i].nbytes;
+    record.enabled = plan.copy_outputs[i];
+    record.suppressed = !record.enabled;
+    command_records.push_back(std::move(record));
+  }
+  execution_attestation_.inventory =
+      build_webgpu_command_inventory(command_records);
+
+  if (!plan.single_compute_pass &&
+      plan.max_compute_dispatches_per_pass != 0) {
+    execution_attestation_.error_reason =
+        "pass cap requires single_compute_pass";
+    throw std::runtime_error("WebGPU: " + execution_attestation_.error_reason);
+  }
+  const bool is_chunked = chunk != 0 && n > chunk;
+  if (plan.single_compute_pass && is_chunked) {
+    execution_attestation_.error_reason =
+        "single_compute_pass is incompatible with chunked execution";
+    throw std::runtime_error("WebGPU: " + execution_attestation_.error_reason);
+  }
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  if (plan.single_compute_pass && should_timestamp_query()) {
+    execution_attestation_.error_reason =
+        "single_compute_pass is incompatible with timestamp queries";
+    throw std::runtime_error("WebGPU: " + execution_attestation_.error_reason);
+  }
+#endif // WGPU_BACKEND_ENABLE_PROFILING
+  execution_attestation_.applied = plan.single_compute_pass;
 
   if (plan.dispatch_chunks.empty()) {
     return 0;
@@ -1670,14 +2080,17 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     WGPUCommandEncoder encoder =
         wgpuDeviceCreateCommandEncoder(device_, &enc_desc);
 
-    // One pass per dispatch: enforces storage RAW ordering across deps.
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
     uint32_t query_index = 0;
 #endif
+    ScopedComputePass shared_pass;
+    size_t dispatches_in_shared_pass = 0;
     for (const auto& dispatch_chunk : plan.dispatch_chunks) {
       for (size_t i : dispatch_chunk) {
         const auto& dispatch = dispatches_[i];
         if (dispatch.kind == WebGPUDispatch::Kind::Copy) {
+          shared_pass.close();
+          dispatches_in_shared_pass = 0;
           wgpuCommandEncoderCopyBufferToBuffer(
               encoder,
               dispatch.copy_src,
@@ -1699,15 +2112,31 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
           pass_desc.timestampWrites = &tw;
         }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
-        WGPUComputePassEncoder pass =
-            wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        WGPUComputePassEncoder pass = shared_pass.get();
+        if (pass == nullptr) {
+          pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+          ++execution_attestation_.encoded_compute_passes;
+          if (plan.single_compute_pass) {
+            shared_pass.reset(pass);
+          }
+        }
         wgpuComputePassEncoderSetPipeline(pass, dispatch.pipeline);
         wgpuComputePassEncoderSetBindGroup(
             pass, 0, dispatch.bind_group, 0, nullptr);
         wgpuComputePassEncoderDispatchWorkgroups(
             pass, dispatch.workgroup_count_x, dispatch.workgroup_count_y, 1);
-        wgpuComputePassEncoderEnd(pass);
-        wgpuComputePassEncoderRelease(pass);
+        if (!plan.single_compute_pass) {
+          wgpuComputePassEncoderEnd(pass);
+          wgpuComputePassEncoderRelease(pass);
+        } else {
+          ++dispatches_in_shared_pass;
+          if (webgpu_pass_cap_reached(
+                  dispatches_in_shared_pass,
+                  plan.max_compute_dispatches_per_pass)) {
+            shared_pass.close();
+            dispatches_in_shared_pass = 0;
+          }
+        }
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
         if (qp) {
           qp->record(
@@ -1720,6 +2149,7 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
 #endif // WGPU_BACKEND_ENABLE_PROFILING
       }
     }
+    shared_pass.close();
 
     for (size_t i = 0; i < output_copies_.size(); i++) {
       const size_t logical_nbytes = tensors_[output_ids_[i]].cur_nbytes;
@@ -1741,6 +2171,7 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     WGPUCommandBufferDescriptor cmd_desc = {};
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
     wgpuQueueSubmit(queue_, 1, &cmd);
+    execution_attestation_.queue_submit_count = 1;
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
@@ -1751,6 +2182,15 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
       qp->print_results();
     }
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+    const size_t expected_passes = count_webgpu_compute_passes(
+        command_records,
+        plan.single_compute_pass,
+        plan.max_compute_dispatches_per_pass);
+    if (execution_attestation_.encoded_compute_passes != expected_passes) {
+      execution_attestation_.error_reason =
+          "encoded compute-pass count does not match command inventory";
+      throw std::runtime_error("WebGPU: " + execution_attestation_.error_reason);
+    }
     return 1;
   }
 
@@ -1785,6 +2225,7 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
       WGPUComputePassDescriptor pass_desc = {};
       WGPUComputePassEncoder pass =
           wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+      ++execution_attestation_.encoded_compute_passes;
       wgpuComputePassEncoderSetPipeline(pass, dispatches_[i].pipeline);
       wgpuComputePassEncoderSetBindGroup(
           pass, 0, dispatches_[i].bind_group, 0, nullptr);
@@ -1813,9 +2254,17 @@ size_t WebGPUGraph::execute(const WebGPUExecutionPlan& plan) {
     WGPUCommandBufferDescriptor cmd_desc = {};
     WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, &cmd_desc);
     wgpuQueueSubmit(queue_, 1, &cmd);
+    ++execution_attestation_.queue_submit_count;
 
     wgpuCommandBufferRelease(cmd);
     wgpuCommandEncoderRelease(encoder);
+  }
+  const size_t expected_passes =
+      count_webgpu_compute_passes(command_records, false, 0);
+  if (execution_attestation_.encoded_compute_passes != expected_passes) {
+    execution_attestation_.error_reason =
+        "encoded compute-pass count does not match command inventory";
+    throw std::runtime_error("WebGPU: " + execution_attestation_.error_reason);
   }
   return plan.dispatch_chunks.size();
 }

@@ -1,0 +1,124 @@
+{
+  "acquisition": {
+    "files": {
+      ".gitattributes": {
+        "bytes": 1570,
+        "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+      },
+      "README.md": {
+        "bytes": 29351,
+        "sha256": "aaab87052837925e0fb400bb20700553b11088fa5b3ae21fa0c1ec5da53637a4"
+      },
+      "chat_template.jinja": {
+        "bytes": 18569,
+        "sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"
+      },
+      "config.json": {
+        "bytes": 4946,
+        "sha256": "bbeff1e2fd3fe282536e7ace02309d43e0dbd9b6ac4b6a149b97e3ab6942a878"
+      },
+      "generation_config.json": {
+        "bytes": 203,
+        "sha256": "b69207f9be617e982d13cc273cce6fd88c98dda99a4bdc5e2d52ffe0a0d9f0a9"
+      },
+      "model.safetensors": {
+        "bytes": 10208852878,
+        "sha256": "33fe0cece08fb527ffefbd1a3a9ce73bd71073727993a283506293e5c6bf0137"
+      },
+      "processor_config.json": {
+        "bytes": 1689,
+        "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+      },
+      "tokenizer.json": {
+        "bytes": 32169626,
+        "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f"
+      },
+      "tokenizer_config.json": {
+        "bytes": 3729,
+        "sha256": "3ab5c7b94dc97d65ca7064496fa69b88ff875378e1cb7ee3e43070c3a8170999"
+      }
+    },
+    "repo_id": "google/gemma-4-E2B-it-qat-q4_0-unquantized",
+    "revision": "6befbaca7398925921802abd1f277b495b78b738"
+  },
+  "artifacts": [
+    {
+      "bytes": 697820048,
+      "path": "model.pte",
+      "role": "pte",
+      "sha256": "3c8cd7cffe28b7a5a7f2a822d61cb08ca75e2094296c365026de8c0673b9bb33"
+    },
+    {
+      "bytes": 490343936,
+      "path": "vulkan_constants_5744ffbc74f9b1f05c9b1de0242271e80917b06d119a752ab06357a3ce34bac0.ptd",
+      "role": "ptd",
+      "sha256": "46bde3894dde6a31c6988158f764bb819f1355b17a88d76c916d0ae632656980"
+    },
+    {
+      "bytes": 1499632256,
+      "path": "vulkan_constants_c99ae26962b09639368ed489fd7383e97c2c1b2b65cb0c49957f7657b38f4235.ptd",
+      "role": "ptd",
+      "sha256": "82a18ddf74f7befdeab3a946cfb2e0ff4d79f52659ca9832b59dc37a3c45140e"
+    },
+    {
+      "bytes": 1396131456,
+      "path": "vulkan_constants_dc47af467f37efd71f907f227e6414712f1e2c3419daa2692b29ed92687110b7.ptd",
+      "role": "ptd",
+      "sha256": "8dfc0f10781f98fd62cf7bc59eeb071f435df2403fb7ebcb169e1df7669217d2"
+    }
+  ],
+  "export": {
+    "backend": "webgpu",
+    "max_input_len": 512,
+    "max_seq_len": 8960,
+    "methods": [
+      "text_decoder"
+    ],
+    "output": {
+      "dtype": "int64",
+      "semantic": "greedy_token",
+      "shape": [
+        1,
+        1
+      ]
+    },
+    "quantization": "8da4w+emb4"
+  },
+  "model": {
+    "architecture": {
+      "global_head_dim": 512,
+      "head_dim": 256,
+      "hidden_size": 1536,
+      "intermediate_size": 6144,
+      "layer_types": [
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention",
+        "sliding_attention", "sliding_attention", "sliding_attention", "sliding_attention", "full_attention"
+      ],
+      "model_type": "gemma4",
+      "num_attention_heads": 8,
+      "num_hidden_layers": 35,
+      "num_key_value_heads": 1,
+      "num_kv_shared_layers": 20,
+      "vocab_size": 262144
+    },
+    "source_config": {
+      "path": "config/e2b_config.json",
+      "sha256": "526e9fd34a8a489c35952535335a4b8556e9169d851187a895f80286e7466206"
+    }
+  },
+  "provenance": {
+    "artifact_status": "accepted_behavior_oracle",
+    "source_closure": "pending_final_source_rebuild"
+  },
+  "ptd_order": [
+    "vulkan_constants_5744ffbc74f9b1f05c9b1de0242271e80917b06d119a752ab06357a3ce34bac0.ptd",
+    "vulkan_constants_c99ae26962b09639368ed489fd7383e97c2c1b2b65cb0c49957f7657b38f4235.ptd",
+    "vulkan_constants_dc47af467f37efd71f907f227e6414712f1e2c3419daa2692b29ed92687110b7.ptd"
+  ],
+  "schema_version": 1
+}

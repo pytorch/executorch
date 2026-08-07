@@ -145,6 +145,14 @@ class QuantizedLinearMatch(PatternMatch):
             ):
                 self.quantize_input_node = input_to_dq_node
                 self.pattern_input_node = self.quantize_input_node.args[0]
+                self.all_nodes.append(self.quantize_input_node)
+                if isinstance(self.input_scales_node, torch.fx.Node):
+                    self.all_nodes.append(self.input_scales_node)
+                    choose_qparams_node = self.input_scales_node.args[0]
+                    if isinstance(choose_qparams_node, torch.fx.Node):
+                        self.all_nodes.append(choose_qparams_node)
+                if isinstance(self.input_zeros_node, torch.fx.Node):
+                    self.all_nodes.append(self.input_zeros_node)
 
         # The implementation has a limitation that input channels must be a
         # multiple of 4. This is to ensure that data loads are aligned well with
@@ -595,6 +603,75 @@ def make_q8ta_linear_custom_op(
     match.quantize_output_node.replace_all_uses_with(qlinear_node)
 
 
+def make_reused_linear_dq8ca_q4gsw_op(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+    packed_weight: torch.Tensor,
+    transposed_scales: torch.Tensor,
+):
+    dequant_args = match.dequantize_weight_node.args
+    if (
+        len(dequant_args) < 7
+        or not isinstance(dequant_args[1], (list, tuple))
+        or len(dequant_args[1]) != 2
+        or dequant_args[1][0] != 1
+        or dequant_args[4] != torch.int8
+        or dequant_args[5:7] != (-8, 7)
+    ):
+        raise RuntimeError("shared 8da4w weight has an unexpected dequant ABI")
+    group_size = dequant_args[1][1]
+    if not isinstance(group_size, int) or group_size <= 0:
+        raise RuntimeError("shared 8da4w weight has an invalid group size")
+    if (
+        packed_weight.dtype != torch.uint8
+        or packed_weight.ndim != 2
+        or transposed_scales.ndim != 2
+        or transposed_scales.dtype != torch.float32
+        or transposed_scales.shape[1] != packed_weight.shape[0]
+        or packed_weight.shape[1] * 2 != transposed_scales.shape[0] * group_size
+    ):
+        raise RuntimeError("shared 8da4w packed weight geometry mismatch")
+
+    weight_name = utils.get_tensor_name(ep, match.weight_node)
+    sums_name = (weight_name + "_sums").replace(".", "_")
+    weight_sums_node = next(
+        (
+            node
+            for node in graph_module.graph.nodes
+            if node.op == "placeholder" and node.target == sums_name
+        ),
+        None,
+    )
+    if weight_sums_node is None:
+        raise RuntimeError("shared 8da4w weight sums placeholder is missing")
+    weight_sums = get_param_tensor(ep, weight_sums_node)
+    if (
+        weight_sums is None
+        or weight_sums.dtype != torch.int32
+        or tuple(weight_sums.shape) != tuple(transposed_scales.shape)
+    ):
+        raise RuntimeError("shared 8da4w weight sums geometry mismatch")
+
+    with graph_module.graph.inserting_before(match.output_node):
+        qlinear_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default,
+            args=(
+                match.pattern_input_node,
+                match.input_scales_node,
+                match.input_zeros_node,
+                match.weight_node,
+                weight_sums_node,
+                match.weight_scales_node,
+                group_size,
+                match.bias_node,
+            ),
+        )
+    qlinear_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(qlinear_node)
+
+
 @register_pattern_replacement("quantized_linear")
 def replace_quantized_linear_patterns(
     ep: ExportedProgram,
@@ -612,6 +689,27 @@ def replace_quantized_linear_patterns(
     assert match.weight_zeros_node is not None
     weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
     assert weight_zeros_tensor is not None
+
+    modification_tags = getattr(ep, "_et_vk_param_modification_tags", {})
+    weight_tag = modification_tags.get(utils.get_tensor_name(ep, match.weight_node))
+    scales_tag = modification_tags.get(
+        utils.get_tensor_name(ep, match.weight_scales_node)
+    )
+    if weight_tag is not None or scales_tag is not None:
+        if (
+            weight_tag != "4 bit linear weight"
+            or scales_tag != "4 bit linear scales"
+            or not match.is_input_dynamic_perchannel_quantized()
+        ):
+            raise RuntimeError("shared quantized linear mutation tags are inconsistent")
+        make_reused_linear_dq8ca_q4gsw_op(
+            ep,
+            graph_module,
+            match,
+            weight_tensor,
+            weight_scales_tensor,
+        )
+        return
 
     # Route to appropriate custom op.
     if (

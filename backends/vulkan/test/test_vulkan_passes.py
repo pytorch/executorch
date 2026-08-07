@@ -1,18 +1,45 @@
+import operator
 import unittest
 from typing import Optional, Tuple
+from unittest.mock import MagicMock, patch
 
 import torch
 
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
+from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
+    SqueezeUnsqueezeInputs,
+)
+from executorch.backends.vulkan.patterns.quantized_linear import (
+    find_quantized_linear_patterns,
+    replace_quantized_linear_patterns,
+)
+from executorch.backends.vulkan.patterns.sdpa import (
+    CausalSDPAMatch,
+    is_custom_sdpa_node,
+    is_sdpa_with_kv_cache_node,
+    is_update_cache_node,
+)
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
+from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
+from torch.export._remove_auto_functionalized_pass import (
+    unsafe_remove_auto_functionalized_pass,
+)
+from torchao.quantization.granularity import PerGroup
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
+from torchao.quantization.quant_api import (
+    Int8DynamicActivationIntxWeightConfig,
+    IntxWeightOnlyConfig,
+    quantize_,
+)
 
 ###################
 ## Common Models ##
@@ -32,6 +59,145 @@ class SingleLinearModule(torch.nn.Module):
     def get_sample_inputs(self):
         sample_inputs = (torch.rand(size=(32, self.K), dtype=torch.float32),)
         return sample_inputs
+
+
+class HfRopeFullTableModule(torch.nn.Module):
+    def __init__(self, broken_k_arm: bool = False, sin_start: int = 2) -> None:
+        super().__init__()
+        self.broken_k_arm = broken_k_arm
+        self.sin_start = sin_start
+
+    def forward(self, xq, xk, cos_table, sin_table):
+        cos = cos_table[2:3].unsqueeze(1)
+        sin = sin_table[self.sin_start : self.sin_start + 1].unsqueeze(1)
+        q1 = xq[..., : xq.shape[-1] // 2]
+        q2 = xq[..., xq.shape[-1] // 2 :]
+        k1 = xk[..., : xk.shape[-1] // 2]
+        k2 = xk[..., xk.shape[-1] // 2 :]
+        q = (xq * cos) + (torch.cat((-q2, q1), dim=-1) * sin)
+        k_rotation = torch.cat((-k2, k1), dim=-1) * sin
+        if self.broken_k_arm:
+            return q, (xk * cos) - k_rotation
+        return q, (xk * cos) + k_rotation
+
+    def get_sample_inputs(self):
+        return (
+            torch.rand(1, 1, 4, 32),
+            torch.rand(1, 1, 2, 32),
+            torch.rand(8, 32),
+            torch.rand(8, 32),
+        )
+
+
+class TiedLinearPair(torch.nn.Module):
+    def __init__(self, in_features: int = 256, out_features: int = 128) -> None:
+        super().__init__()
+        self.in_features = in_features
+        self.linear1 = torch.nn.Linear(in_features, out_features)
+        self.linear2 = torch.nn.Linear(in_features, out_features)
+        self.linear2.weight = self.linear1.weight
+
+    def forward(self, x):
+        return self.linear1(x) + self.linear2(x)
+
+    def get_sample_inputs(self):
+        return (torch.rand(8, self.in_features),)
+
+
+class RmsNormVariantModule(torch.nn.Module):
+    def __init__(self, exponent: Optional[float]) -> None:
+        super().__init__()
+        self.exponent = exponent
+        self.weight = torch.nn.Parameter(torch.ones(64))
+
+    def forward(self, x):
+        mean_sq = x.pow(2).mean(-1, keepdim=True) + 1e-6
+        if self.exponent is None:
+            rstd = torch.rsqrt(mean_sq)
+        else:
+            rstd = torch.pow(mean_sq, self.exponent)
+        return (x * rstd) * self.weight
+
+    def get_sample_inputs(self):
+        return (torch.rand(2, 8, 64),)
+
+
+class SelectAsSymIntModule(torch.nn.Module):
+    def __init__(self, bounded: bool = True, use_select: bool = True) -> None:
+        super().__init__()
+        self.bounded = bounded
+        self.use_select = use_select
+
+    def forward(self, index, x):
+        if self.use_select:
+            value = index.select(0, 0).item()
+        else:
+            value = index.sum().item()
+        if not self.bounded:
+            return x.sum() + value
+        torch._check(value >= 3)
+        torch._check(value <= 17)
+        return x[:, :value].sum()
+
+    def get_sample_inputs(self):
+        return (torch.tensor([5], dtype=torch.int64), torch.rand(2, 32))
+
+
+class CausalSdpaModule(torch.nn.Module):
+    def __init__(self, update_key: bool, update_value: bool) -> None:
+        super().__init__()
+        self.update_key = update_key
+        self.update_value = update_value
+        self.register_buffer("key_cache", torch.zeros(1, 8, 2, 4))
+        self.register_buffer("value_cache", torch.zeros(1, 8, 2, 4))
+
+    def forward(self, query, key, value):
+        if self.update_key:
+            torch.ops.llama.update_cache(key, self.key_cache, 0)
+        if self.update_value:
+            torch.ops.llama.update_cache(value, self.value_cache, 0)
+        return torch.ops.llama.custom_sdpa(
+            query,
+            self.key_cache,
+            self.value_cache,
+            0,
+            None,
+            0.0,
+            True,
+            None,
+        )
+
+    def get_sample_inputs(self):
+        return (
+            torch.rand(1, 1, 2, 4),
+            torch.rand(1, 1, 2, 4),
+            torch.rand(1, 1, 2, 4),
+        )
+
+
+class SharedCacheCausalSdpaModule(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("cache", torch.zeros(1, 8, 2, 4))
+
+    def forward(self, query, projected_cache_value):
+        torch.ops.llama.update_cache(projected_cache_value, self.cache, 0)
+        return torch.ops.llama.custom_sdpa(
+            query,
+            self.cache,
+            self.cache,
+            0,
+            None,
+            0.0,
+            True,
+            None,
+        )
+
+    def get_sample_inputs(self):
+        return (
+            torch.rand(1, 1, 2, 4),
+            torch.rand(1, 1, 2, 4),
+        )
 
 
 ###########
@@ -86,7 +252,88 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
     return count
 
 
+def lower_module(model: torch.nn.Module):
+    program = torch.export.export(model, model.get_sample_inputs(), strict=True)
+    return to_edge(
+        program,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    ).exported_program()
+
+
+def run_fuse_patterns(exported_program):
+    fuse_pass = FusePatternsPass()
+    fuse_pass._exported_program = exported_program
+    return fuse_pass.call(exported_program.graph_module)
+
+
+def nodes_named(graph_module: torch.fx.GraphModule, canonical_op_name: str):
+    return [
+        node
+        for node in graph_module.graph.nodes
+        if get_target_canonical_name(node) == canonical_op_name
+    ]
+
+
+def quantized_linear_matches(exported_program):
+    matches = []
+    for node in exported_program.graph_module.graph.nodes:
+        match = find_quantized_linear_patterns(node)
+        if match is not None:
+            matches.append(match)
+    return matches
+
+
+def quantize_tied_pair(model: TiedLinearPair, config) -> TiedLinearPair:
+    quantize_(model, config)
+    model.linear2.weight = model.linear1.weight
+    return model
+
+
+def shared_8da4w_program(
+    in_features: int = 256,
+    out_features: int = 128,
+    group_size: int = 32,
+    weight_dtype=torch.int4,
+):
+    model = TiedLinearPair(in_features, out_features).eval()
+    config = Int8DynamicActivationIntxWeightConfig(
+        weight_dtype=weight_dtype,
+        weight_granularity=PerGroup(group_size),
+    )
+    return lower_module(quantize_tied_pair(model, config))
+
+
+def causal_sdpa_program(update_key: bool, update_value: bool):
+    exported_program = lower_module(CausalSdpaModule(update_key, update_value))
+    return unsafe_remove_auto_functionalized_pass(exported_program)
+
+
+def shared_cache_causal_sdpa_program():
+    exported_program = lower_module(SharedCacheCausalSdpaModule())
+    return unsafe_remove_auto_functionalized_pass(exported_program)
+
+
 class TestVulkanPasses(unittest.TestCase):
+    def test_squeeze_preserves_gelu_kwargs_only_on_gelu(self):
+        input_arg = MagicMock()
+        input_arg.node.meta = {"val": torch.empty(2, 1, 4)}
+        kwargs = {"approximate": "tanh"}
+        metadata = {"val": torch.empty(2, 1, 4)}
+
+        with patch.object(ExportPass, "call_operator", autospec=True) as base_call:
+            base_call.side_effect = [MagicMock(), MagicMock(), MagicMock()]
+            SqueezeUnsqueezeInputs().call_operator(
+                exir_ops.edge.aten.gelu.default,
+                (input_arg,),
+                kwargs,
+                metadata,
+            )
+
+        calls = base_call.call_args_list
+        self.assertEqual(calls[0].args[3], {})
+        self.assertEqual(calls[1].args[3], kwargs)
+        self.assertEqual(calls[2].args[3], {})
+
     def test_fuse_torchao_quantized_embedding(self):
         """A torchao-dialect 4-bit weight-only quantized embedding
         (torchao.dequantize_affine -> aten.embedding) should fuse into a single
@@ -779,3 +1026,281 @@ class TestVulkanPasses(unittest.TestCase):
 
         gm = ep.graph_module
         self.assertEqual(op_node_count(gm, "q8ta_pixel_shuffle.default"), 0)
+
+
+class GemmaMatcherWitnessTest(unittest.TestCase):
+    def test_full_table_hf_rope_preserves_tables_start_and_meta_shapes(self):
+        model = HfRopeFullTableModule()
+        exported_program = lower_module(model)
+
+        result = run_fuse_patterns(exported_program)
+        fused_nodes = nodes_named(result.graph_module, "apply_rotary_emb_hf.default")
+        self.assertEqual(len(fused_nodes), 1)
+        fused = fused_nodes[0]
+        self.assertEqual(fused.args[2].target, "cos_table")
+        self.assertEqual(fused.args[3].target, "sin_table")
+        self.assertEqual(fused.args[4], 2)
+
+        output_shapes = {
+            node.args[1]: tuple(node.meta["val"].shape)
+            for node in result.graph_module.graph.nodes
+            if node.op == "call_function"
+            and node.target is operator.getitem
+            and node.args[0] is fused
+        }
+        self.assertEqual(output_shapes, {0: (1, 1, 4, 32), 1: (1, 1, 2, 32)})
+
+    def test_full_table_hf_rope_rejects_changed_k_arithmetic(self):
+        result = run_fuse_patterns(lower_module(HfRopeFullTableModule(True)))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            nodes_named(result.graph_module, "apply_rotary_emb_hf.default"), []
+        )
+
+    def test_full_table_hf_rope_rejects_mismatched_frequency_slices(self):
+        result = run_fuse_patterns(lower_module(HfRopeFullTableModule(sin_start=3)))
+
+        self.assertEqual(
+            nodes_named(result.graph_module, "apply_rotary_emb_hf.default"), []
+        )
+
+    def test_shared_8da4w_reuses_only_weight_storage(self):
+        exported_program = shared_8da4w_program()
+        matches = quantized_linear_matches(exported_program)
+        self.assertEqual(len(matches), 2)
+        self.assertIs(matches[0].weight_node, matches[1].weight_node)
+
+        result = run_fuse_patterns(exported_program)
+        fused = nodes_named(result.graph_module, "linear_dq8ca_q4gsw.default")
+        self.assertEqual(len(fused), 2)
+        for argument_index in (3, 4, 5):
+            self.assertIs(fused[0].args[argument_index], fused[1].args[argument_index])
+        self.assertIsNot(fused[0].args[7], fused[1].args[7])
+        self.assertEqual(
+            exported_program._et_vk_param_modification_tags,
+            {
+                "linear1.parametrizations.weight.original0": "4 bit linear weight",
+                "linear1.parametrizations.weight.original1": "4 bit linear scales",
+            },
+        )
+
+    def test_shared_8da4w_rejects_incomplete_mutation_tags(self):
+        exported_program = shared_8da4w_program()
+        matches = quantized_linear_matches(exported_program)
+        self.assertEqual(len(matches), 2)
+        replace_quantized_linear_patterns(
+            exported_program, exported_program.graph_module, matches[0]
+        )
+        tags = exported_program._et_vk_param_modification_tags
+        scales_name = next(
+            name for name, tag in tags.items() if tag == "4 bit linear scales"
+        )
+        del tags[scales_name]
+
+        with self.assertRaisesRegex(
+            RuntimeError, "shared quantized linear mutation tags are inconsistent"
+        ):
+            replace_quantized_linear_patterns(
+                exported_program, exported_program.graph_module, matches[1]
+            )
+
+    def test_shared_weight_only_4bit_linear_is_rejected_fail_closed(self):
+        model = TiedLinearPair().eval()
+        config = IntxWeightOnlyConfig(
+            weight_dtype=torch.int4,
+            granularity=PerGroup(32),
+        )
+        exported_program = lower_module(quantize_tied_pair(model, config))
+
+        with self.assertRaisesRegex(
+            RuntimeError, "shared quantized linear mutation tags are inconsistent"
+        ):
+            run_fuse_patterns(exported_program)
+
+    def test_shared_8da4w_rejects_packed_weight_geometry(self):
+        exported_program = shared_8da4w_program(in_features=252, group_size=4)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "shared 8da4w packed weight geometry mismatch"
+        ):
+            run_fuse_patterns(exported_program)
+
+    def test_shared_8da4w_rejects_weight_sums_geometry(self):
+        for out_features, error in (
+            (130, "shared 8da4w packed weight geometry mismatch"),
+            (132, "shared 8da4w weight sums geometry mismatch"),
+        ):
+            with self.subTest(out_features=out_features, error=error):
+                exported_program = shared_8da4w_program(out_features=out_features)
+
+                with self.assertRaisesRegex(RuntimeError, error):
+                    run_fuse_patterns(exported_program)
+
+    def test_shared_8da4w_rejects_unexpected_dequant_abi(self):
+        exported_program = shared_8da4w_program(weight_dtype=torch.int2)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "shared 8da4w weight has an unexpected dequant ABI"
+        ):
+            run_fuse_patterns(exported_program)
+
+    def test_rms_norm_accepts_rsqrt_and_pow_negative_half(self):
+        for exponent, expected_rsqrt, expected_pow in (
+            (None, 1, 1),
+            (-0.5, 0, 2),
+        ):
+            with self.subTest(exponent=exponent):
+                exported_program = lower_module(RmsNormVariantModule(exponent))
+                self.assertEqual(
+                    op_node_count(exported_program.graph_module, "rsqrt.default"),
+                    expected_rsqrt,
+                )
+                self.assertEqual(
+                    op_node_count(exported_program.graph_module, "pow.Tensor_Scalar"),
+                    expected_pow,
+                )
+                result = run_fuse_patterns(exported_program)
+                self.assertEqual(
+                    op_node_count(result.graph_module, "rms_norm.default"), 1
+                )
+
+    def test_rms_norm_rejects_other_reciprocal_exponents(self):
+        for exponent in (-1.0, -0.25):
+            with self.subTest(exponent=exponent):
+                exported_program = lower_module(RmsNormVariantModule(exponent))
+                self.assertEqual(
+                    op_node_count(exported_program.graph_module, "pow.Tensor_Scalar"),
+                    2,
+                )
+                result = run_fuse_patterns(exported_program)
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    op_node_count(result.graph_module, "rms_norm.default"), 0
+                )
+
+    def test_select_as_symint_preserves_bounded_and_unbounded_ranges(self):
+        for bounded, expected_range in ((True, (3, 17)), (False, (None, None))):
+            with self.subTest(bounded=bounded):
+                result = run_fuse_patterns(
+                    lower_module(SelectAsSymIntModule(bounded=bounded))
+                )
+                selected = nodes_named(result.graph_module, "select_as_symint.default")
+                self.assertEqual(len(selected), 1)
+                self.assertEqual(selected[0].meta["et_vk_value_range"], expected_range)
+                constraints = [
+                    node
+                    for node in result.graph_module.graph.nodes
+                    if "sym_constrain_range.default" in str(node.target)
+                ]
+                self.assertEqual(len(constraints), 1)
+                self.assertEqual(
+                    constraints[0].kwargs,
+                    {"min": expected_range[0], "max": expected_range[1]},
+                )
+
+    def test_select_as_symint_rejects_non_select_scalar(self):
+        result = run_fuse_patterns(lower_module(SelectAsSymIntModule(use_select=False)))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            nodes_named(result.graph_module, "select_as_symint.default"), []
+        )
+
+    def test_select_as_symint_eager_requires_integral_input(self):
+        self.assertEqual(
+            torch.ops.et_vk.select_as_symint.default(
+                torch.tensor([5, 6], dtype=torch.int64), 0, 1
+            ),
+            6,
+        )
+        with self.assertRaisesRegex(ValueError, "requires an integral input"):
+            torch.ops.et_vk.select_as_symint.default(torch.tensor([5.0, 6.0]), 0, 1)
+
+    def test_causal_sdpa_requires_both_cache_updates(self):
+        for update_key, update_value, expected in (
+            (True, True, (True, True, True)),
+            (True, False, (True, False, False)),
+            (False, True, (False, True, False)),
+            (False, False, (False, False, False)),
+        ):
+            with self.subTest(update_key=update_key, update_value=update_value):
+                exported_program = causal_sdpa_program(update_key, update_value)
+                sdpa_node = next(
+                    node
+                    for node in exported_program.graph_module.graph.nodes
+                    if is_custom_sdpa_node(node)
+                )
+                match = CausalSDPAMatch(sdpa_node)
+                actual = (
+                    match.update_key_cache_node is not None,
+                    match.update_value_cache_node is not None,
+                    match.match_found,
+                )
+                self.assertEqual(actual, expected)
+                if match.match_found:
+                    self.assertEqual(match.query_node.target, "query")
+                    self.assertEqual(match.key_projection_node.target, "key")
+                    self.assertEqual(match.value_projection_node.target, "value")
+
+    def test_causal_sdpa_replaces_complete_cache_topology(self):
+        exported_program = causal_sdpa_program(True, True)
+        result = run_fuse_patterns(exported_program)
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            sum(is_update_cache_node(node) for node in result.graph_module.graph.nodes),
+            0,
+        )
+        self.assertEqual(
+            sum(
+                is_sdpa_with_kv_cache_node(node)
+                for node in result.graph_module.graph.nodes
+            ),
+            1,
+        )
+
+    def test_causal_sdpa_rejects_shared_key_value_cache_update(self):
+        exported_program = shared_cache_causal_sdpa_program()
+        sdpa_node = next(
+            node
+            for node in exported_program.graph_module.graph.nodes
+            if is_custom_sdpa_node(node)
+        )
+        match = CausalSDPAMatch(sdpa_node)
+
+        self.assertIs(match.update_key_cache_node, match.update_value_cache_node)
+        self.assertFalse(match.match_found)
+
+        result = run_fuse_patterns(exported_program)
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            sum(is_update_cache_node(node) for node in result.graph_module.graph.nodes),
+            1,
+        )
+        self.assertEqual(
+            sum(is_custom_sdpa_node(node) for node in result.graph_module.graph.nodes),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                is_sdpa_with_kv_cache_node(node)
+                for node in result.graph_module.graph.nodes
+            ),
+            0,
+        )
+
+    def test_causal_sdpa_rejects_incomplete_optional_arguments(self):
+        for argument_count in (4, 5, 6):
+            with self.subTest(argument_count=argument_count):
+                graph = torch.fx.Graph()
+                query = graph.placeholder("query")
+                key = graph.placeholder("key")
+                value = graph.placeholder("value")
+                full_args = (query, key, value, 0, None, 0.0)
+                sdpa_node = graph.call_function(
+                    torch.ops.llama.custom_sdpa.default,
+                    full_args[:argument_count],
+                )
+
+                self.assertFalse(CausalSDPAMatch(sdpa_node).match_found)

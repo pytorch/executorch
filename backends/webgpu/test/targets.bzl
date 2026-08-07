@@ -19,6 +19,23 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.python_test(
+        name = "test_update_cache",
+        srcs = ["ops/test_update_cache.py"],
+        preload_deps = [
+            "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+            "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+            "//executorch/backends/vulkan/serialization:lib",
+            "//executorch/backends/vulkan:vulkan_preprocess",
+            "//executorch/examples/models/gemma4:webgpu_support",
+            "//executorch/exir:lib",
+        ],
+    )
+
     runtime.python_library(
         name = "tester",
         srcs = ["tester.py"],

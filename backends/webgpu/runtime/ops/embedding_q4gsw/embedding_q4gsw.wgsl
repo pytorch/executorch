@@ -12,6 +12,13 @@ struct Params {
   bytes_per_row: u32,
   total_blocks: u32,
   is_linear_weight: u32,
+  // This dispatch owns vocab rows [row_lo, row_lo + rows_in_chunk). t_weight
+  // and t_scales are bound at that chunk's byte offsets, so both use row-local
+  // indices.
+  row_lo: u32,
+  rows_in_chunk: u32,
+  pad0: u32,
+  pad1: u32,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
@@ -19,8 +26,11 @@ override wg_size: u32 = 64u;
 
 // One thread per 32-dim block of one gathered row (flat-buffer weight path).
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let block = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+  // 2D-spill: total_blocks can exceed the 65535 per-dim grid cap.
+  let block = gid.x + gid.y * (num_workgroups.x * wg_size);
   if (block >= params.total_blocks) {
     return;
   }
@@ -29,7 +39,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   // token assumed in-range (mirrors Vulkan; no vocab clamp).
   let token = u32(t_indices[indices_idx]);
-  let row_byte_base = token * params.bytes_per_row;
+  // A vocab-sized 4-bit table can exceed maxStorageBufferBindingSize, so it is
+  // bound one chunk of rows per dispatch. Each token belongs to exactly one
+  // chunk, so every output row is still written exactly once.
+  if (token < params.row_lo || token - params.row_lo >= params.rows_in_chunk) {
+    return;
+  }
+  let row_byte_base = (token - params.row_lo) * params.bytes_per_row;
   let out_base = indices_idx * params.embed_dim + base_dim;
 
   for (var t: u32 = 0u; t < 32u; t = t + 1u) {
@@ -46,7 +62,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       nib = b & 0x0Fu;          // low nibble
     }
     let q = f32(i32(nib) - 8); // +8-shifted on pack; recover signed [-8,7]
-    let scale = t_scales[token * params.groups_per_row + dim / params.group_size];
+    let scale = t_scales[
+        (token - params.row_lo) * params.groups_per_row +
+        dim / params.group_size];
     t_out[out_base + t] = q * scale;
   }
 }

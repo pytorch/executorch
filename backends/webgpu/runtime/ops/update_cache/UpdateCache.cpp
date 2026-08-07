@@ -9,28 +9,77 @@
 #include <executorch/backends/webgpu/runtime/WebGPUGraph.h>
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
+#include <executorch/backends/webgpu/runtime/ops/update_cache/UpdateCacheState.h>
 #include <executorch/backends/webgpu/runtime/ops/update_cache/update_cache_wgsl.h>
 
 #include <webgpu/webgpu.h>
 
 #include <cstdint>
-#include <cstring>
+#include <limits>
 #include <stdexcept>
 
 namespace executorch::backends::webgpu {
 
 namespace {
 
-// Uniform buffer layout matching the WGSL Params struct (16-byte aligned).
-struct UpdateCacheParams {
-  uint32_t numel;
-  uint32_t dst_offset;
-  uint32_t cache_numel;
-  uint32_t _pad0;
+int64_t read_input_pos(const WebGPUGraph& graph, int input_pos_id) {
+  const auto type = graph.get_value_type(input_pos_id);
+  if (type == WebGPUGraph::ValueType::Int) {
+    return graph.get_int(input_pos_id);
+  }
+  if (type == WebGPUGraph::ValueType::SymInt) {
+    return graph.read_symint(input_pos_id);
+  }
+  throw std::runtime_error(
+      "WebGPU update_cache: input_pos must be Int or SymInt");
+}
+
+void validate_fp32_tensor(const WebGPUTensor& tensor, const char* label) {
+  const uint64_t numel = utils::numel_of(tensor.dims);
+  if (numel > std::numeric_limits<size_t>::max() / sizeof(float) ||
+      tensor.nbytes != static_cast<size_t>(numel) * sizeof(float)) {
+    throw std::runtime_error(
+        std::string("WebGPU update_cache: ") + label + " must be fp32");
+  }
+}
+
+struct UpdateCacheRefreshContext {
+  int value_id;
+  int cache_id;
+  int input_pos_id;
+  size_t expected_value_rank;
+  size_t expected_cache_rank;
+  uint32_t workgroup_size;
+  uint32_t max_workgroups_per_dimension;
+  WGPUBuffer params_buffer;
+  size_t dispatch_index;
 };
-static_assert(
-    sizeof(UpdateCacheParams) == 16,
-    "UpdateCacheParams must be 16 bytes");
+
+void refresh_update_cache(
+    WebGPUGraph& graph,
+    const UpdateCacheRefreshContext& context) {
+  const LiveUpdateCacheInputs inputs = {
+      graph.cur_dims(context.value_id),
+      graph.cur_dims(context.cache_id),
+      context.expected_value_rank,
+      context.expected_cache_rank,
+      read_input_pos(graph, context.input_pos_id),
+      context.workgroup_size,
+      context.max_workgroups_per_dimension,
+  };
+  refresh_live_update_cache_state(
+      inputs, [&](const LiveUpdateCacheState& state) {
+        wgpuQueueWriteBuffer(
+            graph.queue(),
+            context.params_buffer,
+            0,
+            &state.params,
+            sizeof(state.params));
+        auto& dispatch = graph.dispatch_at(context.dispatch_index);
+        dispatch.workgroup_count_x = state.workgroup_count_x;
+        dispatch.workgroup_count_y = 1;
+      });
+}
 
 // llama.update_cache.default args: [value, cache, input_pos, out].
 void update_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
@@ -42,82 +91,29 @@ void update_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
 
   const auto& value_tensor = graph.get_tensor(value_id);
   const auto& cache_tensor = graph.get_tensor(cache_id);
-  if (value_tensor.dims.size() < 4 || cache_tensor.dims.size() < 4 ||
-      value_tensor.nbytes == 0) {
+  if (value_tensor.dims.size() < 4 || cache_tensor.dims.size() < 4) {
     throw std::runtime_error("WebGPU update_cache: expects 4D value and cache");
   }
-
-  uint64_t value_numel = 1;
-  for (int64_t d : value_tensor.dims) {
-    value_numel *= static_cast<uint64_t>(d);
-  }
-  // fp32-only shader: bail if bytes don't match an fp32 element count.
-  if (value_tensor.nbytes != value_numel * sizeof(float)) {
-    throw std::runtime_error(
-        "WebGPU update_cache: fp32-only (byte-size mismatch)");
-  }
-
-  const size_t ndim = value_tensor.dims.size();
-  const size_t cndim = cache_tensor.dims.size();
-  // Mirror Vulkan update_cache_impl shape guards (backends/vulkan SDPA.cpp).
-  if (value_tensor.dims[ndim - 4] != 1 || cache_tensor.dims[cndim - 4] != 1) {
-    throw std::runtime_error("WebGPU update_cache: batch must be 1");
-  }
-  if (value_tensor.dims[ndim - 1] != cache_tensor.dims[cndim - 1]) {
-    throw std::runtime_error("WebGPU update_cache: head_dim mismatch");
-  }
-  if (value_tensor.dims[ndim - 2] != cache_tensor.dims[cndim - 2]) {
-    throw std::runtime_error("WebGPU update_cache: n_heads mismatch");
-  }
-  const uint64_t head_dim = static_cast<uint64_t>(value_tensor.dims[ndim - 1]);
-  const uint64_t n_heads = static_cast<uint64_t>(value_tensor.dims[ndim - 2]);
-
-  uint64_t cache_numel = 1;
-  for (int64_t d : cache_tensor.dims) {
-    cache_numel *= static_cast<uint64_t>(d);
-  }
-
-  if (graph.get_value_type(input_pos_id) != WebGPUGraph::ValueType::Int) {
-    throw std::runtime_error(
-        "WebGPU update_cache: input_pos must be Int (SymInt not yet supported)");
-  }
-  const int64_t input_pos = graph.get_int(input_pos_id);
-  if (input_pos < 0) {
-    throw std::runtime_error(
-        "WebGPU update_cache: input_pos must be non-negative");
-  }
-
-  // Bound input_pos in u64 so the u32 param downcasts cannot overflow/truncate.
-  const uint64_t stride = n_heads * head_dim;
-  if (cache_numel > UINT32_MAX || value_numel > cache_numel ||
-      static_cast<uint64_t>(input_pos) > (cache_numel - value_numel) / stride) {
-    throw std::runtime_error(
-        "WebGPU update_cache: input_pos writes past cache capacity");
-  }
-  const uint64_t dst_offset = static_cast<uint64_t>(input_pos) * stride;
-
-  UpdateCacheParams params = {};
-  params.numel = static_cast<uint32_t>(value_numel);
-  params.dst_offset = static_cast<uint32_t>(dst_offset);
-  params.cache_numel = static_cast<uint32_t>(cache_numel);
+  validate_fp32_tensor(value_tensor, "value");
+  validate_fp32_tensor(cache_tensor, "cache");
 
   // Validate dispatch against device limits before allocating GPU objects.
   const uint32_t wg_size =
       utils::clamp_workgroup_size(device, kUpdateCacheWorkgroupSizeX);
-  const uint32_t workgroup_count_x = utils::compute_1d_workgroup_count(
-      device, params.numel, wg_size, "update_cache");
-
-  WGPUBufferDescriptor uniform_desc = {};
-  uniform_desc.size = sizeof(UpdateCacheParams);
-  uniform_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
-  uniform_desc.mappedAtCreation = true;
-  WGPUBuffer uniform_buffer = wgpuDeviceCreateBuffer(device, &uniform_desc);
-  void* mapped =
-      wgpuBufferGetMappedRange(uniform_buffer, 0, sizeof(UpdateCacheParams));
-  std::memcpy(mapped, &params, sizeof(UpdateCacheParams));
-  wgpuBufferUnmap(uniform_buffer);
-
-  graph.add_uniform_buffer_bytes(sizeof(UpdateCacheParams));
+  const uint32_t max_workgroups = utils::queried_max_workgroups(device);
+  const LiveUpdateCacheInputs initial_inputs = {
+      value_tensor.dims,
+      cache_tensor.dims,
+      value_tensor.dims.size(),
+      cache_tensor.dims.size(),
+      read_input_pos(graph, input_pos_id),
+      wg_size,
+      max_workgroups,
+  };
+  const LiveUpdateCacheState initial_state =
+      compute_live_update_cache_state(initial_inputs);
+  WGPUBuffer uniform_buffer =
+      graph.create_params_buffer(initial_state.params);
 
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
@@ -143,10 +139,32 @@ void update_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       &wg_size_constant,
       1);
 
-  graph.add_dispatch({bundle.pipeline, bundle.bind_group, workgroup_count_x});
+  const size_t dispatch_index = graph.add_dispatch(
+      {bundle.pipeline,
+       bundle.bind_group,
+       initial_state.workgroup_count_x,
+       "update_cache"});
 
-  // Drop our ref; the bind group keeps the uniform buffer alive until release.
-  wgpuBufferRelease(uniform_buffer);
+  const UpdateCacheRefreshContext refresh_context = {
+      value_id,
+      cache_id,
+      input_pos_id,
+      value_tensor.dims.size(),
+      cache_tensor.dims.size(),
+      wg_size,
+      max_workgroups,
+      uniform_buffer,
+      dispatch_index,
+  };
+  std::vector<int> symint_triggers;
+  if (graph.get_value_type(input_pos_id) == WebGPUGraph::ValueType::SymInt) {
+    symint_triggers.push_back(input_pos_id);
+  }
+  graph.add_post_resize_hook(
+      {value_id, cache_id},
+      symint_triggers,
+      refresh_update_cache,
+      refresh_context);
 }
 
 } // namespace

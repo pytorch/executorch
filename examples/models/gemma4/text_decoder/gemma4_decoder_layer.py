@@ -126,6 +126,7 @@ class Gemma4DecoderLayer(nn.Module):
         per_layer_input: torch.Tensor,
         input_pos: Optional[torch.Tensor] = None,
         shared_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        query_start_pos: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         """Forward pass for decoder layer.
 
@@ -134,6 +135,7 @@ class Gemma4DecoderLayer(nn.Module):
             per_layer_input: Per-layer input of shape [batch, seq_len, hidden_size_per_layer_input]
             input_pos: Current position(s) for KV cache
             shared_kv: Optional tuple of (k, v) from donor layer for YOCO
+            query_start_pos: Optional absolute position for a selected query row
 
         Returns:
             Tuple of (hidden_states, per_layer_input, kv_to_share)
@@ -145,6 +147,7 @@ class Gemma4DecoderLayer(nn.Module):
             hidden_states=hidden_states,
             input_pos=input_pos,
             shared_kv=shared_kv,
+            query_start_pos=query_start_pos,
         )
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = residual + hidden_states

@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from slice.wgsl - DO NOT EDIT.
-// wgsl-sha256: 6a895a8c321cd3ddaffc468d7843c9dea3eaeb9d3de0088a1a09419b3ccfd10b
+// wgsl-sha256: 5b9cb0c437a87fac0e66c1a6e7fedba75068737e2b9ed03f53b4f6ec1250081d
 inline constexpr const char* kSliceWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -37,8 +37,11 @@ struct Params {
 override wg_size: u32 = 64u;
 
 @compute @workgroup_size(wg_size, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let out_bufi = gid.x;
+fn main(
+    @builtin(global_invocation_id) gid: vec3<u32>,
+    @builtin(num_workgroups) num_workgroups: vec3<u32>) {
+    // 2D-spill: numel can exceed the 65535 per-dim grid cap.
+    let out_bufi = gid.x + gid.y * (num_workgroups.x * wg_size);
     if (out_bufi >= out_meta.numel) {
         return;
     }

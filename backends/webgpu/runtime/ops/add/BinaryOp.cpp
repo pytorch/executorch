@@ -11,6 +11,7 @@
 #include <executorch/backends/webgpu/runtime/ops/OperatorRegistry.h>
 #include <executorch/backends/webgpu/runtime/ops/TensorMeta.h>
 #include <executorch/backends/webgpu/runtime/ops/add/binary_add_wgsl.h>
+#include <executorch/backends/webgpu/runtime/ops/rms_norm/RmsNormFusion.h>
 
 #include <webgpu/webgpu.h>
 
@@ -40,6 +41,11 @@ void add_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     alpha = static_cast<float>(graph.get_int(alpha_id));
   } else if (graph.get_value_type(alpha_id) == WebGPUGraph::ValueType::Double) {
     alpha = static_cast<float>(graph.get_double(alpha_id));
+  }
+
+  // Fold into an immediately preceding rms_norm dispatch when guards hold.
+  if (fusion::try_fuse_add(graph, in1_id, in2_id, alpha, out_id)) {
+    return;
   }
 
   const auto& in1_tensor = graph.get_tensor(in1_id);

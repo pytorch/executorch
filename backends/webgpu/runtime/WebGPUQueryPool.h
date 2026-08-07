@@ -17,6 +17,41 @@
 
 namespace executorch::backends::webgpu {
 
+namespace detail {
+
+class WebGPUQueryResultState final {
+ public:
+  bool results_valid() const {
+    return results_valid_;
+  }
+  uint64_t result_generation() const {
+    return result_generation_;
+  }
+  void invalidate() {
+    results_valid_ = false;
+  }
+  void complete() {
+    results_valid_ = true;
+    result_generation_++;
+  }
+
+ private:
+  bool results_valid_ = false;
+  uint64_t result_generation_ = 0;
+};
+
+inline bool query_result_extraction_succeeded(
+    uint32_t num_pairs,
+    WGPUWaitStatus wait_status,
+    WGPUMapAsyncStatus map_status,
+    const uint64_t* ticks) {
+  return num_pairs == 0 ||
+      (wait_status == WGPUWaitStatus_Success &&
+       map_status == WGPUMapAsyncStatus_Success && ticks != nullptr);
+}
+
+} // namespace detail
+
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
 
 // Per-dispatch GPU timing; mirrors Vulkan QueryPool ShaderDuration.
@@ -70,10 +105,21 @@ class WebGPUQueryPool {
   const std::vector<ShaderDuration>& results() const {
     return durations_;
   }
+  bool results_valid() const {
+    return result_state_.results_valid();
+  }
+  uint64_t result_generation() const {
+    return result_state_.result_generation();
+  }
   void print_results(bool tsv = false) const;
   uint64_t get_mean_shader_ns(const std::string& kernel_name) const;
 
  private:
+  bool finalize_extraction(
+      WGPUWaitStatus wait_status,
+      WGPUMapAsyncStatus map_status,
+      const uint64_t* ticks);
+
   WGPUQuerySet qset_ = nullptr;
   WGPUBuffer resolve_buf_ = nullptr; // QueryResolve | CopySrc
   WGPUBuffer readback_buf_ = nullptr; // MapRead | CopyDst
@@ -81,6 +127,7 @@ class WebGPUQueryPool {
   uint32_t num_pairs_ = 0;
   double ns_per_tick_ = 1.0; // WebGPU timestamps are already nanoseconds
   std::vector<ShaderDuration> durations_;
+  detail::WebGPUQueryResultState result_state_;
 };
 
 // Per-op durations from begin/end tick pairs (consecutive-end delta).
