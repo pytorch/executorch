@@ -33,9 +33,22 @@ from typing import Any, Dict, List
 # are not published for them.
 DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"]
 
-# CUDA versions to publish. cu130 first because it is the generator's stable choice, and
-# cu126 because it is the floor a consumer pairing with an older PyTorch needs.
-SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130"]
+# CUDA versions to publish.
+#
+# Chosen so that every consumer row can find a matching wheel rather than by what is
+# convenient to verify. A delegate built against one of these has to be able to depend on an
+# ExecuTorch wheel for the same CUDA version, and a missing version means that consumer has
+# nothing to depend on:
+#
+#   cu126   the floor, and what Jetson devices are limited to
+#   cu130   the generator's stable choice, and the default for accelerator consumers
+#   cu132   the newest, which consumers building against a current TensorRT need
+#
+# cu132 is included even though no machine here can execute it, because omitting it would
+# leave a published consumer row with no ExecuTorch wheel to pair with. The packaging
+# properties are checked on every row; executing a model is a release-gate step on hardware
+# that has the matching GPU.
+SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
 # little signal, and this pair is the one with a machine that can run a model on it.
