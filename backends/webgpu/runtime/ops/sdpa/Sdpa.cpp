@@ -694,7 +694,7 @@ void sdpa_with_kv_cache_impl(WebGPUGraph& graph, const std::vector<int>& args) {
     // lambda runs, so eager construction here can never throw on it.
     if (fd_eligible) {
       state.fd = make_sdpa_fd_decode_state(
-          gr.device(), Hq, Hkv, D, state.context_len, g, scale);
+          gr.device(), Hq, Hkv, D, state.context_len, g, scale, gr.kv_f16());
     }
     return state;
   };

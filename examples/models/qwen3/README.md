@@ -68,5 +68,33 @@ Note that you have to apply the chat template manually for the C++ runner.
 
 To run the model on an example iOS or Android app, see the Llama README's [Step 5: Build Mobile apps](../llama/README.md#step-5-build-mobile-apps) section.
 
+### WebGPU export (Qwen3-0.6B)
+
+`config/qwen3_webgpu_q4gsw.yaml` exports Qwen3-0.6B with group-symmetric 4-bit weights at `max_seq_length` 512 and `max_context_length` 8960, for the WebGPU delegate.
+
+**Runtime selection is declared, not inferred.** `LlmConfig` exposes no WebGPU backend field, so the config sets `backend.vulkan.enabled` — that is the *serialization* mechanism that produces the program the WebGPU delegate consumes (the delegate registers under the Vulkan backend id). Vulkan serialization on its own is not a WebGPU selection. The export contract `manifests/qwen3_0_6b_webgpu.json` therefore records `target_runtime: webgpu` alongside `serialization_backend: vulkan`, and `webgpu_artifact_manifest.py` rejects any artifact set whose declared runtime target is missing or different.
+
+Export:
+```
+python -m extension.llm.export.export_llm \
+  --config examples/models/qwen3/config/qwen3_webgpu_q4gsw.yaml
+```
+
+The contract pins the checkpoint and tokenizer to an exact Hugging Face commit, with the published SHA-256 and byte count for each. Build a manifest over an output directory and validate it:
+```
+python -m executorch.examples.models.qwen3.webgpu_artifact_manifest create \
+  --root <output-dir> \
+  --output <output-dir>/manifest.json \
+  --role pte=qwen3_0_6b_webgpu_q4gsw.pte \
+  --role javascript=runner.js \
+  --role wasm=runner.wasm
+
+python -m executorch.examples.models.qwen3.webgpu_artifact_manifest validate \
+  --root <output-dir> \
+  --manifest <output-dir>/manifest.json
+```
+
+Validation fails closed on a missing, extra, symlinked, wrong-size or wrong-hash artifact; on a role whose file extension contradicts it; on a method set other than `forward`; on a graph carrying portable operators or a delegate other than the WebGPU one; and on any acquisition pin that disagrees with the checked contract.
+
 ### FAQ
 For more help with exporting or running this model, feel free to ask in our [discord channel](https://discord.gg/UEjkY9Zs).

@@ -746,7 +746,9 @@ void expect_sdpa_route(
     const std::vector<std::string>& names,
     int s,
     bool expect_k16,
-    const char* k16_kernel_name = "sdpa_streaming_attention_k16_causal_bound") {
+    const char* k16_kernel_name = "sdpa_streaming_attention_k16_causal_bound",
+    const char* fd_split_kernel_name = "fd_split",
+    const char* fd_reduce_kernel_name = "fd_reduce") {
   const bool expect_fd = s == 1;
   const bool expect_materialized = !expect_fd && !expect_k16;
   EXPECT_EQ(std::count(names.begin(), names.end(), "update_cache"), 2);
@@ -754,9 +756,11 @@ void expect_sdpa_route(
       std::count(names.begin(), names.end(), k16_kernel_name),
       expect_k16 ? 1 : 0);
   EXPECT_EQ(
-      std::count(names.begin(), names.end(), "fd_split"), expect_fd ? 1 : 0);
+      std::count(names.begin(), names.end(), fd_split_kernel_name),
+      expect_fd ? 1 : 0);
   EXPECT_EQ(
-      std::count(names.begin(), names.end(), "fd_reduce"), expect_fd ? 1 : 0);
+      std::count(names.begin(), names.end(), fd_reduce_kernel_name),
+      expect_fd ? 1 : 0);
   EXPECT_EQ(
       std::count(names.begin(), names.end(), "sdpa_compute_attn_weights"),
       expect_materialized ? 1 : 0);
@@ -769,6 +773,19 @@ void expect_sdpa_route(
   EXPECT_EQ(
       names.size(),
       static_cast<size_t>(2 + (expect_k16 ? 1 : (expect_fd ? 2 : 3))));
+}
+
+TEST(DynamicShape, Qwen3FdProfileLabelsContract) {
+  expect_sdpa_route(
+      {"update_cache",
+       "update_cache",
+       "fd_split_gqa2_f16",
+       "fd_reduce_gqa2_f16"},
+      1,
+      false,
+      "sdpa_streaming_attention_qwen3_k16_causal_bound",
+      "fd_split_gqa2_f16",
+      "fd_reduce_gqa2_f16");
 }
 #endif
 
@@ -1690,11 +1707,19 @@ TEST(DynamicShape, Qwen3K16CausalLiveRoutesProfile) {
   constexpr float kQwen3MaxError = 1e-2f;
   constexpr const char* kQwen3Kernel =
       "sdpa_streaming_attention_qwen3_k16_causal_bound";
+  constexpr const char* kQwen3FdSplitKernel = "fd_split_gqa2_f16";
+  constexpr const char* kQwen3FdReduceKernel = "fd_reduce_gqa2_f16";
   Module module(g_dir + "/sdpa_k16_qwen3.pte");
   load_sdpa_module(module, true);
   prime_k16_sdpa(
       module, "sdpa_k16_qwen3", kQwen3Hq, kQwen3Hkv, kQwen3D, kQwen3MaxError);
-  expect_sdpa_route(current_profile_names(), 12, true, kQwen3Kernel);
+  expect_sdpa_route(
+      current_profile_names(),
+      12,
+      true,
+      kQwen3Kernel,
+      kQwen3FdSplitKernel,
+      kQwen3FdReduceKernel);
   for (int s : {128, 1, 17, 1, 128}) {
     run_k16_sdpa(
         module,
@@ -1705,7 +1730,13 @@ TEST(DynamicShape, Qwen3K16CausalLiveRoutesProfile) {
         kQwen3D,
         false,
         kQwen3MaxError);
-    expect_sdpa_route(current_profile_names(), s, s > 1, kQwen3Kernel);
+    expect_sdpa_route(
+        current_profile_names(),
+        s,
+        s > 1,
+        kQwen3Kernel,
+        kQwen3FdSplitKernel,
+        kQwen3FdReduceKernel);
   }
 }
 

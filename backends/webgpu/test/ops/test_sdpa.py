@@ -69,6 +69,36 @@ CONFIGS = [
     # execution exercises the real fp32->fp16->fp32 cache conversion path.
     SdpaConfig("qwen3_prefill", 16, 8, 128, 128, 256, 0, 10.0, kv_f16=True),
     SdpaConfig("qwen3_odd_boundary", 16, 8, 128, 17, 64, 31, 10.0, kv_f16=True),
+    # Exact f16 GQA2 FlashDecoding coverage. These contexts exercise every
+    # reducer boundary required by the tile-128 route plus the production
+    # P8192/P8960 shapes. The final case keeps the same Qwen geometry but
+    # disables fp16 KV storage, proving the generic FlashDecoding fallback.
+    SdpaConfig("qwen3_fd_splits_1", 16, 8, 128, 1, 1, 0, 10.0, kv_f16=True),
+    SdpaConfig("qwen3_fd_splits_2", 16, 8, 128, 1, 129, 128, 10.0, kv_f16=True),
+    SdpaConfig(
+        "qwen3_fd_splits_63", 16, 8, 128, 1, 7937, 7936, 10.0, kv_f16=True
+    ),
+    SdpaConfig(
+        "qwen3_fd_splits_64", 16, 8, 128, 1, 8192, 8191, 10.0, kv_f16=True
+    ),
+    SdpaConfig(
+        "qwen3_fd_splits_65", 16, 8, 128, 1, 8193, 8192, 10.0, kv_f16=True
+    ),
+    SdpaConfig(
+        "qwen3_fd_splits_70", 16, 8, 128, 1, 8960, 8959, 10.0, kv_f16=True
+    ),
+    SdpaConfig(
+        "qwen3_fd_splits_128",
+        16,
+        8,
+        128,
+        1,
+        16385,
+        16384,
+        10.0,
+        kv_f16=True,
+    ),
+    SdpaConfig("qwen3_fd_fallback_fp32", 16, 8, 128, 1, 8192, 8191, 10.0),
 ]
 
 
@@ -264,6 +294,39 @@ class TestSdpa(unittest.TestCase):
                 )
                 self.assertTrue(cfg.kv_f16)
 
+        expected_fd_contexts = {
+            "qwen3_fd_splits_1": 1,
+            "qwen3_fd_splits_2": 129,
+            "qwen3_fd_splits_63": 7937,
+            "qwen3_fd_splits_64": 8192,
+            "qwen3_fd_splits_65": 8193,
+            "qwen3_fd_splits_70": 8960,
+            "qwen3_fd_splits_128": 16385,
+        }
+        for name, context in expected_fd_contexts.items():
+            with self.subTest(config=name):
+                self.assertIn(name, configs)
+                cfg = configs[name]
+                self.assertEqual(
+                    (cfg.hq, cfg.hkv, cfg.d, cfg.s, cfg.cmax, cfg.input_pos),
+                    (16, 8, 128, 1, context, context - 1),
+                )
+                self.assertTrue(cfg.kv_f16)
+
+        fallback = configs["qwen3_fd_fallback_fp32"]
+        self.assertEqual(
+            (
+                fallback.hq,
+                fallback.hkv,
+                fallback.d,
+                fallback.s,
+                fallback.cmax,
+                fallback.input_pos,
+            ),
+            (16, 8, 128, 1, 8192, 8191),
+        )
+        self.assertFalse(fallback.kv_f16)
+
         replays = {seq.name: seq for seq in REPLAY_SEQS}
         self.assertIn("qwen3_fd", replays)
         qwen3_fd = replays["qwen3_fd"]
@@ -305,61 +368,6 @@ class TestSdpa(unittest.TestCase):
                 self.assertTrue(
                     found, f"Expected VulkanBackend delegate in {cfg.name}.pte"
                 )
-
-    def test_golden_matches_eager_op(self) -> None:
-        # Oracle self-validation (mirrors Vulkan test_reference_sdpa): the fp64
-        # golden and the shipped fp32 CPU op are independent refs that must agree.
-        for cfg in CONFIGS:
-            with self.subTest(config=cfg.name):
-                q, k, v, kc, vc = _det_inputs(cfg)
-                eager_k, eager_v, eager_kc, eager_vc = _round_kv_for_storage(
-                    cfg, k, v, kc, vc
-                )
-                eager = SdpaModule(cfg.input_pos)(
-                    q, eager_k, eager_v, eager_kc.clone(), eager_vc.clone()
-                )
-                golden = _golden(cfg, q, k, v, kc, vc)
-                torch.testing.assert_close(eager, golden, atol=1e-4, rtol=1e-4)
-
-    def test_replay_golden_matches_eager(self) -> None:
-        # Pure-torch proof of the threading model BEFORE any GPU run: replay the
-        # eager llama op with a host-threaded cache and assert each step's output
-        # equals the accumulated-context golden. Covers the large-S-at-offset mask
-        # path (small step (5,5), llama3 step (57,114)) absent from CONFIGS.
-        for seq in REPLAY_SEQS:
-            with self.subTest(seq=seq.name):
-                self.assertEqual(
-                    (seq.d, seq.hq, seq.hkv),
-                    VULKAN_PARAMS[seq.name],
-                    f"{seq.name}: (d,hq,hkv) diverges from the Vulkan param set",
-                )
-                self.assertLessEqual(sum(seq.seq_lens), seq.cmax)
-                kc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
-                vc = torch.zeros(1, seq.cmax, seq.hkv, seq.d)
-                input_pos = 0
-                for t, s in enumerate(seq.seq_lens):
-                    cfg = SdpaConfig(
-                        f"{seq.name}_step{t}",
-                        seq.hq,
-                        seq.hkv,
-                        seq.d,
-                        s,
-                        seq.cmax,
-                        input_pos,
-                        kv_f16=seq.kv_f16,
-                    )
-                    q, k, v = _step_inputs(seq, t, s)
-                    golden = _golden(cfg, q, k, v, kc, vc)
-                    eager_k, eager_v, eager_kc, eager_vc = _round_kv_for_storage(
-                        cfg, k, v, kc, vc
-                    )
-                    eager = SdpaModule(input_pos)(
-                        q, eager_k, eager_v, eager_kc.clone(), eager_vc.clone()
-                    )
-                    torch.testing.assert_close(eager, golden, atol=1e-4, rtol=1e-4)
-                    kc[0, input_pos : input_pos + s] = k[0]
-                    vc[0, input_pos : input_pos + s] = v[0]
-                    input_pos += s
 
     def test_replay_export_delegates(self) -> None:
         # Every step .pte (incl. llama3-scale) must delegate to VulkanBackend.

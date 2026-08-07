@@ -11,8 +11,12 @@
 
 #include <executorch/backends/webgpu/runtime/WebGPUUtils.h>
 #include <executorch/backends/webgpu/runtime/ops/argmax/arg_reduce_multiwg_route.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/SdpaFdDecode.h>
+#include <executorch/backends/webgpu/runtime/ops/sdpa_fd_decode/sdpa_fd_split_gqa2_f16_wgsl.h>
 
 #include <gtest/gtest.h>
+
+#include <string_view>
 
 #include <limits>
 
@@ -146,4 +150,56 @@ TEST(WebGPUUtils, ArgReduceResizeRejectsScratchGrowth) {
   EXPECT_TRUE(arg_reduce_partial_slots_fit(256u, 256u, 1u));
   EXPECT_FALSE(arg_reduce_partial_slots_fit(256u, 257u, 1u));
   EXPECT_FALSE(arg_reduce_partial_slots_fit(256u, 129u, 2u));
+}
+
+TEST(WebGPUUtils, QwenGqa2FdRouteRequiresEveryExactPredicate) {
+  EXPECT_TRUE(is_qwen_gqa2_f16_fd_route(true, 16, 8, 128, 2));
+  EXPECT_FALSE(is_qwen_gqa2_f16_fd_route(false, 16, 8, 128, 2));
+  EXPECT_FALSE(is_qwen_gqa2_f16_fd_route(true, 15, 8, 128, 2));
+  EXPECT_FALSE(is_qwen_gqa2_f16_fd_route(true, 16, 7, 128, 2));
+  EXPECT_FALSE(is_qwen_gqa2_f16_fd_route(true, 16, 8, 64, 2));
+  EXPECT_FALSE(is_qwen_gqa2_f16_fd_route(true, 16, 8, 128, 1));
+}
+
+TEST(WebGPUUtils, QwenGqa2FdRouteUsesTile128Schedule) {
+  EXPECT_EQ(sdpa_fd_split_tile(true), 128u);
+  EXPECT_EQ(sdpa_fd_num_splits(1u, true), 1u);
+  EXPECT_EQ(sdpa_fd_num_splits(129u, true), 2u);
+  EXPECT_EQ(sdpa_fd_num_splits(7937u, true), 63u);
+  EXPECT_EQ(sdpa_fd_num_splits(8192u, true), 64u);
+  EXPECT_EQ(sdpa_fd_num_splits(8193u, true), 65u);
+  EXPECT_EQ(sdpa_fd_num_splits(8960u, true), 70u);
+  EXPECT_EQ(sdpa_fd_num_splits(16385u, true), 128u);
+}
+
+TEST(WebGPUUtils, GenericFdFallbackKeepsTile64Schedule) {
+  EXPECT_EQ(sdpa_fd_split_tile(false), 64u);
+  EXPECT_EQ(sdpa_fd_num_splits(128u, false), 2u);
+  EXPECT_EQ(sdpa_fd_num_splits(8192u, false), 128u);
+  EXPECT_EQ(sdpa_fd_num_splits(8960u, false), 128u);
+}
+
+TEST(WebGPUUtils, QwenGqa2FdUsesOneSplitWorkgroupPerKvHead) {
+  EXPECT_EQ(sdpa_fd_split_head_count(16u, 8u, true), 8u);
+  EXPECT_EQ(sdpa_fd_split_head_count(16u, 8u, false), 16u);
+}
+
+TEST(WebGPUUtils, QwenGqa2FdRouteReentersAfterLongContext) {
+  const uint32_t splits[] = {
+      sdpa_fd_num_splits(128u, true),
+      sdpa_fd_num_splits(8192u, true),
+      sdpa_fd_num_splits(128u, true),
+  };
+  EXPECT_EQ(splits[0], 1u);
+  EXPECT_EQ(splits[1], 64u);
+  EXPECT_EQ(splits[2], 1u);
+}
+
+TEST(WebGPUUtils, QwenGqa2FdShaderLoadsEachVElementOnceForTheHeadPair) {
+  const std::string_view source(kSdpaFdSplitGqa2F16WGSL);
+  const std::string_view load = "t_v_cache[";
+  const size_t first = source.find(load);
+  ASSERT_NE(first, std::string_view::npos);
+  EXPECT_EQ(source.find(load, first + 1), std::string_view::npos);
+  EXPECT_EQ(source.find("atomic"), std::string_view::npos);
 }
