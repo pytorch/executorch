@@ -1518,10 +1518,17 @@ constexpr uint32_t kRouteK16CausalBound = 1u << 11;
 constexpr uint32_t kRouteBicolSubgroup = 1u << 12;
 constexpr uint32_t kRouteQwen3Q16K16 = 1u << 13;
 constexpr uint32_t kRouteQwen3Q32K16 = 1u << 14;
-bool should_timestamp_query() {
-  return std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
-}
 #endif // WGPU_BACKEND_ENABLE_PROFILING
+
+// Bench gate: compiled out unless WGPU_BACKEND_ENABLE_PROFILING; then the
+// WEBGPU_TIMESTAMP_QUERY env var enables per-pass GPU timestamp queries.
+bool should_timestamp_query() {
+#ifdef WGPU_BACKEND_ENABLE_PROFILING
+  return std::getenv("WEBGPU_TIMESTAMP_QUERY") != nullptr;
+#else
+  return false;
+#endif
+}
 } // namespace
 
 #ifdef WGPU_BACKEND_ENABLE_PROFILING
