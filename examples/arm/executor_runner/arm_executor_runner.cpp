@@ -491,7 +491,10 @@ Error prepare_input_tensors(
       } else if (input_evalues[i].isTensor()) {
         // Copy the data from the input buffer to the tensor
         Tensor& tensor = input_evalues[i].toTensor();
-        std::memcpy(tensor.mutable_data_ptr<int8_t>(), buffer, buffer_size);
+        std::memcpy( // NOLINT(memcpy) - Buffer size is checked
+            tensor.mutable_data_ptr<int8_t>(),
+            buffer,
+            buffer_size);
       }
     }
 
