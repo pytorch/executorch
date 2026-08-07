@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""Narrow the generated build matrix to the rows a GPU wheel can honestly support.
+
+The shared matrix generator emits every CUDA version and Python version it knows about.
+Building all of them would publish wheels for combinations nothing can verify, and a GPU
+wheel that installs and then cannot run is worse than one that does not exist: the failure
+appears when a model runs, and it looks like a model problem rather than a packaging one.
+
+A row is kept only when all three of these hold:
+
+  a GPU exists that the row's device code covers
+  a PyTorch build is published for that CUDA version and architecture
+  a machine is available to run a real model before release
+
+The values below are the current answers to those questions. They are written out rather
+than derived because each one is an external fact that can change independently.
+"""
+
+import argparse
+import json
+import sys
+from typing import Any, Dict, List
+
+# Python versions to skip. 3.14 is excluded because the current CPU wheel rows already fail
+# on it for an unrelated reason in the example requirements, so a GPU row would inherit a
+# known-broken build. The free-threaded builds are excluded because the CUDA dependencies
+# are not published for them.
+DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"]
+
+# CUDA versions to publish. cu130 first because it is the generator's stable choice, and
+# cu126 because it is the floor a consumer pairing with an older PyTorch needs.
+SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130"]
+
+# The single row built for a pull request. A full matrix on every push would cost hours for
+# little signal, and this pair is the one with a machine that can run a model on it.
+PR_PYTHON_VERSION: str = "3.12"
+PR_CUDA_VERSION: str = "cu130"
+
+# Jetson devices are their own row: a JetPack image, one Python version, and one CUDA
+# version. They cannot take a generic aarch64 wheel, because the generic builds carry no
+# device code for their GPU architecture and no portable fallback either.
+#
+# Kept empty on purpose. Published PyTorch stopped shipping sm_87 device code after 2.8.0,
+# so a Jetson row today would produce a wheel whose PyTorch dependency cannot execute on the
+# device. Populate this when that changes.
+JETPACK_PYTHON_VERSIONS: List[str] = []
+JETPACK_CUDA_VERSIONS: List[str] = []
+JETPACK_CONTAINER_IMAGE: str = "nvcr.io/nvidia/l4t-jetpack:r36.4.0"
+
+# The generic aarch64 builder image predates the glibc that the CUDA wheels need, so the
+# aarch64 rows build in a newer manylinux image instead.
+SBSA_CONTAINER_IMAGE: str = "quay.io/pypa/manylinux_2_39_aarch64"
+
+
+def keep(item: Dict[str, Any], is_jetpack: bool) -> bool:
+    """Whether this row should be built, adjusting its container image where needed."""
+    if item["python_version"] in DISABLED_PYTHON_VERSIONS:
+        return False
+
+    if is_jetpack:
+        if (
+            item["python_version"] in JETPACK_PYTHON_VERSIONS
+            and item["desired_cuda"] in JETPACK_CUDA_VERSIONS
+        ):
+            item["container_image"] = JETPACK_CONTAINER_IMAGE
+            return True
+        return False
+
+    if item["desired_cuda"] not in SUPPORTED_CUDA_VERSIONS:
+        return False
+
+    if item.get("gpu_arch_type") == "cuda-aarch64":
+        item["container_image"] = SBSA_CONTAINER_IMAGE
+
+    return True
+
+
+def only_pull_request_row(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One representative row, so a pull request does not build the whole matrix."""
+    for item in items:
+        if (
+            item["python_version"] == PR_PYTHON_VERSION
+            and item["desired_cuda"] == PR_CUDA_VERSION
+        ):
+            return [item]
+    # Falling back to the first row rather than to nothing: an empty matrix would make the
+    # build job vanish, which reads as a pass.
+    return items[:1]
+
+
+def main(argv: List[str]) -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--matrix", required=True, help="the generated matrix, as JSON")
+    parser.add_argument(
+        "--jetpack", default="false", help="build the Jetson row instead"
+    )
+    parser.add_argument("--limit-pr-builds", default="false", help="build one row only")
+    args = parser.parse_args(argv)
+
+    try:
+        matrix = json.loads(args.matrix)
+    except json.JSONDecodeError as error:
+        print(f"could not parse the matrix: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    is_jetpack = args.jetpack.lower() == "true"
+    items = [item for item in matrix.get("include", []) if keep(item, is_jetpack)]
+
+    if args.limit_pr_builds.lower() == "true" and items:
+        items = only_pull_request_row(items)
+
+    # Fail loudly on an empty result. A silently empty matrix produces a workflow with no
+    # build job, which shows up as a green check for a build that never happened.
+    if not items:
+        print(
+            "the filter produced no rows to build, so nothing would be verified. "
+            f"jetpack={is_jetpack}, supported CUDA={SUPPORTED_CUDA_VERSIONS}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(json.dumps({"include": items}))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
