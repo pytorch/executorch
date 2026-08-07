@@ -145,6 +145,26 @@ class WgslCodegenTest(unittest.TestCase):
         )
         self.assertEqual(g.parse_workgroup_size(src), (64, 1, 1))
 
+    def test_parse_workgroup_ignores_commented_attributes(self) -> None:
+        line = (
+            "// prose mentioning @workgroup_size(1) inline\n"
+            "@compute @workgroup_size(64, 1, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(line), (64, 1, 1))
+
+        block = (
+            "/* banner\n * @workgroup_size(1)\n */\n"
+            "@compute @workgroup_size(32, 2, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(block), (32, 2, 1))
+
+    def test_parse_workgroup_ignores_commented_constants(self) -> None:
+        src = (
+            "// const WG: u32 = 1u;\nconst WG: u32 = 64u;\n"
+            "@compute @workgroup_size(WG, 1, 1)\nfn main(){}"
+        )
+        self.assertEqual(g.parse_workgroup_size(src), (64, 1, 1))
+
     def test_render_header_shape(self) -> None:
         wgsl = "@compute @workgroup_size(64, 1, 1)\nfn main(){}\n"
         h = g.render_header(Path("runtime/ops/update_cache/update_cache.wgsl"), wgsl)
@@ -220,14 +240,14 @@ class WgslCodegenTest(unittest.TestCase):
             digest.update(b"\0")
             digest.update(output.read_bytes())
             digest.update(b"\0")
-        self.assertEqual(len(outputs), 136)
+        self.assertEqual(len(outputs), 138)
         self.assertEqual(
             digest.hexdigest(),
-            "0512f8d258952e446ffaedcb653b6a3a720eccf8a6b5327d95fd454a912214a3",
+            "fee848cd069b4c09d3d2e9a7920331f46d5646b74bec30259542dde8f287e504",
         )
         self.assertEqual(
             hashlib.sha256(g.registry_path().read_bytes()).hexdigest(),
-            "28aaa7a8d3e916df43e407120e91d487d0d51cbc5ca93c56bd822d25d109890e",
+            "477721998b3cd8f3f0fdd485fa797c71035a20cbc10a8b4bf44893e37fa435b8",
         )
 
     def test_rope_hf_reconstructs_full_2d_grid_stride(self) -> None:
