@@ -488,7 +488,9 @@ target_link_libraries(custom_op_check PRIVATE _portable_lib)
 # because that enables the CUDA language and fails on a machine with a CUDA
 # toolkit it cannot probe, which has nothing to do with compiling an operator.
 target_include_directories(custom_op_check PRIVATE ${TORCH_INCLUDE_DIR})
-target_compile_features(custom_op_check PRIVATE cxx_std_20)
+# Deliberately no target_compile_features here. These headers need C++20, and the
+# package config is what has to say so. Setting it here would compile the check
+# correctly while leaving a real consumer to fail.
 """
 
 
@@ -851,17 +853,66 @@ def _find_wheel_files() -> list:
     return []
 
 
+# The architectures this project builds wheels for. Matched by suffix rather than
+# parsed positionally, because the version part differs between spellings
+# (linux_x86_64, manylinux_2_28_x86_64, manylinux2014_x86_64) enough that a
+# positional pattern picks it up as part of the name.
+_WHEEL_ARCHITECTURES = ("x86_64", "aarch64", "arm64", "i686", "ppc64le", "s390x")
+
+
+def _wheel_architecture(tag: str):
+    """The architecture a platform tag names, or None if it names none of ours."""
+    for architecture in _WHEEL_ARCHITECTURES:
+        if tag.endswith("_" + architecture):
+            return architecture
+    return None
+
+
+def test_platform_tag_comparison_is_sound() -> None:
+    """The tag comparison must accept what the release pipeline actually produces.
+
+    A local build tags a wheel plain `linux_x86_64`, while the release pipeline builds
+    in a manylinux image and rewrites the file name to `manylinux_2_28_x86_64`. Only
+    the rewritten pair exposed a comparison that rejected every correct wheel, and no
+    local build reproduces that rewrite. Checking the pairs directly means the mistake
+    is catchable without the release pipeline.
+    """
+    accept = (
+        ("manylinux_2_28_x86_64", "linux_x86_64"),
+        ("manylinux_2_28_aarch64", "linux_aarch64"),
+        ("manylinux2014_x86_64", "linux_x86_64"),
+        ("linux_x86_64", "linux_x86_64"),
+    )
+    for claimed, supported in accept:
+        claimed_arch = _wheel_architecture(claimed)
+        assert claimed_arch is not None, f"no architecture read from {claimed}"
+        assert claimed_arch == _wheel_architecture(supported), (
+            f"the comparison rejects {claimed} against {supported}, which is what the "
+            "release pipeline produces for a correct wheel"
+        )
+
+    reject = (("manylinux_2_28_aarch64", "linux_x86_64"),)
+    for claimed, supported in reject:
+        assert _wheel_architecture(claimed) != _wheel_architecture(supported), (
+            f"the comparison accepts {claimed} against {supported}, so a wheel "
+            "labelled for the wrong architecture would ship"
+        )
+    print("✓ the platform tag comparison accepts real tags and rejects a mismatch")
+
+
 def test_wheel_platform_tag() -> None:
-    """The wheel's declared platform tag must match what its libraries need.
+    """The wheel's declared platform tag must name the architecture it was built for.
 
-    A library that quietly picks up a newer dependency, or a newer minimum glibc,
-    makes the wheel unusable on machines the tag says it supports. auditwheel is
-    the tool that decides this, so ask it rather than guessing.
+    Only the architecture. auditwheel cannot certify a glibc baseline for this wheel:
+    it depends on torch without vendoring torch's libraries, so the contents reference
+    libtorch.so from outside any manylinux policy and auditwheel reports a plain
+    linux_<arch>. That is the expected answer for a torch-dependent wheel rather than
+    a defect, and the manylinux tag on the file comes from the build image. Asserting
+    the baseline here failed every correct wheel.
 
-    Only a contradiction between the tag and the contents fails here. Reports about
-    instruction set extensions are left to the caller, because a prebuilt tool that
-    ships in the wheel can legitimately require a newer baseline than the tag
-    implies.
+    The architecture is still worth checking, because a wheel labelled with the wrong
+    one installs on machines it cannot run on at all, and that is a mistake this can
+    actually catch.
     """
     if importlib.util.find_spec("auditwheel") is None:
         # Installed here rather than skipped, because auditwheel is not in any CI
@@ -905,39 +956,20 @@ def test_wheel_platform_tag() -> None:
         "auditwheel reported no platform tag for the wheel, so its contents could "
         f"not be checked against what it claims: {combined[-400:]}"
     )
-    # auditwheel reports the OLDEST tag the contents are compatible with. Claiming a
-    # newer one is conservative and valid: it narrows where the wheel installs
-    # rather than admitting a host it cannot run on. What must not happen is the
-    # reverse, a wheel claiming an older baseline than its libraries support.
     claimed = wheels[-1].name.split("-")[-1].removesuffix(".whl")
     supported = match.group(1)
 
-    def _baseline(tag: str):
-        parsed = re.search(r"manylinux_(\d+)_(\d+)_(\w+)", tag)
-        return (
-            (int(parsed.group(1)), int(parsed.group(2)), parsed.group(3))
-            if parsed
-            else None
-        )
-
-    claimed_baseline, supported_baseline = _baseline(claimed), _baseline(supported)
-    if claimed_baseline and supported_baseline:
-        assert claimed_baseline[2] == supported_baseline[2], (
-            f"the wheel claims architecture {claimed_baseline[2]} but its contents "
-            f"are built for {supported_baseline[2]}"
-        )
-        assert claimed_baseline[:2] >= supported_baseline[:2], (
-            f"the wheel claims platform tag {claimed} but its contents need at least "
-            f"{supported}, so it would install on hosts it cannot run on"
-        )
-    else:
-        # A tag neither side expresses as a manylinux baseline, such as a plain
-        # linux_x86_64 from a local build. Fall back to requiring the same text.
-        assert supported in claimed, (
-            f"the wheel claims platform tag {claimed} but its contents only support "
-            f"{supported}"
-        )
-    print(f"✓ the wheel contents are compatible with its declared tag {claimed}")
+    claimed_arch = _wheel_architecture(claimed)
+    supported_arch = _wheel_architecture(supported)
+    assert claimed_arch and supported_arch, (
+        f"could not read an architecture from the declared tag {claimed} or from what "
+        f"auditwheel reported, {supported}"
+    )
+    assert claimed_arch == supported_arch, (
+        f"the wheel claims architecture {claimed_arch} but its contents are built for "
+        f"{supported_arch}, so it would install where it cannot run"
+    )
+    print(f"✓ the wheel is tagged for the architecture it contains ({claimed_arch})")
 
 
 def test_no_absolute_runtime_paths() -> None:
@@ -1311,6 +1343,7 @@ def run_tests(work_dir: Path) -> None:
     test_shipped_library_names_are_expected()
     test_shipped_libraries_load()
     test_shipped_libraries_resolve_without_build_tree()
+    test_platform_tag_comparison_is_sound()
     test_wheel_platform_tag()
     test_custom_op_compiles(work_dir)
     test_no_absolute_runtime_paths()
