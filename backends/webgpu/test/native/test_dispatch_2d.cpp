@@ -217,9 +217,10 @@ TEST(DispatchRoute, RecordsEligibleQ4AndDynamicSdpaAlternates) {
   EXPECT_TRUE(should_record_q4gsw_dual_route(32, true, true, false));
   EXPECT_TRUE(should_record_q4gsw_dual_route(32, true, false, true));
 
-  EXPECT_FALSE(should_record_sdpa_dual_route(true, false));
-  EXPECT_FALSE(should_record_sdpa_dual_route(false, true));
-  EXPECT_TRUE(should_record_sdpa_dual_route(true, true));
+  EXPECT_FALSE(should_record_sdpa_dual_route(true, false, false));
+  EXPECT_FALSE(should_record_sdpa_dual_route(false, true, true));
+  EXPECT_TRUE(should_record_sdpa_dual_route(true, true, false));
+  EXPECT_TRUE(should_record_sdpa_dual_route(true, false, true));
 }
 
 TEST(WebGPUGraphConfig, ParsesExactBooleanCompileOption) {
