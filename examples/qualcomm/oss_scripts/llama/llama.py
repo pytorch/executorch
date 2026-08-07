@@ -525,6 +525,7 @@ def _build_parser():
         default=8,
         type=int,
     )
+
     parser.add_argument(
         "--use_attention_sink",
         default=None,
@@ -621,12 +622,140 @@ def _build_parser():
     )
 
     parser.add_argument(
+        "--calib_hf_dataset",
+        type=str,
+        default=None,
+        help="HuggingFace chat dataset to use as additional calibration data "
+        "(e.g. 'HuggingFaceTB/smol-smoltalk').",
+    )
+
+    parser.add_argument(
+        "--calib_hf_limit",
+        type=int,
+        default=1,
+        help="Number of samples to load from --calib_hf_dataset.",
+    )
+
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=1,
         help="Batch size for text decoder quantization. Larger values increase throughput "
         "but require more host memory. Only affects the CALIBRATE graph; DECODE and "
         "PREFILL graphs always use batch size 1.",
+    )
+
+    parser.add_argument(
+        "--qat",
+        action="store_true",
+        help="Enable Quantization-Aware Training (QAT). If not set, defaults to PTQ.",
+    )
+
+    parser.add_argument(
+        "--train_config",
+        type=str,
+        default=os.path.join(os.path.dirname(__file__), "train", "config", "qad.yaml"),
+        help="(QAT) Path to a YAML file overriding TrainingArgs defaults "
+        "(train/config/config.py) — e.g. epochs, lr, alpha, temperature, "
+        "grad_accum_steps, max_grad_norm, warmup_ratio. Defaults to "
+        "train/config/qad.yaml.",
+    )
+
+    parser.add_argument(
+        "--lr_config",
+        type=str,
+        default=os.path.join(
+            os.path.dirname(__file__), "train", "config", "lr_config.yaml"
+        ),
+        help="(QAT) Path to a YAML file mapping glob patterns over "
+        "model.named_parameters() names to per-param-group optimizer kwargs "
+        "(lr, weight_decay, betas, eps, ...). Defaults to "
+        "train/config/lr_config.yaml.",
+    )
+
+    parser.add_argument(
+        "--qat_full_tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="(QAT) list of lm-eluther tasks for calib and training data."
+        "Usage: --qat_full_tasks task1 task2"
+        "The full tasks is split into calib/train/val by --calib_train_ratio / --train_val_ratio. ",
+    )
+
+    parser.add_argument(
+        "--qat_full_limit",
+        type=int,
+        default=200,
+        help="(QAT) number of samples for full task limits.",
+    )
+
+    parser.add_argument(
+        "--qat_full_hf_dataset",
+        type=str,
+        default=None,
+        help="(QAT) HuggingFace instruct dataset name for calib and training "
+        "(e.g. 'HuggingFaceTB/smol-smoltalk')."
+        "The full HuggingFace dataset is split into calib/train/val by --calib_train_ratio / --train_val_ratio. ",
+    )
+
+    parser.add_argument(
+        "--qat_full_hf_limit",
+        type=int,
+        default=200,
+        help="(QAT) Number of samples to load from --qat_full_hf_dataset.",
+    )
+
+    parser.add_argument(
+        "--calib_train_ratio",
+        type=float,
+        default=0.2,
+        help="(QAT) Fraction of the full data pool for PTQ calibration. "
+        "The remaining (1 - calib_train_ratio) goes to train + val. "
+        "e.g. 0.2 → 20%% calib, 80%% for train+val.",
+    )
+
+    parser.add_argument(
+        "--train_tasks",
+        nargs="+",
+        type=str,
+        default=None,
+        help="(QAT) list of lm-eluther tasks for training data. "
+        "Usage: --train_tasks task1 task2."
+        "And you need to use --calib_tasks to specify calibration data separately. ",
+    )
+
+    parser.add_argument(
+        "--train_limit",
+        type=int,
+        default=1,
+        help="(QAT) number of samples for train task limits.",
+    )
+
+    parser.add_argument(
+        "--train_hf_dataset",
+        type=str,
+        default=None,
+        help="(QAT) HuggingFace instruct dataset for training "
+        "(e.g. 'HuggingFaceTB/smol-smoltalk')."
+        "And you may need to use --calib_tasks to specify calibration data separately. ",
+    )
+
+    parser.add_argument(
+        "--train_hf_limit",
+        type=int,
+        default=1000,
+        help="(QAT) Number of samples to load from --train_hf_dataset. "
+        "And you may need to use --calib_hf_dataset to specify calibration data separately. ",
+    )
+
+    parser.add_argument(
+        "--train_val_ratio",
+        type=float,
+        default=1.0,
+        help="(QAT) Fraction of the non-calib samples used for training. "
+        "The remaining becomes the validation set. "
+        "e.g. 0.9 → 90%% train, 10%% val. 1.0 disables validation.",
     )
 
     parser.add_argument(
@@ -638,6 +767,16 @@ def _build_parser():
     )
 
     parser.add_argument("-v", "--verbose", action="store_true")
+
+    parser.add_argument(
+        "--freeze_all_params",
+        action="store_true",
+        help="(QAT CI only) Freeze all model weight parameters during QAT training so that "
+        "only quantization scale/zero_point are updated via observer calibration — weights are not "
+        "tuned. This is used as a controlled baseline to isolate the effect of weight updates: "
+        "comparing --freeze_all_params vs normal QAT shows how much benefit comes from weight "
+        "adaptation alone.",
+    )
 
     parser.add_argument(
         "--quant_recipe_suggestion",
@@ -744,18 +883,45 @@ def export_llama(args) -> None:
             )
         if args.eval_tasks is not None:
             raise ValueError("Multimodal models do not support --eval_tasks.")
+        if args.qat:
+            raise ValueError("QAT is not supported for multimodal models (VLM/ALM).")
 
     if not args.pre_gen_pte:
-        if is_multimodal and args.calib_samples is None:
-            raise ValueError(
-                "For MLLMs calibration data is required for compilation. "
-                "Provide --calib_samples with a vision/audio JSON file."
+        if is_multimodal:
+            if args.calib_samples is None:
+                raise ValueError(
+                    "For MLLMs calibration data is required for compilation. "
+                    "Provide --calib_samples with a vision/audio JSON file."
+                )
+        else:
+            has_calib = any(
+                (args.calib_tasks, args.calib_samples, args.calib_hf_dataset)
             )
-        if not is_multimodal and not any((args.calib_tasks, args.calib_samples)):
-            raise ValueError(
-                "For LLMs calibration data is required for compilation. "
-                "Provide --calib_tasks or --calib_samples."
-            )
+            has_full = args.qat_full_tasks or args.qat_full_hf_dataset
+
+            if args.qat:
+                has_train = args.train_tasks or args.train_hf_dataset
+                if has_full and has_train:
+                    raise ValueError(
+                        "QAT accepts only one training-data source: use "
+                        "--qat_full_tasks / --qat_full_hf_dataset for auto-split into "
+                        "calib/train/val, or --train_tasks / --train_hf_dataset paired "
+                        "with --calib_* for explicit split — not both."
+                    )
+                if not has_full and not has_train:
+                    raise ValueError(
+                        "QAT requires training data: provide --qat_full_tasks / "
+                        "--qat_full_hf_dataset (auto-split), or --train_tasks / "
+                        "--train_hf_dataset together with --calib_* (explicit split)."
+                    )
+
+            # Calibration data is required, except in QAT auto-split mode where it
+            # is carved from the --qat_full_* pool.
+            if not (args.qat and has_full) and not has_calib:
+                raise ValueError(
+                    "For LLMs calibration data is required for compilation. "
+                    "Provide --calib_tasks or --calib_samples or --calib_hf_dataset."
+                )
 
     if args.pre_gen_pte:
         text_decoder_pte_path = f"{args.pre_gen_pte}/{pte_filenames[TEXT_DECODER]}.pte"

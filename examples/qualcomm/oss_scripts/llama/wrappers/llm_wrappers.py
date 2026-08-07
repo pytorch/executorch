@@ -85,11 +85,15 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.quantize import PTQStrategy
+from executorch.examples.qualcomm.oss_scripts.llama.quantize import (
+    PTQStrategy,
+    QATStrategy,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     StaticLLMQuantRecipe,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
+from executorch.examples.qualcomm.oss_scripts.llama.train.config import TrainingArgs
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
     Component,
     get_model_specific_kwargs,
@@ -107,8 +111,12 @@ from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from torch.utils.data import DataLoader
 from torchao.prototype.spinquant import apply_spinquant
-from torchao.quantization.pt2e import MinMaxObserver
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import MinMaxObserver, move_exported_model_to_train
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from transformers import AutoModel, AutoModelForSpeechSeq2Seq
 
 
@@ -164,10 +172,13 @@ class TextDecoder(Component):
             self.pass_manager_cls.get_passes_dependency_for_capture_program()
         )
         self.meta = {}
+        recipe_cls = (
+            self.config.qat_recipe
+            if control_args.qat and self.config.qat_recipe
+            else self.config.quant_recipe
+        )
         self.quant_recipe: StaticLLMQuantRecipe = (
-            self.config.quant_recipe(mode == Mode.CALIBRATE)
-            if self.config.quant_recipe
-            else None
+            recipe_cls(mode == Mode.CALIBRATE) if recipe_cls else None
         )
 
         # For multimodal embedding
@@ -580,6 +591,7 @@ class TextDecoder(Component):
             soc_model=data.soc_model,
         )
 
+        use_qat = self.control_args.qat and self.mode == Mode.CALIBRATE
         with torch.no_grad():
             graph_module = None
             self.decoder = torch.export.export(
@@ -588,6 +600,7 @@ class TextDecoder(Component):
             if (
                 self.mode == Mode.CALIBRATE
                 and self.control_args.quant_recipe_suggestion
+                or use_qat
             ):
                 graph_module = copy.deepcopy(self.decoder)
             if self.apply_embedding:
@@ -615,7 +628,11 @@ class TextDecoder(Component):
                     event_name="export_tasks",
                 )
 
-            self.decoder = prepare_pt2e(self.decoder, quantizer)
+            if use_qat:
+                self.decoder = prepare_qat_pt2e(self.decoder, quantizer)
+                move_exported_model_to_train(self.decoder)
+            else:
+                self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
                     self.tok_embedding, tok_embedding_quantizer
@@ -625,19 +642,47 @@ class TextDecoder(Component):
                 calibration_dataloaders = {
                     AUDIO_ENCODER: request.method_data[
                         AUDIO_ENCODER
-                    ].calibration_data.intermediate_outputs,
+                    ].quantization_data.intermediate_outputs,
                     VISION_ENCODER: request.method_data[
                         VISION_ENCODER
-                    ].calibration_data.intermediate_outputs,
-                    TEXT_DECODER: data.calibration_data.datasets,
+                    ].quantization_data.intermediate_outputs,
+                    TEXT_DECODER: data.quantization_data.calib_loader,
                 }
-                PTQStrategy(
-                    inference=self._decoder_inference,
-                    module=self.decoder,
-                    seq_mse_candidates=self.config.seq_mse_candidates,
-                    tok_embedding=self.tok_embedding,
-                ).quantize(calib_loader=calibration_dataloaders)
-                logging.info("Calibration complete for prepare_pt2e")
+
+                if use_qat:
+                    training_args = TrainingArgs.from_yaml(
+                        self.control_args.train_config
+                    )
+                    training_args.lr_config = self.control_args.lr_config
+                    frozen = (
+                        [".*"]
+                        if self.control_args.freeze_all_params
+                        # freeze_all_params: CI-only flag to verify QAT vs PTQ accuracy difference
+                        # by disabling weight updates and only updating scale/zero_point.
+                        else getattr(self.quant_recipe, "frozen_param_patterns", None)
+                    )
+                    QATStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(
+                        calib_loader=calibration_dataloaders,
+                        training_args=training_args,
+                        teacher=graph_module,
+                        train_loader=data.quantization_data.train_loader,
+                        val_loader=data.quantization_data.val_loader,
+                        frozen_param_patterns=frozen,
+                    )
+                    logging.info("QAT training complete")
+                else:
+                    PTQStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(calib_loader=calibration_dataloaders)
+                    logging.info("Calibration complete")
             else:
                 # one dummy inference to remove affine observer
                 # error happened in convert_pt2e
@@ -656,7 +701,7 @@ class TextDecoder(Component):
                     self.quant_recipe.recipe,
                 )
 
-            # FP32 model used for quant-recipe-suggestion reference; release after use.
+            # FP32 model used as QAT teacher or quant-recipe-suggestion reference; release after use.
             del graph_module
             gc.collect()
 
@@ -1216,7 +1261,7 @@ class Modality(Component):
             return
 
         request_data = request.method_data[self.modality]
-        calibration_datasets = request_data.calibration_data.datasets
+        calibration_datasets = request_data.quantization_data.calib_loader
 
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
@@ -1224,7 +1269,7 @@ class Modality(Component):
             if request_data.skip_quantize:
                 logging.info(f"skipping encoder quantization for {self.modality}")
                 intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-                request_data.calibration_data.intermediate_outputs = (
+                request_data.quantization_data.intermediate_outputs = (
                     intermediate_outputs
                 )
                 return
@@ -1237,7 +1282,7 @@ class Modality(Component):
 
             # start calibration
             intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-            request_data.calibration_data.intermediate_outputs = intermediate_outputs
+            request_data.quantization_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
@@ -1246,7 +1291,7 @@ class Modality(Component):
                 qdq_intermediate_outputs = self._calibrate(
                     self.model, calibration_datasets
                 )
-                request_data.calibration_data.qdq_intermediate_outputs = (
+                request_data.quantization_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
 
@@ -1325,14 +1370,23 @@ class MultiModalManager(Component):
             tokenizer_wrapper=tokenizer_wrapper,
             attn_mask=self.text_decoder.calibration_prefill.attn_mask,
         )
-        calibration_data = dataset_builder.build_calib_dataloaders()
+        if self.control_args.qat:
+            calib_loader, train_loader, val_loader = (
+                dataset_builder.build_qat_dataloaders()
+            )
+        else:
+            calib_loader = dataset_builder.build_calib_dataloaders()
+            train_loader = dict.fromkeys(calib_loader)
+            val_loader = dict.fromkeys(calib_loader)
 
         quantize_request = Request(
             inspect.currentframe().f_code.co_name,
             {
                 m: Request.Data(
-                    calibration_data=Request.CalibrationData(
-                        datasets=calibration_data[m]
+                    quantization_data=Request.QuantizationData(
+                        calib_loader=calib_loader[m],
+                        train_loader=train_loader[m],
+                        val_loader=val_loader[m],
                     ),
                     skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer_wrapper.tokenizer,
