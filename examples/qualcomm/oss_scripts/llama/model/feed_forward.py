@@ -54,13 +54,13 @@ class CodegenFeedForward(FeedForwardBase):
         # HF uses NewGelu, however, Gelu is a fused op in QNN and can run faster
         self.act = GELUActivation(use_gelu_python=False)
 
-    def prepare_feedfoward_conv(self):
+    def prepare_feedforward_conv(self):
         intermediate_size = 4 * self.dim
         self.fc_in_conv = torch.nn.Conv2d(self.dim, intermediate_size, 1, bias=True)
         self.fc_out_conv = torch.nn.Conv2d(self.hidden_dim, self.dim, 1, bias=True)
 
         self.forward_no_conv = self.forward
-        self.forward = self.forward_feedfoward_conv
+        self.forward = self.forward_feedforward_conv
 
         self.fc_in_conv.weight.data.copy_(self.fc_in.weight[:, :, None, None])
         self.fc_out_conv.weight.data.copy_(self.fc_out.weight[:, :, None, None])
@@ -71,7 +71,7 @@ class CodegenFeedForward(FeedForwardBase):
         del self.fc_in
         del self.fc_out
 
-    def forward_feedfoward_conv(self, x):
+    def forward_feedforward_conv(self, x):
         bsz, _, _ = x.size()
 
         x = torch.reshape(x, (bsz, -1, 1, self.dim))
@@ -105,14 +105,14 @@ class GLMFeedForward(FeedForwardBase):
         self.down_proj = torch.nn.Linear(args.hidden_dim, args.dim, bias=False)
         self.activation_fn = args.act_fn.get_function()
 
-    def prepare_feedfoward_conv(self):
+    def prepare_feedforward_conv(self):
         self.gate_up_proj_conv = torch.nn.Conv2d(
             self.dim, 2 * self.hidden_dim, 1, bias=False
         )
         self.down_proj_conv = torch.nn.Conv2d(self.hidden_dim, self.dim, 1, bias=False)
 
         self.forward_no_conv = self.forward
-        self.forward = self.forward_feedfoward_conv
+        self.forward = self.forward_feedforward_conv
 
         self.gate_up_proj_conv.weight.data.copy_(
             self.gate_up_proj.weight[:, :, None, None]
@@ -122,7 +122,7 @@ class GLMFeedForward(FeedForwardBase):
         del self.gate_up_proj
         del self.down_proj
 
-    def forward_feedfoward_conv(self, x):
+    def forward_feedforward_conv(self, x):
         bsz, _, _ = x.size()
         x = torch.reshape(x, (bsz, -1, 1, self.dim))
         x = x.transpose(1, 3)  # Transpose right before and after Conv
