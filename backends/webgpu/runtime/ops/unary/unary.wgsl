@@ -17,5 +17,5 @@ fn main(
         return;
     }
     let x = input[idx];
-    output[idx] = 1.0 / sqrt(x);
+    output[idx] = ${OPERATOR};
 }
