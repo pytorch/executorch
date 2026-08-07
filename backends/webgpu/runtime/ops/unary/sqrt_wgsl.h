@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from sqrt.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: 008534ae365969f5c180b42e8d6d0b131df78f181e5435abbcafc3ffb8be8aac
 inline constexpr const char* kSqrtWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;
