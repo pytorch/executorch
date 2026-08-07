@@ -19,6 +19,21 @@ fbcode_target(
     ],
 )
 
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_et_vk_sdpa",
+    srcs = [
+        "ops/test_et_vk_sdpa.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:custom_ops_lib",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:lib",
+    ],
+)
+
 non_fbcode_target(
     _kind = runtime.python_test,
     name = "test_webgpu_artifact_manifest",
@@ -43,6 +58,18 @@ fbcode_target(
 )
 
 fbcode_target(
+    _kind = python_unittest,
+    name = "test_rope_hf_single",
+    srcs = [
+        "ops/test_rope_hf_single.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+fbcode_target(
     _kind = runtime.python_library,
     name = "tester",
     srcs = ["tester.py"],
@@ -58,5 +85,32 @@ fbcode_target(
     srcs = ["test_webgpu_artifact_manifest.py"],
     deps = [
         "//executorch/backends/webgpu/scripts:webgpu_artifact_manifest",
+    ],
+)
+
+fbcode_target(
+    _kind = python_unittest,
+    name = "test_wgsl_codegen",
+    srcs = ["test_wgsl_codegen.py"],
+    deps = [
+        "fbsource//third-party/pypi/pyyaml:pyyaml",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_update_cache",
+    srcs = ["ops/test_update_cache.py"],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan/serialization:lib",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/examples/models/gemma4:webgpu_support",
+        "//executorch/exir:lib",
     ],
 )

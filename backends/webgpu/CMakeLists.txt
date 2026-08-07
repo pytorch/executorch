@@ -261,6 +261,10 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
       webgpu_update_cache_test test/native/test_update_cache.cpp
     )
     target_link_libraries(webgpu_update_cache_test PRIVATE GTest::gtest)
+    target_include_directories(
+      webgpu_update_cache_test
+      PRIVATE "${EXECUTORCH_ROOT}/third-party/json/single_include"
+    )
     add_webgpu_native_test(
       webgpu_dynamic_shape_test test/native/test_dynamic_shape.cpp
     )
@@ -274,6 +278,19 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
     target_link_libraries(
       webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    add_webgpu_native_test(
+      webgpu_update_cache_state_test
+      test/native/test_update_cache_state.cpp
+    )
+    target_link_libraries(
+      webgpu_update_cache_state_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    add_webgpu_native_test(
+      webgpu_slice_chain_test test/native/test_slice_chain.cpp
+    )
+    target_link_libraries(
+      webgpu_slice_chain_test PRIVATE GTest::gtest GTest::gtest_main
     )
     add_executable(
       webgpu_execution_options_test test/native/test_execution_options.cpp
