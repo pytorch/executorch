@@ -880,7 +880,9 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
         # Anything else absolute stays, because it is a dependency the environment provides and the wheel
         # has no relative answer for, such as torch's own lib directory, which is how these extensions
         # resolve torch at all.
-        if any(marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")):
+        if any(
+            marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")
+        ):
             return False
         return "/cuda" not in entry.lower()
 
