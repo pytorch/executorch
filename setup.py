@@ -253,18 +253,29 @@ _SIBLING_LIBRARY_SEARCH_PATHS = (
 )
 
 
-def _cuda_runtime_search_paths() -> List[str]:
+def _cuda_runtime_search_paths(depth: int = 1) -> List[str]:
     """Loader paths that reach the CUDA wheels installed beside this one.
 
-    Two levels up from `executorch/lib` is the directory those wheels install into, so a
-    relative hop finds them wherever the environment lives. Without this the delegate
-    resolves the CUDA runtime only where the build machine had it.
+    Those wheels install as siblings of this package, so the hop has to climb out of the package first.
+    `depth` is how many directories separate the library from the package root, and the wheel ships
+    libraries at more than one depth: a hop sized for one of them lands inside this package from the
+    other, where nothing is found.
     """
     train = _cuda_train()
+    out = "/".join([".."] * (depth + 1))
     return [
-        f"$ORIGIN/../../{directory}"
+        f"$ORIGIN/{out}/{directory}"
         for directory in _CUDA_LIBRARY_DIRECTORIES.get(train, ())
     ]
+
+
+def _package_relative_depth(library: Path) -> int:
+    """How many directories separate a shipped library from the installed package root."""
+    parts = list(Path(library).parts)
+    if "executorch" not in parts:
+        return 1
+    # The remaining parts after "executorch" are the directories plus the file name itself.
+    return max(len(parts) - parts.index("executorch") - 2, 0)
 
 
 def _base_dependencies() -> List[str]:
@@ -783,14 +794,19 @@ class InstallerBuildExt(build_ext):
             os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
 
 
-def _append_relative_search_paths(entries: List[str]) -> None:
+def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
     """Add the relative hops a shipped library needs, skipping any already present.
 
     Two kinds, both relative so the wheel works wherever the environment lives:
     the CUDA runtime, which arrives in its own wheel installed beside this one, and a sibling
     ExecuTorch library that the wheel installs in a different directory from the library linking it.
+
+    `depth` sizes the hop out of this package, since the wheel ships libraries at more than one depth.
     """
-    for search_path in (*_cuda_runtime_search_paths(), *_SIBLING_LIBRARY_SEARCH_PATHS):
+    for search_path in (
+        *_cuda_runtime_search_paths(depth),
+        *_SIBLING_LIBRARY_SEARCH_PATHS,
+    ):
         if search_path not in entries:
             entries.append(search_path)
 
@@ -860,7 +876,7 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
     # resolves the runtime only through the absolute toolkit path the linker recorded,
     # which names the build machine and will not exist for a user who installed from an
     # index. Appended, so a path already present keeps its position.
-    _append_relative_search_paths(entries)
+    _append_relative_search_paths(entries, _package_relative_depth(library))
     rewritten = ":".join(entries)
     if rewritten == original:
         return
@@ -1037,10 +1053,21 @@ class CustomBuildPy(build_py):
         # 1.5.0+cpu)` is rejected by CMake as an invalid argument, so a consumer could
         # not name the version this file reports. Strip to the dotted numbers CMake
         # can compare, which is what a consumer asks for in practice.
-        cmake_version = re.match(r"\d+(?:\.\d+)*", Version.string())
-        contents = contents.replace(
-            "@EXECUTORCH_VERSION@", cmake_version.group(0) if cmake_version else "0"
-        )
+        # Two variables with different jobs. CMake compares PACKAGE_VERSION, so it has to be the
+        # numeric release and nothing else. EXECUTORCH_BUILD_VERSION is documented as the full
+        # version, which is what a consumer pinning an exact build compares against, so filling it
+        # from the numeric part would make that comparison pass against a different wheel.
+        build_version = Version.string()
+        cmake_version = re.match(r"\d+(?:\.\d+)*", build_version)
+        if not cmake_version:
+            # A version file claiming 0 would satisfy every version request, which is worse than
+            # not building at all.
+            raise RuntimeError(
+                f"cannot derive a numeric CMake version from {build_version!r}; the version file "
+                "would claim 0 and satisfy every version request"
+            )
+        contents = contents.replace("@EXECUTORCH_VERSION@", cmake_version.group(0))
+        contents = contents.replace("@EXECUTORCH_BUILD_VERSION@", build_version)
         self.mkpath(os.path.dirname(destination))
         with open(destination, "w") as handle:
             handle.write(contents)
