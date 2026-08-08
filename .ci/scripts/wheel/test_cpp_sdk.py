@@ -25,7 +25,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 # Exports the model to a .pte and prints the reference outputs, so the C++ side can
 # be compared against eager PyTorch rather than merely checked for not crashing.
 #
@@ -720,7 +719,9 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     package_dir = _installed_package_dir()
     include_root = package_dir / "include"
     headers = sorted(include_root.rglob("*.h"))
-    assert headers, f"no headers found under {include_root}, so this check would prove nothing"
+    assert (
+        headers
+    ), f"no headers found under {include_root}, so this check would prove nothing"
 
     # The same include directories the CMake package exports, since that is what a consumer gets.
     includes = [
@@ -732,7 +733,9 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     broken = []
     for header in headers:
         relative = header.relative_to(include_root)
-        source.write_text(f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n")
+        source.write_text(
+            f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n"
+        )
         result = subprocess.run(
             [_tool("c++"), "-std=c++20", *includes, "-fsyntax-only", str(source)],
             capture_output=True,
@@ -741,7 +744,9 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         )
         if result.returncode != 0:
             missing = re.search(r"fatal error: ([^:]+): No such file", result.stderr)
-            broken.append(f"{relative}: {missing.group(1) if missing else 'does not compile'}")
+            broken.append(
+                f"{relative}: {missing.group(1) if missing else 'does not compile'}"
+            )
 
     assert not broken, (
         "the wheel ships headers that cannot be included from the installed package, so a consumer "
