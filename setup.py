@@ -863,11 +863,14 @@ class CustomBuildPy(build_py):
                 # that cannot be included is a library nobody can call.
                 #
                 # Only the headers a consumer can actually compile against. Three of the
-                # four in that directory cannot be: two include a header generated during
-                # the build, and one includes a regular expression library the wheel does
-                # not carry and whose implementation is not in the shipped library either.
+                # four in that directory cannot be: two reach a header generated inside a
+                # PyTorch installation, which this package deliberately does not require,
+                # and one includes a regular expression library the wheel does not carry
+                # and whose implementation is not in the shipped library either.
                 # Publishing a header that cannot be included is worse than not publishing
                 # it, because the failure arrives at compile time in someone else's project.
+                # The component still ships its library, which keeps a build that has the
+                # headers from a source checkout on one copy of the profiler.
                 "devtools/etdump/utils.h",
             ]:
                 # A directory entry publishes everything under it, and a file entry publishes
