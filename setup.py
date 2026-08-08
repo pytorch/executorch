@@ -83,6 +83,31 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
+# Headers swept in by a directory copy that a consumer of the wheel cannot compile, because each needs
+# something the wheel does not carry. Publishing one is worse than leaving it out: the failure arrives in
+# someone else's project at compile time rather than here.
+# Headers swept in by a directory copy that a consumer of the wheel cannot compile, because each needs
+# something the wheel does not carry. Publishing one is worse than leaving it out: the failure arrives in
+# someone else's project at compile time rather than here.
+#
+# Matched on the file name, so only headers that nothing else the wheel installs includes belong here. A
+# header other shipped headers pull in must keep shipping even when it cannot be compiled on its own, since
+# removing it would break the ones that need it.
+_UNSHIPPABLE_HEADERS = frozenset(
+    {
+        # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
+        # headers. Those are a third-party library this wheel does not vendor.
+        "tensor_parser.h",
+        # Uses the runtime namespace macro without including the header that defines it, so it does not
+        # compile on its own anywhere.
+        "platform_memory_allocator.h",
+        # A test helper, needing a test framework the wheel does not ship.
+        "error_matchers.h",
+        # Reads processor details through cpuinfo, whose headers the wheel does not publish.
+        "cpuinfo_utils.h",
+    }
+)
+
 try:
     from tools.cmake.cmake_cache import CMakeCache
 except ImportError:
@@ -875,9 +900,7 @@ class CustomBuildPy(build_py):
                 # A directory entry publishes everything under it, and a file entry publishes
                 # just that file. Some directories hold headers a consumer cannot compile
                 # against, so those are named individually rather than swept in.
-                path = Path(include_dir)
-                src_list = path.rglob("*.h") if path.is_dir() else [path]
-                for src in src_list:
+                for src in _headers_to_install(Path(include_dir)):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
@@ -969,6 +992,17 @@ class CustomBuildPy(build_py):
             self.mkpath(os.path.dirname(destination))
             with open(destination, "w") as handle:
                 handle.write(contents)
+
+
+def _headers_to_install(entry: Path):
+    """The headers a copy list entry publishes, skipping any a consumer could not compile.
+
+    A directory entry publishes everything under it, and a file entry publishes just that file. A header a
+    consumer cannot compile is worse than an absent one, because the failure lands in their project rather
+    than here, and the directory entries sweep in a few of those.
+    """
+    candidates = entry.rglob("*.h") if entry.is_dir() else [entry]
+    return [src for src in candidates if src.name not in _UNSHIPPABLE_HEADERS]
 
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
