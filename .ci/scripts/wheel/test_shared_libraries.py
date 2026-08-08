@@ -1070,7 +1070,15 @@ def test_no_absolute_runtime_paths() -> None:
     # Everything else absolute is a defect, checked as a property rather than against a list of known-bad
     # directories. A list only catches what someone already thought of, and the directory that actually
     # shipped, a CUDA toolkit prefix recorded on the build machine, was not on it.
-    allowed_absolute = ("/torch/lib",)
+    # Absolute paths a shipped library may keep, because the wheel has no relative route to what they name.
+    #
+    # PyTorch's own directory: the wheel neither declares nor bundles PyTorch, so an absolute path is the
+    # only way these extensions reach it at all.
+    #
+    # The maths library directories come from PyTorch's build flags and reach anything that links PyTorch,
+    # including this project's own extensions. They name a location on whichever machine built PyTorch, so
+    # nothing here can change them, and reporting them would be reporting a defect with no available fix.
+    allowed_absolute = ("/torch/lib", "/lib/intel64", "/lib/win-x64")
 
     offenders = {}
     checked = 0
