@@ -418,6 +418,11 @@ if(TARGET executorch::runtime)
 endif()
 
 executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+# The CUDA delegate and its stream helper, present only in a wheel built from a
+# CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
+# while configuring.
+executorch_define_component(backend_cuda executorch_backend_cuda)
+executorch_define_component(extension_cuda executorch_extension_cuda)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
