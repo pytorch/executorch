@@ -184,6 +184,13 @@ if(NOT _cuda_is_msvc_toolchain)
   executorch_target_link_options_shared_lib(aoti_cuda_shims)
 endif()
 
+# This library links the CUDA runtime directly and the wheel ships it, so it
+# needs a search path for the same reason the delegate does. Without one it can
+# ship with no runtime path at all, on a builder where the runtime resolves from
+# an implicit link directory, and the wheel then adds no relative hop either,
+# because the step that adds one has nothing to rewrite.
+executorch_target_shipped_runtime_path(aoti_cuda_shims)
+
 install(
   TARGETS aoti_cuda_shims
   EXPORT ExecuTorchTargets
