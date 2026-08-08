@@ -112,13 +112,16 @@ def only_pull_request_row(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return []
 
     def rank(item: Dict[str, Any]) -> tuple:
-        # Newest supported CUDA version first, since that is the row most likely to break, then the
-        # requested python version when it is available.
+        # The requested pair first, then the newest CUDA version as a fallback when that pair is not on
+        # offer. Ordering by version alone picked the newest, which is the one version no machine here can
+        # execute, so a pull request built a wheel nobody could run a model on. The point of building one
+        # row is to get signal from it.
+        requested_cuda = item["desired_cuda"] == PR_CUDA_VERSION
         try:
-            cuda = SUPPORTED_CUDA_VERSIONS.index(item["desired_cuda"])
+            newest = SUPPORTED_CUDA_VERSIONS.index(item["desired_cuda"])
         except ValueError:
-            cuda = -1
-        return (cuda, item["python_version"] == PR_PYTHON_VERSION)
+            newest = -1
+        return (requested_cuda, item["python_version"] == PR_PYTHON_VERSION, newest)
 
     return [max(items, key=rank)]
 
