@@ -1122,12 +1122,17 @@ def test_extension_contains_no_component() -> None:
 
     # Every symbol group a shipped library owns. The extension holding any of these
     # means it still carries its own copy of that component.
-    owned = (
-        *_REGISTRY_SYMBOLS,
-        *_THREADPOOL_SYMBOLS,
-        *_KERNEL_SYMBOLS,
-        *_KERNEL_REGISTRY_SYMBOLS,
-        *_XNNPACK_SYMBOLS,
+    # Derived from the ownership table rather than restated. A hand-written copy drifts: this once
+    # listed five symbol groups while the table covered eleven, so the components added later, including
+    # both CUDA ones, were never checked here.
+    #
+    # The bundled third-party groups are left out on purpose. That code is also linked by torch, and the
+    # extension links torch, so seeing those symbols there says nothing about this split.
+    owned = tuple(
+        symbol
+        for _, symbols, _, _ in _OWNED_COMPONENTS
+        if symbols not in (_BUNDLED_THREADPOOL_SYMBOLS, _BUNDLED_XNNPACK_SYMBOLS)
+        for symbol in symbols
     )
     contained = [symbol for symbol in owned if _defines_symbol(extension, symbol)]
     assert not contained, (
