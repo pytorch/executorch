@@ -245,7 +245,7 @@ def _consumer_cmake(components) -> str:
         f"target_link_libraries(consumer PRIVATE executorch::{name})"
         for name in components
     )
-    return f"""cmake_minimum_required(VERSION 3.24)
+    return f"""cmake_minimum_required(VERSION 3.28)
 project(consumer CXX)
 find_package(executorch REQUIRED COMPONENTS {requested})
 add_executable(consumer consumer.cpp)
@@ -712,6 +712,8 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     (source_dir / "consumer.cpp").write_text("int main() { return 0; }\n")
 
     for requested, must_accept in ((release, True), ("0.1", True), (too_new, False)):
+        # Deliberately the older floor: this probe never links an imported target, so it also checks
+        # that version acceptance answers correctly below the version those targets need.
         (source_dir / "CMakeLists.txt").write_text(
             "cmake_minimum_required(VERSION 3.24)\n"
             "project(probe CXX)\n"
