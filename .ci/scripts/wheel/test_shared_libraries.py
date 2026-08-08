@@ -305,6 +305,15 @@ def _assert_single_definer(symbols, what: str, owner: str | None = None) -> None
     # others not means a partial build, which is neither of those and is a fault.
     present = {symbol for symbol, definers in found.items() if definers}
     if not present:
+        # When the caller has already established that the owner library ships, finding none of its
+        # symbols is a fault rather than an absence. Returning success here made this a no-op the moment
+        # a sentinel symbol was renamed or inlined, which turns the ownership check off without anyone
+        # noticing, and one of these sentinels is a two-line accessor.
+        assert owner is None, (
+            f"the wheel ships {owner}, which owns the {what}, but none of its symbols "
+            f"{sorted(found)} are defined anywhere. Either the sentinel symbols were renamed or "
+            "inlined, in which case this check needs updating, or the library is empty."
+        )
         print(f"- this wheel ships no {what}, nothing to check")
         return
     assert len(present) == len(found), (
