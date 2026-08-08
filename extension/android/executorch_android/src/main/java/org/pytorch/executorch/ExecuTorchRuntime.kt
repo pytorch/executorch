@@ -10,8 +10,10 @@ package org.pytorch.executorch
 
 import com.facebook.jni.annotations.DoNotStrip
 import com.facebook.soloader.nativeloader.NativeLoader
+import com.facebook.soloader.nativeloader.NativeLoaderDelegate
 import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.File
+import java.util.ServiceLoader
 
 /** Class for entire ExecuTorch Runtime related functions. */
 class ExecuTorchRuntime private constructor() {
@@ -19,7 +21,8 @@ class ExecuTorchRuntime private constructor() {
   companion object {
     init {
       if (!NativeLoader.isInitialized()) {
-        NativeLoader.init(SystemDelegate())
+        val customDelegate = ServiceLoader.load(NativeLoaderDelegate::class.java).firstOrNull()
+        NativeLoader.init(customDelegate ?: SystemDelegate())
       }
       // Loads libexecutorch.so from jniLibs
       NativeLoader.loadLibrary("executorch")
