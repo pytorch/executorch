@@ -23,6 +23,8 @@ private constructor(
     val numBos: Int,
     val numEos: Int,
     val loadMode: Int,
+    val sampleRate: Int,
+    val preprocessorPath: String?,
 ) {
 
   companion object {
@@ -47,6 +49,9 @@ private constructor(
     /** Model type constant for generic multimodal models. */
     const val MODEL_TYPE_MULTIMODAL = 2
 
+    /** Model type constant for text-and-audio multimodal models (e.g., Voxtral). */
+    const val MODEL_TYPE_TEXT_AUDIO = 5
+
     /**
      * Creates a new Builder instance for constructing LlmModuleConfig objects.
      *
@@ -70,6 +75,8 @@ private constructor(
     private var numBos: Int = 0
     private var numEos: Int = 0
     private var loadMode: Int = LOAD_MODE_MMAP
+    private var sampleRate: Int = 16000
+    private var preprocessorPath: String? = null
 
     /** Sets the path to the module. */
     fun modulePath(modulePath: String): Builder = apply { this.modulePath = modulePath }
@@ -110,6 +117,13 @@ private constructor(
       return apply { this.loadMode = loadMode }
     }
 
+    /** Sets the audio sample rate in Hz (default 16000). */
+    fun sampleRate(sampleRate: Int): Builder = apply { this.sampleRate = sampleRate }
+
+    /** Sets the path to an optional audio preprocessor .pte (e.g., mel spectrogram extractor). */
+    fun preprocessorPath(preprocessorPath: String?): Builder =
+        apply { this.preprocessorPath = preprocessorPath }
+
     /**
      * Constructs the LlmModuleConfig instance with validated parameters.
      *
@@ -128,6 +142,8 @@ private constructor(
           numBos,
           numEos,
           loadMode,
+          sampleRate,
+          preprocessorPath,
       )
     }
   }
