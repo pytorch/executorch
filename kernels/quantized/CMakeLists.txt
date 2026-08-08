@@ -86,6 +86,24 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+    # Only when the pybind extension is absent. When it is present, the block
+    # below sets the full runtime path for this target in one place, and setting
+    # it here as well would leave two independent copies of the same logic where
+    # the later one wins.
+    if(EXECUTORCH_BUILD_SHARED
+       AND NOT APPLE
+       AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE
+       AND NOT TARGET portable_lib
+    )
+      # Wheel-specific: the generated library lands in
+      # <site-packages>/executorch/kernels/quantized, two levels below the
+      # wheel's lib/. A normal install puts the runtime in CMAKE_INSTALL_LIBDIR,
+      # which this relative path would not reach.
+      set_target_properties(
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                                         INSTALL_RPATH "$ORIGIN/../../lib"
+      )
+    endif()
 
     # Register quantized ops to portable_lib, so that they're available via
     # pybindings.
@@ -126,11 +144,19 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # libraries will look like "@rpath/_portable_lib.cpython-310-darwin.so",
       # so we can add an LC_RPATH entry to look in a directory relative to the
       # installed location of our _portable_lib.so file. To see these LC_*
-      # values, run `otool -l libquantized_ops_lib.dylib`.
+      # values, run `otool -l libquantized_ops_lib.dylib`. "extension", not
+      # "extensions": the plural directory does not exist, so the parent's path
+      # reached nothing and this library could not find the extension it needs.
+      # Fixed on both branches so they cannot disagree. Not cosmetic: the
+      # dependency-closure check fails without it.
       if(APPLE)
-        set(RPATH "@loader_path/../../extensions/pybindings")
+        set(RPATH "@loader_path/../../extension/pybindings")
       else()
-        set(RPATH "$ORIGIN/../../extensions/pybindings")
+        set(RPATH "$ORIGIN/../../extension/pybindings")
+        if(EXECUTORCH_BUILD_SHARED AND EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+          # Wheel-specific: two levels below the wheel's lib/ directory.
+          string(APPEND RPATH ":$ORIGIN/../../lib")
+        endif()
       endif()
       set_target_properties(
         quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
