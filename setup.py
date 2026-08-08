@@ -862,16 +862,15 @@ class CustomBuildPy(build_py):
                 # ETDump, whose library the package ships as a component. A profiler
                 # that cannot be included is a library nobody can call.
                 #
-                # Only the headers a consumer can actually compile against. Three of the
-                # four in that directory cannot be: two reach a header generated inside a
-                # PyTorch installation, which this package deliberately does not require,
-                # and one includes a regular expression library the wheel does not carry
-                # and whose implementation is not in the shipped library either.
-                # Publishing a header that cannot be included is worse than not publishing
-                # it, because the failure arrives at compile time in someone else's project.
-                # The component still ships its library, which keeps a build that has the
-                # headers from a source checkout on one copy of the profiler.
+                # The whole directory except the filter, which includes a regular
+                # expression library the wheel does not carry and whose implementation
+                # is not in the shipped library either. Publishing a header that cannot
+                # be included is worse than not publishing it, because the failure
+                # arrives at compile time in someone else's project.
+                "devtools/etdump/etdump_flatcc.h",
+                "devtools/etdump/emitter.h",
                 "devtools/etdump/utils.h",
+                "devtools/etdump/data_sinks/",
             ]:
                 # A directory entry publishes everything under it, and a file entry publishes
                 # just that file. Some directories hold headers a consumer cannot compile
