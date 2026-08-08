@@ -962,6 +962,16 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "share/cmake/executorch-config.cmake",
                 ),
+                # And again where CMake looks when a consumer points CMAKE_PREFIX_PATH at the
+                # package root, which is the ordinary way to use an installed package. CMake
+                # searches <prefix>/lib/cmake/<name>, not <prefix>/share/cmake directly, so
+                # without this copy the root is not a usable prefix and a consumer needs a
+                # path that names this project's layout. The first location stays because the
+                # existing contract uses it.
+                (
+                    "tools/cmake/executorch-wheel-config.cmake",
+                    "lib/cmake/executorch/executorch-config.cmake",
+                ),
             ]
             # The headers the package installs. Two audiences now: a custom-operator
             # build, which needs the kernel and tensor helpers, and a C++ application
@@ -991,9 +1001,20 @@ class CustomBuildPy(build_py):
                 "extension/data_loader/",
                 # ETDump, whose library the package ships as a component. A profiler
                 # that cannot be included is a library nobody can call.
-                "devtools/etdump/",
+                #
+                # Only the headers a consumer can actually compile against. Three of the
+                # four in that directory cannot be: two include a header generated during
+                # the build, and one includes a regular expression library the wheel does
+                # not carry and whose implementation is not in the shipped library either.
+                # Publishing a header that cannot be included is worse than not publishing
+                # it, because the failure arrives at compile time in someone else's project.
+                "devtools/etdump/utils.h",
             ]:
-                src_list = Path(include_dir).rglob("*.h")
+                # A directory entry publishes everything under it, and a file entry publishes
+                # just that file. Some directories hold headers a consumer cannot compile
+                # against, so those are named individually rather than swept in.
+                path = Path(include_dir)
+                src_list = path.rglob("*.h") if path.is_dir() else [path]
                 for src in src_list:
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
@@ -1048,9 +1069,6 @@ class CustomBuildPy(build_py):
             "cmake",
             "executorch-wheel-config-version.cmake.in",
         )
-        destination = os.path.join(
-            dst_root, "share", "cmake", "executorch-config-version.cmake"
-        )
         with open(template) as handle:
             contents = handle.read()
         # Only the numeric release part. A Python version can carry a local segment
@@ -1073,9 +1091,22 @@ class CustomBuildPy(build_py):
             )
         contents = contents.replace("@EXECUTORCH_VERSION@", cmake_version.group(0))
         contents = contents.replace("@EXECUTORCH_BUILD_VERSION@", build_version)
-        self.mkpath(os.path.dirname(destination))
-        with open(destination, "w") as handle:
-            handle.write(contents)
+        # CMake only reads a version file that sits beside the configuration file it found, so this
+        # goes to both locations the configuration is installed to. Writing it to one would leave a
+        # version request silently unchecked when the other location was used.
+        for destination in (
+            os.path.join(dst_root, "share", "cmake", "executorch-config-version.cmake"),
+            os.path.join(
+                dst_root,
+                "lib",
+                "cmake",
+                "executorch",
+                "executorch-config-version.cmake",
+            ),
+        ):
+            self.mkpath(os.path.dirname(destination))
+            with open(destination, "w") as handle:
+                handle.write(contents)
 
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):

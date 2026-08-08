@@ -746,6 +746,49 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     )
 
 
+def test_every_shipped_header_compiles(work_dir: Path) -> None:
+    """Each installed header must compile on its own against the installed wheel.
+
+    A header that cannot be included is worse than one that is absent, because the failure arrives in
+    someone else's project at compile time. This caught a profiler header that includes a regular
+    expression library the wheel does not carry, and whose implementation the shipped library does not
+    define either.
+
+    Compiled one at a time rather than all together, so the message names the header at fault.
+    """
+    package_dir = _installed_package_dir()
+    include_root = package_dir / "include"
+    headers = sorted(include_root.rglob("*.h"))
+    assert headers, f"no headers found under {include_root}, so this check would prove nothing"
+
+    # The same include directories the CMake package exports, since that is what a consumer gets.
+    includes = [
+        f"-I{include_root}",
+        f"-I{include_root / 'executorch' / 'runtime' / 'core' / 'portable_type' / 'c10'}",
+    ]
+
+    source = work_dir / "header_probe.cpp"
+    broken = []
+    for header in headers:
+        relative = header.relative_to(include_root)
+        source.write_text(f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n")
+        result = subprocess.run(
+            [_tool("c++"), "-std=c++20", *includes, "-fsyntax-only", str(source)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            missing = re.search(r"fatal error: ([^:]+): No such file", result.stderr)
+            broken.append(f"{relative}: {missing.group(1) if missing else 'does not compile'}")
+
+    assert not broken, (
+        "the wheel ships headers that cannot be included from the installed package, so a consumer "
+        "following the documentation would fail to compile:\n  " + "\n  ".join(broken)
+    )
+    print(f"✓ all {len(headers)} shipped headers compile against the installed wheel")
+
+
 def test_documented_example_compiles(work_dir: Path) -> None:
     """The C++ example in the documentation must compile against the installed wheel.
 
@@ -861,6 +904,7 @@ def test_quantized_kernels_component_runs_a_model(work_dir: Path) -> None:
 
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
+    test_every_shipped_header_compiles(work_dir)
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_has_no_kernels(work_dir)
     test_kernels_component_runs_a_model(work_dir)
