@@ -199,11 +199,20 @@ def _tool(name: str):
 
 
 def _shipped_shared_objects(package_dir: Path):
-    return [
+    """Every shared object the wheel installed.
+
+    Asserts it found some, because a wheel that installed none would let every check that walks this list
+    report success having examined nothing.
+    """
+    found = [
         path
         for path in sorted(package_dir.rglob("*.so*"))
         if path.is_file() and not path.is_symlink()
     ]
+    assert (
+        found
+    ), f"no shared objects found under {package_dir}, so nothing below would be checking them"
+    return found
 
 
 def _shipped_runtime_libraries(package_dir: Path):
@@ -1155,6 +1164,10 @@ def test_no_absolute_runtime_paths() -> None:
         "the build tree that produced the wheel or, for an empty entry, the process "
         f"working directory: {offenders}"
     )
+    assert checked, (
+        f"no shipped library under {package_dir} carries a runtime search path, so this check examined "
+        "nothing and would pass on a wheel that shipped no libraries at all"
+    )
     print(
         f"✓ none of the {checked} shipped libraries searches a build-tree or empty "
         "runtime path"
@@ -1233,9 +1246,14 @@ def test_extension_contains_no_component() -> None:
     # switched off the one check that would notice if that retention stopped working. The
     # stream helper stays excluded because the extension reaches it only through the
     # delegate's public link, with no retention of its own to protect.
+    shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
+    assert shipped, (
+        f"the wheel installed no runtime libraries under {package_dir / 'lib'}, so this check would "
+        "compare the extension against nothing and pass"
+    )
     expected = {
         name
-        for name in (path.name for path in _shipped_runtime_libraries(package_dir))
+        for name in shipped
         if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
     }
     unused = sorted(expected - needed)

@@ -99,9 +99,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
         # headers. Those are a third-party library this wheel does not vendor.
         "tensor_parser.h",
-        # Uses the runtime namespace macro without including the header that defines it, so it does not
-        # compile on its own anywhere.
-        "platform_memory_allocator.h",
         # A test helper, needing a test framework the wheel does not ship.
         "error_matchers.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
@@ -1048,6 +1045,10 @@ class CustomBuildPy(build_py):
                 "devtools/etdump/emitter.h",
                 "devtools/etdump/utils.h",
                 "devtools/etdump/data_sinks/",
+                # The CUDA stream helper's public header. Its library is shared so the process has one
+                # copy of the caller-stream state, and that is a handshake the caller takes part in, so a
+                # consumer needs the declarations to take part at all.
+                "extension/cuda/caller_stream.h",
             ]:
                 # A directory entry publishes everything under it, and a file entry publishes
                 # just that file. Some directories hold headers a consumer cannot compile
