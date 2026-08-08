@@ -661,14 +661,34 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     )
 
     installed = None
+    build_version = None
     for line in version_file.read_text().splitlines():
         if line.startswith("set(PACKAGE_VERSION"):
             installed = line.split('"')[1]
-            break
+        elif line.startswith("set(EXECUTORCH_BUILD_VERSION"):
+            build_version = line.split('"')[1]
     assert installed, f"could not read PACKAGE_VERSION from {version_file}"
     assert not installed.startswith("@"), (
         f"the version file still holds an unsubstituted placeholder, {installed}, so "
         "packaging copied the template instead of filling it in"
+    )
+
+    # The two variables report different things and are filled separately. Only checking the numeric one
+    # would pass on a file where the full version was truncated to it, or where its placeholder was never
+    # substituted, and the full version is what a consumer compares to pin an exact build.
+    assert build_version, f"could not read EXECUTORCH_BUILD_VERSION from {version_file}"
+    assert not build_version.startswith("@"), (
+        f"the build version still holds an unsubstituted placeholder, {build_version}"
+    )
+    assert build_version.startswith(installed), (
+        f"the build version {build_version} does not start with the numeric release {installed}, "
+        "so they describe different builds"
+    )
+    from executorch.version import __version__ as installed_version
+
+    assert build_version == installed_version, (
+        f"the version file says {build_version} but the installed package says {installed_version}, "
+        "so a consumer pinning an exact build would compare against the wrong one"
     )
 
     # CMake compares dotted integers only, and find_package rejects a REQUESTED version
