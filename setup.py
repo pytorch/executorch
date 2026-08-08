@@ -270,12 +270,25 @@ def _cuda_runtime_search_paths(depth: int = 1) -> List[str]:
 
 
 def _package_relative_depth(library: Path) -> int:
-    """How many directories separate a shipped library from the installed package root."""
+    """How many directories separate a shipped library from the installed package root.
+
+    Searched from the END of the path. At build time the path is absolute and a source checkout is
+    often named after the package too, so taking the first match found the checkout instead of the
+    package inside the build output and produced a hop that climbs out of the install directory.
+    """
     parts = list(Path(library).parts)
     if "executorch" not in parts:
         return 1
-    # The remaining parts after "executorch" are the directories plus the file name itself.
-    return max(len(parts) - parts.index("executorch") - 2, 0)
+    index = len(parts) - 1 - parts[::-1].index("executorch")
+    depth = max(len(parts) - index - 2, 0)
+    # The wheel installs nothing deeper than a few directories inside the package. A larger number
+    # means the path was misread, and a wrong hop fails on a user's machine rather than here.
+    if depth > 3:
+        raise RuntimeError(
+            f"refusing to build a runtime search path {depth} directories deep for {library}; "
+            "the package directory was probably misidentified"
+        )
+    return depth
 
 
 def _base_dependencies() -> List[str]:
