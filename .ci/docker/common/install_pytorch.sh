@@ -49,18 +49,8 @@ install_pytorch_and_domains() {
     export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
   fi
   configure_pytorch_compiler
-  # PyTorch no longer supports "python setup.py bdist_wheel"; it now builds
-  # through scikit-build-core (PEP 517). Build the wheel with the standard
-  # frontend and keep build isolation off, so PyTorch builds against this
-  # environment's numpy and toolchain (avoids an ABI mismatch) and reuses
-  # sccache. With isolation off the frontend does not fetch the PEP 517 build
-  # requirements, so install the ones not already in the image here. Keep in
-  # sync with pytorch/pyproject.toml [build-system].requires.
-  # cmake stays below 4 because the wheel lands on PATH ahead of the image's
-  # cmake 3.x, so every later build in the image would jump a major version.
-  conda_run pip install build "scikit-build-core>=1.0" "setuptools>=77.0.0,<82" \
-    "cmake>=3.27,<4" ninja "packaging>=24.2" "typing-extensions>=4.10.0" pyyaml six
-  conda_run python -m build --wheel --no-isolation
+  # Then build and install PyTorch
+  conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
