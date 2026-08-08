@@ -706,6 +706,62 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     )
 
 
+def test_profiler_component_is_usable(work_dir: Path) -> None:
+    """A C++ application must be able to construct the profiler the etdump component represents.
+
+    Linking a component proves the library resolves. It does not prove a consumer can call anything in it,
+    and the profiler shipped for a while with only an internal alignment helper as its public surface, so
+    the component could be requested and linked but not used.
+    """
+    package_dir = _installed_package_dir()
+    shipped = package_dir / "lib" / "libexecutorch_etdump.so"
+    if not shipped.is_file():
+        print("- this wheel ships no profiler, skipping")
+        return
+
+    source_dir = work_dir / "with-etdump"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "consumer.cpp").write_text(
+        "#include <executorch/devtools/etdump/etdump_flatcc.h>\n"
+        "#include <memory>\n"
+        "int main() {\n"
+        "  auto tracer = std::make_unique<executorch::etdump::ETDumpGen>();\n"
+        "  return tracer == nullptr ? 1 : 0;\n"
+        "}\n"
+    )
+    (source_dir / "CMakeLists.txt").write_text(_consumer_cmake(["runtime", "etdump"]))
+
+    build_dir = work_dir / "with-etdump-build"
+    configured = subprocess.run(
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={package_dir}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert configured.returncode == 0, (
+        "configuring an application that uses the profiler failed:\n"
+        f"{configured.stdout[-1500:]}\n{configured.stderr[-1500:]}"
+    )
+    built = subprocess.run(
+        [_tool("cmake"), "--build", str(build_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert built.returncode == 0, (
+        "an application that constructs the profiler failed to build against the installed wheel, so the "
+        f"component cannot be used by a consumer:\n{built.stdout[-2000:]}\n{built.stderr[-2000:]}"
+    )
+    print("✓ a C++ app linking executorch::etdump constructs the profiler")
+
+
 def test_every_shipped_header_compiles(work_dir: Path) -> None:
     """Each installed header must compile on its own against the installed wheel.
 
@@ -727,12 +783,29 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     includes = [
         f"-I{include_root}",
         f"-I{include_root / 'executorch' / 'runtime' / 'core' / 'portable_type' / 'c10'}",
+        # The same definition every imported target carries. Without it the vendored c10 headers reach for
+        # a header generated inside a PyTorch build, which no wheel can carry, so compiling without it
+        # tests a configuration no consumer of this package is ever in.
+        "-DC10_USING_CUSTOM_GENERATED_MACROS",
     ]
+    # Headers a wheel-only consumer cannot compile and is not expected to. Each needs something outside the
+    # package: a platform that is not the one being built for, or a third-party library the wheel does not
+    # carry. They ship because a source build includes them, and holding them to this rule would report a
+    # defect with no available fix.
+    needs_more_than_the_wheel = (
+        "mman_windows.h",  # a Windows compatibility shim, needs the MinGW headers
+        "threadpool.h",  # needs pthreadpool
+        "cpuinfo_utils.h",  # needs cpuinfo
+        "testing_util/tensor_util.h",  # a test helper, needs a test framework
+        "tensor_dimension_limit.h",  # reached only through a test helper
+    )
 
     source = work_dir / "header_probe.cpp"
     broken = []
     for header in headers:
         relative = header.relative_to(include_root)
+        if relative.as_posix().endswith(needs_more_than_the_wheel):
+            continue
         source.write_text(
             f"#include <{relative.as_posix()}>\nint main() {{ return 0; }}\n"
         )
@@ -830,6 +903,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
 
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
+    test_profiler_component_is_usable(work_dir)
     test_every_shipped_header_compiles(work_dir)
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_has_no_kernels(work_dir)

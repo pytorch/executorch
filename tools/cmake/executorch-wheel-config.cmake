@@ -55,11 +55,7 @@
 # executorch::kernels_optimized -- The CPU operator kernels. Needed to run a
 # model. executorch::backend_xnnpack   -- The XNNPACK delegate.
 # executorch::threadpool        -- The shared thread pool. executorch::etdump --
-# The profiler. Links only: its concrete profiler is declared in a header that
-# cannot ship, because that header reaches one generated inside a PyTorch
-# installation and this package deliberately does not require PyTorch. Useful to
-# a build that already has the headers from a source checkout, and it keeps
-# every consumer on one copy of the profiler.
+# The profiler.
 #
 # Check with if(TARGET executorch::<name>) rather than assuming one exists. A
 # namespaced name that was never defined is a configure-time error that names
