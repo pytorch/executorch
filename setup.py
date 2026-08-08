@@ -918,10 +918,21 @@ class CustomBuildPy(build_py):
         # 1.5.0+cpu)` is rejected by CMake as an invalid argument, so a consumer could
         # not name the version this file reports. Strip to the dotted numbers CMake
         # can compare, which is what a consumer asks for in practice.
-        cmake_version = re.match(r"\d+(?:\.\d+)*", Version.string())
-        contents = contents.replace(
-            "@EXECUTORCH_VERSION@", cmake_version.group(0) if cmake_version else "0"
-        )
+        # Two variables with different jobs. CMake compares PACKAGE_VERSION, so it has to be the
+        # numeric release and nothing else. EXECUTORCH_BUILD_VERSION is documented as the full
+        # version, which is what a consumer pinning an exact build compares against, so filling it
+        # from the numeric part would make that comparison pass against a different wheel.
+        build_version = Version.string()
+        cmake_version = re.match(r"\d+(?:\.\d+)*", build_version)
+        if not cmake_version:
+            # A version file claiming 0 would satisfy every version request, which is worse than
+            # not building at all.
+            raise RuntimeError(
+                f"cannot derive a numeric CMake version from {build_version!r}; the version file "
+                "would claim 0 and satisfy every version request"
+            )
+        contents = contents.replace("@EXECUTORCH_VERSION@", cmake_version.group(0))
+        contents = contents.replace("@EXECUTORCH_BUILD_VERSION@", build_version)
         self.mkpath(os.path.dirname(destination))
         with open(destination, "w") as handle:
             handle.write(contents)

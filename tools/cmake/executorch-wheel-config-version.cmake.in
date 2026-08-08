@@ -21,7 +21,7 @@ set(PACKAGE_VERSION "@EXECUTORCH_VERSION@")
 # cannot pin a nightly or a specific build through it: passing the full string
 # to find_package is a hard argument error. This variable is what a consumer
 # compares when an exact build pairing is required.
-set(EXECUTORCH_BUILD_VERSION "@EXECUTORCH_VERSION@")
+set(EXECUTORCH_BUILD_VERSION "@EXECUTORCH_BUILD_VERSION@")
 
 # Any version at least as new as the one requested is compatible. ExecuTorch has
 # no stable ABI promise across majors yet, so this is deliberately permissive;
