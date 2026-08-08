@@ -1179,18 +1179,20 @@ def test_extension_contains_no_component() -> None:
     # this split moved out of it, so the extension must now resolve them from outside or
     # a retention option silently failed.
     #
-    # Not every shipped library serves Python. The quantized kernels and the CUDA
-    # delegate exist for a C++ application: Python registers quantized operators through
-    # the torch-linked ahead-of-time library at export time, and never loads the CUDA
-    # delegate from this extension at all. Requiring a dependency on those would demand
-    # the extension link code it has no use for.
+    # Not every shipped library serves Python. The quantized kernels exist for a C++
+    # application, since Python registers those operators through the torch-linked
+    # ahead-of-time library at export time, and requiring a dependency would demand the
+    # extension link code it has no use for.
+    #
+    # The CUDA delegate is NOT in that category. The build deliberately links it into the
+    # extension with a retention option, so it does carry a dependency, and excluding it
+    # switched off the one check that would notice if that retention stopped working. The
+    # stream helper stays excluded because the extension reaches it only through the
+    # delegate's public link, with no retention of its own to protect.
     expected = {
         name
         for name in (path.name for path in _shipped_runtime_libraries(package_dir))
-        if not any(
-            marker in name
-            for marker in ("kernels_quantized", "backend_cuda", "extension_cuda")
-        )
+        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
     }
     unused = sorted(expected - needed)
     assert not unused, (
