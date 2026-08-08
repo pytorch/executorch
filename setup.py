@@ -184,6 +184,13 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
+        # backends/qualcomm/__init__.py cannot be imported from a clean install
+        # without both of these. It reads the CPU vendor to disable an mkldnn path on
+        # AMD, and the module it imports first does a module-scope `import requests`,
+        # so declaring only the cpuinfo half leaves the import failing on the line
+        # before.
+        "py-cpuinfo",
+        "requests",
         "pytorch-tokenizers",
         "pyyaml",
         "ruamel.yaml",
@@ -665,6 +672,8 @@ class InstallerBuildExt(build_ext):
         # Copy the file.
         self.copy_file(os.fspath(src_file), os.fspath(dst_file))
 
+        _strip_absolute_runtime_paths(dst_file)
+
         # Ensure that the destination file is writable, even if the source was
         # not. build_py does this by passing preserve_mode=False to copy_file,
         # but that would clobber the X bit on any executables. TODO(dbort): This
@@ -672,6 +681,74 @@ class InstallerBuildExt(build_ext):
         if not os.access(src_file, os.W_OK):
             # Make the file writable. This should respect the umask.
             os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
+
+
+def _strip_absolute_runtime_paths(library: Path) -> None:
+    """Remove unusable runtime search paths from a library the wheel ships.
+
+    These libraries are copied out of the build tree rather than installed, so they
+    still carry every directory the linker recorded while resolving their
+    dependencies. Two kinds of entry are removed:
+
+    - a directory inside this build, which names the machine that produced the
+      wheel and cannot exist for a user
+    - an empty entry, which the loader reads as the process working directory
+
+    Other absolute entries are kept. The Python extensions link torch and resolve it
+    through the directory the linker recorded, so dropping that would stop them
+    importing in an environment where torch is not beside them.
+
+    Best effort: a build without patchelf still produces a working wheel, with the
+    paths left in place. The tool cannot be guaranteed on PATH (the pip package does
+    not reliably provide a binary inside a build venv), so failing the build here
+    would break building from source on a machine that simply lacks it.
+
+    What must not happen is both this and its check going quiet together, which is how
+    a wheel carrying build-machine directories could ship unnoticed. So the check in
+    the release tests treats a missing patchelf as a failure rather than a skip: the
+    wheel-build environment has it, and that is where the guarantee belongs.
+    """
+    if library.suffix != ".so" and ".so." not in library.name:
+        return
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        return
+    result = subprocess.run(
+        [patchelf, "--print-rpath", os.fspath(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    original = result.stdout.strip()
+    if not original:
+        # No runtime search path at all, which is nothing to clean. patchelf prints
+        # the same empty string for an absent tag and for one holding a single empty
+        # entry, so there is nothing to distinguish here and nothing to do either way.
+        return
+
+    def keep(entry: str) -> bool:
+        if not entry:
+            # The loader reads an empty entry as the process working directory.
+            return False
+        if not entry.startswith("/"):
+            return True
+        # Absolute, so decide by what it points at. A directory inside this build
+        # cannot exist for a user. Anything else absolute is a dependency the
+        # environment provides, such as torch's own lib directory, which is how
+        # these extensions resolve torch at all.
+        return not any(
+            marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")
+        )
+
+    rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
+    if rewritten == original:
+        return
+    subprocess.run(
+        [patchelf, "--set-rpath", rewritten, os.fspath(library)],
+        check=True,
+    )
 
 
 class CustomBuildPy(build_py):
@@ -1089,6 +1166,74 @@ setup(
             []
             if _is_minimal_build()
             else [
+                # Install the shared runtime the Python extension links, rather
+                # than having the extension contain its own copy. Named without a
+                # version, so a consumer's find_library(executorch) resolves it: that
+                # matches libexecutorch.so and not libexecutorch.so.1. A version is
+                # only useful where something upgrades the library independently of
+                # what links it, which never happens inside a wheel.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name="libexecutorch.so",
+                    dst="executorch/lib/libexecutorch.so",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the profiler next to it, as its own library rather than
+                # code fused into the Python extension, so a process has one copy of
+                # it however many consumers load.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_name="libexecutorch_etdump.so",
+                    dst="executorch/lib/libexecutorch_etdump.so",
+                    # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
+                    # the devtools subdirectory itself, so the library exists
+                    # whenever the shared build does. The Python extension carries a
+                    # hard dependency on it, so requiring the option here left a
+                    # wheel whose extension could not load at all.
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the shared thread pool next to it. It is a separate
+                # library so that a process has one pool rather than one per
+                # component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_name="libexecutorch_threadpool.so",
+                    dst="executorch/lib/libexecutorch_threadpool.so",
+                    # The target only exists when both of its dependencies are
+                    # enabled, so packaging has to require them too or a shared
+                    # build with either turned off looks for a file that was
+                    # never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_PTHREADPOOL",
+                        "EXECUTORCH_BUILD_CPUINFO",
+                    ],
+                ),
+                # Install the merged CPU kernels beside them, so the operators are
+                # registered once per process rather than once per component.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/configurations/",
+                    src_name="libexecutorch_kernels_optimized.so",
+                    dst="executorch/lib/libexecutorch_kernels_optimized.so",
+                    # The target is only created when the optimized kernels are
+                    # enabled, so packaging has to require that too rather than
+                    # looking for a file a shared build may never have produced.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # Install the XNNPACK delegate beside them, so a process has one
+                # copy of it instead of one per component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
+                    src_name="libexecutorch_backend_xnnpack.so",
+                    dst="executorch/lib/libexecutorch_backend_xnnpack.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.

@@ -255,8 +255,25 @@ target_link_libraries(
 )
 target_link_libraries(
   qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core qnn_backend_options
+                                 qnn_backend_options
 )
+# Resolve the runtime from the shared library when one is built, so this
+# delegate does not carry its own copy of the backend registry.
+if(EXECUTORCH_BUILD_SHARED)
+  target_link_libraries(qnn_executorch_backend PRIVATE executorch_shared)
+  executorch_target_link_shared_runtime(qnn_executorch_backend)
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    # Wheel-specific: ships in executorch/backends/qualcomm, two levels below
+    # the wheel's lib/. A normal install puts the runtime in
+    # CMAKE_INSTALL_LIBDIR, which this relative path would not reach.
+    set_target_properties(
+      qnn_executorch_backend PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                                        INSTALL_RPATH "$ORIGIN/../../lib"
+    )
+  endif()
+else()
+  target_link_libraries(qnn_executorch_backend PRIVATE executorch_core)
+endif()
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
@@ -359,12 +376,31 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
             qnn_schema
             qnn_manager
             qnn_executorch_header
-            executorch
-            extension_tensor
             qnn_backend_options
             wrappers
             qnn_executorch_logging
   )
+  # extension_tensor is bundled into the shared runtime, so naming it again here
+  # would give this module a second copy of what that library already provides.
+  if(NOT EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE extension_tensor)
+  endif()
+  # Same reasoning as the delegate above: take the runtime from the shared
+  # library when there is one, rather than embedding a second registry.
+  if(EXECUTORCH_BUILD_SHARED)
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch_shared)
+    executorch_target_link_shared_runtime(PyQnnManagerAdaptor)
+    if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+      # Wheel-specific: ships in executorch/backends/qualcomm/python, three
+      # levels below the wheel's lib/.
+      set_target_properties(
+        PyQnnManagerAdaptor PROPERTIES BUILD_RPATH "$ORIGIN/../../../lib"
+                                       INSTALL_RPATH "$ORIGIN/../../../lib"
+      )
+    endif()
+  else()
+    target_link_libraries(PyQnnManagerAdaptor PRIVATE executorch)
+  endif()
 
   pybind11_extension(PyQnnManagerAdaptor)
   if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES RelWithDebInfo)

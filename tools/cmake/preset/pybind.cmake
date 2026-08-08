@@ -104,6 +104,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
   endif()
   set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
+  # Ship one shared runtime that both the pybind extension and standalone C++
+  # consumers link, so a process has a single backend registry. Linux only:
+  # macOS C++ consumers are served by the Swift package distribution, and the
+  # runtime has no export annotations for a Windows DLL.
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
