@@ -832,22 +832,17 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     # carry. They ship because a source build includes them, and holding them to this rule would report a
     # defect with no available fix.
     needs_more_than_the_wheel = (
+        # These ship because other shipped headers include them, so they cannot be left out, and they do
+        # not compile on their own: each needs a third-party library the wheel links but publishes no
+        # headers for, or a platform other than the one being built for.
         "mman_windows.h",  # a Windows compatibility shim, needs the MinGW headers
         "threadpool.h",  # needs pthreadpool
-        "cpuinfo_utils.h",  # needs cpuinfo
         "testing_util/tensor_util.h",  # a test helper, needs a test framework
-        "testing_util/error_matchers.h",  # a test helper, needs a test framework
         "tensor_dimension_limit.h",  # reached only through a test helper
         # These say in their own text that they must not be included directly, and name the header to
         # include instead. Including one anyway is a use error rather than a packaging defect.
         "c10/util/complex_math.h",
         "c10/util/complex_utils.h",
-        # Needs a header generated when the schema is compiled, which the wheel has never carried. The
-        # omission predates this work, so it is left as it is rather than widened into this change.
-        "runtime/executor/tensor_parser.h",
-        # Uses the runtime namespace macro without including the header that defines it, so it does not
-        # compile on its own anywhere, including before this work. Fixing it belongs in its own change.
-        "runtime/executor/platform_memory_allocator.h",
     )
 
     source = work_dir / "header_probe.cpp"
