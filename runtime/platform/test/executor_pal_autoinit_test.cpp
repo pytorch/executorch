@@ -9,24 +9,15 @@
 #include <gtest/gtest.h>
 
 #include <executorch/runtime/platform/platform.h>
-#include <executorch/test/utils/DeathTest.h>
 
-TEST(ExecutorPalTest, UninitializedPalDeath) {
-  // Check for assertion failure on debug builds.
+TEST(ExecutorPalTest, AutoInitialization) {
+  // Functions should auto-initialize and work without explicit et_pal_init()
+  et_timestamp_t time = et_pal_current_ticks();
+  EXPECT_GE(time, 0);
 
-#ifndef NDEBUG
-
-  ET_EXPECT_DEATH_NO_PAL_INIT(
-      { et_pal_current_ticks(); }, "PAL must be initialized");
-
-  ET_EXPECT_DEATH_NO_PAL_INIT(
-      {
-        et_pal_emit_log_message(
-            0, et_pal_log_level_t::kFatal, "", "", 0, "", 0);
-      },
-      "PAL must be initialized");
-
-#endif // !defined(NDEBUG)
+  // Logging should also work
+  et_pal_emit_log_message(
+      0, et_pal_log_level_t::kInfo, "test", "test", 0, "auto-init test", 14);
 }
 
 /// Override the default weak main declaration.
