@@ -677,9 +677,9 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     # would pass on a file where the full version was truncated to it, or where its placeholder was never
     # substituted, and the full version is what a consumer compares to pin an exact build.
     assert build_version, f"could not read EXECUTORCH_BUILD_VERSION from {version_file}"
-    assert not build_version.startswith("@"), (
-        f"the build version still holds an unsubstituted placeholder, {build_version}"
-    )
+    assert not build_version.startswith(
+        "@"
+    ), f"the build version still holds an unsubstituted placeholder, {build_version}"
     assert build_version.startswith(installed), (
         f"the build version {build_version} does not start with the numeric release {installed}, "
         "so they describe different builds"
