@@ -867,13 +867,22 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
             return False
         if not entry.startswith("/"):
             return True
-        # Absolute, so decide by what it points at. A directory inside this build
-        # cannot exist for a user. Anything else absolute is a dependency the
-        # environment provides, such as torch's own lib directory, which is how
-        # these extensions resolve torch at all.
-        return not any(
-            marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")
-        )
+        # Absolute, so decide by what it points at.
+        #
+        # A directory inside this build cannot exist for a user.
+        #
+        # A CUDA toolkit directory is dropped for a different reason: the wheel declares the CUDA runtime
+        # as a dependency and reaches it through a relative hop, so an absolute toolkit path is both
+        # unnecessary and harmful. It sits ahead of the hop, so a user who happens to have a toolkit at
+        # that prefix resolves the runtime from there instead of from the declared dependency, and the
+        # builder always has one, so nothing here would ever exercise the hop.
+        #
+        # Anything else absolute stays, because it is a dependency the environment provides and the wheel
+        # has no relative answer for, such as torch's own lib directory, which is how these extensions
+        # resolve torch at all.
+        if any(marker in entry for marker in ("/pip-out/", "/cmake-out", "/build/lib.")):
+            return False
+        return "/cuda" not in entry.lower()
 
     entries = [entry for entry in original.split(":") if keep(entry)]
     # A CUDA wheel links the CUDA runtime from a separate wheel installed beside this
