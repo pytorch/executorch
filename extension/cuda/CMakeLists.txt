@@ -31,6 +31,11 @@ if(EXECUTORCH_BUILD_SHARED)
     extension_cuda PROPERTIES OUTPUT_NAME executorch_extension_cuda
   )
   executorch_target_soname_policy(extension_cuda)
+  # Without this the library can ship with no runtime search path at all, on a builder where the CUDA
+  # runtime resolves from an implicit link directory. The wheel then adds no relative hop either, because
+  # the step that adds one has nothing to rewrite and returns early, so the library would look correct on
+  # the machine that built it and fail to load anywhere else.
+  executorch_target_shipped_runtime_path(extension_cuda)
 endif()
 target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})

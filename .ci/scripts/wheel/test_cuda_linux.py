@@ -191,6 +191,29 @@ def test_device_code_covers_the_row() -> None:
     print(f"✓ device code covers the row: {inspected}")
 
 
+def test_the_delegate_registers() -> None:
+    """The delegate has to appear in the runtime's backend list, not merely be present as a file.
+
+    Registration happens in a static initializer, which a normal link discards because nothing in the
+    program references it. Keeping it alive needs a linker option, and a wheel whose delegate ships but
+    does not register would load a delegated program and fail with an unregistered backend. That is the
+    failure this whole layout is most able to introduce, so it is worth asserting rather than assuming.
+
+    Needs no GPU: registration is a link-time property, checked by importing.
+    """
+    from executorch.extension.pybindings.portable_lib import (
+        _get_registered_backend_names,
+    )
+
+    registered = _get_registered_backend_names()
+    assert "CudaBackend" in registered, (
+        f"the wheel ships the CUDA delegate but CudaBackend is not registered: {registered}. "
+        "The library is present and its static initializer did not run, which means the option "
+        "that keeps it on the link line stopped working."
+    )
+    print(f"✓ the delegate registers: CudaBackend among {len(registered)} backend(s)")
+
+
 if __name__ == "__main__":
     assert platform.system() == "Linux", "the CUDA rows are Linux only"
 
@@ -198,6 +221,7 @@ if __name__ == "__main__":
     test_cuda_runtime_is_declared()
     test_cuda_libraries_resolve_relatively()
     test_device_code_covers_the_row()
+    test_the_delegate_registers()
 
     # Everything a CPU wheel is held to still applies: one owner per component, no
     # build-tree paths, and a C++ application able to link what the wheel ships.
