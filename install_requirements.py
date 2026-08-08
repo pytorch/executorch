@@ -45,7 +45,11 @@ def install_requirements(use_pytorch_nightly):
 
     # Determine the appropriate PyTorch URL based on CUDA delegate status
     torch_url = determine_torch_url(TORCH_URL_BASE)
-    torchao_url = determine_torch_url(TORCHAO_URL_BASE)
+    # torchao is deliberately NOT given the CUDA suffix. Its CUDA channel publishes x86_64 only, so
+    # asking for a CUDA build makes the pin unsatisfiable on other architectures, and the CUDA build
+    # is not needed: nothing in the wheel links or bundles torchao, which is a quantization-workflow
+    # dependency of the examples and tests.
+    torchao_url = TORCHAO_URL_BASE
 
     # pip packages needed by exir.
     TORCH_PACKAGE = [
