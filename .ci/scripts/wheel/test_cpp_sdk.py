@@ -105,6 +105,11 @@ print(
             "expected": expected.flatten().tolist(),
             "delegated": mode == "delegate",
             "has_xnnpack": b"XnnpackBackend" in bytes(buffer),
+            # Whether the program actually carries quantized operators. The numeric comparison alone
+            # cannot tell: an unquantized export of the same model produces a closer match than the
+            # tolerance a quantized one needs, so it would pass while proving nothing about the
+            # quantized kernels.
+            "has_quantized": b"quantized_decomposed" in bytes(buffer),
         }
     )
 )
@@ -830,6 +835,14 @@ def test_quantized_kernels_component_runs_a_model(work_dir: Path) -> None:
         return
 
     model, reference = _export(work_dir, "quantized")
+    # The export has to have produced a quantized program, or the rest of this proves nothing about the
+    # quantized kernels. The numeric comparison cannot tell the difference: an unquantized export of the
+    # same model lands well inside the tolerance a quantized one needs, so it would pass while linking a
+    # library it never exercised.
+    assert reference["has_quantized"], (
+        "the quantized export produced a program with no quantized operators, so this check would "
+        "prove nothing about the quantized kernels"
+    )
     consumer = _build_consumer(
         work_dir,
         "with-quantized",

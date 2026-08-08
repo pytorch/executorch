@@ -61,8 +61,19 @@ executorch_cuda_arch_list() {
   # detecting the builder's GPU.
   local train="${CU_VERSION:-${DESIRED_CUDA:-}}"
   # A CPU row names no CUDA train and needs no architectures, so it is not an error.
+  #
+  # A CUDA row always names one, so an empty value there means the row lost it. Treating that as a CPU
+  # row let the build fall back to detecting the builder's GPU, which produces a wheel carrying device
+  # code for whatever machine happened to build it while every check still reports green.
   case "${train}" in
-    "" | cpu | CPU | none | NONE) return 0 ;;
+    "" | cpu | CPU | none | NONE)
+      if [ "${EXECUTORCH_BUILD_CUDA:-}" = "1" ]; then
+        echo "this is a CUDA build but CU_VERSION and DESIRED_CUDA are both empty, so the row lost" >&2
+        echo "its CUDA version. Refusing to detect the builder GPU instead." >&2
+        return 65
+      fi
+      return 0
+      ;;
   esac
   # The value arrives as cu130, while some callers pass 13.0 instead.
   train="${train#cu}"
