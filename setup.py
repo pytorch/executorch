@@ -53,6 +53,7 @@ import contextlib
 import importlib.util
 import logging
 import os
+import shlex
 import re
 import shutil
 import site
@@ -206,15 +207,15 @@ def _cuda_train() -> str:
     if digits[:2] in _CUDA_RUNTIME_PACKAGES:
         return digits[:2]
 
-    # Fall back to the installed toolkit only when the build was asked for CUDA. A release builder can
-    # have a toolkit installed while building a CPU row, and asking the machine there made a CPU wheel
-    # declare a CUDA runtime it never loads, which is several hundred megabytes a user does not need.
-    if os.environ.get("EXECUTORCH_BUILD_CUDA", "").strip() not in (
-        "1",
-        "ON",
-        "on",
-        "true",
-        "TRUE",
+    # Fall back to the installed toolkit, matching how the build itself decides. The build turns CUDA on
+    # when a toolkit is present and the option was not switched off, so keying this off a release variable
+    # alone produced a wheel that carried the CUDA libraries while declaring no CUDA runtime and recording
+    # no way to reach one. A release builder can also have a toolkit installed while building a CPU row, so
+    # an explicit OFF has to be honoured or that row declares a runtime it never loads.
+    if not install_utils.is_cmake_option_on(
+        shlex.split(os.environ.get("CMAKE_ARGS", "")),
+        "EXECUTORCH_BUILD_CUDA",
+        default=True,
     ):
         return ""
     if not install_utils.is_cuda_available():
@@ -1014,11 +1015,14 @@ class CustomBuildPy(build_py):
                 # that cannot be included is a library nobody can call.
                 #
                 # Only the headers a consumer can actually compile against. Three of the
-                # four in that directory cannot be: two include a header generated during
-                # the build, and one includes a regular expression library the wheel does
-                # not carry and whose implementation is not in the shipped library either.
+                # four in that directory cannot be: two reach a header generated inside a
+                # PyTorch installation, which this package deliberately does not require,
+                # and one includes a regular expression library the wheel does not carry
+                # and whose implementation is not in the shipped library either.
                 # Publishing a header that cannot be included is worse than not publishing
                 # it, because the failure arrives at compile time in someone else's project.
+                # The component still ships its library, which keeps a build that has the
+                # headers from a source checkout on one copy of the profiler.
                 "devtools/etdump/utils.h",
             ]:
                 # A directory entry publishes everything under it, and a file entry publishes
