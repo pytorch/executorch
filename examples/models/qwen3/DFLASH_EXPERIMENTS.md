@@ -13,7 +13,7 @@ don't waste time on a chip that was never going to show a speedup.
 
 Model was `Qwen/Qwen3-4B` with the `z-lab/Qwen3-4B-DFlash-b16` draft
 checkpoint, exported with:
---dflash-layers 1,9,17,25,33 --qlinear 4w --qembedding 4w --use-custom-sdpa --use-custom-kv-cache
+--tap-layers 1,9,17,25,33 --qlinear 4w --qembedding 4w --use-custom-sdpa --use-custom-kv-cache
 
 We tested three chips: the M2 in a MacBook Air (8 GPU cores), an M2 Pro
 rental (16 GPU cores), and a base M4 rental (10 GPU cores). Same `.pte`

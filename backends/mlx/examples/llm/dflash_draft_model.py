@@ -135,62 +135,93 @@ class DFlashQwen3Attention(Qwen3Attention):
         sin: torch.Tensor,
         cache=None,
         cache_position=None,
-        new_ctx_len=None,
     ) -> torch.Tensor:
         # Two paths that MUST produce identical logits (verified in eager by
         # scratch_draft_cache_equiv.py):
-        #   - uncached (cache=None): reproject the full [context; block]
-        #     every round. Original behavior, untouched.
-        #   - cached: reproject only the block plus the NEWLY-arrived context
-        #     tokens, write those context K/V into the per-layer cache at
-        #     cache_position, then read the full accumulated context K/V back
-        #     from the cache -- so context is projected once ever, not once
-        #     per round (removes the quadratic reprojection the review flagged).
+        #   - uncached (cache=None): x_ctx is the FULL accumulated context;
+        #     reproject the full [context; block] every round. Unchanged.
+        #   - cached: x_ctx is ONLY the newly-arrived context slice (so
+        #     new_ctx_len = x_ctx.shape[1] is derived from a tensor shape --
+        #     a backed SymInt torch.export can trace -- rather than passed
+        #     as a raw Python int, which can never be marked dynamic).
+        #     Project only that slice plus the block, write the new context
+        #     K/V into the cache at cache_position, then attend over the
+        #     FULL fixed-size cache buffer with a validity mask -- never
+        #     narrow() it down to the valid length, since that length is a
+        #     data value (from cache_position's contents) rather than a
+        #     shape, and narrowing by it would need .item(), triggering
+        #     exactly the GuardOnDataDependentSymNode failure this design
+        #     exists to avoid. valid_mask() does the equivalent job via a
+        #     plain elementwise comparison instead.
         B, L, _ = x.shape
-        S = x_ctx.shape[1]
         q_shape = (B, L, -1, self.head_dim)
 
         query_states = self.q_norm(self.q_proj(x).view(q_shape)).transpose(1, 2)
 
-        total_len = cos.shape[1]
-        q_cos = cos.narrow(1, total_len - L, L)
-        q_sin = sin.narrow(1, total_len - L, L)
-        query_states, _ = apply_rotary_pos_emb(query_states, query_states, q_cos, q_sin)
-
         if cache is None:
             # --- Uncached path (unchanged) ---
+            S = x_ctx.shape[1]
             kv_shape = (B, S + L, -1, self.head_dim)
             kv_input = torch.cat([x_ctx, x], dim=1)
             key_states = self.k_norm(self.k_proj(kv_input).view(kv_shape)).transpose(1, 2)
             value_states = self.v_proj(kv_input).view(kv_shape).transpose(1, 2)
+            total_len = cos.shape[1]
+            q_cos = cos.narrow(1, total_len - L, L)
+            q_sin = sin.narrow(1, total_len - L, L)
+            query_states, _ = apply_rotary_pos_emb(query_states, query_states, q_cos, q_sin)
             _, key_states = apply_rotary_pos_emb(key_states, key_states, cos, sin)
+            attention_mask = None
         else:
             # --- Cached path ---
-            # Project only newly-arrived context, RoPE at absolute positions,
-            # write to cache. A context token's position never changes, so
-            # caching post-RoPE keys is safe.
-            new_ctx = x_ctx.narrow(1, S - new_ctx_len, new_ctx_len)
+            new_ctx_len = x_ctx.shape[1]  # backed SymInt, derived from shape
             new_shape = (B, new_ctx_len, -1, self.head_dim)
-            new_k = self.k_norm(self.k_proj(new_ctx).view(new_shape)).transpose(1, 2)
-            new_v = self.v_proj(new_ctx).view(new_shape).transpose(1, 2)
-            ctx_cos = cos.narrow(1, S - new_ctx_len, new_ctx_len)
-            ctx_sin = sin.narrow(1, S - new_ctx_len, new_ctx_len)
-            _, new_k = apply_rotary_pos_emb(new_k, new_k, ctx_cos, ctx_sin)
+            new_k = self.k_norm(self.k_proj(x_ctx).view(new_shape)).transpose(1, 2)
+            new_v = self.v_proj(x_ctx).view(new_shape).transpose(1, 2)
 
+            # cos/sin cover [new context ; block], contiguous, in that order.
+            ctx_cos = cos.narrow(1, 0, new_ctx_len)
+            ctx_sin = sin.narrow(1, 0, new_ctx_len)
+            _, new_k = apply_rotary_pos_emb(new_k, new_k, ctx_cos, ctx_sin)
+            blk_cos = cos.narrow(1, new_ctx_len, L)
+            blk_sin = sin.narrow(1, new_ctx_len, L)
+            query_states, _ = apply_rotary_pos_emb(query_states, query_states, blk_cos, blk_sin)
+
+            # Write new context K/V into the persistent cache. full_k/full_v
+            # are ALWAYS the full max_seq_len buffer -- never narrowed.
             full_k, full_v = cache.write(self.layer_idx, new_k, new_v, cache_position)
-            ctx_key_states = full_k.narrow(2, 0, S)
-            ctx_value_states = full_v.narrow(2, 0, S)
 
             # Block K/V are fresh every round (never cached).
             blk_shape = (B, L, -1, self.head_dim)
             blk_k = self.k_norm(self.k_proj(x).view(blk_shape)).transpose(1, 2)
             blk_v = self.v_proj(x).view(blk_shape).transpose(1, 2)
-            blk_cos = cos.narrow(1, S, L)
-            blk_sin = sin.narrow(1, S, L)
             _, blk_k = apply_rotary_pos_emb(blk_k, blk_k, blk_cos, blk_sin)
 
-            key_states = torch.cat([ctx_key_states, blk_k], dim=2)
-            value_states = torch.cat([ctx_value_states, blk_v], dim=2)
+            # Write new context K/V into the persistent cache. full_k/full_v
+            # are the full max_seq_len buffer as returned by write() -- the
+            # narrow() below (not here) is what trims them to valid_len.
+
+            # Slice down to [valid context ; block] -- NOT the full padded
+            # buffer -- so attention only ever computes over real content.
+            # valid_len_after() is the authoritative crop point (one past the
+            # last written position). Extracting it via .item() + torch._check
+            # hints (exactly the pattern custom_sdpa's own internal K/V
+            # slicing already uses, see custom_ops.py) keeps this export-safe
+            # despite being a data-dependent length -- verified directly via
+            # a standalone probe before wiring this in. This replaces the
+            # earlier mask-based approach, which attended over the ENTIRE
+            # fixed buffer every round (e.g. 4096 padded positions) and was
+            # the actual measured performance cost (1.68x slower than
+            # uncached at max_seq_len=4096, scaling directly with buffer
+            # size) -- masking discards invalid attention weights but still
+            # computes them; slicing never computes them at all.
+            valid_len = cache.valid_len_after(cache_position).item()
+            torch._check(valid_len >= 1)
+            torch._check(valid_len <= full_k.shape[2])
+            ctx_k = full_k.narrow(2, 0, valid_len)
+            ctx_v = full_v.narrow(2, 0, valid_len)
+            key_states = torch.cat([ctx_k, blk_k], dim=2)
+            value_states = torch.cat([ctx_v, blk_v], dim=2)
+            attention_mask = None  # nothing invalid remains to mask
 
         attention_interface = eager_attention_forward
         if self.config._attn_implementation != "eager":
@@ -201,7 +232,7 @@ class DFlashQwen3Attention(Qwen3Attention):
             query_states,
             key_states,
             value_states,
-            attention_mask=None,
+            attention_mask=attention_mask,
             dropout=0.0,
             scaling=self.scaling,
             sliding_window=None,
@@ -228,10 +259,10 @@ class DFlashQwen3DecoderLayer(nn.Module):
             config.hidden_size, eps=config.rms_norm_eps
         )
 
-    def forward(self, x, x_ctx, cos, sin, cache=None, cache_position=None, new_ctx_len=None):
+    def forward(self, x, x_ctx, cos, sin, cache=None, cache_position=None):
         x = x + self.self_attn(
             self.input_layernorm(x), x_ctx, cos, sin,
-            cache=cache, cache_position=cache_position, new_ctx_len=new_ctx_len,
+            cache=cache, cache_position=cache_position,
         )
         return x + self.mlp(self.post_attention_layernorm(x))
 
@@ -256,31 +287,32 @@ class DFlashDraftModel(nn.Module):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-    def forward(self, tokens, target_hidden, cache=None, cache_position=None, new_ctx_len=None):
-        # Positions are derived here from the actual input shapes rather than
-        # passed in as a separate tensor, so callers only need to supply
-        # `tokens` and `target_hidden` -- no third tensor whose shape must be
-        # kept in sync with both of theirs. This also keeps the block-length
-        # and context-length dimensions symbolically related for
-        # torch.export: since both are read directly off the dynamic-shaped
-        # inputs, the exporter ties them together automatically through this
-        # arithmetic instead of relying on a caller-supplied tensor with a
-        # separately-declared (and possibly mismatched) dynamic shape.
+    def forward(self, tokens, target_hidden, cache=None, cache_position=None):
+        # target_hidden means different things depending on cache:
+        #   - cache is None: the FULL accumulated context (unchanged).
+        #   - cache is not None: ONLY the newly-arrived context slice. Its
+        #     length (new_ctx_len) is derived from target_hidden.shape[1] --
+        #     a backed SymInt torch.export can trace -- rather than passed
+        #     as a separate raw-int argument, which can never be marked
+        #     dynamic. cache_position gives the new slice's absolute
+        #     positions; the block's positions follow immediately after.
         block_len = tokens.shape[1]
-        ctx_len = target_hidden.shape[1]
-        position_ids = torch.arange(ctx_len + block_len, device=tokens.device).unsqueeze(0)
-
-        # Embed the proposal block (last accepted token + masked future positions).
         h = self.embed_tokens(tokens) * self.config.embed_scale
-        # Translate the concatenated target hidden states into the draft model's hidden space.
         h_ctx = self.hidden_norm(self.fc(target_hidden))
+
+        if cache is None:
+            ctx_len = target_hidden.shape[1]
+            position_ids = torch.arange(ctx_len + block_len, device=tokens.device).unsqueeze(0)
+        else:
+            new_ctx_len = target_hidden.shape[1]
+            block_start = cache_position[-1] + 1
+            block_positions = block_start + torch.arange(block_len, device=tokens.device)
+            position_ids = torch.cat([cache_position, block_positions]).unsqueeze(0)
+
         # Positional information for both the proposal block and target context.
         cos, sin = self.rotary_emb(h, position_ids)
         for layer in self.layers:
-            h = layer(
-                h, h_ctx, cos, sin,
-                cache=cache, cache_position=cache_position, new_ctx_len=new_ctx_len,
-            )
+            h = layer(h, h_ctx, cos, sin, cache=cache, cache_position=cache_position)
         h = self.norm(h)
         # Only return predictions for the future positions.
         logits = self.lm_head(h[:, 1:, :])

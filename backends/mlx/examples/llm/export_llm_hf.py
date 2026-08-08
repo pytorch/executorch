@@ -137,7 +137,7 @@ def _export_with_custom_components(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
-    dflash_layers: Optional[list[int]] = None,
+    tap_layers: Optional[list[int]] = None,
 ) -> None:
     """
     Export using direct HF model with custom MLX components.
@@ -209,6 +209,20 @@ def _export_with_custom_components(
     # StaticCache wrapper for non-sliding-window models (stores cache as .static_cache).
     # This matters because the sliding window SDPA closure looks up the cache via
     # exportable_module.cache, matching the optimum-executorch convention.
+    #
+    # Composing hidden-state tapping with the hybrid-cache wrapper is outside
+    # this path's scope (per review): reject the combination explicitly
+    # rather than silently selecting the hybrid-cache wrapper and dropping
+    # the tap request, which the elif ordering below would otherwise do with
+    # no error at all.
+    if sliding_window is not None and tap_layers is not None:
+        raise ValueError(
+            "--tap-layers is not supported together with sliding-window "
+            "models (which require the hybrid-cache wrapper). Composing "
+            "hidden-state tapping with the hybrid cache is out of scope "
+            "for this export path."
+        )
+
     if sliding_window is not None:
         from transformers.integrations.executorch import (
             TorchExportableModuleWithHybridCache,
@@ -220,20 +234,20 @@ def _export_with_custom_components(
             batch_size=1,
             max_cache_len=effective_cache_len,
         )
-    elif dflash_layers is not None:
+    elif tap_layers is not None:
         # Qwen3-specific for now.
         from executorch.backends.mlx.examples.llm.dflash_hidden_export import (
             TorchExportableModuleWithStaticCacheAndHidden,
         )
 
         logger.info(
-            f"Creating DFlash hidden-state-tapping wrapper, layers={dflash_layers}"
+            f"Creating DFlash hidden-state-tapping wrapper, layers={tap_layers}"
         )
         exportable = TorchExportableModuleWithStaticCacheAndHidden(
             model=model,
             batch_size=1,
             max_cache_len=effective_cache_len,
-            layer_ids=dflash_layers,
+            layer_ids=tap_layers,
         )
     else:
         logger.info("Creating TorchExportableModuleWithStaticCache wrapper...")
@@ -316,7 +330,7 @@ def _export_with_custom_components(
         partitioner=[MLXPartitioner()],
         compile_config=edge_config,
         # Required by the C++ LLMEngine metadata contract (get_llm_metadata in
-        # llm_runner_helper.cpp) -- this export path (used for --dflash-layers)
+        # llm_runner_helper.cpp) -- this export path (used for --tap-layers)
         constant_methods={"get_max_seq_len": max_seq_len},
     )
 
@@ -354,7 +368,7 @@ def export_llama_hf(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
-    dflash_layers: Optional[list[int]] = None,
+    tap_layers: Optional[list[int]] = None,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -369,10 +383,10 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    if use_custom_sdpa or use_custom_kv_cache or dflash_layers is not None:
+    if use_custom_sdpa or use_custom_kv_cache or tap_layers is not None:
         logger.info(
             f"Using custom components: sdpa={use_custom_sdpa}, "
-            f"kv_cache={use_custom_kv_cache}, dflash_layers={dflash_layers}"
+            f"kv_cache={use_custom_kv_cache}, tap_layers={tap_layers}"
         )
         _export_with_custom_components(
             model_id=model_id,
@@ -387,7 +401,7 @@ def export_llama_hf(
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
-            dflash_layers=dflash_layers,
+            tap_layers=tap_layers,
         )
     else:
         logger.info("Using optimum-executorch pipeline (no custom components)")
@@ -456,16 +470,19 @@ def main():
         help="Use MLX custom KV cache (mlx::kv_cache_update)",
     )
     parser.add_argument(
-        "--dflash-layers",
+        "--tap-layers",
         type=str,
         default=None,
-        help="Comma-separated transformer layer indices whose hidden states are concatenated and returned alongside logits for DFlash. E.g. '1,9,17,25,33'",
+        help="Comma-separated transformer layer indices whose hidden states are "
+        "concatenated and returned alongside logits (e.g. for DFlash draft "
+        "conditioning). E.g. '1,9,17,25,33'. Not supported with sliding-window "
+        "models (see hybrid-cache rejection above).",
     )
 
     args = parser.parse_args()
     # Convert "1,9,17,25,33" -> [1, 9, 17, 25, 33]
-    dflash_layers = (
-        [int(x) for x in args.dflash_layers.split(",")] if args.dflash_layers else None
+    tap_layers = (
+        [int(x) for x in args.tap_layers.split(",")] if args.tap_layers else None
     )
 
     export_llama_hf(
@@ -481,7 +498,7 @@ def main():
         no_tie_word_embeddings=args.no_tie_word_embeddings,
         qlinear_group_size=args.qlinear_group_size,
         qembedding_group_size=args.qembedding_group_size,
-        dflash_layers=dflash_layers,
+        tap_layers=tap_layers,
     )
 
 

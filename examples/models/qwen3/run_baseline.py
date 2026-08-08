@@ -71,6 +71,7 @@ def main():
     n = len(generated)
     print(f"Prompt: {args.prompt}")
     print(f"Generated ({n} tokens): {text}")
+    print(f"TOKEN_IDS: {generated}")
     print("\n--baseline stats--")
     print(f"time: {dt:.2f}s   tokens/s: {n / dt:.2f}")
 

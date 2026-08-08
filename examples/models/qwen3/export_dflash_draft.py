@@ -68,6 +68,15 @@ def main():
     # --max-ctx-len is the actual bound on context length at inference time.
     parser.add_argument("--ctx-len", type=int, default=8)
     parser.add_argument("--max-ctx-len", type=int, default=4096)
+    parser.add_argument(
+        "--cached",
+        action="store_true",
+        help="Export with a persistent draft KV cache (review point 3) instead "
+        "of reprojecting the full accumulated context every round. The "
+        "exported forward() then takes (tokens, new_ctx, cache_position) "
+        "instead of (tokens, target_hidden) -- new_ctx is ONLY the "
+        "newly-confirmed context hidden states, not the full history.",
+    )
     args = parser.parse_args()
 
     target = AutoModelForCausalLM.from_pretrained(args.target_model, dtype="auto")
@@ -91,25 +100,75 @@ def main():
     block_size, ctx_len = args.block_size, args.ctx_len
     hidden_size = model.fc.in_features
     tokens = torch.randint(0, 1000, (1, block_size), dtype=torch.long)
-    target_hidden = torch.randn(1, ctx_len, hidden_size)
 
-    # block_len is now bounded/dynamic; position_ids is no longer a model input.
-    ctx_dim = Dim("ctx_len", min=1, max=args.max_ctx_len)
     # min=2, not 1: block_len=1 hits a shape-ambiguity guard during export.
     # run_dflash.py's bs==1 branch already skips the draft entirely in that
     # case (target-only step), so the export never needs to support it.
     block_dim = Dim("block_len", min=2, max=block_size)
-    dynamic_shapes = {
-        "tokens": {1: block_dim},
-        "target_hidden": {1: ctx_dim},
-    }
 
     import torch.fx.experimental._config as fx_config
 
-    with fx_config.patch(backed_size_oblivious=True):
-        exported = torch.export.export(
-            model, (tokens, target_hidden), dynamic_shapes=dynamic_shapes
+    if args.cached:
+        from executorch.backends.mlx.examples.llm.dflash_draft_cache import (
+            DFlashDraftKVCache,
         )
+
+        class DFlashCachedDraftModel(torch.nn.Module):
+            """Owns the cache as a submodule (mutable buffers) rather than
+            receiving it as a forward() argument, matching the pattern
+            proven in scratch_draft_cache_export.py."""
+
+            def __init__(self, draft_model, max_seq_len):
+                super().__init__()
+                self.draft = draft_model
+                self.cache = DFlashDraftKVCache(
+                    num_layers=draft_model.config.num_hidden_layers,
+                    num_heads=draft_model.config.num_key_value_heads,
+                    head_dim=draft_model.config.head_dim,
+                    max_seq_len=max_seq_len,
+                )
+
+            def forward(self, tokens, new_ctx, cache_position):
+                return self.draft(
+                    tokens, new_ctx, cache=self.cache, cache_position=cache_position
+                )
+
+        cached_model = DFlashCachedDraftModel(model, args.max_ctx_len).eval()
+
+        # Example inputs for tracing: a mid-generation round -- some prior
+        # context already in the cache, plus a few newly-confirmed tokens.
+        prev_ctx_len_example = 32
+        new_ctx = torch.randn(1, ctx_len, hidden_size)
+        cache_position = torch.arange(
+            prev_ctx_len_example, prev_ctx_len_example + ctx_len, dtype=torch.long
+        )
+
+        new_ctx_dim = Dim("new_ctx_len", min=1, max=args.max_ctx_len)
+        dynamic_shapes = {
+            "tokens": {1: block_dim},
+            "new_ctx": {1: new_ctx_dim},
+            "cache_position": {0: new_ctx_dim},
+        }
+
+        with fx_config.patch(backed_size_oblivious=True):
+            exported = torch.export.export(
+                cached_model,
+                (tokens, new_ctx, cache_position),
+                dynamic_shapes=dynamic_shapes,
+                strict=True,
+            )
+    else:
+        target_hidden = torch.randn(1, ctx_len, hidden_size)
+        ctx_dim = Dim("ctx_len", min=1, max=args.max_ctx_len)
+        dynamic_shapes = {
+            "tokens": {1: block_dim},
+            "target_hidden": {1: ctx_dim},
+        }
+
+        with fx_config.patch(backed_size_oblivious=True):
+            exported = torch.export.export(
+                model, (tokens, target_hidden), dynamic_shapes=dynamic_shapes
+            )
 
     from executorch.backends.mlx.partitioner import MLXPartitioner
     from executorch.exir import to_edge_transform_and_lower
@@ -120,9 +179,15 @@ def main():
     with open(args.output, "wb") as f:
         f.write(et_program.buffer)
     print(f"Saved draft model to: {args.output}")
-    print(
-        f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, dynamic block_len supported: 1 to {block_size}."
-    )
+    if args.cached:
+        print(
+            f"Cached draft: dynamic new_ctx_len 1 to {args.max_ctx_len}, "
+            f"dynamic block_len 2 to {block_size}."
+        )
+    else:
+        print(
+            f"Dynamic ctx_len supported: 1 to {args.max_ctx_len}, dynamic block_len supported: 2 to {block_size}."
+        )
 
 
 if __name__ == "__main__":

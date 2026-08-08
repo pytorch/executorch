@@ -41,6 +41,29 @@ def first_mismatch(draft_ids, target_ids):
     return len(draft_ids)
 
 
+def compute_block_len(block_size, max_new_tokens, num_generated, max_seq_len, position, draft_room=None):
+    """Bounded dynamic proposal length (review point 1):
+        min(checkpoint block_size, remaining token budget, remaining context budget)
+    draft_room, if given (cached mode), additionally bounds against the
+    draft cache's own remaining capacity, so a cache write never overruns
+    its fixed buffer.
+    """
+    bs = min(block_size, max_new_tokens - num_generated, max_seq_len - position)
+    if draft_room is not None:
+        bs = min(bs, draft_room)
+    return bs
+
+
+def truncate_at_eos(new_tokens, accepted, eos_id):
+    """If eos_id appears in new_tokens, truncate right after it and clamp
+    accepted so it never claims more accepted draft tokens than actually
+    survive truncation."""
+    if eos_id in new_tokens:
+        new_tokens = new_tokens[: new_tokens.index(eos_id) + 1]
+        accepted = min(accepted, len(new_tokens) - 1)
+    return new_tokens, accepted
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--target-pte", default="qwen3_4b_dflash_target.pte")
@@ -76,6 +99,20 @@ def main():
         "z-lab checkpoint's native config (e.g. our block_size=8 test export).",
     )
     p.add_argument("--max-seq-len", type=int, default=4096, help="Target's static cache capacity.")
+    p.add_argument(
+        "--draft-max-ctx-len", type=int, default=None,
+        help="The --max-ctx-len the cached draft-pte was exported with. "
+        "Required with --cached: block_len is bounded against it so the "
+        "draft cache never overruns its buffer. Defaults to --max-seq-len.",
+    )
+    p.add_argument(
+        "--cached",
+        action="store_true",
+        help="Use the persistent draft KV cache (review point 3) -- draft-pte "
+        "must have been exported with export_dflash_draft.py --cached. "
+        "Only newly-confirmed hidden states are sent to the draft each "
+        "round, instead of the full accumulated context.",
+    )
     args = p.parse_args()
 
     config = load_dflash_config(
@@ -131,10 +168,29 @@ def main():
     # Run the target model over the prompt once to initialize generation.
     # This produces the first next-token prediction and the hidden states that condition the draft model during speculative decoding.
     input_pos = torch.arange(prompt_len, dtype=torch.long)
-    logits, hidden = target.execute([prompt_ids, input_pos])
+    # .contiguous(): the MLX backend's native tensor conversion requires
+    # standard C-contiguous strides and fails hard otherwise ("tensor is
+    # not contiguous"). Seen on this environment's torch build even though
+    # prompt_ids/input_pos are built via plain tokenizer output / arange --
+    # a no-op if already contiguous, a real fix if either secretly isn't.
+    logits, hidden = target.execute([prompt_ids.contiguous(), input_pos.contiguous()])
     hidden = hidden.float()
     pos = prompt_len
     last_token = int(logits[0, -1].argmax())
+
+    if args.cached:
+        # Hidden states not yet written to the draft's persistent cache.
+        # Starts as the prompt's hidden states. Flushed into the cache (and
+        # prev_ctx_len advanced) only on rounds where the draft actually
+        # runs -- see the bs==1 skip below for why this can't just advance
+        # unconditionally every round.
+        pending_ctx = hidden
+        prev_ctx_len = 0
+        draft_max_ctx = (
+            args.draft_max_ctx_len
+            if args.draft_max_ctx_len is not None
+            else args.max_seq_len
+        )
 
     generated = [last_token]
     rounds = 0
@@ -146,6 +202,11 @@ def main():
         rounds += 1
         # Dynamic block_len: shrink the proposal near the end of generation.
         bs = min(block_size, args.max_new_tokens - len(generated), args.max_seq_len - pos)
+        if args.cached:
+            # Bound against the DRAFT cache's own capacity too, so a cache
+            # write never runs off the fixed buffer (silent corruption).
+            draft_room = draft_max_ctx - (prev_ctx_len + pending_ctx.shape[1])
+            bs = min(bs, draft_room)
         if bs <= 0:
             break
 
@@ -163,7 +224,28 @@ def main():
                 dim=1,
             )
             _t0 = time.time()
-            (draft_logits,) = draft.execute([draft_input, hidden])
+            if args.cached:
+                # bs==1 rounds skip the draft entirely (see above), so
+                # pending_ctx may hold more than one round's worth of
+                # confirmed-but-unwritten context by the time the draft
+                # actually runs again -- that's fine, it all gets written
+                # (and prev_ctx_len advanced) together, right here.
+                cache_position = torch.arange(
+                    prev_ctx_len, prev_ctx_len + pending_ctx.shape[1], dtype=torch.long
+                )
+                assert prev_ctx_len + pending_ctx.shape[1] <= draft_max_ctx, (
+                    f"draft cache overrun: writing up to "
+                    f"{prev_ctx_len + pending_ctx.shape[1]} but capacity is "
+                    f"{draft_max_ctx}. Re-export with larger --max-ctx-len "
+                    f"or pass correct --draft-max-ctx-len."
+                )
+                (draft_logits,) = draft.execute(
+                    [draft_input, pending_ctx.contiguous(), cache_position.contiguous()]
+                )
+                prev_ctx_len += pending_ctx.shape[1]
+                pending_ctx = pending_ctx.new_zeros((1, 0, pending_ctx.shape[-1]))
+            else:
+                (draft_logits,) = draft.execute([draft_input, hidden])
             _draft_exec_time = time.time() - _t0
             draft_ids = draft_logits[0].argmax(-1).tolist()  # bs - 1 tokens
 
@@ -186,14 +268,16 @@ def main():
         # target_ids[accepted] is always in-bounds, including the all-accepted
         # bonus-token case.)
         accepted = first_mismatch(draft_ids, target_ids)
-        if args.verbose and rounds <= 10:
+        if args.verbose:
             print(
                 f"  timing: draft_exec={_draft_exec_time*1000:.1f}ms "
-                f"target_exec={_target_exec_time*1000:.1f}ms ctx_len={hidden.shape[1]}"
+                f"target_exec={_target_exec_time*1000:.1f}ms "
+                f"ctx_len={prev_ctx_len if args.cached else hidden.shape[1]}"
             )
-        if args.verbose and rounds <= 5:
+        if args.verbose:
             print(
-                f"round {rounds}: pos={pos} hidden_ctx={hidden.shape[1]} "
+                f"round {rounds}: pos={pos} "
+                f"hidden_ctx={prev_ctx_len if args.cached else hidden.shape[1]} "
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
         new_tokens = draft_ids[:accepted] + [target_ids[accepted]]
@@ -201,9 +285,7 @@ def main():
         # Stop generation once an EOS token becomes part of the accepted sequence.
         # Truncate before updating the running stats so a round that hits EOS
         # doesn't over-count tokens/acceptances that never actually get emitted.
-        if eos_id in new_tokens:
-            new_tokens = new_tokens[: new_tokens.index(eos_id) + 1]
-            accepted = min(accepted, len(new_tokens) - 1)
+        new_tokens, accepted = truncate_at_eos(new_tokens, accepted, eos_id)
 
         accepted_total += accepted
         emitted_total += len(new_tokens)
@@ -213,9 +295,20 @@ def main():
         # 4. Advance the accepted sequence. Rejected draft tokens are discarded, and the next round starts from the updated position.
         pos += len(new_tokens)
         last_token = new_tokens[-1]
-        # Append the hidden states for the newly accepted tokens to the running target context.
-        # The draft model conditions on the hidden states of the entire sequence, so this context grows as generation progresses rather than being replaced each round.
-        hidden = torch.cat([hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1)
+        # Append the hidden states for the newly accepted tokens.
+        if args.cached:
+            # Always accumulate here, whether or not this round's draft call
+            # actually ran (see the bs==1 skip and the flush-on-next-call
+            # logic above) -- this is what guarantees prev_ctx_len only ever
+            # advances by exactly what's genuinely been written to the cache.
+            pending_ctx = torch.cat(
+                [pending_ctx, new_hidden[:, : len(new_tokens), :].float()], dim=1
+            )
+        else:
+            # The draft model conditions on the hidden states of the entire
+            # sequence, so this context grows as generation progresses
+            # rather than being replaced each round.
+            hidden = torch.cat([hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1)
 
         if eos_id in new_tokens:
             break
@@ -225,6 +318,7 @@ def main():
     n = len(generated)
     print(f"\nPrompt: {args.prompt}")
     print(f"Generated ({n} tokens): {text}")
+    print(f"TOKEN_IDS: {generated}")
     print("\n--stats--")
     print(f"rounds: {rounds}")
     if rounds:

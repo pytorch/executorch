@@ -61,8 +61,26 @@ class DFlashDraftKVCache(nn.Module):
 
     def valid_mask(self, valid_len: Union[torch.Tensor, int], device=None) -> torch.Tensor:
         # True for positions [0, valid_len), False for the unwritten tail.
+        # This is the read-side of the DFlash "append and crop" semantics
+        # (per review): valid_len is authoritative, so any cache slot at or
+        # beyond it -- whether never written, or holding stale data from a
+        # position that's since been cropped away -- is masked out of
+        # attention regardless of what's physically in the buffer. Combined
+        # with the append-only write() above, this gives crop behavior
+        # without a data-dependent narrow(): cropping to `valid_len` is just
+        # attending with this mask rather than physically truncating the
+        # buffer (which would need .item() and break export).
         positions = torch.arange(self.max_seq_len, device=device)
         return positions < valid_len
+
+    @staticmethod
+    def valid_len_after(cache_position: torch.Tensor) -> torch.Tensor:
+        # The authoritative confirmed-context length after a write at
+        # cache_position: one past the last written position. This is the
+        # "crop point" -- everything from here on is invalid, and valid_mask()
+        # enforces exactly that. A named method so the append-and-crop
+        # semantics are explicit rather than an inline `cache_position[-1]+1`.
+        return cache_position[-1] + 1
 
     def reset(self) -> None:
         for layer in self.layers:
