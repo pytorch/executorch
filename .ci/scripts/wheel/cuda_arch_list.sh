@@ -22,7 +22,7 @@
 # an architecture torch supports but this wheel omits produces a wheel that installs and then fails at
 # the first kernel launch. Two omissions found that way were the GPU on the runner that tests these
 # wheels, and a common desktop card.
-_cuda_arch_x86_64_cu130="7.5 8.0 8.6 8.9 9.0 10.0 12.0"
+_cuda_arch_x86_64_cu130="8.0 8.6 8.9 9.0 10.0 12.0"
 _cuda_arch_x86_64_cu132="${_cuda_arch_x86_64_cu130}"
 
 # The architectures the published aarch64 PyTorch CUDA build covers, read from its own library on an ARM
@@ -40,7 +40,12 @@ _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
 # wheel would advertise a device the row cannot otherwise serve, since those devices also need the
 # CUDA, TensorRT and PyTorch pinned by their own software release rather than the ones a generic
 # wheel resolves.
-_cuda_arch_x86_64_cu126="7.5 8.0 8.6 8.9 9.0"
+#
+# The floor is 8.0 rather than the oldest architecture PyTorch still carries. One of these sources compiles
+# an integer matrix-multiply path only at 8.0 and newer, so an older architecture would get a delegate that
+# loads, runs most models, and fails on one that needs that operator. Claiming hardware the delegate only
+# partly serves is the same problem the embedded modules have, so the row leaves it out for the same reason.
+_cuda_arch_x86_64_cu126="8.0 8.6 8.9 9.0"
 _cuda_arch_aarch64_cu126="8.0 9.0"  # what the aarch64 build of this train covers
 
 # A CUDA train with no architecture list would leave the build detecting the builder's GPU, which is
