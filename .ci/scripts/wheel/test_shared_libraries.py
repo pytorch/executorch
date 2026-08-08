@@ -55,6 +55,16 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # The quantized kernels, whose own library the wheel ships when they are built.
 # A separate group because they have a separate owner, and because a wheel built
 # without them ships neither the library nor these symbols.
+# The CUDA delegate and its stream helper, for a wheel built from a CUDA index. The
+# stream helper matters most: two copies means two notions of the caller's stream, so
+# work queued through one is invisible to the other.
+# A strongly defined symbol, chosen by reading the built library rather than guessed.
+# The CudaBackend methods are emitted weak, and the definer count only looks at strong
+# definitions, so naming one of those would report zero definers for a library that is
+# plainly present.
+_CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
+_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+
 _QUANTIZED_KERNEL_SYMBOLS = (
     "torch::executor::native::quantize_per_tensor_out",
     "torch::executor::native::dequantize_per_tensor_out",
@@ -378,6 +388,18 @@ _OWNED_COMPONENTS = (
         "set of quantized kernels",
         _QUANTIZED_KERNEL_SYMBOLS,
         "libexecutorch_kernels_quantized.so",
+        False,
+    ),
+    (
+        "CUDA delegate",
+        _CUDA_BACKEND_SYMBOLS,
+        "libexecutorch_backend_cuda.so",
+        False,
+    ),
+    (
+        "CUDA stream helper",
+        _CUDA_STREAM_SYMBOLS,
+        "libexecutorch_extension_cuda.so",
         False,
     ),
     # The third-party code these libraries bundle, checked separately from the
@@ -1214,11 +1236,16 @@ def test_extension_contains_no_component() -> None:
     # this split moved out of it, so the extension must now resolve them from outside or
     # a retention option silently failed.
     #
-    # Not every shipped library serves Python. The quantized kernels and the CUDA
-    # delegate exist for a C++ application: Python registers quantized operators through
-    # the torch-linked ahead-of-time library at export time, and never loads the CUDA
-    # delegate from this extension at all. Requiring a dependency on those would demand
-    # the extension link code it has no use for.
+    # Not every shipped library serves Python. The quantized kernels exist for a C++
+    # application, since Python registers those operators through the torch-linked
+    # ahead-of-time library at export time, and requiring a dependency would demand the
+    # extension link code it has no use for.
+    #
+    # The CUDA delegate is NOT in that category. The build deliberately links it into the
+    # extension with a retention option, so it does carry a dependency, and excluding it
+    # switched off the one check that would notice if that retention stopped working. The
+    # stream helper stays excluded because the extension reaches it only through the
+    # delegate's public link, with no retention of its own to protect.
     shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
     assert shipped, (
         f"the wheel installed no runtime libraries under {package_dir / 'lib'}, so this check would "
@@ -1227,10 +1254,7 @@ def test_extension_contains_no_component() -> None:
     expected = {
         name
         for name in shipped
-        if not any(
-            marker in name
-            for marker in ("kernels_quantized", "backend_cuda", "extension_cuda")
-        )
+        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
     }
     unused = sorted(expected - needed)
     assert not unused, (
@@ -1308,6 +1332,8 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_backend_cuda",
+        "libexecutorch_extension_cuda",
         "libexecutorch_backend_xnnpack",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
