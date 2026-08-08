@@ -35,18 +35,42 @@ build_dir="${et_root_dir}/arm_test"
 build_executor_runner="${et_root_dir}/backends/arm/scripts/build_executor_runner.sh"
 build_root_test_dir="${et_root_dir}/arm_test/arm_semihosting_executor_runner_corstone-300_${target}"
 
-select_ops_list="\
-aten::add.out,\
-aten::clamp.out,\
-aten::mul.out,\
-aten::convolution.out,\
-aten::max_pool2d_with_indices.out,\
-dim_order_ops::_clone_dim_order.out,\
-aten::cat.out,\
-aten::full.out,\
-aten::ge.Tensor_out,\
-aten::unsqueeze_copy.out,\
-aten::select_copy.int_out,\
-aten::amax.out"
+join_by_comma() {
+    local IFS=,
+    echo "$*"
+}
 
-${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="${select_ops_list}" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"
+ops_list=(
+    aten::add.out
+    aten::clamp.out
+    aten::mul.out
+    aten::convolution.out
+    aten::max_pool2d_with_indices.out
+    dim_order_ops::_clone_dim_order.out
+    aten::cat.out
+    aten::full.out
+    aten::ge.Tensor_out
+    aten::unsqueeze_copy.out
+    aten::select_copy.int_out
+    aten::amax.out
+    cortex_m::quantize_per_tensor.out
+    cortex_m::dequantize_per_tensor.out
+    cortex_m::quantized_add.out
+    cortex_m::quantized_div.out
+    cortex_m::quantized_mul.out
+    cortex_m::quantized_activation.out
+    cortex_m::minimum.out
+    cortex_m::maximum.out
+    cortex_m::quantized_linear.out
+    cortex_m::softmax.out
+    cortex_m::transpose.out
+    cortex_m::pad.out
+    cortex_m::quantized_conv2d.out
+    cortex_m::quantized_depthwise_conv2d.out
+    cortex_m::quantized_transpose_conv2d.out
+    cortex_m::quantized_avg_pool2d.out
+    cortex_m::quantized_max_pool2d.out
+    cortex_m::quantized_batch_matmul.out
+)
+
+${build_executor_runner} --pte=semihosting --bundleio --target="${target}" --output="${build_root_test_dir}" --select_ops_list="$(join_by_comma "${ops_list[@]}")" --extra_build_flags="-DET_ATOL=5.0 -DET_RTOL=1.0 -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0"

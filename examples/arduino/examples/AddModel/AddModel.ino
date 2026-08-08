@@ -21,10 +21,10 @@
 //            def forward(self, x): return x + 1.0
 //        et = to_edge(export(Add().eval(), (torch.tensor([1.,2.,3.]),))).to_executorch()
 //        with open('add.pte','wb') as f: f.write(bytes(et.buffer))"
-//   2. Convert to header: python examples/arm/executor_runner/pte_to_header.py \
+//   2. Convert to header: python examples/arduino/pte_to_header.py \
 //        -p add.pte -o model.h
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #if __has_include("model.h")
 #include "model.h"
 #else
@@ -47,6 +47,14 @@ alignas(16) static uint8_t method_pool[8 * 1024];
 
 static BufferDataLoader* g_loader = nullptr;
 static Program* g_prog = nullptr;
+
+// ExecuTorch logs go to a weak hook so the library does not depend on Serial.
+// Without this the runtime's own diagnostics -- allocation failures, operator
+// mismatches -- are discarded, and errors surface only as bare hex codes.
+extern "C" void et_arduino_log(const char* msg) {
+  Serial.print("ET| ");
+  Serial.println(msg);
+}
 
 void setup() {
   Serial.begin(115200);

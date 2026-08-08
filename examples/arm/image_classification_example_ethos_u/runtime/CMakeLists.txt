@@ -71,12 +71,15 @@ endif()
 find_package(
   executorch REQUIRED HINTS "${ET_BUILD_DIR_PATH}/lib/cmake/ExecuTorch"
 )
+include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
 
 # The core_platform project defines the corstone-320 target and contains the
 # start-up code for the Cortex-M
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
 
 add_executable(img_class_example main.cpp)
+include(${ET_DIR_PATH}/backends/arm/cmake/ArmRunnerUtils.cmake)
+arm_runner_link_minimal_specs(img_class_example)
 
 target_sources(
   img_class_example
@@ -84,15 +87,29 @@ target_sources(
           ${CMAKE_SOURCE_DIR}/../../executor_runner/arm_memory_allocator.cpp
 )
 
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "image_classification_cortex_m_ops_lib"
+  CUSTOM_OPS_YAML
+  "${ET_DIR_PATH}/backends/cortex_m/ops/operators.yaml"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  KERNEL_LIBS
+  cortex_m_kernels
+  DEPS
+  executorch
+)
+
+verify_targets_exist(
+  CONTEXT img_class_example TARGETS image_classification_cortex_m_ops_lib
+  cortex_m_kernels portable_kernels
+)
+
 target_link_libraries(
   img_class_example
-  PUBLIC executorch
-         ethosu_target_init
-         extension_runner_util
-         quantized_ops_lib
+  PUBLIC executorch ethosu_target_init extension_runner_util
+         image_classification_cortex_m_ops_lib cortex_m_kernels
          portable_kernels
-         cortex_m_kernels
-         cortex_m_ops_lib
 )
 
 # Apply whole-archive helper where available to keep static initializers.
