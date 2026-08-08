@@ -98,9 +98,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
         # headers. Those are a third-party library this wheel does not vendor.
         "tensor_parser.h",
-        # Uses the runtime namespace macro without including the header that defines it, so it does not
-        # compile on its own anywhere.
-        "platform_memory_allocator.h",
         # A test helper, needing a test framework the wheel does not ship.
         "error_matchers.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
