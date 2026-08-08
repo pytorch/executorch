@@ -47,6 +47,7 @@ from executorch.exir import (
 from torch import memory_format, nn
 from torch.export import export
 from torchao.quantization.pt2e.quantizer import Quantizer
+from typing_extensions import deprecated
 
 neutron_target_spec = NeutronTargetSpec(target="imxrt700")
 
@@ -174,6 +175,10 @@ def _get_example_input(
     return tuple(example_input)
 
 
+@deprecated(
+    "NXP backend: The imperative lowering functions will be removed in the future. "
+    "Please use the recipe-based approach instead."
+)
 def to_quantized_edge_program(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],
@@ -272,6 +277,10 @@ def to_quantized_edge_program(
     return edge_program_manager
 
 
+@deprecated(
+    "NXP backend: The imperative lowering functions will be removed in the future. "
+    "Please use the recipe-based approach instead."
+)
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]],

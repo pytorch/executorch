@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 # Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2026 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,7 +23,15 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import (
+    move_exported_model_to_eval,
+    move_exported_model_to_train,
+)
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     Quantizer as TorchAOPT2EQuantizer,
@@ -245,6 +254,13 @@ class EdgeTransformAndLowerStage(Stage):
         # Use PassManager directly if found, otherwise use dict
         final_passes = pass_manager if pass_manager else transform_passes
 
+        if (
+            hasattr(er := artifact.context["export_recipe"], "lowering_recipe")
+            and er.lowering_recipe is not None
+            and (callback := er.lowering_recipe.pre_partitioning_callback) is not None
+        ):
+            callback(self._partitioners, artifact.data)
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
@@ -254,6 +270,16 @@ class EdgeTransformAndLowerStage(Stage):
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
             )
+
+        # Apply post-partitioning transforms if specified in the lowering recipe. These are used for graph transforms
+        #  that require the fully partitioned graph or for side effect operations.
+        if (
+            hasattr(er := artifact.context.get("export_recipe"), "lowering_recipe")
+            and er.lowering_recipe is not None
+            and (transforms := er.lowering_recipe.post_partitioning_transforms)
+        ):
+            for transform in transforms:
+                edge_program_manager = transform(edge_program_manager)
 
         delegation_info = get_delegation_info(
             edge_program_manager.exported_program().graph_module
@@ -415,16 +441,27 @@ class QuantizeStage(Stage):
         else:
             raise ValueError("No quantizers detected")
 
+    @staticmethod
+    def _apply_passes(
+        m: torch.fx.GraphModule,
+        passes: Optional[List[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]]],
+    ) -> torch.fx.GraphModule:
+        """Apply a list of GraphModule -> GraphModule transforms in order."""
+        for p in passes or []:
+            m = p(m)
+        return m
+
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
-                "Quantization recipe is invalid to run QunatizeStage, returning original model"
+                "Quantization recipe is invalid to run QuantizeStage, returning original model"
             )
             self._artifact = artifact
             return
 
         assert isinstance(artifact.data, dict)
 
+        qr = self._quantization_recipe
         models = artifact.data
         example_inputs = artifact.get_context("example_inputs")
 
@@ -436,19 +473,55 @@ class QuantizeStage(Stage):
                     f"Example inputs for method {method_name} not found or empty."
                 )
 
+            if isinstance(model, torch.nn.Module):
+                model.eval()
+
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
             quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers  # pyre-ignore
+                qr.quantizers  # pyre-ignore
             )
-            prepared_model = prepare_pt2e(captured_graph, quantizer)
 
-            for calibration_input in example_inputs[method_name]:
-                prepared_model(*calibration_input)
+            # Phase 1: prepare
+            if qr.is_qat:
+                m = prepare_qat_pt2e(captured_graph, quantizer)
+            else:
+                m = prepare_pt2e(captured_graph, quantizer)
 
-            quantized_model = convert_pt2e(prepared_model)
-            quantized_models[method_name] = quantized_model
+            m = self._apply_passes(m, qr.post_prepare_passes)
+
+            # Phase 2: optional training.
+            # In QAT mode the model is in training mode after prepare_qat_pt2e, so
+            # move_exported_model_to_eval is always called (with or without a train_fn)
+            # to ensure eval mode before the subsequent passes and calibration.
+            if qr.train_fn is not None:
+                m = move_exported_model_to_train(m)
+                qr.train_fn(m)
+
+            if qr.is_qat:
+                m = move_exported_model_to_eval(m)
+
+            m = self._apply_passes(m, qr.post_train_passes)
+
+            # Phase 3: calibration (skipped when a train_fn was provided)
+            if qr.train_fn is None:
+                calibration_inputs = (
+                    qr.calibration_inputs_fn()
+                    if qr.calibration_inputs_fn is not None
+                    else example_inputs[method_name]
+                )
+                for calibration_input in calibration_inputs:
+                    m(*calibration_input)
+
+            m = self._apply_passes(m, qr.post_calibration_passes)
+
+            # Phase 4: convert
+            m = convert_pt2e(m)
+
+            m = self._apply_passes(m, qr.post_convert_passes)
+
+            quantized_models[method_name] = m
 
         self._artifact = artifact.copy_with_new_data(quantized_models)
 
