@@ -1085,22 +1085,29 @@ def test_no_absolute_runtime_paths() -> None:
     # Directories that only exist inside a build of this project.
     build_markers = ("/pip-out/", "/cmake-out", "/build/lib.")
 
-    # The one absolute path a shipped library may keep. PyTorch is neither declared as a dependency of
-    # this wheel nor bundled in it, so there is no relative route to it and an absolute one is how these
-    # extensions resolve it at all.
+    # This project's libraries must not name an absolute directory the wheel has a relative route to. The
+    # one that shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
+    # hop, so a user with a toolkit at the same prefix resolved the CUDA runtime from there instead of from
+    # the declared dependency, and the builder always has one, so nothing exercised the hop.
     #
-    # Everything else absolute is a defect, checked as a property rather than against a list of known-bad
-    # directories. A list only catches what someone already thought of, and the directory that actually
-    # shipped, a CUDA toolkit prefix recorded on the build machine, was not on it.
-    # Absolute paths a shipped library may keep, because the wheel has no relative route to what they name.
+    # Stated as a property rather than a list of known-bad directories, because a list only catches what
+    # someone already thought of and that prefix was not on one.
     #
-    # PyTorch's own directory: the wheel neither declares nor bundles PyTorch, so an absolute path is the
-    # only way these extensions reach it at all.
-    #
-    # The maths library directories come from PyTorch's build flags and reach anything that links PyTorch,
-    # including this project's own extensions. They name a location on whichever machine built PyTorch, so
-    # nothing here can change them, and reporting them would be reporting a defect with no available fix.
+    # PyTorch's own directory is allowed: the wheel neither declares nor bundles PyTorch, so an absolute
+    # path is the only way to reach it. The maths library directories are allowed too, because they come
+    # from PyTorch's build flags and reach everything that links PyTorch, including this project's own
+    # extensions, naming a location on whichever machine built PyTorch that nothing here can change.
     allowed_absolute = ("/torch/lib", "/lib/intel64", "/lib/win-x64")
+    # PyTorch's own libraries are vendored into the wheel and also record a CUDA toolkit directory. That is
+    # the one path this check exists to reject on our libraries, so it is allowed only on theirs.
+    vendored_prefixes = (
+        "libtorch",
+        "libc10",
+        "libshm",
+        "libcaffe2",
+        "libgomp",
+        "libiomp",
+    )
 
     offenders = {}
     checked = 0
@@ -1127,8 +1134,10 @@ def test_no_absolute_runtime_paths() -> None:
         for entry in raw.split(":"):
             if not entry:
                 bad.append("<empty>")
-            elif entry.startswith("/") and not any(
-                allowed in entry for allowed in allowed_absolute
+            elif (
+                entry.startswith("/")
+                and not any(allowed in entry for allowed in allowed_absolute)
+                and not library.name.startswith(vendored_prefixes)
             ):
                 # Named separately so the message says which kind it is: a build directory and a
                 # toolkit prefix are the same defect with different causes.
