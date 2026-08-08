@@ -1018,6 +1018,15 @@ def test_no_absolute_runtime_paths() -> None:
     # Directories that only exist inside a build of this project.
     build_markers = ("/pip-out/", "/cmake-out", "/build/lib.")
 
+    # The one absolute path a shipped library may keep. PyTorch is neither declared as a dependency of
+    # this wheel nor bundled in it, so there is no relative route to it and an absolute one is how these
+    # extensions resolve it at all.
+    #
+    # Everything else absolute is a defect, checked as a property rather than against a list of known-bad
+    # directories. A list only catches what someone already thought of, and the directory that actually
+    # shipped, a CUDA toolkit prefix recorded on the build machine, was not on it.
+    allowed_absolute = ("/torch/lib",)
+
     offenders = {}
     checked = 0
     for library in sorted(package_dir.rglob("*.so*")):
@@ -1043,8 +1052,17 @@ def test_no_absolute_runtime_paths() -> None:
         for entry in raw.split(":"):
             if not entry:
                 bad.append("<empty>")
-            elif entry.startswith("/") and any(m in entry for m in build_markers):
-                bad.append(entry)
+            elif entry.startswith("/") and not any(
+                allowed in entry for allowed in allowed_absolute
+            ):
+                # Named separately so the message says which kind it is: a build directory and a
+                # toolkit prefix are the same defect with different causes.
+                kind = (
+                    "inside a build of this project"
+                    if any(m in entry for m in build_markers)
+                    else "an absolute directory the wheel has a relative route to"
+                )
+                bad.append(f"{entry} ({kind})")
         if bad:
             offenders[str(library.relative_to(package_dir))] = bad
 
