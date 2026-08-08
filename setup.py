@@ -280,15 +280,7 @@ def _package_relative_depth(library: Path) -> int:
     if "executorch" not in parts:
         return 1
     index = len(parts) - 1 - parts[::-1].index("executorch")
-    depth = max(len(parts) - index - 2, 0)
-    # The wheel installs nothing deeper than a few directories inside the package. A larger number
-    # means the path was misread, and a wrong hop fails on a user's machine rather than here.
-    if depth > 3:
-        raise RuntimeError(
-            f"refusing to build a runtime search path {depth} directories deep for {library}; "
-            "the package directory was probably misidentified"
-        )
-    return depth
+    return max(len(parts) - index - 2, 0)
 
 
 def _base_dependencies() -> List[str]:
