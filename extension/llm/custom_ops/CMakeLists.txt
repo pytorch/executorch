@@ -130,6 +130,8 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop_aot.cpp
   )
+  # This lib compiles real PyTorch headers, which require C++20.
+  set_target_properties(custom_ops_aot_lib PROPERTIES CXX_STANDARD 20)
   target_include_directories(
     custom_ops_aot_lib PRIVATE "${_common_include_directories}"
   )
