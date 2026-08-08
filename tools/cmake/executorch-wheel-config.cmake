@@ -378,6 +378,9 @@ executorch_define_component(threadpool executorch_threadpool)
 # checks, so it has to be defined here or a consumer following the documentation
 # gets a bare name that CMake hands to the linker as a literal flag.
 executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The quantized kernels, optional in the same way: a wheel built without them
+# simply has no such library and the component is not defined.
+executorch_define_component(kernels_quantized executorch_kernels_quantized)
 # The profiler. A C++ application could not record timing data from an installed
 # package before, because the implementation shipped only inside the Python
 # extension.
