@@ -25,19 +25,23 @@
 _cuda_arch_x86_64_cu130="7.5 8.0 8.6 8.9 9.0 10.0 12.0"
 _cuda_arch_x86_64_cu132="${_cuda_arch_x86_64_cu130}"
 
-# Server-class ARM plus the modules whose CUDA train matches: Grace-Hopper, GB200 and Thor.
-_cuda_arch_aarch64_cu130="9.0 10.0 11.0"
+# The architectures the published aarch64 PyTorch CUDA build covers, read from its own library on an ARM
+# machine, for the same reason as the x86_64 rows above. Includes the ARM module whose train matches.
+_cuda_arch_aarch64_cu130="8.0 9.0 10.0 11.0 12.0"
 _cuda_arch_aarch64_cu132="${_cuda_arch_aarch64_cu130}"
 
-# The older CUDA train. These are the server parts that train supports, matching what the other
-# architecture of the same train claims.
+# The older CUDA train.
+#
+# The two architectures do not carry identical lists, because each covers what the published PyTorch
+# build for that architecture covers, and those differ. Matching them to each other instead would mean
+# advertising a GPU on one architecture that PyTorch cannot serve there.
 #
 # The smaller embedded modules are deliberately absent. An embedded-only architecture in a generic
 # wheel would advertise a device the row cannot otherwise serve, since those devices also need the
 # CUDA, TensorRT and PyTorch pinned by their own software release rather than the ones a generic
 # wheel resolves.
 _cuda_arch_x86_64_cu126="7.5 8.0 8.6 8.9 9.0"
-_cuda_arch_aarch64_cu126="8.0 9.0"
+_cuda_arch_aarch64_cu126="8.0 9.0"  # what the aarch64 build of this train covers
 
 # A CUDA train with no architecture list would leave the build detecting the builder's GPU, which is
 # the failure this file exists to prevent. Adding a train to the release matrix without adding its
