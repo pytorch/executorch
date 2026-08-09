@@ -110,6 +110,8 @@ reported while CMake configures, rather than failing later at link time.
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
 | `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
+| `executorch::backend_cuda` | the CUDA delegate, in a CUDA wheel. |
+| `executorch::extension_cuda` | the CUDA stream helper, in a CUDA wheel. Its header includes `cuda_runtime.h`, so a consumer supplies a CUDA toolkit's include directory. |
 | `executorch::threadpool` | the shared thread pool. |
 | `executorch::etdump` | the profiler. |
 

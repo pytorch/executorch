@@ -44,6 +44,21 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
     echo "the file $file has been modified for atomic to use full path"
 fi
 
+# A CPU row must say so, rather than relying on the builder having no CUDA toolkit installed. The build
+# turns CUDA on when it detects one, so a builder that gains a toolkit would silently start producing a
+# CPU wheel carrying the CUDA delegate. That already happened on Windows, where the image ships a toolkit
+# on PATH and the resulting wheel failed to load its own extension.
+#
+# A CPU row names no CUDA train. It may say so by leaving the variable unset or by setting it to a value
+# that means "no CUDA", so both spellings have to count: testing only for empty left a row that sets it to
+# cpu falling through, and that row then declared CUDA dependencies it never loads.
+case "${CU_VERSION:-${DESIRED_CUDA:-}}" in
+    "" | cpu | CPU | none | NONE)
+        export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
+        echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
+        ;;
+esac
+
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then

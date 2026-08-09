@@ -457,6 +457,37 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+# The CUDA delegate and its stream helper, present only in a wheel built from a
+# CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
+# while configuring.
+executorch_define_component(backend_cuda executorch_backend_cuda)
+executorch_define_component(extension_cuda executorch_extension_cuda)
+# The stream helper's public header includes cuda_runtime.h, which this wheel
+# does not publish. No include directory is put on the target, because there is
+# no correct one to point at.
+#
+# The nvidia pip wheels this package declares as dependencies carry a flat
+# header tree, and their own cuda_runtime.h includes "crt/host_config.h", so
+# compiling against them fails on the very first include. They supply the
+# runtime library, not a usable header tree.
+#
+# find_package(CUDAToolkit) is not used either. It searches for a full toolkit
+# layout, which those wheels are not, so it silently resolves to whichever
+# system toolkit is installed instead. It also runs in the caller's scope, where
+# it deposits dozens of CUDA:: imported targets and a pinned CUDAToolkit_BIN_DIR
+# cache entry that makes a later find_package(CUDAToolkit) in the consumer's own
+# project resolve to that toolkit rather than the one it asked for.
+#
+# A consumer of this header is writing CUDA host code and creating streams, so
+# it already needs a toolkit of its own. Saying so is better than pointing at
+# something that does not work.
+if(TARGET executorch::extension_cuda)
+  message(
+    STATUS
+      "executorch: extension_cuda's header includes cuda_runtime.h, which this wheel does not "
+      "publish. Add a CUDA toolkit's include directory to any target that includes it."
+  )
+endif()
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working
