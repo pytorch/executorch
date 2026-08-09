@@ -51,6 +51,16 @@ def define_common_targets():
         )
 
     runtime.cxx_test(
+        name = "device_copy_test",
+        srcs = ["device_copy_test.cpp"],
+        deps = [
+            "//executorch/runtime/core:device_allocator",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/core/test:mock_cuda_allocator",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "tensor_shape_to_c_string_test",
         srcs = ["tensor_shape_to_c_string_test.cpp"],
         deps = [

@@ -54,6 +54,7 @@ def define_common_targets():
             exported_deps = [
                 ":tensor_dimension_limit",
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core:device_allocator",
                 "//executorch/runtime/core/portable_type/c10/c10:c10",
             ] + [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,

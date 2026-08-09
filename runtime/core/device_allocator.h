@@ -92,6 +92,35 @@ class DeviceAllocator {
       etensor::DeviceIndex index) = 0;
 
   /**
+   * Copy data between two buffers on this device type.
+   *
+   * Needed by a program whose activations stay on the device: the caller hands over device memory
+   * and the runtime copies it into the device buffer the memory plan reserved, so neither end is
+   * host memory. Not pure virtual, because an allocator for a device that cannot do this can decline
+   * rather than be forced to implement it.
+   *
+   * @param dst Destination pointer (device memory).
+   * @param dst_index The device index the destination lives on.
+   * @param src Source pointer (device memory).
+   * @param src_index The device index the source lives on.
+   * @param nbytes Number of bytes to copy.
+   * @return Error::Ok on success, or an appropriate error code on failure.
+   */
+  virtual Error copy_device_to_device(
+      void* dst,
+      etensor::DeviceIndex dst_index,
+      const void* src,
+      etensor::DeviceIndex src_index,
+      size_t nbytes) {
+    (void)dst;
+    (void)dst_index;
+    (void)src;
+    (void)src_index;
+    (void)nbytes;
+    return Error::NotSupported;
+  }
+
+  /**
    * Returns the device type this allocator handles.
    */
   virtual etensor::DeviceType device_type() const = 0;

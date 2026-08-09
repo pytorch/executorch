@@ -178,8 +178,14 @@ Error copy_tensor_data(
         "t_dst.nbytes() %zu != t_src.nbytes(). %zu",
         t_dst.nbytes(),
         t_src.nbytes());
-    std::memcpy(
-        t_dst.mutable_data_ptr(), t_src.const_data_ptr(), t_src.nbytes());
+    return copy_between_devices(
+        t_dst.mutable_data_ptr(),
+        t_dst.device().type(),
+        t_dst.device().index(),
+        t_src.const_data_ptr(),
+        t_src.device().type(),
+        t_src.device().index(),
+        t_src.nbytes());
   }
   return Error::Ok;
 }
