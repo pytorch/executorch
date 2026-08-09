@@ -178,6 +178,18 @@ Error copy_tensor_data(
         "t_dst.nbytes() %zu != t_src.nbytes(). %zu",
         t_dst.nbytes(),
         t_src.nbytes());
+    // The copy below assumes host memory on both sides. Reaching it with device memory means a
+    // program planned a buffer for a tensor that lives on an accelerator, and copying into it with a
+    // host memcpy is undefined. Reported here because the alternative is a crash with no message.
+    ET_CHECK_OR_RETURN_ERROR(
+        t_dst.device().is_cpu() && t_src.device().is_cpu(),
+        NotSupported,
+        "Cannot copy into a memory-planned tensor that does not live on the host: destination "
+        "device type %d, source device type %d. A program whose activations stay on a device must "
+        "be exported with MemoryPlanningPass(alloc_graph_input=False) so the runtime shares the "
+        "caller's memory instead of copying into its own buffer.",
+        static_cast<int>(t_dst.device().type()),
+        static_cast<int>(t_src.device().type()));
     std::memcpy(
         t_dst.mutable_data_ptr(), t_src.const_data_ptr(), t_src.nbytes());
   }
