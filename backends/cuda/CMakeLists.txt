@@ -42,6 +42,43 @@ if(NOT CMAKE_CUDA_COMPILER)
   check_language(CUDA)
 endif()
 
+# Take the architectures from the release row when it names them, before the
+# language is enabled, since CMake fixes them at that point. Without this the
+# build uses CMake's default, which on some devices is older than the intrinsics
+# these sources use, and the compile fails with an undefined identifier that
+# looks like a source problem.
+#
+# TORCH_CUDA_ARCH_LIST is the variable the surrounding build environment already
+# sets, in PyTorch's dotted form. CMake wants bare integers, so "9.0" becomes
+# 90, and the "+PTX" suffix asking for a portable form becomes the -virtual
+# kind.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+  set(_cuda_arch_list "")
+  string(REPLACE " " ";" _cuda_arch_items "$ENV{TORCH_CUDA_ARCH_LIST}")
+  foreach(_cuda_arch_item IN LISTS _cuda_arch_items)
+    if(_cuda_arch_item STREQUAL "")
+      continue()
+    endif()
+    set(_cuda_arch_kind "real")
+    if(_cuda_arch_item MATCHES "\\+PTX$")
+      set(_cuda_arch_kind "virtual")
+      string(REPLACE "+PTX" "" _cuda_arch_item "${_cuda_arch_item}")
+    endif()
+    string(REPLACE "." "" _cuda_arch_number "${_cuda_arch_item}")
+    if(_cuda_arch_number MATCHES "^[0-9]+$")
+      list(APPEND _cuda_arch_list "${_cuda_arch_number}-${_cuda_arch_kind}")
+    endif()
+  endforeach()
+  if(_cuda_arch_list)
+    list(REMOVE_DUPLICATES _cuda_arch_list)
+    set(CMAKE_CUDA_ARCHITECTURES ${_cuda_arch_list})
+    message(
+      STATUS
+        "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"
+    )
+  endif()
+endif()
+
 if(CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
