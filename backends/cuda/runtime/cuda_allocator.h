@@ -46,6 +46,13 @@ class CudaAllocator final : public executorch::runtime::DeviceAllocator {
       size_t nbytes,
       executorch::runtime::etensor::DeviceIndex index) override;
 
+  executorch::runtime::Error copy_device_to_device(
+      void* dst,
+      executorch::runtime::etensor::DeviceIndex dst_index,
+      const void* src,
+      executorch::runtime::etensor::DeviceIndex src_index,
+      size_t nbytes) override;
+
   executorch::runtime::etensor::DeviceType device_type() const override;
 
   /// Returns the global CudaAllocator singleton.

@@ -177,7 +177,12 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
         t_src.nbytes());
     // Copy the source data to the preallocated memory of the destination, which
     // must be the same size as the source.
-    std::memcpy(dst_data_ptr, t_src.const_data_ptr(), t_src.nbytes());
+    return copy_between_devices(
+        dst_data_ptr,
+        t_dst.device(),
+        t_src.const_data_ptr(),
+        t_src.device(),
+        t_src.nbytes());
   }
 
   return Error::Ok;

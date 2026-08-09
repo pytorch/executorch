@@ -20,6 +20,7 @@
 
 #include <c10/util/irange.h>
 #include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/device_allocator.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
@@ -1166,6 +1167,54 @@ ET_NODISCARD Error share_tensor_data(
 ET_NODISCARD Error copy_tensor_data(
     const executorch::aten::Tensor& t_dst,
     const executorch::aten::Tensor& t_src);
+
+/**
+ * Copy nbytes between two buffers, each of which may live on the host or on a device.
+ *
+ * A plain memcpy is only correct when both ends are host memory. A program exported to keep
+ * activations on an accelerator plans its inputs into device memory, so copying an input into one
+ * has to go through that device's allocator. Kept as one helper because both the portable and the
+ * ATen tensor implementations need it and neither may name a specific accelerator.
+ */
+ET_NODISCARD inline Error copy_between_devices(
+    void* dst,
+    executorch::aten::Device dst_device,
+    const void* src,
+    executorch::aten::Device src_device,
+    size_t nbytes) {
+  if (dst_device.is_cpu() && src_device.is_cpu()) {
+    std::memcpy(dst, src, nbytes);
+    return Error::Ok;
+  }
+
+  // Whichever end is not the host owns the copy, and the allocator is reached through the registry a
+  // backend populates, so this stays free of any accelerator dependency.
+  const auto device = dst_device.is_cpu() ? src_device : dst_device;
+  auto* allocator = get_device_allocator(device.type());
+  ET_CHECK_OR_RETURN_ERROR(
+      allocator != nullptr,
+      NotFound,
+      "No allocator is registered for device type %d, so a copy involving its memory cannot be "
+      "performed. The backend that owns that device registers one when it is linked in.",
+      static_cast<int>(device.type()));
+
+  if (src_device.is_cpu()) {
+    return allocator->copy_host_to_device(dst, src, nbytes, dst_device.index());
+  }
+  if (dst_device.is_cpu()) {
+    return allocator->copy_device_to_host(dst, src, nbytes, src_device.index());
+  }
+  // Neither end is the host. One allocator cannot own memory belonging to a different device type,
+  // so that combination is refused rather than handed to whichever type was looked up.
+  ET_CHECK_OR_RETURN_ERROR(
+      src_device.type() == dst_device.type(),
+      NotSupported,
+      "Copying directly between device types %d and %d is not supported; route through the host.",
+      static_cast<int>(src_device.type()),
+      static_cast<int>(dst_device.type()));
+  return allocator->copy_device_to_device(
+      dst, dst_device.index(), src, src_device.index(), nbytes);
+}
 
 /**
  * Set the data_ptr of t to buffer.

@@ -97,6 +97,7 @@
     {
         "directory": "runtime/core/exec_aten/util/test",
         "sources": [
+            "device_copy_test.cpp",
             "dim_order_util_test.cpp",
             "operator_impl_example_test.cpp",
             "scalar_type_util_test.cpp",
