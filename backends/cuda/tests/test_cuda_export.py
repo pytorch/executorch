@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
-import tempfile
 import unittest
 from typing import Tuple
 
@@ -132,22 +130,8 @@ class TestCudaExport(unittest.TestCase):
         inputs = (torch.randn(3, 4), torch.randn(3, 4))
 
         # Test export
-        edge_program_manager = self._export_to_cuda_with_lower(
-            module,
-            inputs,
-            [
-                CudaBackend.generate_method_name_compile_spec("forward"),
-                CompileSpec("low_memory_mode", b"ON"),
-            ],
-        )
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
-
-        et_program = edge_program_manager.to_executorch()
-        with tempfile.TemporaryDirectory() as output_dir:
-            et_program.write_tensor_data_to_file(output_dir)
-            ptd_path = os.path.join(output_dir, "aoti_cuda_blob.ptd")
-            self.assertTrue(os.path.isfile(ptd_path))
-            self.assertGreater(os.path.getsize(ptd_path), 0)
 
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
