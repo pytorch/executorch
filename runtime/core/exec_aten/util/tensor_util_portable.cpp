@@ -180,9 +180,11 @@ Error copy_tensor_data(
         t_src.nbytes());
     return copy_between_devices(
         t_dst.mutable_data_ptr(),
-        t_dst.device(),
+        t_dst.device().type(),
+        t_dst.device().index(),
         t_src.const_data_ptr(),
-        t_src.device(),
+        t_src.device().type(),
+        t_src.device().index(),
         t_src.nbytes());
   }
   return Error::Ok;

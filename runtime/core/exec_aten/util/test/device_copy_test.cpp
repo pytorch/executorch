@@ -16,7 +16,6 @@
 
 #include <array>
 
-using executorch::aten::Device;
 using executorch::aten::DeviceType;
 using executorch::runtime::Error;
 using executorch::runtime::internal::copy_between_devices;
@@ -41,8 +40,8 @@ class DeviceCopyTest : public ::testing::Test {
   }
 
   static MockCudaAllocator* allocator_;
-  static constexpr Device kHost{DeviceType::CPU};
-  static constexpr Device kDevice{DeviceType::CUDA, 0};
+  static constexpr DeviceType kHost = DeviceType::CPU;
+  static constexpr DeviceType kDevice = DeviceType::CUDA;
   std::array<uint8_t, 8> source_{1, 2, 3, 4, 5, 6, 7, 8};
   std::array<uint8_t, 8> destination_{};
 };
@@ -52,7 +51,7 @@ MockCudaAllocator* DeviceCopyTest::allocator_ = nullptr;
 TEST_F(DeviceCopyTest, HostToHostDoesNotReachTheAllocator) {
   ASSERT_EQ(
       copy_between_devices(
-          destination_.data(), kHost, source_.data(), kHost, source_.size()),
+          destination_.data(), kHost, 0, source_.data(), kHost, 0, source_.size()),
       Error::Ok);
   EXPECT_EQ(destination_, source_);
   // A host copy must not depend on a device being registered at all.
@@ -64,7 +63,7 @@ TEST_F(DeviceCopyTest, HostToHostDoesNotReachTheAllocator) {
 TEST_F(DeviceCopyTest, HostToDeviceUsesTheAllocator) {
   ASSERT_EQ(
       copy_between_devices(
-          destination_.data(), kDevice, source_.data(), kHost, source_.size()),
+          destination_.data(), kDevice, 0, source_.data(), kHost, 0, source_.size()),
       Error::Ok);
   EXPECT_EQ(allocator_->h2d_count_, 1);
   EXPECT_EQ(allocator_->last_h2d_size_, source_.size());
@@ -74,7 +73,7 @@ TEST_F(DeviceCopyTest, HostToDeviceUsesTheAllocator) {
 TEST_F(DeviceCopyTest, DeviceToHostUsesTheAllocator) {
   ASSERT_EQ(
       copy_between_devices(
-          destination_.data(), kHost, source_.data(), kDevice, source_.size()),
+          destination_.data(), kHost, 0, source_.data(), kDevice, 0, source_.size()),
       Error::Ok);
   EXPECT_EQ(allocator_->d2h_count_, 1);
   EXPECT_EQ(destination_, source_);
@@ -85,7 +84,7 @@ TEST_F(DeviceCopyTest, DeviceToDeviceUsesTheAllocator) {
   // and the runtime fills the device buffer the memory plan reserved, so neither end is host memory.
   ASSERT_EQ(
       copy_between_devices(
-          destination_.data(), kDevice, source_.data(), kDevice, source_.size()),
+          destination_.data(), kDevice, 0, source_.data(), kDevice, 0, source_.size()),
       Error::Ok);
   EXPECT_EQ(allocator_->d2d_count_, 1);
   EXPECT_EQ(allocator_->h2d_count_, 0);
@@ -96,7 +95,8 @@ TEST_F(DeviceCopyTest, ZeroBytesIsAccepted) {
   // A tensor with a zero-sized dimension reaches here with nothing to copy, and that is not an
   // error. It is worth pinning because the device path is easy to write in a way that rejects it.
   ASSERT_EQ(
-      copy_between_devices(destination_.data(), kDevice, source_.data(), kHost, 0),
+      copy_between_devices(
+          destination_.data(), kDevice, 0, source_.data(), kHost, 0, 0),
       Error::Ok);
   EXPECT_EQ(allocator_->h2d_count_, 1);
   EXPECT_EQ(allocator_->last_h2d_size_, 0u);
