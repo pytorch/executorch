@@ -43,7 +43,25 @@ if(TARGET bundled_program)
   target_compile_definitions(selective_build PRIVATE -DET_BUNDLE_IO)
   target_link_libraries(selective_build PRIVATE bundled_program)
 endif()
-target_link_libraries(selective_build PRIVATE executorch_core program_schema)
+if(EXECUTORCH_BUILD_SHARED)
+  # This module calls into the runtime, so resolve those symbols from
+  # libexecutorch.so rather than baking in a second copy of the core. It lands
+  # in <site-packages>/executorch/codegen/tools, two levels below the wheel's
+  # lib/.
+  target_link_libraries(
+    selective_build PRIVATE executorch_shared program_schema
+  )
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    # Wheel-specific: the runtime ships two levels up under lib/. A normal
+    # install puts it in CMAKE_INSTALL_LIBDIR, which this would not reach.
+    set_target_properties(
+      selective_build PROPERTIES BUILD_RPATH "$ORIGIN/../../lib"
+                                 INSTALL_RPATH "$ORIGIN/../../lib"
+    )
+  endif()
+else()
+  target_link_libraries(selective_build PRIVATE executorch_core program_schema)
+endif()
 
 # Install the module
 install(TARGETS selective_build LIBRARY DESTINATION executorch/codegen/tools)

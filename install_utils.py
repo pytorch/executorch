@@ -142,11 +142,33 @@ def _get_cuda_version():
 
 
 def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
-    prefix = f"-D{name}="
-    for arg in args:
-        if arg.startswith(prefix):
-            return arg[len(prefix) :]
-    return None
+    """The value CMake would use for -D<name>, which is the last one given.
+
+    Repeating a definition is how a caller overrides an earlier one, and CMake keeps the last, so returning
+    the first would let packaging read one value while the build used another.
+
+    All three spellings CMake accepts are matched, because it treats them identically: -D<name>=<value>,
+    -D<name>:<type>=<value>, and -D followed by <name>=<value> as a separate argument. Matching only the
+    first meant a caller who switched an option off in either of the other two forms was read as leaving it
+    on, so a CPU row could ship a wheel carrying CUDA.
+    """
+    # A bare -D takes its definition from the next argument, so both spellings collapse to one form.
+    definitions = []
+    remaining = iter(args)
+    for arg in remaining:
+        if arg == "-D":
+            definitions.append(next(remaining, ""))
+        elif arg.startswith("-D"):
+            definitions.append(arg[2:])
+
+    # The name may carry a CMake type, as in EXECUTORCH_BUILD_CUDA:BOOL.
+    pattern = re.compile(rf"{re.escape(name)}(?::\w+)?=(.*)", re.DOTALL)
+    value = None
+    for definition in definitions:
+        match = pattern.fullmatch(definition)
+        if match:
+            value = match.group(1)
+    return value
 
 
 def _normalize_cmake_bool(value: Optional[str], default: bool = False) -> bool:
