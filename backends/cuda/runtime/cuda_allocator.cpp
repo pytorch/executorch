@@ -29,13 +29,16 @@ Error copy_impl(
     DeviceIndex index,
     cudaMemcpyKind kind) {
   ET_CHECK_OR_RETURN_ERROR(
-      kind == cudaMemcpyHostToDevice || kind == cudaMemcpyDeviceToHost,
+      kind == cudaMemcpyHostToDevice || kind == cudaMemcpyDeviceToHost ||
+          kind == cudaMemcpyDeviceToDevice,
       InvalidArgument,
       "CudaAllocator::copy_impl: unsupported cudaMemcpyKind %d",
       static_cast<int>(kind));
   const char* method = kind == cudaMemcpyHostToDevice
       ? "CudaAllocator::copy_host_to_device"
-      : "CudaAllocator::copy_device_to_host";
+      : (kind == cudaMemcpyDeviceToHost
+             ? "CudaAllocator::copy_device_to_host"
+             : "CudaAllocator::copy_device_to_device");
   ET_CHECK_OR_RETURN_ERROR(
       dst != nullptr, InvalidArgument, "%s: dst is null", method);
   ET_CHECK_OR_RETURN_ERROR(
@@ -218,6 +221,18 @@ Error CudaAllocator::copy_device_to_host(
     size_t nbytes,
     DeviceIndex index) {
   return copy_impl(dst, src, nbytes, index, cudaMemcpyDeviceToHost);
+}
+
+Error CudaAllocator::copy_device_to_device(
+    void* dst,
+    DeviceIndex dst_index,
+    const void* src,
+    DeviceIndex src_index,
+    size_t nbytes) {
+  // Both ends are on this device type, so either index identifies the stream to copy on. Passing the
+  // destination's, because that is the device the copy is filling.
+  (void)src_index;
+  return copy_impl(dst, src, nbytes, dst_index, cudaMemcpyDeviceToDevice);
 }
 
 DeviceType CudaAllocator::device_type() const {

@@ -80,6 +80,22 @@ class MockCudaAllocator : public DeviceAllocator {
     return Error::Ok;
   }
 
+  Error copy_device_to_device(
+      void* dst,
+      etensor::DeviceIndex dst_index,
+      const void* src,
+      etensor::DeviceIndex src_index,
+      size_t nbytes) override {
+    std::memcpy(dst, src, nbytes);
+    d2d_count_++;
+    last_d2d_dst_ = dst;
+    last_d2d_src_ = src;
+    last_d2d_size_ = nbytes;
+    last_d2d_dst_index_ = dst_index;
+    last_d2d_src_index_ = src_index;
+    return Error::Ok;
+  }
+
   etensor::DeviceType device_type() const override {
     return etensor::DeviceType::CUDA;
   }
@@ -102,6 +118,7 @@ class MockCudaAllocator : public DeviceAllocator {
     deallocate_count_ = 0;
     h2d_count_ = 0;
     d2h_count_ = 0;
+    d2d_count_ = 0;
     last_allocate_size_ = 0;
     last_allocate_index_ = -1;
     last_allocate_ptr_ = nullptr;
@@ -139,6 +156,14 @@ class MockCudaAllocator : public DeviceAllocator {
   const void* last_d2h_src_ = nullptr;
   size_t last_d2h_size_ = 0;
   etensor::DeviceIndex last_d2h_index_ = -1;
+
+  // Device-to-device copy tracking
+  int d2d_count_ = 0;
+  void* last_d2d_dst_ = nullptr;
+  const void* last_d2d_src_ = nullptr;
+  size_t last_d2d_size_ = 0;
+  etensor::DeviceIndex last_d2d_dst_index_ = -1;
+  etensor::DeviceIndex last_d2d_src_index_ = -1;
 };
 
 } // namespace testing

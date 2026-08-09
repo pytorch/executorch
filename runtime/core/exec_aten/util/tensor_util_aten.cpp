@@ -20,6 +20,27 @@ namespace ET_RUNTIME_NAMESPACE {
  * at::Tensor (instead of executorch::aten::Tensor) to make sure it fails at
  * compile time if built incorrectly.
  */
+
+namespace {
+
+// An ATen tensor reports a c10::DeviceType, while the allocator registry is keyed on the runtime's
+// own enum. Translated here rather than in the shared helper, because only this variant sees c10.
+etensor::DeviceType to_runtime_device_type(c10::DeviceType type) {
+  switch (type) {
+    case c10::DeviceType::CPU:
+      return etensor::DeviceType::CPU;
+    case c10::DeviceType::CUDA:
+      return etensor::DeviceType::CUDA;
+    default:
+      ET_CHECK_MSG(
+          false,
+          "Device type %d is not supported by the ExecuTorch runtime",
+          static_cast<int>(type));
+  }
+}
+
+} // namespace
+
 Error get_dim_order(
     const at::Tensor& tensor,
     executorch::aten::DimOrderType* out_dim_order,
@@ -177,7 +198,14 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
         t_src.nbytes());
     // Copy the source data to the preallocated memory of the destination, which
     // must be the same size as the source.
-    std::memcpy(dst_data_ptr, t_src.const_data_ptr(), t_src.nbytes());
+    return copy_between_devices(
+        dst_data_ptr,
+        to_runtime_device_type(t_dst.device().type()),
+        static_cast<etensor::DeviceIndex>(t_dst.device().index()),
+        t_src.const_data_ptr(),
+        to_runtime_device_type(t_src.device().type()),
+        static_cast<etensor::DeviceIndex>(t_src.device().index()),
+        t_src.nbytes());
   }
 
   return Error::Ok;
