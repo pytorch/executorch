@@ -51,6 +51,15 @@ def define_common_targets():
         )
 
     runtime.cxx_test(
+        name = "copy_tensor_data_device_test",
+        srcs = ["copy_tensor_data_device_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "tensor_shape_to_c_string_test",
         srcs = ["tensor_shape_to_c_string_test.cpp"],
         deps = [
