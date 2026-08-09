@@ -57,6 +57,25 @@ example = (torch.randn(2, 8), torch.randn(2, 1, 6, 6))
 with torch.no_grad():
     expected = model(*example)
 
+if mode == "quantized":
+    # Quantize with the same flow the documentation shows, so the exported program
+    # references the quantized operator set rather than the plain one.
+    # Importing this loads the ahead-of-time library, which is what registers the out
+    # variants of the quantized operators with torch. Without it the export fails with
+    # "Missing out variants: quantized_decomposed::quantize_per_tensor", because the
+    # lowering step has no out variant to select.
+    import executorch.kernels.quantized  # noqa: F401
+    from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+        get_symmetric_quantization_config,
+        XNNPACKQuantizer,
+    )
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+    quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+    prepared = prepare_pt2e(torch.export.export(model, example).module(), quantizer)
+    prepared(*example)
+    model = convert_pt2e(prepared)
+
 partitioners = []
 if mode == "delegate":
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -85,6 +104,11 @@ print(
             "expected": expected.flatten().tolist(),
             "delegated": mode == "delegate",
             "has_xnnpack": b"XnnpackBackend" in bytes(buffer),
+            # Whether the program actually carries quantized operators. The numeric comparison alone
+            # cannot tell: an unquantized export of the same model produces a closer match than the
+            # tolerance a quantized one needs, so it would pass while proving nothing about the
+            # quantized kernels.
+            "has_quantized": b"quantized_decomposed" in bytes(buffer),
         }
     )
 )
@@ -190,8 +214,14 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < expected.size(); ++i) {
     worst = std::fmax(worst, std::fabs((double)actual[i] - (double)expected[i]));
   }
-  if (worst > 1e-4) {
-    std::printf("output differs from eager PyTorch by %g\n", worst);
+  // Passed in rather than fixed, because the acceptable difference depends on the
+  // model. A float32 model should match to within rounding, while an int8 quantized one
+  // legitimately differs by about one quantization step, and using the looser number
+  // for both would stop the float path catching a real regression.
+  const double tolerance = argc > 7 ? std::atof(argv[7]) : 1e-4;
+  if (worst > tolerance) {
+    std::printf(
+        "output differs from eager PyTorch by %g, tolerance %g\n", worst, tolerance);
     return 1;
   }
 
@@ -329,8 +359,16 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
     return consumer
 
 
-def _run_consumer(consumer: Path, model: Path, reference, work_dir: Path) -> str:
-    """Run the application and require it to match eager PyTorch."""
+def _run_consumer(
+    consumer: Path, model: Path, reference, work_dir: Path, tolerance: float = 1e-4
+) -> str:
+    """Run the application and require it to match eager PyTorch within `tolerance`.
+
+    The tolerance is a parameter because the acceptable difference depends on the model.
+    A float32 model should match to within rounding, while an int8 quantized one
+    legitimately differs by about one quantization step, and using the looser number for
+    both would stop the float path catching a real regression.
+    """
     inputs = reference["inputs"]
     shape_a, data_a = _write_tensor(work_dir, "a", inputs[0])
     shape_b, data_b = _write_tensor(work_dir, "b", inputs[1])
@@ -352,6 +390,7 @@ def _run_consumer(consumer: Path, model: Path, reference, work_dir: Path) -> str
             str(shape_b),
             str(data_b),
             str(expected),
+            repr(tolerance),
         ],
         capture_output=True,
         text=True,
@@ -1005,6 +1044,46 @@ def test_documented_example_compiles(work_dir: Path) -> None:
     print("✓ the C++ example in the documentation compiles against the wheel")
 
 
+def test_quantized_kernels_component_runs_a_model(work_dir: Path) -> None:
+    """A C++ application can run a quantized model using the shipped quantized kernels.
+
+    Before the quantized kernels became their own library they existed only inside the
+    ahead-of-time extension beside the Python bindings, so a C++ application loading a
+    quantized program had nothing to link and failed at run time with the operators
+    reported missing.
+
+    Skipped rather than failed when the wheel ships no such library, because building
+    without the quantized kernels is a supported configuration.
+    """
+    package_dir = _installed_package_dir()
+    shipped = package_dir / "lib" / "libexecutorch_kernels_quantized.so"
+    if not shipped.is_file():
+        print("- this wheel ships no quantized kernels, skipping")
+        return
+
+    model, reference = _export(work_dir, "quantized")
+    # The export has to have produced a quantized program, or the rest of this proves nothing about the
+    # quantized kernels. The numeric comparison cannot tell the difference: an unquantized export of the
+    # same model lands well inside the tolerance a quantized one needs, so it would pass while linking a
+    # library it never exercised.
+    assert reference["has_quantized"], (
+        "the quantized export produced a program with no quantized operators, so this check would "
+        "prove nothing about the quantized kernels"
+    )
+    consumer = _build_consumer(
+        work_dir,
+        "with-quantized",
+        ["runtime", "kernels_optimized", "kernels_quantized"],
+    )
+    # One int8 quantization step over this model's output range is about 5e-3, so a
+    # float32 tolerance cannot be met by a correct quantized run.
+    output = _run_consumer(consumer, model, reference, work_dir, tolerance=2e-2)
+    print(
+        f"✓ a C++ app linking executorch::kernels_quantized runs a quantized model "
+        f"({output})"
+    )
+
+
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
     test_profiler_component_is_usable(work_dir)
@@ -1013,6 +1092,7 @@ def run_tests(work_dir: Path) -> None:
     test_documented_example_compiles(work_dir)
     test_runtime_alone_links_but_has_no_kernels(work_dir)
     test_kernels_component_runs_a_model(work_dir)
+    test_quantized_kernels_component_runs_a_model(work_dir)
     test_delegated_model_needs_the_delegate_component(work_dir)
     test_consumer_is_relocatable(work_dir)
     test_one_registry_in_the_cpp_process(work_dir)

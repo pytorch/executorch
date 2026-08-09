@@ -53,7 +53,8 @@
 # from being dropped. The names, when present, are:
 #
 # executorch::kernels_optimized -- The CPU operator kernels. Needed to run a
-# model. executorch::backend_xnnpack   -- The XNNPACK delegate.
+# model. executorch::kernels_quantized -- The quantized operator kernels, for a
+# quantized model. executorch::backend_xnnpack   -- The XNNPACK delegate.
 # executorch::threadpool        -- The shared thread pool. executorch::etdump --
 # The profiler.
 #
@@ -237,7 +238,9 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # older-CMake route cannot use.
   set(EXECUTORCH_FOUND ON)
   list(APPEND EXECUTORCH_LIBRARIES "${_executorch_runtime_library}")
-  foreach(_kernels IN ITEMS libexecutorch_kernels_optimized)
+  foreach(_kernels IN ITEMS libexecutorch_kernels_optimized
+                            libexecutorch_kernels_quantized
+  )
     _executorch_find_library(_executorch_kernel_library "${_kernels}")
     if(_executorch_kernel_library)
       list(
@@ -415,6 +418,9 @@ executorch_define_component(threadpool executorch_threadpool)
 # checks, so it has to be defined here or a consumer following the documentation
 # gets a bare name that CMake hands to the linker as a literal flag.
 executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The quantized kernels, optional in the same way: a wheel built without them
+# simply has no such library and the component is not defined.
+executorch_define_component(kernels_quantized executorch_kernels_quantized)
 # The profiler. A C++ application could not record timing data from an installed
 # package before, because the implementation shipped only inside the Python
 # extension.

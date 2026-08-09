@@ -108,6 +108,7 @@ reported while CMake configures, rather than failing later at link time.
 | --- | --- |
 | `executorch::runtime` | the program loader and executor. Always present. |
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
+| `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
 | `executorch::threadpool` | the shared thread pool. |
 | `executorch::etdump` | the profiler. |
