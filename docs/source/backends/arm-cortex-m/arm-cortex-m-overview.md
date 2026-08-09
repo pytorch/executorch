@@ -109,6 +109,7 @@ from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPas
 config = EdgeCompileConfig(
     preserve_ops=[
         torch.ops.aten.linear.default,
+        torch.ops.aten.lstm.input,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardsigmoid_.default,
         torch.ops.aten.hardswish.default,
@@ -123,6 +124,12 @@ edge_program_manager = to_edge(quantized_exported_program, compile_config=config
 pass_manager = CortexMPassManager(edge_program_manager.exported_program())
 edge_program_manager._edge_programs["forward"] = pass_manager.transform()
 ```
+
+`aten.lstm.input` is the one preserved op with no portable fallback: it is fused
+into a CMSIS-NN kernel only for a single-layer, unidirectional, biased LSTM with
+a zero initial state whose `h_n`/`c_n` outputs are unused. Any other
+configuration fails in `CortexMPassManager` rather than running unaccelerated,
+so drop it from `preserve_ops` if your model uses one.
 
 ### 3. Serialize to .pte
 

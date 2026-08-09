@@ -19,6 +19,9 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 )
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager
+from executorch.exir.passes.remove_unused_parameters_pass import (
+    remove_unused_parameters_pass,
+)
 from executorch.exir.program._program import _transform, lift_constant_tensor_pass
 from torch.export import ExportedProgram
 
@@ -119,4 +122,7 @@ class CortexMPassManager(PassManager):
         # All constant tensors should be lifted to buffers at this point, re-run
         # lift_constant_tensor_pass in case new ones have been introduced.
         exported_program = lift_constant_tensor_pass(exported_program)
+        # Fusions orphan the float weights they replace, and to_edge's own
+        # unused-parameter pruning has already run by this point.
+        exported_program = remove_unused_parameters_pass(exported_program)
         return exported_program

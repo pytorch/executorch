@@ -73,6 +73,11 @@ INT16_ACTIVATION_PER_TENSOR_QSPEC = QuantizationSpec(
 CMSIS_SOFTMAX_SCALE: float = 1.0 / 256.0
 CMSIS_SOFTMAX_ZERO_POINT: int = -128
 
+# Marks an aten.lstm.input that LstmBoundaryQuantizer accepted, and required by
+# the lowering pass: surrounding q/dq nodes are not proof of acceptance, since
+# another quantizer may have placed them around a configuration it cannot fuse.
+LSTM_BOUNDARY_META_KEY: str = "cortex_m_lstm_boundary"
+
 SOFTMAX_OUTPUT_FIXED_QSPEC = FixedQParamsQuantizationSpec(
     dtype=torch.int8,
     scale=CMSIS_SOFTMAX_SCALE,
