@@ -28,6 +28,17 @@ torch::executor::ScalarType torch_to_executorch_scalar_type(
 c10::ScalarType executorch_to_torch_scalar_type(
     torch::executor::ScalarType type);
 
+/**
+ * Translates a PyTorch device into the runtime's own device description.
+ *
+ * Needed so a tensor handed in from Python is described as living where it actually lives. A device
+ * tensor labelled as host memory is copied with a host memcpy, which is undefined.
+ *
+ * Throws for a device type the runtime does not model, rather than silently reporting host memory.
+ */
+executorch::runtime::etensor::Device torch_to_executorch_device(
+    c10::Device device);
+
 /*
  * @param[in] aten_tensor Input at::Tensor
  * @param[in,out] mutable_et ETensor whose underlying memory now will alias to
