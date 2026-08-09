@@ -134,6 +134,22 @@ c10::ScalarType executorch_to_torch_scalar_type(
   return static_cast<c10::ScalarType>(intermediate);
 }
 
+executorch::runtime::etensor::Device torch_to_executorch_device(
+    c10::Device device) {
+  using executorch::runtime::etensor::DeviceIndex;
+  using executorch::runtime::etensor::DeviceType;
+
+  if (device.is_cpu()) {
+    return executorch::runtime::etensor::Device(DeviceType::CPU);
+  }
+  ET_CHECK_MSG(
+      device.is_cuda(),
+      "Device type %s is not supported by the ExecuTorch runtime",
+      c10::DeviceTypeName(device.type()).c_str());
+  return executorch::runtime::etensor::Device(
+      DeviceType::CUDA, static_cast<DeviceIndex>(device.index()));
+}
+
 /*
  * Following makes two assumptions:
  * 1. aten_tensor's lifetime is longer than the liftime within which mutable_et

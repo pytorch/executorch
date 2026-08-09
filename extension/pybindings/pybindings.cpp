@@ -103,6 +103,7 @@ using torch::executor::ETDumpGen;
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
+using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
 #endif // !USE_ATEN_LIB
 
@@ -1109,11 +1110,11 @@ struct PyMethod final {
         auto type =
             torch_to_executorch_scalar_type(at_tensor.options().dtype());
         size_t dim = at_tensor.dim();
-        // cant directly alias at::Tensor sizes and strides due to int64 vs
-        // int32 typing conflict
-        std::vector<int> sizes(
+        // Rebuilt rather than aliased, because an at::Tensor reports 64-bit sizes and strides while
+        // the runtime uses narrower types.
+        std::vector<aten::SizesType> sizes(
             at_tensor.sizes().begin(), at_tensor.sizes().end());
-        std::vector<int> strides(
+        std::vector<aten::StridesType> strides(
             at_tensor.strides().begin(), at_tensor.strides().end());
 
         // Only works for MemoryFormat::Contiguous or MemoryFormat::ChannelsLast
@@ -1133,14 +1134,18 @@ struct PyMethod final {
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
-        TensorPtr tensor = for_blob(
-                               mutable_tensor_data_ptr_no_cow(at_tensor),
-                               std::move(sizes),
-                               type)
-                               .strides(std::move(strides))
-                               .dim_order(std::move(dim_order))
-                               .dynamism(aten::TensorShapeDynamism::STATIC)
-                               .make_tensor_ptr();
+        // The device comes from the tensor the caller passed, so a program whose activations stay on
+        // an accelerator sees its input described as device memory. Defaulting to CPU labelled a GPU
+        // input as host memory, and the runtime then copied it with a host memcpy.
+        TensorPtr tensor = make_tensor_ptr(
+            std::move(sizes),
+            mutable_tensor_data_ptr_no_cow(at_tensor),
+            std::move(dim_order),
+            std::move(strides),
+            type,
+            aten::TensorShapeDynamism::STATIC,
+            nullptr,
+            torch_to_executorch_device(at_tensor.device()));
         input_tensors.push_back(tensor);
         EValue evalue(input_tensors.back());
 #endif
