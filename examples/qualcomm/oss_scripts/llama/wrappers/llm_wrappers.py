@@ -10,7 +10,6 @@ import inspect
 import json
 import logging
 import re
-import types
 
 from functools import partial
 from typing import Any, Dict, List
@@ -106,7 +105,6 @@ from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from torch.utils.data import DataLoader
-from torchao.prototype.spinquant import apply_spinquant
 from torchao.quantization.pt2e import MinMaxObserver
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from transformers import AutoModel, AutoModelForSpeechSeq2Seq
@@ -290,21 +288,10 @@ class TextDecoder(Component):
 
         decoder.load_state_dict(state_dict, strict=True, assign=True)
 
-        # apply spin quant if required
         if any([self.config.r1, self.config.r2]):
-            decoder.config = types.SimpleNamespace(
-                dim=decoder.dim,
-                head_dim=decoder.dim // decoder.n_heads,
-                n_local_heads=decoder.n_heads,
-                intermediate_size=4 * decoder.dim,
-            )
-            apply_spinquant(
-                decoder,
-                use_r1=self.config.r1,
-                use_r2=self.config.r2,
-                use_r4=False,
-                pretrained_rotation_path=None,
-                qkv_split=True,
+            raise RuntimeError(
+                "SpinQuant (r1/r2) is no longer supported: the "
+                "torchao.prototype.spinquant module has been deleted."
             )
 
         # perform model transformation
