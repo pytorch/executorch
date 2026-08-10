@@ -23,7 +23,11 @@ from executorch.exir.pass_base import (
 )
 from executorch.exir.pass_manager import ExportedProgramPassManager, PassManager
 from executorch.exir.passes import ScalarToTensorPass
+from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.pass_registry import PassRegistry
+from executorch.exir.passes.remove_mixed_type_operators import (
+    RemoveMixedTypeOperators,
+)
 from executorch.exir.program import to_edge
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
@@ -263,6 +267,95 @@ class TestExportPassFastCopy(unittest.TestCase):
         pass_(graph_module)
 
         self.assertEqual(pass_.operator_calls, 0)
+
+    def test_normalize_transpose_uses_targeted_fast_copy(self) -> None:
+        class TransposeModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.t(torch.neg(x))
+
+        class RecordingNormalizeTransposePass(NormalizeTransposePass):
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_targets: list[Any] = []
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_targets.append(op)
+                return super().call_operator(op, args, kwargs, meta)
+
+        graph_module = export(
+            TransposeModule(), (torch.randn(2, 3),), strict=True
+        ).graph_module
+        pass_ = RecordingNormalizeTransposePass()
+
+        pass_result = pass_(graph_module)
+        assert pass_result is not None
+        targets = [
+            node.target
+            for node in pass_result.graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+
+        self.assertEqual(pass_.operator_targets, [torch.ops.aten.t.default])
+        self.assertIn(torch.ops.aten.t_copy.default, targets)
+        self.assertIn(torch.ops.aten.neg.default, targets)
+
+    def test_remove_mixed_type_operators_uses_targeted_fast_copy(self) -> None:
+        class MixedTypeModule(torch.nn.Module):
+            def forward(
+                self, x: torch.Tensor, y: torch.Tensor
+            ) -> torch.Tensor:
+                return torch.neg(torch.add(x, y))
+
+        class RecordingRemoveMixedTypeOperators(RemoveMixedTypeOperators):
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_targets: list[Any] = []
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_targets.append(op)
+                return super().call_operator(op, args, kwargs, meta)
+
+        graph_module = export(
+            MixedTypeModule(),
+            (
+                torch.tensor([1, 2], dtype=torch.int64),
+                torch.tensor([1.0, 2.0], dtype=torch.float32),
+            ),
+            strict=True,
+        ).graph_module
+        pass_ = RecordingRemoveMixedTypeOperators()
+
+        pass_result = pass_(graph_module)
+        assert pass_result is not None
+        graph = pass_result.graph_module.graph
+        targets = [
+            node.target for node in graph.nodes if node.op == "call_function"
+        ]
+
+        self.assertIn(torch.ops.aten.add.Tensor, pass_.operator_targets)
+        self.assertIn(torch.ops.aten._to_copy.default, pass_.operator_targets)
+        self.assertNotIn(torch.ops.aten.neg.default, pass_.operator_targets)
+        self.assertIn(torch.ops.aten.neg.default, targets)
+
+        add_nodes = graph.find_nodes(
+            op="call_function", target=torch.ops.aten.add.Tensor
+        )
+        self.assertEqual(len(add_nodes), 1)
+        for arg in add_nodes[0].args:
+            assert isinstance(arg, torch.fx.Node)
+            self.assertEqual(arg.meta["val"].dtype, torch.float32)
 
     def test_fast_copy_fallback_is_side_effect_free(self) -> None:
         class RootModule(torch.nn.Module):

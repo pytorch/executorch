@@ -14,6 +14,15 @@ from torch.utils._pytree import PyTree
 
 
 class RemoveMixedTypeOperators(ExportPass):
+    targeted_ops = {
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.mul.Tensor,
+        torch.ops.aten.sub.Tensor,
+        torch.ops.aten.div.Tensor,
+        torch.ops.aten.div.Tensor_mode,
+        torch.ops.aten.minimum.default,
+    }
+
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
         if len(args) <= 1:
