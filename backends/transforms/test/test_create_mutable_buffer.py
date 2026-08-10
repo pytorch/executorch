@@ -10,7 +10,10 @@ import unittest
 
 import executorch
 import torch
-from executorch.backends.transforms.utils import create_mutable_buffer
+from executorch.backends.transforms.utils import (
+    create_constant_placeholder,
+    create_mutable_buffer,
+)
 from executorch.exir import ExecutorchBackendConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -19,6 +22,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     Verification,
 )
 from torch.export import export
+from torch.export.graph_signature import InputKind
 from torch.utils._pytree import tree_flatten
 
 
@@ -169,6 +173,55 @@ class TestMutableBufferCreation(unittest.TestCase):
                     name=requested_name,
                     data=torch.ones(1),
                 )
+
+    def test_mixed_kind_same_name_raises(self):
+        """
+        A name used by a mutable buffer cannot be reused by a constant
+        placeholder in either creation order; the constant dedup must not hand
+        back a mutable buffer node.
+        """
+
+        class EmptyNetwork(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x
+
+            test_data: torch.Tensor = (torch.zeros(1),)
+
+        def fresh_program():
+            ep = export(EmptyNetwork(), args=EmptyNetwork.test_data, strict=True)
+            return to_edge(ep).exported_program()
+
+        # mutable first, then constant
+        exported_program = fresh_program()
+        graph = exported_program.graph_module.graph
+        create_mutable_buffer(
+            exp_program=exported_program, name="b_cache", data=torch.ones(1)
+        )
+        with self.assertRaises(RuntimeError):
+            with graph.inserting_before(list(graph.nodes)[0]):
+                create_constant_placeholder(
+                    exp_program=exported_program,
+                    graph=graph,
+                    name="b_cache",
+                    kind=InputKind.PARAMETER,
+                    data=torch.ones(1),
+                )
+
+        # constant first, then mutable
+        exported_program = fresh_program()
+        graph = exported_program.graph_module.graph
+        with graph.inserting_before(list(graph.nodes)[0]):
+            create_constant_placeholder(
+                exp_program=exported_program,
+                graph=graph,
+                name="b_cache",
+                kind=InputKind.PARAMETER,
+                data=torch.ones(1),
+            )
+        with self.assertRaises(RuntimeError):
+            create_mutable_buffer(
+                exp_program=exported_program, name="b_cache", data=torch.ones(1)
+            )
 
 
 class TestRegisterMutableBufferPass(unittest.TestCase):

@@ -137,9 +137,14 @@ def create_constant_placeholder(
     """
 
     # Multiple pattern replacements may request the same shared weight; return
-    # the existing node to avoid duplicate parameter names on recompile.
+    # the existing node to avoid duplicate parameter names on recompile. A
+    # mutable buffer of the same name is not a constant and cannot be shared.
     existing = _find_placeholder(graph, name)
     if existing is not None:
+        if existing.name in exp_program.graph_signature.buffers_to_mutate:
+            raise RuntimeError(
+                f"Placeholder '{name}' already exists as a mutable buffer"
+            )
         return existing
 
     fake_tensor = _get_fake_tensor_mode(graph, data)
