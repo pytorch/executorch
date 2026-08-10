@@ -112,11 +112,11 @@ def main(argv: List[Any]) -> None:
 
     options = parser.parse_args(argv)
 
-    if not options.prim_op_names and not options.op_selection_yaml_path:
+    if options.prim_op_names is None and not options.op_selection_yaml_path:
         parser.error("one of --prim-op-names or --op-selection-yaml-path is required")
 
     prim_op_names: List[str] = []
-    if options.prim_op_names:
+    if options.prim_op_names is not None:
         # Parse comma-separated prim op names
         prim_op_names.extend(
             name.strip() for name in options.prim_op_names.split(",") if name.strip()
