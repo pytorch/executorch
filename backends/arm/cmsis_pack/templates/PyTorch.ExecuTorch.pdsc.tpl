@@ -13,7 +13,8 @@
   <name>ExecuTorch</name>
   <description overview="Documentation/README.md">ExecuTorch: PyTorch Edge Runtime for on-device AI inference on Arm Cortex-M processors.</description>
   
-  <url>https://github.com/pytorch/executorch/releases/download/%{RELEASE_VERSION}%/</url>
+  <!-- Release tags carry a leading 'v'; without it this path 404s. -->
+  <url>https://github.com/pytorch/executorch/releases/download/v%{RELEASE_VERSION}%/</url>
   <license>LICENSE</license>
   <repository type="git">https://github.com/pytorch/executorch.git</repository>
   
