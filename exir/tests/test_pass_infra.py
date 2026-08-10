@@ -14,6 +14,7 @@ import executorch.exir as exir
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
+    _extend_faketensor_cache_builtins,
     ExportedProgramPassBase,
     ExportedProgramPassResult,
     ExportPass,
@@ -28,6 +29,8 @@ from executorch.exir.program import to_edge
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch._library import utils as _library_utils
+from torch._subclasses import FakeTensorMode
 
 
 class TestPassInfra(unittest.TestCase):
@@ -313,6 +316,46 @@ class TestExportPassFastCopy(unittest.TestCase):
 
         self.assertEqual(list(pass_.tracer.graph.nodes), [])
         self.assertEqual(interpreter._node_remap, {})
+
+
+class TestExportPassFakeTensorCache(unittest.TestCase):
+    def test_extension_restores_builtin_predicate_after_exception(self) -> None:
+        op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+        fake_tensor_mode = FakeTensorMode()
+        original_is_builtin = _library_utils.is_builtin
+
+        self.assertFalse(original_is_builtin(op))
+        with self.assertRaisesRegex(RuntimeError, "test failure"):
+            with _extend_faketensor_cache_builtins(fake_tensor_mode):
+                self.assertTrue(_library_utils.is_builtin(op))
+                raise RuntimeError("test failure")
+
+        self.assertIs(_library_utils.is_builtin, original_is_builtin)
+
+    def test_extension_replaces_nonbuiltin_bypass_with_cache_entry(self) -> None:
+        op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+        fake_tensor_mode = FakeTensorMode()
+        fake_x = fake_tensor_mode.from_tensor(torch.randn(4))
+        FakeTensorMode.cache_clear()
+
+        try:
+            with fake_tensor_mode:
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+            bypasses = FakeTensorMode.cache_info().bypasses
+            self.assertEqual(bypasses.get("non-builtin"), 1)
+
+            with fake_tensor_mode, _extend_faketensor_cache_builtins(
+                fake_tensor_mode
+            ):
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+                after_miss = FakeTensorMode.cache_info()
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+                after_hit = FakeTensorMode.cache_info()
+
+            self.assertEqual(after_miss.misses, 1)
+            self.assertEqual(after_hit.hits, after_miss.hits + 1)
+        finally:
+            FakeTensorMode.cache_clear()
 
 
 class TestExportedProgramPassManager(unittest.TestCase):

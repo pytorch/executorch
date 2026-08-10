@@ -7,14 +7,16 @@
 
 # pyre-strict
 import operator
+import threading
 import traceback
 from abc import ABC, abstractmethod
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
     Dict,
+    Iterator,
     List,
     MutableMapping,
     Optional,
@@ -27,6 +29,7 @@ from typing import (
 )
 
 import torch
+from torch._library import utils as _library_utils
 from executorch.exir import memory
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -34,7 +37,7 @@ from executorch.exir.error import ExportError, ExportErrorType
 from torch import fx
 from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
-from torch._subclasses.fake_tensor import FakeTensor
+from torch._subclasses.fake_tensor import _DispatchCacheBypassEntry, FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
 from torch.export import ExportedProgram
 from torch.fx import traceback as fx_traceback
@@ -313,6 +316,63 @@ class ExportedProgramPassBase(ABC):
         Args:
             exported_program: The exported program we will run checks on
         """
+
+
+_EXTRA_CACHEABLE_NAMESPACES: frozenset[str] = frozenset(
+    {
+        "quantized_decomposed",
+        "tosa",
+        "cortex_m",
+    }
+)
+
+_FAKETENSOR_CACHE_PATCH_LOCK = threading.RLock()
+
+
+def _is_extra_cacheable_op(op: object) -> bool:
+    return (
+        isinstance(op, torch._ops.OpOverload)
+        and op.namespace in _EXTRA_CACHEABLE_NAMESPACES
+    )
+
+
+def _evict_extra_nonbuiltin_bypasses(
+    cache: MutableMapping[object, object],
+) -> None:
+    for key, value in tuple(cache.items()):
+        flattened_key = getattr(key, "key", ())
+        if (
+            flattened_key
+            and _is_extra_cacheable_op(flattened_key[0])
+            and isinstance(value, _DispatchCacheBypassEntry)
+            and value.reason == "non-builtin"
+        ):
+            cache.pop(key, None)
+
+
+@contextmanager
+def _extend_faketensor_cache_builtins(
+    fake_tensor_mode: FakeTensorMode,
+) -> Iterator[None]:
+    """Allow vetted ExecuTorch namespaces in the FakeTensor dispatch cache."""
+    with _FAKETENSOR_CACHE_PATCH_LOCK:
+        original_is_builtin = _library_utils.is_builtin
+
+        def extended_is_builtin(op: torch._ops.OpOverload) -> bool:
+            return _is_extra_cacheable_op(op) or original_is_builtin(op)
+
+        try:
+            _library_utils.is_builtin = extended_is_builtin  # pyre-ignore[8]
+            _evict_extra_nonbuiltin_bypasses(FakeTensorMode.cache)
+            if fake_tensor_mode.shape_env is not None:
+                _evict_extra_nonbuiltin_bypasses(
+                    fake_tensor_mode.shape_env.fake_tensor_cache
+                )
+            # Keep positive entries after restoring the predicate: reuse across
+            # successive ExportPass instances is the performance benefit.
+            yield
+        finally:
+            _library_utils.is_builtin = original_is_builtin  # pyre-ignore[8]
 
 
 _FAST_COPY_UNSAFE_TARGETS: frozenset[Any] = frozenset(
@@ -1066,7 +1126,8 @@ class _ExportPassBase(PassBase):
         self.fake_tensor_mode = fake_tensor_mode
 
         with fake_tensor_mode, dispatcher_mode:  # type: ignore[assignment, union-attr]
-            result = self.call_submodule(graph_module, tuple(inputs))
+            with _extend_faketensor_cache_builtins(fake_tensor_mode):
+                result = self.call_submodule(graph_module, tuple(inputs))
 
         return result
 
