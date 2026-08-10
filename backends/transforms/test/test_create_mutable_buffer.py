@@ -156,7 +156,12 @@ class TestMutableBufferCreation(unittest.TestCase):
 
             test_data: torch.Tensor = (torch.zeros(1),)
 
-        for requested_name in ("b_cache", "0_cache"):
+        # A clean repeat is caught by the state_dict target check, a renamed
+        # repeat by the placeholder lookup; pin each to its own error.
+        for requested_name, error in (
+            ("b_cache", "already exists in state_dict"),
+            ("0_cache", "already exists in the graph"),
+        ):
             exported_program = export(
                 EmptyNetwork(), args=EmptyNetwork.test_data, strict=True
             )
@@ -167,7 +172,7 @@ class TestMutableBufferCreation(unittest.TestCase):
                 name=requested_name,
                 data=torch.ones(1),
             )
-            with self.assertRaises(RuntimeError):
+            with self.assertRaisesRegex(RuntimeError, error):
                 create_mutable_buffer(
                     exp_program=exported_program,
                     name=requested_name,
@@ -197,7 +202,7 @@ class TestMutableBufferCreation(unittest.TestCase):
         create_mutable_buffer(
             exp_program=exported_program, name="b_cache", data=torch.ones(1)
         )
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(RuntimeError, "already exists as a mutable buffer"):
             with graph.inserting_before(list(graph.nodes)[0]):
                 create_constant_placeholder(
                     exp_program=exported_program,
@@ -218,7 +223,7 @@ class TestMutableBufferCreation(unittest.TestCase):
                 kind=InputKind.PARAMETER,
                 data=torch.ones(1),
             )
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(RuntimeError, "already exists in the graph"):
             create_mutable_buffer(
                 exp_program=exported_program, name="b_cache", data=torch.ones(1)
             )
