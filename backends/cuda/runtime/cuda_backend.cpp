@@ -829,6 +829,15 @@ class ET_EXPERIMENTAL CudaBackend final
       slim_outputs[i] = nullptr;
     }
 
+    // The kernels above and the D2D landing copies are asynchronous, so the
+    // outputs are not readable yet. Whoever consumes them next may run on a
+    // different stream, such as another backend's delegate or a portable kernel
+    // on the default stream, with no event linking the two, so returning here
+    // would hand out buffers that are still being written. The CUDA graph replay
+    // and capture paths already synchronize before returning; this path must do
+    // the same.
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cuda_stream));
+
     return Error::Ok;
   }
 
