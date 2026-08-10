@@ -13,6 +13,7 @@ from executorch.extension.llm.cache.reference_cache import (
     AttendSpec,
     CacheConfig,
     CacheSizing,
+    CellReferenceCache,
     ContiguousReferenceCache,
     MaskKind,
 )
@@ -256,6 +257,201 @@ class UpdateAndAttendTest(unittest.TestCase):
             and n.target is torch.ops.kvcache.update_and_attend.default
         )
         self.assertEqual(tuple(node.meta["val"].shape), (1, 4, 3, 5))
+
+
+class CellCacheTest(unittest.TestCase):
+    # Many sequences over one pool of per-token cells, flat on the token axis.
+    # The baseline throughout is the cacheless model: whatever a sequence would
+    # have computed alone, it must still compute when batched beside others.
+
+    CAPACITY = 32
+
+    def setUp(self):
+        torch.manual_seed(0)
+        self.n_layers, self.hidden = 2, 16
+        self.n_heads, self.n_kv_heads, self.head_dim = 4, 2, 8
+        self.model = TinyAttentionModel(
+            self.n_layers,
+            self.hidden,
+            self.n_heads,
+            self.n_kv_heads,
+            self.head_dim,
+            40,
+        ).eval()
+        self.cache_key = "cells"
+
+    def tearDown(self):
+        REGISTRY.uninstall(self.cache_key)
+
+    def _cache(self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC):
+        cache = CellReferenceCache(
+            CacheConfig(
+                n_layers=self.n_layers,
+                n_kv_heads=self.n_kv_heads,
+                head_dim=self.head_dim,
+                capacity=capacity,
+                sizing=sizing,
+            )
+        )
+        REGISTRY.install(self.cache_key, cache)
+        return cache
+
+    def _step(self, cache, x, positions, seqs):
+        """One forward carrying `x`, whose tokens have these positions/seqs."""
+        cache.begin_step(seqs)
+        pos = torch.tensor(positions, dtype=torch.long).unsqueeze(-1)
+        with REGISTRY.active(self.cache_key):
+            return self.model(x, pos, torch.arange(x.shape[1]))
+
+    def test_single_sequence_matches_baseline(self):
+        x = torch.randn(1, 5, self.hidden)
+        out = self._step(self._cache(), x, list(range(5)), [0] * 5)
+        torch.testing.assert_close(
+            out, self.model.reference_forward(x, torch.arange(5)), atol=1e-4, rtol=1e-4
+        )
+
+    def test_batched_sequences_match_separate_runs(self):
+        # Two prefills in ONE forward. Each must equal what it computes alone,
+        # which is exactly the isolation the per-cell seq bitset buys.
+        a, b = torch.randn(1, 4, self.hidden), torch.randn(1, 3, self.hidden)
+        out = self._step(
+            self._cache(),
+            torch.cat([a, b], dim=1),
+            [0, 1, 2, 3, 0, 1, 2],
+            [0, 0, 0, 0, 1, 1, 1],
+        )
+        torch.testing.assert_close(
+            out[:, :4, :],
+            self.model.reference_forward(a, torch.arange(4)),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        torch.testing.assert_close(
+            out[:, 4:, :],
+            self.model.reference_forward(b, torch.arange(3)),
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_batched_decode_continues_each_sequence(self):
+        # Prefill both, then one forward carrying a new token for each.
+        a, b = torch.randn(1, 4, self.hidden), torch.randn(1, 3, self.hidden)
+        cache = self._cache()
+        self._step(
+            cache,
+            torch.cat([a[:, :3], b[:, :2]], dim=1),
+            [0, 1, 2, 0, 1],
+            [0, 0, 0, 1, 1],
+        )
+        out = self._step(cache, torch.cat([a[:, 3:], b[:, 2:]], dim=1), [3, 2], [0, 1])
+        torch.testing.assert_close(
+            out[:, 0, :],
+            self.model.reference_forward(a, torch.arange(4))[:, -1, :],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+        torch.testing.assert_close(
+            out[:, 1, :],
+            self.model.reference_forward(b, torch.arange(3))[:, -1, :],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_fork_shares_cells_and_history(self):
+        trunk, tail = torch.randn(1, 4, self.hidden), torch.randn(1, 1, self.hidden)
+        cache = self._cache()
+        self._step(cache, trunk, [0, 1, 2, 3], [0] * 4)
+
+        free_before = cache.free_cells()
+        cache.seq_cp(0, 1)
+        self.assertEqual(cache.free_cells(), free_before)  # no cell, no byte copied
+        self.assertEqual(cache.seq_len(1), 4)
+
+        out = self._step(cache, tail, [4], [1])  # the branch continues the trunk
+        torch.testing.assert_close(
+            out[:, 0, :],
+            self.model.reference_forward(
+                torch.cat([trunk, tail], dim=1), torch.arange(5)
+            )[:, -1, :],
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    def test_seq_rm_frees_only_unowned_cells(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 3, self.hidden), [0, 1, 2], [0] * 3)
+        cache.seq_cp(0, 1)
+
+        cache.seq_rm(0)
+        self.assertEqual(cache.seq_len(0), 0)
+        self.assertEqual(cache.seq_len(1), 3)  # the fork still owns them
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
+
+        cache.seq_rm(1)
+        self.assertEqual(cache.free_cells(), self.CAPACITY)
+
+    def test_admission_fails_before_the_forward(self):
+        cache = self._cache(capacity=4)
+        self.assertFalse(cache.can_extend(5))
+        with self.assertRaises(RuntimeError):
+            cache.begin_step([0] * 5)
+
+    def test_step_protocol_is_enforced(self):
+        cache = self._cache()
+        kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
+        pos = torch.tensor([[0]])
+
+        cache.begin_step([0, 0])  # declares two tokens, forward carries one
+        with self.assertRaises(ValueError):
+            cache.update_and_fetch(0, kv, kv, pos)
+
+        cache.begin_step([0])
+        cache.update_and_fetch(0, kv, kv, pos)
+        with self.assertRaises(RuntimeError):  # a second step, no begin_step
+            cache.update_and_fetch(0, kv, kv, pos)
+
+    def test_growth_keeps_cell_indices_and_bytes(self):
+        # A grown pool must append rows only: a cell's index is its name, held
+        # by the plan and by _pos/_seq, so renumbering or dropping rows would
+        # move history without anything noticing.
+        cache = self._cache()
+        first = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
+        cache.begin_step([0, 0])
+        k, _, _ = cache.update_and_fetch(0, first, first, torch.tensor([[0], [1]]))
+        self.assertEqual(k.shape[2], 2)  # a short session reserves a short pool
+
+        rest = torch.randn(1, self.n_kv_heads, 6, self.head_dim)
+        cache.begin_step([0] * 6)
+        k, v, _ = cache.update_and_fetch(
+            0, rest, rest, torch.tensor([[p] for p in range(2, 8)])
+        )
+        self.assertEqual(k.shape[2], 8)
+        torch.testing.assert_close(k[:, :, :2, :], first)  # cells 0,1 unmoved
+        torch.testing.assert_close(v[:, :, 2:, :], rest)
+
+    def test_sizings_agree(self):
+        x = torch.randn(1, 5, self.hidden)
+        out = [
+            self._step(self._cache(sizing=s), x, list(range(5)), [0] * 5)
+            for s in (CacheSizing.DYNAMIC, CacheSizing.STATIC)
+        ]
+        torch.testing.assert_close(out[0], out[1])
+
+    def test_a_verb_does_not_hide_a_missing_begin_step(self):
+        # A sequence verb drops the memoized plan, which must not be mistaken
+        # for the start of a step -- that would silently reuse the previous
+        # step's sequence assignment for the new tokens.
+        cache = self._cache()
+        kv = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
+        pos = torch.tensor([[0], [0]])
+        cache.begin_step([0, 1])
+        cache.update_and_fetch(0, kv, kv, pos)
+
+        cache.seq_rm(2)  # any verb; a no-op here beyond dropping the plan
+        with self.assertRaises(RuntimeError):  # layer 0 was already served
+            cache.update_and_fetch(0, kv, kv, pos)
+        with self.assertRaises(RuntimeError):  # and the declaration is spent
+            cache.update_and_fetch(1, kv, kv, pos)
 
 
 class ContiguousSpecTest(unittest.TestCase):
