@@ -328,7 +328,8 @@ void _qk_at_v_gemm(
     accum_t* o_data,
     const int64_t o_stride_m,
     const accum_t beta,
-    accum_t* buf_qdq_ptr) {
+    accum_t* buf_qdq_ptr,
+    const bool widen_v) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       const float* qk = static_cast<const float*>(qk_data);
@@ -378,6 +379,34 @@ void _qk_at_v_gemm(
     // qk has been cast to the activation dtype (see qk_reduced_data); both
     // operands are reduced precision and accumulate into the float output.
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (widen_v) {
+        // Weights are still accum_t, so widen V to match and let BLAS do the
+        // multiply. buf_qdq_ptr is free here: per-thread, ctx-allocated, the
+        // right size, and only the quantized branch above uses it.
+        const auto* v_src =
+            static_cast<const ::executorch::aten::BFloat16*>(v_data.data);
+        for (int64_t kk = 0; kk < k; ++kk) {
+          for (int64_t nn = 0; nn < n; ++nn) {
+            buf_qdq_ptr[kk * n + nn] =
+                static_cast<accum_t>(v_src[kk * v_stride_n + nn]);
+          }
+        }
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            n,
+            m,
+            k,
+            static_cast<accum_t>(1),
+            buf_qdq_ptr,
+            n,
+            static_cast<const accum_t*>(qk_data),
+            qk_stride_m,
+            beta,
+            o_data,
+            o_stride_m);
+        return;
+      }
       auto do_gemm = [&](auto rt_tag) {
         using rt = decltype(rt_tag);
         ::executorch::cpublas::gemm(
@@ -1207,9 +1236,17 @@ void cpu_flash_attention(
         // For reduced-precision activations the attention weights are cast to
         // the activation dtype so that Softmax(q @ k.T) @ v runs as a
         // reduced-in/float-out gemm matching the value matrix.
+        // Casting the weights down only pays when the bf16 attn@V kernel is
+        // the one that runs. Above kMinQBlockForWidenedAV it is faster to keep
+        // them in accum_t, widen V and let BLAS multiply -- also one rounding
+        // step fewer. Below it the widening stops amortizing.
+        constexpr int64_t kMinQBlockForWidenedAV = 64;
+        const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
+            std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+            qBlockSize >= kMinQBlockForWidenedAV;
         const void* qk_gemm_data = qk_data;
         if constexpr (is_reduced_type) {
-          if (!is_quantized_sdpa) {
+          if (!is_quantized_sdpa && !widen_v) {
             vec::convert<accum_t, scalar_t>(
                 qk_data, qk_reduced_data, qBlockSize * kvBlockSize);
             qk_gemm_data = qk_reduced_data;
@@ -1227,7 +1264,8 @@ void cpu_flash_attention(
             dst_data,
             headSize,
             n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
-            buf_qdq_ptr);
+            buf_qdq_ptr,
+            widen_v);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides
