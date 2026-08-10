@@ -156,8 +156,50 @@ gemm_notrans_<torch::executor::BFloat16, float, float>(
     const torch::executor::BFloat16 *b, int64_t ldb,
     float beta,
     float *c, int64_t ldc) {
-  // a's k-dimension is strided by lda; bf16_dot_with_fp32_arith needs it
-  // contiguous.
+  // bf16_dot_with_fp32_arith needs a contiguous k-vector, but a is strided by
+  // lda in k, so the dot path must gather each row first: k strided loads to
+  // buy n dots. At n == 1 that is one gather per multiply-add and cannot pay
+  // on any architecture. a's m-dimension is contiguous, so accumulate along it
+  // instead, which is the traversal the fp32 specialization already uses.
+  constexpr int64_t kMinColsForGather = 2;
+  const bool use_dot = n >= kMinColsForGather;
+
+  if (!use_dot) {
+    for (int64_t j = 0; j < n; ++j) {
+      float *c_col = c + j * ldc;
+      if (beta == 0) {
+        for (int64_t i = 0; i < m; ++i) {
+          c_col[i] = 0.0f;
+        }
+      } else if (beta != 1.0f) {
+        for (int64_t i = 0; i < m; ++i) {
+          c_col[i] *= beta;
+        }
+      }
+    }
+    // l outermost so a's column is loaded once and reused across c's columns.
+    for (int64_t l = 0; l < k; ++l) {
+      const torch::executor::BFloat16 *a_col = a + l * lda;
+      for (int64_t j = 0; j < n; ++j) {
+        const float b_val = static_cast<float>(b[l + j * ldb]) * alpha;
+        float *c_col = c + j * ldc;
+        // Unrolled for the same reason the fp32 specialization above is: the
+        // bf16->fp32 conversion does not vectorize from the rolled form.
+        int64_t i = 0;
+        for (; i + 4 <= m; i += 4) {
+          c_col[i + 0] += static_cast<float>(a_col[i + 0]) * b_val;
+          c_col[i + 1] += static_cast<float>(a_col[i + 1]) * b_val;
+          c_col[i + 2] += static_cast<float>(a_col[i + 2]) * b_val;
+          c_col[i + 3] += static_cast<float>(a_col[i + 3]) * b_val;
+        }
+        for (; i < m; ++i) {
+          c_col[i] += static_cast<float>(a_col[i]) * b_val;
+        }
+      }
+    }
+    return;
+  }
+
   std::vector<torch::executor::BFloat16> a_row(k);
   for (int64_t i = 0; i < m; ++i) {
     for (int64_t l = 0; l < k; ++l) {
