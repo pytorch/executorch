@@ -739,6 +739,107 @@ class TestFusionPasses(TestFusionPassesBase):
                 deq_scale = node.args[1]
         self.assertEqual(deq_scale, DEQUANT_SCALE * FULL_VALUE)
 
+    def test_fuse_mul_into_dequant_lifted_constant_multiplier(self) -> None:
+        """`to_edge` lifts a literal mul operand into a constant placeholder
+        rather than an `aten.full`, so the pass must fold that spelling too."""
+        INPUT_SHAPE: Final[List[int]] = [4, 32]
+        DEQUANT_SCALE: Final[float] = 1.5
+        CONST_VALUE: Final[float] = 0.7071067811865476
+
+        builder = GraphBuilder()
+        x_input = torch.randint(low=0, high=255, size=INPUT_SHAPE, dtype=torch.uint8)
+        x = builder.placeholder("x", x_input)
+        # 0-d constant, matching what to_edge produces for a scalar operand.
+        const_input = torch.tensor(CONST_VALUE)
+        const = builder.placeholder("lifted_constant", const_input)
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, DEQUANT_SCALE, 0, 0, 255, torch.uint8),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(dequant, const),
+        )
+        builder.output([mul])
+        original_graph = builder.get_graph_module()
+        # Export marks lifted constants by hanging the real tensor off the
+        # placeholder's FakeTensor; GraphBuilder does not, so set it here.
+        for node in original_graph.graph.find_nodes(op="placeholder"):
+            if node.name == "lifted_constant":
+                node.meta["val"].constant = const_input
+        gm_before = copy.deepcopy(original_graph)
+
+        result = cast(PassResult, FuseMulTensorIntoDequantPass()(original_graph))
+        self.assertTrue(result.modified)
+        converted_graph = result.graph_module
+
+        validate_numerics(
+            gm_before,
+            converted_graph,
+            (x_input, const_input),
+            "FuseMulTensorIntoDequantPass",
+        )
+
+        self.check_op_counts(
+            converted_graph,
+            expected_op_counts={
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: 1,
+                exir_ops.edge.aten.mul.Tensor: 0,
+            },
+        )
+
+        dequant_nodes = converted_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        )
+        self.assertEqual(len(dequant_nodes), 1)
+        # The constant is fp32, so the folded scale carries its fp32 value --
+        # not the fp64 literal it was built from.
+        self.assertEqual(dequant_nodes[0].args[1], DEQUANT_SCALE * const_input.item())
+
+        # The placeholder is part of the input signature; erasing it would
+        # desync the signature, so it must survive as an unused input.
+        self.assertEqual(
+            len(
+                [
+                    n
+                    for n in converted_graph.graph.find_nodes(op="placeholder")
+                    if n.name == "lifted_constant"
+                ]
+            ),
+            1,
+        )
+
+    def test_fuse_mul_into_dequant_rejects_non_scalar_constant(self) -> None:
+        """A multi-element constant cannot be folded into a per-tensor scale."""
+        INPUT_SHAPE: Final[List[int]] = [4, 32]
+
+        builder = GraphBuilder()
+        x_input = torch.randint(low=0, high=255, size=INPUT_SHAPE, dtype=torch.uint8)
+        x = builder.placeholder("x", x_input)
+        const_input = torch.full(INPUT_SHAPE, 3.0)
+        const = builder.placeholder("lifted_constant", const_input)
+        dequant = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(x, 1.5, 0, 0, 255, torch.uint8),
+        )
+        mul = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(dequant, const),
+        )
+        builder.output([mul])
+        original_graph = builder.get_graph_module()
+        for node in original_graph.graph.find_nodes(op="placeholder"):
+            if node.name == "lifted_constant":
+                node.meta["val"].constant = const_input
+
+        result = cast(PassResult, FuseMulTensorIntoDequantPass()(original_graph))
+        self.assertFalse(result.modified)
+        self.check_op_counts(
+            result.graph_module,
+            expected_op_counts={exir_ops.edge.aten.mul.Tensor: 1},
+        )
+
     def test_fuse_mul_into_dequant_no_match(self) -> None:
         """
         Test that FuseMulTensorIntoDequantPass does NOT modify the graph

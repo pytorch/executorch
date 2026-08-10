@@ -876,12 +876,45 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
         return True
 
 
+def get_constant_scalar_from_node(node: torch.fx.Node) -> Optional[Number]:
+    """Return the compile-time scalar produced by ``node``, or None.
+
+    A single-valued multiplier reaches the graph in more than one spelling.
+    ``aten.full`` carries its fill value inline, but ``to_edge`` lifts a literal
+    operand into a constant placeholder instead, holding the value on the
+    FakeTensor (``meta["val"].constant``) or as a module attribute. Recognising
+    only the ``aten.full`` form silently misses the lifted ones.
+    """
+    if node.target == exir_ops.edge.aten.full.default:
+        value = node.args[1]
+        return value if isinstance(value, Number) else None
+
+    if node.op not in ("placeholder", "get_attr"):
+        return None
+
+    tensor = getattr(node.meta.get("val"), "constant", None)
+    target = node.target
+    if tensor is None and isinstance(target, str):
+        obj: object = node.graph.owning_module
+        for part in target.split("."):
+            if obj is None:
+                break
+            obj = getattr(obj, part, None)
+        tensor = obj
+    if isinstance(tensor, torch.nn.Parameter):
+        tensor = tensor.data
+    if not isinstance(tensor, torch.Tensor) or tensor.numel() != 1:
+        return None
+    return tensor.item()
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul is multiplying the outputs of dequantize
-    and aten.full, or vice versa. If found, updates the dequant scale to reflect
-    the multiplication and removes the full and mul nodes.
+    and a single-valued constant (an aten.full node or a lifted constant
+    placeholder), or vice versa. If found, updates the dequant scale to reflect
+    the multiplication and removes the mul node.
     """
 
     @property
@@ -889,7 +922,8 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         return [exir_ops.edge.aten.mul.Tensor]
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Ensure that one of the args to mul is dequantize and the other is aten.full
+        # Ensure that one of the args to mul is dequantize and the other is a
+        # compile-time scalar.
         dequant_nodes = [
             arg
             for arg in node.args
@@ -905,7 +939,7 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
             arg
             for arg in node.args
             if isinstance(arg, torch.fx.Node)
-            and arg.target == exir_ops.edge.aten.full.default
+            and get_constant_scalar_from_node(arg) is not None
         ]
 
         if len(dequant_nodes) != 1 or len(multiplier_nodes) != 1:
@@ -914,15 +948,16 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         deq_node = dequant_nodes[0]
         mplier_node = multiplier_nodes[0]
 
-        # Ensure that dequant and full don't have any other users
+        # Ensure that dequant and the multiplier don't have any other users
         if len(deq_node.users) > 1 or len(mplier_node.users) > 1:
             return False
 
+        multiplier = get_constant_scalar_from_node(mplier_node)
         new_deq_args = list(deq_node.args)
         assert isinstance(deq_node.args[1], Number)
-        assert isinstance(mplier_node.args[1], Number)
+        assert isinstance(multiplier, Number)
         # pyre-ignore[58]: Unsupported operand *
-        new_deq_args[1] = deq_node.args[1] * mplier_node.args[1]
+        new_deq_args[1] = deq_node.args[1] * multiplier
 
         logging.debug(
             f"Fused {node} and {mplier_node} into {deq_node}. Updated scale from {deq_node.args[1]} to {new_deq_args[1]}"
@@ -933,9 +968,12 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         # Update the dequant node's args with the new scale
         deq_node.args = tuple(new_deq_args)
 
-        # Erase the mul and full nodes
         node.graph.erase_node(node)
-        node.graph.erase_node(mplier_node)
+        # Only the full node is ours to erase. A placeholder is part of the
+        # ExportedProgram's input signature, so removing it here would desync
+        # the signature from the graph; leave it dangling for the owner to drop.
+        if mplier_node.op == "call_function":
+            node.graph.erase_node(mplier_node)
 
         return True
 
