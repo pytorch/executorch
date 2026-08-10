@@ -77,7 +77,7 @@ class Gemma4TextModelWrapper(nn.Module):
         self.n_self_layers = config.num_self_decoder_layers
         self.max_batch_size = config.max_batch_size
         self.vocab_size = config.vocab_size
-        self.kv_io_bit_width = kwargs.get("kv_io_bit_width", 32)
+        self.kv_io_bit_width = kwargs.get("kv_io_bit_width") or 32
 
         self.model = Gemma4TextModel(
             config,

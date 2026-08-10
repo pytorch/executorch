@@ -104,6 +104,12 @@ KVManager::KVManager(Metadata metadata, std::unique_ptr<MethodMeta> method_meta)
     // v_cache shape: [1, n_kv, ar_len, head_dim] -> head_dim at dim 3
     const int64_t k_head_dim = k_out->sizes()[2];
     const int64_t v_head_dim = v_out->sizes()[3];
+    ET_CHECK_MSG(
+        k_head_dim == v_head_dim,
+        "K/V head_dim mismatch at layer %d (k %d, v %d). Expected output order [logits, k_0..n-1, v_0..n-1] with k [1, n_kv, head_dim, ar_len] and v [1, n_kv, ar_len, head_dim]",
+        layer,
+        static_cast<int>(k_head_dim),
+        static_cast<int>(v_head_dim));
     k_head_dim_.push_back(k_head_dim);
     v_head_dim_.push_back(v_head_dim);
 

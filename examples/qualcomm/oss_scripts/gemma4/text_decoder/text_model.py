@@ -118,7 +118,6 @@ class Gemma4TextModel(nn.Module):
         )
 
         hidden_states = self.norm(hidden_states)
-        # Compute logits only for the last token(s)
         logits = self.lm_head(hidden_states)
 
         if self.final_logit_softcapping > 0:

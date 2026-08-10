@@ -438,10 +438,10 @@ class TextDecoder(Component):
                 )
             )
             extra_kwargs = {
+                # 32 is the sentinel for "unquantized KV IO"; get_kv_io_bit_width()
+                # returns it too when the recipe has no default_quant_dtype.
                 "kv_io_bit_width": (
-                    self.quant_recipe.get_kv_io_bit_width()
-                    if self.quant_recipe
-                    else None
+                    self.quant_recipe.get_kv_io_bit_width() if self.quant_recipe else 32
                 ),
             }
             decoder: Gemma4TextModelWrapper = Gemma4TextModelWrapper(
@@ -600,6 +600,9 @@ class TextDecoder(Component):
         if node.target in freq_op and node.meta["val"].size() in freq_shape:
             quant_io_type = fixed_point_type["io_type"]
 
+        # Matched against stack_trace source text, so this is coupled to the
+        # variable names in model forward: renaming per_layer_inputs or
+        # changing how it is sliced silently drops the tag.
         if (
             self.control_args.decoder_model == "gemma4-e2b"
             and "stack_trace" in node.meta
@@ -610,7 +613,10 @@ class TextDecoder(Component):
         ):
             quant_io_type = fixed_point_type["io_type"]
 
-        # tag donor kv
+        # Tag the donor K/V that YOCO shared layers consume.
+        #
+        # Matched on full_k/full_v are the local variable names in model forward.
+        # Renaming them drops the tag.
         if self.control_args.decoder_model == "gemma4-e2b" and (
             is_node_src_start_with_name(node, "full_k")
             or is_node_src_start_with_name(node, "full_v")

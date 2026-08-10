@@ -238,7 +238,6 @@ Error Runner::load() {
   // k_cache: [1, n_heads, head_dim, seq_len]
   auto k_cache_shape = method_meta->output_tensor_meta(1)->sizes();
   int64_t num_heads = k_cache_shape[1];
-  int64_t head_dim = k_cache_shape[2];
   bool use_int64_token = method_meta->input_tensor_meta(0)->scalar_type() ==
       executorch::aten::ScalarType::Long;
 
@@ -288,12 +287,7 @@ Error Runner::load() {
   }
   kv_manager_ = std::make_unique<KVManager>(
       KVManager::Metadata{
-          context_len_,
-          head_dim,
-          max_ar_len,
-          max_cache_len,
-          num_heads,
-          num_kv_layers},
+          context_len_, max_ar_len, max_cache_len, num_heads, num_kv_layers},
       std::make_unique<MethodMeta>(
           std::move(module_->method_meta(token_generator_method_name).get())));
 

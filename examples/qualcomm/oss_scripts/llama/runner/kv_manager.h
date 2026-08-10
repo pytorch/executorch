@@ -29,7 +29,6 @@ class KVManager {
  public:
   struct Metadata {
     int32_t context_len;
-    int64_t head_dim;
     int32_t max_ar_len;
     int32_t max_cache_len;
     int64_t num_heads;
@@ -162,10 +161,6 @@ class KVManager {
 
   inline const size_t total_cache_size_in_bytes() const {
     return total_cache_size_;
-  }
-
-  int64_t get_head_dim() const {
-    return metadata_.head_dim;
   }
 
  private:
