@@ -75,7 +75,9 @@ function musl_select_toolchain() {
     fi
 
     if [[ "${ARCH}" == "x86_64" ]] ; then
-        toolchain_url="https://musl.cc/aarch64-linux-musl-cross.tgz"
+        # musl.cc serves this fine to developers but has never answered the link
+        # check from a GitHub hosted runner.
+        toolchain_url="https://musl.cc/aarch64-linux-musl-cross.tgz" # @lint-ignore
         toolchain_dir="aarch64-linux-musl-cross"
         toolchain_md5_checksum="a6bb806af217a91cf575e15163e8b12b"
         toolchain_archive="${toolchain_dir}.tgz"
