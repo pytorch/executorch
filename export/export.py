@@ -300,7 +300,10 @@ class ExportSession:
         stage = None
         for stage_type in stages or self._get_default_pipeline():
             if stage_type == StageType.SOURCE_TRANSFORM:
-                stage = SourceTransformStage(self._quant_recipe)
+                stage = SourceTransformStage(
+                    self._quant_recipe,
+                    in_place=self._export_recipe.source_transform_in_place,
+                )
             elif stage_type == StageType.QUANTIZE:
                 stage = QuantizeStage(self._quant_recipe)
             elif stage_type == StageType.TORCH_EXPORT:
