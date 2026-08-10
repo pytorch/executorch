@@ -95,6 +95,12 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def _buffer_target(node_name: str) -> str:
+    """Map a placeholder name to its state_dict target per the export
+    convention: placeholder "b_foo" corresponds to buffer target "foo"."""
+    return node_name[2:] if node_name.startswith("b_") else node_name
+
+
 def _find_placeholder(graph: torch.fx.Graph, name: str) -> Optional[torch.fx.Node]:
     """Return the placeholder previously created for this requested name, if any."""
     for n in graph.nodes:
@@ -316,11 +322,7 @@ def create_mutable_buffer(
     if not isinstance(data, torch.Tensor):
         raise ValueError("Data must be a torch.Tensor")
 
-    # Extract target name (remove "b_" prefix if present, following export convention)
-    if name.startswith("b_"):
-        target = name[2:]
-    else:
-        target = name
+    target = _buffer_target(name)
 
     # Check if target already exists
     if target in exp_program.state_dict:
@@ -372,8 +374,10 @@ def create_mutable_buffer(
 
     assert node is not None, "node should be created at this point"
 
+    # If fx renamed the node, the caller's name is stale; re-apply the target
+    # convention to the assigned name.
     if node.name != name:
-        target = node.name[2:] if node.name.startswith("b_") else node.name
+        target = _buffer_target(node.name)
         if target in exp_program.state_dict:
             graph.erase_node(node)
             raise RuntimeError(f"Buffer target '{target}' already exists in state_dict")

@@ -93,7 +93,7 @@ class TestMutableBufferCreation(unittest.TestCase):
             == target_name
         )
 
-    def test_create_mutable_buffer_sanitized_name(self):
+    def test_create_mutable_buffer_renamed_name(self):
         """
         torch.fx renames a placeholder whose requested name is not a valid
         identifier or collides with an existing node. Node target, graph
