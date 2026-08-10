@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from hardswish.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: c874a15ef6cdaec71187296016cc2a1515f5e7c889b97dfa8fd4b278e6e2c3d5
 inline constexpr const char* kHardswishWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

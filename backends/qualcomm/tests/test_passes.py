@@ -6,6 +6,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    ExpandBroadcastTensorShape,
     FoldQDQ,
     InsertIOQDQ,
     InsertReshapeForReduceOps,
@@ -23,6 +24,7 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
 from executorch.backends.qualcomm.tests.models import (
+    BroadcastAndMutate,
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
@@ -35,6 +37,7 @@ from executorch.backends.qualcomm.utils.utils import (
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.exported_program import OutputKind
 from torch.library import Library
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -469,6 +472,211 @@ class TestPasses(unittest.TestCase):
                         should_decompose,
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
+
+    def test_index_put_int64_value_not_quantized(self):
+        """QNN's IndexPut annotator must skip a non-float (int64) value arg.
+
+        Regression for MoE (Mixtral) routing, where index_put's value is an int64
+        arange: annotating it makes quantize_per_tensor assert a float input, so
+        to_executorch() fails. Only float tensors may be annotated.
+        Exercised on both the HTP and LPAI annotators, which share the guard.
+        """
+
+        class IndexPutInt64Value(torch.nn.Module):
+            def forward(self, x):
+                buf = torch.zeros(4, dtype=torch.long)
+                idx = torch.arange(
+                    4, dtype=torch.int64
+                )  # int64 value written by index_put
+                buf = buf.index_put((torch.tensor([0, 1, 2, 3]),), idx)
+                return x + buf.to(torch.float32)
+
+        module = IndexPutInt64Value().eval()
+        sample_input = (torch.randn(4),)
+
+        def run_backend(backend):
+            quantizer = QnnQuantizer(backend=backend)
+            quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+            gm = (
+                torch.export.export(module, sample_input)
+                .run_decompositions({})
+                .module()
+            )
+            prepared = prepare_pt2e(gm, quantizer)
+            prepared(*sample_input)
+            converted = convert_pt2e(prepared)
+            # Re-export runs the quantize_per_tensor meta kernel; before the dtype
+            # guard this raised "Expecting input to have dtype torch.float32" on the
+            # int64 value.
+            torch.export.export(converted, sample_input)
+
+        # HTP is the core QNN quantizer backend; a failure here is a real regression,
+        # not something to swallow. LPAI additionally needs quantized_aot_lib, so only
+        # that missing optional dependency is allowed to skip the LPAI leg.
+        run_backend(QnnExecuTorchBackendType.kHtpBackend)
+        try:
+            run_backend(QnnExecuTorchBackendType.kLpaiBackend)
+        except Exception as e:
+            if "quantized_aot_lib" in str(e):
+                self.skipTest(f"LPAI quantizer unavailable: {e}")
+            raise
+
+    def test_expand_broadcast_preserves_rank0_input_mutation(self):
+        """A rank-0 user input that is BOTH broadcast (needs rank promotion) AND mutated in
+        place must keep its USER_INPUT_MUTATION write-back on the rank-0 value.
+
+        Regression for the all-users rewrite: it redirected *every* consumer of the operand to
+        the promoted (1,) view, including the in-place mutation, so the write-back became
+        copy_(dst=(), src=(1,)) and to_executorch() failed with "expand: too few dimensions".
+        Asserts the broadcast consumes the promoted view while the mutation path stays rank-0.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        broadcast = [
+            n for n in gm.graph.nodes if n.target == add and n.meta["val"].dim() == 1
+        ]
+        self.assertTrue(broadcast)
+        self.assertTrue(
+            any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for n in broadcast
+                for a in n.args
+            ),
+            "the broadcast operand should be rank-promoted to a view_copy",
+        )
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        checked = 0
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                checked += 1
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "rank promotion leaked into the USER_INPUT_MUTATION write-back path",
+                )
+        self.assertEqual(
+            checked,
+            len(mutated),
+            "did not find every mutation-output node in the graph",
+        )
+
+    def test_expand_broadcast_promotes_per_consumer(self):
+        """One tensor feeding two broadcasts of different output rank must be promoted
+        independently per broadcast node, not shared. The all-users rewrite reshaped the
+        operand once (to the first broadcast's rank) and redirected the second broadcast too,
+        mis-shaping it."""
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoBroadcasts(torch.nn.Module):
+            def forward(self, a2d, a1d, b):
+                return (
+                    a2d + b,
+                    a1d + b,
+                )  # b:(4,) -> rank-2 needs a view; rank-1 does not
+
+        exported = torch.export.export(
+            TwoBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        for node in gm.graph.nodes:
+            if node.target != add:
+                continue
+            has_view = any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for a in node.args
+            )
+            if node.meta["val"].dim() == 2:
+                self.assertTrue(has_view, "rank-2 broadcast operand should be promoted")
+            if node.meta["val"].dim() == 1:
+                self.assertFalse(
+                    has_view, "rank-1 broadcast operand should not be promoted"
+                )
+
+    def test_expand_broadcast_dedupes_shared_same_rank(self):
+        """One operand feeding two broadcasts of the SAME output rank must be promoted with a
+        single shared view_copy, not one per broadcast node.
+
+        Regression for the per-node redirect (PR #21583): redirecting only the current node's
+        input fixed the rank-0 mutation bug but created a separate view_copy for every broadcast
+        consumer, so `a2d + b, a2d - b` (b:(4,)) produced two identical (1,4) reshapes. Deduping
+        by (operand, new_rank) collapses them to one while keeping the rank-0 mutation path (whose
+        operand is never rank-promoted) at rank-0 -- so this coexists with
+        test_expand_broadcast_preserves_rank0_input_mutation.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        sub = exir_ops.edge.aten.sub.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoSameRankBroadcasts(torch.nn.Module):
+            def forward(self, a2d, b):
+                return a2d + b, a2d - b  # b:(4,) promoted to (1,4) for both
+
+        exported = torch.export.export(
+            TwoSameRankBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        views = [n for n in gm.graph.nodes if n.target == view_copy]
+        self.assertEqual(
+            len(views), 1, "the shared operand should yield exactly one view_copy"
+        )
+        shared = views[0]
+        for target in (add, sub):
+            broadcast = [n for n in gm.graph.nodes if n.target == target]
+            self.assertTrue(broadcast)
+            self.assertTrue(
+                all(shared in n.args for n in broadcast),
+                "both same-rank broadcasts should consume the shared view_copy",
+            )
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "dedupe must not rank-promote the USER_INPUT_MUTATION write-back",
+                )
 
 
 if __name__ == "__main__":
