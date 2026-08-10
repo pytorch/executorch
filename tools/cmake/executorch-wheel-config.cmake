@@ -68,11 +68,50 @@ if(_portable_lib_LIBRARY)
   list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
   add_library(_portable_lib STATIC IMPORTED)
   set(EXECUTORCH_INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/../../include)
-  # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
     _portable_lib
     PROPERTIES IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
                INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               CXX_STANDARD 20
+               # PyTorch requires C++20, so anything linking this must compile
+               # as
+               # C++20. An interface requirement rather than CXX_STANDARD,
+               # because
+               # an imported target compiles nothing itself and CXX_STANDARD
+               # does
+               # not reach consumers, so a custom-op build could still compile
+               # as
+               # C++17 and fail against headers that need C++20.
+               INTERFACE_COMPILE_FEATURES cxx_std_20
+  )
+
+  # The extension links the runtime rather than containing it, so it no longer
+  # satisfies the runtime symbols a custom-op library references. Put the
+  # shipped runtime on this target's interface, which is where the definitions
+  # moved to, so an out-of-tree operator project keeps building and loading
+  # against the extension exactly as it did before.
+  find_library(
+    EXECUTORCH_RUNTIME_LIBRARY executorch
+    PATHS "${CMAKE_CURRENT_LIST_DIR}/../../lib"
+    NO_DEFAULT_PATH
+  )
+  if(EXECUTORCH_RUNTIME_LIBRARY)
+    set_property(
+      TARGET _portable_lib
+      APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES "${EXECUTORCH_RUNTIME_LIBRARY}"
+    )
+  endif()
+endif()
+
+# find_package checks <package name>_FOUND, which is case-sensitive and does not
+# match the EXECUTORCH_FOUND spelling this file documents. Without this, a
+# REQUIRED find_package succeeds even when nothing usable was located, and the
+# consumer goes on to link nothing.
+set(executorch_FOUND ${EXECUTORCH_FOUND})
+if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
+  message(
+    FATAL_ERROR
+      "Found the ExecuTorch package but could not locate the Python extension "
+      "inside it, so there is nothing to link."
   )
 endif()
