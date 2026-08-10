@@ -43,6 +43,13 @@ inline char to_blas(TransposeType trans) {
   return 'N';
 }
 
+// Whether gemm() dispatches to a BLAS implementation rather than the portable
+// fallback. Callers that can restructure a shape BLAS handles better -- by
+// widening a reduced-precision operand, say -- need this to know whether that
+// is worth doing. Answered here because the build flag is only visible inside
+// this library.
+bool gemm_uses_blas();
+
 // clang-format off
 template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
 void gemm_impl(
