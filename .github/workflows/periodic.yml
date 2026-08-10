@@ -1,60 +1,44 @@
 name: periodic
 
 on:
-  schedule:
-    # We have several schedules so jobs can check github.event.schedule to activate only for a fraction of the runs.
-    # Also run less frequently on weekends.
-    - cron: 45 0,8,16 * * *
-  push:
-    tags:
-      - ciflow/periodic/*
-    branches:
-      - release/*
   workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}-${{ github.event.schedule }}
-  cancel-in-progress: true
 
 permissions: read-all
 
 jobs:
-  gather-models:
-    runs-on: ubuntu-22.04
-    outputs:
-      models: ${{ steps.gather-models.outputs.models }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'false'
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Extract the list of models to test
-        id: gather-models
-        env:
-          EFFECTIVE_EVENT: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ciflow/periodic') && 'schedule' || github.event_name }}
-        run: |
-          set -eux
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${EFFECTIVE_EVENT}"
-
   test-models-linux:
     name: test-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        include:
+          - build-tool: cmake
+            model: dl3
+            backend: portable
+            runner: linux.4xlarge.memory
+            timeout: 240
+            sample: a
+          - build-tool: cmake
+            model: dl3
+            backend: portable
+            runner: linux.4xlarge.memory
+            timeout: 240
+            sample: b
+          - build-tool: cmake
+            model: edsr
+            backend: portable
+            runner: linux.2xlarge
+            timeout: 330
+            sample: long
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
