@@ -12,7 +12,6 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "graph_builder.py",
             ],
-            typing = True,
             deps = [
                 "//caffe2:torch",
                 "//executorch/exir:pass_base",
@@ -24,7 +23,6 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "program_builder.py",
             ],
-            typing = True,
             deps = [
                 ":graph_builder",
                 "//caffe2:torch",

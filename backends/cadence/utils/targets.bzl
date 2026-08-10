@@ -12,7 +12,6 @@ def define_common_targets():
         srcs = [
             "facto_util.py",
         ],
-        typing = True,
         deps = [
             "fbcode//caffe2:torch",
             "fbcode//pytorch/facto:facto",
