@@ -161,7 +161,16 @@ gemm_notrans_<torch::executor::BFloat16, float, float>(
   // buy n dots. At n == 1 that is one gather per multiply-add and cannot pay
   // on any architecture. a's m-dimension is contiguous, so accumulate along it
   // instead, which is the traversal the fp32 specialization already uses.
+  //
+  // On aarch64 the gather-free form keeps winning well past n == 1. On x86
+  // vdpbf16ps makes the dot strong enough that only n == 1 avoids it. The
+  // crossover is empirical, and only visible with runtime-valued dimensions:
+  // constant-folded ones let the gather-free loop unroll and hide it.
+#if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE)
+  constexpr int64_t kMinColsForGather = 32;
+#else
   constexpr int64_t kMinColsForGather = 2;
+#endif
   const bool use_dot = n >= kMinColsForGather;
 
   if (!use_dot) {
