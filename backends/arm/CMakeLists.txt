@@ -192,8 +192,30 @@ if(EXECUTORCH_BUILD_VGF)
     )
   endif()
 
-  if(EXISTS
-     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
+  set(EXECUTORCH_VGF_ROOT
+      ""
+      CACHE PATH
+            "Path to a VGF installation containing include/ and lib/libvgf.a"
+  )
+
+  if(EXECUTORCH_VGF_ROOT)
+    message(STATUS "libvgf sourced from ${EXECUTORCH_VGF_ROOT}")
+    set(LIBVGF_PATH "${EXECUTORCH_VGF_ROOT}")
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
+    if(NOT EXISTS "${LIBVGF_STATIC}")
+      message(FATAL_ERROR "EXECUTORCH_VGF_ROOT does not contain lib/libvgf.a: "
+                          "${EXECUTORCH_VGF_ROOT}"
+      )
+    endif()
+    if(NOT EXISTS "${LIBVGF_PATH}/include/vgf/decoder.hpp")
+      message(
+        FATAL_ERROR "EXECUTORCH_VGF_ROOT does not contain the VGF headers: "
+                    "${EXECUTORCH_VGF_ROOT}"
+      )
+    endif()
+  elseif(
+    EXISTS
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
   )
     message(STATUS "libvgf sourced from local scratch tree")
 
