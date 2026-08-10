@@ -73,6 +73,9 @@ from executorch.exir.passes.remove_graph_asserts_pass import (
 )
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
+from executorch.exir.passes.replace_slice_copy_with_slice_pass import (
+    ReplaceSliceCopyWithSlicePass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -751,6 +754,7 @@ def pre_memory_planning_passes(
             NormalizeViewCopyBasePass(),
             dead_code_elimination_pass,
             ReplaceViewCopyWithViewPass(),
+            ReplaceSliceCopyWithSlicePass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
         ]
