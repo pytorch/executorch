@@ -22,6 +22,9 @@
 #ifdef __aarch64__
 #include <arm_neon.h>
 #include <cpuinfo.h>
+#elif defined(__x86_64__)
+#include <cpuinfo.h>
+#include <immintrin.h>
 #endif
 
 namespace vec = at::vec;
@@ -115,6 +118,17 @@ float reduce(vec::VectorizedN<float, kF32RegistersPerIteration>& x) {
 #define COMPILER_SUPPORTS_BF16_TARGET 0
 #endif // defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) &&
        // defined(__clang__) && __clang_major__ > 15
+
+// GCC 10 / Clang 9 are the first versions with both the target("avx512bf16")
+// function attribute and _mm512_dpbf16_ps.
+#if defined(__x86_64__) && defined(__clang__) && __clang_major__ >= 9
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 1
+#elif defined(__x86_64__) && !defined(__clang__) && defined(__GNUC__) && \
+    __GNUC__ >= 10
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 1
+#else
+#define COMPILER_SUPPORTS_X86_BF16_TARGET 0
+#endif
 
 #if COMPILER_SUPPORTS_BF16_TARGET
 #define TARGET_ARM_BF16_ATTRIBUTE __attribute__((target("arch=armv8.2-a+bf16")))
@@ -326,6 +340,62 @@ dot_with_fp32_arith_no_bfdot(const T* vec1, const T* vec2, int64_t len) {
 }
 #undef DOT_WITH_FP32_ARITH_TAIL_AFTER_MAIN_LOOP_BODY
 
+#if COMPILER_SUPPORTS_X86_BF16_TARGET
+// Native x86 bf16 dot using AVX512-BF16's vdpbf16ps (_mm512_dpbf16_ps),
+// which computes bf16 x bf16 -> fp32 accumulate in a single instruction.
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16"))) float
+dot_with_fp32_arith_x86bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t len) {
+  // Each __m512bh holds 32 bf16; _mm512_dpbf16_ps accumulates bf16 x bf16
+  // products into a __m512 of 16 fp32 lanes.
+  constexpr int kBF16PerRegister = 32;
+  constexpr int kAccumulators = 4;
+  constexpr int kBF16PerIteration = kBF16PerRegister * kAccumulators;
+
+  __m512 acc[kAccumulators];
+  for (int i = 0; i < kAccumulators; ++i) {
+    acc[i] = _mm512_setzero_ps();
+  }
+
+  int64_t j = 0;
+  // Main loop: 4 independent accumulators for ILP, 128 bf16 per iteration.
+  const int64_t len_main = len - (len % kBF16PerIteration);
+  for (; j < len_main; j += kBF16PerIteration) {
+    for (int i = 0; i < kAccumulators; ++i) {
+      const int64_t off = j + i * kBF16PerRegister;
+      const __m512bh a =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec1 + off));
+      const __m512bh b =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec2 + off));
+      acc[i] = _mm512_dpbf16_ps(acc[i], a, b);
+    }
+  }
+
+  // 32-wide cleanup loop for the remaining full registers.
+  const int64_t len_vec = len - (len % kBF16PerRegister);
+  for (; j < len_vec; j += kBF16PerRegister) {
+    const __m512bh a = (__m512bh)_mm512_loadu_si512((const void*)(vec1 + j));
+    const __m512bh b = (__m512bh)_mm512_loadu_si512((const void*)(vec2 + j));
+    acc[0] = _mm512_dpbf16_ps(acc[0], a, b);
+  }
+
+  float reduced_sum = 0;
+  for (int i = 0; i < kAccumulators; ++i) {
+    reduced_sum += _mm512_reduce_add_ps(acc[i]);
+  }
+
+  // Scalar fp32 tail for the remainder, matching no_bfdot numerics.
+  for (; j < len; ++j) {
+    float x1 = vec1[j];
+    float x2 = vec2[j];
+    reduced_sum += x1 * x2;
+  }
+  return reduced_sum;
+}
+#endif // COMPILER_SUPPORTS_X86_BF16_TARGET
+
 } // namespace
 
 float bf16_dot_with_fp32_arith(
@@ -338,6 +408,11 @@ float bf16_dot_with_fp32_arith(
     return dot_with_fp32_arith_bfdot(vec1, vec2, len);
   } else
 #endif // COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_X86_BF16_TARGET
+      if (cpuinfo_initialize() && cpuinfo_has_x86_avx512bf16()) {
+    return dot_with_fp32_arith_x86bfdot(vec1, vec2, len);
+  } else
+#endif // COMPILER_SUPPORTS_X86_BF16_TARGET
   {
     return dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
   }
