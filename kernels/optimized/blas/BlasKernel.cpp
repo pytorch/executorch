@@ -333,7 +333,8 @@ float bf16_dot_with_fp32_arith(
     const at::BFloat16* vec2,
     int64_t len) {
 #if COMPILER_SUPPORTS_BF16_TARGET
-  if (cpuinfo_has_arm_bf16()) {
+  // cpuinfo_has_* reads a zeroed struct until cpuinfo_initialize() runs.
+  if (cpuinfo_initialize() && cpuinfo_has_arm_bf16()) {
     return dot_with_fp32_arith_bfdot(vec1, vec2, len);
   } else
 #endif // COMPILER_SUPPORTS_BF16_TARGET
