@@ -159,6 +159,16 @@ class ExportRecipe:
         quantization_recipe: Optional quantization recipe for model quantization
         aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
                                These callables are invoked to modify and return the transformed program.
+        source_transform_passes: Optional list of nn.Module transforms applied once
+                               during the SOURCE_TRANSFORM stage, before quantization.
+                               Each is applied once per distinct model object, so a
+                               model shared by several methods is transformed once.
+        pre_trace_hooks: Optional list of (method_name, model) callables invoked
+                               immediately before each method is traced. Use these for
+                               per-method state that must differ between traces; a
+                               SOURCE_TRANSFORM pass cannot express it, because that
+                               stage completes before any tracing and methods may share
+                               one model object.
         source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
                                stage and mutate the caller's model. Necessary for models
                                large enough that a second copy will not fit in memory.
@@ -181,6 +191,10 @@ class ExportRecipe:
     pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
     strict: bool = True
+    source_transform_passes: Optional[
+        List[Callable[[torch.nn.Module], torch.nn.Module]]
+    ] = None
+    pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -260,6 +274,8 @@ class ExportRecipe:
         all_quantizers = []
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
+        all_source_transform_passes = []
+        all_pre_trace_hooks = []
         all_transform_passes = []
         combined_backend_config = None
 
@@ -267,6 +283,10 @@ class ExportRecipe:
             # Collect pre-edge transform passes
             if recipe.aten_transform_passes:
                 all_pre_edge_passes.extend(recipe.aten_transform_passes)
+            if recipe.source_transform_passes:
+                all_source_transform_passes.extend(recipe.source_transform_passes)
+            if recipe.pre_trace_hooks:
+                all_pre_trace_hooks.extend(recipe.pre_trace_hooks)
 
             # Collect partitioners from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
@@ -347,6 +367,11 @@ class ExportRecipe:
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
             aten_transform_passes=all_pre_edge_passes,
+            source_transform_passes=all_source_transform_passes or None,
+            pre_trace_hooks=all_pre_trace_hooks or None,
+            source_transform_in_place=any(
+                recipe.source_transform_in_place for recipe in backend_recipes
+            ),
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=combined_backend_config,
         )
