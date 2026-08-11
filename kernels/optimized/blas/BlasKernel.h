@@ -146,6 +146,24 @@ void bf16_dot4_with_fp32_arith(
     int64_t stride2,
     int64_t len,
     float* out);
+void bf16_gemv_notrans_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const torch::executor::BFloat16* a,
+    int64_t lda,
+    const torch::executor::BFloat16* b,
+    float beta,
+    float* c);
+void bf16_gemv_transa_with_fp32_arith(
+    int64_t m,
+    int64_t k,
+    float alpha,
+    const torch::executor::BFloat16* a,
+    int64_t lda,
+    const torch::executor::BFloat16* b,
+    float beta,
+    float* c);
 } // namespace internal
 
 // Used by custom SDPA's attn@V. Serial on purpose: SDPA already parallelizes
@@ -163,16 +181,17 @@ gemm_notrans_<torch::executor::BFloat16, float, float>(
     const torch::executor::BFloat16 *b, int64_t ldb,
     float beta,
     float *c, int64_t ldc) {
+  if (n == 1) {
+    internal::bf16_gemv_notrans_with_fp32_arith(
+        m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+
   // bf16_dot_with_fp32_arith needs a contiguous k-vector, but a is strided by
-  // lda in k, so the dot path must gather each row first: k strided loads to
-  // buy n dots. At n == 1 that is one gather per multiply-add and cannot pay
-  // on any architecture. a's m-dimension is contiguous, so accumulate along it
-  // instead, which is the traversal the fp32 specialization already uses.
-  //
-  // On aarch64 the gather-free form keeps winning well past n == 1. On x86
-  // vdpbf16ps makes the dot strong enough that only n == 1 avoids it. The
-  // crossover is empirical, and only visible with runtime-valued dimensions:
-  // constant-folded ones let the gather-free loop unroll and hide it.
+  // lda in k, so the dot path must gather each row first. On aarch64 the
+  // gather-free form wins for small n; x86 uses the dot path from n == 2.
+  // The crossover is empirical and only visible with runtime-valued
+  // dimensions: constant-folded ones let the gather-free loop unroll.
 #if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE)
   constexpr int64_t kMinColsForGather = 32;
 #else
@@ -315,6 +334,12 @@ inline void gemm_transa_<torch::executor::BFloat16, float, float>(
     const torch::executor::BFloat16 *b, int64_t ldb,
     float beta,
     float *c, int64_t ldc) {
+  if (n == 1) {
+    internal::bf16_gemv_transa_with_fp32_arith(
+        m, k, alpha, a, lda, b, beta, c);
+    return;
+  }
+
   // Four columns at a time: k is headSize here, short enough that each dot's
   // cross-lane reduction is a large share of its cost, and this tile produces
   // m*n of them.

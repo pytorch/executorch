@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #define TEST_FORALL_SUPPORTED_CTYPES(_, N)   \
@@ -227,6 +228,69 @@ TEST(BlasTest, BF16FloatGemmMatchesScalarAccumulation) {
             }
           }
         }
+      }
+    }
+  }
+}
+
+TEST(BlasTest, BF16FloatGemmDecodeShapesMatchScalarAccumulation) {
+  using executorch::aten::BFloat16;
+  using executorch::cpublas::TransposeType;
+
+  struct Shape {
+    bool transa;
+    int64_t m;
+    int64_t k;
+  };
+  constexpr Shape kShapes[] = {
+      {false, 64, 511},
+      {false, 128, 512},
+      {false, 130, 513},
+      {true, 512, 64},
+      {true, 515, 128},
+      {true, 513, 130},
+  };
+
+  for (const Shape shape : kShapes) {
+    constexpr int64_t kN = 1;
+    const int64_t lda = (shape.transa ? shape.k : shape.m) + 3;
+    const int64_t ldb = shape.k;
+    const int64_t ldc = shape.m;
+    const auto a =
+        make_values<BFloat16>(lda * (shape.transa ? shape.m : shape.k), 8);
+    const auto b = make_values<BFloat16>(shape.k, 9);
+
+    for (const auto [alpha, beta] :
+         {std::pair{1.0f, 0.0f}, std::pair{-0.5f, 0.25f}}) {
+      auto c = make_values<float>(shape.m, 10);
+      auto expected = c;
+
+      // clang-format off
+      reference_gemm(
+          shape.transa,
+          shape.m, kN, shape.k,
+          alpha,
+          a.data(), lda,
+          b.data(), ldb,
+          beta,
+          expected, ldc);
+
+      executorch::cpublas::gemm(
+          shape.transa ? TransposeType::Transpose : TransposeType::NoTranspose,
+          TransposeType::NoTranspose,
+          shape.m, kN, shape.k,
+          alpha,
+          a.data(), lda,
+          b.data(), ldb,
+          beta,
+          c.data(), ldc);
+      // clang-format on
+
+      const std::string context = "transa=" + std::to_string(shape.transa) +
+          " m=" + std::to_string(shape.m) + " k=" + std::to_string(shape.k) +
+          " alpha=" + std::to_string(alpha) + " beta=" + std::to_string(beta);
+      for (int64_t i = 0; i < shape.m; ++i) {
+        expect_near_relative(c[i], expected[i], context.c_str());
       }
     }
   }
