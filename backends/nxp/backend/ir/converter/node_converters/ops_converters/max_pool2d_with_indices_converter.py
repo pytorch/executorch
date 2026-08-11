@@ -42,6 +42,10 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
+        # # The input must be 4D.
+        # if input_rank(node, 0) != 4:
+        #     return False
+
         kernel_size, stride, padding, dilation, ceil_mode = (
             MaxPool2DWithIndicesConverter._get_node_args(node)
         )
