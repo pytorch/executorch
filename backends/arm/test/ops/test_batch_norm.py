@@ -15,7 +15,6 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
-    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -87,17 +86,14 @@ def test_native_batch_norm_legit_no_training_tosa_FP(test_data: Tuple):
     pipeline.run()
 
 
-# TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_tosa_INT_not_delegated():
+def test_native_batch_norm_legit_no_training_tosa_INT():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
-    OpNotSupportedPipeline[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         BatchNorm2d(*model_params),
         (test_data,),
-        {
-            "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
-        },
-        quantize=True,
-    ).run()
+        aten_op=[],
+    )
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -120,31 +116,24 @@ def test_native_batch_norm_legit_no_training_vgf_quant(test_data: Tuple):
     pass
 
 
-# TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_u55_INT_not_delegated():
+def test_native_batch_norm_legit_no_training_u55_INT():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
-    OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         BatchNorm2d(*model_params),
         (test_data,),
-        {
-            "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
-        },
-        quantize=True,
-        u55_subset=True,
-    ).run()
+        aten_ops=[],
+    )
+    pipeline.run()
 
 
-# TODO(MLETORCH-100: Quantized stand-alone batch norms)
-def test_native_batch_norm_legit_no_training_u85_INT_not_delegated():
+def test_native_batch_norm_legit_no_training_u85_INT():
     test_data, model_params = test_data_suite["rand_1_3_254_254"]()
-    OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         BatchNorm2d(*model_params),
         (test_data,),
-        {
-            "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
-        },
-        quantize=True,
-    ).run()
+        aten_ops=[],
+    )
+    pipeline.run()
 
 
 class BatchNorm2dConv(torch.nn.Module):
