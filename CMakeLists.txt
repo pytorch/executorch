@@ -1060,9 +1060,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # RPATH for _portable_lib.so
   if(APPLE)
-    set(_portable_lib_rpath "@loader_path/../../../torch/lib")
+    set(_portable_lib_rpath
+        "@loader_path/../../../torch/lib;@loader_path/../../../../.."
+    )
   else()
-    set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+    set(_portable_lib_rpath "$ORIGIN/../../../torch/lib:$ORIGIN/../../../../..")
   endif()
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)

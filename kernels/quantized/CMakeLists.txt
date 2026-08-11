@@ -129,11 +129,11 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # values, run `otool -l libquantized_ops_lib.dylib`.
       if(APPLE)
         set(RPATH
-            "@loader_path/../../extension/pybindings;@loader_path/../../../torch/lib"
+            "@loader_path/../../extension/pybindings;@loader_path/../../../torch/lib;@loader_path/../../../../.."
         )
       else()
         set(RPATH
-            "$ORIGIN/../../extension/pybindings:$ORIGIN/../../../torch/lib"
+            "$ORIGIN/../../extension/pybindings:$ORIGIN/../../../torch/lib:$ORIGIN/../../../../.."
         )
       endif()
       set_target_properties(

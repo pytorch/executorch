@@ -142,10 +142,12 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
   # <site-packages>/executorch/extension/pybindings/.
   if(APPLE)
     set(RPATH
-        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib;@loader_path/../../../../../.."
     )
   else()
-    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
+    set(RPATH
+        "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib:$ORIGIN/../../../../../.."
+    )
   endif()
   set_target_properties(
     custom_ops_aot_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH

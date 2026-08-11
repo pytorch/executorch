@@ -83,9 +83,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
   if(APPLE)
-    set(_training_lib_rpath "@loader_path/../../../../torch/lib")
+    set(_training_lib_rpath
+        "@loader_path/../../../../torch/lib;@loader_path/../../../../../.."
+    )
   else()
-    set(_training_lib_rpath "$ORIGIN/../../../../torch/lib")
+    set(_training_lib_rpath
+        "$ORIGIN/../../../../torch/lib:$ORIGIN/../../../../../.."
+    )
   endif()
   set_target_properties(
     _training_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
