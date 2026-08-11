@@ -154,6 +154,9 @@ class ExportRecipe:
         quantization_recipe: Optional quantization recipe for model quantization
         aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
                                These callables are invoked to modify and return the transformed program.
+        source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
+                               stage and mutate the caller's model. Necessary for models
+                               large enough that a second copy will not fit in memory.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
@@ -166,6 +169,7 @@ class ExportRecipe:
     aten_transform_passes: Optional[
         List[Callable[[str, ExportedProgram], ExportedProgram]]
     ] = None
+    source_transform_in_place: bool = False
     lowering_recipe: Optional[LoweringRecipe] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None

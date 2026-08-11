@@ -106,8 +106,12 @@ export_rope_model('${ROPE_DECODE_MODEL}', '${ROPE_DECODE_XQ_GOLDEN}', '${ROPE_DE
 "
 
 $PYTHON_EXECUTABLE -c "
-from executorch.backends.webgpu.test.ops.test_rope_hf import export_rope_hf_dynamic
+from executorch.backends.webgpu.test.ops.test_rope_hf import (
+    export_rope_hf_dynamic,
+    export_rope_hf_dynamic_sequence,
+)
 export_rope_hf_dynamic('${ROPE_HF_DIR}')
+export_rope_hf_dynamic_sequence('${ROPE_HF_DIR}')
 "
 
 $PYTHON_EXECUTABLE -c "
@@ -157,6 +161,7 @@ export_incache_decode('/tmp')
 "
 
 require_file "${ROPE_HF_DIR}/rope_hf_dynamic.pte"
+require_file "${ROPE_HF_DIR}/rope_hf_dynamic_sequence.pte"
 require_file "${SYMINT_BLOB}"
 require_file "${OUTPUT_SUPPRESSION_DIR}/input.bin"
 

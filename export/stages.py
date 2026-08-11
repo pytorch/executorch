@@ -315,8 +315,13 @@ class SourceTransformStage(Stage):
     Optional stage: Source transform stage: Apply source transformations to the model.
     """
 
-    def __init__(self, quantization_recipe: Optional[QuantizationRecipe]) -> None:
+    def __init__(
+        self,
+        quantization_recipe: Optional[QuantizationRecipe],
+        in_place: bool = False,
+    ) -> None:
         self._quantization_recipe = quantization_recipe
+        self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
 
     @property
@@ -347,8 +352,11 @@ class SourceTransformStage(Stage):
 
         assert isinstance(artifact.data, dict)
 
-        # Store the original models
-        self._transformed_models = copy.deepcopy(artifact.data)
+        # A second copy of the model is not affordable for every caller, so
+        # large models can opt out and have their own model mutated instead.
+        self._transformed_models = (
+            artifact.data if self._in_place else copy.deepcopy(artifact.data)
+        )
 
         # Apply torchao quantize_ to each model
         for _, model in self._transformed_models.items():
