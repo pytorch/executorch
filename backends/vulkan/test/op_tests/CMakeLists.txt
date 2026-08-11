@@ -72,6 +72,7 @@ function(vulkan_op_test test_name test_src)
   set(extra_deps ${ARGN})
 
   add_executable(${test_name} ${test_src})
+  target_compile_features(${test_name} PRIVATE cxx_std_20)
   target_include_directories(${test_name} PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(
     ${test_name}
@@ -89,6 +90,7 @@ endfunction()
 
 if(TARGET vulkan_backend AND LIB_TORCH)
   add_library(test_utils ${CMAKE_CURRENT_SOURCE_DIR}/test_utils.cpp)
+  target_compile_features(test_utils PRIVATE cxx_std_20)
   target_include_directories(test_utils PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(
     test_utils PRIVATE vulkan_backend ${LIB_TORCH} ${LIB_TORCH_CPU}
