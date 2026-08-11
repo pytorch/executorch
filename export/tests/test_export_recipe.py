@@ -140,6 +140,25 @@ class TestExportRecipeCombine(unittest.TestCase):
         self.assertIsNone(recipe.source_transform_passes)
         self.assertIsNone(recipe.pre_trace_hooks)
 
+    def test_release_option_does_not_change_existing_positional_arguments(
+        self,
+    ) -> None:
+        lowering_recipe = Mock()
+        recipe = ExportRecipe(None, None, None, False, lowering_recipe)
+
+        self.assertIs(recipe.lowering_recipe, lowering_recipe)
+        self.assertFalse(recipe.release_intermediate_artifacts)
+
+    def test_combine_preserves_release_intermediate_artifacts(self) -> None:
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(release_intermediate_artifacts=True),
+                ExportRecipe(),
+            ]
+        )
+
+        self.assertTrue(combined.release_intermediate_artifacts)
+
     def test_preserves_source_transform_passes_and_pre_trace_hooks(self) -> None:
         first_source_transform = Mock()
         second_source_transform = Mock()

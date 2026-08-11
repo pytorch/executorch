@@ -172,6 +172,12 @@ class ExportRecipe:
         source_transform_in_place: Skip the defensive deepcopy in the SOURCE_TRANSFORM
                                stage and mutate the caller's model. Necessary for models
                                large enough that a second copy will not fit in memory.
+        release_intermediate_artifacts: Drop each stage's output once the next stage
+                               has consumed it, so only the final artifact stays
+                               resident. Necessary for models whose intermediates do
+                               not all fit in memory at once. Makes
+                               get_exported_program() and get_edge_program_manager()
+                               unavailable after export.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
@@ -195,6 +201,7 @@ class ExportRecipe:
         List[Callable[[torch.nn.Module], torch.nn.Module]]
     ] = None
     pre_trace_hooks: Optional[List[Callable[[str, torch.nn.Module], None]]] = None
+    release_intermediate_artifacts: bool = False
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":
@@ -371,6 +378,9 @@ class ExportRecipe:
             pre_trace_hooks=all_pre_trace_hooks or None,
             source_transform_in_place=any(
                 recipe.source_transform_in_place for recipe in backend_recipes
+            ),
+            release_intermediate_artifacts=any(
+                recipe.release_intermediate_artifacts for recipe in backend_recipes
             ),
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=combined_backend_config,

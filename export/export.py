@@ -7,7 +7,7 @@
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import torch
 from executorch.exir import EdgeProgramManager
@@ -233,6 +233,7 @@ class ExportSession:
         }
 
         self._stage_to_artifacts: Dict[StageType, PipelineArtifact] = {}
+        self._released_stages: Set[StageType] = set()
 
     def _detect_model_type(
         self, model: Union[nn.Module, GraphModule, ExportedProgram, Dict]
@@ -452,6 +453,8 @@ class ExportSession:
         )
 
         current_artifact = PipelineArtifact(data=self._model, context=self._run_context)
+        release = self._export_recipe.release_intermediate_artifacts
+        previous_stage_type = None
 
         # Execute stages from registry in the order specified by pipeline_stages
         for stage_type in self._pipeline_stages:
@@ -470,6 +473,30 @@ class ExportSession:
             logging.info(f"Stage {stage_type} execution done")
 
             self._stage_to_artifacts[stage_type] = current_artifact
+
+            # The stage that just ran has consumed its input, so the previous
+            # stage's output is now unreachable except through the two
+            # references we hold ourselves.
+            if release and previous_stage_type is not None:
+                self._release_stage(previous_stage_type)
+            previous_stage_type = stage_type
+
+    def _release_stage(self, stage_type: StageType) -> None:
+        self._stage_to_artifacts.pop(stage_type, None)
+        stage = self._stage_registry.get(stage_type)
+        if stage is not None:
+            stage.release_artifact()
+        self._released_stages.add(stage_type)
+        logging.info(f"Released artifact for stage: {stage_type}")
+
+    def _raise_if_released(self, *stage_types: StageType) -> None:
+        released = [s for s in stage_types if s in self._released_stages]
+        if released:
+            names = ", ".join(str(s) for s in released)
+            raise RuntimeError(
+                f"Artifact for {names} was released to free memory. Disable "
+                "release_intermediate_artifacts on the recipe to retain it."
+            )
 
     def export(self) -> None:
         """
@@ -501,6 +528,7 @@ class ExportSession:
             RuntimeError: If torch export stage has not been run
             KeyError: If the method name is not found in exported programs
         """
+        self._raise_if_released(StageType.TORCH_EXPORT)
         artifact = self._stage_to_artifacts.get(StageType.TORCH_EXPORT)
         if artifact is None or artifact.data is None:
             raise RuntimeError(
@@ -533,17 +561,19 @@ class ExportSession:
             RuntimeError: If no edge stage has been run
         """
         # Check stages in order of preference
-        for stage_type in [
+        edge_stages = [
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
             StageType.TO_BACKEND,
             StageType.EDGE_PROGRAM_MANAGER_TRANSFORM,
             StageType.TO_EDGE,
-        ]:
+        ]
+        for stage_type in edge_stages:
             artifact = self._stage_to_artifacts.get(stage_type)
             if artifact is not None and artifact.data is not None:
                 logging.info(f"Returning edge program manager from stage {stage_type}")
                 return artifact.data
 
+        self._raise_if_released(*edge_stages)
         raise RuntimeError(
             "Edge program manager is not available. "
             "Run one of the edge stages first: TO_EDGE_TRANSFORM_AND_LOWER, TO_EDGE, EDGE_PROGRAM_MANAGER_TRANSFORM, or TO_BACKEND."
@@ -679,13 +709,16 @@ class ExportSession:
             & {StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND}
         )
         if not lowering_stage:
-            RuntimeError(
+            raise RuntimeError(
                 "No delegation info available, atleast one of the lowering stages should be present"
             )
 
         stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])
         if stage_artifact is None:
-            RuntimeError("No delegation info available, run the lowering stage first")
+            self._raise_if_released(lowering_stage[0])
+            raise RuntimeError(
+                "No delegation info available, run the lowering stage first"
+            )
 
         delegation_info_by_method = stage_artifact.get_context(
             "delegation_info_by_method", None

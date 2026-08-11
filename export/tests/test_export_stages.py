@@ -6,7 +6,9 @@
 
 # pyre-strict
 
+import gc
 import unittest
+import weakref
 from unittest.mock import call, Mock, patch
 
 import torch
@@ -98,6 +100,21 @@ class TestTorchExportStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.get_artifacts()
         self.assertIn("Stage: TorchExportStage not executed", str(cm.exception))
+
+    @patch("torch.export.export")
+    def test_run_after_artifact_release(self, mock_torch_export: Mock) -> None:
+        first_program = Mock(spec=ExportedProgram)
+        second_program = Mock(spec=ExportedProgram)
+        mock_torch_export.side_effect = [first_program, second_program]
+        stage = TorchExportStage()
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+
+        stage.run(artifact)
+        stage.release_artifact()
+        stage.run(artifact)
+
+        self.assertIs(stage.get_artifacts().data["forward"], second_program)
+        self.assertEqual(mock_torch_export.call_count, 2)
 
     @patch("torch.export.export")
     def test_export_stage_with_aten_transform_passes(
@@ -437,6 +454,51 @@ class TestSourceTransformStage(unittest.TestCase):
         stage.run(PipelineArtifact(data=self.models_dict, context={}))
 
         self.assertIs(stage.get_artifacts().data["forward"], replacement)
+
+
+class TestStageArtifactRelease(unittest.TestCase):
+    def test_release_makes_the_output_collectable(self) -> None:
+        """A released stage must not be what keeps its own output alive."""
+        stage = TorchExportStage()
+        payload = SimpleTestModel()
+        stage._artifact = PipelineArtifact(data=payload, context={})
+        ref = weakref.ref(payload)
+        del payload
+
+        gc.collect()
+        self.assertIsNotNone(ref())
+
+        stage.release_artifact()
+        gc.collect()
+        self.assertIsNone(ref())
+
+    def test_get_artifacts_after_release_explains_why(self) -> None:
+        stage = TorchExportStage()
+        stage._artifact = PipelineArtifact(data=Mock(), context={})
+        stage.release_artifact()
+
+        with self.assertRaises(RuntimeError) as cm:
+            stage.get_artifacts()
+        self.assertIn("released to free memory", str(cm.exception))
+
+    def test_source_transform_release_drops_transformed_models(self) -> None:
+        """SourceTransformStage holds a second reference that must go too."""
+        recipe = Mock(spec=QuantizationRecipe)
+        recipe.ao_quantization_configs = None
+        stage = SourceTransformStage(
+            recipe, source_transform_passes=[lambda m: m], in_place=True
+        )
+        model = SimpleTestModel()
+        stage.run(PipelineArtifact(data={"forward": model}, context={}))
+        ref = weakref.ref(model)
+        del model
+
+        gc.collect()
+        self.assertIsNotNone(ref())
+
+        stage.release_artifact()
+        gc.collect()
+        self.assertIsNone(ref())
 
 
 class TestQuantizeStage(unittest.TestCase):

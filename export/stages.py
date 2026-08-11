@@ -63,6 +63,7 @@ class Stage(ABC):
         Initialize the stage.
         """
         self._artifact = None
+        self._artifact_released = False
 
     @property
     @abstractmethod
@@ -98,9 +99,26 @@ class Stage(ABC):
         pass
 
     def get_artifacts(self) -> "PipelineArtifact":
-        if self._artifact is None:
-            raise RuntimeError(f"Stage: {self.__class__.__name__} not executed")
-        return self._artifact
+        if self._artifact is not None:
+            self._artifact_released = False
+            return self._artifact
+        if self._artifact_released:
+            raise RuntimeError(
+                f"Stage: {self.__class__.__name__} artifact was released to free "
+                "memory. Disable release_intermediate_artifacts to retain it."
+            )
+        raise RuntimeError(f"Stage: {self.__class__.__name__} not executed")
+
+    def release_artifact(self) -> None:
+        """
+        Drop this stage's reference to its output.
+
+        The pipeline holds the only other reference, so releasing both lets a
+        stage's output be collected once the next stage has consumed it.
+        Subclasses that retain their own references must extend this.
+        """
+        self._artifact = None
+        self._artifact_released = True
 
 
 class TorchExportStage(Stage):
@@ -318,6 +336,7 @@ class ExecutorchStage(Stage):
     """
 
     def __init__(self, backend_config: Any) -> None:
+        super().__init__()
         self._backend_config = backend_config
 
     @property
@@ -366,10 +385,15 @@ class SourceTransformStage(Stage):
         ] = None,
         in_place: bool = False,
     ) -> None:
+        super().__init__()
         self._quantization_recipe = quantization_recipe
         self._source_transform_passes = source_transform_passes
         self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
+
+    def release_artifact(self) -> None:
+        super().release_artifact()
+        self._transformed_models = {}
 
     @property
     def stage_type(self) -> str:
@@ -435,6 +459,7 @@ class QuantizeStage(Stage):
     """
 
     def __init__(self, quantization_recipe: Optional[QuantizationRecipe]) -> None:
+        super().__init__()
         self._quantization_recipe = quantization_recipe
 
     @property
