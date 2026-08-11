@@ -114,10 +114,12 @@ class TorchExportStage(Stage):
             List[Callable[[str, ExportedProgram], ExportedProgram]]
         ] = None,
         strict=True,
+        pre_trace_hooks: Optional[List[Callable[[str, nn.Module], None]]] = None,
     ) -> None:
         super().__init__()
         self._aten_transform_passes = aten_transform_passes
         self.strict = strict
+        self._pre_trace_hooks = pre_trace_hooks
 
     @property
     def stage_type(self) -> str:
@@ -146,6 +148,12 @@ class TorchExportStage(Stage):
                     )
 
                 method_dynamic_shapes = dynamic_shapes.get(method_name)
+
+                # Applied here, not in SOURCE_TRANSFORM, because methods may
+                # share one model object: a stage that ran to completion before
+                # any tracing would leave only the last method's state in place.
+                for hook in self._pre_trace_hooks or []:
+                    hook(method_name, model)
 
                 # Export the model
                 exported_programs[method_name] = torch.export.export(
@@ -353,9 +361,13 @@ class SourceTransformStage(Stage):
     def __init__(
         self,
         quantization_recipe: Optional[QuantizationRecipe],
+        source_transform_passes: Optional[
+            List[Callable[[nn.Module], nn.Module]]
+        ] = None,
         in_place: bool = False,
     ) -> None:
         self._quantization_recipe = quantization_recipe
+        self._source_transform_passes = source_transform_passes
         self._in_place = in_place
         self._transformed_models: Dict[str, nn.Module] = {}
 
@@ -375,37 +387,46 @@ class SourceTransformStage(Stage):
         """
         Apply source transformations to the model.
         """
-        if (
-            not self._quantization_recipe
-            or not self._quantization_recipe.ao_quantization_configs
-        ):
+        ao_configs = (
+            self._quantization_recipe.ao_quantization_configs
+            if self._quantization_recipe
+            else None
+        )
+        if not ao_configs and not self._source_transform_passes:
             logging.info(
-                "Quantization recipe is invalid to run SourceTransform, returning original artifact"
+                "No source transform passes and no AO quantization configs, returning original artifact"
             )
             self._artifact = artifact
             return
 
         assert isinstance(artifact.data, dict)
 
+        if ao_configs and len(ao_configs) > 1:
+            raise ValueError(
+                "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
+            )
+
         # A second copy of the model is not affordable for every caller, so
         # large models can opt out and have their own model mutated instead.
-        self._transformed_models = (
-            artifact.data if self._in_place else copy.deepcopy(artifact.data)
-        )
+        models = artifact.data if self._in_place else copy.deepcopy(artifact.data)
 
-        # Apply torchao quantize_ to each model
-        for _, model in self._transformed_models.items():
-            # pyre-ignore
-            if len(self._quantization_recipe.ao_quantization_configs) > 1:
-                raise ValueError(
-                    "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
-                )
+        # Several methods commonly share one model object. Transform each
+        # distinct object once, or a shared model is quantized once per method.
+        transformed_by_id: Dict[int, nn.Module] = {}
+        for method_name, model in list(models.items()):
+            original_id = id(model)
+            if original_id not in transformed_by_id:
+                for transform in self._source_transform_passes or []:
+                    model = transform(model)
+                if ao_configs:
+                    ao_config = ao_configs[0]
+                    quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
+                    unwrap_tensor_subclass(model)
+                transformed_by_id[original_id] = model
+            models[method_name] = transformed_by_id[original_id]
 
-            ao_config = self._quantization_recipe.ao_quantization_configs[0]
-            quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
-            unwrap_tensor_subclass(model)
-
-        self._artifact = artifact.copy_with_new_data(self._transformed_models)
+        self._transformed_models = models
+        self._artifact = artifact.copy_with_new_data(models)
 
 
 class QuantizeStage(Stage):

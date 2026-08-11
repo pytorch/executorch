@@ -159,6 +159,28 @@ class TestTorchExportStage(unittest.TestCase):
             str(cm.exception),
         )
 
+    def test_pre_trace_hooks_fire_per_method(self) -> None:
+        """Hooks fire once per method, immediately before that method's trace."""
+        calls = []
+        stage = TorchExportStage(
+            pre_trace_hooks=[lambda name, model: calls.append((name, model))]
+        )
+        artifact = PipelineArtifact(
+            data={"decode": self.model, "prefill": self.model},
+            context={
+                "example_inputs": {
+                    "decode": self.example_inputs,
+                    "prefill": self.example_inputs,
+                }
+            },
+        )
+        stage.run(artifact)
+
+        # Both methods share one model object, so a hook that ran in an earlier
+        # batch stage could only have left the last method's state in place.
+        self.assertEqual([name for name, _ in calls], ["decode", "prefill"])
+        self.assertTrue(all(model is self.model for _, model in calls))
+
 
 class TestEdgeTransformAndLowerStage(unittest.TestCase):
     def setUp(self) -> None:
@@ -355,24 +377,66 @@ class TestSourceTransformStage(unittest.TestCase):
         # verify the result model is NOT the same object as the original
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
-    @patch("executorch.export.stages.quantize_")
-    @patch("executorch.export.stages.unwrap_tensor_subclass")
-    def test_run_in_place_does_not_copy_the_model(
-        self, mock_unwrap: Mock, mock_quantize: Mock
-    ) -> None:
-        from torchao.core.config import AOBaseConfig
+    def _no_quant_recipe(self) -> Mock:
+        recipe = Mock(spec=QuantizationRecipe)
+        recipe.ao_quantization_configs = None
+        return recipe
 
-        mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_quantization_configs = [
-            AOQuantizationConfig(ao_base_config=Mock(spec=AOBaseConfig))
-        ]
+    def test_source_transform_passes_run_without_quantization(self) -> None:
+        seen = []
 
-        stage = SourceTransformStage(mock_recipe, in_place=True)
+        def record(model: torch.nn.Module) -> torch.nn.Module:
+            seen.append(model)
+            return model
+
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[record], in_place=True
+        )
         stage.run(PipelineArtifact(data=self.models_dict, context={}))
 
-        # The caller's own model is quantized rather than a copy of it.
-        self.assertIs(mock_quantize.call_args[0][0], self.model)
+        self.assertEqual(seen, [self.model])
+        # in_place mutates the caller's own module rather than a copy
         self.assertIs(stage.get_artifacts().data["forward"], self.model)
+
+    def test_source_transform_passes_copy_by_default(self) -> None:
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[lambda m: m]
+        )
+        stage.run(PipelineArtifact(data=self.models_dict, context={}))
+
+        self.assertIsNot(stage.get_artifacts().data["forward"], self.model)
+
+    def test_source_transform_pass_applied_once_for_shared_model(self) -> None:
+        """Methods sharing one model object must not be transformed twice."""
+        calls = []
+
+        def record(model: torch.nn.Module) -> torch.nn.Module:
+            calls.append(model)
+            return model
+
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[record], in_place=True
+        )
+        stage.run(
+            PipelineArtifact(
+                data={"decode": self.model, "prefill": self.model}, context={}
+            )
+        )
+
+        self.assertEqual(len(calls), 1)
+        data = stage.get_artifacts().data
+        self.assertIs(data["decode"], data["prefill"])
+
+    def test_source_transform_pass_return_value_is_rebound(self) -> None:
+        replacement = SimpleTestModel()
+        stage = SourceTransformStage(
+            self._no_quant_recipe(),
+            source_transform_passes=[lambda m: replacement],
+            in_place=True,
+        )
+        stage.run(PipelineArtifact(data=self.models_dict, context={}))
+
+        self.assertIs(stage.get_artifacts().data["forward"], replacement)
 
 
 class TestQuantizeStage(unittest.TestCase):
@@ -595,7 +659,8 @@ class TestToBackendStage(unittest.TestCase):
         mock_get_delegation_info.side_effect = delegation_by_graph_module.__getitem__
 
         stage = ToBackendStage()
-        stage.run(PipelineArtifact(data=self.mock_edge_manager, context=self.context))
+        artifact = PipelineArtifact(data=self.mock_edge_manager, context=self.context)
+        stage.run(artifact)
 
         self.assertEqual(
             stage.delegation_info_by_method,
