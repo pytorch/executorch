@@ -111,7 +111,10 @@ def test_native_library_paths() -> None:
 
 
 def test_uv_wheel_install() -> None:
-    if sys.version_info[:2] != (3, 14):
+    if os.getenv("GITHUB_EVENT_NAME") != "pull_request" and sys.version_info[:2] != (
+        3,
+        14,
+    ):
         print("Skipping uv wheel test; it runs once with Python 3.14")
         return
 
