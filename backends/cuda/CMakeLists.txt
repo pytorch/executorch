@@ -42,6 +42,85 @@ if(NOT CMAKE_CUDA_COMPILER)
   check_language(CUDA)
 endif()
 
+# Take the architectures from the release row when it names them, before the
+# language is enabled, since CMake fixes them at that point. Without this the
+# build uses CMake's default, which on some devices is older than the intrinsics
+# these sources use, and the compile fails with an undefined identifier that
+# looks like a source problem.
+#
+# TORCH_CUDA_ARCH_LIST is the variable the surrounding build environment already
+# sets, in PyTorch's dotted form. CMake wants bare integers, so "9.0" becomes
+# 90. A "+PTX" suffix asks for the portable form in addition to the compiled
+# one, which is what PyTorch means by it, so it adds the -virtual kind rather
+# than replacing the -real one.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+  set(_cuda_arch_list "")
+  string(STRIP "$ENV{TORCH_CUDA_ARCH_LIST}" _cuda_arch_request)
+  string(TOLOWER "${_cuda_arch_request}" _cuda_arch_request_lower)
+  # CMake understands these three itself, and they cannot be combined with a
+  # version list, so they pass straight through as the whole value. Dropping
+  # them left the variable unset and the compile fell back to CMake's own
+  # default, measured as 52 under CUDA 12.8 and 75 under 13.0, which is the
+  # outcome this block exists to prevent.
+  if(_cuda_arch_request_lower MATCHES "^(native|all|all-major)$")
+    set(CMAKE_CUDA_ARCHITECTURES ${_cuda_arch_request_lower})
+    message(
+      STATUS
+        "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"
+    )
+  else()
+    string(REPLACE " " ";" _cuda_arch_items "${_cuda_arch_request}")
+    foreach(_cuda_arch_item IN LISTS _cuda_arch_items)
+      if(_cuda_arch_item STREQUAL "")
+        continue()
+      endif()
+      set(_cuda_arch_ptx OFF)
+      if(_cuda_arch_item MATCHES "\\+PTX$")
+        set(_cuda_arch_ptx ON)
+        string(REPLACE "+PTX" "" _cuda_arch_item "${_cuda_arch_item}")
+      endif()
+      string(REPLACE "." "" _cuda_arch_number "${_cuda_arch_item}")
+      # A trailing letter selects an architecture-specific feature set, as in
+      # "10.0a", which CMake accepts and this build passes through.
+      if(_cuda_arch_number MATCHES "^[0-9]+[a-z]?$")
+        list(APPEND _cuda_arch_list "${_cuda_arch_number}-real")
+        if(_cuda_arch_ptx)
+          list(APPEND _cuda_arch_list "${_cuda_arch_number}-virtual")
+        endif()
+      else()
+        # Said out loud because a silently dropped entry can empty the list, and
+        # then the compile falls back to CMake's default, which is what this
+        # block exists to prevent. Named families such as "Hopper" land here.
+        message(
+          WARNING
+            "Ignoring \"${_cuda_arch_item}\" from TORCH_CUDA_ARCH_LIST: expected a "
+            "version such as 9.0, 9.0+PTX or 10.0a."
+        )
+      endif()
+    endforeach()
+    if(_cuda_arch_list)
+      list(REMOVE_DUPLICATES _cuda_arch_list)
+      set(CMAKE_CUDA_ARCHITECTURES ${_cuda_arch_list})
+      message(
+        STATUS
+          "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"
+      )
+    else()
+      # Fail here rather than let CMAKE_CUDA_ARCHITECTURES fall back to the
+      # compiler default, which is the failure this block exists to prevent.
+      # Reached when the variable held only named GPU families PyTorch accepts,
+      # such as "Hopper", or was empty, both of which the parser above passes
+      # over.
+      message(
+        FATAL_ERROR
+          "TORCH_CUDA_ARCH_LIST was set (\"$ENV{TORCH_CUDA_ARCH_LIST}\") but "
+          "contained no version this parser recognises. Use versions such as "
+          "9.0, 9.0+PTX or 10.0a rather than named GPU families like \"Hopper\"."
+      )
+    endif()
+  endif()
+endif()
+
 if(CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
