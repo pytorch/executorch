@@ -109,15 +109,15 @@ float reduce(vec::VectorizedN<float, kF32RegistersPerIteration>& x) {
 #if defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) && \
     defined(__clang__) && __clang_major__ > 15
 // https://godbolt.org/z/z8P4Yncra
-#define COMPILER_SUPPORTS_BF16_TARGET 1
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 1
 #elif defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) && \
     !defined(__clang__) && defined(__GNUC__) && __GNUC__ >= 10
 // https://gcc.gnu.org/gcc-10/changes.html
 // https://godbolt.org/z/cdGG7vn8o
-#define COMPILER_SUPPORTS_BF16_TARGET 1
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 1
 #else // defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) &&
       // defined(__clang__) && __clang_major__ > 15
-#define COMPILER_SUPPORTS_BF16_TARGET 0
+#define COMPILER_SUPPORTS_ARM_BF16_TARGET 0
 #endif // defined(__aarch64__) && !defined(CPU_CAPABILITY_SVE) &&
        // defined(__clang__) && __clang_major__ > 15
 
@@ -132,7 +132,7 @@ float reduce(vec::VectorizedN<float, kF32RegistersPerIteration>& x) {
 #define COMPILER_SUPPORTS_X86_BF16_TARGET 0
 #endif
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 #define TARGET_ARM_BF16_ATTRIBUTE __attribute__((target("arch=armv8.2-a+bf16")))
 
 TARGET_ARM_BF16_ATTRIBUTE C10_ALWAYS_INLINE void
@@ -171,7 +171,7 @@ dot_with_fp32_arith_vectorized_tail_inner_loop_bfdot(
 
 #else
 #define TARGET_ARM_BF16_ATTRIBUTE
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 namespace {
 
@@ -249,7 +249,7 @@ C10_ALWAYS_INLINE auto dot_with_fp32_arith_main_loop_no_bfdot(
   return reduce(sum);
 }
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 template <int n>
 struct ForcedUnrollTargetBFloat16 {
   template <typename Func>
@@ -287,7 +287,7 @@ dot_with_fp32_arith_main_loop_bfdot(
   }
   return reduce(sum);
 }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 static_assert(
     (vec::Vectorized<BFloat16>::size() &
@@ -324,7 +324,7 @@ static_assert(
   }                                                                            \
   return reduced_sum
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 TARGET_ARM_BF16_ATTRIBUTE float dot_with_fp32_arith_bfdot(
     const BFloat16* vec1,
     const BFloat16* vec2,
@@ -332,7 +332,7 @@ TARGET_ARM_BF16_ATTRIBUTE float dot_with_fp32_arith_bfdot(
   auto reduced_sum = dot_with_fp32_arith_main_loop_bfdot(vec1, vec2, len);
   DOT_WITH_FP32_ARITH_TAIL_AFTER_MAIN_LOOP_BODY(_bfdot);
 }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 template <typename T>
 C10_ALWAYS_INLINE float
@@ -344,7 +344,7 @@ dot_with_fp32_arith_no_bfdot(const T* vec1, const T* vec2, int64_t len) {
 
 } // namespace
 
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
 // Four dots against a shared vec1: the cross-lane reduction is paid once per
 // four results rather than per result, which matters when callers reduce over
 // headSize while producing a whole tile of outputs.
@@ -380,7 +380,7 @@ TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
     }
   }
 }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
 
 #if defined(__aarch64__)
 template <int64_t kRegisterPairs>
@@ -459,11 +459,11 @@ static void gemv_notrans_neon(
 
 static float
 platform_bf16_dot(const BFloat16* vec1, const BFloat16* vec2, int64_t len) {
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
   if (cpuinfo_initialize() && cpuinfo_has_arm_bf16()) {
     return dot_with_fp32_arith_bfdot(vec1, vec2, len);
   }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
   return dot_with_fp32_arith_no_bfdot(vec1, vec2, len);
 }
 
@@ -473,12 +473,12 @@ static bool try_platform_bf16_dot4(
     int64_t stride2,
     int64_t len,
     float* out) {
-#if COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_ARM_BF16_TARGET
   if (cpuinfo_initialize() && cpuinfo_has_arm_bf16()) {
     dot4_with_fp32_arith_bfdot(vec1, vec2, stride2, len, out);
     return true;
   }
-#endif // COMPILER_SUPPORTS_BF16_TARGET
+#endif // COMPILER_SUPPORTS_ARM_BF16_TARGET
   return false;
 }
 
