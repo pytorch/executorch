@@ -8,6 +8,11 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
+from executorch.backends.nxp.ops_aliases import (
+    Convolution,
+    ExecutorchDelegateCall,
+    SliceCopy,
+)
 
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
@@ -21,11 +26,6 @@ from executorch.backends.nxp.tests.models import (
     SliceTensorModule,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    Convolution,
-    ExecutorchDelegateCall,
-    SliceCopy,
-)
 
 
 @pytest.fixture(autouse=True)

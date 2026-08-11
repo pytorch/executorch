@@ -14,7 +14,7 @@ from executorch.backends.nxp.neutron_partitioner import (
     NeutronPartitioner,
     NXP_DELEGATION_TAG,
 )
-from executorch.backends.nxp.tests.ops_aliases import (
+from executorch.backends.nxp.ops_aliases import (
     DequantizePerChannel,
     DequantizePerTensor,
     QuantizePerChannel,
