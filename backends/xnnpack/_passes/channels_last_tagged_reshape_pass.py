@@ -14,7 +14,6 @@ from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_dynamic_qdq,
-    is_quant,
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
@@ -366,6 +365,21 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 else ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
             )
 
+    @staticmethod
+    def redirect_dynamic_uses_to_nhwc(
+        input_node: torch.fx.Node, input_node_nhwc: torch.fx.Node
+    ) -> None:
+        """Point the source node's consumers at its NHWC copy.
+
+        The graph output is left out: it has to keep returning the source in its
+        original memory format, and call() reads it as out_node.meta["val"], which
+        the copy does not carry until the pass retraces.
+        """
+        for user in list(input_node.users):
+            if user is input_node_nhwc or user.op == "output":
+                continue
+            user.replace_input_with(input_node, input_node_nhwc)
+
     def input_to_nhwc(
         self,
         graph_module: torch.fx.GraphModule,
@@ -411,11 +425,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             is_dynamic_input = is_dynamic_qdq(input_node)
 
             if is_dynamic_input:
-                # Trace back over the q/dq wrapper to the source node, so the copy
-                # lands ahead of the quantize. Only q/dq nodes may be stepped over:
-                # walking further reaches ordinary compute, which the blanket
-                # replace_all_uses_with below has no business rewriting.
-                while (is_quant(input_node) or is_dequant(input_node)) and isinstance(
+                # Trace back over the dynamic q/dq wrapper to the source node, so the
+                # copy lands ahead of the quantize. Only the wrapper may be stepped
+                # over: walking further reaches ordinary compute, whose consumers the
+                # rewrite below has no business redirecting.
+                while is_dynamic_qdq(input_node) and isinstance(
                     input_node.args[0], torch.fx.Node
                 ):
                     input_node = input_node.args[0]
@@ -431,9 +445,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 ChannelsLastTaggedReshapePass.mark_as_nhwc_node(input_node_nhwc)
 
             if is_dynamic_input:
-                # Replace downstream input_nodes with NHWC node
-                input_node.replace_all_uses_with(input_node_nhwc)
-                input_node_nhwc.args = (input_node,)
+                self.redirect_dynamic_uses_to_nhwc(input_node, input_node_nhwc)
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,
