@@ -34,8 +34,14 @@ def get_default_compile_config() -> EdgeCompileConfig:
     ``_skip_dim_order=True`` keeps ExecuTorch on ``aten._to_copy`` instead of
     emitting ``dim_order_ops._to_dim_order_copy``, which coreai-torch cannot
     lower (its validator requires dim-order ops be decomposed).
+
+    ``_check_ir_validity=False`` disables the edge-dialect verifier. Core AI's
+    quantized ops legitimately mix dtypes, which the verifier forbids: an FP8 or
+    FP4 weight reaches ``coreai::constexpr_blockwise_shift_scale`` alongside an
+    fp32 or ``float8_e8m0fnu`` scale, and the check rejects any op whose tensor
+    inputs disagree on dtype.
     """
-    return EdgeCompileConfig(_skip_dim_order=True)
+    return EdgeCompileConfig(_skip_dim_order=True, _check_ir_validity=False)
 
 
 __all__ = [
