@@ -26,10 +26,8 @@ from executorch.backends.cadence.aot.compiler_utils import (
     get_zero_point,
 )
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
     HierarchicalInplacePassInterface,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
     set_arg,
 )
@@ -61,7 +59,6 @@ def get_tensor_arg(node: torch.fx.Node, arg_name: str) -> torch.Tensor:
     return tensor
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMMWithAdd(RemoveOrReplacePassInterface):
     """
     Fuses mm -> add patterns into addmm.
@@ -212,7 +209,6 @@ class FuseMMWithAdd(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a conv op with batchnorm if the following two conditions
@@ -361,7 +357,6 @@ class FuseBatchNormWithConv(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
     """
     This pass fuses a quantized::conv op with quantized::batchnorm if the
@@ -589,17 +584,14 @@ class FuseQuantizedBatchNormWithConv(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedTransposeOrPermuteOps(_SharedFuseCascadedTransposeOrPermuteOps):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseCascadedViewOps(_SharedFuseCascadedViewOps):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
     """
     Fuse dequantize-quantize op pairs to a single requantize op.
@@ -741,7 +733,6 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Scalar is multiplying the
@@ -791,7 +782,6 @@ class FuseMulScalarIntoDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul.Tensor is followed by quant node.
@@ -876,7 +866,6 @@ class FuseMulTensorIntoQuantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
     """
     Looks for the pattern where aten.mul is multiplying the outputs of dequantize
@@ -940,7 +929,6 @@ class FuseMulTensorIntoDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseTransposeOrPermuteOpPairsPass(_SharedFuseTransposeOrPermuteOpPairsPass):
     bypass_ops: set[EdgeOpOverload] = (
         _SharedFuseTransposeOrPermuteOpPairsPass.bypass_ops
@@ -952,7 +940,6 @@ class FuseTransposeOrPermuteOpPairsPass(_SharedFuseTransposeOrPermuteOpPairsPass
     )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
     """
     A pass that fuses a chain of full and reshape-like operations into a single full operation.
@@ -1006,7 +993,6 @@ class FuseFullThenReshapePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class FuseSliceSameDimPass(RemoveOrReplacePassInterface):
     """Fuse chained slices on the same dim into a single slice.
 
