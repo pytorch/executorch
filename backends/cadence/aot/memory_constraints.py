@@ -16,8 +16,11 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    CompileMode,
     create_cadence_pass_filter,
+    normalize_compile_mode,
     register_cadence_pass,
+    resolve_opt_level,
 )
 from executorch.backends.cadence.aot.utils import get_shape, is_node_in_flattened_output
 from executorch.exir import memory
@@ -63,11 +66,16 @@ class MemConstraints:
 
     def __init__(
         self,
-        opt_level: int = 1,
+        mode: CompileMode | int | None = None,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
+        opt_level: Optional[int] = None,
     ) -> None:
-        self.opt_level = opt_level
+        normalized_mode = normalize_compile_mode(mode, opt_level)
+        self.opt_level = resolve_opt_level(normalized_mode)
+        self.mode: Optional[CompileMode] = (
+            normalized_mode if isinstance(normalized_mode, CompileMode) else None
+        )
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
 

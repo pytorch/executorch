@@ -36,7 +36,11 @@ jobs:
       runner: linux.4xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
-      timeout: 120
+      # The test script alone runs about 60 minutes, and the checkout plus the
+      # Dawn and SwiftShader source builds in front of it have been measured
+      # between 18 and 64 minutes on this same runner type, so 120 does not
+      # cover a slow setup.
+      timeout: 150
       script: |
         set -eux
 
