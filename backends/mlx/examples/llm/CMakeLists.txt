@@ -35,8 +35,14 @@ executorch_target_link_options_shared_lib(executorch)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-set(link_libraries executorch extension_module extension_tensor
-                   extension_llm_cache gflags
+set(link_libraries
+    executorch
+    extension_module
+    extension_tensor
+    extension_llm_cache
+    extension_llm_runner
+    extension_llm_sampler
+    gflags
 )
 
 if(NOT TARGET mlxdelegate)

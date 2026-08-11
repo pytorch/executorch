@@ -96,6 +96,7 @@ pip install -U "transformers @ git+https://github.com/huggingface/transformers.g
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |
 | `--use-offgraph-cache` | `False` | Use the off-graph KV cache (`kvcache::update_and_attend`); replaces the two flags above |
+| `--prefill-chunk-size` | `512` | Off-graph: tokens per prefill step, published as `get_prefill_chunk_size` for the runner. It is the largest single write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the exported sequence length |
 
 Off-graph exports keep no cache in the `.pte`, so the pybindings `run_llm_hf`
 cannot run them — use [`mlx_run_llm_hf`](#mlx_run_llm_hf-c) below, which builds
@@ -212,10 +213,10 @@ sliding at 512 and 4 full:
 A ring layer allocates its whole `window + chunk - 1` slots up front, while a
 flat layer starts at `--kv-initial-capacity` and doubles as the sequence grows,
 so an all-flat cache can look smaller than a sliding one early in a run and
-larger later. Prefill runs in `--prefill-chunk-size` steps precisely so that
+larger later. Prefill runs in steps of the chunk size the export published, so
 the ring is bounded by the chunk rather than by the prompt: prefilling 24k
-tokens in one step would need 541 MiB of ring here, against 24 MiB at the
-512 default.
+tokens in one step would need 541 MiB of ring here, against 24 MiB at the 512
+default.
 
 ### Options
 
@@ -227,15 +228,14 @@ tokens in one step would need 541 MiB of ring here, against 24 MiB at the
 | `--tokenizer` | *(required)* | Path to `tokenizer.json` |
 | `--prompt` | `The quick brown fox` | Input prompt |
 | `--max-new-tokens` | `50` | Tokens to generate, excluding the prompt |
+| `--temperature` | `0` | Sampling temperature; 0 is greedy argmax, which is what makes two `.pte` files comparable |
 | `--chat` | `llama3` | Chat template: `llama3`, `gemma`, `gemma4`, or `0` to disable |
 | `--kv-max-capacity` | `0` | Off-graph: history the cache may hold. Setting it selects the off-graph path |
 | `--kv-storage-dtype` | `bf16` | Off-graph: KV storage dtype (`bf16`, `fp16`, `fp32`) |
 | `--kv-initial-capacity` | `-1` | Off-graph: starting pool size; grows by doubling up to capacity |
-| `--prefill-chunk-size` | `512` | Tokens per prefill step; also the largest single write, so it sizes a ring layer to `window + chunk - 1`. Must not exceed the sequence length the `.pte` was exported with |
 | `--kv-windows` | *(model's own)* | Off-graph: attention pattern override, e.g. `512` |
 | `--interactive` | `false` | Multi-turn chat on stdin; off-graph only |
-| `--warmup` | `0` | Throwaway iterations before measuring |
-| `--iters` | `1` | Measured iterations; reports tok/s and a mean +/- stddev |
+| `--warmup` | `false` | Run once before measuring, to absorb JIT and pool growth |
 
 ---
 

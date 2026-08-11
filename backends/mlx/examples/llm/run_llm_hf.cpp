@@ -12,10 +12,11 @@
 // passes its cache_key as a load-time backend option (the rendezvous init()
 // reads). Its shape comes from constant methods the export publishes; the flags
 // below only choose policy. Without --kv-max-capacity it runs an in-graph model
-// unchanged -- so the same binary compares both cache paths. Greedy decode.
+// unchanged -- so the same binary compares both cache paths. Greedy decode
+// unless --temperature is set.
 //
 // Usage:
-//   run_llm_hf --pte <model.pte> --tokenizer <tokenizer.json> [flags]
+//   run_llm_hf --pte <model.pte> --tokenizer <tokenizer file> [flags]
 //
 // --help lists every flag with its default.
 
@@ -29,10 +30,14 @@
 #include <executorch/backends/mlx/runtime/MLXSequenceCache.h>
 #include <executorch/backends/mlx/runtime/backend_options.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/util.h>
+#include <executorch/extension/llm/sampler/util.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 
-#include <pytorch/tokenizers/hf_tokenizer.h>
+#include <pytorch/tokenizers/tokenizer.h>
 
 #include <gflags/gflags.h>
 #include <mlx/memory.h>
@@ -44,12 +49,22 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 DEFINE_string(pte, "", "Model .pte file.");
-DEFINE_string(tokenizer, "", "tokenizer.json for the model.");
+DEFINE_string(
+    tokenizer,
+    "",
+    "Tokenizer file; any format the shared loader accepts (tokenizer.json, "
+    "tiktoken, sentencepiece).");
 DEFINE_string(prompt, "The quick brown fox", "Prompt to generate from.");
 DEFINE_int32(max_new_tokens, 50, "Tokens to generate, excluding the prompt.");
+DEFINE_double(
+    temperature,
+    0.0,
+    "Sampling temperature. 0 is greedy argmax, which is what makes two .pte "
+    "files comparable; above 0 samples and the run stops being reproducible.");
 DEFINE_string(
     chat,
     "llama3",
@@ -71,13 +86,6 @@ DEFINE_int32(
     -1,
     "Off-graph: the cache pool's starting size; it grows (doubling) up to "
     "capacity. -1 keeps the CacheConfig default. Small values force growth.");
-DEFINE_int32(
-    prefill_chunk_size,
-    512,
-    "Tokens per prefill step. This is the largest single write, so it also "
-    "sizes a ring layer to window + chunk - 1 -- without it a long prompt "
-    "would need a ring as large as itself, defeating the window. Must not "
-    "exceed the sequence length the .pte was exported with.");
 DEFINE_string(
     kv_windows,
     "",
@@ -87,15 +95,10 @@ DEFINE_bool(
     interactive,
     false,
     "Multi-turn chat on stdin instead of a single prompt; off-graph only.");
-DEFINE_int32(
+DEFINE_bool(
     warmup,
-    0,
-    "Throwaway iterations before measuring, to absorb JIT and pool growth.");
-DEFINE_int32(
-    iters,
-    1,
-    "Measured iterations; reports per-iter tok/s and a mean +/- stddev "
-    "summary.");
+    false,
+    "Run once before measuring, to absorb JIT and pool growth.");
 
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
@@ -178,17 +181,21 @@ std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
 }
 
 // Fill in the cache geometry the export published: get_n_caches, then one
-// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat).
-// Only the shape comes from the .pte -- capacity, dtype and any override stay
-// with the flags. False means this is not an off-graph model.
+// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat),
+// plus get_prefill_chunk_size, which the export validates against the sliding
+// window and which becomes max_write -- the largest step the cache may see.
+// Capacity and dtype stay with the flags. False means this is not an off-graph
+// model.
 bool read_kv_layout(Module& module, cache::CacheConfig& cfg) {
   const auto n_caches = const_int(module, "get_n_caches");
   const auto kv_heads = const_ints(module, "get_kv_heads");
   const auto head_dims = const_ints(module, "get_head_dims");
   const auto windows = const_ints(module, "get_windows");
-  if (!n_caches || !kv_heads || !head_dims || !windows) {
+  const auto chunk = const_int(module, "get_prefill_chunk_size");
+  if (!n_caches || !kv_heads || !head_dims || !windows || !chunk) {
     return false;
   }
+  cfg.max_write = static_cast<int>(*chunk);
   const size_t n = static_cast<size_t>(*n_caches);
   if (kv_heads->size() != n || head_dims->size() != n || windows->size() != n) {
     return false;
@@ -212,6 +219,10 @@ bool read_kv_layout(Module& module, cache::CacheConfig& cfg) {
 // of windows repeating over the caches (0 = flat). One entry makes every layer
 // sliding. Only the policy changes; each cache keeps the geometry the .pte
 // declared, so this cannot desync from the graph.
+//
+// The export sizes the chunk to the model's own window; narrowing the window
+// here would leave the ring (window + max_write - 1) sized by the chunk
+// instead, so the chunk follows the window down.
 bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
   std::vector<int> pattern;
   if (!parse_int_list(spec, ',', pattern) || pattern.empty()) {
@@ -223,38 +234,16 @@ bool apply_window_override(const std::string& spec, cache::CacheConfig& cfg) {
         ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, w}
         : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
   }
-  return cache::valid(cfg);
-}
-
-// argmax over the last position's vocab row of a [1, T, vocab] logits tensor,
-// reading whatever float dtype the op emitted.
-int64_t argmax_last(const ::executorch::aten::Tensor& logits) {
-  const auto dim = logits.dim();
-  const int64_t vocab = logits.size(dim - 1);
-  const int64_t t = dim >= 2 ? logits.size(dim - 2) : 1;
-  const int64_t offset = (t - 1) * vocab; // start of the last row
-  auto scan = [&](auto* data) {
-    int64_t best = 0;
-    float best_v = -1e30f;
-    for (int64_t i = 0; i < vocab; ++i) {
-      const float v = static_cast<float>(data[offset + i]);
-      if (v > best_v) {
-        best_v = v;
-        best = i;
-      }
+  int narrowest = 0; // smallest ring window in the pattern; 0 if all flat
+  for (int w : pattern) {
+    if (w > 0 && (narrowest == 0 || w < narrowest)) {
+      narrowest = w;
     }
-    return best;
-  };
-  switch (logits.scalar_type()) {
-    case ::executorch::aten::ScalarType::Float:
-      return scan(logits.const_data_ptr<float>());
-    case ::executorch::aten::ScalarType::Half:
-      return scan(logits.const_data_ptr<::executorch::aten::Half>());
-    case ::executorch::aten::ScalarType::BFloat16:
-      return scan(logits.const_data_ptr<::executorch::aten::BFloat16>());
-    default:
-      throw std::runtime_error("argmax_last: unsupported logits dtype");
   }
+  if (cfg.max_write && narrowest > 0 && narrowest < *cfg.max_write) {
+    cfg.max_write = narrowest;
+  }
+  return cache::valid(cfg);
 }
 
 // Human-readable name for a kv_dtype (an ET ScalarType int). Only the
@@ -343,11 +332,10 @@ int main(int argc, char** argv) {
   const std::string& chat = FLAGS_chat;
   const int kv_capacity = FLAGS_kv_max_capacity;
   const int max_new = FLAGS_max_new_tokens;
+  const float temperature = static_cast<float>(FLAGS_temperature);
   const int initial_capacity = FLAGS_kv_initial_capacity;
-  const int chunk = FLAGS_prefill_chunk_size;
   const bool interactive = FLAGS_interactive;
-  const int warmup = FLAGS_warmup;
-  const int iters = FLAGS_iters;
+  const bool warmup = FLAGS_warmup;
   if (pte.empty() || tok_path.empty()) {
     std::cerr << "Required: --pte <file> --tokenizer <file>  "
                  "[--kv-max-capacity N for off-graph models]\n";
@@ -355,9 +343,10 @@ int main(int argc, char** argv) {
   }
 
   try {
-    // Tokenizer.
-    ::tokenizers::HFTokenizer tokenizer;
-    if (tokenizer.load(tok_path) != ::tokenizers::Error::Ok) {
+    // The shared loader sniffs the format, so --tokenizer takes any of the
+    // files the other runners accept, not just tokenizer.json.
+    auto tokenizer = ::executorch::extension::llm::load_tokenizer(tok_path);
+    if (!tokenizer) {
       std::cerr << "Failed to load tokenizer: " << tok_path << std::endl;
       return 1;
     }
@@ -371,11 +360,15 @@ int main(int argc, char** argv) {
     ::executorch::runtime::BackendOptions<1> mlx_opts;
     ::executorch::runtime::LoadBackendOptionsMap options_map;
     const bool off_graph = kv_capacity > 0;
+    // Tokens per prefill step, from the .pte. 0 means one step: an
+    // in-graph model publishes no chunk and has no ring to bound.
+    int prefill_chunk = 0;
 
     // Load the program but not forward: the cache must exist before forward's
     // backend init reads its key, and the layout it needs is published by
     // constant methods in the same file.
     Module module(pte);
+    const long load_start_ms = ::executorch::extension::llm::time_in_ms();
     if (module.load() != Error::Ok) {
       std::cerr << "Failed to load " << pte << std::endl;
       return 1;
@@ -406,8 +399,6 @@ int main(int argc, char** argv) {
       if (initial_capacity >= 0) {
         cfg.initial_capacity = initial_capacity;
       }
-      // Prefill is chunked, so the chunk is the largest step the cache sees.
-      cfg.max_write = chunk;
       auto built = cache::CacheBuilderRegistry::global().build(
           ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
       if (!built.ok()) {
@@ -415,6 +406,7 @@ int main(int argc, char** argv) {
                   << static_cast<int>(built.error()) << std::endl;
         return 1;
       }
+      prefill_chunk = cfg.max_write ? *cfg.max_write : 0;
       session.emplace(cache::make_unique_key(), built.get());
 
       print_cache_summary(cfg);
@@ -437,6 +429,11 @@ int main(int argc, char** argv) {
       std::cerr << "Failed to load forward" << std::endl;
       return 1;
     }
+    // Timings reported at the end, in the shared runner's format.
+    ::executorch::extension::llm::Stats stats;
+    stats.model_load_start_ms = load_start_ms;
+    stats.model_load_end_ms = ::executorch::extension::llm::time_in_ms();
+
     // Weights-only baseline, so the deltas below isolate the cache.
     const double mem_at_load = ::mlx::core::get_active_memory() / 1048576.0;
     std::cout << "[mem]   after load  : " << mem_at_load << " MiB" << std::endl;
@@ -452,7 +449,7 @@ int main(int argc, char** argv) {
     }
     // The template carries its own BOS, so only a raw prompt asks for one.
     const int8_t bos = chat == "0" ? 1 : 0;
-    auto enc = tokenizer.encode(enc_input, bos, /*eos=*/0);
+    auto enc = tokenizer->encode(enc_input, bos, /*eos=*/0);
     if (!enc.ok()) {
       std::cerr << "Encode failed" << std::endl;
       return 1;
@@ -460,16 +457,19 @@ int main(int argc, char** argv) {
     std::vector<uint64_t> tokens = std::move(*enc);
     const int prompt_len = static_cast<int>(tokens.size());
 
-    // Stop on end-of-text and (for chat) the turn-end token <|eot_id|>.
-    std::vector<uint64_t> stop_ids = {tokenizer.eos_tok()};
+    // End-of-text from the model's metadata when it publishes any, else the
+    // tokenizer's. The turn-end token is ours: it depends on --chat, which the
+    // .pte knows nothing about.
+    std::unordered_set<uint64_t> stop_ids =
+        ::executorch::extension::llm::get_eos_ids(tokenizer.get(), &module);
     std::optional<int64_t> turn_end_id;
     if (chat != "0") {
       const char* turn_end = chat == "llama3" ? "<|eot_id|>"
           : chat == "gemma4"                  ? "<turn|>"
                                               : "<end_of_turn>";
-      if (auto eot = tokenizer.piece_to_id(turn_end); eot.ok()) {
+      if (auto eot = tokenizer->piece_to_id(turn_end); eot.ok()) {
         turn_end_id = static_cast<int64_t>(*eot);
-        stop_ids.push_back(*eot);
+        stop_ids.insert(*eot);
       }
     }
     auto is_stop = [&](int64_t t) {
@@ -481,6 +481,12 @@ int main(int argc, char** argv) {
       return false;
     };
 
+    // One Sampler for the whole run, as the shared runner does: constructing
+    // one per token would reseed its RNG from the wall clock every time. Built
+    // on first use because the vocab size comes from the logits -- this export
+    // publishes no get_vocab_size.
+    std::optional<::executorch::extension::llm::Sampler> sampler;
+
     auto step = [&](const std::vector<int64_t>& ids,
                     const std::vector<int64_t>& pos) {
       auto in =
@@ -490,7 +496,16 @@ int main(int argc, char** argv) {
       if (!out.ok()) {
         throw std::runtime_error("execute failed");
       }
-      return argmax_last(out->at(0).toTensor());
+      const auto& logits = out->at(0).toTensor();
+      if (!sampler) {
+        sampler.emplace(
+            static_cast<int32_t>(logits.size(logits.dim() - 1)), temperature);
+      }
+      stats.on_sampling_begin();
+      const int32_t tok =
+          ::executorch::extension::llm::sample_from_logits(logits, *sampler);
+      stats.on_sampling_end();
+      return static_cast<int64_t>(tok);
     };
 
     // Prefill in chunks, so a ring layer holds window + chunk - 1 slots rather
@@ -498,9 +513,11 @@ int main(int argc, char** argv) {
     // earlier ones exist to place their K/V in the cache.
     auto prefill = [&](const std::vector<int64_t>& ids,
                        const std::vector<int64_t>& pos) {
+      const size_t step_size =
+          prefill_chunk > 0 ? static_cast<size_t>(prefill_chunk) : ids.size();
       int64_t next = 0;
-      for (size_t off = 0; off < ids.size(); off += chunk) {
-        const size_t n = std::min(static_cast<size_t>(chunk), ids.size() - off);
+      for (size_t off = 0; off < ids.size(); off += step_size) {
+        const size_t n = std::min(step_size, ids.size() - off);
         next = step(
             {ids.begin() + off, ids.begin() + off + n},
             {pos.begin() + off, pos.begin() + off + n});
@@ -561,7 +578,7 @@ int main(int argc, char** argv) {
 
         std::string turn;
         wrap_turn(chat, line, /*with_bos=*/position == 0, turn);
-        auto te = tokenizer.encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
+        auto te = tokenizer->encode(turn, /*bos=*/chat == "0" ? 1 : 0, 0);
         if (!te.ok()) {
           std::cerr << "Encode failed\n";
           continue;
@@ -590,7 +607,7 @@ int main(int argc, char** argv) {
 
         uint64_t prev = te->back();
         for (int i = 0; i < budget && !is_stop(next); ++i) {
-          if (auto piece = tokenizer.decode(prev, static_cast<uint64_t>(next));
+          if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
               piece.ok()) {
             std::cout << *piece << std::flush;
           }
@@ -638,31 +655,23 @@ int main(int argc, char** argv) {
                 << (mem - mem_at_load) << " MiB since load)" << std::endl;
     };
 
-    // warmup iters absorb JIT + pool growth; measured iters record tok/s. The
-    // off-graph cache is cleared between iters so each prefill starts at length
-    // 0 (in-graph overwrites by position, so no reset needed there).
-    const int total_iters = warmup + std::max(1, iters);
-    std::vector<double> pf_tps, dc_tps;
-    for (int iter = 0; iter < total_iters; ++iter) {
+    // One optional warmup run to absorb JIT and pool growth, then one measured
+    // run, as the shared LLM runners do. Repeats belong in a harness that
+    // restarts the process: clear() rewinds the sequence but leaves the pools
+    // at their grown size, so an in-process repeat cannot see reallocation.
+    for (int iter = 0; iter < (warmup ? 2 : 1); ++iter) {
+      const bool measured = !warmup || iter == 1;
       if (iter > 0 && off_graph) {
         session->control()->clear();
       }
-      const bool measured = iter >= warmup;
-      const bool print_text = (iter == 0);
-      // Report the footprint from the last iteration: a measured one, and in
-      // steady state once any pool growth has settled.
-      const bool print_mem = (iter == total_iters - 1);
-
-      const auto t0 = std::chrono::steady_clock::now();
+      stats.inference_start_ms = ::executorch::extension::llm::time_in_ms();
       int64_t next = prefill(ids, prefill_pos);
-      const auto t1 = std::chrono::steady_clock::now();
-      if (print_text || print_mem) {
-        std::cout << "\n"; // blank line separating this section from the banner
-      }
-      if (print_mem) {
+      stats.prompt_eval_end_ms = ::executorch::extension::llm::time_in_ms();
+      // prefill returns the first generated token, so TTFT ends with prefill
+      stats.first_token_ms = stats.prompt_eval_end_ms;
+      if (measured) {
+        std::cout << "\n";
         print_footprint("after prefill", prompt_len);
-      }
-      if (print_text) {
         std::cout << "\n"; // blank line before the streamed generation
       }
 
@@ -672,57 +681,28 @@ int main(int argc, char** argv) {
         if (is_stop(next)) {
           break;
         }
-        if (print_text) {
-          if (auto piece = tokenizer.decode(prev, static_cast<uint64_t>(next));
+        if (measured) {
+          if (auto piece = tokenizer->decode(prev, static_cast<uint64_t>(next));
               piece.ok()) {
-            std::cout << *piece << std::flush;
+            ::executorch::extension::llm::safe_printf(piece->c_str());
+            fflush(stdout);
           }
         }
         prev = static_cast<uint64_t>(next);
         ++generated;
         next = step({next}, {prompt_len + i});
       }
-      const auto t2 = std::chrono::steady_clock::now();
-      if (print_text) {
+      stats.inference_end_ms = ::executorch::extension::llm::time_in_ms();
+      if (measured) {
         std::cout << "\n\n"; // close the generation line + blank separator
-      }
-      if (print_mem) {
         // trailing space aligns the colon with the "after prefill" line above
         print_footprint("after decode ", prompt_len + generated);
-      }
-
-      const double pf = ms(t0, t1), dc = ms(t1, t2);
-      const double pf_t = prompt_len / (pf / 1000.0);
-      const double dc_t = dc > 0 ? generated / (dc / 1000.0) : 0.0;
-      std::cout << "\n[iter " << iter << (measured ? "" : " warmup")
-                << "] prefill " << pf_t << " tok/s (" << prompt_len << " tok, "
-                << pf << " ms) | decode " << dc_t << " tok/s (" << generated
-                << " tok, " << dc << " ms)\n";
-      if (measured) {
-        pf_tps.push_back(pf_t);
-        dc_tps.push_back(dc_t);
+        stats.num_prompt_tokens = prompt_len;
+        stats.num_generated_tokens = generated;
       }
     }
-
-    auto summarize = [](const char* label, const std::vector<double>& v) {
-      double m = 0.0;
-      for (double x : v) {
-        m += x;
-      }
-      m /= static_cast<double>(v.size());
-      double var = 0.0;
-      for (double x : v) {
-        var += (x - m) * (x - m);
-      }
-      const double sd = v.size() > 1
-          ? std::sqrt(var / static_cast<double>(v.size() - 1))
-          : 0.0;
-      std::cout << label << ": " << m << " +/- " << sd
-                << " tok/s (n=" << v.size() << ")\n";
-    };
-    std::cout << "\n";
-    summarize("prefill", pf_tps);
-    summarize("decode ", dc_tps);
+    std::cout << std::endl;
+    ::executorch::extension::llm::print_report(stats);
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "Error: " << e.what() << std::endl;
