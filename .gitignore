@@ -84,6 +84,7 @@ xcuserdata/
 /src/executorch/share/
 /src/executorch/version.py
 *_etdump
+CMakeUserPresets.json
 
 # Android
 *.aar
