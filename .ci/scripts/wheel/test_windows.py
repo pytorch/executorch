@@ -10,7 +10,6 @@ import platform
 from typing import List
 
 import test_base
-
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models import Backend, Model, MODEL_NAME_TO_MODEL
@@ -68,6 +67,8 @@ def run_tests(model_tests: List[ModelTest]) -> None:
 
 
 if __name__ == "__main__":
+    test_base.test_uv_wheel_install()
+
     if platform.system() == "Windows":
         registered = _get_registered_backend_names()
         # Vulkan backend is optional: only present when the wheel was built with
