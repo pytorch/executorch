@@ -71,12 +71,7 @@ def test_dialect_mv2(test_case):
     assert torch.argmax(ref) == torch.argmax(result), "Mismatch in model outputs"
 
 
-@parametrize(
-    "test_case",
-    test_cases,
-    xfails={"mobilenet_v2": "MLETORCH-XXX - Investigate mobilenet_v2 flakiness"},
-    strict=False,
-)
+@parametrize("test_case", test_cases)
 def test_implementation_mv2(test_case):
     inputs = test_case.get_example_inputs()
     tester = CortexMTester(test_case.model, inputs)
