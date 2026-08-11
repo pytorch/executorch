@@ -6,7 +6,6 @@
 
 # pyre-unsafe
 
-import logging
 from typing import Dict
 
 import torch
@@ -49,14 +48,6 @@ class ViewCopyVisitor(NodeVisitor):
 
         # output
         output_id = vals_to_ids[node]
-
-        logging.warning(
-            "XNNPACK static reshape debug_handle=%s target=%s input=%s output=%s",
-            debug_handle,
-            node.target,
-            xnn_graph.xvalues[input_id],
-            xnn_graph.xvalues[output_id],
-        )
 
         # input shape
         check_or_raise(

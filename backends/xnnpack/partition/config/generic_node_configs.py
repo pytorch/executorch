@@ -12,6 +12,7 @@ from typing import cast, List, Optional
 
 import numpy as np
 import torch
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
     XNNPartitionerConfig,
@@ -417,6 +418,25 @@ class ViewCopyConfig(GenericNodePartitionerConfig):
         """
         if not self.check_common_constraints(node, ep):
             return False
+
+        input_node = get_input_node(node, 0)
+        output_node = next(iter(node.users), None)
+        if (
+            is_dequant(input_node)
+            and output_node is not None
+            and is_quant(output_node)
+        ):
+            input_quant_params = QuantParams.from_q_dq_node(input_node, ep)
+            output_quant_params = QuantParams.from_q_dq_node(output_node, ep)
+            if not input_quant_params.matches(output_quant_params):
+                why(
+                    node,
+                    reason=(
+                        "XNNPACK static reshape requires matching input and "
+                        "output quantization parameters."
+                    ),
+                )
+                return False
 
         new_shape = node.args[1]
 

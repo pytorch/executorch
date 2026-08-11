@@ -12,11 +12,17 @@ import torch
 import torch.nn.functional as F
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge, to_edge_transform_and_lower
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+from executorch.backends.xnnpack.utils.configs import get_transform_passes
+from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from torch.export import export
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestXnnpackPartitioner(unittest.TestCase):
@@ -87,6 +93,62 @@ class TestXnnpackPartitioner(unittest.TestCase):
 
         log_contents = log_capture_string.getvalue()
         self.assertNotIn("DEPRECATION WARNING", log_contents)
+
+    def test_quantized_view_with_mismatched_qparams_stays_portable(self):
+        class ConvPoolFlattenLinear(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 4, 3)
+                self.linear = torch.nn.Linear(4, 2)
+
+            def forward(self, x):
+                x = self.conv(x)
+                x = F.adaptive_avg_pool2d(x, (1, 1))
+                return self.linear(torch.flatten(x, 1))
+
+        inputs = (torch.randn(1, 3, 8, 8),)
+        exported = export(ConvPoolFlattenLinear().eval(), inputs, strict=False)
+        quantizer = XNNPACKQuantizer().set_global(
+            get_symmetric_quantization_config(is_per_channel=False)
+        )
+        prepared = prepare_pt2e(exported.module(), quantizer)
+        prepared(*inputs)
+        converted = convert_pt2e(prepared)
+
+        output_quant = next(
+            node
+            for node in converted.graph.nodes
+            if "quantize_per_tensor" in str(node.target)
+            and any("flatten" in str(inp.target) for inp in node.all_input_nodes)
+        )
+        output_scale = output_quant.args[1] * 2
+        output_quant.args = (
+            output_quant.args[0],
+            output_scale,
+            *output_quant.args[2:],
+        )
+        output_dequant = next(iter(output_quant.users))
+        output_dequant.args = (
+            output_dequant.args[0],
+            output_scale,
+            *output_dequant.args[2:],
+        )
+        converted.recompile()
+
+        lowered = to_edge_transform_and_lower(
+            export(converted, inputs, strict=False),
+            partitioner=[XnnpackPartitioner()],
+            transform_passes=get_transform_passes(),
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=True
+            ),
+        )
+        self.assertTrue(
+            any(
+                "view_copy" in str(node.target)
+                for node in lowered.exported_program().graph.nodes
+            )
+        )
 
     def test_multi_method_partitioning_with_shared_weights(self):
         """

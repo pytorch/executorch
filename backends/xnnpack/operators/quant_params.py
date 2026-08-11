@@ -163,6 +163,26 @@ class QuantParams:
             f")"
         )
 
+    def matches(self, other: QuantParams) -> bool:
+        def values_match(lhs, rhs) -> bool:
+            if isinstance(lhs, torch.Tensor) and isinstance(rhs, torch.Tensor):
+                return torch.equal(lhs, rhs)
+            return bool(lhs == rhs)
+
+        return (
+            self.per_channel == other.per_channel
+            and self.per_channel_group == other.per_channel_group
+            and values_match(self.scale, other.scale)
+            and values_match(self.zp, other.zp)
+            and self.axis == other.axis
+            and self.dtype == other.dtype
+            and self.qmin == other.qmin
+            and self.qmax == other.qmax
+            and self.is_dynamic == other.is_dynamic
+            and self.num_nonbatch_dims == other.num_nonbatch_dims
+            and self.group_size == other.group_size
+        )
+
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
         if tensor.dtype == self.dtype:
