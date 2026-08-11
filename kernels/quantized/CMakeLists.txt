@@ -137,8 +137,8 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         )
       endif()
       set_target_properties(
-        quantized_ops_aot_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
-                                         INSTALL_RPATH "${RPATH}"
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                "${RPATH}"
       )
     endif()
   endif()

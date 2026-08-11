@@ -1174,13 +1174,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  # setup.py packages the library directly from the CMake build tree. Build it
-  # with its install RPATH so paths from the build environment are not embedded
-  # in the wheel.
   set_target_properties(
-    portable_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
-                            INSTALL_RPATH "${_portable_lib_rpath}"
+    portable_lib PROPERTIES INSTALL_RPATH "${_portable_lib_rpath}"
   )
+  if(NOT APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_rpath}"
+    )
+  endif()
 
   install(
     TARGETS portable_lib

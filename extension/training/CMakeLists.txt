@@ -92,8 +92,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
   set_target_properties(
-    _training_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
-                             INSTALL_RPATH "${_training_lib_rpath}"
+    _training_lib PROPERTIES INSTALL_RPATH "${_training_lib_rpath}"
   )
 
   install(TARGETS _training_lib

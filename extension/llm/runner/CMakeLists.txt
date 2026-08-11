@@ -141,8 +141,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     )
   endif()
   set_target_properties(
-    _llm_runner PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH
-                                                         "${RPATH}"
+    _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"
   )
   # Add include directories
   target_include_directories(
