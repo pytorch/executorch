@@ -73,7 +73,6 @@ class NarrowToCoreAIDtypesPass:
                 )
             placeholder.replace_all_uses_with(cast)
             cast.args = (placeholder,)  # restore the cast's own (detached) input
-            cast.meta["val"] = val.to(narrow_dtype)
 
         # 2. Re-propagate dtypes through the (now-32-bit) interior.
         FakeTensorProp(graph_module).propagate(*[p.meta["val"] for p in placeholders])
@@ -88,6 +87,8 @@ class NarrowToCoreAIDtypesPass:
             if isinstance(cur, torch.Tensor) and cur.dtype != orig_dtype:
                 with graph.inserting_before(output_node):
                     widen = graph.call_function(to_copy, (arg,), {"dtype": orig_dtype})
+                # Set by hand: this runs after the propagate above, so nothing
+                # else fills it in.
                 widen.meta["val"] = cur.to(orig_dtype)
                 out_args[i] = widen
         output_node.args = (tuple(out_args),)
