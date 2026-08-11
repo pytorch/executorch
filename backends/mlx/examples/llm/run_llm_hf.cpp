@@ -7,20 +7,17 @@
  */
 
 // C++ runner for HuggingFace LLMs on the MLX backend. Unlike the pybindings
-// run_llm_hf.py, it can bind the off-graph KV cache: with --kv-cache it builds
-// an MLXSequenceCache, installs it in the process-global registry, and passes
-// its cache_key as a load-time backend option (the rendezvous init() reads).
-// Its shape comes from constant methods the export publishes; the flags below
-// only choose policy. Without --kv-max-capacity it runs an in-graph model
+// run_llm_hf.py, it can bind the off-graph KV cache: with --kv-max-capacity it
+// builds an MLXSequenceCache, installs it in the process-global registry, and
+// passes its cache_key as a load-time backend option (the rendezvous init()
+// reads). Its shape comes from constant methods the export publishes; the flags
+// below only choose policy. Without --kv-max-capacity it runs an in-graph model
 // unchanged -- so the same binary compares both cache paths. Greedy decode.
 //
 // Usage:
-//   run_llm_hf --pte <model.pte> --tokenizer <tokenizer.json> \
-//       [--kv-max-capacity N] [--kv-storage-dtype bf16|fp16|fp32] \
-//       [--kv-initial-capacity N] [--kv-max-write N] \
-//       [--kv-windows <w0,w1,...>] \
-//       [--prompt "..."] [--max-new-tokens N] [--chat llama3|gemma|gemma4|0] \
-//       [--warmup N] [--iters N] [--interactive 1]
+//   run_llm_hf --pte <model.pte> --tokenizer <tokenizer.json> [flags]
+//
+// --help lists every flag with its default.
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wconversion"
@@ -37,15 +34,68 @@
 
 #include <pytorch/tokenizers/hf_tokenizer.h>
 
+#include <gflags/gflags.h>
 #include <mlx/memory.h>
 
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
+
+DEFINE_string(pte, "", "Model .pte file.");
+DEFINE_string(tokenizer, "", "tokenizer.json for the model.");
+DEFINE_string(prompt, "The quick brown fox", "Prompt to generate from.");
+DEFINE_int32(max_new_tokens, 50, "Tokens to generate, excluding the prompt.");
+DEFINE_string(
+    chat,
+    "llama3",
+    "Instruct chat template to wrap the prompt in: llama3, gemma, gemma4, or 0 "
+    "to disable. Raw text confuses an instruct model into emitting turn "
+    "markers.");
+DEFINE_int32(
+    kv_max_capacity,
+    0,
+    "Off-graph: how much history the cache may hold. Setting it selects the "
+    "off-graph path; the cache's shape comes from the .pte, so the kv_ flags "
+    "only choose policy.");
+DEFINE_string(
+    kv_storage_dtype,
+    "bf16",
+    "Off-graph: KV storage dtype, bf16|fp16|fp32.");
+DEFINE_int32(
+    kv_initial_capacity,
+    -1,
+    "Off-graph: the cache pool's starting size; it grows (doubling) up to "
+    "capacity. -1 keeps the CacheConfig default. Small values force growth.");
+DEFINE_int32(
+    prefill_chunk_size,
+    512,
+    "Tokens per prefill step. This is the largest single write, so it also "
+    "sizes a ring layer to window + chunk - 1 -- without it a long prompt "
+    "would need a ring as large as itself, defeating the window. Must not "
+    "exceed the sequence length the .pte was exported with.");
+DEFINE_string(
+    kv_windows,
+    "",
+    "Off-graph: impose an attention pattern other than the model's own, e.g. "
+    "\"512\" to make every layer sliding.");
+DEFINE_bool(
+    interactive,
+    false,
+    "Multi-turn chat on stdin instead of a single prompt; off-graph only.");
+DEFINE_int32(
+    warmup,
+    0,
+    "Throwaway iterations before measuring, to absorb JIT and pool growth.");
+DEFINE_int32(
+    iters,
+    1,
+    "Measured iterations; reports per-iter tok/s and a mean +/- stddev "
+    "summary.");
 
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::Module;
@@ -127,6 +177,37 @@ std::optional<std::vector<int>> const_ints(Module& module, const char* name) {
   return std::vector<int>(p, p + t.numel());
 }
 
+// Fill in the cache geometry the export published: get_n_caches, then one
+// entry per cache in get_kv_heads / get_head_dims / get_windows (0 = flat).
+// Only the shape comes from the .pte -- capacity, dtype and any override stay
+// with the flags. False means this is not an off-graph model.
+bool read_kv_layout(Module& module, cache::CacheConfig& cfg) {
+  const auto n_caches = const_int(module, "get_n_caches");
+  const auto kv_heads = const_ints(module, "get_kv_heads");
+  const auto head_dims = const_ints(module, "get_head_dims");
+  const auto windows = const_ints(module, "get_windows");
+  if (!n_caches || !kv_heads || !head_dims || !windows) {
+    return false;
+  }
+  const size_t n = static_cast<size_t>(*n_caches);
+  if (kv_heads->size() != n || head_dims->size() != n || windows->size() != n) {
+    return false;
+  }
+  cfg.n_layers = static_cast<int>(n);
+  cfg.layers.clear();
+  cfg.layers.reserve(n);
+  for (size_t l = 0; l < n; ++l) {
+    cache::LayerConfig lc{};
+    lc.n_kv_heads = (*kv_heads)[l];
+    lc.head_dim = (*head_dims)[l];
+    lc.policy = (*windows)[l] > 0
+        ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
+        : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
+    cfg.layers.push_back(lc);
+  }
+  return true;
+}
+
 // Replace the model's own attention pattern with `spec`, a comma-separated list
 // of windows repeating over the caches (0 = flat). One entry makes every layer
 // sliding. Only the policy changes; each cache keeps the geometry the .pte
@@ -192,6 +273,36 @@ std::string dtype_name(int st) {
   }
 }
 
+// Announce the cache shape: the same .pte runs under whatever config this
+// invocation asks for -- capacity, storage dtype, flat/ring layers -- with no
+// re-export. The footprint lines printed later then show it growing at runtime.
+void print_cache_summary(const cache::CacheConfig& cfg) {
+  // Ring layers grouped by window: --kv-windows can give each layer its own,
+  // and the pools are sized per layer, so a single number would misreport them.
+  std::map<int, int> ring;
+  int flat = 0;
+  for (int l = 0; l < cfg.n_layers; ++l) {
+    const cache::LayerConfig& lc =
+        cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
+    if (lc.policy.kind == cache::LayerPolicy::Kind::Ring) {
+      ++ring[lc.policy.window];
+    } else {
+      ++flat;
+    }
+  }
+  std::cout << "\n[cache] off-graph seq | capacity=" << cfg.capacity
+            << " initial=" << cfg.initial_capacity
+            << " kv_dtype=" << dtype_name(cfg.kv_dtype);
+  if (cfg.max_write) {
+    std::cout << " max_write=" << *cfg.max_write;
+  }
+  std::cout << "\n        " << cfg.n_layers << " layers: " << flat << " flat";
+  for (const auto& [window, n] : ring) {
+    std::cout << " + " << n << " ring(window " << window << ")";
+  }
+  std::cout << std::endl;
+}
+
 // One user turn wrapped in the model's instruct template. Returns false for an
 // unknown template name. The leading BOS belongs to the first turn only, so a
 // continuing conversation passes with_bos=false.
@@ -219,48 +330,24 @@ bool wrap_turn(
   return true;
 }
 
-std::string
-arg(int argc, char** argv, const std::string& key, const std::string& def) {
-  for (int i = 1; i + 1 < argc; ++i) {
-    if (key == argv[i]) {
-      return argv[i + 1];
-    }
-  }
-  return def;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {
-  const std::string pte = arg(argc, argv, "--pte", "");
-  const std::string tok_path = arg(argc, argv, "--tokenizer", "");
-  // Off-graph: how much history the cache may hold. Its presence selects the
-  // off-graph path; the cache's shape comes from the .pte, so only policy is
-  // set here.
-  const int kv_capacity = std::stoi(arg(argc, argv, "--kv-max-capacity", "0"));
-  const std::string kv_dtype = arg(argc, argv, "--kv-storage-dtype", "bf16");
-  // Optional: impose an attention pattern other than the model's own, e.g.
-  // "512" to make every layer sliding.
-  const std::string kv_windows = arg(argc, argv, "--kv-windows", "");
-  const std::string prompt = arg(argc, argv, "--prompt", "The quick brown fox");
-  const int max_new = std::stoi(arg(argc, argv, "--max-new-tokens", "50"));
-  // Instruct chat template to wrap the prompt in: llama3 (default) or gemma.
-  // Raw text confuses an instruct model into emitting turn markers; 0 disables.
-  const std::string chat = arg(argc, argv, "--chat", "llama3");
-  // Off-graph only: the cache pool's starting size; it grows (doubling) up to
-  // capacity. -1 keeps the CacheConfig default. Small values force growth.
-  const int initial_capacity =
-      std::stoi(arg(argc, argv, "--kv-initial-capacity", "-1"));
-  // Off-graph only: the largest single step, which sizes a ring layer's slots
-  // to window + max_write - 1. -1 lets each ring layer use its own window.
-  // Prefill goes in one step, so this must be at least the prompt length.
-  const int max_write = std::stoi(arg(argc, argv, "--kv-max-write", "-1"));
-  // Benchmarking: `warmup` throwaway iters (absorb JIT + pool growth) then
-  // `iters` measured; per-iter tok/s plus a mean +/- stddev summary.
-  // Multi-turn chat on stdin instead of a single prompt; off-graph only.
-  const bool interactive = arg(argc, argv, "--interactive", "0") != "0";
-  const int warmup = std::stoi(arg(argc, argv, "--warmup", "0"));
-  const int iters = std::stoi(arg(argc, argv, "--iters", "1"));
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+  const std::string& pte = FLAGS_pte;
+  const std::string& tok_path = FLAGS_tokenizer;
+  const std::string& kv_dtype = FLAGS_kv_storage_dtype;
+  const std::string& kv_windows = FLAGS_kv_windows;
+  const std::string& prompt = FLAGS_prompt;
+  const std::string& chat = FLAGS_chat;
+  const int kv_capacity = FLAGS_kv_max_capacity;
+  const int max_new = FLAGS_max_new_tokens;
+  const int initial_capacity = FLAGS_kv_initial_capacity;
+  const int chunk = FLAGS_prefill_chunk_size;
+  const bool interactive = FLAGS_interactive;
+  const int warmup = FLAGS_warmup;
+  const int iters = FLAGS_iters;
   if (pte.empty() || tok_path.empty()) {
     std::cerr << "Required: --pte <file> --tokenizer <file>  "
                  "[--kv-max-capacity N for off-graph models]\n";
@@ -303,26 +390,10 @@ int main(int argc, char** argv) {
                   << " (bf16|fp16|fp32)" << std::endl;
         return 1;
       }
-      const auto n_caches = const_int(module, "get_n_caches");
-      const auto kv_heads = const_ints(module, "get_kv_heads");
-      const auto head_dims = const_ints(module, "get_head_dims");
-      const auto windows = const_ints(module, "get_windows");
-      if (!n_caches || !kv_heads || !head_dims || !windows) {
+      if (!read_kv_layout(module, cfg)) {
         std::cerr << "No KV cache layout in " << pte
                   << "; re-export with --use-offgraph-cache" << std::endl;
         return 1;
-      }
-      cfg.n_layers = static_cast<int>(*n_caches);
-      cfg.layers.clear();
-      cfg.layers.reserve(static_cast<size_t>(cfg.n_layers));
-      for (size_t l = 0; l < static_cast<size_t>(cfg.n_layers); ++l) {
-        cache::LayerConfig lc{};
-        lc.n_kv_heads = (*kv_heads)[l];
-        lc.head_dim = (*head_dims)[l];
-        lc.policy = (*windows)[l] > 0
-            ? cache::LayerPolicy{cache::LayerPolicy::Kind::Ring, (*windows)[l]}
-            : cache::LayerPolicy{cache::LayerPolicy::Kind::Flat, 0};
-        cfg.layers.push_back(lc);
       }
       if (!kv_windows.empty() && !apply_window_override(kv_windows, cfg)) {
         std::cerr << "Invalid --kv-windows: " << kv_windows << std::endl;
@@ -335,9 +406,8 @@ int main(int argc, char** argv) {
       if (initial_capacity >= 0) {
         cfg.initial_capacity = initial_capacity;
       }
-      if (max_write > 0) {
-        cfg.max_write = max_write;
-      }
+      // Prefill is chunked, so the chunk is the largest step the cache sees.
+      cfg.max_write = chunk;
       auto built = cache::CacheBuilderRegistry::global().build(
           ::executorch::backends::mlx::kMLXBackendId, "seq", cfg);
       if (!built.ok()) {
@@ -347,33 +417,7 @@ int main(int argc, char** argv) {
       }
       session.emplace(cache::make_unique_key(), built.get());
 
-      // Announce the cache shape: the same .pte runs under whatever config this
-      // invocation asks for -- capacity, storage dtype, flat/ring layers --
-      // with no re-export. The footprint lines below then show it growing at
-      // runtime.
-      int flat = 0, ring = 0, ring_window = 0;
-      for (int l = 0; l < cfg.n_layers; ++l) {
-        const cache::LayerConfig& lc =
-            cfg.layers.size() == 1 ? cfg.layers.front() : cfg.layers[l];
-        if (lc.policy.kind == cache::LayerPolicy::Kind::Ring) {
-          ++ring;
-          ring_window = lc.policy.window;
-        } else {
-          ++flat;
-        }
-      }
-      std::cout << "\n[cache] off-graph seq | capacity=" << cfg.capacity
-                << " initial=" << cfg.initial_capacity
-                << " kv_dtype=" << dtype_name(cfg.kv_dtype);
-      if (cfg.max_write) {
-        std::cout << " max_write=" << *cfg.max_write;
-      }
-      std::cout << "\n        " << cfg.n_layers << " layers: " << flat
-                << " flat";
-      if (ring > 0) {
-        std::cout << " + " << ring << " ring(window " << ring_window << ")";
-      }
-      std::cout << std::endl;
+      print_cache_summary(cfg);
       if (mlx_opts.set_option(
               ::executorch::backends::mlx::kCacheKeyKey,
               session->key().c_str()) != Error::Ok ||
@@ -418,11 +462,13 @@ int main(int argc, char** argv) {
 
     // Stop on end-of-text and (for chat) the turn-end token <|eot_id|>.
     std::vector<uint64_t> stop_ids = {tokenizer.eos_tok()};
+    std::optional<int64_t> turn_end_id;
     if (chat != "0") {
       const char* turn_end = chat == "llama3" ? "<|eot_id|>"
           : chat == "gemma4"                  ? "<turn|>"
                                               : "<end_of_turn>";
       if (auto eot = tokenizer.piece_to_id(turn_end); eot.ok()) {
+        turn_end_id = static_cast<int64_t>(*eot);
         stop_ids.push_back(*eot);
       }
     }
@@ -445,6 +491,21 @@ int main(int argc, char** argv) {
         throw std::runtime_error("execute failed");
       }
       return argmax_last(out->at(0).toTensor());
+    };
+
+    // Prefill in chunks, so a ring layer holds window + chunk - 1 slots rather
+    // than growing with the prompt. Only the last chunk's token is kept; the
+    // earlier ones exist to place their K/V in the cache.
+    auto prefill = [&](const std::vector<int64_t>& ids,
+                       const std::vector<int64_t>& pos) {
+      int64_t next = 0;
+      for (size_t off = 0; off < ids.size(); off += chunk) {
+        const size_t n = std::min(static_cast<size_t>(chunk), ids.size() - off);
+        next = step(
+            {ids.begin() + off, ids.begin() + off + n},
+            {pos.begin() + off, pos.begin() + off + n});
+      }
+      return next;
     };
 
     // Multi-turn: history stays in the cache, so each turn only prefills its
@@ -524,7 +585,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < n; ++i) {
           tpos.push_back(position + i);
         }
-        int64_t next = step(tin, tpos);
+        int64_t next = prefill(tin, tpos);
         position += n;
 
         uint64_t prev = te->back();
@@ -535,6 +596,14 @@ int main(int argc, char** argv) {
           }
           prev = static_cast<uint64_t>(next);
           next = step({next}, {position});
+          ++position;
+        }
+        // The turn-end token stops generation, so it is neither printed nor
+        // fed back -- but the next turn opens without closing this one, and an
+        // unterminated assistant turn compounds over a session. Commit it, at
+        // the cost of one extra step per turn.
+        if (turn_end_id && next == *turn_end_id && control->can_extend(1)) {
+          step({next}, {position});
           ++position;
         }
         std::cout << "\n[" << position << "/" << control->capacity()
@@ -585,7 +654,7 @@ int main(int argc, char** argv) {
       const bool print_mem = (iter == total_iters - 1);
 
       const auto t0 = std::chrono::steady_clock::now();
-      int64_t next = step(ids, prefill_pos);
+      int64_t next = prefill(ids, prefill_pos);
       const auto t1 = std::chrono::steady_clock::now();
       if (print_text || print_mem) {
         std::cout << "\n"; // blank line separating this section from the banner

@@ -30,8 +30,13 @@ list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
+# As in examples/models/llama: point gflags_DIR at the copy the executorch build
+# configured, since a separate find_package() project cannot see it.
+set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../../third-party/gflags)
+find_package(gflags REQUIRED)
+
 set(link_libraries executorch extension_module extension_tensor
-                   extension_llm_cache
+                   extension_llm_cache gflags
 )
 
 if(NOT TARGET mlxdelegate)
@@ -55,3 +60,8 @@ target_include_directories(
                         ${_flatbuffers_include}
 )
 target_link_libraries(mlx_run_llm_hf PUBLIC ${link_libraries})
+
+# The copy helper is gated on EXECUTORCH_BUILD_MLX, which the installed config
+# does not set; reaching here means mlxdelegate exists.
+set(EXECUTORCH_BUILD_MLX ON)
+executorch_target_copy_mlx_metallib(mlx_run_llm_hf)
