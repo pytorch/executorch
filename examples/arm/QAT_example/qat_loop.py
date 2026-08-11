@@ -51,8 +51,8 @@ EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
 from executorch.backends.arm.quantizer import (  # noqa: E402
-    get_symmetric_quantization_config,
     get_uint8_io_quantization_config,
+    get_vgf_snorm_quantization_config,
     VgfQuantizer,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner  # noqa: E402
@@ -663,7 +663,7 @@ def make_quantizer(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
-    global_config = get_symmetric_quantization_config(is_qat=is_qat)
+    global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
     quantizer.set_global(global_config)
 
     if io_quantization == "int8":
