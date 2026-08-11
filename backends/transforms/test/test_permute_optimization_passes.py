@@ -810,6 +810,89 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             "permute_view_add_sub_mul_view_permute",
         )
 
+    def test_permute_constant_pad_nd_permute(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 64, 64, 3)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        pad = builder.call_operator(
+            op=exir_ops.edge.aten.constant_pad_nd.default,
+            args=(p1, [0, 0, 0, 0, 0, 1], 0.0),
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(pad, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.constant_pad_nd.default),
+            1,
+        )
+
+        pad_nodes = [
+            node
+            for node in result.graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.constant_pad_nd.default
+        ]
+        self.assertEqual(pad_nodes[0].args[1], [0, 1])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "permute_constant_pad_nd_permute",
+        )
+
+    def test_permute_aten_pad_permute(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 64, 64, 3)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        pad = builder.call_operator(
+            op=exir_ops.edge.aten.pad.default,
+            args=(p1, [0, 0, 0, 0, 0, 1], "constant", 0.0),
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(pad, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.pad.default), 1
+        )
+
+        pad_nodes = [
+            node
+            for node in result.graph_module.graph.nodes
+            if node.target == exir_ops.edge.aten.pad.default
+        ]
+        self.assertEqual(pad_nodes[0].args[1], [0, 1])
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "permute_aten_pad_permute",
+        )
+
     def test_permute_squeeze_clamp_add_permute(self) -> None:
         """4D permute → squeeze(view) → hardtanh → add(with self) → 3D permute.
         Tests clamp + add interacting across a squeeze boundary."""

@@ -346,6 +346,148 @@ def _export_with_custom_components(
     _save_program(executorch_program, output_path)
 
 
+def _export_with_offgraph_cache(
+    model_id: str,
+    revision: Optional[str],
+    output_path: str,
+    max_seq_len: int,
+    dtype: str,
+    qlinear: Optional[str],
+    qembedding: Optional[str],
+    no_tie_word_embeddings: bool = False,
+    qlinear_group_size: Optional[int] = None,
+    qembedding_group_size: Optional[int] = None,
+) -> None:
+    """
+    Export using the off-graph KV cache op (kvcache::update_and_attend).
+
+    Unlike the custom-components path, the cache is not a graph tensor: the model
+    is run with use_cache=False (no StaticCache wrapper, no HFStaticCache swap),
+    so each attention layer emits an update_and_attend node fed this step's k/v.
+    The cache is created and bound at runtime via a cache_key.
+    """
+    import executorch.exir as exir
+    from executorch.backends.mlx import MLXPartitioner
+    from executorch.backends.mlx.llm.hf_attention import (
+        OffGraphExportWrapper,
+        register_mlx_offgraph_attention,
+    )
+    from executorch.backends.mlx.passes import get_default_passes
+    from executorch.exir import EdgeCompileConfig
+    from executorch.exir.capture._config import ExecutorchBackendConfig
+    from executorch.exir.passes import MemoryPlanningPass
+    from transformers import AutoModelForCausalLM
+
+    torch_dtype_map = {
+        "fp32": torch.float32,
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+    }
+    torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
+
+    register_mlx_offgraph_attention()
+    logger.info("Registered MLX off-graph attention (update_and_attend)")
+
+    logger.info(f"Loading HuggingFace model: {model_id}")
+    load_kwargs = {
+        "torch_dtype": torch_dtype,
+        "low_cpu_mem_usage": True,
+        "attn_implementation": "mlx_offgraph",
+    }
+    if revision is not None:
+        load_kwargs["revision"] = revision
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    model.eval()
+
+    from executorch.backends.mlx.llm.quantization import quantize_model_
+
+    quantize_model_(
+        model,
+        qlinear_config=qlinear,
+        qlinear_group_size=qlinear_group_size,
+        qembedding_config=qembedding,
+        qembedding_group_size=qembedding_group_size,
+        tie_word_embeddings=getattr(model.config, "tie_word_embeddings", False)
+        and not no_tie_word_embeddings,
+    )
+
+    exportable = OffGraphExportWrapper(model)
+
+    # The cache is built before the graph runs, so the runtime cannot learn its
+    # shape from the model. Publish it, one entry per cache:
+    #   n_caches  how many caches to allocate
+    #   kv_heads  KV heads per cache
+    #   head_dims head dim per cache -- gemma-4 mixes 256 and 512
+    #   windows   sliding window per cache, 0 = flat
+    from executorch.backends.mlx.llm.cache import resolve_hf_cache_layout
+
+    # resolve_hf_cache_layout drops the KV-shared tail, so these are indexed by
+    # cache -- the same indexing _cache_id maps layers onto.
+    layer_types, cache_kv_heads, cache_head_dims = resolve_hf_cache_layout(model.config)
+    text_config = model.config.get_text_config()
+    sliding_window = getattr(text_config, "sliding_window", None) or 0
+    cache_windows = [
+        sliding_window if t == "sliding_attention" else 0 for t in layer_types
+    ]
+    kv_metadata = {
+        # The cache count, not num_hidden_layers: gemma-4 E2B shares KV across
+        # its tail, so 15 caches for 35 layers.
+        "get_n_caches": len(layer_types),
+        "get_kv_heads": torch.tensor(cache_kv_heads, dtype=torch.int32),
+        "get_head_dims": torch.tensor(cache_head_dims, dtype=torch.int32),
+        "get_windows": torch.tensor(cache_windows, dtype=torch.int32),
+    }
+    logger.info(
+        f"KV cache layout: {len(layer_types)} caches, "
+        f"{sum(1 for w in cache_windows if w)} sliding (window {sliding_window})"
+    )
+
+    logger.info("Exporting model with torch.export...")
+    seq_length = 3
+    example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
+    example_cache_position = torch.arange(seq_length, dtype=torch.long)
+
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_seq_len - 1)
+    dynamic_shapes = {
+        "input_ids": {1: seq_len_dim},
+        "cache_position": {0: seq_len_dim},
+    }
+
+    with torch.no_grad():
+        exported_program = torch.export.export(
+            exportable,
+            args=(),
+            kwargs={
+                "input_ids": example_input_ids,
+                "cache_position": example_cache_position,
+            },
+            dynamic_shapes=dynamic_shapes,
+            strict=True,
+        )
+
+    logger.info("Delegating to MLX backend...")
+    edge_program = exir.to_edge_transform_and_lower(
+        {"forward": exported_program},
+        transform_passes=get_default_passes(),
+        constant_methods=kv_metadata,
+        partitioner=[MLXPartitioner()],
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False,
+            _skip_dim_order=True,
+        ),
+    )
+
+    logger.info("Exporting to ExecuTorch...")
+    executorch_program = edge_program.to_executorch(
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
+        )
+    )
+
+    _save_program(executorch_program, output_path)
+
+
 def _save_program(executorch_program, output_path: str) -> None:
     """Save the ExecuTorch program to disk."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -366,6 +508,7 @@ def export_llama_hf(
     qembedding: Optional[str] = None,
     use_custom_sdpa: bool = False,
     use_custom_kv_cache: bool = False,
+    use_offgraph_cache: bool = False,
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
@@ -383,7 +526,26 @@ def export_llama_hf(
         use_custom_sdpa: Use MLX custom SDPA (mlx::custom_sdpa)
         use_custom_kv_cache: Use MLX custom KV cache (mlx::kv_cache_update)
     """
-    if use_custom_sdpa or use_custom_kv_cache:
+    if use_offgraph_cache:
+        if use_custom_sdpa or use_custom_kv_cache:
+            raise ValueError(
+                "--use-offgraph-cache is exclusive with --use-custom-sdpa / "
+                "--use-custom-kv-cache (it replaces both)"
+            )
+        logger.info("Using off-graph KV cache (update_and_attend)")
+        _export_with_offgraph_cache(
+            model_id=model_id,
+            revision=revision,
+            output_path=output_path,
+            max_seq_len=max_seq_len,
+            dtype=dtype,
+            qlinear=qlinear,
+            qembedding=qembedding,
+            no_tie_word_embeddings=no_tie_word_embeddings,
+            qlinear_group_size=qlinear_group_size,
+            qembedding_group_size=qembedding_group_size,
+        )
+    elif use_custom_sdpa or use_custom_kv_cache:
         logger.info(
             f"Using custom components: sdpa={use_custom_sdpa}, "
             f"kv_cache={use_custom_kv_cache}"
@@ -468,6 +630,13 @@ def main():
         default=False,
         help="Use MLX custom KV cache (mlx::kv_cache_update)",
     )
+    parser.add_argument(
+        "--use-offgraph-cache",
+        action="store_true",
+        default=False,
+        help="Use the off-graph KV cache op (kvcache::update_and_attend); "
+        "replaces --use-custom-sdpa/--use-custom-kv-cache",
+    )
 
     args = parser.parse_args()
 
@@ -481,6 +650,7 @@ def main():
         qembedding=args.qembedding,
         use_custom_sdpa=args.use_custom_sdpa,
         use_custom_kv_cache=args.use_custom_kv_cache,
+        use_offgraph_cache=args.use_offgraph_cache,
         no_tie_word_embeddings=args.no_tie_word_embeddings,
         qlinear_group_size=args.qlinear_group_size,
         qembedding_group_size=args.qembedding_group_size,
