@@ -54,7 +54,9 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.constant_pad_nd.default,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.pad.default,
             exir_ops.edge.aten.sum.dim_IntList,
             exir_ops.edge.aten.slice_copy.Tensor,
         }
@@ -79,6 +81,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     _UNSQUEEZE_OPS = (exir_ops.edge.aten.unsqueeze_copy.default,)
 
     _SQUEEZE_OPS = (exir_ops.edge.aten.squeeze_copy.dim,)
+
+    _PAD_OPS = (
+        exir_ops.edge.aten.constant_pad_nd.default,
+        exir_ops.edge.aten.pad.default,
+    )
 
     @staticmethod
     def _find_extra_one(longer: list[int], shorter: list[int]) -> int:
@@ -144,6 +151,19 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Adapts from input-rank to output-rank space (downstream direction).
         Returns the adjusted permutation, or None if not possible.
         """
+        inp = node.args[0]
+        assert isinstance(inp, torch.fx.Node)
+        inp_val = inp.meta.get("val")
+        if inp_val is None:
+            return None
+        in_shape = inp_val.shape
+        # ``permute`` must live in the view's input-rank space. It does not when
+        # the view is reached by upstream traversal, where the permutation is
+        # expressed at the view's output rank; bail out so the caller drops the
+        # subgraph instead of indexing out of range or silently mis-adapting.
+        if len(permute) != len(in_shape):
+            return None
+
         # Handle explicit unsqueeze_copy(dim)
         if node.target in self._UNSQUEEZE_OPS:
             dim = cast(int, node.args[1])
@@ -176,9 +196,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return new_perm
 
         # Handle view_copy (squeeze/unsqueeze-like reshape)
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-        in_shape = inp.meta["val"].shape
         out_shape = node.meta["val"].shape
 
         if len(out_shape) == len(in_shape) + 1:
@@ -294,6 +311,18 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             return True
         if node in processed_nodes or not self.is_node_permutable(node):
             return False
+        # A permutable op can still change rank via broadcasting (e.g.
+        # [8, 1] + [1, 1, 1] -> [1, 8, 1]), which would leave the node carrying
+        # a permutation of the wrong rank. Downstream rewrites index the
+        # permutation by dim (update_cat / update_mean_dim / update_slice_copy),
+        # so bail out rather than mis-permute or index out of range.
+        # Squeeze/unsqueeze views are exempt: they intentionally carry their
+        # input-rank permutation and are rank-checked in
+        # _adapt_permute_across_view.
+        if not self._is_squeeze_unsqueeze_view(node):
+            node_shape = getattr(node.meta.get("val"), "shape", None)
+            if node_shape is not None and len(node_shape) != len(current_start_permute):
+                return False
         subgraph.nodes.add(node)
         subgraph.node_end_permute[node] = current_end_permute
         subgraph.node_start_permute[node] = current_start_permute
@@ -428,6 +457,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return False
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
+        if node.target in self._PAD_OPS and not self._is_constant_pad(node):
+            return False
         if node.target in self._permutable_ops:
             if node.target in (
                 exir_ops.edge.aten.mean.dim,
@@ -439,6 +470,24 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         if self._is_squeeze_unsqueeze_view(node):
             return True
         return self._is_pointwise(node.target)
+
+    def _is_constant_pad(self, node: torch.fx.Node) -> bool:
+        if len(node.args) < 2:
+            return False
+
+        pad = node.args[1]
+        if not isinstance(pad, (list, tuple)):
+            return False
+
+        if len(pad) % 2 != 0:
+            return False
+
+        if node.target == exir_ops.edge.aten.pad.default:
+            mode = node.args[2] if len(node.args) > 2 else node.kwargs.get("mode")
+            if mode not in (None, "constant"):
+                return False
+
+        return True
 
     def permute_subgraph(self, subgraph: Subgraph) -> bool:  # noqa: C901
         # Ensure that the subgraph's edges have not been modified by an earlier rewrite before applying changes.
@@ -473,6 +522,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_mean_dim(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
+            elif node.target in self._PAD_OPS:
+                self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
                 self.update_view_copy(node, node_start_perm)
             elif node.target in self._UNSQUEEZE_OPS:
@@ -573,6 +624,24 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)
         set_arg(node, "dim", start_permute[dim])
+
+    def update_pad(self, node: torch.fx.Node, start_permute: list[int]) -> None:
+        pad = list(cast(list[int], node.args[1]))
+        rank = len(start_permute)
+        pad_pairs = [[0, 0] for _ in range(rank)]
+        for pair_idx, pair_start in enumerate(range(0, len(pad), 2)):
+            dim = rank - 1 - pair_idx
+            pad_pairs[dim] = [pad[pair_start], pad[pair_start + 1]]
+
+        remapped_pairs = [pad_pairs[start_permute.index(dim)] for dim in range(rank)]
+        remapped_pad = []
+        for pair in reversed(remapped_pairs):
+            remapped_pad.extend(pair)
+
+        while len(remapped_pad) > 2 and remapped_pad[-2:] == [0, 0]:
+            remapped_pad = remapped_pad[:-2]
+
+        node.update_arg(1, remapped_pad)
 
     def update_view_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         """Adjust view_copy shape arg after permute removal.

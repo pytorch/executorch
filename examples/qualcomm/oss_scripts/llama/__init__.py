@@ -17,6 +17,9 @@ from executorch.examples.models.codegen import (
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma2 import convert_weights as convert_gemma2_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+from executorch.examples.models.gemma4 import (
+    convert_hf_to_custom as convert_gemma4_weights,
+)
 
 from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.granite import (
@@ -69,6 +72,7 @@ from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe impo
     CodegenQuantRecipe,
     Gemma2QuantRecipe,
     Gemma3QuantRecipe,
+    Gemma4QuantRecipe,
     Gemma_2BQuantRecipe,
     GLM_1_5B_InstructQuantRecipe,
     Granite_3_3_2B_InstructQuantRecipe,
@@ -602,3 +606,22 @@ class SmolVLM_500M(LLMModelConfig):
     r2 = False
     r3 = False
     quant_recipe = SmolVLMQuantRecipe
+
+
+@register_llm_model("gemma4-e2b")
+@dataclass(init=False, frozen=True)
+class Gemma4_E2B(LLMModelConfig):
+    repo_id: str = "google/gemma-4-e2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma4/config/e2b_config.json"
+    )
+    convert_weights = convert_gemma4_weights
+    transform_weight = False
+    instruct_model = True
+    num_sharding = 4
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quant_recipe = Gemma4QuantRecipe

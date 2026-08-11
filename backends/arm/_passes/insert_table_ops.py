@@ -211,11 +211,22 @@ class InsertTableOpsPass(ArmPass):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
+            int16_max = torch.iinfo(torch.int16).max
+            has_full_int16_upper_range = (
+                in_quantargs.dtype == torch.int16 and in_quantargs.qmax == int16_max
+            )
             x = x.clamp(in_quantargs.qmin, in_quantargs.qmax).to(
                 dtype=in_quantargs.dtype
             )
             # Dont use the 7 LSBs.
             x = in_quantargs.dequantize_value((x & ~0x7F))
+            if has_full_int16_upper_range:
+                # TOSA uses table[512] as the virtual right endpoint when
+                # interpolating raw INT16 input codes [32640, 32767]. Evaluate
+                # its real value at affine code 32768 without casting to int16.
+                x[-1] = (
+                    int16_max + 1 - in_quantargs.get_zp_per_tensor()
+                ) * in_quantargs.get_scale_per_tensor()
             x = torch_op(x)
             return out_quantargs.quantize_value(x)
 
