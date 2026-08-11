@@ -17,6 +17,10 @@ from executorch.backends.arm.common.pipeline_config import (
     QuantizeInfConfig,
     SoftmaxDecompositionConfig,
 )
+from executorch.backends.arm.quantizer import (
+    get_symmetric_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
@@ -127,6 +131,8 @@ def test_quant_inf_config_reaches_annotation_pipeline():
 
 
 def test_leaky_relu_config_serializes_roundtrip():
+    assert ArmPassPipelineConfig().is_default()
+
     config = ArmPassPipelineConfig(
         leaky_relu=LeakyReLULoweringConfig.DECOMPOSE,
     )
@@ -182,6 +188,24 @@ def test_leaky_relu_decompose_config_reaches_annotation_pipeline():
     assert torch.ops.aten.clamp.default in targets
     assert torch.ops.aten.mul.Tensor in targets
     assert torch.ops.aten.add.Tensor in targets
+
+
+def test_quantizer_transform_for_annotation_prefers_table_for_leaky_relu():
+    compile_spec = TosaCompileSpec(
+        TosaSpecification.create_from_string("TOSA-1.00+INT")
+    )
+    quantizer = TOSAQuantizer(compile_spec)
+    quantizer.set_global(get_symmetric_quantization_config())
+    exported = export(ModuleWithLeakyReLU(), (torch.randn(4),), strict=True)
+
+    transformed = quantizer.transform_for_annotation(exported.graph_module)
+    targets = _call_function_targets(transformed)
+
+    assert torch.ops.aten.leaky_relu.default in targets
+    assert (
+        compile_spec._get_pass_pipeline_config().leaky_relu
+        is LeakyReLULoweringConfig.DECOMPOSE
+    )
 
 
 def test_leaky_relu_decompose_config_reaches_backend_pipeline():
