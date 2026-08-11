@@ -142,6 +142,10 @@ macro(find_package_torch)
     add_torch_to_cmake_prefix_path()
     find_package(Torch CONFIG REQUIRED)
   endif()
+  # PyTorch sets CXX_STANDARD on its imported target, which does not propagate
+  # to consumers. Advertise the requirement as an interface compile feature so
+  # only targets that link Torch are compiled as C++20.
+  target_compile_features(torch INTERFACE cxx_std_20)
 endmacro()
 
 # Modify ${targetName}'s INTERFACE_INCLUDE_DIRECTORIES by wrapping each entry in
