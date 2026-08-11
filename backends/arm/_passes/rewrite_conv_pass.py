@@ -334,56 +334,230 @@ class RewriteConvPass(ArmPass):
         )
         return rescale_node, rescale_fake_tensor
 
-    def insert_identity_int32_rescale(
-        self,
-        graph_module,
-        source_node,
-        conv_node,
-        conv_fake_tensor: torch.Tensor,
-    ):
-        with graph_module.graph.inserting_after(conv_node):
-            rescale_node = create_node(
-                graph=graph_module.graph,
-                op_target=exir_ops.backend.tosa.RESCALE.default,
-                args=(
-                    conv_node,
-                    torch.int32,
-                    [1.0],
-                    0,
-                    0,
-                ),
-                from_node=source_node,
+    @staticmethod
+    def _combine_rescale_scales(
+        lhs_scales: list[float], rhs_scales: list[float]
+    ) -> list[float]:
+        """Multiply scalar or equally sized per-channel rescale factors."""
+        if not lhs_scales or not rhs_scales:
+            raise ValueError("Cannot combine empty rescale factors.")
+        if (
+            len(lhs_scales) != 1
+            and len(rhs_scales) != 1
+            and len(lhs_scales) != len(rhs_scales)
+        ):
+            raise ValueError(
+                "Cannot combine rescales with incompatible scale counts: "
+                f"{len(lhs_scales)} and {len(rhs_scales)}."
             )
-        rescale_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
-            conv_fake_tensor,
-            torch.int32,
-            [1.0],
-            0,
-            0,
-        )
-        return rescale_node, rescale_fake_tensor
+        scale_count = max(len(lhs_scales), len(rhs_scales))
+        return [
+            lhs_scales[index % len(lhs_scales)] * rhs_scales[index % len(rhs_scales)]
+            for index in range(scale_count)
+        ]
 
-    def _has_int32_rescale_user(self, node: torch.fx.Node) -> bool:
+    @staticmethod
+    def _is_direct_int32_rescale(node: torch.fx.Node) -> bool:
+        """Return whether a node directly rescales its input to INT32."""
+        return (
+            node.op == "call_function"
+            and node.target == exir_ops.backend.tosa.RESCALE.default
+            and len(node.args) > 1
+            and node.args[1] == torch.int32
+        )
+
+    def _get_direct_int32_rescale_users(
+        self, node: torch.fx.Node
+    ) -> list[torch.fx.Node]:
+        """Return consumers that directly request an INT32 value."""
+        return [user for user in node.users if self._is_direct_int32_rescale(user)]
+
+    def _get_permute_int32_rescale_users(
+        self, node: torch.fx.Node
+    ) -> dict[torch.fx.Node, list[torch.fx.Node]]:
+        """Return permutations and their direct INT32 rescale consumers."""
+        result: dict[torch.fx.Node, list[torch.fx.Node]] = {}
         for user in node.users:
-            if (
-                user.op == "call_function"
-                and user.target == exir_ops.backend.tosa.RESCALE.default
-                and len(user.args) > 1
-                and user.args[1] == torch.int32
-            ):
-                return True
             if (
                 user.op == "call_function"
                 and user.target == exir_ops.edge.aten.permute_copy.default
             ):
-                for inner_user in user.users:
-                    if (
-                        inner_user.op == "call_function"
-                        and inner_user.target == exir_ops.backend.tosa.RESCALE.default
-                        and inner_user.args[1] == torch.int32
-                    ):
-                        return True
-        return False
+                if int32_users := self._get_direct_int32_rescale_users(user):
+                    result[user] = int32_users
+        return result
+
+    @staticmethod
+    def _insert_layout_permute(
+        graph_module: torch.fx.GraphModule,
+        source_node: torch.fx.Node,
+        input_node: torch.fx.Node,
+        input_fake_tensor: FakeTensor,
+        dims: tuple[int, ...],
+    ) -> tuple[torch.fx.Node, FakeTensor]:
+        """Insert the mandatory TOSA-to-Edge output layout permutation."""
+        with graph_module.graph.inserting_after(input_node):
+            output = create_node(
+                graph=graph_module.graph,
+                op_target=exir_ops.edge.aten.permute_copy.default,
+                args=(input_node, list(dims)),
+                from_node=source_node,
+            )
+        output_fake_tensor = permute_fake_tensor_metadata(input_fake_tensor, dims)
+        output.meta["val"] = output_fake_tensor
+        return output, output_fake_tensor
+
+    def _insert_a16w8_output_branches(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.Node,
+        tosa_op: torch.fx.Node,
+        tosa_node_fake_tensor: torch.Tensor,
+        default_rescale: torch.fx.Node,
+        post_permute_dims: tuple[int, ...],
+    ) -> None:
+        """Route A16W8 convolution users through the required output types.
+
+        Keep INT32 consumers on a widened path from the INT48 accumulator, even
+        though the convolution's declared output is INT16. This preserves
+        numerical range by avoiding unnecessary INT16 rounding and clamping.
+
+        """
+        direct_int32_users = self._get_direct_int32_rescale_users(node)
+        permute_int32_users = self._get_permute_int32_rescale_users(node)
+        if not direct_int32_users and not permute_int32_users:
+            return
+
+        conv_scales = cast(list[float], default_rescale.args[2])
+        conv_output_zp = cast(int, default_rescale.args[4])
+
+        # The layout permutation cannot consume the INT48 accumulator. Fork
+        # before narrowing. A direct INT32 rescale can be combined with the
+        # convolution rescale:
+        #
+        #                         CONV (INT48)
+        #                               |
+        #                    +----------+---------+
+        #                    |                    |
+        #          RESCALE (INT16)     RESCALE (INT32, combined)
+        #                    |                    |
+        #                 PERMUTE              PERMUTE
+        #                    |                    |
+        #             INT16 consumer        INT32 consumer
+        #
+        # Direct consumers have no axis-changing operation between the
+        # convolution and rescale, so both scale factors can be combined.
+        for int32_user in direct_int32_users:
+            # Retarget the existing consumer rescale to the TOSA convolution;
+            # its previous consumers will be moved after the layout permute.
+            user_scales = cast(list[float], int32_user.args[2])
+            user_input_zp = int32_user.args[3]
+            user_output_zp = cast(int, int32_user.args[4])
+            if conv_output_zp != user_input_zp:
+                raise ValueError(
+                    "Cannot combine convolution and INT32 rescales with "
+                    f"different intermediate zero points: {conv_output_zp} "
+                    f"and {user_input_zp}."
+                )
+
+            # The intermediate zero points cancel, so the direct path can
+            # combine both scales without rounding through INT16.
+            combined_scales = self._combine_rescale_scales(conv_scales, user_scales)
+            # Capture the old consumers before adding the layout permute. A
+            # blanket replace afterward would also rewrite the new permute's
+            # input and create a cycle.
+            previous_users = list(int32_user.users)
+            int32_user.args = (
+                tosa_op,
+                torch.int32,
+                combined_scales,
+                0,
+                user_output_zp,
+            )
+            int32_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+                tosa_node_fake_tensor,
+                torch.int32,
+                combined_scales,
+                0,
+                user_output_zp,
+            )
+            int32_user.meta["val"] = int32_fake_tensor
+            int32_output, _ = self._insert_layout_permute(
+                graph_module,
+                node,
+                int32_user,
+                int32_fake_tensor,
+                post_permute_dims,
+            )
+            for user in previous_users:
+                user.replace_input_with(int32_user, int32_output)
+
+        # A source permutation may change the per-channel axis, so keep both
+        # rescales on a separate widened branch instead of combining them:
+        #
+        #              CONV (INT48)
+        #                   |
+        #           RESCALE (INT32)
+        #                   |
+        #           layout PERMUTE
+        #                   |
+        #           source PERMUTE
+        #                   |
+        #           RESCALE (INT32)
+        #                   |
+        #           INT32 consumer
+        #
+        # This also avoids an intermediate INT16 rounding step.
+        for permute, int32_users in permute_int32_users.items():
+            # Convert the accumulator to the declared convolution domain, but
+            # use INT32 storage to avoid clamping values to the INT16 range.
+            with graph_module.graph.inserting_after(tosa_op):
+                widened_rescale = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.backend.tosa.RESCALE.default,
+                    args=(
+                        tosa_op,
+                        torch.int32,
+                        conv_scales,
+                        0,
+                        conv_output_zp,
+                    ),
+                    from_node=node,
+                )
+            widened_fake_tensor = exir_ops.backend.tosa.RESCALE.default(
+                tosa_node_fake_tensor,
+                torch.int32,
+                conv_scales,
+                0,
+                conv_output_zp,
+            )
+            widened_rescale.meta["val"] = widened_fake_tensor
+            widened_output, widened_output_fake_tensor = self._insert_layout_permute(
+                graph_module,
+                node,
+                widened_rescale,
+                widened_fake_tensor,
+                post_permute_dims,
+            )
+
+            # Clone the source permutation for the widened branch. The
+            # original may still have sibling consumers that require INT16.
+            source_permute_dims = cast(list[int], permute.args[1])
+            with graph_module.graph.inserting_after(widened_output):
+                widened_permute = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.edge.aten.permute_copy.default,
+                    args=(widened_output, source_permute_dims),
+                    from_node=permute,
+                )
+            widened_permute.meta["val"] = permute_fake_tensor_metadata(
+                widened_output_fake_tensor,
+                tuple(source_permute_dims),
+            )
+            for int32_user in int32_users:
+                int32_user.replace_input_with(permute, widened_permute)
+
+            if not permute.users:
+                graph_module.graph.erase_node(permute)
 
     def _insert_output_conversion(
         self,
@@ -393,39 +567,38 @@ class RewriteConvPass(ArmPass):
         input_fake_tensor: torch.Tensor,
         tosa_node_fake_tensor: torch.Tensor,
     ) -> tuple[torch.fx.Node, FakeTensor]:
+        # Convolutions that match none of the special cases below require no
+        # output conversion and keep the original TOSA node.
         node_replacement: torch.fx.Node = tosa_op
         node_replacement_fake_tensor = tosa_node_fake_tensor
-        if (
+        is_a8w8_conv = (
             tosa_node_fake_tensor.dtype == torch.int32
             and input_fake_tensor.dtype == torch.int8
-        ):
+        )
+        is_a16w8_conv = (
+            tosa_node_fake_tensor.dtype == torch.int32
+            and input_fake_tensor.dtype == torch.int16
+        )
+        is_fp8_conv = (
+            tosa_node_fake_tensor.dtype == torch.float16
+            and input_fake_tensor.dtype in self._FP8_DTYPES
+        )
+        if is_a8w8_conv:
             node_replacement, node_replacement_fake_tensor = self.insert_output_rescale(
                 graph_module, node, tosa_op, tosa_node_fake_tensor
             )
-        elif (
-            tosa_node_fake_tensor.dtype == torch.int32
-            and input_fake_tensor.dtype == torch.int16
-        ):
-            # Explicit layout paths require a post-conv permute, which does
-            # not support INT48. Always rescale before post-permute.
-            if self._has_int32_rescale_user(node):
-                node_replacement, node_replacement_fake_tensor = (
-                    self.insert_identity_int32_rescale(
-                        graph_module, node, tosa_op, tosa_node_fake_tensor
-                    )
-                )
-            else:
-                node_replacement, node_replacement_fake_tensor = (
-                    self.insert_output_rescale(
-                        graph_module, node, tosa_op, tosa_node_fake_tensor
-                    )
-                )
-
+        elif is_a16w8_conv:
+            # Explicit layout paths require a post-conv permute, which cannot
+            # consume INT48. Return the declared INT16 rescale so the caller
+            # can create its standard layout permute first, then add parallel
+            # INT32 branches with their own layout permutations. If every
+            # consumer moves to INT32, the caller removes the unused INT16
+            # rescale and permutation.
+            node_replacement, node_replacement_fake_tensor = self.insert_output_rescale(
+                graph_module, node, tosa_op, tosa_node_fake_tensor
+            )
             tosa_op.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.INT48
-        elif (
-            tosa_node_fake_tensor.dtype == torch.float16
-            and input_fake_tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
-        ):
+        elif is_fp8_conv:
             node_output_fake_tensor = get_first_fake_tensor(node)
             # TOSA FP8 conv widens the output. Cast back to the exported
             # graph dtype before the post-layout permute.
@@ -689,7 +862,32 @@ class RewriteConvPass(ArmPass):
                 node_replacement_fake_tensor, post_permute_dims
             )
 
-            node.replace_all_uses_with(node_replacement)
+            is_a16w8_conv = (
+                tosa_node_fake_tensor.dtype == torch.int32
+                and input_fake_tensor.dtype == torch.int16
+            )
+            if is_a16w8_conv:
+                # Keep values in INT32 whenever a consumer supports it, even
+                # though the declared output is INT16, by branching from the
+                # accumulator before narrowing.
+                self._insert_a16w8_output_branches(
+                    graph_module,
+                    node,
+                    tosa_op,
+                    tosa_node_fake_tensor,
+                    post_permute_input,
+                    post_permute_dims,
+                )
+                # Only users not moved to widened branches remain on the
+                # source node. Route those through the declared INT16 output,
+                # or remove that branch when every consumer was moved.
+                if node.users:
+                    node.replace_all_uses_with(node_replacement)
+                else:
+                    graph_module.graph.erase_node(node_replacement)
+                    graph_module.graph.erase_node(post_permute_input)
+            else:
+                node.replace_all_uses_with(node_replacement)
 
             graph_module.graph.erase_node(node)
 
