@@ -162,7 +162,8 @@ def test_uv_wheel_install() -> None:
             check=True,
         )
 
-        smoke_test = textwrap.dedent("""
+        smoke_test = textwrap.dedent(
+            """
             import sys
 
             if sys.platform == "win32":
@@ -190,7 +191,8 @@ def test_uv_wheel_install() -> None:
             output = module.run_method("forward", inputs)[0]
             torch.testing.assert_close(output, torch.full((2, 3), 3.0))
             print("uv wheel runtime smoke test passed")
-            """)
+            """
+        )
         env = os.environ.copy()
         for key in list(env):
             if (
