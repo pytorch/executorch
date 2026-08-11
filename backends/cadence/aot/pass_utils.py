@@ -7,7 +7,9 @@
 # pyre-strict
 
 import dataclasses
+import warnings
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, List, Optional, Set, Type, Union
 
 import torch
@@ -23,6 +25,59 @@ from executorch.backends.transforms.permute_pass_utils import (  # noqa: F401
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import PassBase, PassResult
 from torch._ops import OpOverloadPacket
+
+
+class CompileMode(Enum):
+    """Selects which pass pipeline the Cadence backend runs.
+
+    During migration, omitting ``mode`` preserves the legacy ``opt_level=1``
+    behavior, while explicitly passing ``DEFAULT`` selects the former O3
+    pipeline with all graph optimizations.
+    """
+
+    MINIMAL = "minimal"
+    DEFAULT = "default"
+    SIZE = "size"
+
+
+def opt_level_from_compile_mode(mode: CompileMode) -> int:
+    """Translate the new API to the legacy pass levels during migration."""
+    if mode is CompileMode.MINIMAL:
+        return 0
+    if mode is CompileMode.SIZE:
+        return 4
+    return 3
+
+
+def resolve_opt_level(
+    mode: CompileMode | int | None = None,
+    opt_level: Optional[int] = None,
+) -> int:
+    if opt_level is not None:
+        if mode is not None:
+            warnings.warn(
+                "Both mode and opt_level were provided; deprecated opt_level takes "
+                "precedence.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return opt_level
+    if mode is None:
+        return 1
+    if isinstance(mode, int):
+        return mode
+    return opt_level_from_compile_mode(mode)
+
+
+def normalize_compile_mode(
+    mode: CompileMode | int | None = None,
+    opt_level: Optional[int] = None,
+) -> CompileMode | int:
+    """Resolve compatibility arguments while preserving an explicit enum mode."""
+    resolved_opt_level = resolve_opt_level(mode, opt_level)
+    if opt_level is None and isinstance(mode, CompileMode):
+        return mode
+    return resolved_opt_level
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?

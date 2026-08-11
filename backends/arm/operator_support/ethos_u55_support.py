@@ -209,7 +209,6 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.scatter_reduce.two,
         exir_ops.edge.aten.scatter_add.default,
         exir_ops.edge.aten.unfold_copy.default,  # GATHER
-        exir_ops.edge.aten.upsample_nearest2d.vec,  # RESIZE
         exir_ops.edge.aten.upsample_bilinear2d.vec,  # RESIZE
         exir_ops.edge.aten.reflection_pad1d.default,  # REVERSE
         exir_ops.edge.aten.reflection_pad2d.default,  # REVERSE
@@ -244,6 +243,97 @@ class EthosU55NotSupported(OperatorSupportBase):
             return False
 
         return True
+
+
+class EthosU55ResizeCheck(OperatorSupportBase):
+    """Accept nearest-neighbor upscales supported by Ethos-U55.
+
+    Ethos-U55 supports nearest-neighbor TOSA RESIZE when both spatial dimensions
+    have batch size 1 and use the same power-of-two scale in the range 2x
+    through 8x.
+
+    """
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter.
+
+        Args:
+            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+        """
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return True when a resize satisfies the U55 constraints.
+
+        Args:
+            submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
+            node (fx.Node): FX node to check.
+
+        Returns:
+            bool: True if supported; otherwise, False.
+
+        """
+        if node.target != exir_ops.edge.aten.upsample_nearest2d.vec:
+            return True
+
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        output_shape = get_first_fake_tensor(node).shape
+        input_batch = input_shape[0]
+        output_batch = output_shape[0]
+        if isinstance(input_batch, torch.SymInt) or isinstance(
+            output_batch, torch.SymInt
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 nearest-neighbor resize requires a static batch size of 1.",
+            )
+            return False
+        if input_batch != 1 or output_batch != 1:
+            self.reporter.report_reject(
+                node, "U55 nearest-neighbor resize requires batch size 1."
+            )
+            return False
+
+        scale_factors_arg = node.args[2]
+        if scale_factors_arg is not None:
+            scale_factors = typing.cast(typing.Sequence[float], scale_factors_arg)
+            if len(scale_factors) != 2 or not (
+                scale_factors[0] == scale_factors[1] and scale_factors[0] in (2, 4, 8)
+            ):
+                self.reporter.report_reject(
+                    node,
+                    "U55 nearest-neighbor resize requires equal 2x, 4x, or 8x "
+                    "scale factors.",
+                )
+                return False
+            return True
+
+        input_height, input_width = input_shape[-2:]
+        output_height, output_width = output_shape[-2:]
+        if any(
+            isinstance(dim, torch.SymInt)
+            for dim in (input_height, input_width, output_height, output_width)
+        ):
+            self.reporter.report_reject(
+                node,
+                "U55 nearest-neighbor resize with an explicit size requires "
+                "static spatial dimensions.",
+            )
+            return False
+        if any(
+            output_height == input_height * scale
+            and output_width == input_width * scale
+            for scale in (2, 4, 8)
+        ):
+            return True
+
+        self.reporter.report_reject(
+            node, "U55 nearest-neighbor resize requires a 2x, 4x, or 8x upscale."
+        )
+        return False
 
 
 class EthosU55CastCheck(OperatorSupportBase):

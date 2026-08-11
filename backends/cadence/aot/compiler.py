@@ -45,7 +45,12 @@ from executorch.exir.program._program import to_edge
 from torch.export.exported_program import ExportedProgram
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e
 
-from .pass_utils import EdgePassesConfig
+from .pass_utils import (
+    CompileMode,
+    EdgePassesConfig,
+    normalize_compile_mode,
+    resolve_opt_level,
+)
 from .passes import apply_exir_ops_passes, apply_torch_ops_passes
 from .utils import print_ops_info
 
@@ -364,15 +369,16 @@ def quantize_and_export_to_edge(
 def _lower_ep_to_cadence(
     program: ExportedProgram,
     dump_graphs: bool = False,
-    opt_level: int = 1,
+    mode: CompileMode | int | None = None,
     edge_passes_config: Optional[EdgePassesConfig] = None,
+    opt_level: Optional[int] = None,
 ) -> EdgeProgramManager:
     """
     Lower an existing ExportedProgram to edge IR and apply frontend optimization passes.
     """
     edge_prog_manager = _lower_ep_to_edge(program, dump_graphs=dump_graphs)
     cadence_prog_manager = apply_exir_ops_passes(
-        opt_level, edge_prog_manager, edge_passes_config
+        resolve_opt_level(mode, opt_level), edge_prog_manager, edge_passes_config
     )
     return cadence_prog_manager
 
@@ -381,12 +387,13 @@ def export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-    opt_level: int = 1,
+    mode: CompileMode | int | None = None,
     edge_passes_config: Optional[EdgePassesConfig] = None,
+    opt_level: Optional[int] = None,
 ) -> EdgeProgramManager:
     edge_prog_manager = export_to_edge(model, inputs, dump_graphs=dump_graphs)
     cadence_prog_manager = apply_exir_ops_passes(
-        opt_level, edge_prog_manager, edge_passes_config
+        resolve_opt_level(mode, opt_level), edge_prog_manager, edge_passes_config
     )
     return cadence_prog_manager
 
@@ -395,8 +402,9 @@ def quantize_and_export_to_cadence(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-    opt_level: int = 1,
+    mode: CompileMode | int | None = None,
     edge_passes_config: Optional[EdgePassesConfig] = None,
+    opt_level: Optional[int] = None,
 ) -> EdgeProgramManager:
     """
     Trace, quantize, lower a model/inputs pair to edge IR and apply frontend
@@ -406,6 +414,7 @@ def quantize_and_export_to_cadence(
 
     return _lower_ep_to_cadence(
         quantized_model,
+        mode=mode,
         opt_level=opt_level,
         dump_graphs=dump_graphs,
         edge_passes_config=edge_passes_config,
@@ -416,17 +425,19 @@ def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     output_dir: Optional[str] = None,
-    opt_level: int = 1,
+    mode: CompileMode | int | None = None,
     mem_algo: int = 0,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
+    opt_level: Optional[int] = None,
 ) -> ExecutorchProgramManager:
     ep = torch.export.export(model, inputs, strict=True)
     return _lower_ep_to_cadence_gen_etrecord(
         ep,
         output_dir=output_dir,
+        mode=mode,
         opt_level=opt_level,
         mem_algo=mem_algo,
         alloc_graph_input=alloc_graph_input,
@@ -442,15 +453,18 @@ def export_to_executorch_gen_etrecord(
 def _lower_ep_to_cadence_gen_etrecord(
     ep: ExportedProgram,
     output_dir: Optional[str] = None,
-    opt_level: int = 1,
+    mode: CompileMode | int | None = None,
     mem_algo: int = 0,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
+    opt_level: Optional[int] = None,
 ) -> ExecutorchProgramManager:
+    normalized_mode = normalize_compile_mode(mode, opt_level)
+    resolved_opt_level = resolve_opt_level(normalized_mode)
     edge_prog_manager = _lower_ep_to_edge(ep, dump_graphs)
-    cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
+    cadence_prog_manager = apply_exir_ops_passes(resolved_opt_level, edge_prog_manager)
 
     # Print some information to terminal
     print_ops_info(
@@ -463,7 +477,7 @@ def _lower_ep_to_cadence_gen_etrecord(
 
     memory_planning_pass = CadenceMemoryPlanning(
         memory_config,
-        opt_level=opt_level,
+        mode=normalized_mode,
         mem_algo=mem_algo,
         alloc_graph_input=alloc_graph_input,
         alloc_graph_output=alloc_graph_output,
@@ -483,7 +497,7 @@ def _lower_ep_to_cadence_gen_etrecord(
     print_memory_planning_info(
         exec_prog,
         memory_config,
-        opt_level,
+        normalized_mode,
         alloc_graph_input,
         alloc_graph_output,
     )
