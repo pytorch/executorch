@@ -457,6 +457,51 @@ TARGET_ARM_BF16_ATTRIBUTE static void dot4_with_fp32_arith_bfdot(
 }
 #endif // COMPILER_SUPPORTS_BF16_TARGET
 
+#if COMPILER_SUPPORTS_X86_BF16_TARGET
+// x86 counterpart of dot4_with_fp32_arith_bfdot. The single-dot path above
+// carries four accumulators for ILP, but at len == headSize it never enters
+// its 128-wide main loop: it fills one accumulator and then reduces all four,
+// so three of every four reductions are over zeros. Here each accumulator
+// holds a distinct output instead, so the same four reductions do four times
+// the work.
+__attribute__((target("avx512f,avx512bw,avx512vl,avx512bf16"))) static void
+dot4_with_fp32_arith_x86bfdot(
+    const BFloat16* vec1,
+    const BFloat16* vec2,
+    int64_t stride2,
+    int64_t len,
+    float* out) {
+  constexpr int64_t kBF16PerRegister = 32;
+  __m512 acc[4];
+  for (int i = 0; i < 4; ++i) {
+    acc[i] = _mm512_setzero_ps();
+  }
+
+  int64_t j = 0;
+  const int64_t len_vec = len - (len % kBF16PerRegister);
+  for (; j < len_vec; j += kBF16PerRegister) {
+    const __m512bh a = (__m512bh)_mm512_loadu_si512((const void*)(vec1 + j));
+    for (int i = 0; i < 4; ++i) {
+      const __m512bh b =
+          (__m512bh)_mm512_loadu_si512((const void*)(vec2 + i * stride2 + j));
+      acc[i] = _mm512_dpbf16_ps(acc[i], a, b);
+    }
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    out[i] = _mm512_reduce_add_ps(acc[i]);
+  }
+
+  // Scalar fp32 tail, matching the numerics of the no_bfdot path.
+  for (; j < len; ++j) {
+    const float x1 = vec1[j];
+    for (int i = 0; i < 4; ++i) {
+      out[i] += x1 * static_cast<float>(vec2[i * stride2 + j]);
+    }
+  }
+}
+#endif // COMPILER_SUPPORTS_X86_BF16_TARGET
+
 void bf16_dot4_with_fp32_arith(
     const at::BFloat16* vec1,
     const at::BFloat16* vec2,
@@ -469,6 +514,12 @@ void bf16_dot4_with_fp32_arith(
     return;
   }
 #endif // COMPILER_SUPPORTS_BF16_TARGET
+#if COMPILER_SUPPORTS_X86_BF16_TARGET
+  if (cpuinfo_initialize() && cpuinfo_has_x86_avx512bf16()) {
+    dot4_with_fp32_arith_x86bfdot(vec1, vec2, stride2, len, out);
+    return;
+  }
+#endif // COMPILER_SUPPORTS_X86_BF16_TARGET
   for (int64_t j = 0; j < 4; ++j) {
     out[j] = bf16_dot_with_fp32_arith(vec1, vec2 + j * stride2, len);
   }
