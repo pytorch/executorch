@@ -16,9 +16,11 @@ import gc
 import re
 import unittest
 
+import executorch.backends.apple.coreai.compiler.preprocess as preprocess_module
+
 import torch
 import torch.nn as nn
-from coreai_torch import ExternalizeSpec, externalize_modules, get_decomp_table
+from coreai_torch import externalize_modules, ExternalizeSpec, get_decomp_table
 from coreai_torch.composite_ops import RMSNorm, SDPA
 
 from executorch.backends.apple.coreai import (
@@ -34,7 +36,6 @@ from executorch.backends.apple.coreai.externalize import (
     register,
     spec_for,
 )
-import executorch.backends.apple.coreai.compiler.preprocess as preprocess_module
 from executorch.exir import to_edge_transform_and_lower
 
 

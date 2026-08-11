@@ -45,10 +45,7 @@ from executorch.backends.apple.coreai.externalize.registry import (
     lookup,
     register,
 )
-from executorch.backends.apple.coreai.externalize.specs import (
-    default_specs,
-    spec_for,
-)
+from executorch.backends.apple.coreai.externalize.specs import default_specs, spec_for
 
 
 def is_externalize_target(target: Any) -> bool:
