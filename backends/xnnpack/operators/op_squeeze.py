@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, Dict
 
 import torch
@@ -50,6 +51,14 @@ class SqueezeVisitor(NodeVisitor):
 
         # output
         output_id = vals_to_ids[node]
+
+        logging.warning(
+            "XNNPACK static reshape debug_handle=%s target=%s input=%s output=%s",
+            debug_handle,
+            node.target,
+            xnn_graph.xvalues[input_id],
+            xnn_graph.xvalues[output_id],
+        )
 
         check_or_raise(
             "val" in input_node.meta,
@@ -113,6 +122,14 @@ class UnsqueezeVisitor(NodeVisitor):
 
         # output
         output_id = vals_to_ids[node]
+
+        logging.warning(
+            "XNNPACK static reshape debug_handle=%s target=%s input=%s output=%s",
+            debug_handle,
+            node.target,
+            xnn_graph.xvalues[input_id],
+            xnn_graph.xvalues[output_id],
+        )
 
         check_or_raise(
             "val" in input_node.meta,
