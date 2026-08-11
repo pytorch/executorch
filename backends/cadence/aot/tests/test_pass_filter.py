@@ -16,11 +16,26 @@ from executorch.backends.cadence.aot import pass_utils
 from executorch.backends.cadence.aot.pass_utils import (
     ALL_CADENCE_PASSES,
     CadencePassAttribute,
+    CompileMode,
     create_cadence_pass_filter,
     register_cadence_pass,
+    resolve_opt_level,
 )
 
 from executorch.exir.pass_base import ExportPass, PassBase
+
+
+class TestCompileModeCompatibility(unittest.TestCase):
+    def test_resolve_opt_level(self) -> None:
+        self.assertEqual(resolve_opt_level(), 1)
+        self.assertEqual(resolve_opt_level(CompileMode.MINIMAL), 0)
+        self.assertEqual(resolve_opt_level(CompileMode.DEFAULT), 3)
+        self.assertEqual(resolve_opt_level(CompileMode.SIZE), 4)
+        self.assertEqual(resolve_opt_level(2), 2)
+
+    def test_deprecated_opt_level_takes_precedence(self) -> None:
+        with self.assertWarns(DeprecationWarning):
+            self.assertEqual(resolve_opt_level(CompileMode.MINIMAL, 4), 4)
 
 
 class TestBase(unittest.TestCase):

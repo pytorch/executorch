@@ -31,6 +31,77 @@ function(arm_runner_require_baremetal_targets)
 
 endfunction()
 
+function(verify_targets_exist)
+  cmake_parse_arguments(ARG "" "CONTEXT" "TARGETS" ${ARGN})
+
+  set(_targets ${ARG_TARGETS} ${ARG_UNPARSED_ARGUMENTS})
+  if(NOT ARG_CONTEXT)
+    set(ARG_CONTEXT "verify_targets_exist")
+  endif()
+
+  foreach(_target IN LISTS _targets)
+    if(NOT TARGET ${_target})
+      message(FATAL_ERROR "${ARG_CONTEXT} requires missing target ${_target}.")
+    endif()
+  endforeach()
+endfunction()
+
+# Private function to isolate logic for building prim ops library.
+function(_arm_runner_create_prim_ops_lib)
+  # Parse arguments.
+  set(options INCLUDE_ALL_OPS)
+  set(one_value_args LIB_NAME SELECTED_OPS_YAML)
+  set(multi_value_args DEPS)
+  cmake_parse_arguments(
+    ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN}
+  )
+
+  set(_out_dir "${CMAKE_CURRENT_BINARY_DIR}/${ARG_LIB_NAME}")
+  set(_sources ${EXECUTORCH_ROOT}/kernels/prim_ops/register_prim_ops.cpp)
+
+  # Generate selected operator list if needed.
+  if(NOT ARG_INCLUDE_ALL_OPS)
+    set(_selected_prim_ops_header "${_out_dir}/selected_prim_ops.h")
+    set(_gen_selected_prim_ops_script
+        "${EXECUTORCH_ROOT}/codegen/tools/gen_selected_prim_ops.py"
+    )
+    set(_gen_selected_prim_ops_command
+        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_prim_ops
+        --op-selection-yaml-path=${ARG_SELECTED_OPS_YAML}
+        --output-dir=${_out_dir}
+    )
+    add_custom_command(
+      COMMENT "Generating selected_prim_ops.h for ${ARG_LIB_NAME}"
+      OUTPUT ${_selected_prim_ops_header}
+      COMMAND ${_gen_selected_prim_ops_command}
+      DEPENDS ${ARG_SELECTED_OPS_YAML} ${_gen_selected_prim_ops_script}
+      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+    )
+    list(APPEND _sources ${_selected_prim_ops_header})
+  endif()
+
+  # Add prim ops registration library.
+  add_library(${ARG_LIB_NAME} ${_sources})
+  target_include_directories(
+    ${ARG_LIB_NAME} PRIVATE ${EXECUTORCH_ROOT}/kernels/prim_ops ${_out_dir}
+  )
+  if(NOT ARG_INCLUDE_ALL_OPS)
+    target_compile_definitions(
+      ${ARG_LIB_NAME} PRIVATE ET_PRIM_OPS_SELECTIVE_BUILD
+                              EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD
+    )
+  endif()
+  target_link_libraries(${ARG_LIB_NAME} PRIVATE ${ARG_DEPS})
+  executorch_target_link_options_shared_lib(${ARG_LIB_NAME})
+
+  # Add prim ops kernel library.
+  add_library(
+    ${ARG_LIB_NAME}_impl ${EXECUTORCH_ROOT}/kernels/prim_ops/et_copy_index.cpp
+                         ${EXECUTORCH_ROOT}/kernels/prim_ops/et_view.cpp
+  )
+  target_link_libraries(${ARG_LIB_NAME}_impl PRIVATE ${ARG_DEPS})
+endfunction()
+
 #[[
 Create a selected operator registration library for one operator family.
 
@@ -62,12 +133,16 @@ Arguments:
   INCLUDE_ALL_OPS: Generate a non-selective registration library for the
 	selected operator family.
 
+  PRIM_OPS: Build a selective prim ops library instead of a codegen operators lib.
+
 The lib will always be created, even when no operators are selected.
 OP_LIST and OPS_FROM_MODEL can be used additively.
+If neither OP_LIST nor OPS_FROM_MODEL is set, the generated registration
+library is empty. INCLUDE_ALL_OPS explicitly builds a full registration library.
 ]]
 function(arm_runner_create_selected_ops_lib)
   # Parse arguments
-  set(options INCLUDE_ALL_OPS)
+  set(options INCLUDE_ALL_OPS PRIM_OPS)
   set(one_value_args LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML OP_LIST
                      OPS_FROM_MODEL DTYPE_SELECTIVE_BUILD
   )
@@ -101,10 +176,13 @@ function(arm_runner_create_selected_ops_lib)
     )
   endif()
 
-  if(NOT ARG_FUNCTIONS_YAML AND NOT ARG_CUSTOM_OPS_YAML)
+  if(NOT ARG_PRIM_OPS
+     AND NOT ARG_FUNCTIONS_YAML
+     AND NOT ARG_CUSTOM_OPS_YAML
+  )
     message(
       FATAL_ERROR
-        "${_arm_runner_create_selected_ops_lib_context} requires FUNCTIONS_YAML or CUSTOM_OPS_YAML."
+        "${_arm_runner_create_selected_ops_lib_context} requires FUNCTIONS_YAML or CUSTOM_OPS_YAML unless PRIM_OPS is set."
     )
   endif()
 
@@ -128,10 +206,24 @@ function(arm_runner_create_selected_ops_lib)
       DTYPE_SELECTIVE_BUILD
       "${ARG_DTYPE_SELECTIVE_BUILD}"
   )
+  set(_arm_runner_include_all_ops OFF)
   if(ARG_INCLUDE_ALL_OPS)
+    set(_arm_runner_include_all_ops ON)
     list(APPEND _arm_runner_selected_ops_args INCLUDE_ALL_OPS "ON")
   endif()
   gen_selected_ops(${_arm_runner_selected_ops_args})
+
+  if(ARG_PRIM_OPS)
+    set(_arm_runner_prim_ops_args
+        LIB_NAME "${ARG_LIB_NAME}" SELECTED_OPS_YAML
+        "${gen_selected_ops_output_yaml}" DEPS ${ARG_DEPS}
+    )
+    if(_arm_runner_include_all_ops)
+      list(APPEND _arm_runner_prim_ops_args INCLUDE_ALL_OPS)
+    endif()
+    _arm_runner_create_prim_ops_lib(${_arm_runner_prim_ops_args})
+    return()
+  endif()
 
   # Codegen for operator library.
   set(_arm_ops_binding_args LIB_NAME "${ARG_LIB_NAME}")
@@ -196,21 +288,6 @@ function(arm_runner_configure_runtime_output TARGET_NAME FALLBACK_DIR)
       endif()
     endforeach()
   endif()
-endfunction()
-
-function(verify_targets_exist)
-  cmake_parse_arguments(ARG "" "CONTEXT" "TARGETS" ${ARGN})
-
-  set(_targets ${ARG_TARGETS} ${ARG_UNPARSED_ARGUMENTS})
-  if(NOT ARG_CONTEXT)
-    set(ARG_CONTEXT "verify_targets_exist")
-  endif()
-
-  foreach(_target IN LISTS _targets)
-    if(NOT TARGET ${_target})
-      message(FATAL_ERROR "${ARG_CONTEXT} requires missing target ${_target}.")
-    endif()
-  endforeach()
 endfunction()
 
 # Link the provided target with minimal specs. This minimizes code size, but
