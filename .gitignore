@@ -24,6 +24,16 @@ build-direct/
 dist/
 arm-scratch/
 executorch.egg-info
+
+# MLX delegate code generated in-tree from backends/mlx/serialization/schema.fbs
+# by generate.py, which the MLX backend runs at build time.
+backends/mlx/_generated_inspector.py
+backends/mlx/runtime/MLXLoader.cpp
+backends/mlx/runtime/MLXLoader.h
+backends/mlx/runtime/schema_generated.h
+backends/mlx/serialization/_generated/
+backends/mlx/serialization/_generated_serializers.py
+backends/mlx/serialization/mlx_graph_schema.py
 pip-out/
 build-profiling/
 **/ddr_*_temp
@@ -74,6 +84,7 @@ xcuserdata/
 /src/executorch/share/
 /src/executorch/version.py
 *_etdump
+CMakeUserPresets.json
 
 # Android
 *.aar

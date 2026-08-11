@@ -18,8 +18,10 @@ from executorch.backends.cadence.aot.fuse_ops import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    CompileMode,
     create_cadence_pass_filter,
     EdgePassesConfig,
+    opt_level_from_compile_mode,
     register_cadence_pass,
 )
 
@@ -100,22 +102,38 @@ def get_passes_in_default_order() -> list[Type[ExportPass]]:
     return pytree.tree_flatten(passes)[0]
 
 
+def get_passes(
+    mode: CompileMode,
+    edge_passes_config: Optional[EdgePassesConfig] = None,
+) -> list[Type[ExportPass]]:
+    pass_filter = create_cadence_pass_filter(
+        opt_level_from_compile_mode(mode),
+        edge_passes_config=edge_passes_config,
+    )
+    return list(filter(pass_filter, get_passes_in_default_order()))
+
+
 def apply_exir_ops_passes(
-    opt_level: int,
+    opt_level: int | CompileMode,
     edge_prog_manager: EdgeProgramManager,
     edge_passes_config: Optional[EdgePassesConfig] = None,
 ) -> EdgeProgramManager:
-    passes = get_passes_in_default_order()
-    pass_filter = create_cadence_pass_filter(
-        opt_level, edge_passes_config=edge_passes_config
+    resolved_opt_level = (
+        opt_level_from_compile_mode(opt_level)
+        if isinstance(opt_level, CompileMode)
+        else opt_level
     )
+    pass_filter = create_cadence_pass_filter(
+        resolved_opt_level, edge_passes_config=edge_passes_config
+    )
+    passes = list(filter(pass_filter, get_passes_in_default_order()))
     cadence_passes = [
         (
             lambda graph_module, filtered_pass=filtered_pass: filtered_pass()(
                 graph_module
             )
         )
-        for filtered_pass in list(filter(pass_filter, passes))
+        for filtered_pass in passes
     ]
     cadence_prog_manager = edge_prog_manager.transform(
         cast(

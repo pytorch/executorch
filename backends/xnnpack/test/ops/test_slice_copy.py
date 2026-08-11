@@ -140,10 +140,9 @@ class TestSliceCopy(unittest.TestCase):
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
-    # Note: Slice ends up as slice_copy later in the process, but during quantization,
-    # it's still slice, which isn't supported by the XNNPACK quantizer.
-    @unittest.skip("T156004676 - slice isn't propagated")
-    def _test_qs8_slice_copy(self):
+    # Note: Slice ends up as slice_copy later in the process, but during quantization
+    # it's still slice, so the quantizer shares observers on aten.slice.Tensor.
+    def test_qs8_slice_copy(self):
         class SliceCopy(torch.nn.Module):
             def forward(self, x):
                 y = x + x
@@ -157,8 +156,9 @@ class TestSliceCopy(unittest.TestCase):
             .export()
             .check_node_count(
                 {
-                    "aten::slice.Tensor": 3,
-                    "quantized_decomposed::quantize_per_tensor": 3,
+                    torch.ops.aten.slice.Tensor: 3,
+                    # 3 slices, plus the input and the add output
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default: 5,
                 }
             )
             .to_edge_transform_and_lower()
