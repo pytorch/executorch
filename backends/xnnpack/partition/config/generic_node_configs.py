@@ -421,11 +421,7 @@ class ViewCopyConfig(GenericNodePartitionerConfig):
 
         input_node = get_input_node(node, 0)
         output_node = next(iter(node.users), None)
-        if (
-            is_dequant(input_node)
-            and output_node is not None
-            and is_quant(output_node)
-        ):
+        if is_dequant(input_node) and output_node is not None and is_quant(output_node):
             input_quant_params = QuantParams.from_q_dq_node(input_node, ep)
             output_quant_params = QuantParams.from_q_dq_node(output_node, ep)
             if not input_quant_params.matches(output_quant_params):
