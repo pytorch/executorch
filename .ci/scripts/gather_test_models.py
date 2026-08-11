@@ -42,6 +42,12 @@ CUSTOM_TIMEOUT = {
     # Just some examples on how custom timeout can be set
     "linux": {
         "mobilebert": 90,
+        # dl3 and edsr on the portable backend take about 100 and 205 minutes, so at
+        # the default 90 they were killed on every periodic run and never reported a
+        # result. Both pass given the time. This also raises the cap for their xnnpack
+        # variants, which still finish in about 10 minutes and are unaffected.
+        "dl3": 150,
+        "edsr": 300,
         "emformer_predict": 360,
         "llama3_2_text_decoder": 360,
     },
