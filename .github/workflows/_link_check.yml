@@ -29,7 +29,7 @@ jobs:
           args=()
           # A push creating a tag or branch reports an all zero SHA no remote can serve.
           if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            git fetch --no-tags origin "$BASE_REF"
             args=("$BASE_REF" "$HEAD_REF")
           fi
           ./scripts/lint_urls.sh "${args[@]}" || {
