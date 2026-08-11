@@ -390,6 +390,9 @@ exclude_patterns = [
     'extension/llm/tokenizers',
     'extension/llm/tokenizers/**',
     'examples/llm_server',
+    # muse_glimmer is a symlink to this directory; the linter resolves it and
+    # then fails on a directory.
+    'examples/models/muse-glimmer',
     'backends/cadence/utils/FACTO',
     'examples/cuda',
     'examples/qualcomm',

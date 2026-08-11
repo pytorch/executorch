@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -43,11 +43,13 @@ class CacheSizing(Enum):
 class MaskKind(Enum):
     NONE = "none"  # decode: q_len == 1, the single query sees all of history
     CAUSAL = "causal"  # prefill/continuation: query i sees keys up to its position
+    EXPLICIT = "explicit"  # anything the other two cannot express: a mask tensor
 
 
 @dataclass
 class AttendSpec:
     kind: MaskKind
+    mask: Optional[torch.Tensor] = None  # EXPLICIT only: bool, true = attend
 
 
 @experimental(
@@ -150,8 +152,23 @@ class ContiguousReferenceCache:
             v_hist = self._v[layer_id]
         self._used[layer_id] = new_used
 
-        kind = MaskKind.NONE if q_len == 1 else MaskKind.CAUSAL
-        return k_hist, v_hist, AttendSpec(kind=kind)
+        return k_hist, v_hist, self._spec(q_len, new_used, k.device)
+
+    @staticmethod
+    def _spec(q_len: int, total: int, device: torch.device) -> AttendSpec:
+        """The mask semantic for q_len new cells at the tail of a total window."""
+        if q_len == 1:
+            return AttendSpec(kind=MaskKind.NONE)
+        if q_len == total:
+            return AttendSpec(kind=MaskKind.CAUSAL)
+        # Continuation (chunked / multi-turn): the new cells are at the tail, so
+        # query i attends keys up to i + total - q_len. A backend whose causal is
+        # lower-right aligned fuses that as CAUSAL; torch's is_causal
+        # is upper-left, so the reference hands back the band itself.
+        offsets = torch.arange(total, device=device) - torch.arange(
+            q_len, device=device
+        ).unsqueeze(-1)
+        return AttendSpec(kind=MaskKind.EXPLICIT, mask=offsets <= total - q_len)
 
 
 def attend(
@@ -165,14 +182,18 @@ def attend(
     """Eager attend mechanism: SDPA over fetched K/V per the mask semantic.
 
     Repeats K/V heads for GQA/MQA (``H_q`` a multiple of ``H_kv``), casts to fp32,
-    and calls ``F.scaled_dot_product_attention`` -- causal for CAUSAL (the cache is
-    contiguous, so causal alignment matches the prior length), unmasked for NONE.
+    and calls ``F.scaled_dot_product_attention`` -- one mechanism per kind:
+    unmasked for NONE, ``is_causal`` for CAUSAL, the cache's own bool mask for
+    EXPLICIT. CAUSAL is square-only here. The design's causal is lower-right
+    aligned, which torch's upper-left ``is_causal`` matches only on a fresh full prefill,
+    so a cache must declare EXPLICIT for a chunked or multi-turn step.
 
     Args (BHSD):
         q: ``[B, H_q, q_len, head_dim]`` -- queries (already RoPE-rotated).
         k: ``[B, H_kv, total, head_dim]`` -- key history.
         v: ``[B, H_kv, total, v_head_dim]`` -- value history.
-        spec: mask semantic (NONE = attend all; CAUSAL = causal).
+        spec: mask semantic (NONE = attend all; CAUSAL = causal; EXPLICIT = the
+            spec's bool mask).
         scale: attention softmax scale.
         out_dtype: output dtype.
 
@@ -186,11 +207,19 @@ def attend(
         k = k.repeat_interleave(rep, dim=1)
         v = v.repeat_interleave(rep, dim=1)
 
+    if spec.kind == MaskKind.CAUSAL and q.shape[-2] != k.shape[-2]:
+        raise ValueError(
+            "CAUSAL over a non-square window: torch's is_causal is upper-left "
+            "aligned and would hide the prior cells. The cache must declare "
+            "EXPLICIT with a lower-right band for a continuation."
+        )
+
     out = F.scaled_dot_product_attention(
         q.to(torch.float32),
         k.to(torch.float32),
         v.to(torch.float32),
-        is_causal=spec.kind != MaskKind.NONE,
+        attn_mask=spec.mask if spec.kind == MaskKind.EXPLICIT else None,
+        is_causal=spec.kind == MaskKind.CAUSAL,
         scale=scale,
     )
     return out.to(out_dtype)

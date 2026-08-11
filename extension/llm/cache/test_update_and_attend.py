@@ -9,9 +9,12 @@ import unittest
 import torch
 import torch.nn.functional as F
 from executorch.extension.llm.cache.reference_cache import (
+    attend,
+    AttendSpec,
     CacheConfig,
     CacheSizing,
     ContiguousReferenceCache,
+    MaskKind,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY, update_and_attend
 
@@ -205,6 +208,27 @@ class UpdateAndAttendTest(unittest.TestCase):
                             out[:, 0, :], ref[:, step, :], atol=1e-4, rtol=1e-4
                         )
 
+    def test_chunked_prefill_matches_baseline(self):
+        # Prefill in chunks: each chunk's queries must attend every earlier
+        # chunk's keys, which holds only if CAUSAL is lower-right aligned.
+        chunk, total = 3, 6
+        x = torch.randn(1, total, self.hidden)
+        ref = self.model.reference_forward(x, torch.arange(total))
+
+        ep = self._export(chunk)
+        cache = ContiguousReferenceCache(self._config(CacheSizing.DYNAMIC, total))
+        REGISTRY.install(self.cache_key, cache)
+        with REGISTRY.active(self.cache_key):
+            for start in range(0, total, chunk):
+                out = ep.module()(
+                    x[:, start : start + chunk, :],
+                    _positions(start, chunk),
+                    torch.arange(chunk),
+                )
+        torch.testing.assert_close(
+            out, ref[:, total - chunk :, :], atol=1e-4, rtol=1e-4
+        )
+
     def test_static_overflow_raises(self):
         ep = self._export(seq_len=5)
         cache = ContiguousReferenceCache(self._config(CacheSizing.STATIC, capacity=3))
@@ -232,6 +256,74 @@ class UpdateAndAttendTest(unittest.TestCase):
             and n.target is torch.ops.kvcache.update_and_attend.default
         )
         self.assertEqual(tuple(node.meta["val"].shape), (1, 4, 3, 5))
+
+
+class ContiguousSpecTest(unittest.TestCase):
+    # Which mask semantic the cache declares for each shape of step.
+
+    def setUp(self):
+        torch.manual_seed(0)
+        self.cache = ContiguousReferenceCache(
+            CacheConfig(n_layers=1, n_kv_heads=2, head_dim=4, capacity=8)
+        )
+
+    def _step(self, start, q_len):
+        kv = torch.randn(1, 2, q_len, 4)
+        return self.cache.update_and_fetch(0, kv, kv, _positions(start, q_len))[2]
+
+    def test_decode_is_unmasked(self):
+        self.assertEqual(self._step(0, 1).kind, MaskKind.NONE)
+
+    def test_fresh_prefill_is_causal(self):
+        self.assertEqual(self._step(0, 4).kind, MaskKind.CAUSAL)
+
+    def test_continuation_is_an_explicit_lower_right_band(self):
+        self._step(0, 4)
+        spec = self._step(4, 3)  # 3 new cells at the tail of a 7-cell window
+        self.assertEqual(spec.kind, MaskKind.EXPLICIT)
+        self.assertEqual(spec.mask.dtype, torch.bool)
+        torch.testing.assert_close(
+            spec.mask, torch.ones(3, 7, dtype=torch.bool).tril(7 - 3)
+        )
+
+
+class AttendExplicitTest(unittest.TestCase):
+    # No cache emits MaskKind.EXPLICIT yet; these pin the spec's contract (bool,
+    # true = attend, broadcast over batch/heads) that cell/tree caches rely on.
+
+    def setUp(self):
+        torch.manual_seed(0)
+        self.q_len, self.total, self.head_dim = 3, 5, 8
+        self.q = torch.randn(1, 4, self.q_len, self.head_dim)  # GQA: 4 q heads
+        self.k = torch.randn(1, 2, self.total, self.head_dim)  # over 2 kv heads
+        self.v = torch.randn(1, 2, self.total, self.head_dim)
+        self.scale = self.head_dim**-0.5
+
+    def _attend(self, spec, k=None, v=None):
+        k = self.k if k is None else k
+        v = self.v if v is None else v
+        return attend(self.q, k, v, spec, self.scale, torch.float32)
+
+    def test_causal_rejects_a_non_square_window(self):
+        # torch's is_causal is upper-left, so it cannot serve a continuation;
+        # a cache must declare EXPLICIT there rather than CAUSAL.
+        with self.assertRaises(ValueError):
+            self._attend(AttendSpec(kind=MaskKind.CAUSAL))
+
+    def test_explicit_attends_the_true_cells(self):
+        # Polarity: masking to cells {0, 2} must equal attending over just those
+        # keys. The inverted convention would instead select {1, 3, 4}.
+        keep = torch.tensor([0, 2])
+        mask = torch.zeros(self.q_len, self.total, dtype=torch.bool)
+        mask[:, keep] = True
+        torch.testing.assert_close(
+            self._attend(AttendSpec(kind=MaskKind.EXPLICIT, mask=mask)),
+            self._attend(
+                AttendSpec(kind=MaskKind.NONE),
+                self.k.index_select(2, keep),
+                self.v.index_select(2, keep),
+            ),
+        )
 
 
 if __name__ == "__main__":

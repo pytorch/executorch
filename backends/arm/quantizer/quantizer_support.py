@@ -155,6 +155,7 @@ FUSED_RELU_OP_PATTERNS = (
 ALL_QPARAM_OP_PATTERNS = (
     [(target,) for target in _one_to_one]
     + ACTIVATION_FUNCTION_PATTERNS
+    + combo_pattern(BATCH_NORM_OPS)
     + CONV_OP_PATTERNS
     + LINEAR_OP_PATTERNS
     + BINARY_OP_PATTERNS

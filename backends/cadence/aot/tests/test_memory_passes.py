@@ -29,6 +29,7 @@ from executorch.backends.cadence.aot.memory_planning_algo import (
 )
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    CompileMode,
     count_node,
     register_cadence_pass,
 )
@@ -50,6 +51,54 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.models import MultiLayerPerceptron
 from parameterized import parameterized
 from torch.fx import GraphModule
+
+
+class TestCompileModeNormalization(unittest.TestCase):
+    def test_enum_mode_is_preserved(self) -> None:
+        memory_planning = CadenceMemoryPlanning(
+            get_default_memory_config(), mode=CompileMode.MINIMAL
+        )
+
+        self.assertEqual(memory_planning.mode, CompileMode.MINIMAL)
+        self.assertEqual(memory_planning.opt_level, 0)
+        self.assertEqual(memory_planning.algo.mode, CompileMode.MINIMAL)
+
+    def test_legacy_level_warns_once_and_takes_precedence(self) -> None:
+        with self.assertWarns(DeprecationWarning) as warning:
+            memory_planning = CadenceMemoryPlanning(
+                get_default_memory_config(),
+                mode=CompileMode.MINIMAL,
+                opt_level=4,
+            )
+
+        self.assertEqual(len(warning.warnings), 1)
+        self.assertIsNone(memory_planning.mode)
+        self.assertEqual(memory_planning.opt_level, 4)
+        self.assertIsNone(memory_planning.algo.mode)
+        self.assertEqual(memory_planning.algo.opt_level, 4)
+
+    def test_mem_constraints_normalize_conflicting_arguments(self) -> None:
+        with self.assertWarns(DeprecationWarning) as warning:
+            constraints = MemConstraints(
+                mode=CompileMode.MINIMAL,
+                opt_level=4,
+            )
+
+        self.assertEqual(len(warning.warnings), 1)
+        self.assertIsNone(constraints.mode)
+        self.assertEqual(constraints.opt_level, 4)
+
+    def test_memory_algorithm_normalizes_conflicting_arguments(self) -> None:
+        with self.assertWarns(DeprecationWarning) as warning:
+            algorithm = PositionBasedGreedyWithHierarchy(
+                get_default_memory_config(),
+                mode=CompileMode.MINIMAL,
+                opt_level=4,
+            )
+
+        self.assertEqual(len(warning.warnings), 1)
+        self.assertIsNone(algorithm.mode)
+        self.assertEqual(algorithm.opt_level, 4)
 
 
 class TestMemPlanningPasses(unittest.TestCase):

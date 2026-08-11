@@ -49,8 +49,29 @@ install_pytorch_and_domains() {
     export MAX_JOBS="${PYTORCH_BUILD_MAX_JOBS}"
   fi
   configure_pytorch_compiler
-  # Then build and install PyTorch
-  conda_run python setup.py bdist_wheel
+  # PyTorch no longer supports "python setup.py bdist_wheel"; it now builds
+  # through scikit-build-core (PEP 517). Build the wheel with the standard
+  # frontend and keep build isolation off, so PyTorch builds against this
+  # environment's numpy and toolchain (avoids an ABI mismatch) and reuses
+  # sccache.
+  #
+  # With isolation off the frontend does not fetch the PEP 517 build
+  # requirements, so install them here. They go into a throwaway venv rather
+  # than into the image, because scikit-build-core registers a setuptools
+  # build_ext plugin: left in the image it hijacks every later
+  # "pip install --no-build-isolation" and turns on C++20 module scanning that
+  # the image compiler cannot satisfy. The venv inherits the image's
+  # site-packages, so PyTorch still builds against the same numpy.
+  #
+  # Keep the list in sync with pytorch/pyproject.toml [build-system].requires.
+  local build_venv=/tmp/pytorch-build-venv
+  rm -rf "${build_venv}"
+  conda_run python -m venv --system-site-packages "${build_venv}"
+  conda_run "${build_venv}/bin/pip" install build "scikit-build-core>=1.0" \
+    "setuptools>=77.0.0,<82" "cmake>=3.27,<4" ninja "packaging>=24.2" \
+    "typing-extensions>=4.10.0" pyyaml six
+  conda_run "${build_venv}/bin/python" -m build --wheel --no-isolation
+  rm -rf "${build_venv}"
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
