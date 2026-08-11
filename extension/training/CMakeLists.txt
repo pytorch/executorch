@@ -82,6 +82,16 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
+  if(APPLE)
+    set(_training_lib_rpath "@loader_path/../../../../torch/lib")
+  else()
+    set(_training_lib_rpath "$ORIGIN/../../../../torch/lib")
+  endif()
+  set_target_properties(
+    _training_lib PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE
+                             INSTALL_RPATH "${_training_lib_rpath}"
+  )
+
   install(TARGETS _training_lib
           LIBRARY DESTINATION executorch/extension/training/pybindings
   )
