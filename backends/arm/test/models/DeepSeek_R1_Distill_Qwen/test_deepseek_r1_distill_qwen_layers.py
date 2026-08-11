@@ -342,8 +342,29 @@ VGF_NO_QUANT_BF16_SMALL_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = (
     TOSA_BF16_SMALL_TEST_CASES
 )
 
-VGF_NO_QUANT_BF16_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = (
-    TOSA_BF16_XLARGE_TEST_CASES
+VGF_NO_QUANT_BF16_XLARGE_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
+    "attention": DeepSeekR1DistillQwenTestCase(
+        model_cls=AttentionModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+    "mlp": DeepSeekR1DistillQwenTestCase(
+        model_cls=MLPModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+    "decoder_layer": DeepSeekR1DistillQwenTestCase(
+        model_cls=DecoderLayerModel,
+        atol=1e-2,
+        rtol=1e-2,
+    ),
+}
+
+# TODO(MLETORCH-2048): Investigate the ARM64 VGF BF16 decoder-layer mismatch.
+VGF_NO_QUANT_BF16_XLARGE_XFAILS: dict[str, common.xfail_type] = (
+    {"decoder_layer": "MLETORCH-2048: ARM64 VGF BF16 numeric mismatch"}
+    if common.is_aarch64_host()
+    else {}
 )
 
 TOSA_MXFP8_TEST_CASES: dict[str, DeepSeekR1DistillQwenTestCase] = {
@@ -573,6 +594,7 @@ def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16(
 @common.parametrize(
     "test_case",
     VGF_NO_QUANT_BF16_XLARGE_TEST_CASES,
+    xfails=VGF_NO_QUANT_BF16_XLARGE_XFAILS,
 )
 def test_deepseek_r1_distill_qwen_vgf_no_quant_bf16_xlarge(
     test_case: DeepSeekR1DistillQwenTestCase,

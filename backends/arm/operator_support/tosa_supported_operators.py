@@ -40,6 +40,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
+    EthosU55ResizeCheck,
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
@@ -363,6 +364,7 @@ def _negative_checks(
 
     if tosa_spec.is_U55_subset:
         checks.append(EthosU55NotSupported(reporter))
+        checks.append(EthosU55ResizeCheck(reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
 
