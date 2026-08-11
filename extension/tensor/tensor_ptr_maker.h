@@ -93,6 +93,22 @@ class TensorPtrMaker final {
   }
 
   /**
+   * Labels the tensor with the device where its buffer already lives.
+   *
+   * No data is moved, matching the corresponding `make_tensor_ptr` parameter.
+   *
+   * @param device The device on which the data buffer resides. Give the index
+   * explicitly: a device constructed without one is index 0 in this build and
+   * -1 in the ATen build, where it then compares unequal to the same device
+   * carrying an explicit index.
+   * @return Rvalue to this TensorPtrMaker for method chaining.
+   */
+  TensorPtrMaker&& device(executorch::aten::Device device) {
+    device_ = device;
+    return std::move(*this);
+  }
+
+  /**
    * Creates and returns a TensorPtr instance using the properties set in this
    * TensorPtrMaker.
    *
@@ -106,7 +122,8 @@ class TensorPtrMaker final {
         std::move(strides_),
         type_,
         dynamism_,
-        std::move(deleter_));
+        std::move(deleter_),
+        device_);
   }
 
   /**
@@ -141,6 +158,8 @@ class TensorPtrMaker final {
   executorch::aten::ScalarType type_ = executorch::aten::ScalarType::Float;
   executorch::aten::TensorShapeDynamism dynamism_ =
       executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND;
+  executorch::aten::Device device_ =
+      executorch::aten::Device(executorch::aten::DeviceType::CPU);
 };
 
 /**
