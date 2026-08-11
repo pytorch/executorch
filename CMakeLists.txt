@@ -277,16 +277,11 @@ endif()
 
 add_subdirectory(third-party)
 
-# On Apple, pybind11 SHARED extension modules must not link libpython directly.
-# When python_add_library creates a SHARED library, it links Python::Python (via
-# pybind11::embed) which pulls in libpython. This conflicts with pybind11
-# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
-# state crash at import time. This function replaces pybind11::embed with
-# pybind11::module (which links Python::Module instead of Python::Python —
-# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
-# symbol resolution. No-op on non-Apple platforms.
+# Unix pybind extension modules resolve Python symbols from the running
+# interpreter rather than linking a build-environment libpython. On Apple,
+# dynamic_lookup is also required for those symbols.
 function(strip_python_lib target)
-  if(NOT APPLE)
+  if(WIN32)
     return()
   endif()
   get_target_property(_libs ${target} LINK_LIBRARIES)
@@ -295,7 +290,9 @@ function(strip_python_lib target)
     list(APPEND _libs pybind11::module)
     set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
   endif()
-  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  if(APPLE)
+    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
 endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
