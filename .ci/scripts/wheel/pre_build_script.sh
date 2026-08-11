@@ -44,6 +44,57 @@ if [[ "$(uname -m)" == "aarch64" ]]; then
     echo "the file $file has been modified for atomic to use full path"
 fi
 
+# A CPU row must say so, rather than relying on the builder having no CUDA toolkit installed. The build
+# turns CUDA on when it detects one, so a builder that gains a toolkit would silently start producing a
+# CPU wheel carrying the CUDA delegate. That already happened on Windows, where the image ships a toolkit
+# on PATH and the resulting wheel failed to load its own extension.
+#
+# Stated as the inverse rule: anything that does not name a CUDA train this project supports is a CPU row.
+# An allowlist of spellings was tried first and left a gap for every spelling nobody thought of, which is
+# the same defect twice: testing only for empty let a row spelled "cpu" through, and listing "cpu" still
+# leaves "cpu-aarch64", "rocm" and anything else the matrix generator emits.
+#
+# The supported trains come from install_utils.py, so both classifiers see the same list.
+# Both reduce the row to digits and match against major+minor, so a row spelled with an
+# unsupported minor (say cu125) is a CPU row here and setup.py raises there.
+CUDA_ROW=0
+if [[ -n "${CU_VERSION:-${DESIRED_CUDA:-}}" ]]; then
+    ROW_VALUE="${CU_VERSION:-${DESIRED_CUDA:-}}"
+    # Windows builders run MSYS bash in a conda environment that has python.exe
+    # and no python3, so either name alone breaks a platform. Mirrors
+    # run_python_script.sh. Resolving up front instead of testing the exit status
+    # keeps a missing interpreter a hard failure rather than a silent CPU build.
+    PYTHON_BIN=$(command -v python3 || command -v python)
+    row_classification=$("${PYTHON_BIN}" - "${ROW_VALUE}" <<'PY'
+import re, sys
+sys.path.insert(0, '.')
+from install_utils import SUPPORTED_CUDA_VERSIONS
+row = re.sub(r'[^0-9]', '', sys.argv[1])
+trains = {f'{major}{minor}' for major, minor in SUPPORTED_CUDA_VERSIONS}
+print('cuda' if row in trains else 'cpu')
+PY
+)
+    if [[ "${row_classification}" == "cuda" ]]; then
+        CUDA_ROW=1
+    fi
+fi
+
+if [[ ${CUDA_ROW} -eq 0 ]]; then
+    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=OFF"
+    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
+    echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' names no supported CUDA train, building CPU-only"
+else
+    # A CUDA row must produce the CUDA libraries. Left at the default, the build only
+    # turns CUDA on if it happens to detect a toolkit, so a builder without one produced
+    # a wheel tagged for CUDA, carrying no CUDA library, while still declaring the CUDA
+    # runtime packages. That installs cleanly and then reports the backend as
+    # unregistered when a model runs. Asking for it explicitly makes a missing toolkit
+    # fail while configuring instead.
+    export CMAKE_ARGS="${CMAKE_ARGS:-} -DEXECUTORCH_BUILD_CUDA=ON"
+    echo "CMAKE_ARGS=${CMAKE_ARGS}" >> "${GITHUB_ENV}"
+    echo "row '${CU_VERSION:-${DESIRED_CUDA:-}}' is a CUDA row, requiring the CUDA build"
+fi
+
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
 if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
