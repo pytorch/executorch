@@ -164,14 +164,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-# The thread pool carries the define that switches parallel_for from a serial
-# fallback to the real threaded implementation, so without it quantize,
-# dequantize and choose_qparams run on one core. Guarded because a bare metal
-# target builds these kernels without a thread pool at all, where the serial
-# fallback is the only correct choice.
 target_link_libraries(
   quantized_kernels PRIVATE executorch_core kernels_util_all_deps
 )
+# The thread pool carries the define that switches parallel_for from a serial
+# fallback to the real threaded implementation. Without it choose_qparams runs
+# on one core, as does the ARM path in quantize. Guarded because a bare metal
+# target builds these kernels without a thread pool at all, where the serial
+# fallback is the only correct choice.
 if(TARGET extension_threadpool)
   target_link_libraries(quantized_kernels PRIVATE extension_threadpool)
 endif()
@@ -197,4 +197,26 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_quantized_ops quantized_ops_lib quantized_kernels
     executorch_shared
   )
+  # Named after what the library provides rather than after the target that
+  # produces it, matching the optimized kernels next to it, so the shipped file
+  # reads as libexecutorch_kernels_quantized.so. The target name stays as it is
+  # because a source build already refers to it.
+  set_target_properties(
+    executorch_quantized_ops PROPERTIES OUTPUT_NAME
+                                        executorch_kernels_quantized
+  )
+  # Ships beside libexecutorch.so in the wheel's lib/ directory, so it resolves
+  # the runtime from there rather than from wherever it was built.
+  executorch_target_shipped_runtime_path(executorch_quantized_ops)
+
+  # The wheel ships this library and also ships the export time plugin, and both
+  # register the same operator names into the runtime registry. The runtime
+  # stops on a repeat registration rather than choosing one, so a process
+  # holding both dies. Have the plugin take its registration from this library
+  # instead of compiling a second copy, which leaves exactly one registrant.
+  #
+  # Retention rather than a plain link, because registration happens in a static
+  # initializer and nothing references a symbol from this library. Under
+  # --as-needed the linker would drop the dependency and the operators would
+  # silently fail to register instead of failing the build.
 endif()
