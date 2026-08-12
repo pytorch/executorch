@@ -497,6 +497,15 @@ RAM is the binding constraint, not flash. Zephyr reserves 32 KB of main stack
 and a 32 KB heap out of 128 KB before the sketch gets any, and the arena the
 sketch hands to `MemoryManager` comes out of what remains. KeywordSpotting's
 DS-CNN plans 16 KB of buffers but needs considerably more for the method's own
-structures: a 28 KB arena fails `load_method` with `MemoryAllocationFailed`
-(0x21), and a 64 KB one loads but then fails `execute` with `InvalidProgram`
-(0x23), which is memory being overrun rather than a malformed program.
+structures, which leaves a usable band rather than a floor to clear:
+
+| Arena | Result |
+|-------|--------|
+| 28 KB | `load_method` fails, `MemoryAllocationFailed` (0x21), 180 B short |
+| 40 KB | Works. 46,068 bytes of globals (35%) — what the table above measures |
+| 64 KB | Pushes globals to 70,644 and past Zephyr's reservation; may appear to run, but it is overrunning memory |
+
+The sketch ships 40 KB for that reason. Growing it is not automatically safer:
+`arduino-cli` reports RAM against the full 131,072 bytes and knows nothing about
+Zephyr's stack and heap, so a 64 KB arena still reports a comfortable 53% while
+already overlapping reserved memory. Read the arena as bounded on both sides.
