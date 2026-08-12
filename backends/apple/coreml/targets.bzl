@@ -1,6 +1,18 @@
 load("@fbsource//tools/build_defs:default_platform_defs.bzl", "APPLE")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/runtime/core:targets.bzl", "build_sdk")
+load("@fbsource//xplat/executorch/runtime/core:targets.bzl", "build_sdk", "event_tracer_enabled")
+
+def _needs_coreml_sdk():
+    """Whether to compile `runtime/sdk` into the CoreML delegate.
+
+    `ETCoreMLModelManager.mm` imports `ETCoreMLModelAnalyzer.h` and friends under
+    `#if ET_EVENT_TRACER_ENABLED`, so the sdk sources must be present whenever that
+    define is set -- not only under `executorch.build_sdk`. CMake couples the two
+    (`EXECUTORCH_BUILD_DEVTOOLS` drives both `SDK_SOURCES` and
+    `-DET_EVENT_TRACER_ENABLED`); Buck exposes them as independent buckconfigs, so
+    without this `executorch.event_tracer_enabled=true` alone fails to compile.
+    """
+    return build_sdk() or event_tracer_enabled()
 
 def define_common_targets(is_fbcode = False):
     """Combined fbcode + xplat target definitions for backends/apple/coreml.
@@ -207,7 +219,7 @@ def define_common_targets(is_fbcode = False):
                 "runtime/util/objc_json_serde.mm",
             ] + (glob([
                 "runtime/sdk/*.mm",
-            ]) if build_sdk() else []),
+            ]) if _needs_coreml_sdk() else []),
             headers = glob([
                 "runtime/include/coreml_backend/delegate.h",
                 "runtime/kvstore/*.hpp",
@@ -218,7 +230,7 @@ def define_common_targets(is_fbcode = False):
                 "runtime/util/*.hpp",
             ]) + (glob([
                 "runtime/sdk/*.h",
-            ]) if build_sdk() else []),
+            ]) if _needs_coreml_sdk() else []),
             compiler_flags = [
                 "-fobjc-arc",
                 "-fno-exceptions",
@@ -244,7 +256,7 @@ def define_common_targets(is_fbcode = False):
                 "runtime/util",
             ] + ([
                 "runtime/sdk",
-            ] if build_sdk() else []),
+            ] if _needs_coreml_sdk() else []),
             fbobjc_libraries = [
                 "libsqlite3",
             ],
@@ -258,7 +270,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/kernel:kernel_includes",
             ] + ([
                 ":proto",
-            ] if build_sdk() else []),
+            ] if _needs_coreml_sdk() else []),
         )
 
         _PROTOS = [
