@@ -33,6 +33,7 @@ from pathlib import Path
 _EXPORT_SCRIPT = """
 import json
 import sys
+from pathlib import Path
 
 import torch
 from executorch.exir import to_edge_transform_and_lower
@@ -64,7 +65,15 @@ if mode == "quantized":
     # variants of the quantized operators with torch. Without it the export fails with
     # "Missing out variants: quantized_decomposed::quantize_per_tensor", because the
     # lowering step has no out variant to select.
-    import executorch.kernels.quantized  # noqa: F401
+    # Loaded directly rather than through executorch.kernels.quantized, whose __init__
+    # swallows every exception, so a load failure would otherwise appear much later as
+    # "Missing out variants" with no indication of why.
+    import executorch as _executorch
+
+    _root = Path(list(_executorch.__path__)[0]) / "kernels" / "quantized"
+    _libs = sorted(_root.glob("*quantized_ops_aot_lib.*"))
+    assert len(_libs) == 1, f"expected one ahead-of-time library, found {_libs}"
+    torch.ops.load_library(str(_libs[0]))
     from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
         get_symmetric_quantization_config,
         XNNPACKQuantizer,
@@ -259,6 +268,62 @@ find_package(executorch REQUIRED COMPONENTS {requested})
 add_executable(consumer consumer.cpp)
 {links}
 """
+
+
+def _mach_o_runtime_paths(binary) -> list:
+    """The runtime search path entries a Mach-O binary records.
+
+    Mach-O keeps one entry per LC_RPATH load command, where ELF keeps a single colon joined
+    string, so they are read rather than split.
+    """
+    otool = _tool("otool")
+    assert otool is not None, "otool is required to read a Mach-O runtime search path"
+    listing = subprocess.run(
+        [otool, "-l", str(binary)], capture_output=True, text=True, check=False
+    ).stdout
+    entries = []
+    lines = listing.splitlines()
+    for index, line in enumerate(lines):
+        if "LC_RPATH" not in line:
+            continue
+        for following in lines[index + 1 : index + 4]:
+            stripped = following.strip()
+            if stripped.startswith("path "):
+                entries.append(stripped.split(" (offset", 1)[0][len("path ") :])
+                break
+    return entries
+
+
+def _dynamic_lib_suffix() -> str:
+    """The loadable library suffix on this platform, including the dot."""
+    return ".dylib" if sys.platform == "darwin" else ".so"
+
+
+def _library_file_name(base_name: str) -> str:
+    """The file name a library has on this platform."""
+    return f"{base_name}{_dynamic_lib_suffix()}"
+
+
+def _recorded_dependencies(binary) -> str:
+    """What a built binary records about its dependencies and search paths.
+
+    readelf prints the ELF dynamic section, otool -l the Mach-O load commands. Both
+    carry the same facts: a dependency entry and a runtime search path entry, named
+    NEEDED and RUNPATH on ELF, LC_LOAD_DYLIB and LC_RPATH on Mach-O.
+    """
+    if sys.platform == "darwin":
+        tool, args = _tool("otool"), ["-l"]
+        needed = "otool"
+    else:
+        tool, args = _tool("readelf"), ["-d"]
+        needed = "readelf"
+    assert tool is not None, f"{needed} is needed to read the runtime search path"
+    return subprocess.run(
+        [tool, *args, str(binary)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
 
 def _tool(name: str) -> str:
@@ -560,19 +625,14 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
     model, reference = _export(work_dir, "plain")
     consumer = _build_consumer(work_dir, "relocate", ["runtime", "kernels_optimized"])
 
-    assert shutil.which("readelf") is not None, "readelf is needed to read the RUNPATH"
-    dynamic = subprocess.run(
-        [_tool("readelf"), "-d", str(consumer)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert "libexecutorch.so" in dynamic, (
+    dynamic = _recorded_dependencies(consumer)
+    assert _library_file_name("libexecutorch") in dynamic, (
         "the application records no dependency on the shipped runtime, so it is not "
         f"linking what the wheel ships:\n{dynamic}"
     )
-    assert "$ORIGIN" in dynamic, (
-        "the application has no $ORIGIN-relative runtime search path, so it cannot "
+    token = "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
+    assert token in dynamic, (
+        f"the application has no {token} relative runtime search path, so it cannot "
         f"work anywhere but where it was built:\n{dynamic}"
     )
     # The newer tag specifically, not just any search path. DT_RPATH is searched
@@ -580,12 +640,15 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
     # a consumer given DT_RPATH cannot point an instrumented or locally built
     # runtime at their application. Both tags satisfy the check above, so without
     # this the package could silently go back to the older one.
-    assert "(RUNPATH)" in dynamic, (
-        "the application's runtime search path is recorded as DT_RPATH rather than "
-        "DT_RUNPATH. DT_RPATH outranks LD_LIBRARY_PATH and is inherited by "
-        "dependencies, so a consumer could not override a packaged library with "
-        f"their own build:\n{dynamic}"
-    )
+    # ELF only. Mach-O records one LC_RPATH with no weaker older variant, so there is no
+    # equivalent preference to check there.
+    if sys.platform != "darwin":
+        assert "(RUNPATH)" in dynamic, (
+            "the application's runtime search path is recorded as DT_RPATH rather than "
+            "DT_RUNPATH. DT_RPATH outranks LD_LIBRARY_PATH and is inherited by "
+            "dependencies, so a consumer could not override a packaged library with "
+            f"their own build:\n{dynamic}"
+        )
 
     package_dir = _installed_package_dir()
     deployed = work_dir / "deployed"
@@ -598,7 +661,7 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
         directory = package_dir / source
         if not directory.is_dir():
             continue
-        for library in sorted(directory.glob("lib*.so*")):
+        for library in sorted(directory.glob(_library_file_name("lib*") + "*")):
             if library.is_file() and not library.is_symlink():
                 shutil.copy2(library, deployed / library.name)
 
@@ -625,20 +688,50 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
         "be installed. Without it the relocated application resolves the original "
         "package and the check would pass without testing anything."
     )
-    current = subprocess.run(
-        [patchelf, "--print-rpath", str(moved)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    kept = [
-        entry
-        for entry in current.split(":")
-        if entry and not entry.startswith(str(package_dir))
-    ]
-    subprocess.run(
-        [patchelf, "--set-rpath", ":".join(kept) or "$ORIGIN", str(moved)], check=True
-    )
+    if sys.platform == "darwin":
+        entries = _mach_o_runtime_paths(moved)
+    else:
+        entries = [
+            entry
+            for entry in subprocess.run(
+                [patchelf, "--print-rpath", str(moved)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            .stdout.strip()
+            .split(":")
+            if entry
+        ]
+    kept = [entry for entry in entries if not entry.startswith(str(package_dir))]
+
+    if sys.platform == "darwin":
+        # One entry per load command, so each unwanted one is deleted individually and the
+        # fallback is added only when stripping emptied the list.
+        install_name_tool = _tool("install_name_tool")
+        assert install_name_tool is not None, (
+            "install_name_tool is required to strip the wheel's absolute directory from the "
+            "relocated application, and without it this check passes for the wrong reason"
+        )
+        for entry in entries:
+            if entry in kept:
+                continue
+            subprocess.run(
+                [install_name_tool, "-delete_rpath", entry, str(moved)],
+                capture_output=True,
+                check=False,
+            )
+        if not kept:
+            subprocess.run(
+                [install_name_tool, "-add_rpath", "@loader_path", str(moved)],
+                capture_output=True,
+                check=False,
+            )
+    else:
+        subprocess.run(
+            [patchelf, "--set-rpath", ":".join(kept) or "$ORIGIN", str(moved)],
+            check=True,
+        )
 
     output = _run_consumer(moved, model, reference, work_dir)
     print(f"✓ the application still runs deployed away from the wheel ({output})")
@@ -790,7 +883,9 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
     # Globbed, not an exact name: the library carries a version suffix outside a wheel build, and an exact
     # match would silently skip this check there. The profiler is required elsewhere in this suite, so its
     # absence is a fault rather than a reason to skip.
-    shipped = sorted((package_dir / "lib").glob("libexecutorch_etdump.so*"))
+    shipped = sorted(
+        (package_dir / "lib").glob(_library_file_name("libexecutorch_etdump") + "*")
+    )
     assert shipped, (
         f"the wheel ships no profiler library under {package_dir / 'lib'}, so the etdump component it "
         "advertises cannot be linked"
@@ -1026,7 +1121,7 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
                         "executorch_kernels_optimized",
                         "executorch_threadpool",
                     )
-                    if (library_dir / f"lib{name}.so").is_file()
+                    if (library_dir / (f"lib{name}" + _dynamic_lib_suffix())).is_file()
                 ],
                 f"-Wl,-rpath,{library_dir}",
             ],
@@ -1236,10 +1331,8 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
     # the only thing that carries them on this route. Reading the dynamic section rather
     # than running because running needs a model, which the modern-CMake tests above
     # cover once and this one only owns the variables path.
-    dependencies = subprocess.run(
-        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=True
-    ).stdout
-    assert "libexecutorch.so" in dependencies, (
+    dependencies = _recorded_dependencies(consumer)
+    assert _library_file_name("libexecutorch") in dependencies, (
         "a consumer built through EXECUTORCH_LIBRARIES on pre-3.28 CMake does not "
         f"depend on the runtime:\n{dependencies}"
     )
@@ -1269,7 +1362,11 @@ def test_quantized_kernels_component_runs_a_model(work_dir: Path) -> None:
     package_dir = _installed_package_dir()
     # Globbed for the same reason the profiler check is: the library carries a version suffix outside a
     # wheel build, and an exact name would skip this silently there rather than running it.
-    shipped = sorted((package_dir / "lib").glob("libexecutorch_kernels_quantized.so*"))
+    shipped = sorted(
+        (package_dir / "lib").glob(
+            _library_file_name("libexecutorch_kernels_quantized") + "*"
+        )
+    )
     assert shipped, (
         "the wheel ships no quantized kernels library. The preset that builds it enables "
         "them unconditionally, so this is a packaging or build regression rather than an "
@@ -1318,7 +1415,9 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
     # always enables these kernels, so their absence is a regression rather than a
     # configuration to tolerate, and skipping would report this as coverage.
     assert sorted(
-        (package_dir / "lib").glob("libexecutorch_kernels_quantized.so*")
+        (package_dir / "lib").glob(
+            _library_file_name("libexecutorch_kernels_quantized") + "*"
+        )
     ), "the wheel ships no quantized kernels library, so this check cannot run"
 
     source_dir = work_dir / "aggregate-only"
@@ -1353,9 +1452,7 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
         )
 
     consumer = build_dir / "consumer"
-    dependencies = subprocess.run(
-        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=True
-    ).stdout
+    dependencies = _recorded_dependencies(consumer)
     assert "libexecutorch_kernels_quantized" not in dependencies, (
         "an application that linked only ${EXECUTORCH_LIBRARIES} depends on the "
         "quantized kernels. That library collides with the export-time plugin, so it "
