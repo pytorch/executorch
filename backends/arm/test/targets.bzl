@@ -52,6 +52,7 @@ def define_arm_tests():
     test_files += [
         "quantizer/test_generic_annotater.py",
         "quantizer/test_uint8_io_quantization.py",
+        "quantizer/test_vgf_snorm_quantization.py",
     ]
 
     # Misc tests
