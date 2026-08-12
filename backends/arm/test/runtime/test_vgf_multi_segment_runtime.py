@@ -17,11 +17,11 @@ from backends.arm.test.runtime._vgf_runtime_test_utils import (
     make_identity_grid,
     make_input_tensor,
     make_sampler_probe_inputs,
-    xfail_if_model_converter_below_minimum_version,
+    xfail_if_legacy_model_converter_release,
 )
 from executorch.backends.arm.test import common
 
-pytestmark = xfail_if_model_converter_below_minimum_version()
+pytestmark = xfail_if_legacy_model_converter_release()
 
 
 class _GraphThenShader(torch.nn.Module):
