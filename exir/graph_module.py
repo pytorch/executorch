@@ -8,7 +8,7 @@
 # pyre-strict
 
 from types import FunctionType as function
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Collection, Dict, List, Tuple, Union
 
 import torch
 from torch._ops import HigherOrderOperator
@@ -151,3 +151,29 @@ def bfs_trace_with_node_process(
             for _, submodule, _ in get_control_flow_submodules(current_graph_module)
         ]
         queue.extend(control_flow_submodules)
+
+
+def contains_any_op(
+    graph_module: torch.fx.GraphModule,
+    ops: Collection[Any],
+) -> bool:
+    """Return whether ``graph_module`` or a control-flow subgraph uses ``ops``."""
+    if not ops:
+        return False
+
+    queue = [graph_module]
+    while queue:
+        current_graph_module = queue.pop(0)
+        for node in current_graph_module.graph.nodes:
+            # EdgeOpOverload wraps the original ATen overload in ``_op``.
+            # Decomposition tables are keyed by the latter.
+            target = node.target
+            if not isinstance(target, torch._ops.OpOverload):
+                target = getattr(target, "_op", target)
+            if node.op == "call_function" and target in ops:
+                return True
+        queue.extend(
+            submodule
+            for _, submodule, _ in get_control_flow_submodules(current_graph_module)
+        )
+    return False

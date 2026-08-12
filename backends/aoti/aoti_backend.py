@@ -20,6 +20,7 @@ from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import contains_any_op
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
 
@@ -248,8 +249,12 @@ class AotiBackend(ABC):
             else:
                 custom_pass(device_edge_program.graph_module)
 
-        # Run decompositions if any
-        if decomposition_table:
+        # ``run_decompositions`` retraces the complete ExportedProgram even
+        # when none of the table's operators occur in the graph. Large CUDA
+        # models make that no-op expensive, so only run it when it can apply.
+        if contains_any_op(
+            device_edge_program.graph_module, decomposition_table.keys()
+        ):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )
