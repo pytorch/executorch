@@ -14,6 +14,7 @@ on:
       - extension/llm/export/**
       - extension/audio/**
       - examples/models/gemma4_31b/**
+      - examples/models/muse-glimmer/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
@@ -90,6 +91,7 @@ jobs:
           backends/mlx/test/test_slot_recycling.py \
           backends/mlx/test/test_sample.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
+          examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
