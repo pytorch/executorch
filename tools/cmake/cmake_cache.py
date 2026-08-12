@@ -7,7 +7,10 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-_FALSE_VALUES = {"off", "0", "", "no"}
+# CMake's own rule, matching install_utils._normalize_cmake_bool: true is ON, TRUE, YES, Y
+# or a non-zero number. Excluding a short list of false spellings instead read FALSE, N,
+# NOTFOUND and IGNORE as enabled, and this decides whether shared libraries are packaged.
+_TRUE_VALUES = {"on", "true", "yes", "y"}
 
 
 @dataclass
@@ -35,9 +38,15 @@ class CMakeCache:
 
     @staticmethod
     def _is_truthy(value: Optional[str]) -> bool:
-        if (value is None) or (value.lower().strip() in _FALSE_VALUES):
+        if value is None:
             return False
-        return True
+        normalized = value.strip().lower()
+        if normalized in _TRUE_VALUES:
+            return True
+        try:
+            return int(normalized) != 0
+        except ValueError:
+            return False
 
     @staticmethod
     def read_cmake_cache(cache_path: str) -> Dict[str, CacheValue]:
