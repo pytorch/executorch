@@ -53,7 +53,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         module_call_graph: List[ep.ModuleCallEntry],
     ) -> None:
         super().__init__(graph_signature, module_call_graph)
-        self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
+        self.state_dict: Dict[str, torch.Tensor] = {}
 
     def serialize_operator(
         self,
