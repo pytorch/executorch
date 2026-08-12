@@ -13,7 +13,6 @@ runtime.export_file(
 fbcode_target(
     _kind = runtime.python_library,
     name = "lib",
-    typing = True,
     srcs = [
         "serialization/__init__.py",
         "serialization/graph_serialize.py",
