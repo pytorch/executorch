@@ -193,17 +193,16 @@ if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
 endif()
 
 if(EXECUTORCH_BUILD_SHARED)
-  # Linux only, and said here rather than left to fail somewhere downstream. The
-  # shared build names libraries with an ELF soname, records $ORIGIN runtime
-  # paths, and uses GNU linker options to keep a registration-only library on a
-  # link line. None of that applies on Apple, which is served by the Swift
-  # package distribution, or on Windows, where the runtime carries no export
-  # annotations for a DLL. Enabling it elsewhere failed much later and less
-  # clearly, when packaging looked for a .so the build never emitted.
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Said here rather than left to fail somewhere downstream, where packaging
+  # looked for a library the build never emitted. Windows is still refused:
+  # there the runtime carries no export annotations, so a DLL would link against
+  # nothing, which is a missing capability rather than a different spelling of
+  # one.
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT APPLE)
     message(
-      FATAL_ERROR "EXECUTORCH_BUILD_SHARED is supported on Linux only, not "
-                  "${CMAKE_SYSTEM_NAME}."
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_SHARED is supported on Linux and macOS only, not "
+        "${CMAKE_SYSTEM_NAME}."
     )
   endif()
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
