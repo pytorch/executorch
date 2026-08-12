@@ -42,6 +42,61 @@ if(NOT CMAKE_CUDA_COMPILER)
   check_language(CUDA)
 endif()
 
+# Take the architectures from the release row when it names them, before the
+# language is enabled, since CMake fixes them at that point. Without this the
+# build uses CMake's default, which on some devices is older than the intrinsics
+# these sources use, and the compile fails with an undefined identifier that
+# looks like a source problem.
+#
+# TORCH_CUDA_ARCH_LIST is the variable the surrounding build environment already
+# sets, in PyTorch's dotted form. CMake wants bare integers, so "9.0" becomes
+# 90. A "+PTX" suffix asks for the portable form in addition to the compiled
+# one, which is what PyTorch means by it, so it adds the -virtual kind rather
+# than replacing the -real one. Torch sets this to OFF at root scope when it is
+# defined, warning that it ignores the value, so a defined value does not mean a
+# caller chose it. OFF is treated as absent here, otherwise asking for an
+# architecture through the preset silently compiles for whatever torch's own
+# gencode flags select instead. CMAKE_CUDA_ARCHITECTURES is deliberately not
+# read here. torch's CMake rejects and overrides it, which is why the release
+# rows publish TORCH_CUDA_ARCH_LIST instead, and CMake fills the cache entry
+# with a default of its own once the CUDA language is enabled. torch enables
+# that language before this directory is added, so the cache always holds a
+# value and cannot be read as a caller's intent: doing so replaced torch's
+# autodetected architecture with CMake's default and broke the build on a device
+# the default does not cover.
+if(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+  string(REPLACE "." "" _executorch_cuda_arch_list "$ENV{TORCH_CUDA_ARCH_LIST}")
+  string(REPLACE " " ";" _executorch_cuda_arch_list
+                 "${_executorch_cuda_arch_list}"
+  )
+  # A "+PTX" suffix asks for the portable form in addition to the compiled one.
+  # nvcc rejects that spelling and CMake spells it as a separate -virtual entry,
+  # so translate rather than pass it through: "120+PTX" becomes "120" and
+  # "120-virtual".
+  set(_executorch_cuda_arch_resolved "")
+  foreach(_arch IN LISTS _executorch_cuda_arch_list)
+    if(_arch MATCHES "^(.+)\\+PTX$")
+      list(APPEND _executorch_cuda_arch_resolved "${CMAKE_MATCH_1}"
+           "${CMAKE_MATCH_1}-virtual"
+      )
+    else()
+      list(APPEND _executorch_cuda_arch_resolved "${_arch}")
+    endif()
+  endforeach()
+  set(CMAKE_CUDA_ARCHITECTURES "${_executorch_cuda_arch_resolved}")
+  message(
+    STATUS
+      "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"
+  )
+else()
+  # torch sets this to OFF on purpose and drives nvcc with its own gencode
+  # flags, so there is nothing to choose here and overriding it would replace a
+  # working set of architectures with one value.
+  message(
+    STATUS "CUDA architectures left to torch: ${CMAKE_CUDA_ARCHITECTURES}"
+  )
+endif()
+
 if(CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
