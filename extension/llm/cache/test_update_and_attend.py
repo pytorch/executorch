@@ -425,6 +425,23 @@ class CellCacheTest(unittest.TestCase):
         self.assertEqual(cache.seq_len(1), 2)  # only positions 0 and 1
         self.assertEqual(cache.free_cells(), self.CAPACITY - 4)  # still no copy
 
+    def test_freeing_the_tail_shrinks_the_read_window(self):
+        cache = self._cache()
+        kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
+        cache.begin_step([0] * 4)
+        k, _, _ = cache.update_and_fetch(0, kv, kv, _positions(0, 4))
+        self.assertEqual(k.shape[2], 4)  # four cells held, so a window of four
+
+        cache.seq_rm(0)  # frees all four, so used_end walks back to 0
+        self.assertEqual(cache.free_cells(), self.CAPACITY)
+
+        # one token reclaims cell 0, so the window is its own single cell
+        kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
+        cache.begin_step([1])
+        k, _, spec = cache.update_and_fetch(0, kv, kv, torch.tensor([[0]]))
+        self.assertEqual(k.shape[2], 1)  # the window length is 1, not the old 4
+        self.assertEqual(spec.mask.shape[-1], 1)
+
     def test_seq_rm_over_a_range_frees_only_that_window(self):
         cache = self._cache()
         self._step(cache, torch.randn(1, 5, self.hidden), [0, 1, 2, 3, 4], [0] * 5)
