@@ -89,6 +89,7 @@ way, depending on the `ETHOSU_ARENA` parameter, the linker knows whether the inp
 its value is derived based on the memory mode parameter that is passed to the `examples/arm/run.sh` shell script. Then, at link time, the .ddr.bss section is always placed in the external memory and the .sram.bss is always placed in the SRAM.
 Finally, note that in the `examples/arm/executor_runner/arm_executor_runner.cpp` application code, we place the buffers for the Ethos-u scratch and the neural network in the correct symbol from the linker script. For instance,
 the Ethos-u scratch buffer corresponds to the the `.bss.tensor_arena` input section in the linker script, In the application code, when we allocate memory for the Ethos-u scratch buffer, we place this array in the .bss.tensor_arena section in the memory map.
+The same runner also supports ExecuTorch memory-planned tensors in `SLOW_MEMORY_REGION` for `mem_id=1` and `mem_id=2`, and in `FAST_MEMORY_REGION` for `mem_id=3`, backed by the `.fast_memory` input section in `.sram.bss` and sized with `ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE`.
 
 ```
 unsigned char __attribute__((

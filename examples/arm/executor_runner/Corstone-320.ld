@@ -236,6 +236,8 @@ SECTIONS
     *(.bss.tensor_arena)
 #endif
     . = ALIGN(16);
+    *(.fast_memory)
+    . = ALIGN(16);
     *(.bss.ethosu_scratch);
   } > SRAM :null
 
