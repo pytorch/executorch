@@ -64,12 +64,18 @@ class CoreAIQuantizer:
         )
         return self._prepared
 
+    def _require_prepared(self, method: str) -> None:
+        if self._prepared is None:
+            raise RuntimeError(f"Call prepare() before {method}().")
+
     def calibration_mode(self):
         """Context manager to collect activation statistics on calibration data."""
+        self._require_prepared("calibration_mode")
         return self._quantizer.calibration_mode()
 
     def training_mode(self):
         """Context manager for quantization-aware training."""
+        self._require_prepared("training_mode")
         return self._quantizer.training_mode()
 
     def convert(self) -> fx.GraphModule:
@@ -82,6 +88,5 @@ class CoreAIQuantizer:
         """
         from coreai_opt.common import ExportBackend
 
-        if self._prepared is None:
-            raise RuntimeError("Call prepare() before convert().")
+        self._require_prepared("convert")
         return self._quantizer.finalize(backend=ExportBackend.CoreAI)

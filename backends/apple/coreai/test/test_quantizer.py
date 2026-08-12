@@ -98,6 +98,14 @@ class CoreAIQuantizerTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             q.convert()
 
+    def test_prepare_is_required_before_the_mode_context_managers(self):
+        """Otherwise coreai_opt's own error surfaces instead of ours."""
+        for method in ("calibration_mode", "training_mode"):
+            with self.subTest(method):
+                q = CoreAIQuantizer(_model())
+                with self.assertRaisesRegex(RuntimeError, f"before {method}"):
+                    getattr(q, method)()
+
 
 class CoreAIQuantizerConvBNTest(unittest.TestCase):
     def setUp(self):
