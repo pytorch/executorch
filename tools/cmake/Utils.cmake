@@ -355,8 +355,15 @@ endfunction()
 # recorded directories are what resolves them there, and packaging strips them
 # so nothing absolute ships.
 function(executorch_target_shipped_runtime_path target_name)
+  # Mach-O spells the same idea @loader_path.
+  if(APPLE)
+    set(_origin "@loader_path")
+  else()
+    set(_origin "$ORIGIN")
+  endif()
   set_target_properties(
-    ${target_name} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
+    ${target_name} PROPERTIES BUILD_RPATH "${_origin}" INSTALL_RPATH
+                                                       "${_origin}"
   )
 endfunction()
 
@@ -378,12 +385,21 @@ endfunction()
 function(executorch_target_shared_runtime_path target_name wheel_subdir
          install_destination
 )
-  if(NOT EXECUTORCH_BUILD_SHARED OR APPLE)
+  if(NOT EXECUTORCH_BUILD_SHARED)
     return()
+  endif()
+  # Mach-O spells the token differently and takes a list rather than a colon
+  # joined string, so both differ here while the mechanism does not.
+  if(APPLE)
+    set(_origin "@loader_path")
+    set(_separator ";")
+  else()
+    set(_origin "$ORIGIN")
+    set(_separator ":")
   endif()
   # Up out of the subdirectory, then into the package's lib/.
   string(REGEX REPLACE "[^/]+" ".." _up "${wheel_subdir}")
-  set(_paths "$ORIGIN/${_up}/lib")
+  set(_paths "${_origin}/${_up}/lib")
   # Made absolute lexically, so a destination that is already absolute, as a
   # ${CMAKE_INSTALL_LIBDIR} based one becomes, is handled the same as a prefix
   # relative one.
@@ -408,10 +424,10 @@ function(executorch_target_shared_runtime_path target_name wheel_subdir
   file(RELATIVE_PATH _to_libdir "${_installed_dir}"
        "${CMAKE_INSTALL_FULL_LIBDIR}"
   )
-  string(APPEND _paths ":$ORIGIN/${_to_libdir}")
+  string(APPEND _paths "${_separator}${_origin}/${_to_libdir}")
   get_target_property(_existing ${target_name} INSTALL_RPATH)
   if(_existing)
-    set(_paths "${_existing}:${_paths}")
+    set(_paths "${_existing}${_separator}${_paths}")
   endif()
   set_target_properties(
     ${target_name} PROPERTIES BUILD_RPATH "${_paths}" INSTALL_RPATH "${_paths}"
@@ -434,6 +450,14 @@ endfunction()
 # instead is not equivalent, because a wheel is a zip and the format has no
 # portable symlink support.
 function(executorch_target_soname_policy target_name)
+  # Mach-O records the path a library expects to live at, and a consumer copies
+  # that path verbatim, so a library shipped somewhere other than where it was
+  # built is unfindable unless the recorded name is relative to whoever loads
+  # it. Set that before the wheel check, because the wheel is exactly the case
+  # that relocates.
+  if(APPLE)
+    set_target_properties(${target_name} PROPERTIES INSTALL_NAME_DIR "@rpath")
+  endif()
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     return()
   endif()

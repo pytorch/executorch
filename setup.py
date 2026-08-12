@@ -1728,8 +1728,8 @@ setup(
                 # what links it, which never happens inside a wheel.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/",
-                    src_name="libexecutorch.so",
-                    dst="executorch/lib/libexecutorch.so",
+                    src_name=get_dynamic_lib_name("executorch"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch"),
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
                 # Install the profiler next to it, as its own library rather than
@@ -1737,8 +1737,8 @@ setup(
                 # it however many consumers load.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
-                    src_name="libexecutorch_etdump.so",
-                    dst="executorch/lib/libexecutorch_etdump.so",
+                    src_name=get_dynamic_lib_name("executorch_etdump"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch_etdump"),
                     # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
                     # the devtools subdirectory itself, so the library exists
                     # whenever the shared build does. The Python extension carries a
@@ -1751,8 +1751,9 @@ setup(
                 # component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
-                    src_name="libexecutorch_threadpool.so",
-                    dst="executorch/lib/libexecutorch_threadpool.so",
+                    src_name=get_dynamic_lib_name("executorch_threadpool"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_threadpool"),
                     # The target only exists when both of its dependencies are
                     # enabled, so packaging has to require them too or a shared
                     # build with either turned off looks for a file that was
@@ -1767,8 +1768,9 @@ setup(
                 # registered once per process rather than once per component.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/configurations/",
-                    src_name="libexecutorch_kernels_optimized.so",
-                    dst="executorch/lib/libexecutorch_kernels_optimized.so",
+                    src_name=get_dynamic_lib_name("executorch_kernels_optimized"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_optimized"),
                     # The target is only created when the optimized kernels are
                     # enabled, so packaging has to require that too rather than
                     # looking for a file a shared build may never have produced.
@@ -1783,8 +1785,9 @@ setup(
                 # CPU-only build never produced.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
-                    src_name="libexecutorch_backend_cuda.so",
-                    dst="executorch/lib/libexecutorch_backend_cuda.so",
+                    src_name=get_dynamic_lib_name("executorch_backend_cuda"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_cuda"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_CUDA",
@@ -1816,8 +1819,9 @@ setup(
                 # them before.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
-                    src_name="libexecutorch_kernels_quantized.so",
-                    dst="executorch/lib/libexecutorch_kernels_quantized.so",
+                    src_name=get_dynamic_lib_name("executorch_kernels_quantized"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_quantized"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
@@ -1839,8 +1843,9 @@ setup(
                 # copy of it instead of one per component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
-                    src_name="libexecutorch_backend_xnnpack.so",
-                    dst="executorch/lib/libexecutorch_backend_xnnpack.so",
+                    src_name=get_dynamic_lib_name("executorch_backend_xnnpack"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_xnnpack"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",
