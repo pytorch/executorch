@@ -152,10 +152,13 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     # to the shared build so a build that does not opt in keeps the parent's
     # install-only behaviour.
     set_target_properties(
-      custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH ${RPATH}
+      custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                           "${RPATH}"
     )
   else()
-    set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES INSTALL_RPATH "${RPATH}"
+    )
   endif()
   executorch_target_shared_runtime_path(
     custom_ops_aot_lib "extension/llm/custom_ops"
