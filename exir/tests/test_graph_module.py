@@ -23,12 +23,8 @@ class TestContainsAnyOp(unittest.TestCase):
     def test_matches_aten_op(self) -> None:
         graph_module, _ = self._add_graph()
 
-        self.assertTrue(
-            contains_any_op(graph_module, {torch.ops.aten.add.Tensor})
-        )
-        self.assertFalse(
-            contains_any_op(graph_module, {torch.ops.aten.mul.Tensor})
-        )
+        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
+        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
 
     def test_matches_wrapped_edge_op(self) -> None:
         graph_module, add = self._add_graph()
@@ -38,9 +34,7 @@ class TestContainsAnyOp(unittest.TestCase):
 
         add.target = EdgeOp()
 
-        self.assertTrue(
-            contains_any_op(graph_module, {torch.ops.aten.add.Tensor})
-        )
+        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
 
 
 if __name__ == "__main__":
