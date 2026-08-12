@@ -106,12 +106,6 @@ install(
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/portable/
 )
 
-if(EXECUTORCH_BUILD_SHARED)
-  executorch_add_shared_library(
-    executorch_portable_ops portable_ops_lib portable_kernels executorch_shared
-  )
-endif()
-
 # Build the portable custom ops AOT library for registering custom ops into
 # PyTorch. Requires find_package(Torch), which must be called at root scope
 # before this subdirectory is processed. Not targeting ARM_BAREMETAL as aot_lib
@@ -144,7 +138,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
     set(RPATH "\$ORIGIN/../../extensions/pybindings")
   endif()
   set_target_properties(
-    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
-                                                                ${RPATH}
+    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                  "${RPATH}"
   )
 endif()
