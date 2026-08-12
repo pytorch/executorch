@@ -62,12 +62,21 @@ def _full_finalize(model, example_inputs):
 
 
 def _constant_dtypes(graph_module):
-    """dtype of every constant the converted graph holds, keyed by name."""
+    """dtype of every constant the converted graph holds, keyed by name.
+
+    Targets can be dotted attribute paths (``0.bias``), which a plain getattr
+    does not resolve, so walk them: a helper that silently returns nothing
+    would make the "no such constant" assertions below pass vacuously.
+    """
     dtypes = {}
     for node in graph_module.graph.nodes:
         if node.op != "get_attr":
             continue
-        value = getattr(graph_module, str(node.target), None)
+        value = graph_module
+        for part in str(node.target).split("."):
+            value = getattr(value, part, None)
+            if value is None:
+                break
         if isinstance(value, torch.Tensor):
             dtypes[str(node.target)] = value.dtype
     return dtypes
@@ -389,12 +398,6 @@ class FloatQuantizationTest(unittest.TestCase):
     ``QuantizationSpec``, with ``scale_dtype`` selecting the scale form: an
     fp32 scale for plain FP8, or a power-of-two ``float8_e8m0fnu`` scale for
     OCP Microscaling (FP4 always, FP8 optionally).
-
-    These need ``get_default_compile_config()``, which disables the edge
-    verifier: an FP weight reaches ``coreai::constexpr_blockwise_shift_scale``
-    beside a differently-typed scale, and the verifier rejects any op whose
-    tensor inputs disagree on dtype. Int8 happens to pass without it, so the
-    tests above do not need the config.
     """
 
     CASES = (
@@ -479,6 +482,7 @@ class FloatQuantizationTest(unittest.TestCase):
         for case in self.CASES:
             with self.subTest(case.name):
                 constants = _constant_dtypes(self._convert(case))
+                self.assertTrue(constants, "no constants collected")
                 self.assertEqual([n for n in constants if n.endswith("zero_point")], [])
 
     def test_lowers_through_to_executorch(self):
@@ -487,15 +491,20 @@ class FloatQuantizationTest(unittest.TestCase):
                 self.assertGreater(self._pte_size(case), 0)
 
     def test_fp4_is_smaller_than_fp8(self):
-        """Guards against a silent fallback that would keep the wider dtype."""
+        """Guards against a silent fallback that would keep the wider dtype.
+
+        Both sides use the same per-block granularity and e8m0 scales, so the
+        difference is the weight dtype alone.
+        """
         by_name = {case.name: case for case in self.CASES}
         fp4 = self._pte_size(by_name["fp4_e2m1_microscaling"])
-        fp8 = self._pte_size(by_name["fp8_e4m3_per_channel"])
+        fp8 = self._pte_size(by_name["fp8_e4m3_microscaling"])
         self.assertLess(
             fp4,
             fp8,
-            f"fp4 pte ({fp4}) should be smaller than fp8 ({fp8}); equal sizes "
-            f"suggest the requested dtype was not applied",
+            f"fp4 pte ({fp4}) should be smaller than fp8 at the same "
+            f"granularity ({fp8}); equal sizes suggest the requested dtype was "
+            f"not applied",
         )
 
 
