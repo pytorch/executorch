@@ -7,7 +7,6 @@
 
 # pyre-strict
 
-# TODO(T138924864): Refactor to unify the serialization for bundled program and executorch program.
 
 import functools
 import importlib.resources as _resources
