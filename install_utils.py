@@ -141,6 +141,44 @@ def _get_cuda_version():
         )
 
 
+def _selected_nvcc() -> List[str]:
+    """The nvcc command line to ask for a version, matching what the build will use.
+
+    Reading the bare command described whichever toolkit was on PATH, while the build also honours
+    these variables. Packaging then declared the runtime for one toolkit while compiling against
+    another, or declared nothing at all when the selected compiler was not on PATH.
+    """
+    explicit = os.environ.get("CMAKE_CUDA_COMPILER") or os.environ.get("CUDACXX")
+    if explicit:
+        return [explicit, "--version"]
+    root = os.environ.get("CUDAToolkit_ROOT")
+    if root:
+        candidate = os.path.join(root, "bin", "nvcc")
+        if os.path.exists(candidate):
+            return [candidate, "--version"]
+    return ["nvcc", "--version"]
+
+
+@functools.lru_cache(maxsize=1)
+def _detected_cuda_major() -> Optional[int]:
+    """The CUDA major version of the installed toolkit, or None if none is installed.
+
+    Kept separate from `_get_cuda_version` because the mismatch guard in the wheel build
+    needs the major regardless of whether the exact (major, minor) is listed in
+    SUPPORTED_CUDA_VERSIONS. Reading through the validator caused the guard to see an
+    empty detection for any unlisted minor (say 12.8), so a cu130 row built on a CUDA 12
+    toolkit produced a wheel with no error.
+    """
+    try:
+        result = subprocess.run(
+            _selected_nvcc(), capture_output=True, text=True, check=True
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+        return None
+    match = re.search(r"release (\d+)\.\d+", result.stdout)
+    return int(match.group(1)) if match else None
+
+
 def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
     """The value CMake would use for -D<name>, which is the last one given.
 
