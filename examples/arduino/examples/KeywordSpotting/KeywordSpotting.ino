@@ -54,7 +54,13 @@ static const char* kLabels[] = {
     "silence", "unknown", "yes", "no", "up", "down",
     "left", "right", "on", "off", "stop", "go"};
 
-alignas(16) static uint8_t method_pool[28 * 1024];
+// 28 KB fails load_method with MemoryAllocationFailed (0x21), and going the
+// other way is not free: Zephyr takes a 32 KB stack and a 32 KB heap out of the
+// board's 128 KB before the sketch sees any, so an arena large enough to push
+// globals past ~64 KB overruns that reservation. arduino-cli's RAM figure does
+// not account for it and will look comfortable either way. See "Memory" in
+// ../../README.md.
+alignas(16) static uint8_t method_pool[40 * 1024];
 
 // ExecuTorch logs go to a weak hook so the library does not depend on Serial.
 // Without this the runtime's own diagnostics -- allocation failures, operator
