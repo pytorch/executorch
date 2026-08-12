@@ -150,9 +150,7 @@ using printf_size_t = unsigned long;
  * e.g. the input file data and the pte file data
  * In our unit test flow, we have the capability to provide an enitre model to
  * the Corstone-3xx FVP using semi hosting. Hence, the input file allocation
- * pool needs to be large enough to take an entire model and input. On the FVP,
- * input_data_sec is linked to the DDR, which is large (256MB on
- * Corstone-300).
+ * pool needs to be large enough to take an entire model and input.
  * If you use semihosting on your HW this can be lowered to fit your
  * files/memory
  */
@@ -163,7 +161,7 @@ using printf_size_t = unsigned long;
 const size_t input_file_allocation_pool_size =
     ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section("input_file_allocator_sec"),
     aligned(16))) input_file_allocation_pool[input_file_allocation_pool_size];
 #endif
 
@@ -231,7 +229,7 @@ using torch::executor::etdump_result;
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section("method_allocator_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
 #if defined(ET_BUNDLE_IO)

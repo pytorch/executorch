@@ -254,14 +254,6 @@ SECTIONS
     __asan_shadow_end = .;
   } > DDR :null
 
-  .ddr.bss (NOLOAD) :
-  {
-#if (ETHOSU_ARENA == 1)
-    . = ALIGN(32);
-    *(.bss.tensor_arena)
-#endif
-  } > DDR :null
-
   __eddr_data = ALIGN(4);
   .sram.data :
   {
@@ -280,6 +272,17 @@ SECTIONS
     . = ALIGN(4);
     __rodata_end__ = .;
   } > DTCM AT >DDR :rom_dram
+
+  .ddr.bss (NOLOAD) :
+  {
+    . = ALIGN(16);
+    *(input_file_allocator_sec)
+    *(method_allocator_sec)
+#if (ETHOSU_ARENA == 1)
+    . = ALIGN(32);
+    *(.bss.tensor_arena)
+#endif
+  } > DDR :null
 
   .bss :
   {
