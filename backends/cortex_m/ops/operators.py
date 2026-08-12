@@ -1495,8 +1495,21 @@ def quantized_max_pool2d_impl(
     if ceil_mode:
         raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
 
+    # aten's cpu_max_pool_channels_last buffers each window index in
+    # vec::int_same_size_t<opmath_t> and guards it with
+    # TORCH_CHECK(input_depth * input_height * input_width <= max), so int8
+    # rejects any image with more than 127 spatial elements -- H*W, with
+    # channels not counted. int16 hits the same wall at 32767, which a future
+    # quantized_max_pool2d_s16 will need to handle the same way. Pooling is
+    # layout-invariant, so pool a contiguous copy; the return below puts the
+    # result back in channels-last either way.
+    #
+    # .to(memory_format=...) rather than .contiguous(): for C == 1 the
+    # channels-last strides also satisfy plain contiguity, so .contiguous()
+    # returns the same tensor while aten still dispatches on the memory-format
+    # hint and raises anyway.
     result = F.max_pool2d(
-        input,
+        input.to(memory_format=torch.contiguous_format),
         kernel,
         stride=stride_vals,
         padding=padding_vals,
