@@ -260,5 +260,28 @@ class BoundaryLoweringTest(unittest.TestCase):
         self.assertIn(torch.int64, out_dtypes)  # int64 output preserved
 
 
+class _MutatedBuffer(nn.Module):
+    """In-place buffer mutation, as a KV cache does."""
+
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("count", torch.zeros(8))
+
+    def forward(self, x):
+        self.count.add_(1.0)
+        return x + self.count
+
+
+class MutableBufferBoundaryTest(unittest.TestCase):
+    """A mutated buffer crosses the boundary as an input as well as an output.
+
+    coreai gives it a graph argument and a result, so both sides of the
+    compatibility check have to count it.
+    """
+
+    def test_mutated_buffer_lowers(self):
+        _lower(_MutatedBuffer(), (torch.randn(2, 8),))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -131,6 +131,11 @@ class AOTCompileConfig:
                 f"allowed: {sorted(cls._ALLOWED)}"
             )
         arch = data.get("architectures")
+        if arch is not None and not isinstance(arch, list):
+            # A bare string would splat into one flag per character.
+            raise ValueError(
+                f"architectures must be a list, got {type(arch).__name__}: {arch!r}"
+            )
         return cls(
             platform=data.get("platform"),
             preferred_compute=data.get("preferred_compute"),
@@ -152,6 +157,25 @@ def _get_compile_spec(
     return None
 
 
+def _reject_existing_asset_dir(dest: Path) -> None:
+    """Refuse to write over an asset directory a previous build left behind.
+
+    Each delegate owns one ``<hash>/`` directory, and the hash covers the
+    ``.aimodel`` only. AOT options are applied after it is computed, so a
+    rebuild with a different platform or OS floor lands on the same path: left
+    alone, the manifest would advertise the new options while the bundles on
+    disk stayed from the earlier build. Two delegates in one build always
+    differ here, so this only fires across builds.
+    """
+    if dest.exists():
+        raise RuntimeError(
+            f"sidecar asset directory already exists: {dest}\n"
+            f"A previous build wrote it, and its contents may have been "
+            f"compiled with different options. Remove it, or point "
+            f"COREAI_SIDECAR_DIR at a clean directory."
+        )
+
+
 @contextlib.contextmanager
 def coreai_sidecar_dir(path: str) -> Iterator[None]:
     """Set ``COREAI_SIDECAR_DIR`` for the duration of a ``with`` block.
@@ -160,6 +184,12 @@ def coreai_sidecar_dir(path: str) -> Iterator[None]:
     env var to name the build-time output directory.  The prior value is
     restored on exit.
 
+    The directory must not already hold asset directories: they are build
+    output, and stale ones are indistinguishable from this build's. Loose
+    files beside them (``.DS_Store``, a ``.pte``) are left alone. Setting the
+    env var directly skips this check, but each asset directory is still
+    guarded individually as it is written.
+
     Example::
 
         with coreai_sidecar_dir("build/model"):
@@ -167,6 +197,15 @@ def coreai_sidecar_dir(path: str) -> Iterator[None]:
                 ep, partitioner=[CoreAIPartitioner(uses_sidecar=True)]
             )
     """
+    existing = Path(path)
+    if existing.exists() and not existing.is_dir():
+        raise RuntimeError(f"sidecar output path is not a directory: {path}")
+    if existing.is_dir() and any(p.is_dir() for p in existing.iterdir()):
+        raise RuntimeError(
+            f"sidecar output directory already holds assets: {path}\n"
+            f"Assets from an earlier build cannot be told apart from this "
+            f"one's. Remove the directory or choose another."
+        )
     prev = os.environ.get(SIDECAR_DIR_ENV)
     os.environ[SIDECAR_DIR_ENV] = path
     try:
@@ -208,6 +247,46 @@ def _maybe_warn_sidecar_env_ignored() -> None:
         )
 
 
+def _deliver(
+    staging: Path,
+    model_hash: str,
+    packaging: AssetPackaging,
+    manifest_extra: Dict[str, Any],
+    sidecar_dir: Optional[str],
+) -> PreprocessResult:
+    """Ship a staging directory of bundles, embedded or on disk.
+
+    ``staging`` holds the ``.aimodel`` / ``.aimodelc`` bundles, never their
+    contents, so both deliveries land on the same ``<hash>/<bundle>/`` layout:
+    inline under the ``coreai/`` NamedDataStore prefix, sidecar under the build
+    output directory. Keeping one implementation is what stops the two from
+    drifting apart again.
+
+    The sidecar write is staged and renamed into place, so a failure partway
+    cannot leave a half-populated ``<hash>/`` behind for
+    :func:`_reject_existing_asset_dir` to trip over on the next build.
+    """
+    manifest = {"packaging": packaging.value, "hash": model_hash, **manifest_extra}
+    if sidecar_dir is None:
+        return _embed_dir_inline(staging, model_hash, manifest)
+
+    dest = Path(sidecar_dir) / model_hash
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _reject_existing_asset_dir(dest)
+    pending = dest.with_name(f".{model_hash}.partial")
+    if pending.exists():
+        shutil.rmtree(pending)
+    try:
+        pending.mkdir(parents=True)
+        for bundle in sorted(staging.iterdir()):
+            shutil.move(str(bundle), str(pending / bundle.name))
+        pending.rename(dest)
+    except BaseException:
+        shutil.rmtree(pending, ignore_errors=True)
+        raise
+    return PreprocessResult(processed_bytes=json.dumps(manifest).encode("utf-8"))
+
+
 def _prepare_program_for_conversion(edge_program: ExportedProgram) -> ExportedProgram:
     """Rewrite an edge-dialect program into the ATen form ``coreai-torch`` expects.
 
@@ -244,6 +323,10 @@ def _embed_dir_inline(
 ) -> PreprocessResult:
     """Flatten every file under ``root_dir`` into the NamedDataStore.
 
+    ``root_dir`` is the directory *containing* the ``.aimodel`` / ``.aimodelc``
+    bundles, never a bundle itself, so the bundle name survives into the keys
+    and the asset reconstructs to the layout the sidecar routes write on disk.
+
     Keys are ``coreai/{hash}/{relpath}``; the manifest lists the relpaths plus
     any ``manifest_extra`` (packaging, archs, ...).
     """
@@ -258,14 +341,47 @@ def _embed_dir_inline(
                 path.read_bytes(),
                 alignment=_ASSET_ALIGNMENT,
             )
-    manifest = {"hash": model_hash, "files": files, **manifest_extra}
+    manifest = {"files": files, **manifest_extra}
     return PreprocessResult(
         processed_bytes=json.dumps(manifest).encode("utf-8"),
         data_store_output=store.get_named_data_store_output(),
     )
 
 
+def _os_version_text(min_os) -> Optional[str]:
+    """The floor actually baked into a portable asset, as ``major.minor``.
+
+    ``save_asset`` takes an ``OSVersion``, which carries only a major version,
+    so a spec of ``"27.5"`` yields a v27 asset. Deriving the manifest value
+    from the OSVersion rather than the raw spec keeps the two from disagreeing.
+    The AOT route reports :func:`_min_os_text` instead, since ``coreai-build``
+    honours the minor version it is given.
+    """
+    return None if min_os is None else f"{min_os.value.lstrip('v')}.0"
+
+
 # AOT (coreai-build) helpers.
+def _min_os_text(compile_specs: List[CompileSpec]) -> Optional[str]:
+    """The MIN_DEPLOYMENT_VERSION spec as ``major[.minor[.patch]]``, or None.
+
+    The two consumers want different spellings of the same thing: ``coreai.
+    authoring.OSVersion`` accepts only names like ``"v27"``, while
+    ``coreai-build --min-deployment-version`` rejects them and wants a numeric
+    version. Users may write either, so this is the one place that normalizes;
+    ``_min_os_version`` renders the OSVersion form for ``save_asset`` and this
+    numeric form is what reaches coreai-build and the manifest.
+    """
+    raw = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_VERSION)
+    if raw is None:
+        return None
+    text = raw.decode()
+    if text.startswith("v"):
+        text = text[1:]
+    # Canonicalize to major.minor so "27", "v27" and "27.0" agree; two builds
+    # differing only in spelling would otherwise emit different manifests.
+    return f"{text}.0" if "." not in text else text
+
+
 def _aot_compile_options(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
     """Normalized coreai-build opts from AOT_COMPILE_CONFIG + general specs.
 
@@ -274,11 +390,10 @@ def _aot_compile_options(compile_specs: List[CompileSpec]) -> Dict[str, Any]:
     """
     raw = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.AOT_COMPILE_CONFIG)
     config = AOTCompileConfig.from_json(raw.decode()) if raw else AOTCompileConfig()
-    min_dep = _get_compile_spec(compile_specs, COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_VERSION)
     return {
         "platform": config.platform or "macOS",
         # None => let coreai-build use its own default; matches save_asset default.
-        "min_deployment_version": min_dep.decode() if min_dep else None,
+        "min_deployment_version": _min_os_text(compile_specs),
         "preferred_compute": config.preferred_compute or "none",
         # empty list => compile for all supported architectures
         "architectures": list(config.architectures or []),
@@ -442,91 +557,59 @@ class CoreAIBackend(BackendDetails):
         # (via save_asset(minimum_os=...)). In the aot-compiled path the temp
         # .aimodel is discarded, so it keeps the default floor (no
         # double-specification).
+        if not uses_sidecar:
+            _maybe_warn_sidecar_env_ignored()
         if aot_compiled:
-            opts = _aot_compile_options(compile_specs)
-            if uses_sidecar:
-                return CoreAIBackend._preprocess_aot_compiled_sidecar(
-                    program, opts, sidecar_dir
-                )
-            return CoreAIBackend._preprocess_aot_compiled_inline(program, opts)
-
-        min_os = _min_os_version(compile_specs)
-        if uses_sidecar:
-            return CoreAIBackend._preprocess_sidecar(program, sidecar_dir, min_os)
-        _maybe_warn_sidecar_env_ignored()
-        return CoreAIBackend._preprocess_inline(program, min_os)
+            return CoreAIBackend._preprocess_aot_compiled(
+                program, _aot_compile_options(compile_specs), sidecar_dir
+            )
+        return CoreAIBackend._preprocess_portable(
+            program,
+            _min_os_version(compile_specs),
+            sidecar_dir,
+        )
 
     # Portable .aimodel delivery.
     @staticmethod
-    def _preprocess_inline(program, min_os) -> PreprocessResult:
+    def _preprocess_portable(
+        program, min_os, sidecar_dir: Optional[str]
+    ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
-            asset_dir = Path(tmp) / "model.aimodel"
-            model_hash = _save_and_hash(program, asset_dir, min_os)
-            return _embed_dir_inline(
-                asset_dir, model_hash, {"packaging": AssetPackaging.INLINE.value}
+            model_hash = _save_and_hash(program, Path(tmp) / "model.aimodel", min_os)
+            return _deliver(
+                Path(tmp),
+                model_hash,
+                AssetPackaging.SIDECAR if sidecar_dir else AssetPackaging.INLINE,
+                {
+                    # relative path the runtime resolves against its base
+                    "path": f"{model_hash}/model.aimodel",
+                    "min_deployment_version": _os_version_text(min_os),
+                },
+                sidecar_dir,
             )
-
-    @staticmethod
-    def _preprocess_sidecar(program, sidecar_dir: str, min_os) -> PreprocessResult:
-        out_dir = Path(sidecar_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory() as tmp:
-            staged = Path(tmp) / "model.aimodel"
-            model_hash = _save_and_hash(program, staged, min_os)
-            bundle_name = f"{model_hash}.aimodel"
-            final = out_dir / bundle_name
-            if not final.exists():
-                shutil.move(str(staged), str(final))
-
-        manifest = {
-            "packaging": AssetPackaging.SIDECAR.value,
-            "hash": model_hash,
-            "path": bundle_name,
-        }
-        return PreprocessResult(processed_bytes=json.dumps(manifest).encode("utf-8"))
 
     # AOT-compiled .aimodelc delivery (per architecture).
     @staticmethod
-    def _preprocess_aot_compiled_inline(
-        program, opts: Dict[str, Any]
+    def _preprocess_aot_compiled(
+        program, opts: Dict[str, Any], sidecar_dir: Optional[str]
     ) -> PreprocessResult:
         with TemporaryDirectory() as tmp:
             model_hash, out = _compile_aot(program, opts, Path(tmp))
-            archs = [arch for arch, _ in _compiled_arch_bundles(out)]
-            return _embed_dir_inline(
+            return _deliver(
                 out,
                 model_hash,
+                (
+                    AssetPackaging.AOT_COMPILED_SIDECAR
+                    if sidecar_dir
+                    else AssetPackaging.AOT_COMPILED_INLINE
+                ),
                 {
-                    "packaging": AssetPackaging.AOT_COMPILED_INLINE.value,
                     "platform": opts["platform"],
                     "min_deployment_version": opts["min_deployment_version"],
-                    "archs": archs,
+                    "archs": {
+                        arch: f"{model_hash}/{bundle.name}"
+                        for arch, bundle in _compiled_arch_bundles(out)
+                    },
                 },
+                sidecar_dir,
             )
-
-    @staticmethod
-    def _preprocess_aot_compiled_sidecar(
-        program, opts: Dict[str, Any], sidecar_dir: str
-    ) -> PreprocessResult:
-        out_base = Path(sidecar_dir)
-        out_base.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory() as tmp:
-            model_hash, out = _compile_aot(program, opts, Path(tmp))
-            dest = out_base / model_hash
-            archs: Dict[str, str] = {}
-            for arch, bundle in _compiled_arch_bundles(out):
-                target = dest / bundle.name
-                if not target.exists():
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(bundle), str(target))
-                # relative path the runtime resolves against its base dir
-                archs[arch] = f"{model_hash}/{bundle.name}"
-
-        manifest = {
-            "packaging": AssetPackaging.AOT_COMPILED_SIDECAR.value,
-            "hash": model_hash,
-            "platform": opts["platform"],
-            "min_deployment_version": opts["min_deployment_version"],
-            "archs": archs,
-        }
-        return PreprocessResult(processed_bytes=json.dumps(manifest).encode("utf-8"))

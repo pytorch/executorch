@@ -18,6 +18,7 @@ from typing import Any, List, Sequence, Tuple
 import torch
 from executorch.backends.apple.coreai.compiler.constants import MAIN_ENTRYPOINT
 from torch.export.exported_program import ExportedProgram
+from torch.export.graph_signature import InputKind
 
 logger = logging.getLogger(__name__)
 
@@ -70,16 +71,26 @@ def _edge_io(edge_program: ExportedProgram):
     int/float) -> (type_name_str, None), kept as entries so both sides stay
     positionally aligned with :func:`_coreai_io` (which also emits non-tensor
     entries).
+
+    Inputs walk ``graph_signature.input_specs``, which is ordered like the
+    placeholders. Mutated buffers are included alongside the user inputs,
+    mirroring ``TorchConverter._register_io``: a mutation is passed in and
+    handed back, so coreai gives it a graph argument.
     """
     placeholders = {
         n.name: n for n in edge_program.graph.nodes if n.op == "placeholder"
     }
+    signature = edge_program.graph_signature
+    mutated = set(signature.buffers_to_mutate.values())
+
     inputs = []
-    for name in edge_program.graph_signature.user_inputs:
-        # A non-tensor input appears in user_inputs as its literal value, not a
-        # placeholder name.
-        node = placeholders.get(name)
-        val = node.meta.get("val") if node is not None else name
+    for spec in signature.input_specs:
+        is_mutated_buffer = spec.kind == InputKind.BUFFER and spec.target in mutated
+        if spec.kind != InputKind.USER_INPUT and not is_mutated_buffer:
+            continue
+        node = placeholders.get(getattr(spec.arg, "name", None))
+        # A non-tensor input carries its literal value on the spec instead.
+        val = node.meta.get("val") if node is not None else spec.arg.value
         if hasattr(val, "dtype"):
             inputs.append((val.dtype, tuple(val.shape)))
         else:
