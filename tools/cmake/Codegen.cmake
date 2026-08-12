@@ -312,7 +312,26 @@ function(gen_operators_lib)
     list(APPEND _srcs_list ${_opvariant_h})
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  # On Apple a shared operators library must not link the static core: no link
+  # option there makes the shared runtime win the registry symbols first, so the
+  # core's operator registry member would be absorbed and the process would end
+  # up with two operator tables. The headers are all this path needs from it.
+  if(APPLE AND GEN_SHARED)
+    foreach(_dep ${GEN_DEPS})
+      if(TARGET ${_dep})
+        target_include_directories(
+          ${GEN_LIB_NAME}
+          PRIVATE $<TARGET_PROPERTY:${_dep},INTERFACE_INCLUDE_DIRECTORIES>
+        )
+        target_compile_definitions(
+          ${GEN_LIB_NAME}
+          PRIVATE $<TARGET_PROPERTY:${_dep},INTERFACE_COMPILE_DEFINITIONS>
+        )
+      endif()
+    endforeach()
+  else()
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  endif()
   # Resolve the runtime from the shared library rather than from the static core
   # in GEN_DEPS. Linking the static core gives this library its own copy of the
   # operator table, so its static initializer registers into a table nothing
