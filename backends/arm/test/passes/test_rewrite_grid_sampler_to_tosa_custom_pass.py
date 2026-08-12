@@ -420,7 +420,10 @@ def test_rewrite_grid_sampler_to_tosa_custom_c3_pad_for_align_corners():
     )
     assert payload["output_0_type"] == "Image"
     assert payload["output_0_vkformat"] == GRID_SAMPLER_2D_SAMPLER_VK_FORMAT
-    assert any(node.target == exir_ops.edge.aten.cat.default for node in nodes)
+    assert any(
+        node.target == exir_ops.edge.aten.constant_pad_nd.default for node in nodes
+    )
+    assert not any(node.target == exir_ops.edge.aten.cat.default for node in nodes)
     assert any(node.target == exir_ops.edge.aten.slice_copy.Tensor for node in nodes)
 
 
@@ -603,11 +606,17 @@ def test_rewrite_grid_sampler_to_tosa_custom_keeps_clean_graph_for_c3_sampler_pa
         == 2
     )
     assert (
-        _count_call_function_target(graph_module, exir_ops.edge.aten.cat.default) == 1
+        _count_call_function_target(
+            graph_module, exir_ops.edge.aten.constant_pad_nd.default
+        )
+        == 1
+    )
+    assert (
+        _count_call_function_target(graph_module, exir_ops.edge.aten.cat.default) == 0
     )
     assert (
         _count_call_function_target(graph_module, exir_ops.edge.aten.slice_copy.Tensor)
-        >= 2
+        == 1
     )
 
 

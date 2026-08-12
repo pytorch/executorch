@@ -187,6 +187,7 @@ test_run_ethos_u55() {
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/prim_ops.py --bundleio --no_delegate --no_quantize --select_ops_list="aten::add.out,aten::select_copy.int_out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
@@ -473,14 +474,42 @@ test_memory_allocation() {
     # Ethos-U85
     echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
+    # method_allocator_input includes one 16-byte EValue input plus possible
+    # alignment padding before that allocation.
     python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
             --require "model_pte_program_size" "<= 3200 B" \
             --require "method_allocator_planned" "<= 64 B" \
             --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 16 B" \
+            --require "method_allocator_input" "<= 24 B" \
             --require "Total DRAM used" "<= 0.06 KiB"
 
     _test_runner_size_optimization
+
+    echo "${TEST_SUITE_NAME}: Test planned slow and fast memory allocation"
+    local plan_dir="arm_test/test_run/memory_planning"
+    local pte_file="${plan_dir}/memory_planning_mem_id_3.pte"
+    local runner_dir="${plan_dir}/cmake-out"
+    local planned_log="${plan_dir}/planned.log"
+    mkdir -p "${plan_dir}"
+
+    python3 "${et_root_dir}/backends/arm/test/assets/export_memory_planning_mem_id_3.py" \
+        --output="${pte_file}"
+
+    backends/arm/scripts/build_executor_runner.sh \
+        --pte="${pte_file}" \
+        --target=ethos-u55-128 \
+        --output="${runner_dir}" \
+        --select_ops_list="aten::add.out,aten::mul.out" \
+        --extra_build_flags="-DFETCH_ETHOS_U_CONTENT=OFF -DET_ARM_BAREMETAL_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=0x180000 -DET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE=0x1000"
+
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${runner_dir}/arm_executor_runner" \
+        --target=ethos-u55-128 \
+        &> "${planned_log}"
+
+    python3 backends/arm/test/test_memory_allocator_log.py --log "${planned_log}" \
+            --require "method_allocator_planned" "== 8 B" \
+            --require "planned_fast_used" "== 8 B"
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

@@ -187,3 +187,54 @@ template renders tool definitions, and the server converts Muse Glimmer 30B ATEM
 output into OpenAI-compatible `tool_calls`. See
 [`serving/tool_parsers/atem.py`](serving/tool_parsers/atem.py) and
 [`tests/test_atem_tool_parser.py`](tests/test_atem_tool_parser.py).
+
+### Use from pi
+
+Point pi at the server via `~/.pi/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "muse-glimmer-local": {
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "api": "openai-completions",
+      "apiKey": "x",
+      "models": [
+        {
+          "id": "muse-glimmer-30B",
+          "reasoning": true,
+          "contextWindow": 131072,
+          "maxTokens": 32768,
+          "compat": {
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "chat-template",
+            "chatTemplateKwargs": { "return_reasoning": true },
+            "sendSessionAffinityHeaders": true
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+```bash
+pi --provider muse-glimmer-local \
+  --model muse-glimmer-30B \
+  --thinking high \
+  --tools read,bash,edit,write
+```
+
+The model id must match `--model-id`. The `compat` entries:
+
+- `supportsDeveloperRole` — the template renders no `developer` turn, so pi's
+  system prompt is otherwise dropped silently.
+- `supportsReasoningEffort` — the server rejects `reasoning_effort` with a 400.
+- `return_reasoning` — returns the `to=self` channel as `reasoning_content`.
+- `sendSessionAffinityHeaders` — optional, for per-conversation sessions; needs
+  `--max-sessions` above 1.
+
+Set `contextWindow` to the export's context length (`128K` is 131072) and pass
+the same value as `--max-context`. Add `"input": ["text", "image"]` for a vision
+export.

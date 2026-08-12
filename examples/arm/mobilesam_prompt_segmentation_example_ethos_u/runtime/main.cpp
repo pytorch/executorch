@@ -46,7 +46,7 @@ using executorch::runtime::Span;
 const size_t method_allocation_pool_size =
     ET_SEGMENTATION_METHOD_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_data_sec"),
+    section("method_allocator_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
 const size_t temp_allocation_pool_size =

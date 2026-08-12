@@ -96,6 +96,7 @@ fbcode_target(
     srcs = [
         "vgf/__init__.py",
         "vgf/_passes/__init__.py",
+        "vgf/_passes/fuse_grid_sampler_flow_offset.py",
         "vgf/_passes/insert_grid_sampler_grid_dequant_pass.py",
         "vgf/_passes/rewrite_grid_sampler_to_tosa_custom.py",
         "vgf/backend.py",
@@ -107,6 +108,7 @@ fbcode_target(
         "vgf/shaders/grid_sampler.py",
     ],
     resources = [
+        "vgf/shaders/flow_offset_grid_sampler_int8_align_corners.glsl",
         "vgf/shaders/grid_sampler.glsl",
         "vgf/shaders/grid_sampler.spirv.b64",
         "vgf/shaders/grid_sampler_sampler.glsl",
