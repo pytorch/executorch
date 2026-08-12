@@ -144,7 +144,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
     set(RPATH "\$ORIGIN/../../extensions/pybindings")
   endif()
   set_target_properties(
-    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
-                                                                ${RPATH}
+    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                  "${RPATH}"
   )
 endif()
