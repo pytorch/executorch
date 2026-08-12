@@ -324,8 +324,31 @@ def _convert_to_aiprogram(edge_program: ExportedProgram):
 
     aten_program = _prepare_program_for_conversion(edge_program)
     converter = TorchConverter()
-    converter.add_exported_program(aten_program)
+    converter.add_exported_program(
+        aten_program, externalized_modules=_externalized_modules(aten_program)
+    )
     return converter.to_coreai()
+
+
+def _externalized_modules(aten_program: ExportedProgram):
+    """Prepared submodules for the externalized ops this subgraph calls.
+
+    Looked up from the graph rather than a compile spec: the submodules are
+    build-time-only state that the runtime has no use for, and a key in the
+    .pte would make the artifact non-reproducible.
+    """
+    from executorch.backends.apple.coreai.externalize import (
+        externalized_op_name,
+        is_externalize_target,
+        lookup,
+    )
+
+    op_names = {
+        externalized_op_name(node.target)
+        for node in aten_program.graph.nodes
+        if node.op == "call_function" and is_externalize_target(node.target)
+    }
+    return lookup(sorted(op_names)) if op_names else None
 
 
 # Asset embedding helpers.
