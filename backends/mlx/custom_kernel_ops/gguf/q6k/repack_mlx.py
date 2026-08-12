@@ -55,17 +55,31 @@ def repack_mlx(
     ``scale_dtype`` sets the dtype of the emitted scales/biases constants; pass
     the activation dtype so MLX ``quantized_matmul`` does not promote (a bf16
     activation with f16 scales, or vice versa, promotes to float32).
+
+    Once this path is committed to, the raw blob is released so it does not sit
+    alongside the packed constants for the rest of the build. It is deliberately
+    kept when returning ``None``: the fused-kernel fallback reads those bytes.
     """
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
-    weight_target, raw = P.get_placeholder_target_and_tensor(weight_node)
+    weight_target = P.get_placeholder_target(weight_node)
+    cached = P.repack_cache.get(weight_target)
+    if cached is not None:
+        # Second consumer of a shared weight (e.g. a tied embedding / lm_head).
+        # The raw blob is already gone, so it must not be read again.
+        return cached
+
+    _, raw = P.get_placeholder_target_and_tensor(weight_node)
     intx = ExportableGGUFTensor.from_raw(raw, "q6_k").to_intx_unpacked_to_int8_tensor(
         max_group_size=128, scale_dtype=scale_dtype
     )
+    del raw
     group_size = int(intx.block_size[-1])
     if group_size < _MIN_MLX_GROUP_SIZE:
+        # Falling back to the fused kernels, which consume the raw blob.
         return None
 
+    P.release_placeholder_tensor(weight_node)
     qdata, scale, zero_point = intx.qdata, intx.scale, intx.zero_point
     del intx  # drop the tensor-subclass wrapper; keep only the fields we need
     packed, biases = to_mlx_qparams(qdata, scale, zero_point, _BITS)
@@ -84,4 +98,6 @@ def repack_mlx(
         biases,
         scales_slot,
     )
-    return packed_slot, scales_slot, biases_slot, group_size
+    result = (packed_slot, scales_slot, biases_slot, group_size)
+    P.repack_cache[weight_target] = result
+    return result

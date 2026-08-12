@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 
 import torch
 from executorch.backends.mlx._logging import logger
+from executorch.backends.mlx._memprofile import mem_phase
 from executorch.backends.mlx.preprocess import MLXBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -64,7 +65,8 @@ class MLXOperatorSupport(OperatorSupportBase):
         from executorch.backends.mlx.builder.program_builder import MLXProgramBuilder
 
         builder = MLXProgramBuilder(edge_program)
-        builder.check_support_only()
+        with mem_phase("partition: check_support"):
+            builder.check_support_only()
 
         self._supported: Dict[torch.fx.Node, bool] = {}
         self._unsupported_reason: Dict[torch.fx.Node, str] = {}
@@ -150,7 +152,8 @@ class MLXPartitioner(Partitioner):
 
         # Run the builder to determine which nodes are supported
         builder = MLXProgramBuilder(ep)
-        builder.check_support_only()
+        with mem_phase("ops_to_not_decompose: check_support"):
+            builder.check_support_only()
 
         # Collect ops for nodes that are actually supported
         do_not_decompose: list[torch._ops.OpOverload] = []

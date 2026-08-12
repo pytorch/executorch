@@ -41,13 +41,25 @@ def repack_mlx(
     ``scale_dtype`` sets the dtype of the emitted scales/biases constants; pass
     the activation dtype so MLX ``quantized_matmul`` does not promote (a bf16
     activation with f16 scales, or vice versa, promotes to float32).
+
+    The raw blob is released as soon as it has been unpacked, so it does not sit
+    alongside the packed constants for the rest of the build.
     """
     from executorch.extension.llm.export.gguf import ExportableGGUFTensor
 
-    weight_target, raw = P.get_placeholder_target_and_tensor(weight_node)
+    weight_target = P.get_placeholder_target(weight_node)
+    cached = P.repack_cache.get(weight_target)
+    if cached is not None:
+        # Second consumer of a shared weight (e.g. a tied embedding / lm_head).
+        # The raw blob is already gone, so it must not be read again.
+        return cached
+
+    _, raw = P.get_placeholder_target_and_tensor(weight_node)
     intx = ExportableGGUFTensor.from_raw(raw, "q5_k").to_intx_unpacked_to_int8_tensor(
         max_group_size=128, scale_dtype=scale_dtype
     )
+    del raw
+    P.release_placeholder_tensor(weight_node)
     group_size = int(intx.block_size[-1])
     qdata, scale, zero_point = intx.qdata, intx.scale, intx.zero_point
     del intx  # drop the tensor-subclass wrapper; keep only the fields we need
@@ -57,4 +69,6 @@ def repack_mlx(
     packed_slot = P.make_or_get_constant(f"{weight_target}_q5k_packed", packed)
     scales_slot = P.make_or_get_constant(f"{weight_target}_q5k_scales", scale)
     biases_slot = P.make_or_get_constant(f"{weight_target}_q5k_biases", biases)
-    return packed_slot, scales_slot, biases_slot, group_size
+    result = (packed_slot, scales_slot, biases_slot, group_size)
+    P.repack_cache[weight_target] = result
+    return result
