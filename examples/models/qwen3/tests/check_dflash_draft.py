@@ -19,14 +19,17 @@ method = et_runtime.load_program(
     pte_path, verification=Verification.Minimal
 ).load_method("forward")
 
-block_size, hidden_size, vocab_size = 16, 12800, 151936
+block_size, hidden_size, vocab_size = (
+    16,
+    12800,
+    151936,
+)
 
 for ctx_len in (8, 20, 1):
     tokens = torch.randint(0, 1000, (1, block_size), dtype=torch.long)
     target_hidden = torch.randn(1, ctx_len, hidden_size)
-    position_ids = torch.arange(ctx_len + block_size).unsqueeze(0).long()
 
-    (draft_logits,) = method.execute([tokens, target_hidden, position_ids])
+    (draft_logits,) = method.execute([tokens, target_hidden])
     assert draft_logits.shape == (1, block_size - 1, vocab_size), (
         ctx_len,
         draft_logits.shape,

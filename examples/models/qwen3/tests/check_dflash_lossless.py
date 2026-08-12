@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 """Checks that DFlash produces the exact same output as normal greedy decoding.
-
 A command failure or an output mismatch both FAIL this check.
 """
 
@@ -17,37 +16,29 @@ PROMPT = "Write a Python function that takes a list of integers and returns the 
 N = 96
 
 
-def run(script, extra):
+def run(path, extra):
     result = subprocess.run(
-        [
-            sys.executable,
-            f"examples/models/qwen3/{script}",
-            "--prompt",
-            PROMPT,
-            "--max-new-tokens",
-            str(N),
-        ]
-        + extra,
+        [sys.executable, path, "--prompt", PROMPT, "--max-new-tokens", str(N)] + extra,
         capture_output=True,
         text=True,
         cwd=".",
     )
     if result.returncode != 0:
-        print(f"FAIL: {script} exited with code {result.returncode}")
+        print(f"FAIL: {path} exited with code {result.returncode}")
         print(f"--- stderr ---\n{result.stderr}")
         print(f"--- stdout ---\n{result.stdout}")
         sys.exit(1)
 
     m = re.search(r"Generated \([^)]*\): (.*?)\n\n", result.stdout, re.DOTALL)
     if m is None:
-        print(f"FAIL: could not find a 'Generated (...):' line in {script}'s output")
+        print(f"FAIL: could not find a 'Generated (...):' line in {path}'s output")
         print(f"--- stdout ---\n{result.stdout}")
         sys.exit(1)
     return m.group(1)
 
 
-baseline = run("run_baseline.py", [])
-dflash = run("run_dflash.py", [])
+baseline = run("examples/models/qwen3/run_baseline.py", [])
+dflash = run("backends/mlx/examples/llm/run_dflash.py", [])
 
 print("BASELINE:\n", baseline[:400])
 print("\nDFLASH:\n", dflash[:400])

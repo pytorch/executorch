@@ -4,27 +4,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Eager parity test: DFlashQwen3Attention against real, unmodified
-Qwen3Attention. Run directly:
-    python examples/models/qwen3/tests/check_dflash_draft_parity.py
+"""Parity test comparing DFlashQwen3Attention with unmodified Qwen3Attention.
 
-Property under test: with an empty target context (S=0), DFlash's attention
-reduces exactly to plain bidirectional self-attention over the block alone --
-what a real Qwen3Attention computes with is_causal=False. Divergence here
-means the adaptation (position slicing, masking, dispatch) has drifted from
-the reference module.
-"""
+With an empty target context, DFlash should match bidirectional self-attention
+over the proposal block. Any mismatch indicates a difference in the adapted
+attention logic, such as position handling, masking, or dispatch."""
 
 import copy
 
 import torch
 
 from executorch.backends.mlx.examples.llm.dflash_draft_model import (
+    _to_qwen3_config,
     DFlashConfig,
     DFlashQwen3Attention,
-    _to_qwen3_config,
 )
-from transformers.models.qwen3.modeling_qwen3 import Qwen3Attention, Qwen3RotaryEmbedding
+from transformers.models.qwen3.modeling_qwen3 import (
+    Qwen3Attention,
+    Qwen3RotaryEmbedding,
+)
 
 
 def main():
@@ -72,7 +70,9 @@ def main():
     max_diff = (dflash_out - ref_out).abs().max().item()
     print(f"max abs diff: {max_diff:.3e}")
     if torch.allclose(dflash_out, ref_out, atol=1e-5, rtol=1e-5):
-        print("PASS: DFlashQwen3Attention matches real Qwen3Attention with empty context.")
+        print(
+            "PASS: DFlashQwen3Attention matches real Qwen3Attention with empty context."
+        )
     else:
         print("FAIL: DFlashQwen3Attention diverges from the reference module.")
 

@@ -4,10 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Exports the DFlash draft model to a .pte program. 
+"""Export the DFlash draft model to a .pte program. 
 
-This script loads the pretrained DFlash draft checkpoint, copies the shared embedding and output projection weights from target model, applies same 4-bit quantization used by target, and exports the draft model for MLX inference. 
-The exported model is used alongside the target model during speculative decoding. 
+Loads the pretrained Qwen3 DFlash checkpoint, copies embedding and output projection weights from the target model, applies matching 4-bit quantization, and exports the draft for MLX inference. 
 """
 
 import argparse
@@ -20,42 +19,26 @@ from executorch.backends.mlx.examples.llm.dflash_draft_model import (
     load_dflash_config,
 )
 from huggingface_hub import snapshot_download
-from safetensors.torch import load_file
 from torch.export import Dim
 from transformers import AutoModelForCausalLM
 
 
 def load_draft_model(draft_id: str, target_state_dict: dict) -> DFlashDraftModel:
+    from executorch.backends.mlx.examples.llm.dflash_qwen3_adapter import (
+        load_qwen3_dflash_draft_weights,
+    )
+
     path = Path(snapshot_download(draft_id, allow_patterns=["*.safetensors", "*.json"]))
     config = load_dflash_config(path)
     model = DFlashDraftModel(config)
-
-    draft_weights = {}
-    for f in path.glob("*.safetensors"):
-        draft_weights.update(load_file(str(f)))
-
-    missing, unexpected = model.load_state_dict(draft_weights, strict=False)
-    assert not unexpected, f"Unexpected draft checkpoint keys: {unexpected}"
-    still_missing = [
-        k for k in missing if not k.startswith(("embed_tokens.", "lm_head."))
-    ]
-    assert not still_missing, f"Missing draft checkpoint keys: {still_missing}"
-
-    model.embed_tokens.weight.data.copy_(target_state_dict["model.embed_tokens.weight"])
-    lm_head_key = (
-        "lm_head.weight"
-        if "lm_head.weight" in target_state_dict
-        else "model.embed_tokens.weight"
-    )
-    model.lm_head.weight.data.copy_(target_state_dict[lm_head_key])
+    load_qwen3_dflash_draft_weights(model, path, target_state_dict)
     return model
 
 
 def main():
-    # Register "mlx" into ALL_ATTENTION_FUNCTIONS so DFlashQwen3Attention's
-    # dispatch can resolve it. export_llm_hf.py does this for the target;
-    # the draft's own export script needs the same call.
+    # Register the MLX attention implementation so DFlashQwen3Attention can use the same attention dispatch as the target model.
     from executorch.backends.mlx.llm.hf_attention import register_mlx_attention
+
     register_mlx_attention()
 
     parser = argparse.ArgumentParser()
@@ -63,19 +46,14 @@ def main():
     parser.add_argument("--draft-model", default="z-lab/Qwen3-4B-DFlash-b16")
     parser.add_argument("--output", default="qwen3_4b_dflash_draft.pte")
     parser.add_argument("--block-size", type=int, default=16)
-    # --ctx-len only seeds the example shape used for tracing (ctx_len is a
-    # dynamic dim below via `Dim("ctx_len", ...)`); it is not a runtime cap.
-    # --max-ctx-len is the actual bound on context length at inference time.
+    # --ctx-len provides the example shape used during tracing, the dimension remains dynamic.
+    # --max-ctx-len sets the upper bound supported at inference time.
     parser.add_argument("--ctx-len", type=int, default=8)
     parser.add_argument("--max-ctx-len", type=int, default=4096)
     parser.add_argument(
         "--cached",
         action="store_true",
-        help="Export with a persistent draft KV cache (review point 3) instead "
-        "of reprojecting the full accumulated context every round. The "
-        "exported forward() then takes (tokens, new_ctx, cache_position) "
-        "instead of (tokens, target_hidden) -- new_ctx is ONLY the "
-        "newly-confirmed context hidden states, not the full history.",
+        help="Export with a persistent draft KV cache instead of reprojecting the full context each round.",
     )
     args = parser.parse_args()
 
@@ -84,8 +62,7 @@ def main():
     model.eval()
     del target
 
-    # Quantize the draft model to match the target model.
-    # Keeping both models at the same precision reduces memory usage and helps keep their predictions consistent, which is important for achieving a high draft acceptance rate.
+    # Match the target model's 4-bit quantization to reduce memory usage and keep draft predictions aligned with the target for better acceptance.
     from executorch.backends.mlx.llm.quantization import quantize_model_
 
     quantize_model_(
@@ -101,9 +78,7 @@ def main():
     hidden_size = model.fc.in_features
     tokens = torch.randint(0, 1000, (1, block_size), dtype=torch.long)
 
-    # min=2, not 1: block_len=1 hits a shape-ambiguity guard during export.
-    # run_dflash.py's bs==1 branch already skips the draft entirely in that
-    # case (target-only step), so the export never needs to support it.
+    # Require at least 2 proposal tokens because block_len=1 is not supported by the export shape handling, the runtime skips the draft for that case.
     block_dim = Dim("block_len", min=2, max=block_size)
 
     import torch.fx.experimental._config as fx_config
@@ -114,9 +89,10 @@ def main():
         )
 
         class DFlashCachedDraftModel(torch.nn.Module):
-            """Owns the cache as a submodule (mutable buffers) rather than
-            receiving it as a forward() argument, matching the pattern
-            proven in scratch_draft_cache_export.py."""
+            """Wraps the draft model with a persistent KV cache.
+
+            The cache is stored as a module subcomponent so torch.export can preserve its mutable state instead of requiring the cache as a forward argument.
+            """
 
             def __init__(self, draft_model, max_seq_len):
                 super().__init__()
@@ -135,8 +111,7 @@ def main():
 
         cached_model = DFlashCachedDraftModel(model, args.max_ctx_len).eval()
 
-        # Example inputs for tracing: a mid-generation round -- some prior
-        # context already in the cache, plus a few newly-confirmed tokens.
+        # Trace using a mid-generation example with existing cached context and a small batch of newly confirmed tokens.
         prev_ctx_len_example = 32
         new_ctx = torch.randn(1, ctx_len, hidden_size)
         cache_position = torch.arange(

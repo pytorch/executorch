@@ -70,11 +70,15 @@ To run the model on an example iOS or Android app, see the Llama README's [Step 
 
 ### DFlash speculative decoding (MLX delegate)
 
-`export_dflash_draft.py`, `run_dflash.py`, and `run_baseline.py` implement
-block-diffusion speculative decoding (DFlash) for Qwen3 on the MLX delegate.
-See `../../../backends/mlx/examples/llm/dflash_hidden_export.py` for the
-hidden-state-tapping wrapper used during export (moved out of this folder
-since it's model-agnostic, not Qwen3-specific).
+`run_baseline.py` here runs plain greedy decoding for comparison.
+The generic DFlash pieces -- `export_dflash_draft.py`, `run_dflash.py`,
+`dflash_draft_model.py`, `dflash_draft_cache.py`, and
+`dflash_hidden_export.py` -- live under
+`../../../backends/mlx/examples/llm/` instead of here, since none of them
+are Qwen3-specific: any checkpoint exported through the generic
+`export_llm_hf.py` path can use them. Qwen3 involvement here is limited to
+this README and to defaults (checkpoint names, tokenizer/chat-template
+handling) in those generic scripts' CLI arguments.
 
 The `check_dflash_*.py` scripts under `tests/` are manual driver scripts, not
 pytest tests -- they require exported `qwen3_4b_dflash_target.pte` /

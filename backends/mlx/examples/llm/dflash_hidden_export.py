@@ -4,25 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Generic hidden-state-tapping export wrapper for DFlash.
+"""Generic hidden-state-tapping export wrapper for DFlash. 
 
-Originally lived under examples/models/qwen3/, but the wrapper itself has
-no Qwen3-specific logic -- it subclasses transformers'
-TorchExportableModuleWithStaticCache and adds output_hidden_states to its
-forward, which works for any standard HF causal LM exported via the
-generic export_llm_hf.py path. Moved here (per review) so any model using
-that path can reuse it, rather than importing across from a
-model-specific folder.
-
-Gemma 4 (examples/models/gemma4_31b/) currently does hidden-state tapping
-differently -- by patching its own hand-written forward() rather than
-going through export_llm_hf.py's generic HF export path -- so it has its
-own separate mlx_source_transformations.py and isn't using this class.
-Not migrated as part of this change; that's a separate piece of work
-outside this PR's scope.
-
-Base class signature/behavior confirmed via:
-    inspect.getsource(transformers.integrations.executorch.TorchExportableModuleWithStaticCache)
+Wraps TorchExportableModuleWithStaticCache and enables hidden-state outputs during the forward pass. This allows standard HuggingFace causal language models using the generic export path to reuse the wrapper. The wrapper is kept separate from model-specific implementations so it can be shared across different models. The base class behavior follows transformers' TorchExportableModuleWithStaticCache implementation. 
 """
 
 from typing import List, Optional, Sequence
