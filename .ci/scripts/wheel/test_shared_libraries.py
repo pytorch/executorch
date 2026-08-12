@@ -105,6 +105,10 @@ _XNNPACK_SYMBOLS = (
 # have exactly one owner while the bundled code underneath them does not. That is
 # the same failure the split exists to prevent, reached by a different route.
 _BUNDLED_THREADPOOL_SYMBOLS = ("pthreadpool_create", "cpuinfo_initialize")
+# The delegate's own entry points. A second definer means the delegate is compiled
+# into the Python extension as well, which would register it twice in one process.
+_OPENVINO_BACKEND_SYMBOLS = ("OpenvinoBackend",)
+
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
 # A representative symbol from the profiler. A second definer means two event
@@ -533,6 +537,12 @@ _OWNED_COMPONENTS = (
         _BUNDLED_XNNPACK_SYMBOLS,
         "libexecutorch_backend_xnnpack.so",
         True,
+    ),
+    (
+        "OpenVINO delegate",
+        _OPENVINO_BACKEND_SYMBOLS,
+        "libexecutorch_backend_openvino.so",
+        False,
     ),
 )
 
