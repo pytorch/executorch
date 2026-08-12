@@ -523,7 +523,7 @@ class MLXProgramBuilder:
         for handler in matcher.find_patterns():
             handler.set_handlers(self)
 
-    def _process_nodes(self) -> None:  # noqa C901
+    def _process_nodes(self, check_only: bool = False) -> None:  # noqa C901
         """
         Common logic for processing all nodes: create slots, match patterns, run handlers.
 
@@ -536,6 +536,10 @@ class MLXProgramBuilder:
         The ordering is important: patterns must be matched before noops because
         some pattern body nodes (e.g., update_cache) have no users since they
         mutate in-place, but they're not dead - they're handled by the pattern.
+
+        With ``check_only``, a handler that provides a support check is asked
+        instead of being run. Only support status is populated in that mode; no
+        instructions are emitted for those nodes and no constants are repacked.
         """
         self._make_io_slots()
 
@@ -545,12 +549,31 @@ class MLXProgramBuilder:
         self._apply_patterns()
         self._mark_noop()
 
+        def mark_unsupported(n: Node, reason: str) -> None:
+            if n.meta.get("val", None) is not None:
+                self.slot_manager.make_or_get_slots(n)
+            self._mark_unsupported(n, reason)
+
         for n in self.ep.graph.nodes:
             if self._is_handled(n):
                 continue
 
             if self.node_info[n].handler is not None:
                 handler = self.node_info[n].handler
+                if (
+                    check_only
+                    and isinstance(handler, PatternHandler)
+                    and type(handler).has_support_check()
+                ):
+                    if handler.supported(self, n):
+                        self._mark_supported(n, handler=handler)
+                    else:
+                        mark_unsupported(
+                            n,
+                            f"{type(handler).__name__}.supported() rejected "
+                            f"target={n.target}",
+                        )
+                    continue
                 with self.tmp_scope():
                     handler(self, n)
                 self._mark_supported(n, handler=handler)
@@ -559,9 +582,7 @@ class MLXProgramBuilder:
             # Check input dtypes before processing node
             unsupported_dtype_msg = _check_input_dtypes(n)
             if unsupported_dtype_msg is not None:
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, unsupported_dtype_msg)
+                mark_unsupported(n, unsupported_dtype_msg)
                 continue
 
             if n.op in ("placeholder", "output"):
@@ -591,11 +612,19 @@ class MLXProgramBuilder:
 
             handler = REGISTRY.get_handler(n)
             if handler is None:
-                msg = f"no handler for target={n.target}"
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, msg)
+                mark_unsupported(n, f"no handler for target={n.target}")
                 continue
+
+            if check_only:
+                check = REGISTRY.get_support_check(n)
+                if check is not None:
+                    if check(self, n):
+                        self._mark_supported(n, handler=handler)
+                    else:
+                        mark_unsupported(
+                            n, f"{check.__name__} rejected target={n.target}"
+                        )
+                    continue
 
             try:
                 with self.tmp_scope():
@@ -604,9 +633,7 @@ class MLXProgramBuilder:
             except Exception as e:
                 trace_str = traceback.format_exc()
                 msg = f"{handler} failed for {n.target}: {e}.\n{trace_str}"
-                if n.meta.get("val", None) is not None:
-                    self.slot_manager.make_or_get_slots(n)
-                self._mark_unsupported(n, msg)
+                mark_unsupported(n, msg)
 
     def check_support_only(self) -> None:
         """
@@ -618,8 +645,12 @@ class MLXProgramBuilder:
 
         Use this method for ops_to_not_decompose() and similar queries where you
         only need to know support status, not the full compiled graph.
+
+        Handlers that provide a support check are asked rather than run, so they
+        do not repack their weights here; the rest are still run, because
+        whether a handler throws is the only way to know if it can lower a node.
         """
-        self._process_nodes()
+        self._process_nodes(check_only=True)
         # NOTE: We intentionally skip _verify_build() and _build_mlx_graph() here
         # because _build_mlx_graph() calls int() on tensor shapes which evaluates
         # SymInts and corrupts the shape_env. This method is used for
