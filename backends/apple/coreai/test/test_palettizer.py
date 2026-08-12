@@ -12,8 +12,10 @@ element, so the observables differ from quantization: a ``lut_to_dense`` op and
 weight.
 """
 
+import tempfile
 import unittest
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -28,6 +30,8 @@ from executorch.exir import to_edge_transform_and_lower
 
 
 def _model():
+    """Deterministic, so two builds can be compared to each other."""
+    torch.manual_seed(0)
     return nn.Sequential(nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 64)).eval()
 
 
@@ -43,6 +47,14 @@ def _op_count(exported_program, prefix):
         if node.op == "call_function"
         and getattr(node.target, "__name__", str(node.target)).startswith(prefix)
     )
+
+
+def _first_lut(finalized):
+    """The first palette in a finalized model, for comparing clusterings."""
+    for name, tensor in finalized.state_dict().items():
+        if name.endswith(".lut"):
+            return tensor
+    raise AssertionError("no palette in the finalized model")
 
 
 @dataclass(frozen=True)
@@ -110,22 +122,31 @@ class PalettizationTest(unittest.TestCase):
                 originals = [
                     v for k, v in state.items() if k.endswith("weight.original")
                 ]
+                self.assertEqual(
+                    len(originals),
+                    len(luts),
+                    f"expected one emptied weight per palette in {sorted(state)}",
+                )
                 self.assertTrue(all(v.numel() == 0 for v in originals))
 
     def test_palette_size_follows_n_bits(self):
-        """A k-bit palette holds 2**k entries; guards a silently ignored preset."""
+        """A k-bit palette holds 2**k entries; guards a silently ignored preset.
+
+        Every palette is checked, not just the first: the model has two linears,
+        and a preset reaching only one of them would still be wrong.
+        """
         for case in self.CASES:
             with self.subTest(case.name):
                 state = self._export(case).state_dict
-                lut = next(v for k, v in state.items() if k.endswith(".lut"))
-                self.assertEqual(lut.shape[-2], case.palette_entries)
+                luts = [v for k, v in state.items() if k.endswith(".lut")]
+                self.assertTrue(luts, "no palette found")
+                for lut in luts:
+                    self.assertEqual(lut.shape[-2], case.palette_entries)
 
     def test_export_emits_lut_to_dense(self):
         for case in self.CASES:
             with self.subTest(case.name):
-                self.assertGreater(
-                    _op_count(self._export(case), "lut_to_dense"), 0
-                )
+                self.assertGreater(_op_count(self._export(case), "lut_to_dense"), 0)
 
     def test_lowers_through_to_executorch(self):
         for case in self.CASES:
@@ -144,17 +165,62 @@ class PalettizerApiTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "prepare"):
             palettizer.finalize()
 
+    def test_calibration_before_prepare_is_rejected(self):
+        palettizer = CoreAIPalettizer(_model())
+        with self.assertRaisesRegex(RuntimeError, "before calibration_mode"):
+            palettizer.calibration_mode(loss_fn=lambda *_: torch.tensor(0.0))
+
+    def test_finalize_twice_is_rejected(self):
+        """coreai_opt clears its own prepared marker, so the guard must too."""
+        palettizer = CoreAIPalettizer(_model(), PalettizationTest.CASES[0].config())
+        palettizer.prepare((torch.randn(2, 64),))
+        palettizer.finalize()
+        with self.assertRaisesRegex(RuntimeError, "prepare"):
+            palettizer.finalize()
+
+    def test_no_training_mode(self):
+        """KMeansPalettizer does not support training-time compression.
+
+        Forwarding to it would return a context manager that raises only on
+        entry, advertising a capability that cannot work.
+        """
+        self.assertFalse(hasattr(CoreAIPalettizer, "training_mode"))
+
     def test_calibration_is_not_required(self):
         """Plain k-means clusters weights, so it needs no calibration data.
 
         The quantizer's calibration collects activation ranges and is
         mandatory; here it only supplies sensitivity weights.
         """
-        palettizer = CoreAIPalettizer(
-            _model(), PalettizationTest.CASES[0].config()
-        )
+        palettizer = CoreAIPalettizer(_model(), PalettizationTest.CASES[0].config())
         palettizer.prepare((torch.randn(2, 64),))
         self.assertIsInstance(palettizer.finalize(), nn.Module)
+
+    def test_sensitivity_calibration_changes_the_palette(self):
+        """Weighted k-means must actually use the collected sensitivities."""
+        sample = (torch.randn(2, 64),)
+        config = PalettizationTest.CASES[0].config()
+
+        plain = CoreAIPalettizer(_model(), config)
+        plain.prepare(sample)
+        plain_lut = _first_lut(plain.finalize())
+
+        with tempfile.TemporaryDirectory() as d:
+            path = str(Path(d) / "sensitivity")
+            weighted = CoreAIPalettizer(_model(), config)
+            prepared = weighted.prepare(sample)
+            with weighted.calibration_mode(
+                loss_fn=lambda out, target: (out - target).pow(2).mean(),
+                sensitivity_path=path,
+            ) as calibrate:
+                calibrate.step(prepared(*sample), torch.randn(2, 64))
+            weighted_lut = _first_lut(weighted.finalize())
+
+        self.assertEqual(plain_lut.shape, weighted_lut.shape)
+        self.assertFalse(
+            torch.equal(plain_lut, weighted_lut),
+            "sensitivity-weighted clustering produced an identical palette",
+        )
 
 
 if __name__ == "__main__":

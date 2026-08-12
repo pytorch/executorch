@@ -72,21 +72,26 @@ class CoreAIPalettizer:
         )
         return self._prepared
 
+    def _require_prepared(self, method: str) -> None:
+        if self._prepared is None:
+            raise RuntimeError(f"Call prepare() before {method}().")
+
     def calibration_mode(self, *, loss_fn: Callable, sensitivity_path=None):
         """Context manager for sensitivity-weighted clustering (SqueezeLLM).
 
         Optional, and unlike the quantizer's calibration this is not needed for
         a plain run: k-means clusters the weights, which requires no data.
         Supplying a loss function collects squared gradients as per-element
-        sensitivities so clustering favors the weights that matter most.
+        sensitivities so clustering favors the weights that matter most. The
+        block must call ``step(output, target)`` at least once.
+
+        There is no ``training_mode`` counterpart: ``KMeansPalettizer`` does not
+        support training-time compression.
         """
+        self._require_prepared("calibration_mode")
         return self._palettizer.calibration_mode(
             loss_fn=loss_fn, sensitivity_path=sensitivity_path
         )
-
-    def training_mode(self):
-        """Context manager for palettization-aware training."""
-        return self._palettizer.training_mode()
 
     def finalize(self, mmap_dir=None) -> nn.Module:
         """Produce the export-ready palettized model.
@@ -100,8 +105,11 @@ class CoreAIPalettizer:
         """
         from coreai_opt.common import ExportBackend
 
-        if self._prepared is None:
-            raise RuntimeError("Call prepare() before finalize().")
-        return self._palettizer.finalize(
+        self._require_prepared("finalize")
+        finalized = self._palettizer.finalize(
             backend=ExportBackend.CoreAI, mmap_dir=mmap_dir
         )
+        # coreai_opt clears the model's prepared marker, so a second call would
+        # otherwise pass this guard and fail deeper with a worse message.
+        self._prepared = None
+        return finalized
