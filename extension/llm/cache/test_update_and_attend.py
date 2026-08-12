@@ -15,7 +15,9 @@ from executorch.extension.llm.cache.reference_cache import (
     CacheSizing,
     CellReferenceCache,
     ContiguousReferenceCache,
+    flatten_step,
     MaskKind,
+    MAX_SEQS,
 )
 from executorch.extension.llm.cache.update_and_attend import REGISTRY, update_and_attend
 
@@ -314,12 +316,15 @@ class CellCacheTest(unittest.TestCase):
         # Two prefills in ONE forward. Each must equal what it computes alone,
         # which is exactly the isolation the per-cell seq bitset buys.
         a, b = torch.randn(1, 4, self.hidden), torch.randn(1, 3, self.hidden)
-        out = self._step(
-            self._cache(),
-            torch.cat([a, b], dim=1),
-            [0, 1, 2, 3, 0, 1, 2],
-            [0, 0, 0, 0, 1, 1, 1],
-        )
+        cache = self._cache()
+
+        # {seq_id: (tokens, start_pos)} -> the step's parallel arrays
+        tokens, positions, seq_ids, _ = flatten_step({0: (a, 0), 1: (b, 0)})
+        cache.begin_step(seq_ids)
+        with REGISTRY.active(self.cache_key):
+            # every row, not one per sequence: each token is compared below
+            out = self.model(tokens, positions, torch.arange(tokens.shape[1]))
+
         torch.testing.assert_close(
             out[:, :4, :],
             self.model.reference_forward(a, torch.arange(4)),
@@ -334,16 +339,25 @@ class CellCacheTest(unittest.TestCase):
         )
 
     def test_batched_decode_continues_each_sequence(self):
-        # Prefill both, then one forward carrying a new token for each.
+        # Prefill both, then one forward carrying a new token for each, laid
+        # out by flatten_step -- one logits row per sequence, not per token.
         a, b = torch.randn(1, 4, self.hidden), torch.randn(1, 3, self.hidden)
         cache = self._cache()
-        self._step(
-            cache,
-            torch.cat([a[:, :3], b[:, :2]], dim=1),
-            [0, 1, 2, 0, 1],
-            [0, 0, 0, 1, 1],
+
+        tokens, positions, seq_ids, logits_indices = flatten_step(
+            {0: (a[:, :3], 0), 1: (b[:, :2], 0)}
         )
-        out = self._step(cache, torch.cat([a[:, 3:], b[:, 2:]], dim=1), [3, 2], [0, 1])
+        cache.begin_step(seq_ids)
+        with REGISTRY.active(self.cache_key):
+            self.model(tokens, positions, logits_indices)
+
+        tokens, positions, seq_ids, logits_indices = flatten_step(
+            {0: (a[:, 3:], 3), 1: (b[:, 2:], 2)}
+        )
+        cache.begin_step(seq_ids)
+        with REGISTRY.active(self.cache_key):
+            out = self.model(tokens, positions, logits_indices)
+
         torch.testing.assert_close(
             out[:, 0, :],
             self.model.reference_forward(a, torch.arange(4))[:, -1, :],
@@ -390,6 +404,54 @@ class CellCacheTest(unittest.TestCase):
         cache.seq_rm(1)
         self.assertEqual(cache.free_cells(), self.CAPACITY)
 
+    def test_flatten_step_lays_out_the_parallel_arrays(self):
+        tokens, positions, seq_ids, logits_indices = flatten_step(
+            {
+                0: (torch.zeros(1, 3, self.hidden), 5),
+                1: (torch.ones(1, 2, self.hidden), 0),
+            }
+        )
+        self.assertEqual(tokens.shape[1], 5)  # one axis, both sequences
+        self.assertEqual(positions.squeeze(-1).tolist(), [5, 6, 7, 0, 1])
+        self.assertEqual(seq_ids, [0, 0, 0, 1, 1])
+        self.assertEqual(logits_indices.tolist(), [2, 4])  # each sequence's last
+
+    def test_fork_at_a_position_shares_only_the_prefix(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 4, self.hidden), [0, 1, 2, 3], [0] * 4)
+
+        cache.seq_cp(0, 1, upto=2)
+        self.assertEqual(cache.seq_len(0), 4)
+        self.assertEqual(cache.seq_len(1), 2)  # only positions 0 and 1
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 4)  # still no copy
+
+    def test_seq_rm_over_a_range_frees_only_that_window(self):
+        cache = self._cache()
+        self._step(cache, torch.randn(1, 5, self.hidden), [0, 1, 2, 3, 4], [0] * 5)
+
+        cache.seq_rm(0, 0, 2)  # sliding window: drop the oldest two
+        self.assertEqual(cache.seq_len(0), 3)
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 3)
+
+        cache.seq_rm(0, 4)  # backtrack: drop position 4 onwards
+        self.assertEqual(cache.seq_len(0), 2)
+        self.assertEqual(cache.free_cells(), self.CAPACITY - 2)
+
+    def test_every_verb_range_checks_the_seq_id(self):
+        # An id past the bitset would set a bit no int64 can hold, surfacing
+        # much later as an overflow while building the mask.
+        cache = self._cache()
+        for call in (
+            lambda: cache.begin_step([MAX_SEQS]),
+            lambda: cache.seq_cp(0, MAX_SEQS),
+            lambda: cache.seq_cp(MAX_SEQS, 0),
+            lambda: cache.seq_rm(MAX_SEQS),
+            lambda: cache.seq_len(MAX_SEQS),
+            lambda: cache.seq_len(-1),
+        ):
+            with self.assertRaises(ValueError):
+                call()
+
     def test_admission_fails_before_the_forward(self):
         cache = self._cache(capacity=4)
         self.assertFalse(cache.can_extend(5))
@@ -401,9 +463,14 @@ class CellCacheTest(unittest.TestCase):
         kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
         pos = torch.tensor([[0]])
 
+        with self.assertRaises(ValueError):  # a step with no tokens
+            cache.begin_step([])
+
         cache.begin_step([0, 0])  # declares two tokens, forward carries one
         with self.assertRaises(ValueError):
             cache.update_and_fetch(0, kv, kv, pos)
+        with self.assertRaises(RuntimeError):  # the failed attempt still cleared it
+            cache.update_and_fetch(0, kv, kv, torch.tensor([[0], [1]]))
 
         cache.begin_step([0])
         cache.update_and_fetch(0, kv, kv, pos)

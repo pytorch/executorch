@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import List, Mapping, Optional, Sequence, Set, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -177,6 +177,44 @@ class ContiguousReferenceCache:
 MAX_SEQS = 63
 
 
+def flatten_step(
+    sequences: Mapping[int, Tuple[torch.Tensor, int]],
+) -> Tuple[torch.Tensor, torch.Tensor, List[int], torch.Tensor]:
+    """Lay out one step's sequences on a single token axis.
+
+    A step is flat: every sequence's tokens share one axis with B = 1, and the
+    per-token arrays must stay aligned. Building them together is what keeps
+    them so.
+
+    It is a host helper, not part of the cache: the cache is handed only the
+    sequence ids, and never sees the tokens themselves.
+
+    Args:
+        sequences: ``{seq_id: (tokens, start_pos)}`` -- each sequence's tokens
+            with the token axis second (``[1, n]`` ids, or ``[1, n, hidden]``
+            where the model takes embeddings), and the position its first
+            token takes.
+
+    Returns:
+        ``(tokens, positions, seq_ids, logits_indices)`` -- tokens concatenated
+        on the token axis and ``positions`` (``[n_tok, 1]``) as model inputs,
+        ``seq_ids`` for ``begin_step``, and ``logits_indices`` selecting each
+        sequence's last token, the rows worth running the LM head on.
+    """
+    tokens, positions, seq_ids, logits_indices = [], [], [], []
+    for seq_id, (toks, start_pos) in sequences.items():
+        tokens.append(toks)
+        positions.extend(range(start_pos, start_pos + toks.shape[1]))
+        seq_ids.extend([seq_id] * toks.shape[1])
+        logits_indices.append(len(seq_ids) - 1)
+    return (
+        torch.cat(tokens, dim=1),
+        torch.tensor(positions, dtype=torch.long).unsqueeze(-1),
+        seq_ids,
+        torch.tensor(logits_indices, dtype=torch.long),
+    )
+
+
 @dataclass
 class _CellStepPlan:
     """One step's allocation, shared by every layer of that forward."""
@@ -207,7 +245,7 @@ class CellReferenceCache:
     DYNAMIC sizing grows the pool to the occupied extent, so a short session
     reserves a short pool rather than the whole context. Growth must keep every
     cell's index and its bytes -- a cell's index is its name, held by the plan
-    and by ``_pos``/``_seq`` -- so it appends rows and never renumbers.
+    and by ``_pos``/``_owners`` -- so it appends rows and never renumbers.
     """
 
     def __init__(self, config: CacheConfig):
@@ -218,7 +256,7 @@ class CellReferenceCache:
         self.config = config
         cap = config.capacity
         self._pos: List[int] = [-1] * cap  # per cell; -1 = free
-        self._seq: List[int] = [0] * cap  # per cell; owning-sequence bitset
+        self._owners: List[int] = [0] * cap  # per cell; owning-sequence bitset
         self._used_end = 0  # every occupied cell is in [0, used_end): the read window
         h, d = config.n_kv_heads, config.head_dim
         rows = cap if config.sizing == CacheSizing.STATIC else 0
@@ -230,8 +268,8 @@ class CellReferenceCache:
             torch.zeros(1, h, rows, d, dtype=config.dtype)
             for _ in range(config.n_layers)
         ]
-        self._step_seq: List[int] = []
-        self._declared = False  # a declaration is spent by the step it allocates
+        self._step_seq_ids: List[int] = []
+        self._declared = False  # set by begin_step, cleared by the step it authorizes
         self._plan: Optional[_CellStepPlan] = None
         self._served: Set[int] = set()
 
@@ -241,11 +279,17 @@ class CellReferenceCache:
         return self._pos.count(-1)
 
     def can_extend(self, n: int = 1) -> bool:
+        """Whether `n` more tokens fit: cache-wide, one cell per token.
+
+        The bound is on cells, so a prefix shared by several sequences counts
+        once and their lengths can sum past `capacity` while a step still fits.
+        """
         return self.free_cells() >= n
 
-    def seq_len(self, seq: int) -> int:
-        bit = 1 << seq
-        return sum(1 for owners in self._seq if owners & bit)
+    def seq_len(self, seq_id: int) -> int:
+        self._check_seq_id(seq_id)
+        bit = 1 << seq_id
+        return sum(1 for owners in self._owners if owners & bit)
 
     def begin_step(self, seq_ids: Sequence[int]) -> None:
         """Declare the sequence each of the next forward's tokens belongs to.
@@ -254,53 +298,58 @@ class CellReferenceCache:
         without the positions, and cells are interchangeable, so a step that
         passes this check cannot then fail to allocate.
         """
-        for seq in seq_ids:
-            if not 0 <= seq < MAX_SEQS:
-                raise ValueError(f"seq_id {seq} outside [0, {MAX_SEQS})")
+        if not seq_ids:
+            raise ValueError("a step carries at least one token")
+        for seq_id in seq_ids:
+            self._check_seq_id(seq_id)
         if not self.can_extend(len(seq_ids)):
             raise RuntimeError(
                 f"KV cache full: {len(seq_ids)} tokens need as many cells, "
                 f"{self.free_cells()} free"
             )
-        self._step_seq = list(seq_ids)
+        self._step_seq_ids = list(seq_ids)
         self._declared = True
         self._plan = None
         self._served.clear()
 
-    def seq_cp(self, src: int, dst: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Give dst a claim on src's cells -- a fork that copies no K/V."""
-        src_bit, dst_bit = 1 << src, 1 << dst
+    def seq_cp(self, src_id: int, dst_id: int, upto: Optional[int] = None) -> None:
+        """Give dst_id a claim on src_id's cells -- a fork that copies no K/V.
+
+        Shares src_id's cells at positions below `upto`; None shares all of them,
+        forking at src_id's end. There is no lower bound: a shared cell keeps one
+        position, so what can be shared is a prefix, not an arbitrary range.
+        """
+        self._check_seq_id(src_id)
+        self._check_seq_id(dst_id)
+        src_bit, dst_bit = 1 << src_id, 1 << dst_id
         for i in range(self._used_end):
-            if self._seq[i] & src_bit and self._in_range(self._pos[i], p0, p1):
-                self._seq[i] |= dst_bit
+            if self._owners[i] & src_bit and (upto is None or self._pos[i] < upto):
+                self._owners[i] |= dst_bit
         self._invalidate_plan()
 
-    def seq_rm(self, seq: int, p0: int = 0, p1: Optional[int] = None) -> None:
-        """Drop seq's claim; a cell frees only once no sequence owns it."""
-        bit = 1 << seq
+    def seq_rm(self, seq_id: int, p0: int = 0, p1: Optional[int] = None) -> None:
+        """Drop seq_id's claim on positions [p0, p1); p1 = None runs to the end.
+
+        A cell frees only once no sequence owns it, so removing a shared range
+        reclaims nothing until the last owner lets go. seq_rm(s) drops the whole
+        sequence, seq_rm(s, 0, k) evicts its oldest k positions, and seq_rm(s, k)
+        truncates it at position k.
+        """
+        self._check_seq_id(seq_id)
+        bit = 1 << seq_id
         for i in range(self._used_end):
-            if self._seq[i] & bit and self._in_range(self._pos[i], p0, p1):
-                self._seq[i] &= ~bit
-                if self._seq[i] == 0:
+            if self._owners[i] & bit and self._in_range(self._pos[i], p0, p1):
+                self._owners[i] &= ~bit
+                if self._owners[i] == 0:
                     self._pos[i] = -1
-        self._shrink()
-        self._invalidate_plan()
-
-    def seq_keep(self, keep: int) -> None:
-        """Commit one sequence, freeing every cell no longer owned."""
-        bit = 1 << keep
-        for i in range(self._used_end):
-            self._seq[i] &= bit
-            if self._seq[i] == 0:
-                self._pos[i] = -1
         self._shrink()
         self._invalidate_plan()
 
     def reset(self):
         self._pos = [-1] * self.config.capacity
-        self._seq = [0] * self.config.capacity
+        self._owners = [0] * self.config.capacity
         self._used_end = 0
-        self._step_seq = []
+        self._step_seq_ids = []
         self._declared = False
         self._plan = None
         self._served.clear()
@@ -331,7 +380,7 @@ class CellReferenceCache:
                 "begin_step must precede every forward"
             )
         if self._plan is None:
-            self._plan = self._allocate(position, k.device)
+            self._plan = self._allocate(position)
         self._served.add(layer_id)
 
         read_len = self._plan.mask.shape[-1]
@@ -347,37 +396,40 @@ class CellReferenceCache:
 
     # -- internals ----------------------------------------------------------
 
-    def _allocate(self, position: torch.Tensor, device: torch.device) -> _CellStepPlan:
+    def _allocate(self, position: torch.Tensor) -> _CellStepPlan:
+        # The plan indexes and masks the pools, so it is built where they live.
+        device = self._k[0].device
         if not self._declared:
             raise RuntimeError(
                 "no step declared: begin_step must precede every forward"
             )
+        self._declared = False  # one declaration, one attempt at allocating it
         if position.shape[-1] != 1:
             raise NotImplementedError(
                 "cell placement needs one position per token, got "
                 f"{position.shape[-1]}"
             )
         positions = position.reshape(-1).tolist()
-        if len(positions) != len(self._step_seq):
+        if len(positions) != len(self._step_seq_ids):
             raise ValueError(
-                f"begin_step declared {len(self._step_seq)} tokens, "
+                f"begin_step declared {len(self._step_seq_ids)} tokens, "
                 f"the forward carries {len(positions)}"
             )
         cells = [
-            self._claim(pos, 1 << seq) for pos, seq in zip(positions, self._step_seq)
+            self._claim(pos, 1 << seq_id)
+            for pos, seq_id in zip(positions, self._step_seq_ids)
         ]
         # Occupied, sharing a sequence, and no newer than the query. The step's
         # own cells are already placed, so a query sees itself and any earlier
         # token of its sequence in the same batch.
         n = self._used_end
         cell_pos = torch.tensor(self._pos[:n], device=device)
-        cell_seq = torch.tensor(self._seq[:n], device=device)
+        cell_owners = torch.tensor(self._owners[:n], device=device)
         tok_pos = torch.tensor(positions, device=device).unsqueeze(-1)
-        tok_seq = torch.tensor(
-            [1 << seq for seq in self._step_seq], device=device
+        tok_bit = torch.tensor(
+            [1 << seq_id for seq_id in self._step_seq_ids], device=device
         ).unsqueeze(-1)
-        mask = (cell_pos >= 0) & ((cell_seq & tok_seq) != 0) & (cell_pos <= tok_pos)
-        self._declared = False  # one declaration, one allocation
+        mask = (cell_pos >= 0) & ((cell_owners & tok_bit) != 0) & (cell_pos <= tok_pos)
         return _CellStepPlan(
             cells=torch.tensor(cells, dtype=torch.long, device=device), mask=mask
         )
@@ -411,7 +463,7 @@ class CellReferenceCache:
         for i in range(self.config.capacity):
             if self._pos[i] < 0:
                 self._pos[i] = pos
-                self._seq[i] = owners
+                self._owners[i] = owners
                 self._used_end = max(self._used_end, i + 1)
                 return i
         raise RuntimeError("no free cell")  # begin_step admitted the step
@@ -425,6 +477,13 @@ class CellReferenceCache:
         # step protocol state is deliberately left alone: a mutation must not
         # disguise a forward that skipped begin_step.
         self._plan = None
+
+    @staticmethod
+    def _check_seq_id(seq_id: int) -> None:
+        # An id past the bitset silently makes owners a Python big-int, which
+        # only surfaces much later as an int64 overflow building the mask.
+        if not 0 <= seq_id < MAX_SEQS:
+            raise ValueError(f"seq_id {seq_id} outside [0, {MAX_SEQS})")
 
     @staticmethod
     def _in_range(pos: int, p0: int, p1: Optional[int]) -> bool:
