@@ -538,6 +538,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
   echo "::group::Export"
   case "$MODE" in
     solo-text)
+      EXPORT_START_SECONDS=$SECONDS
       TMPDIR="$INDUCTOR_TMPDIR" \
       TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
       python -m executorch.examples.models.muse_glimmer.export.export_solo \
@@ -550,6 +551,7 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       MMPROJ_GGUF_FILE="mmproj-kquant.gguf"
       python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${DRAFT_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
       python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${MMPROJ_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+      EXPORT_START_SECONDS=$SECONDS
       TMPDIR="$INDUCTOR_TMPDIR" \
       TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
       python -m executorch.examples.models.muse_glimmer.export.export_dflash \
@@ -564,6 +566,9 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
       exit 1
       ;;
   esac
+  EXPORT_DURATION_SECONDS=$((SECONDS - EXPORT_START_SECONDS))
+  EXPORT_DURATION_MINUTES=$(awk -v seconds="$EXPORT_DURATION_SECONDS" 'BEGIN {printf "%.2f", seconds / 60}')
+  echo "Muse Glimmer took ${EXPORT_DURATION_MINUTES} minutes to export."
   echo "::endgroup::"
 
   test -f "${OUTPUT_DIR}/model.pte"
