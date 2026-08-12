@@ -717,10 +717,8 @@ class TextDecoder(Component):
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
-            if (
-                self.mode == Mode.CALIBRATE
-                and self.control_args.quant_recipe_suggestion
-                or use_qat
+            if self.mode == Mode.CALIBRATE and (
+                self.control_args.quant_recipe_suggestion or use_qat
             ):
                 graph_module = copy.deepcopy(self.decoder)
             if self.apply_embedding:

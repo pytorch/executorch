@@ -56,7 +56,9 @@ class KLDivergenceLoss:
         valid_s = student_logits[:, :-1][valid_mask]
         valid_t = teacher_logits[:, :-1][valid_mask]
         if valid_s.shape[0] == 0:
-            return torch.zeros(1, device=student_logits.device).squeeze()
+            return torch.zeros(
+                (), device=student_logits.device, dtype=student_logits.dtype
+            )
         return F.kl_div(
             F.log_softmax(valid_s / self.temperature, dim=-1),
             F.softmax(valid_t / self.temperature, dim=-1),

@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Default TrainingArgs (train/config.py) for QAT. Copy this file, edit any
+# Default TrainingArgs (train/config/config.py) for QAT. Copy this file, edit any
 # subset of fields, and pass it via `--train_config path/to/your_config.yaml`.
 
 

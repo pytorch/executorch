@@ -9011,8 +9011,6 @@ class TestExampleLLMScript(TestQNN):
                 "wikitext",
                 "--train_limit",
                 str(train_limit),
-                "--kd_alpha",
-                "0.5",
             ]
             if extra_args:
                 cmds.extend(extra_args)

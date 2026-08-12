@@ -896,13 +896,13 @@ def get_16a4w_qnn_qat_config(
         observer_or_fake_quant_ctr=act_fake_quant_ctr,
     )
 
-    weight_fake_quant_ctr = FakeQuantize.with_args(
+    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int8,
         quant_min=-7,
         quant_max=7,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer=MinMaxObserver.with_args(**extra_args),
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8,
@@ -918,7 +918,7 @@ def get_16a4w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer=MinMaxObserver.with_args(**extra_args),
+        observer=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
