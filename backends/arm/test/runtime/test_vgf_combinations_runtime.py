@@ -18,11 +18,11 @@ from backends.arm.test.runtime._vgf_runtime_test_utils import (
     lower_threes_vgf,
     make_sampler_probe_inputs,
     segment_types,
-    xfail_if_model_converter_below_minimum_version,
+    xfail_if_legacy_model_converter_release,
 )
 from executorch.backends.arm.test import common
 
-pytestmark = xfail_if_model_converter_below_minimum_version()
+pytestmark = xfail_if_legacy_model_converter_release()
 
 
 def _has_alias_pair(vgf_json: dict, lhs: str, rhs: str) -> bool:

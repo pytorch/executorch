@@ -662,7 +662,12 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         )
 
     def _quant_params_match(self, node1: torch.fx.Node, node2: torch.fx.Node) -> bool:
-        return node1.args[1:] == node2.args[1:]
+        arg_names = ("scale", "zero_point", "quant_min", "quant_max", "dtype")
+        arg_types = (float, int, int, int, torch.dtype)
+        return all(
+            get_arg(node1, name, arg_type) == get_arg(node2, name, arg_type)
+            for name, arg_type in zip(arg_names, arg_types)
+        )
 
     def check_ok_to_fuse(
         self,
@@ -684,8 +689,11 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         consumer: torch.fx.Node,
         graph_module: torch.fx.GraphModule,
     ) -> torch.fx.Node:
-        in_scale, in_zero_point = producer.args[1:3]
-        in_tensor, out_scale, out_zero_point, _, _, out_dtype = consumer.args
+        in_scale = get_arg(producer, "scale", float)
+        in_zero_point = get_arg(producer, "zero_point", int)
+        out_scale = get_arg(consumer, "scale", float)
+        out_zero_point = get_arg(consumer, "zero_point", int)
+        out_dtype = get_arg(consumer, "dtype", torch.dtype)
         if in_scale == out_scale and in_zero_point == out_zero_point:
             # If the quant params match, we can remove both dequantize-quantize ops.
             return cast(torch.fx.Node, consumer.args[0])
@@ -697,11 +705,11 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         with graph_module.graph.inserting_before(consumer):
             requantize_node = self._create_requantize_node(
                 in_tensor=cast(torch.fx.Node, consumer.args[0]),
-                in_scale=cast(float, in_scale),
-                in_zero_point=cast(int, in_zero_point),
-                out_scale=cast(float, out_scale),
-                out_zero_point=cast(int, out_zero_point),
-                out_dtype=cast(torch.dtype, out_dtype),
+                in_scale=in_scale,
+                in_zero_point=in_zero_point,
+                out_scale=out_scale,
+                out_zero_point=out_zero_point,
+                out_dtype=out_dtype,
                 graph=graph_module.graph,
             )
         return requantize_node
