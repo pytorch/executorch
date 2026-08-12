@@ -237,9 +237,18 @@ function(_executorch_find_library _output _base_name)
       ""
       PARENT_SCOPE
   )
-  file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
-       "${_executorch_package_root}/lib/${_base_name}.so.*"
-  )
+  # Mach-O puts the version before the suffix, libfoo.1.dylib, where ELF puts it
+  # after, libfoo.so.1, so the versioned pattern differs and not just the
+  # suffix.
+  if(APPLE)
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.dylib"
+         "${_executorch_package_root}/lib/${_base_name}.*.dylib"
+    )
+  else()
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
+         "${_executorch_package_root}/lib/${_base_name}.so.*"
+    )
+  endif()
   list(LENGTH _matches _count)
   if(_count EQUAL 0)
     return()
