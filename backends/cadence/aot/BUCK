@@ -171,18 +171,6 @@ fbcode_target(_kind = executorch_generated_lib,
 )
 
 fbcode_target(_kind = python_unittest,
-    name = "test_pass_filter",
-    srcs = [
-        "tests/test_pass_filter.py",
-    ],
-    typing = True,
-    deps = [
-        ":pass_utils",
-        "//executorch/exir:pass_base",
-    ],
-)
-
-fbcode_target(_kind = python_unittest,
     name = "test_pass_utils",
     srcs = [
         "tests/test_pass_utils.py",

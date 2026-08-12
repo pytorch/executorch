@@ -6,11 +6,9 @@
 
 # pyre-strict
 
-import dataclasses
-import warnings
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, List, Optional, Set, Type, Union
+from typing import Callable, List, Optional, Union
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -23,16 +21,16 @@ from executorch.backends.transforms.permute_pass_utils import (  # noqa: F401
     set_arg as set_arg,
 )
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
-from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.pass_base import PassResult
 from torch._ops import OpOverloadPacket
 
 
 class CompileMode(Enum):
     """Selects which pass pipeline the Cadence backend runs.
 
-    During migration, omitting ``mode`` preserves the legacy ``opt_level=1``
-    behavior, while explicitly passing ``DEFAULT`` selects the former O3
-    pipeline with all graph optimizations.
+    MINIMAL runs only the passes required to produce a legal graph for the
+    target. DEFAULT adds every graph optimization. SIZE adds compile-time type
+    dispatch on top of DEFAULT, which lets the operator library be pruned.
     """
 
     MINIMAL = "minimal"
@@ -40,126 +38,10 @@ class CompileMode(Enum):
     SIZE = "size"
 
 
-def opt_level_from_compile_mode(mode: CompileMode) -> int:
-    """Translate the new API to the legacy pass levels during migration."""
-    if mode is CompileMode.MINIMAL:
-        return 0
-    if mode is CompileMode.SIZE:
-        return 4
-    return 3
-
-
-def resolve_opt_level(
-    mode: CompileMode | int | None = None,
-    opt_level: Optional[int] = None,
-) -> int:
-    if opt_level is not None:
-        if mode is not None:
-            warnings.warn(
-                "Both mode and opt_level were provided; deprecated opt_level takes "
-                "precedence.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return opt_level
-    if mode is None:
-        return 1
-    if isinstance(mode, int):
-        return mode
-    return opt_level_from_compile_mode(mode)
-
-
-def normalize_compile_mode(
-    mode: CompileMode | int | None = None,
-    opt_level: Optional[int] = None,
-) -> CompileMode | int:
-    """Resolve compatibility arguments while preserving an explicit enum mode."""
-    resolved_opt_level = resolve_opt_level(mode, opt_level)
-    if opt_level is None and isinstance(mode, CompileMode):
-        return mode
-    return resolved_opt_level
-
-
-# Is an overlap in tensor lifetime and storage allowed at the current opt level?
-# We allow overlap at opt level >= 2.
-def allow_lifetime_and_storage_overlap(opt_level: int) -> bool:
-    return opt_level >= 2
-
-
 # A dataclass that bundles feature flags for edge passes.
-# When adding a new flag, add a matching bool field to both this class and
-# CadencePassAttribute; the pass filter will pick it up automatically.
 @dataclass(frozen=True)
 class EdgePassesConfig:
     use_im2row_transform: bool = False
-
-
-# A dataclass that stores the attributes of an ExportPass.
-@dataclass(frozen=True)
-class CadencePassAttribute:
-    opt_level: Optional[int] = None
-    debug_pass: bool = False
-    use_im2row_transform: bool = False
-
-
-# A dictionary that maps an ExportPass to its attributes.
-ALL_CADENCE_PASSES: dict[Type[PassBase], CadencePassAttribute] = {}
-
-
-def get_cadence_pass_attribute(p: Type[PassBase]) -> Optional[CadencePassAttribute]:
-    return ALL_CADENCE_PASSES.get(p, None)
-
-
-# A decorator that registers a pass.
-def register_cadence_pass(
-    pass_attribute: CadencePassAttribute,
-) -> Callable[[Type[PassBase]], Type[PassBase]]:
-    def wrapper(cls: Type[PassBase]) -> Type[PassBase]:
-        ALL_CADENCE_PASSES[cls] = pass_attribute
-        return cls
-
-    return wrapper
-
-
-def get_all_available_cadence_passes() -> Set[Type[PassBase]]:
-    return set(ALL_CADENCE_PASSES.keys())
-
-
-def _check_feature_flags(
-    pass_attribute: CadencePassAttribute,
-    config: EdgePassesConfig,
-) -> bool:
-    """Check all feature flags: a pass is included only if every feature it
-    requires is enabled in the config. Iterates over EdgePassesConfig fields
-    so new flags are handled automatically."""
-    for field in dataclasses.fields(EdgePassesConfig):
-        if getattr(pass_attribute, field.name, False) and not getattr(
-            config, field.name
-        ):
-            return False
-    return True
-
-
-# Create a new filter to filter out relevant passes from all passes.
-def create_cadence_pass_filter(
-    opt_level: int,
-    debug: bool = False,
-    edge_passes_config: Optional[EdgePassesConfig] = None,
-) -> Callable[[Type[PassBase]], bool]:
-    if edge_passes_config is None:
-        edge_passes_config = EdgePassesConfig()
-
-    def _filter(p: Type[PassBase]) -> bool:
-        pass_attribute = get_cadence_pass_attribute(p)
-        return (
-            pass_attribute is not None
-            and pass_attribute.opt_level is not None
-            and pass_attribute.opt_level <= opt_level
-            and (not pass_attribute.debug_pass or debug)
-            and _check_feature_flags(pass_attribute, edge_passes_config)
-        )
-
-    return _filter
 
 
 # Return the overload packet for the edge or torch op.
