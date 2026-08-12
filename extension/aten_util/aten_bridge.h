@@ -18,6 +18,7 @@
 #include <c10/core/ScalarTypeToTypeMeta.h> // @manual=//caffe2/c10:c10
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace executorch {
@@ -31,6 +32,16 @@ c10::ScalarType executorch_to_torch_scalar_type(
 
 c10::Device executorch_to_torch_device(
     executorch::runtime::etensor::Device device);
+
+/**
+ * Maps a PyTorch device onto the ExecuTorch device naming the same location.
+ *
+ * Returns nothing for a device this runtime has no type for. That is a valid
+ * thing for a caller to ask, so it is reported rather than fatal, and the
+ * caller adds the context it has before failing.
+ */
+std::optional<executorch::runtime::etensor::Device> torch_to_executorch_device(
+    c10::Device device);
 
 /*
  * @param[in] aten_tensor Input at::Tensor
