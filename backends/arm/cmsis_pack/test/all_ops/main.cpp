@@ -189,7 +189,15 @@ class MetaMethod {
       return;
     }
     size_t num_planned = meta->num_memory_planned_buffers();
-    for (size_t i = 0; i < num_planned && i < kMaxPlanned; ++i) {
+    if (num_planned > kMaxPlanned) {
+      // Leave ok() false: the caller reports FAIL with the method name.
+      printf(
+          "  num_planned %u > kMaxPlanned %u\n",
+          static_cast<unsigned>(num_planned),
+          static_cast<unsigned>(kMaxPlanned));
+      return;
+    }
+    for (size_t i = 0; i < num_planned; ++i) {
       size_t sz = meta->memory_planned_buffer_size(i).get();
       uint8_t* buf = static_cast<uint8_t*>(method_allocator_.allocate(sz, 16));
       planned_spans_[i] = {buf, sz};
@@ -449,8 +457,21 @@ bool run_one_model(const EmbeddedModel& m, RowStat& row) {
     printf("Test_result: %s FAIL (nb_outputs method)\n", m.op);
     return false;
   }
-  const float atol = static_cast<float>(read_scalar(*program, "atol", 1e-3));
-  const float rtol = static_cast<float>(read_scalar(*program, "rtol", 1e-3));
+  // Every exported .pte embeds its tolerances; a missing method signals a
+  // malformed model, so fail rather than fall back to a loose default.
+  bool have_tol = false;
+  const float atol =
+      static_cast<float>(read_scalar(*program, "atol", 0, &have_tol));
+  if (!have_tol) {
+    printf("Test_result: %s FAIL (atol method)\n", m.op);
+    return false;
+  }
+  const float rtol =
+      static_cast<float>(read_scalar(*program, "rtol", 0, &have_tol));
+  if (!have_tol) {
+    printf("Test_result: %s FAIL (rtol method)\n", m.op);
+    return false;
+  }
   printf(
       "  [meta] %u input(s), %u output(s), atol=%g rtol=%g\n",
       static_cast<unsigned>(num_inputs),
@@ -469,8 +490,16 @@ bool run_one_model(const EmbeddedModel& m, RowStat& row) {
   MemoryAllocator temp_allocator(kTempPoolSize, g_temp_pool);
 
   size_t num_planned = meta->num_memory_planned_buffers();
+  if (num_planned > kMaxPlanned) {
+    printf(
+        "Test_result: %s FAIL (num_planned %u > kMaxPlanned %u)\n",
+        m.op,
+        static_cast<unsigned>(num_planned),
+        static_cast<unsigned>(kMaxPlanned));
+    return false;
+  }
   Span<uint8_t> planned_spans[kMaxPlanned];
-  for (size_t i = 0; i < num_planned && i < kMaxPlanned; ++i) {
+  for (size_t i = 0; i < num_planned; ++i) {
     size_t sz = meta->memory_planned_buffer_size(i).get();
     uint8_t* buf = static_cast<uint8_t*>(method_allocator.allocate(sz, 16));
     planned_spans[i] = {buf, sz};
@@ -659,6 +688,15 @@ extern "C" int main(void) {
 
   size_t passed = 0;
   const size_t total = g_embedded_models_count;
+  if (total > kMaxRows) {
+    // The SUMMARY count below is unaffected (driven by run_one_model's
+    // return value), but the per-op table and MemReport only cover kMaxRows.
+    printf(
+        "WARNING: %u models exceed kMaxRows %u; per-op table and MemReport "
+        "are truncated\n",
+        static_cast<unsigned>(total),
+        static_cast<unsigned>(kMaxRows));
+  }
   for (size_t mi = 0; mi < total; ++mi) {
     RowStat& row = g_rows[mi < kMaxRows ? mi : kMaxRows - 1];
     if (run_one_model(g_embedded_models[mi], row)) {
