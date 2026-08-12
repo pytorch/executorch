@@ -43,6 +43,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardswish_converter import (
+    HardswishConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
 )
@@ -73,6 +76,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
     NegConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.pad_converter import (
+    PadConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
@@ -88,6 +94,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import (
     ReLUConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.rsqrt_converter import (
+    RsqrtConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
@@ -134,6 +143,7 @@ __all__ = [
     "ConvolutionConverter",
     "ExpConverter",
     "GetItemConverter",
+    "HardswishConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
     "LogConverter",
@@ -144,12 +154,14 @@ __all__ = [
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
+    "PadConverter",
     "PermuteCopyConverter",
     "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
     "QDQPerTensorDequantizeConverter",
     "QDQQuantizeConverter",
     "ReLUConverter",
+    "RsqrtConverter",
     "SigmoidConverter",
     "SliceTensorConverter",
     "SoftmaxConverter",

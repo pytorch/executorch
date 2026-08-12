@@ -10,15 +10,11 @@ from typing import cast, List, Optional, Sequence, Set, Type
 
 # Import these for the cadence function signatures.
 import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
-
 import torch
 import torch.fx
-
 from executorch.backends.cadence.aot.fuse_ops import FuseTransposeOrPermuteOpPairsPass
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
     set_arg,
 )
@@ -44,7 +40,6 @@ from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveCloneOpsTransformImported(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         finalize_passes: List[PassType] = [
@@ -55,7 +50,6 @@ class RemoveCloneOpsTransformImported(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveDetachCopyPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -77,7 +71,6 @@ class RemoveRedundantOps:
     ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -131,7 +124,6 @@ class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
     """
     For an expand op, if the operator shape matches the expand shape, then the
@@ -154,7 +146,6 @@ class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveToOpsPass(RemoveOrReplacePassInterface):
     # aten.to.* as of now are all nops
     @property
@@ -171,7 +162,6 @@ class RemoveToOpsPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveZeroSizedConstantPadNd(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -197,7 +187,6 @@ class RemoveZeroSizedConstantPadNd(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopSliceOrViewOpPass(RemoveOrReplacePassInterface):
     """
     Remove slice ops that are more like views, and view ops that do not change the shape
@@ -221,7 +210,6 @@ class RemoveNopSliceOrViewOpPass(RemoveOrReplacePassInterface):
         return changed
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopLinalgVectorNormOpPass(RemoveOrReplacePassInterface):
     """
     If the norm is applied over a dimension that is size 1, it can be eliminated.
@@ -255,7 +243,6 @@ class RemoveNopLinalgVectorNormOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
     """
     This is based on the assumption that all tensors are contiguous in ExecuTorch
@@ -275,7 +262,6 @@ class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveAliasCopyOpPass(RemoveOrReplacePassInterface):
     """
 
@@ -293,7 +279,6 @@ class RemoveAliasCopyOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopRequantizeOpPass(RemoveOrReplacePassInterface):
     """
     For a requantize op, if the following three conditions are satisfied:
@@ -327,7 +312,6 @@ class RemoveNopRequantizeOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopMulOpPass(RemoveOrReplacePassInterface):
     """
     If a mul op is multiplying two tensors with the same shape and one
@@ -361,7 +345,6 @@ class RemoveNopMulOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveNopAddOpPass(RemoveOrReplacePassInterface):
     """
     If an add op is adding two tensors with the same shape and one
@@ -395,7 +378,6 @@ class RemoveNopAddOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
     """Remove or sink permute ops that precede mean reductions through unary chains.
 
@@ -608,7 +590,6 @@ class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
     def __init__(self) -> None:
         super().__init__(
@@ -622,7 +603,6 @@ class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseO
         )
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
     """
     Looks for subgraphs of the form:
@@ -738,7 +718,6 @@ class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveBranchedQuantDequant(ExportPass):
     """
     This pass looks for adjacent quant and dequant nodes with identical
@@ -807,7 +786,6 @@ class RemoveBranchedQuantDequant(ExportPass):
         return modified
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
     """
     Simplifies cat->slice_copy chains where one of the cat inputs can be directly passed

@@ -73,19 +73,6 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
-```
-Gets whether the output order workaround is being applied.
-
-```python
-def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
-```
-Sets whether to apply the output order workaround.
-
-Args:
-- **output_order_workaround**: Boolean indicating whether to apply the workaround.
-
-```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
 Set the configuration for the Arm pass pipeline.
@@ -102,8 +89,8 @@ See [Partitioner API](arm-ethos-u-partitioner.md) for more information of the Pa
 ## Quantization
 
 Since the Ethos-U backend is integer-only, all operators intended be executed on the NPU needs to be quantized. The Ethos-U quantizer supports
-[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
-[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
+[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html)  and
+[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_qat.html) quantization.
 
 For more information on quantization, see [Quantization](arm-ethos-u-quantization.md) <!-- @lint-ignore -->
 
@@ -120,6 +107,11 @@ contains a complete DeiT-based export and runtime walkthrough. The README shows
 how to run `model_export/export_deit.py`, build the sample firmware, and convert
 test images into C arrays so the workflow described in this guide can be tried
 end to end.
+
+[`examples/arm/mobilesam_prompt_segmentation_example_ethos_u`](https://github.com/pytorch/executorch/tree/main/examples/arm/mobilesam_prompt_segmentation_example_ethos_u)
+contains a complete MobileSAM prompt segmentation workflow for Ethos-U85,
+including fixed-prompt export, PT2E quantization, transformer lowering, debug
+masks and overlays, a bare-metal Corstone-320 runtime app, and FVP execution.
 
 ### Ethos-U memory modes
 

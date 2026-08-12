@@ -22,9 +22,7 @@ import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import quantize_tensor_multiplier
 from executorch.backends.cadence.aot.fuse_ops import FuseCascadedTransposeOrPermuteOps
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import is_depthwise_conv
@@ -49,7 +47,6 @@ functionally_equivalent_op_targets: Dict[EdgeOpOverload, EdgeOpOverload] = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
     """
     A where op with a logical_not and a boolean tensor can be replaced
@@ -92,7 +89,6 @@ class ReplaceLogicalNotBooleanWhereWithWherePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceSafeSoftmaxWithSoftmax(RemoveOrReplacePassInterface):  # keep
     """
     Replace _safe_softmax with _softmax
@@ -117,7 +113,6 @@ class ReplaceSafeSoftmaxWithSoftmax(RemoveOrReplacePassInterface):  # keep
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2QuantWithCadenceQuantPass(RemoveOrReplacePassInterface):
     """
     Replace the pt2 quantization ops with cadence quantization ops.
@@ -145,7 +140,6 @@ class ReplacePT2QuantWithCadenceQuantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
     """
     Replace the pt2 dequantization ops with cadence dequantization ops.
@@ -190,7 +184,6 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
     """
     When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
@@ -227,7 +220,6 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceFunctionallyEquivalentOpTargets(RemoveOrReplacePassInterface):
     """
     Replace an op with a functionally equivalent op by just switching the op
@@ -258,7 +250,6 @@ class ReplaceFunctionallyEquivalentOpTargets(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceSelectWithViewOpPass(RemoveOrReplacePassInterface):
     """
     If the size along the select dim is 1, then the select op can be replaced
@@ -296,11 +287,10 @@ class ReplaceSelectWithViewOpPass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceMMWithAddMMPass(RemoveOrReplacePassInterface):
     """
     This pass replaces mm with addmm by introducing a zero bias.
-    mm is not supported, so this is an opt_level=0 pass.
+    mm is not supported, so this is a required pass.
     """
 
     @property
@@ -340,7 +330,6 @@ class ReplaceMMWithAddMMPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
     """
     This pass replaces addmm with linear op.
@@ -450,7 +439,6 @@ class ReplaceAddMMWithLinearPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplacePermuteWithTransposePass(RemoveOrReplacePassInterface):
     """
     Replace permute op with transpose if the permutation is only along
@@ -492,7 +480,6 @@ class ReplacePermuteWithTransposePass(RemoveOrReplacePassInterface):
         return False
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(RemoveOrReplacePassInterface):
     """
     Replace optional tensors with concrete tensors. Currently, we
@@ -549,11 +536,10 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(RemoveOrReplacePassInte
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceRepeatWithCatPass(RemoveOrReplacePassInterface):
     """
     Replace repeat op as successive cat ops along different dimensions.
-    repeat is not supported, so this is an opt_level=0 pass.
+    repeat is not supported, so this is a required pass.
     """
 
     @property
@@ -609,7 +595,6 @@ class ReplaceRepeatWithCatPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
     """
     Replace constant pad nd op that does padding on outer-most dimension
@@ -705,7 +690,6 @@ class ReplacePadWithCatPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceConstantPadNdWithSlicePass(RemoveOrReplacePassInterface):
     """
     Replace constant pad nd op that does padding on outer-most dimension
@@ -751,7 +735,6 @@ class ReplaceConstantPadNdWithSlicePass(RemoveOrReplacePassInterface):
 
 
 # Make that pass runnable standalone at opt level 0.
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterface):
     """
     Replace aten convolution op with jarvis-specific convolution op, since the
@@ -871,7 +854,6 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(RemoveOrReplacePassInterf
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTrivialConvWithLinear(RemoveOrReplacePassInterface):
     """
     In nn.Conv1d, the operand shapes are:
@@ -1037,7 +1019,6 @@ def canonicalize_transposed_dim(dim: int, shape: Sequence[int]) -> int:
     return dim
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=3))
 class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
     """
     Replace NCHW convolutions with NHWC (channel-last) convolutions by adding
@@ -1216,7 +1197,6 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=3))
 class ReplaceMaxPool2dWithChannelLastMaxPool2dPass(RemoveOrReplacePassInterface):
     """
     Replace NCHW max pooling with NHWC (channel-last) max pooling by adding
@@ -1277,7 +1257,6 @@ class ReplaceMaxPool2dWithChannelLastMaxPool2dPass(RemoveOrReplacePassInterface)
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=3))
 class MakeSliceAndCatDimOutermostPass(RemoveOrReplacePassInterface):
     """
     Make the slice/cat dimension the outermost dimension by adding transpose
@@ -1358,7 +1337,6 @@ class MakeSliceAndCatDimOutermostPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2, use_im2row_transform=True))
 class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
     """
     Replace convolution where groups=1 with im2row followed by a linear op.
@@ -1574,7 +1552,6 @@ class ReplaceConvWithIm2RowAndLinear(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
     """
     Replace transposed convolution where groups=1 with transposed_im2row
@@ -1765,14 +1742,12 @@ class ReplaceTransposedConvWithLinearPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceNopTransposeOrPermuteWithViewPass(
     _SharedReplaceNopTransposeOrPermuteWithViewPass
 ):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
     """
     If the input of linear/quantized_linear op is a vector, replace it with
@@ -1819,14 +1794,10 @@ class ReplaceLinearWithFullyConnectedOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-register_cadence_pass(CadencePassAttribute(opt_level=0))(ReplaceScalarWithTensorArgPass)
-
-
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceScalarTensorWithFullPass(RemoveOrReplacePassInterface):
     """
     aten.scalar_tensor can be replaced by aten.full with a shape of [1].
-    scalar_tensor is not supported, so this is an opt_level=0 pass.
+    scalar_tensor is not supported, so this is a required pass.
     """
 
     @property
@@ -1851,11 +1822,10 @@ class ReplaceScalarTensorWithFullPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceFullLikeWithFullPass(RemoveOrReplacePassInterface):
     """
     aten.full_like can be replaced by aten.full with the shape of the arg tensor.
-    full_like is not supported, so this is an opt_level=0 pass.
+    full_like is not supported, so this is a required pass.
     """
 
     @property
@@ -1867,19 +1837,19 @@ class ReplaceFullLikeWithFullPass(RemoveOrReplacePassInterface):
         assert isinstance(input_arg, torch.fx.Node)
         shape = input_arg.meta["val"].shape
         fill_value = node.args[1]
+        dtype = node.meta["val"].dtype
 
         with node.graph.inserting_before(node):
             new_node = node.graph.call_function(
                 exir_ops.edge.aten.full.default,
                 args=(shape, fill_value),
-                kwargs={},
+                kwargs={"dtype": dtype},
             )
             new_node.meta = node.meta
         node.replace_all_uses_with(new_node)
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceInfArgInFullWithValuePass(RemoveOrReplacePassInterface):
     """
     aten.full allows "-inf" and "inf" as inputs. The profiler cannot
@@ -1913,7 +1883,6 @@ class ReplaceInfArgInFullWithValuePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(RemoveOrReplacePassInterface):
     """
     Replace the aten avg_pool op with the cadence custom avg_pool2d op.
@@ -2015,7 +1984,6 @@ class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
     """
     Replace im2row with view when possible (no padding, no dilation, and output spatial dimensions are 1).
@@ -2064,7 +2032,6 @@ class ReplaceIm2RowWithViewPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceEmptyTensorsWithFullPass(ExportPass):
     """Replaces nodes that produce empty tensors with full nodes."""
 
@@ -2108,7 +2075,6 @@ class ReplaceEmptyTensorsWithFullPass(ExportPass):
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceWhereWithFullArgsWithWhereScalar(RemoveOrReplacePassInterface):
     """Replaces where ops using two full ops as tensors with a scalar
     version.
@@ -2161,7 +2127,6 @@ class ReplaceWhereWithFullArgsWithWhereScalar(RemoveOrReplacePassInterface):
 
 
 # Adapted from fbcode/pyspeech/opt_passes/replace_ops.py
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
     """
     split_with_sizes() delegates to slice() op, so perform this replacement here.
@@ -2233,7 +2198,6 @@ class ReplaceSplitWithSlicePass(RemoveOrReplacePassInterface):
         return slice_ops
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
     """
     Replace the pow op with successive mul ops when the exponent is an
@@ -2283,7 +2247,6 @@ class ReplacePowWithMulPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
     """
     For certain backends, we have efficient kernels for transposed matmul. We
@@ -2398,7 +2361,6 @@ class ReplaceMatmulWithTransposedMatmulPass(RemoveOrReplacePassInterface):
         return PassResult(result.graph_module, modified)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
     """
     Extracts a single value argument of mul op to a separate full op.
@@ -2464,7 +2426,6 @@ class ReplaceMulTensorWithMulAndFullOpsPass(RemoveOrReplacePassInterface):
         return const_arg
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(RemoveOrReplacePassInterface):
     """
     Replace the aten adaptive avg_pool op with the aten avg_pool2d op.
@@ -2528,7 +2489,6 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding(
     RemoveOrReplacePassInterface
 ):
@@ -2591,7 +2551,6 @@ class CommonReplacePasses:
     ]
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass(RemoveOrReplacePassInterface):
     """
     Replace aten linalg svd op with cadence custom op.
