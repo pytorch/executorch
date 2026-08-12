@@ -4,17 +4,136 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
 import operator
+import os
+import tempfile
 import unittest
 from typing import Tuple
+from unittest.mock import patch
 
 import torch
+from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir._serialize._cord import FileBackedData
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
 from executorch.exir.delegate import executorch_call_delegate
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import export
+from torch.export.pt2_archive._package_weights import TensorProperties, Weights
 from torch.fx.passes.utils.fuser_utils import validate_partition
+
+
+class TestCudaLowMemoryExport(unittest.TestCase):
+    @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
+    def test_low_memory_streaming_keeps_external_weights_abi(self, _) -> None:
+        from torch._inductor import codecache
+
+        options = CudaBackend.get_aoti_compile_options(
+            [CompileSpec("low_memory_mode", b"ON")]
+        )
+        self.assertEqual(
+            options["aot_inductor.package_constants_on_disk_format"],
+            "pickle_weights",
+        )
+
+        original = codecache.determine_aoti_mmap_flags
+        with CudaBackend.get_extra_aoti_compile_context_manager(
+            [CompileSpec("low_memory_mode", b"ON")]
+        ):
+            self.assertEqual(codecache.determine_aoti_mmap_flags(0), (True, False))
+        self.assertIs(codecache.determine_aoti_mmap_flags, original)
+
+    def test_low_memory_weights_are_streamed_in_binary_blob_format(self) -> None:
+        first = torch.tensor([1, 2, 3], dtype=torch.int16)
+        second = torch.tensor([4, 5], dtype=torch.int32)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            so_path = os.path.join(directory, "model.wrapper.so")
+            blob_path = os.path.join(directory, "model.wrapper_weights.blob")
+            # AOTI emits this empty placeholder when the wrapper is compiled
+            # with the external-weights ABI and the tensor values are pickled.
+            with open(blob_path, "wb"):
+                pass
+
+            paths = CudaBackend.materialize_weights_blob(
+                [so_path, blob_path, weights],
+                [CompileSpec("low_memory_mode", b"ON")],
+            )
+
+            self.assertEqual([so_path, blob_path], paths)
+            with open(blob_path, "rb") as blob:
+                data = blob.read()
+            expected = (
+                bytes(first.untyped_storage())
+                + bytes(58)
+                + bytes(second.untyped_storage())
+                + bytes(56)
+            )
+            self.assertEqual(expected, data)
+
+    def test_low_memory_blob_stays_file_backed(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(
+                path, [CompileSpec("low_memory_mode", b"ON")]
+            )
+
+            self.assertIsInstance(blob, FileBackedData)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertEqual(data, blob.to_bytes())
+            self.assertFalse(os.path.exists(path))
+
+    def test_default_blob_behavior_is_unchanged(self) -> None:
+        data = b"cuda weights"
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.blob")
+            with open(path, "wb") as output:
+                output.write(data)
+
+            blob, digest = CudaBackend.load_weights_blob(path, [])
+
+            self.assertIsInstance(blob, bytes)
+            self.assertEqual(data, blob)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+            self.assertFalse(os.path.exists(path))
+
+    def test_low_memory_program_copy_shares_tensor_storage(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(
+            program, [CompileSpec("low_memory_mode", b"ON")]
+        )
+
+        self.assertIsNot(program, copied)
+        self.assertIsNot(program.graph_module, copied.graph_module)
+        self.assertIs(program.state_dict["weight"], copied.state_dict["weight"])
+        copied._state_dict["weight"] = torch.nn.Parameter(torch.zeros(3, 4))
+        self.assertFalse(torch.count_nonzero(program.state_dict["weight"]) == 0)
+
+    def test_default_program_copy_has_independent_tensor_storage(self) -> None:
+        module = torch.nn.Linear(4, 3)
+        program = export(module, (torch.randn(2, 4),), strict=True)
+
+        copied = CudaBackend.copy_exported_program_for_preprocess(program, [])
+
+        self.assertIsNot(program.state_dict["weight"], copied.state_dict["weight"])
+        self.assertNotEqual(
+            program.state_dict["weight"].data_ptr(),
+            copied.state_dict["weight"].data_ptr(),
+        )
 
 
 class TestCudaPartitioner(unittest.TestCase):
