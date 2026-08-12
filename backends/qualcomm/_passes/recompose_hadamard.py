@@ -5,14 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 from operator import attrgetter
 
-# Registers torch.ops.qnn_custom.hadamard_transform.
-import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
-
-import numpy as np
-
-import scipy.linalg
 import torch
 
+# Also registers torch.ops.qnn_custom.hadamard_transform.
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 from executorch.backends.qualcomm.utils.check_qnn_version import (
     is_qnn_sdk_version_less_than,
 )
@@ -31,21 +27,21 @@ def _is_power_of_2_sqare_matrix(weight: torch.Tensor) -> bool:
 
 
 def _match_hadamard_weight(weight: torch.Tensor) -> bool:
-    # Returns True if `weight == scipy.linalg.hadamard(dim) * s` for some scale s.
+    # Returns True if `weight == _hadamard_matrix(dim) * s` for some scale s.
     # A linear/matmul with such a weight is equivalent to a QNN HadamardTransform.
     if _is_power_of_2_sqare_matrix(weight):
         return False
 
-    w = weight.detach().to(torch.float64).numpy()
+    w = weight.detach().to(torch.float64)
     nonzero = w[w != 0]
-    if nonzero.size == 0:
+    if nonzero.numel() == 0:
         return False
     # The Hadamard weight is H * s for a single global scale s; infer s from any
     # nonzero entry (all |H_ij| == 1). For per-channel quant this only matches
     # when every channel's dequantized scale reconstructs the same H * s.
-    scale = float(abs(nonzero.flat[0]))
-    hadamard = scipy.linalg.hadamard(weight.shape[0]).astype("float64") * scale
-    return np.allclose(w, hadamard, rtol=0, atol=1e-4)
+    scale = float(nonzero.flatten()[0].abs())
+    hadamard = _hadamard_matrix(w.shape[0], w.device, w.dtype) * scale
+    return torch.allclose(w, hadamard, rtol=0, atol=1e-4)
 
 
 class RecomposeHadamard(ExportPass):

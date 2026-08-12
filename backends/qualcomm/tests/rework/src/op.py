@@ -11,10 +11,8 @@ import random
 from functools import partial, reduce
 from operator import mul
 
-# Registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
-import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
-
-import scipy.linalg
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 import torch
 
@@ -2221,9 +2219,7 @@ class Hadamard(torch.nn.Module):
     # rewrites each into a single qnn_custom.hadamard_transform during annotation.
     def __init__(self, variant, dim):
         super().__init__()
-        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
-            dim
-        )
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
         if variant == "linear":
             self.op = torch.nn.Linear(dim, dim, bias=False).eval()
             self.op.weight.data.copy_(H)  # symmetric H -> x@H^T == x@H

@@ -7,7 +7,7 @@
 import math
 from typing import List, Optional, Tuple, Union
 
-import scipy.linalg
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 import torch
 
@@ -1691,9 +1691,7 @@ class HadamardLinear(torch.nn.Module):
         self.linear = torch.nn.Linear(dim, dim, bias=False).eval()
         # nn.Linear computes x @ Wᵀ; the Hadamard matrix is symmetric so
         # x @ Hᵀ == x @ H, matching hadamard_transform(x).
-        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
-            dim
-        )
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
         self.linear.weight.data.copy_(H)
 
     def forward(self, x):
@@ -1705,9 +1703,7 @@ class HadamardMatMul(torch.nn.Module):
         super().__init__()
         # The Hadamard matrix is symmetric, so matmul(x, H) applies the transform
         # along the last dim of x, matching hadamard_transform(x).
-        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
-            dim
-        )
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
         self.register_buffer("weight", H)
 
     def forward(self, x):
@@ -1720,9 +1716,7 @@ class HadamardConv(torch.nn.Module):
         # A 1x1 conv mixing channels is a matmul over the channel dim; a Hadamard
         # filter makes it equivalent to hadamard_transform along channels.
         self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=False).eval()
-        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
-            dim
-        )
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
         self.conv.weight.data.copy_(H.reshape(dim, dim, 1, 1))
 
     def forward(self, x):

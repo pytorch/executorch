@@ -11,11 +11,10 @@ import math
 import operator
 from typing import TYPE_CHECKING
 
-# Registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
-import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 import pytest
-import scipy.linalg
 import torch
 
 from executorch.backends.qualcomm import _passes
@@ -4184,9 +4183,7 @@ class RecomposeHadamard:
         target_pass = _passes.RecomposeHadamard
         hadamard = torch.ops.qnn_custom.hadamard_transform.default
         permute = torch.ops.aten.permute.default
-        H = torch.from_numpy(scipy.linalg.hadamard(dim).astype("float32")) / math.sqrt(
-            dim
-        )
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
         vector_input = (torch.randn(1, dim),)
         image_input = (torch.randn(1, dim, 4, 4),)
         non_hadamard = torch.randn(dim, dim)
