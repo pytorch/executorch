@@ -26,6 +26,9 @@ from executorch.backends.transforms.remove_permutes_around_elementwise_ops impor
 from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view import (
     ReplaceNopTransposeOrPermuteWithViewPass,
 )
+from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
+    ReplaceSqueezeAndUnsqueezeWithViewPass,
+)
 
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -642,6 +645,20 @@ class ReplaceNopTransposeOrPermuteWithViewTest(unittest.TestCase):
 # ──────────────────────────────────────────────────────────────────────
 
 
+def _canonicalize_and_remove_permutes(
+    gm: torch.fx.GraphModule,
+) -> PassResult:
+    """Canonicalise squeeze/unsqueeze to view_copy, then remove permutes.
+
+    RemovePermutesAroundElementwiseOps reasons about view_copy alone, so this
+    mirrors the ordering every backend pipeline uses.
+    """
+    canonical = cast(
+        PassResult, ReplaceSqueezeAndUnsqueezeWithViewPass()(gm)
+    ).graph_module
+    return cast(PassResult, RemovePermutesAroundElementwiseOps()(canonical))
+
+
 class RemovePermutesAcrossViewTest(unittest.TestCase):
     def test_permute_view_squeeze_elementwise_view_unsqueeze_permute(self) -> None:
         """permute(3D) → view(unsqueeze) → mul(4D) → view(squeeze) → permute(3D)
@@ -963,8 +980,8 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
 
     def test_permute_unsqueeze_copy_mul_squeeze_copy_permute(self) -> None:
         """permute(3D) → unsqueeze_copy(dim=2) → mul(4D) → squeeze_copy(dim=2) → permute(3D).
-        Tests the explicit unsqueeze_copy/squeeze_copy code paths in
-        _adapt_permute_across_view (distinct from view_copy)."""
+        Canonicalisation rewrites both shape ops to view_copy, which
+        _adapt_permute_across_view then crosses."""
         builder = GraphBuilder()
         x_data = torch.randn(1, 128, 16)
         x = builder.placeholder("x", x_data)
@@ -985,8 +1002,7 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         original = builder.get_graph_module()
         gm_before = copy.deepcopy(original)
 
-        p = RemovePermutesAroundElementwiseOps()
-        result = cast(PassResult, p(original))
+        result = _canonicalize_and_remove_permutes(original)
         self.assertTrue(result.modified)
         self.assertEqual(
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
@@ -1000,8 +1016,8 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
 
     def test_4d_permute_squeeze_copy_clamp_3d_permute(self) -> None:
         """4D permute([0,3,1,2]) → squeeze_copy(dim=2) → hardtanh → 3D permute([0,2,1]).
-        Tests the squeeze_copy code path at the start boundary (entering the
-        subgraph via squeeze_copy rather than view_copy)."""
+        Covers a rank change at the start boundary, reached through the
+        view_copy that canonicalisation leaves behind."""
         builder = GraphBuilder()
         x_data = torch.randn(1, 1, 16, 128)
         x = builder.placeholder("x", x_data)
@@ -1019,8 +1035,7 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         original = builder.get_graph_module()
         gm_before = copy.deepcopy(original)
 
-        p = RemovePermutesAroundElementwiseOps()
-        result = cast(PassResult, p(original))
+        result = _canonicalize_and_remove_permutes(original)
         self.assertTrue(result.modified)
         self.assertEqual(
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
@@ -1104,8 +1119,7 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
         original = builder.get_graph_module()
         gm_before = copy.deepcopy(original)
 
-        p = RemovePermutesAroundElementwiseOps()
-        result = cast(PassResult, p(original))
+        result = _canonicalize_and_remove_permutes(original)
         self.assertTrue(result.modified)
         self.assertEqual(
             count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
@@ -1116,6 +1130,140 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
             [x_data],
             "permute_unsqueeze_copy_neg_dim_mul_squeeze_copy_permute",
         )
+
+    def test_unsqueeze_at_moved_position(self) -> None:
+        """The permutation moves the unsqueeze position (P[index] != index), so
+        the adapted permutation must be built from P[index], not index."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(u, u))
+        sq = builder.call_operator(
+            op=exir_ops.edge.aten.squeeze_copy.dim, args=(mul, 1)
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = _canonicalize_and_remove_permutes(original)
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "UnsqueezeAtMovedPosition"
+        )
+
+    def test_squeeze_dims_multiple_unit_dims(self) -> None:
+        """squeeze_copy.dims dropping more than one unit dim at once."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        u1 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
+        )
+        u2 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(u1, 2)
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(u2, u2))
+        sq = builder.call_operator(
+            op=exir_ops.edge.aten.squeeze_copy.dims, args=(mul, [1, 2])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = _canonicalize_and_remove_permutes(original)
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "SqueezeDimsMultiple"
+        )
+
+    def test_view_copy_multi_unit_dim_rank_change(self) -> None:
+        """A view_copy adding and removing two unit dims at once.
+
+        Exercises the N-dim rank change directly, without relying on
+        canonicalisation to produce the view_copy.
+        """
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        v1 = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(p1, [1, 1, 1, 16, 8])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(v1, v1))
+        v2 = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(mul, [1, 16, 8])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v2, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "ViewCopyMultiUnitDim"
+        )
+
+    def test_squeeze_on_non_unit_dim_is_not_optimized(self) -> None:
+        """A squeeze only drops size-1 dims, so listing a non-unit dim makes it a
+        no-op. Canonicalisation turns it into a same-rank view_copy, which is
+        not a crossable rank change, so the region must be skipped. Covers both
+        the squeeze_copy.dim and squeeze_copy.dims overloads."""
+        for op, dim_arg, name in (
+            (exir_ops.edge.aten.squeeze_copy.dim, 1, "SqueezeDimNonUnit"),
+            (exir_ops.edge.aten.squeeze_copy.dims, [1], "SqueezeDimsNonUnit"),
+        ):
+            with self.subTest(name=name):
+                builder = GraphBuilder()
+                x_data = torch.randn(1, 8, 16)
+                x = builder.placeholder("x", x_data)
+                p1 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+                )
+                mul = builder.call_operator(
+                    op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1)
+                )
+                # dim 1 has size 16, so the squeeze leaves it in place.
+                sq = builder.call_operator(op=op, args=(mul, dim_arg))
+                p2 = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+                )
+                builder.output([p2])
+                original = builder.get_graph_module()
+                gm_before = copy.deepcopy(original)
+
+                result = _canonicalize_and_remove_permutes(original)
+                self.assertFalse(result.modified)
+                validate_numerics(gm_before, result.graph_module, [x_data], name)
 
     def test_upstream_view_rank_mismatch_no_crash(self) -> None:
         """Regression test for IndexError when a squeeze/unsqueeze view_copy
