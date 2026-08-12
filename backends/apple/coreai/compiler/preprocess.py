@@ -343,12 +343,12 @@ def _externalized_modules(aten_program: ExportedProgram):
         lookup,
     )
 
-    op_names = [
+    op_names = {
         externalized_op_name(node.target)
         for node in aten_program.graph.nodes
         if node.op == "call_function" and is_externalize_target(node.target)
-    ]
-    return lookup(op_names) if op_names else None
+    }
+    return lookup(sorted(op_names)) if op_names else None
 
 
 # Asset embedding helpers.

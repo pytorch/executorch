@@ -143,13 +143,19 @@ class _OperatorsSupportedForCoreAIBackend(OperatorSupportBase):
         )
 
         if is_externalize_target(node.target):
-            if is_supported_target(node.target, self._externalized):
-                return True
-            self.log_once(
-                f"Externalized op {name} has no prepared submodule; leaving out "
-                "of delegate. Pass externalized_modules= to CoreAIPartitioner."
-            )
-            return False
+            # Externalized ops are temporary: only coreai knows how to lower
+            # them, and they have no out variant, so one left outside the
+            # delegate fails later with "Missing out variants". There is no
+            # useful fallback, so say so here instead. Their 64-bit operands
+            # are cast at the boundary by NarrowToCoreAIDtypesPass.
+            if not is_supported_target(node.target, self._externalized):
+                raise RuntimeError(
+                    f"Externalized op {name} has no prepared submodule, and it "
+                    f"cannot be lowered outside the Core AI delegate. Pass the "
+                    f"result of coreai_torch.externalize_modules to "
+                    f"CoreAIPartitioner via externalized_modules=."
+                )
+            return True
 
         if not is_coreai_supported_target(node.target):
             self.log_once(f"Core AI cannot lower op, leaving out of delegate: {name}")

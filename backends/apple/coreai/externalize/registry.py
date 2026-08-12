@@ -12,14 +12,17 @@ backend converts a partitioned subgraph. The result holds live
 ``ExportedProgram`` objects, so it cannot travel in a ``CompileSpec``, and node
 metadata does not survive edge lowering.
 
-Entries are keyed by op name, which coreai-torch makes unique per
-externalization, so ``preprocess`` can look up exactly the submodules its own
-subgraph calls. Nothing is serialized: like the sidecar output directory, this
-is build-time-only state and has no meaning to the runtime.
+coreai-torch returns one module per *call site*, and a submodule invoked more
+than once (a shared norm, say) gives several that agree on ``op_name`` and
+differ in ``name``. Entries are therefore keyed by ``name``, the per-call-site
+identity, and grouped by ``op_name`` on the way out so ``preprocess`` gets every
+call site of the ops its own subgraph invokes.
 
-References are weak, so an entry lives exactly as long as the caller's own
-reference to what ``externalize_modules`` returned. A long-lived process
-lowering many models does not accumulate their submodule programs.
+Nothing is serialized: like the sidecar output directory, this is build-time
+state with no meaning to the runtime. References are weak, so an entry lives
+exactly as long as the caller's own reference to what ``externalize_modules``
+returned, and a long-lived process lowering many models does not accumulate
+their submodule programs.
 """
 
 import weakref
@@ -35,11 +38,15 @@ _PREPARED: "weakref.WeakValueDictionary[str, ExternalizedModule]" = (
 def register(modules: Sequence[ExternalizedModule]) -> None:
     """Make prepared submodules available to ``preprocess``."""
     for module in modules:
-        _PREPARED[module.op_name] = module
+        _PREPARED[module.name] = module
 
 
 def lookup(op_names: Sequence[str]) -> List[ExternalizedModule]:
-    """Return the prepared submodules for the given op names.
+    """Every prepared call site of the given ops, in registration order.
+
+    Repeats in ``op_names`` are ignored: the ops are read off graph nodes, so
+    an op invoked at several call sites is named several times, while each of
+    its modules must be handed over exactly once.
 
     Raises:
         KeyError: If an op has no prepared submodule. Either the partitioner
@@ -48,7 +55,13 @@ def lookup(op_names: Sequence[str]) -> List[ExternalizedModule]:
             and preprocessing ran in different processes, which cannot work:
             the payload holds live ExportedProgram objects.
     """
-    missing = [name for name in op_names if name not in _PREPARED]
+    wanted = set(op_names)
+    # Resolve in one pass: the values are weakly held, so a membership test
+    # followed by a lookup could see an entry collected in between.
+    found: List[ExternalizedModule] = [
+        module for module in list(_PREPARED.values()) if module.op_name in wanted
+    ]
+    missing = wanted - {module.op_name for module in found}
     if missing:
         raise KeyError(
             f"no prepared submodule registered for {sorted(missing)}. Pass the "
@@ -56,7 +69,7 @@ def lookup(op_names: Sequence[str]) -> List[ExternalizedModule]:
             f"via externalized_modules=, keep a reference to it until lowering "
             f"finishes, and lower in the same process."
         )
-    return [_PREPARED[name] for name in op_names]
+    return found
 
 
 def clear() -> None:

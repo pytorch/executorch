@@ -21,7 +21,7 @@ import executorch.backends.apple.coreai.compiler.preprocess as preprocess_module
 import torch
 import torch.nn as nn
 from coreai_torch import externalize_modules, ExternalizeSpec, get_decomp_table
-from coreai_torch.composite_ops import RMSNorm, SDPA
+from coreai_torch.composite_ops import GatherMM, RMSNorm, SDPA
 
 from executorch.backends.apple.coreai import (
     CoreAIPartitioner,
@@ -35,6 +35,10 @@ from executorch.backends.apple.coreai.externalize import (
     lookup,
     register,
     spec_for,
+)
+from executorch.backends.apple.coreai.externalize.specs import _TARGETS, target_class
+from executorch.backends.apple.coreai.partition.partitioner import (
+    _OperatorsSupportedForCoreAIBackend,
 )
 from executorch.exir import to_edge_transform_and_lower
 
@@ -171,17 +175,29 @@ class PartitionerSupportTest(unittest.TestCase):
 
 class DefaultSpecsTest(unittest.TestCase):
     def test_covers_the_whole_composite_library(self) -> None:
-        names = {spec.composite_op_name for spec in default_specs()}
+        """Derived from the installed library, not a list that can go stale.
+
+        ``_TARGETS`` is hand-written, so a composite added upstream is silently
+        absent from ``default_specs``. ``RMSNorm`` is the only deliberate
+        omission: it owns its scale, and ``RMSNormImpl`` is the leaf that takes
+        it as an argument.
+        """
+        from coreai_torch import composite_ops
+
+        library = set(composite_ops.__all__) - {"RMSNorm"}
+        covered = {_TARGETS[spec.composite_op_name] for spec in default_specs()}
         self.assertEqual(
-            names,
-            {
-                "rms_norm",
-                "rope",
-                "scaled_dot_product_attention",
-                "gather_mm",
-                "gated_delta_update",
-            },
+            covered,
+            library,
+            f"default_specs covers {sorted(covered)} but the installed library "
+            f"exposes {sorted(library)}",
         )
+
+    def test_every_target_class_resolves(self) -> None:
+        """A renamed upstream class must fail here, not at export time."""
+        for name in default_specs():
+            with self.subTest(name.composite_op_name):
+                self.assertTrue(isinstance(target_class(name.composite_op_name), type))
 
     def test_attrs_are_read_from_the_installed_classes(self) -> None:
         """Transcribing them would let the specs drift from the SDK."""
@@ -256,6 +272,177 @@ class MixedCompositeTest(unittest.TestCase):
             if node.op == "call_function" and is_externalize_target(node.target)
         ]
         self.assertEqual(sorted(claimed), [False, True])
+
+
+class SharedInstance(nn.Module):
+    """One composite instance invoked twice, as a block reuses a shared RoPE.
+
+    Both call sites share an ``op_name`` (it names the submodule) and differ
+    only in ``name``, so anything keyed on ``op_name`` alone collapses them.
+    """
+
+    def __init__(self, dim: int = 8) -> None:
+        super().__init__()
+        self.norm = RMSNorm(dim)
+        self.lin = nn.Linear(dim, dim)
+
+    def forward(self, x):
+        return self.norm(self.lin(self.norm(x)))
+
+
+def _shared_instance_model():
+    torch.manual_seed(0)
+    model = SharedInstance().eval()
+    with torch.no_grad():
+        for param in model.parameters():
+            param.copy_(torch.randn_like(param))
+    return model, (torch.randn(2, 8),)
+
+
+class SharedInstanceTest(unittest.TestCase):
+    """A submodule used at several call sites must lower at every one."""
+
+    def setUp(self) -> None:
+        model, sample = _shared_instance_model()
+        self.ep, self.externalized = _externalize(model, sample)
+
+    def test_one_prepared_module_per_call_site(self) -> None:
+        self.assertEqual(len(self.externalized), 2)
+        # op_name names the submodule, name names the call site.
+        self.assertEqual(len({m.op_name for m in self.externalized}), 1)
+        self.assertEqual(len({m.name for m in self.externalized}), 2)
+
+    def test_registry_keeps_every_call_site(self) -> None:
+        register(self.externalized)
+        op_name = self.externalized[0].op_name
+        found = lookup([op_name])
+        self.assertEqual(len(found), 2, "a call site was dropped by the registry")
+        self.assertEqual({id(m) for m in found}, {id(m) for m in self.externalized})
+
+    def test_lowers_with_both_call_sites_delegated(self) -> None:
+        lowered = _lower(self.ep, self.externalized)
+        leftover = [
+            node.name
+            for node in lowered.exported_program().graph_module.graph.nodes
+            if node.op == "call_function" and is_externalize_target(node.target)
+        ]
+        self.assertEqual(leftover, [])
+        self.assertGreater(len(lowered.to_executorch().buffer), 0)
+
+    def test_preprocess_collects_each_module_once(self) -> None:
+        """One module per call site, not one per node naming the same op.
+
+        ``_externalized_modules`` reads an op name off every matching node, so
+        N call sites of one submodule yield N copies of the same name. The
+        converter keys its resolved nodes on ``id(ext)``, so duplicates collide
+        and all but one call site loses its lowering. Fixing the registry alone
+        would not catch this.
+        """
+        from executorch.backends.apple.coreai.compiler.preprocess import (
+            _externalized_modules,
+        )
+
+        register(self.externalized)
+        collected = _externalized_modules(self.ep)
+        self.assertIsNotNone(collected)
+        ids = [id(m) for m in collected]
+        self.assertEqual(len(ids), len(set(ids)), "the same module was collected twice")
+        self.assertEqual(
+            set(ids),
+            {id(m) for m in self.externalized},
+            "every call site's module must be collected exactly once",
+        )
+
+
+class InteriorIndices(nn.Module):
+    """Indices computed in-graph, as a gather after an argmax does.
+
+    The narrowing pass only casts at the exported-program boundary, so an
+    int64 produced here stays int64 all the way to the delegate.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gather = GatherMM()
+
+    def forward(self, lhs, rhs, scores):
+        return self.gather(lhs, rhs, lhs_indices=scores.argmax(dim=-1))
+
+
+class ExternalizedBoundaryDtypeTest(unittest.TestCase):
+    """64-bit operands are cast at the boundary, not left outside the delegate.
+
+    Core AI narrows 64-bit dtypes, and an externalized op cannot be lowered
+    anywhere else, so the pass inserts an explicit cast rather than the
+    partitioner declining the op.
+    """
+
+    def _externalized(self):
+        torch.manual_seed(0)
+        model = InteriorIndices().eval()
+        sample = (torch.randn(4, 8, 8), torch.randn(4, 8, 8), torch.randn(4, 4))
+        return _externalize(model, sample, specs=("gather_mm",))
+
+    def test_interior_int64_operand_is_present_before_lowering(self):
+        ep, _ = self._externalized()
+        node = next(
+            n
+            for n in ep.graph.nodes
+            if n.op == "call_function" and is_externalize_target(n.target)
+        )
+        operands = [
+            a.meta["val"]
+            for a in node.args
+            if hasattr(a, "meta") and isinstance(a.meta.get("val"), torch.Tensor)
+        ]
+        self.assertTrue(
+            any(v.dtype == torch.int64 for v in operands),
+            "fixture no longer produces an int64 operand",
+        )
+
+    def test_op_is_still_claimed(self):
+        """Only coreai can lower it, so it must go in whatever its dtypes."""
+        ep, externalized = self._externalized()
+        node = next(
+            n
+            for n in ep.graph.nodes
+            if n.op == "call_function" and is_externalize_target(n.target)
+        )
+        support = _OperatorsSupportedForCoreAIBackend(externalized=externalized)
+        self.assertTrue(support.is_node_supported({}, node))
+
+    def test_no_64bit_crosses_the_delegate_boundary(self):
+        ep, externalized = self._externalized()
+        seen = {}
+        original = preprocess_module._prepare_program_for_conversion
+
+        def spy(edge_program):
+            seen["dtypes"] = [
+                node.meta["val"].dtype
+                for node in edge_program.graph.nodes
+                if node.op == "placeholder" and hasattr(node.meta.get("val"), "dtype")
+            ]
+            return original(edge_program)
+
+        preprocess_module._prepare_program_for_conversion = spy
+        try:
+            lowered = _lower(ep, externalized)
+            self.assertGreater(len(lowered.to_executorch().buffer), 0)
+        finally:
+            preprocess_module._prepare_program_for_conversion = original
+
+        self.assertTrue(seen.get("dtypes"), "preprocess never ran")
+        self.assertNotIn(torch.int64, seen["dtypes"])
+        self.assertIn(torch.int32, seen["dtypes"], "the cast should be visible")
+
+
+class UnpreparedExternalizedOpTest(unittest.TestCase):
+    def test_missing_submodule_fails_at_partition(self):
+        """Better than the "Missing out variants" error it would hit later."""
+        model, sample = _model()
+        ep, _ = _externalize(model, sample)
+        with self.assertRaisesRegex(RuntimeError, "no prepared submodule"):
+            _lower(ep, [])
 
 
 class CustomLeaf(nn.Module):
