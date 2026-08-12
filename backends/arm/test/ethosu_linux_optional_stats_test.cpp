@@ -30,6 +30,8 @@ TEST(EthosULinuxOptionalStats, InvokesWithOrWithoutStatsLibrary) {
   handles.outputs = &outputs;
   ExecutionHandle handle{};
   handle.handles = handles;
+  IOPlan io_plan{};
+  io_plan.handles = &handles;
   ASSERT_EQ(platform_init({}, nullptr, &handle), Error::Ok);
   executorch::runtime::MemoryAllocator allocator(0, nullptr);
   executorch::runtime::BackendExecutionContext context(
@@ -39,9 +41,7 @@ TEST(EthosULinuxOptionalStats, InvokesWithOrWithoutStatsLibrary) {
   EthosUStatsBuffer buffer{records, 1};
   set_ethosu_stats_buffer(&buffer);
 #endif
-  EXPECT_EQ(
-      platform_execute(context, &handle, handles, 0, 0, {}, nullptr),
-      Error::Ok);
+  EXPECT_EQ(platform_execute(context, &handle, io_plan), Error::Ok);
 #if defined(ET_ARM_ETHOSU_TEST_STATS_LINKED)
   EXPECT_TRUE(ethosu_execution_metrics_enabled());
   EXPECT_TRUE(EthosU::Inference::cycle_counter_enabled);
