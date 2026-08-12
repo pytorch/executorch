@@ -78,9 +78,29 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         exir_ops.edge.aten.view.default,
     )
 
-    _UNSQUEEZE_OPS = (exir_ops.edge.aten.unsqueeze_copy.default,)
+    @staticmethod
+    def _concrete_shape(node: torch.fx.Node) -> list[int] | None:
+        """Return a node's shape, or None if it is missing or symbolic."""
+        val = node.meta.get("val")
+        if val is None:
+            return None
+        shape = val.shape
+        if not all(isinstance(d, int) for d in shape):
+            return None
+        return [int(d) for d in shape]
 
-    _SQUEEZE_OPS = (exir_ops.edge.aten.squeeze_copy.dim,)
+    def _view_shapes(self, node: torch.fx.Node) -> tuple[list[int], list[int]] | None:
+        """Concrete (input, output) shapes of a view op, else None."""
+        if node.target not in self._VIEW_OPS:
+            return None
+        inp = node.args[0] if node.args else None
+        if not isinstance(inp, torch.fx.Node):
+            return None
+        in_shape = self._concrete_shape(inp)
+        out_shape = self._concrete_shape(node)
+        if in_shape is None or out_shape is None:
+            return None
+        return in_shape, out_shape
 
     _PAD_OPS = (
         exir_ops.edge.aten.constant_pad_nd.default,
@@ -88,20 +108,26 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
     )
 
     @staticmethod
-    def _find_extra_one(longer: list[int], shorter: list[int]) -> int:
-        """If longer has exactly one more element of value 1, return its index. Else -1."""
-        if len(longer) != len(shorter) + 1:
-            return -1
-        for i in range(len(shorter)):
-            if longer[i] != shorter[i]:
-                if longer[i] == 1 and shorter[i:] == longer[i + 1 :]:
-                    return i
-                return -1
-        return len(shorter) if longer[-1] == 1 else -1
+    def _find_extra_ones(longer: list[int], shorter: list[int]) -> list[int] | None:
+        """Positions in ``longer`` whose removal yields ``shorter``.
+
+        Every such position must hold a size-1 dim, so the two shapes differ by
+        unit dims alone. Returns None when no such set of positions exists.
+        """
+        extra: list[int] = []
+        j = 0
+        for i, dim in enumerate(longer):
+            if j < len(shorter) and dim == shorter[j]:
+                j += 1
+                continue
+            if dim != 1:
+                return None
+            extra.append(i)
+        return extra if j == len(shorter) else None
 
     def _is_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
-        """Check if a node is a squeeze, unsqueeze, or view_copy that only
-        adds or removes a single dim of size 1."""
+        """Check if a node is a view_copy that only adds or removes dims of
+        size 1."""
         if node in self._sq_unsq_cache:
             return self._sq_unsq_cache[node]
         result = self._check_squeeze_unsqueeze_view(node)
@@ -109,18 +135,14 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return result
 
     def _check_squeeze_unsqueeze_view(self, node: torch.fx.Node) -> bool:
-        if node.target in self._UNSQUEEZE_OPS or node.target in self._SQUEEZE_OPS:
-            return True
-        if node.target not in self._VIEW_OPS:
+        shapes = self._view_shapes(node)
+        if shapes is None:
             return False
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-        in_shape = inp.meta["val"].shape
-        out_shape = node.meta["val"].shape
-        if len(out_shape) == len(in_shape) + 1:
-            return self._find_extra_one(out_shape, in_shape) != -1
-        if len(in_shape) == len(out_shape) + 1:
-            return self._find_extra_one(in_shape, out_shape) != -1
+        in_shape, out_shape = shapes
+        if len(out_shape) > len(in_shape):
+            return self._find_extra_ones(out_shape, in_shape) is not None
+        if len(in_shape) > len(out_shape):
+            return self._find_extra_ones(in_shape, out_shape) is not None
         return False
 
     def _is_permutation_sink_view(self, node: torch.fx.Node) -> bool:
@@ -151,71 +173,45 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         Adapts from input-rank to output-rank space (downstream direction).
         Returns the adjusted permutation, or None if not possible.
         """
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-        inp_val = inp.meta.get("val")
-        if inp_val is None:
+        shapes = self._view_shapes(node)
+        if shapes is None:
             return None
-        in_shape = inp_val.shape
+        in_shape, out_shape = shapes
         # ``permute`` must live in the view's input-rank space. It does not when
         # the view is reached by upstream traversal, where the permutation is
-        # expressed at the view's output rank; bail out so the caller drops the
-        # subgraph instead of indexing out of range or silently mis-adapting.
+        # expressed at the view's output rank.
         if len(permute) != len(in_shape):
             return None
 
-        # Handle explicit unsqueeze_copy(dim)
-        if node.target in self._UNSQUEEZE_OPS:
-            dim = cast(int, node.args[1])
-            rank = len(permute)
-            index = dim if dim >= 0 else dim + rank + 1
-            # `index` is a POSITION in the permuted output; the un-permuted
-            # position the new dim lands at is the permutation VALUE there
-            # (or the end, when appending). permute_subgraph rewrites the dim
-            # arg to exactly this value, so the two must agree -- using `index`
-            # here instead silently desynchronises them whenever
-            # permute[index] != index.
-            inserted_value = permute[index] if index < rank else rank
-            new_perm = [x + 1 if x >= inserted_value else x for x in permute]
-            new_perm.insert(index, inserted_value)
+        if len(out_shape) > len(in_shape):
+            # unsqueeze: insert an identity mapping at each added position.
+            # Positions are ascending and index into the output, so inserting
+            # them in order lands each one at its final index.
+            positions = self._find_extra_ones(out_shape, in_shape)
+            if positions is None:
+                return None
+            new_perm = list(permute)
+            for index in positions:
+                new_perm = [x + 1 if x >= index else x for x in new_perm]
+                new_perm.insert(index, index)
             return new_perm
 
-        # Handle explicit squeeze_copy(dim)
-        if node.target in self._SQUEEZE_OPS:
-            dim = cast(int, node.args[1])
-            rank = len(permute)
-            index = dim if dim >= 0 else dim + rank
-            # index is a POSITION in the tensor; the permutation VALUE at
+        if len(in_shape) > len(out_shape):
+            positions = self._find_extra_ones(in_shape, out_shape)
+            # Positions index into the node's input rank, which can differ from
+            # the permutation's rank when the view is reached via upstream
+            # traversal after an earlier rank change.
+            if positions is None or positions[-1] >= len(permute):
+                return None
+            # A position is a POSITION in the tensor; the permutation VALUE at
             # that position is the logical dim being removed.
-            squeezed_value = permute[index]
-            new_perm = [
-                x - 1 if x > squeezed_value else x
+            squeezed_values = {permute[p] for p in positions}
+            return [
+                x - sum(1 for v in squeezed_values if v < x)
                 for x in permute
-                if x != squeezed_value
+                if x not in squeezed_values
             ]
-            return new_perm
 
-        # Handle view_copy (squeeze/unsqueeze-like reshape)
-        out_shape = node.meta["val"].shape
-
-        if len(out_shape) == len(in_shape) + 1:
-            # unsqueeze: insert identity mapping at the new dim
-            index = self._find_extra_one(out_shape, in_shape)
-            new_perm = [x + 1 if x >= index else x for x in permute]
-            new_perm.insert(index, index)
-            return new_perm
-        elif len(in_shape) == len(out_shape) + 1:
-            # squeeze via view_copy: find the squeezed dim and remove it
-            index = self._find_extra_one(in_shape, out_shape)
-            # index is a POSITION in in_shape; the permutation VALUE at
-            # that position is the logical dim being removed.
-            squeezed_value = permute[index]
-            new_perm = [
-                x - 1 if x > squeezed_value else x
-                for x in permute
-                if x != squeezed_value
-            ]
-            return new_perm
         return None
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
@@ -377,12 +373,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     return False
             elif user.op == "output":
                 return False
-            elif not self._is_squeeze_unsqueeze_view(
-                user
-            ) and self._is_permutation_sink_view(user):
+            elif self._is_permutation_sink_view(user):
                 # The permutation dies at this reshape (see
                 # _is_permutation_sink_view), so terminate the region here with
                 # no compensating permute and no further downstream traversal.
+                # Checked before the rank-change handling below: a sink always
+                # terminates cleanly, whereas crossing it would leave the region
+                # hunting for an end permute that layout-invariance made moot.
                 continue
             elif not self.visit(
                 user, subgraph, processed_nodes, downstream_end, downstream_start
@@ -526,20 +523,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
                 self.update_view_copy(node, node_start_perm)
-            elif node.target in self._UNSQUEEZE_OPS:
-                # unsqueeze dim is in output space (rank + 1)
-                dim = cast(int, node.args[1])
-                rank = len(node_start_perm)
-                index = dim if dim >= 0 else dim + rank + 1
-                if index < rank:
-                    node.update_arg(1, node_start_perm[index])
-                else:
-                    # Inserting at or beyond existing dims — position unchanged
-                    node.update_arg(1, index)
-            elif node.target in self._SQUEEZE_OPS:
-                # squeeze dim is in input space (rank)
-                dim = get_arg(node, "dim", int)
-                set_arg(node, "dim", node_start_perm[dim])
 
         # Skip incoming permutes.
         for inp, out in subgraph.edges_in:
@@ -649,34 +632,35 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         After removing the start permute, the view's input is in the original
         (un-permuted) layout. Recompute the view's target shape accordingly.
         """
-        inp = node.args[0]
-        assert isinstance(inp, torch.fx.Node)
-
-        in_shape = inp.meta["val"].shape
-        out_shape = node.meta["val"].shape
+        shapes = self._view_shapes(node)
+        if shapes is None:
+            return
+        in_shape, out_shape = shapes
 
         # Compute un-permuted input shape
         inverse_permute = [start_permute.index(i) for i in range(len(start_permute))]
         unpermuted_in = [in_shape[inverse_permute[i]] for i in range(len(in_shape))]
 
-        if len(out_shape) == len(in_shape) + 1:
-            # unsqueeze: find the inserted dim in the permuted output,
-            # then determine where it goes in the un-permuted layout
-            index = self._find_extra_one(out_shape, in_shape)
-            if index != -1:
-                new_shape = list(unpermuted_in)
+        if len(out_shape) > len(in_shape):
+            # unsqueeze: the added unit dims keep their output positions in the
+            # un-permuted layout too
+            positions = self._find_extra_ones(out_shape, in_shape)
+            if positions is None:
+                return
+            new_shape = list(unpermuted_in)
+            for index in positions:
                 new_shape.insert(index, 1)
-                node.update_arg(1, new_shape)
-        elif len(in_shape) == len(out_shape) + 1:
-            # squeeze: find the removed dim in the permuted input,
-            # map it to the un-permuted position, and remove it
-            index = self._find_extra_one(in_shape, out_shape)
-            if index != -1:
-                # Map the squeezed dim from permuted to un-permuted space
-                unpermuted_index = start_permute[index]
-                new_shape = list(unpermuted_in)
-                del new_shape[unpermuted_index]
-                node.update_arg(1, new_shape)
+            node.update_arg(1, new_shape)
+        elif len(in_shape) > len(out_shape):
+            # squeeze: map each removed dim from permuted to un-permuted space,
+            # deleting from the back so earlier indices stay valid
+            positions = self._find_extra_ones(in_shape, out_shape)
+            if positions is None or positions[-1] >= len(start_permute):
+                return
+            new_shape = list(unpermuted_in)
+            for index in sorted((start_permute[p] for p in positions), reverse=True):
+                del new_shape[index]
+            node.update_arg(1, new_shape)
 
     def get_permutation(self, permute_node: torch.fx.Node) -> list[int] | None:
         assert permute_node.target == exir_ops.edge.aten.permute_copy.default

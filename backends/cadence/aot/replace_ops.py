@@ -32,6 +32,9 @@ from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view i
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
+from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
+    ReplaceSqueezeAndUnsqueezeWithViewPass as _SharedReplaceSqueezeAndUnsqueezeWithViewPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -184,40 +187,10 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
-    """
-    When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
-    view_copy op
-    """
-
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [
-            exir_ops.edge.aten.squeeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dim,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-        ]
-
-    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Get the output tensor shape
-        out_shape = node.meta["val"].shape
-
-        # Bail out if any dim is not an int (dynamic shape)
-        for dim in list(out_shape):
-            if not isinstance(dim, int):
-                return False
-
-        # Replace with view op with the new shape
-        with node.graph.inserting_before(node):
-            new_node = node.graph.call_function(
-                exir_ops.edge.aten.view_copy.default,
-                args=(node.args[0], list(out_shape)),
-            )
-            # Do not remove the metadata copy!
-            new_node.meta = node.meta
-        node.replace_all_uses_with(new_node)
-        return True
+class ReplaceSqueezeAndUnsqueezeWithViewPass(
+    _SharedReplaceSqueezeAndUnsqueezeWithViewPass
+):
+    pass
 
 
 class ReplaceFunctionallyEquivalentOpTargets(RemoveOrReplacePassInterface):
