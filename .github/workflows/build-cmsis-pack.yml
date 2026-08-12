@@ -78,7 +78,9 @@ jobs:
         # Stage 1: Build core ExecuTorch with arm-none-eabi-gcc
         # This generates required headers (flatbuffers, schema)
         backends/arm/scripts/build_executorch.sh
-        CMAKE_BUILD_DIR="$(pwd)/cmake-out-arm"
+        # Must match build_executorch.sh's output dir (et_build_root/cmake-out);
+        # copy_sources.sh hard-fails if the generated schema headers are absent.
+        CMAKE_BUILD_DIR="$(pwd)/arm_test/cmake-out"
         echo "::endgroup::"
 
         echo "::group::Determine pack version"
