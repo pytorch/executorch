@@ -11,13 +11,13 @@ import math
 import operator
 from typing import TYPE_CHECKING
 
-# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
-from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
-
 import pytest
 import torch
 
 from executorch.backends.qualcomm import _passes
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,

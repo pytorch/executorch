@@ -7,9 +7,9 @@
 import math
 from typing import List, Optional, Tuple, Union
 
-from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
-
 import torch
+
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 # module with related operator only
 

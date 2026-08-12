@@ -11,10 +11,10 @@ import random
 from functools import partial, reduce
 from operator import mul
 
+import torch
+
 # Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
 from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
-
-import torch
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
