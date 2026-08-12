@@ -17,10 +17,18 @@ from executorch.backends.apple.coreai.recipes.recipe_provider import (
 )
 from executorch.exir.lowered_backend_module import executorch_call_delegate
 from executorch.export import export, ExportRecipe
+from executorch.export.recipe import RecipeType
 
 
 def _model():
     return nn.Sequential(nn.Linear(32, 32), nn.ReLU(), nn.Linear(32, 32)).eval()
+
+
+class _Int64Add(nn.Module):
+    """int64 I/O, which Core AI cannot carry across the delegate boundary."""
+
+    def forward(self, x):
+        return x + x
 
 
 def _delegate_count(edge_manager):
@@ -59,6 +67,26 @@ class CoreAIRecipeProviderTest(unittest.TestCase):
         recipe = CoreAIRecipeProvider().create_recipe(CoreAIRecipeType.FP32, foo=1)
         self.assertIsNotNone(recipe)
 
+    def test_recipe_is_named_for_its_type(self):
+        for recipe_type in CoreAIRecipeType:
+            with self.subTest(recipe_type.value):
+                recipe = CoreAIRecipeProvider().create_recipe(recipe_type)
+                self.assertEqual(recipe.name, recipe_type.value)
+
+    def test_another_backends_recipe_is_declined(self):
+        """Returning a recipe for a type we do not own would break dispatch."""
+
+        class _OtherRecipeType(RecipeType):
+            SOMETHING = "something_else"
+
+            @classmethod
+            def get_backend_name(cls) -> str:
+                return "not_coreai"
+
+        provider = CoreAIRecipeProvider()
+        self.assertIsNone(provider.create_recipe(_OtherRecipeType.SOMETHING))
+        self.assertEqual(list(provider.get_supported_recipes()), list(CoreAIRecipeType))
+
 
 class CoreAIRecipeLoweringTest(unittest.TestCase):
     def setUp(self):
@@ -77,8 +105,27 @@ class CoreAIRecipeLoweringTest(unittest.TestCase):
         session = export(_model(), self.example_inputs, recipe)
         edge = session.get_edge_program_manager()
         self.assertGreaterEqual(_delegate_count(edge), 1)
-        # FP16 recipe casts the whole model -> edge inputs are fp16.
+        # The cast reaches the model's own inputs, not just the interior.
         self.assertTrue(all(d == torch.float16 for d in _input_dtypes(edge)))
+        self.assertGreater(len(session.get_pte_buffer()), 0)
+
+    def test_recipe_applies_the_default_edge_passes(self):
+        """int64 only delegates if the narrowing pass reached the pipeline.
+
+        ``edge_transform_passes`` entries are pass factories rather than passes,
+        so a mis-wired recipe still lowers the simple models above; a model that
+        needs the pass is what makes the wiring observable. The partitioner
+        rejects int64 tensors, so without narrowing nothing is delegated.
+        """
+        session = export(
+            _Int64Add().eval(),
+            [(torch.randint(-8, 8, (2, 8), dtype=torch.int64),)],
+            ExportRecipe.get_recipe(CoreAIRecipeType.FP32),
+        )
+        edge = session.get_edge_program_manager()
+        self.assertGreaterEqual(_delegate_count(edge), 1)
+        # The narrowing is interior only: external I/O stays int64.
+        self.assertTrue(all(d == torch.int64 for d in _input_dtypes(edge)))
         self.assertGreater(len(session.get_pte_buffer()), 0)
 
 

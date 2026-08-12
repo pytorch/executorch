@@ -23,13 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 def _cast_fp32_to_fp16_pass(_method_name, exported_program):
-    """aten_transform pass: cast the whole program to FP16 before edge lowering.
+    """aten_transform pass: cast the program to FP16 before edge lowering.
 
     coreai-torch does not auto-downcast (unlike coremltools), so we run
     coreai_opt's ``cast_fp32_to_fp16`` on the ExportedProgram pre-``to_edge``.
-    Because this runs on the whole model before partitioning, the graph is
-    uniformly FP16 and no delegate boundary mismatch occurs (the model's own
-    I/O becomes FP16).
+    Running it on the whole model before partitioning keeps the cast off the
+    delegate boundary: the model's own I/O becomes FP16 rather than the
+    partitions disagreeing about where conversions belong. Values FP16 cannot
+    represent stay FP32, so the result is mixed, not uniformly FP16.
+
+    Note that ``cast_fp32_to_fp16`` mutates and returns the program it is
+    given.
     """
     from coreai_opt.casting import cast_fp32_to_fp16
 
