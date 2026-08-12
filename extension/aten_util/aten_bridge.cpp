@@ -150,6 +150,20 @@ c10::Device executorch_to_torch_device(
       static_cast<int>(device.type()));
 }
 
+std::optional<executorch::runtime::etensor::Device> torch_to_executorch_device(
+    c10::Device device) {
+  switch (device.type()) {
+    case c10::DeviceType::CPU:
+      return executorch::runtime::etensor::Device(
+          executorch::runtime::etensor::DeviceType::CPU);
+    case c10::DeviceType::CUDA:
+      return executorch::runtime::etensor::Device(
+          executorch::runtime::etensor::DeviceType::CUDA, device.index());
+    default:
+      return std::nullopt;
+  }
+}
+
 /*
  * Following makes two assumptions:
  * 1. aten_tensor's lifetime is longer than the liftime within which mutable_et
