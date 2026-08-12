@@ -32,7 +32,12 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 # there is no build-time dependency on the OpenVINO SDK.
 
 # Define OpenVINO backend as a static library
-add_library(openvino_backend STATIC)
+if(EXECUTORCH_BUILD_SHARED)
+  set(_openvino_backend_library_type SHARED)
+else()
+  set(_openvino_backend_library_type STATIC)
+endif()
+add_library(openvino_backend ${_openvino_backend_library_type})
 
 # Enable exceptions and RTTI for OpenVINO backend
 target_compile_options(openvino_backend PRIVATE -frtti -fexceptions)
@@ -48,6 +53,21 @@ target_include_directories(openvino_backend PRIVATE ${COMMON_INCLUDE_DIRS})
 
 # Link ExecuteTorch core and dynamic loading libraries
 target_link_libraries(openvino_backend PRIVATE executorch_core ${CMAKE_DL_LIBS})
+
+if(EXECUTORCH_BUILD_SHARED)
+  # Named after what the library provides rather than after the target that
+  # produces it, matching the other shipped delegates, so the file reads as
+  # libexecutorch_backend_openvino.so.
+  set_target_properties(
+    openvino_backend PROPERTIES OUTPUT_NAME executorch_backend_openvino
+  )
+  executorch_target_soname_policy(openvino_backend)
+  # Resolve the runtime from the shared library rather than from the static
+  # core, so the delegate registers into the one registry the process has.
+  target_link_libraries(openvino_backend PUBLIC executorch_shared)
+  # Ships beside the runtime in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(openvino_backend)
+endif()
 
 executorch_target_link_options_shared_lib(openvino_backend)
 
