@@ -77,7 +77,6 @@ fbcode_target(
     srcs = [
         "passes/__init__.py",
         "passes/move_cond_predicate_to_cpu.py",
-        "passes/replace_int64_floordiv.py",
     ],
     visibility = [
         "//executorch/backends/cuda/...",
