@@ -21,22 +21,9 @@ import tempfile
 import unittest
 from dataclasses import replace
 
+import executorch.backends.cuda.quantize_op_dispatch as _quantize_op_dispatch  # noqa: F401
 import torch
-
-try:
-    import executorch.backends.cuda.quantize_op_dispatch as _quantize_op_dispatch  # noqa: F401
-    from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
-    from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
-        add_dflash_hidden_tapping,
-        add_on_device_sampler,
-        cuda_source_transformations,
-    )
-except ImportError as e:
-    # The CUDA backend pulls in triton, which is absent on non-CUDA builds.
-    # Every test here is CUDA-specific, so skip the module rather than fail
-    # collection for anyone running the suite without CUDA.
-    raise unittest.SkipTest(f"CUDA backend unavailable: {e}")
-
+from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 from executorch.examples.models.muse_glimmer.export.common import (
     mutable_buffer_metadata,
 )
@@ -51,6 +38,11 @@ from executorch.examples.models.muse_glimmer.inference import (
 )
 from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import _finalize
 from executorch.examples.models.muse_glimmer.model.model import FlatKVCache
+from executorch.examples.models.muse_glimmer.source_transformations.cuda import (
+    add_dflash_hidden_tapping,
+    add_on_device_sampler,
+    cuda_source_transformations,
+)
 from executorch.examples.models.muse_glimmer.tests.test_pipeline import (
     build_random_tiny_model,
     DEFAULT_RECIPE,
