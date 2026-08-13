@@ -228,13 +228,15 @@ jobs:
             echo "Failed: ${bin} not found at ${BIN_DIR}/${bin}"
             exit 1
           fi
-          # Each runner gets its own metallib copy; a missing one only shows up
-          # at runtime as an unresolved Metal kernel.
-          if [ ! -f "${BIN_DIR}/mlx.metallib" ]; then
-            echo "Failed: mlx.metallib not copied next to ${bin}"
-            exit 1
-          fi
         done
+        # Runtime kernel load falls back to an absolute build-tree path, so a
+        # missing colocated metallib only breaks a relocated binary. Assert the
+        # copy so the runners stay self-contained (needs EXECUTORCH_BUILD_MLX=ON
+        # in the preset, which drives executorch_target_copy_mlx_metallib).
+        if [ ! -f "${BIN_DIR}/mlx.metallib" ]; then
+          echo "Failed: mlx.metallib not copied next to the runners"
+          exit 1
+        fi
         echo "Success: built solo_runner, dflash_runner and muse_glimmer_worker"
         echo "::endgroup::"
 
