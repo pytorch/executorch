@@ -828,23 +828,32 @@ def _get_avg_pool2d_replacement(
     input_scale = node.meta["input_qparams"][0].scale
     output_mult, output_shift = quantize_multiplier_aot(input_scale)
 
+    # The cortex_m pool op consumes/produces NHWC-shaped contiguous tensors, so
+    # permute the NCHW graph input to NHWC before the op.
+    with node.graph.inserting_before(node):
+        pool_input = node.graph.create_node(
+            "call_function",
+            target=exir_ops.edge.aten.permute_copy.default,
+            args=(input_node, [0, 2, 3, 1]),
+        )
+
     avg_padding = padding
     if count_include_pad:
         pad_h, pad_w = padding
-        input_tensor = get_first_fake_tensor(input_node)
-        pre_pad = post_pad = to_physical_order([0, 0, pad_h, pad_w], input_tensor)
+        # Input is now NHWC [N, H, W, C]; pad H and W in NHWC physical order.
+        pre_pad = post_pad = [0, int(pad_h), int(pad_w), 0]
         with node.graph.inserting_before(node):
-            input_node = node.graph.create_node(
+            pool_input = node.graph.create_node(
                 "call_function",
                 target=exir_ops.edge.cortex_m.pad.default,
-                args=(input_node, pre_pad, post_pad, int(input_zp)),
+                args=(pool_input, pre_pad, post_pad, int(input_zp)),
             )
         avg_padding = [0, 0]
 
     scratch = _create_uninitialized_alloc_node(node, exported_program)
 
     new_args = (
-        input_node,
+        pool_input,
         kernel_size,
         stride,
         avg_padding,
@@ -854,8 +863,19 @@ def _get_avg_pool2d_replacement(
         int(output_shift),
         scratch,
     )
+    with node.graph.inserting_before(node):
+        pool_node = node.graph.create_node(
+            "call_function",
+            target=exir_ops.edge.cortex_m.quantized_avg_pool2d.default,
+            args=new_args,
+        )
+    for key in ("input_qparams", "output_qparams"):
+        if key in node.meta:
+            pool_node.meta[key] = node.meta[key]
+
+    # Permute the NHWC-shaped op output back to NCHW so downstream stays NCHW.
     return DialectNodeSpec(
-        exir_ops.edge.cortex_m.quantized_avg_pool2d.default, new_args
+        exir_ops.edge.aten.permute_copy.default, (pool_node, [0, 3, 1, 2])
     )
 
 
@@ -1090,19 +1110,39 @@ def _get_max_pool2d_replacement(
     if quantized_op is None:
         return None
 
-    args = (
-        node.args[0],
-        kernel_size,
-        stride,
-        padding,
-        dilation,
-        ceil_mode,
-        input_zero_point,
-        output_zero_point,
-        activation_min,
-        activation_max,
+    input_node = cast(Node, node.args[0])
+    # The cortex_m pool op consumes/produces NHWC-shaped contiguous tensors, so
+    # permute the NCHW graph input to NHWC before the op.
+    with node.graph.inserting_before(node):
+        pool_input = node.graph.create_node(
+            "call_function",
+            target=exir_ops.edge.aten.permute_copy.default,
+            args=(input_node, [0, 2, 3, 1]),
+        )
+        pool_node = node.graph.create_node(
+            "call_function",
+            target=quantized_op.default,
+            args=(
+                pool_input,
+                kernel_size,
+                stride,
+                padding,
+                dilation,
+                ceil_mode,
+                input_zero_point,
+                output_zero_point,
+                activation_min,
+                activation_max,
+            ),
+        )
+    for key in ("input_qparams", "output_qparams"):
+        if key in node.meta:
+            pool_node.meta[key] = node.meta[key]
+
+    # Permute the NHWC-shaped op output back to NCHW so downstream stays NCHW.
+    return DialectNodeSpec(
+        exir_ops.edge.aten.permute_copy.default, (pool_node, [0, 3, 1, 2])
     )
-    return DialectNodeSpec(quantized_op.default, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.minimum.default)

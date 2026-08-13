@@ -72,6 +72,18 @@ test_cases = {
         CortexMAvgPool2d(kernel_size=3, stride=2, padding=1, count_include_pad=True),
         (ramp_tensor(0, 15, (1, 1, 4, 4)),),
     ),
+    # Multi-channel coverage in both memory formats. The cortex_m pool op contract
+    # is NHWC-shaped contiguous; the explicit permute inserted by the AoT pass
+    # normalizes both contiguous and channels_last inputs, so both should lower and
+    # run identically.
+    "avgpool_2x2_mc": McuTestCase(
+        CortexMAvgPool2d(kernel_size=2, stride=2),
+        (ramp_tensor(0, 47, (1, 3, 4, 4)),),
+    ),
+    "avgpool_2x2_mc_channels_last": McuTestCase(
+        CortexMAvgPool2d(kernel_size=2, stride=2),
+        (ramp_tensor(0, 47, (1, 3, 4, 4)).to(memory_format=torch.channels_last),),
+    ),
 }
 
 
@@ -136,13 +148,15 @@ def test_dialect_avg_pool2d(test_case, cortex_m_target):
     scratch_size = scratch_arg.args[0][0][0]
 
     input_node = pool_node.args[0]
+    # The cortex_m pool op consumes/produces NHWC-shaped [N, H, W, C] tensors, so
+    # channels are at index 3 and output width at index 2.
     input_shape = input_node.meta["val"].shape
     output_shape = pool_node.meta["val"].shape
     expected_size = cmsis_nn.avgpool_buffer_size(
         cortex_m_target.backend,
         cmsis_nn.DataType.A8W8,
-        dim_dst_width=int(output_shape[3]),
-        ch_src=int(input_shape[1]),
+        dim_dst_width=int(output_shape[2]),
+        ch_src=int(input_shape[3]),
     )
     assert (
         scratch_size == expected_size

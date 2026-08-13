@@ -64,6 +64,16 @@ test_cases = {
         CortexMMaxPool2d(kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
         (ramp_tensor(-16, 16, (1, 1, 6, 6)),),
     ),
+    # Multi-channel coverage in both memory formats (NHWC-shaped contract; the AoT
+    # permute normalizes contiguous and channels_last inputs identically).
+    "maxpool_2x2_mc": McuTestCase(
+        CortexMMaxPool2d(kernel_size=2, stride=2),
+        (ramp_tensor(-50, 50, (1, 3, 6, 6)),),
+    ),
+    "maxpool_2x2_mc_channels_last": McuTestCase(
+        CortexMMaxPool2d(kernel_size=2, stride=2),
+        (ramp_tensor(-50, 50, (1, 3, 6, 6)).to(memory_format=torch.channels_last),),
+    ),
     "maxpool_2x2_indices": McuTestCase(
         CortexMMaxPool2dIndices(kernel_size=2, stride=2),
         (ramp_tensor(-50, 50, (1, 1, 6, 6)),),

@@ -17,9 +17,10 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import SharedQspecQuantizer
 from executorch.backends.arm.test.common import parametrize, xfail_type
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
-from executorch.backends.cortex_m.test.tester import CortexMTester
+from executorch.backends.cortex_m.test.tester import CortexMTester, CortexMToEdge
 from executorch.backends.test.harness.stages import StageType
 from executorch.exir import EdgeCompileConfig
+from executorch.exir._serialize import _deserialize_pte_binary
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -782,6 +783,28 @@ FVP_OP_CASES = {key: val for key, val in OP_CASES.items() if key in FVP_OP_CASES
 def test_shared_qspec_portable_int8_ops_fvp(op_case: OpCase) -> None:
     tester = CortexMTester(op_case.module, op_case.example_inputs)
     tester.test_implementation()
+
+
+def test_legacy_dim_order_pte_runs_on_cortex_m() -> None:
+    op_case = OP_CASES["clone"]
+    tester = CortexMTester(op_case.module, op_case.example_inputs)
+    tester.quantize()
+    tester.export()
+    tester.to_edge(CortexMToEdge(skip_dim_order=False))
+    tester.check_count(
+        {"executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1}
+    )
+    tester.run_passes()
+    tester.to_executorch()
+    tester.serialize()
+
+    pte = _deserialize_pte_binary(tester.get_artifact(StageType.SERIALIZE))
+    serialized_ops = {
+        (op.name, op.overload) for op in pte.program.execution_plan[0].operators
+    }
+    assert ("dim_order_ops::_clone_dim_order", "out") in serialized_ops
+
+    tester.run_method_and_compare_outputs(inputs=tester.example_inputs)
 
 
 def test_shared_qspec_ops_default_covered() -> None:
