@@ -27,8 +27,8 @@ The Neutron delegate supports the following quantization schemes:
       - `aten.dropout.default`
       - `aten.exp.default`
       - `aten.flatten.using_ints`
-      - `aten.hardtanh.default`
-      - `aten.hardtanh_.default`
+      - `aten.hardswish.default` and `aten.hardswish_.default`
+      - `aten.hardtanh.default` and `aten.hardtanh_.default`
       - `aten.leaky_relu.default` and `aten.leaky_relu_.default`
       - `aten.linear.default`
       - `aten.log.default`
@@ -45,6 +45,7 @@ The Neutron delegate supports the following quantization schemes:
       - `aten.prelu.default`
       - `aten.relu.default` and `aten.relu_.default`
       - `aten.reshape.default`
+      - `aten.rsqrt.default`
       - `aten.sigmoid.default`
       - `aten.slice.Tensor`
       - `aten.softmax.int`
