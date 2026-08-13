@@ -13,7 +13,6 @@ runtime.export_file(
 fbcode_target(
     _kind = runtime.python_library,
     name = "lib",
-    typing = True,
     srcs = [
         "__init__.py",
         "partitioner.py",
