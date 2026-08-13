@@ -89,11 +89,18 @@ class BaseOutputComparator(abc.ABC):
                     store_txt_input_tensor(npu_tensor_path, tensor_spec)
                     store_txt_input_tensor(diff_cpu_npu_tensor_path, tensor_spec)
 
-        # We need to archive the test_dir before comparison, as comparison can cause AssertionError exception
+            try:
+                self.compare_sample(sample_dir, cpu_output_tensors, npu_output_tensors)
+            except Exception as e:
+                # We need to archive the test_dir if comparison fails
+                test_dir = os.path.dirname(cpu_results_dir)
+                if logging.root.isEnabledFor(logging.DEBUG):
+                    archive_test_dir(test_dir)
+                raise e
+
         test_dir = os.path.dirname(cpu_results_dir)
         if logging.root.isEnabledFor(logging.DEBUG):
             archive_test_dir(test_dir)
-        self.compare_sample(sample_dir, cpu_output_tensors, npu_output_tensors)
 
     @abstractmethod
     def compare_sample(
