@@ -160,6 +160,9 @@ class InsertSeqMse(ExportPass):
                 # extract observer
                 weight_node_obs = node.args[1]
                 observer = getattr(graph_module, weight_node_obs.name)
+                # For fake quant case
+                if hasattr(observer, "activation_post_process"):
+                    observer = observer.activation_post_process
                 # extract parameters
                 weight_node = weight_node_obs.args[0]
                 weight_tensor = graph_module.get_parameter(weight_node.target).detach()

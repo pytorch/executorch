@@ -534,6 +534,28 @@ def emit_quantized_gather(
     )
 
 
+def mlx_qparams_supported(
+    in_features: int, num_groups: int, group_size: int, bits: int
+) -> bool:
+    """Whether to_mlx_qparams + regroup_affine_scales can consume this layout.
+
+    Mirrors their asserts using shape metadata only, so a handler can answer
+    "would I lower this?" without reading (and repacking) the weight:
+
+    * to_mlx_qparams packs a row into whole uint32 words, so
+      ``in_features * bits`` must be a multiple of 32.
+    * regroup_affine_scales repeat-interleaves, which only ever splits a group
+      finer, so the weight's own group must be a whole multiple of the
+      MLX-legal ``group_size``.
+    """
+    if in_features <= 0 or num_groups <= 0 or in_features % num_groups != 0:
+        return False
+    if (in_features * bits) % 32 != 0:
+        return False
+    weight_group_size = in_features // num_groups
+    return weight_group_size >= group_size and weight_group_size % group_size == 0
+
+
 def to_mlx_qparams(
     qdata: torch.Tensor,
     scale: torch.Tensor,
