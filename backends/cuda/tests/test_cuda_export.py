@@ -6,6 +6,7 @@
 
 import unittest
 from typing import Tuple
+from unittest import mock
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -96,6 +97,21 @@ class TestCudaExport(unittest.TestCase):
         # Skip tests if CUDA is not available
         if not torch.cuda.is_available():
             self.skipTest("CUDA is not available")
+
+    def test_rehydrated_storage_is_synchronized_before_release(self):
+        from executorch.backends.cuda.cuda_backend import _rehydrate_emptied_tensors
+
+        tensor = torch.empty(16, device="cuda")
+        tensor.untyped_storage().resize_(0)
+
+        with mock.patch.object(
+            torch.cuda, "synchronize", wraps=torch.cuda.synchronize
+        ) as synchronize:
+            with _rehydrate_emptied_tensors([tensor]):
+                tensor.zero_()
+
+        synchronize.assert_called_once_with(tensor.device)
+        self.assertEqual(tensor.untyped_storage().nbytes(), 0)
 
     def _export_to_cuda_with_lower(
         self,

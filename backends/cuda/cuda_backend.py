@@ -120,6 +120,15 @@ def _rehydrate_emptied_tensors(tensors):
             tensor.zero_()
         yield
     finally:
+        # The autotuner finishes with reset_to_zero_args(), whose CUDA zero_
+        # launches asynchronously.  Releasing the storage before that work has
+        # completed leaves the kernel writing through a freed pointer; the
+        # resulting illegal access is then reported by some later CUDA API
+        # (often preserve_rng_state's set_rng_state).  All users of storage that
+        # is about to be resized away must be complete first.
+        cuda_devices = {tensor.device for tensor in emptied if tensor.is_cuda}
+        for device in cuda_devices:
+            torch.cuda.synchronize(device)
         for storage in reversed(restored):
             storage.resize_(0)
 
