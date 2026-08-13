@@ -146,7 +146,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
     orig_codegen_device = _Cpp.codegen_device
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
-    orig_benchmark_all_configs = _Autotuner.benchmark_all_configs
+    orig_autotuner_run = _Autotuner.run
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -177,19 +177,19 @@ def _compile_time_cpu_clones(target_device: torch.device):
             return orig_clone(x).cpu()
         return orig_clone(x)
 
-    def _benchmark_all_configs_with_rehydrated_emptied_args(self, *args, **kwargs):
-        # Autotuning touches its original arguments before and after cloning:
-        # reset_to_zero_args operates on the originals, while the launcher uses
-        # the cloned/prepared arguments. Keep the original storage valid for the
-        # entire config sweep (including its final reset) so neither path can
-        # access the released KV storage.
+    def _autotuner_run_with_rehydrated_emptied_args(self, *args, **kwargs):
+        # CachingAutotuner.run first benchmarks configurations (where cloning and
+        # reset_to_zero_args touch the inputs), then launches the winning kernel
+        # once more on the original arguments. Keep their storage valid through
+        # both phases and the final launch; wrapping benchmark_all_configs alone
+        # would release it too early for that last call.
         tensors = (
             value
             for value in (*args, *kwargs.values())
             if isinstance(value, torch.Tensor)
         )
         with _rehydrate_emptied_tensors(tensors):
-            return orig_benchmark_all_configs(self, *args, **kwargs)
+            return orig_autotuner_run(self, *args, **kwargs)
 
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
@@ -219,9 +219,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
     _Cpp.codegen_device = _codegen_device_target_aware
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
     _graph.is_same_tensor = _is_same_skip_emptied
-    _Autotuner.benchmark_all_configs = (
-        _benchmark_all_configs_with_rehydrated_emptied_args
-    )
+    _Autotuner.run = _autotuner_run_with_rehydrated_emptied_args
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -232,7 +230,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
         _Cpp.codegen_device = orig_codegen_device
         _GL.get_original_value_of_constant = orig_get_const
         _graph.is_same_tensor = orig_is_same
-        _Autotuner.benchmark_all_configs = orig_benchmark_all_configs
+        _Autotuner.run = orig_autotuner_run
 
 
 def _is_kv_buffer(name, v) -> bool:
