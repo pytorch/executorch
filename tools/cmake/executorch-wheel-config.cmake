@@ -19,6 +19,10 @@
 # EXECUTORCH_INCLUDE_DIRS -- The include directories for ExecuTorch
 # EXECUTORCH_LIBRARIES    -- Libraries to link against
 #
+# EXECUTORCH_RUNTIME_LIBRARY_DIR -- Where the shipped libraries live. A consumer
+# that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
+# CMake removes the entry it recorded while building.
+#
 cmake_minimum_required(VERSION 3.19)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This file should be installed
@@ -109,9 +113,6 @@ if(_portable_lib_LIBRARY)
     # installs elsewhere adds these to its own INSTALL_RPATH.
     get_filename_component(
       EXECUTORCH_RUNTIME_LIBRARY_DIR "${EXECUTORCH_RUNTIME_LIBRARY}" DIRECTORY
-    )
-    get_filename_component(
-      EXECUTORCH_PYTHON_EXTENSION_DIR "${_portable_lib_LIBRARY}" DIRECTORY
     )
   endif()
 endif()
