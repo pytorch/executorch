@@ -17,6 +17,37 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_low_memory_autotune_rehydrates_aliased_storage_for_full_bench(self):
+        from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones
+        from torch._inductor.runtime.triton_heuristics import CachingAutotuner
+
+        base = torch.empty_strided((4, 4), (4, 1))
+        view = base[:, 1:]
+        base.untyped_storage().resize_(0)
+        original_benchmark_all_configs = CachingAutotuner.benchmark_all_configs
+        test_case = self
+
+        def fake_benchmark_all_configs(_autotuner, base_arg, view_arg):
+            test_case.assertGreater(base_arg.untyped_storage().nbytes(), 0)
+            test_case.assertEqual(
+                base_arg.untyped_storage()._cdata,
+                view_arg.untyped_storage()._cdata,
+            )
+            test_case.assertEqual(view_arg.storage_offset(), 1)
+            test_case.assertEqual(torch.count_nonzero(base_arg), 0)
+            return "bench-result"
+
+        CachingAutotuner.benchmark_all_configs = fake_benchmark_all_configs
+        try:
+            autotuner = object.__new__(CachingAutotuner)
+            with _compile_time_cpu_clones(torch.device("cuda")):
+                result = autotuner.benchmark_all_configs(base, view)
+        finally:
+            CachingAutotuner.benchmark_all_configs = original_benchmark_all_configs
+
+        self.assertEqual(result, "bench-result")
+        self.assertEqual(base.untyped_storage().nbytes(), 0)
+
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="emulate_precision_casts", value=b"OFF")]

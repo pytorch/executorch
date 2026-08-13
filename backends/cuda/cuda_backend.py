@@ -82,6 +82,48 @@ def _is_emptied(x) -> bool:
     )
 
 
+def _required_storage_nbytes(x: torch.Tensor) -> int:
+    """Return the backing storage required by ``x``'s logical view."""
+    if x.numel() == 0:
+        return 0
+    last_element = x.storage_offset()
+    for size, stride in zip(x.size(), x.stride()):
+        last_element += (size - 1) * stride
+    return int(last_element + 1) * x.element_size()
+
+
+@contextlib.contextmanager
+def _rehydrate_emptied_tensors(tensors):
+    """Temporarily restore zero storage while preserving tensor aliases.
+
+    Low-memory CUDA export keeps KV tensors' sizes and strides but releases
+    their backing storage. Inductor autotuning needs those original tensor
+    objects throughout cloning, reset-to-zero, and kernel launch. Restoring the
+    shared storages in place preserves views/aliases that replacing individual
+    arguments with fresh tensors would break.
+    """
+    emptied = [tensor for tensor in tensors if _is_emptied(tensor)]
+    storages = {}
+    for tensor in emptied:
+        storage = tensor.untyped_storage()
+        key = storage._cdata
+        required = _required_storage_nbytes(tensor)
+        if key not in storages or required > storages[key][1]:
+            storages[key] = (storage, required)
+
+    restored = []
+    try:
+        for storage, required in storages.values():
+            storage.resize_(required)
+            restored.append(storage)
+        for tensor in emptied:
+            tensor.zero_()
+        yield
+    finally:
+        for storage in reversed(restored):
+            storage.resize_(0)
+
+
 @contextlib.contextmanager
 def _compile_time_cpu_clones(target_device: torch.device):
     """Force AOTI's mutated-buffer clones onto CPU while preserving the
@@ -89,11 +131,13 @@ def _compile_time_cpu_clones(target_device: torch.device):
     from torch._inductor import compile_fx as _cfx, graph as _graph
     from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
     from torch._inductor.graph import GraphLowering as _GL
+    from torch._inductor.runtime.triton_heuristics import CachingAutotuner as _Autotuner
 
     orig_clone = _cfx.clone_preserve_strides
     orig_codegen_device = _Cpp.codegen_device
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
+    orig_benchmark_all_configs = _Autotuner.benchmark_all_configs
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -124,6 +168,20 @@ def _compile_time_cpu_clones(target_device: torch.device):
             return orig_clone(x).cpu()
         return orig_clone(x)
 
+    def _benchmark_all_configs_with_rehydrated_emptied_args(self, *args, **kwargs):
+        # Autotuning touches its original arguments before and after cloning:
+        # reset_to_zero_args operates on the originals, while the launcher uses
+        # the cloned/prepared arguments. Keep the original storage valid for the
+        # entire config sweep (including its final reset) so neither path can
+        # access the released KV storage.
+        tensors = (
+            value
+            for value in (*args, *kwargs.values())
+            if isinstance(value, torch.Tensor)
+        )
+        with _rehydrate_emptied_tensors(tensors):
+            return orig_benchmark_all_configs(self, *args, **kwargs)
+
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
         # _to_bytes. For KV buffers we freed with resize_(0) this would otherwise
@@ -152,6 +210,9 @@ def _compile_time_cpu_clones(target_device: torch.device):
     _Cpp.codegen_device = _codegen_device_target_aware
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
     _graph.is_same_tensor = _is_same_skip_emptied
+    _Autotuner.benchmark_all_configs = (
+        _benchmark_all_configs_with_rehydrated_emptied_args
+    )
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -162,6 +223,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
         _Cpp.codegen_device = orig_codegen_device
         _GL.get_original_value_of_constant = orig_get_const
         _graph.is_same_tensor = orig_is_same
+        _Autotuner.benchmark_all_configs = orig_benchmark_all_configs
 
 
 def _is_kv_buffer(name, v) -> bool:
