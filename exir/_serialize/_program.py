@@ -291,10 +291,6 @@ def _extract_delegate_segments(
                     "Program must only contain inline delegate data, "
                     + f"saw {repr(delegate)}"
                 )
-            # TODO(T144120904): Don't extract small blobs into segments;
-            # have a cutoff. Or callers could provide a callback that
-            # returns true/false for a given BackendDelegate, letting them
-            # use their own logic.
             try:
                 inline: BackendDelegateInlineData = program.backend_delegate_data[
                     delegate.processed.index
