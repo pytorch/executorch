@@ -109,6 +109,23 @@ function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
   )
 endfunction()
 
+#[[
+Return the linker script used by the Corstone FVP for SYSTEM_CONFIG.
+]]
+function(get_corstone_linker_script OUT_VAR SYSTEM_CONFIG)
+  if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
+    set(_linker_script "Corstone-300.ld")
+  elseif(SYSTEM_CONFIG MATCHES "Ethos_U85")
+    set(_linker_script "Corstone-320.ld")
+  else()
+    message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
+  endif()
+  set(${OUT_VAR}
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../cmake/linker_scripts/${_linker_script}"
+      PARENT_SCOPE
+  )
+endfunction()
+
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
   if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     # Both model and scratch in DRAM.
