@@ -13,7 +13,9 @@ if (Test-Path -Path $buildDir) {
 cmake -S . -B $buildDir `
     -G "Visual Studio 17 2022" `
     -A ARM64 `
+    -T ClangCL `
     -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_CXX_STANDARD=20 `
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON `
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON `
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON `
