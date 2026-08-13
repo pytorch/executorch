@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import operator
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,9 @@ import pytest
 import torch
 
 from executorch.backends.qualcomm import _passes
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in RecomposeHadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_ops
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
@@ -21,6 +25,9 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
 from executorch.backends.qualcomm.tests.rework.conftest import (
     check_exception,
     EXCEPTION_FROM_PASSES,
+)
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    is_qnn_sdk_version_less_than,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
@@ -4128,6 +4135,114 @@ class LpaiPartitionFallbackSupport:
                     assertions.assert_meta_key_on_named_node(
                         gm, dq_out.name, QCOM_BYPASS_NODE
                     )
+
+
+class RecomposeHadamard:
+    class _Linear(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor, bias: bool = False):
+            super().__init__()
+            dim = weight.shape[0]
+            self.linear = torch.nn.Linear(dim, dim, bias=bias).eval()
+            # nn.Linear computes x @ Wᵀ; a Hadamard matrix is symmetric so
+            # x @ Hᵀ == x @ H, matching hadamard_transform(x).
+            self.linear.weight.data.copy_(weight)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    class _MatMul(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor):
+            super().__init__()
+            self.register_buffer("weight", weight)
+
+        def forward(self, x):
+            return torch.matmul(x, self.weight)
+
+    class _Conv(torch.nn.Module):
+        def __init__(self, weight: torch.Tensor, bias: bool = False):
+            super().__init__()
+            dim = weight.shape[0]
+            self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=bias).eval()
+            self.conv.weight.data.copy_(weight.reshape(dim, dim, 1, 1))
+
+        def forward(self, x):
+            return self.conv(x)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        subtests,
+        backend_type: QnnExecuTorchBackendType,
+        assertions: Assertions,
+        pass_pipeline: PassPipeline,
+    ):
+        if is_qnn_sdk_version_less_than("2.47"):
+            pytest.skip("HadamardTransform requires QNN SDK 2.47 or newer")
+
+        dim = 8
+        target_pass = _passes.RecomposeHadamard
+        hadamard = torch.ops.qnn_custom.hadamard_transform.default
+        permute = torch.ops.aten.permute.default
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        vector_input = (torch.randn(1, dim),)
+        image_input = (torch.randn(1, dim, 4, 4),)
+        non_hadamard = torch.randn(dim, dim)
+        # (label, module, source, inputs, exp_hadamard, exp_permute)
+        cases = [
+            (
+                "linear",
+                RecomposeHadamard._Linear(H),
+                torch.ops.aten.linear.default,
+                vector_input,
+                1,
+                0,
+            ),
+            (
+                "matmul",
+                RecomposeHadamard._MatMul(H),
+                torch.ops.aten.matmul.default,
+                vector_input,
+                1,
+                0,
+            ),
+            # conv mixes the channel dim, so the rewrite is wrapped in permutes.
+            (
+                "conv",
+                RecomposeHadamard._Conv(H),
+                torch.ops.aten.conv2d.default,
+                image_input,
+                1,
+                2,
+            ),
+            # A bias makes the op more than a plain Hadamard product.
+            (
+                "linear_bias",
+                RecomposeHadamard._Linear(H, bias=True),
+                torch.ops.aten.linear.default,
+                vector_input,
+                0,
+                0,
+            ),
+            (
+                "non_hadamard",
+                RecomposeHadamard._Linear(non_hadamard),
+                torch.ops.aten.linear.default,
+                vector_input,
+                0,
+                0,
+            ),
+        ]
+        for label, module, source, inputs, exp_hadamard, exp_permute in cases:
+            with subtests.test(msg=label):
+                gm = pass_pipeline.lower_annotation_gm(
+                    module=module,
+                    sample_input=inputs,
+                    target_pass=target_pass,
+                    backend_type=backend_type,
+                )
+                assertions.assert_target_count(gm, hadamard, exp_hadamard)
+                assertions.assert_target_count(gm, permute, exp_permute)
+                assertions.assert_target_count(gm, source, 0 if exp_hadamard else 1)
 
 
 class RecomposePadMaxPool2d:

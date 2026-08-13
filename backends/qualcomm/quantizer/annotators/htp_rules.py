@@ -10,6 +10,9 @@ import operator
 from functools import partial
 from typing import Dict, List, Optional, Sequence, Tuple
 
+# Registers torch.ops.qnn_custom.hadamard_transform used by the annotator below.
+import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
+
 import executorch.backends.qualcomm.builders.qnn_constants as QnnConstants
 import torch
 
@@ -1146,6 +1149,14 @@ class MatMul(GeneralOpDef):
                 )
         valid &= validate_against_backend_constraints(node, constraints_list)
         return valid
+
+
+@register_annotator(
+    [torch.ops.qnn_custom.hadamard_transform.default],
+    QnnConstants.OpHadamardTransform.op_name,
+)
+class HadamardTransform(GeneralOpDef):
+    pass
 
 
 @register_annotator(
