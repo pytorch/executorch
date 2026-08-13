@@ -1438,7 +1438,6 @@ def test_extension_contains_no_component() -> None:
         check=False,
     ).stdout
     candidates = (*_REGISTRY_SYMBOLS, *_THREADPOOL_SYMBOLS)
-    imported = [symbol for symbol in candidates if symbol in undefined]
     # A symbol the extension defines itself is the hidden copy this check exists to catch. A
     # symbol it neither imports nor defines is simply unused, which happens for the backend
     # registry when the wheel is built with the optional delegates off.
