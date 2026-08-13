@@ -34,6 +34,7 @@ from executorch.backends.nxp.tests.dataset_creator import (
 from executorch.backends.nxp.tests.executorch_pipeline import (
     get_calibration_inputs_fn_from_dataset_dir,
     ModelInputSpec,
+    to_edge_program,
     to_model_input_spec,
     to_quantized_edge_program,
     to_quantized_executorch_program,
@@ -230,6 +231,24 @@ def _run_non_delegated_executorch_program(
     execute_cmd(non_delegated_cmd)
 
     return non_delegated_program.exported_program()
+
+
+def _save_non_quantized_fp32_executorch_program(
+    model,
+    test_dir,
+    test_name,
+    input_spec,
+) -> ExportedProgram:
+    non_quantized_program = to_edge_program(model, input_spec).to_executorch()
+
+    nodes = list(non_quantized_program.exported_program().graph.nodes)
+    assert all(
+        not node.name.startswith("executorch_call_delegate") for node in nodes
+    ), "Delegated parts found in non-quantized FP32 program!"
+
+    save_pte_program(non_quantized_program, test_name + "_non_quantized", test_dir)
+
+    return non_quantized_program.exported_program()
 
 
 def read_prepared_samples(
@@ -457,6 +476,7 @@ def lower_run_compare(
 
     model_to_delegate = model
     model_to_not_delegate = deepcopy(model)
+    model_to_export_fp32 = deepcopy(model)
 
     test_name = get_test_name(request)
     test_dir = os.path.join(OUTPUTS_DIR, test_name)
@@ -474,6 +494,13 @@ def lower_run_compare(
 
     cpu_results_dir = os.path.join(test_dir, "results_cpu")
     npu_results_dir = os.path.join(test_dir, "results_npu")
+
+    _save_non_quantized_fp32_executorch_program(
+        model_to_export_fp32,
+        test_dir,
+        test_name,
+        input_spec,
+    )
 
     delegated_program, testing_dataset_dir = _run_delegated_executorch_program(
         model_to_delegate,
