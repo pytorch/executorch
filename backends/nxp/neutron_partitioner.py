@@ -234,7 +234,7 @@ supported_ops = {
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten.rsqrt.default: RsqrtConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
-    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceCopyTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.sum.dim_IntList: SumDimIntListConverter,  # noqa F405
