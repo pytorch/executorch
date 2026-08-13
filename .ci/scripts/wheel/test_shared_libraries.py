@@ -74,6 +74,13 @@ _AOTI_SHIM_SYMBOLS = (
     "aoti_torch_empty_strided",
     "aoti_torch_delete_tensor_object",
     "executorch::backends::cuda::CUDAStreamGuard::create",
+    # From the CUDA sources rather than the C++ ones. The build drops every .cu file when no working
+    # compiler is found, and the library is still produced from its .cpp sources, so a check that
+    # names only C++ symbols passes on a library missing every kernel it was gated for.
+    "aoti_torch_cuda__weight_int4pack_mm",
+    "aoti_torch_cuda_sort_stable",
+    "aoti_torch_cuda_rand",
+    "aoti_torch_cuda_randint_low_out",
 )
 
 _QUANTIZED_KERNEL_SYMBOLS = (
