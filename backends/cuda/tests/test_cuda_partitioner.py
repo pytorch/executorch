@@ -13,7 +13,12 @@ from typing import Tuple
 from unittest.mock import patch
 
 import torch
-from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_backend import (
+    _encode_fqn_weight_manifest,
+    _FQN_WEIGHTS_MAGIC,
+    _materialize_fqn_weights,
+    CudaBackend,
+)
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -27,9 +32,7 @@ from torch.fx.passes.utils.fuser_utils import validate_partition
 
 class TestCudaLowMemoryExport(unittest.TestCase):
     @patch.object(CudaBackend, "_setup_cuda_environment_for_fatbin", return_value=True)
-    def test_low_memory_streaming_keeps_external_weights_abi(self, _) -> None:
-        from torch._inductor import codecache
-
+    def test_all_cuda_exports_request_structured_weights(self, _) -> None:
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec("low_memory_mode", b"ON")]
         )
@@ -37,15 +40,14 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             options["aot_inductor.package_constants_on_disk_format"],
             "pickle_weights",
         )
+        self.assertEqual(
+            CudaBackend.get_aoti_compile_options([])[
+                "aot_inductor.package_constants_on_disk_format"
+            ],
+            "pickle_weights",
+        )
 
-        original = codecache.determine_aoti_mmap_flags
-        with CudaBackend.get_extra_aoti_compile_context_manager(
-            [CompileSpec("low_memory_mode", b"ON")]
-        ):
-            self.assertEqual(codecache.determine_aoti_mmap_flags(0), (True, False))
-        self.assertIs(codecache.determine_aoti_mmap_flags, original)
-
-    def test_low_memory_weights_are_streamed_in_binary_blob_format(self) -> None:
+    def test_weights_are_materialized_as_independent_storages(self) -> None:
         first = torch.tensor([1, 2, 3], dtype=torch.int16)
         second = torch.tensor([4, 5], dtype=torch.int32)
         weights = Weights(
@@ -56,41 +58,81 @@ class TestCudaLowMemoryExport(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as directory:
-            so_path = os.path.join(directory, "model.wrapper.so")
-            blob_path = os.path.join(directory, "model.wrapper_weights.blob")
-            # AOTI emits this empty placeholder when the wrapper is compiled
-            # with the external-weights ABI and the tensor values are pickled.
-            with open(blob_path, "wb"):
-                pass
-
-            paths = CudaBackend.materialize_weights_blob(
-                [so_path, blob_path, weights],
-                [CompileSpec("low_memory_mode", b"ON")],
+            artifact = _materialize_fqn_weights(
+                weights, directory, mutated_fqns={"second"}
+            )
+            self.assertEqual(2, len(artifact.entries))
+            self.assertEqual(2, len(artifact.storages))
+            self.assertTrue(artifact.entries[0].shareable)
+            self.assertFalse(artifact.entries[1].shareable)
+            self.assertEqual(
+                bytes(first.untyped_storage()),
+                artifact.storages[artifact.entries[0].storage_key].to_bytes(),
+            )
+            self.assertEqual(
+                bytes(second.untyped_storage()),
+                artifact.storages[artifact.entries[1].storage_key].to_bytes(),
             )
 
-            self.assertEqual([so_path, blob_path], paths)
-            with open(blob_path, "rb") as blob:
-                data = blob.read()
-            expected = (
-                bytes(first.untyped_storage())
-                + bytes(58)
-                + bytes(second.untyped_storage())
-                + bytes(56)
-            )
-            self.assertEqual(expected, data)
+            manifest = _encode_fqn_weight_manifest("so-key", artifact.entries)
+            self.assertTrue(manifest.startswith(_FQN_WEIGHTS_MAGIC))
+            self.assertIn(b"first", manifest)
+            self.assertIn(b"second", manifest)
+            for storage in artifact.storages.values():
+                storage.close()
 
-            # The streaming write computes the digest in the same pass. Loading
-            # the file-backed blob must not reread it solely for hashing.
-            with patch.object(
-                FileBackedData,
-                "sha256",
-                side_effect=AssertionError("unexpected blob reread"),
-            ):
-                blob, digest = CudaBackend.load_weights_blob(
-                    blob_path, [CompileSpec("low_memory_mode", b"ON")]
-                )
-            self.assertEqual(hashlib.sha256(expected).hexdigest(), digest)
-            self.assertEqual(expected, blob.to_bytes())
+    def test_views_share_one_physical_storage(self) -> None:
+        base = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+        view = base[:, 1:]
+        weights = Weights(
+            {
+                "base": (base, TensorProperties(base)),
+                # AOTI may return a cloned value tensor; TensorProperties is
+                # the source of truth for reconstructing the original view.
+                "view": (base, TensorProperties(view)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = _materialize_fqn_weights(weights, directory, set())
+            self.assertEqual(1, len(artifact.storages))
+            self.assertEqual(
+                artifact.entries[0].storage_group,
+                artifact.entries[1].storage_group,
+            )
+            self.assertEqual(1, artifact.entries[1].storage_offset)
+            self.assertEqual((3, 3), artifact.entries[1].sizes)
+            self.assertEqual((4, 1), artifact.entries[1].strides)
+            for storage in artifact.storages.values():
+                storage.close()
+
+    def test_identical_mutable_storages_remain_distinct_groups(self) -> None:
+        first = torch.zeros(4)
+        second = torch.zeros(4)
+        weights = Weights(
+            {
+                "first": (first, TensorProperties(first)),
+                "second": (second, TensorProperties(second)),
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = _materialize_fqn_weights(
+                weights, directory, mutated_fqns={"first", "second"}
+            )
+            self.assertEqual(1, len(artifact.storages))
+            self.assertEqual(
+                artifact.entries[0].storage_key,
+                artifact.entries[1].storage_key,
+            )
+            self.assertNotEqual(
+                artifact.entries[0].storage_group,
+                artifact.entries[1].storage_group,
+            )
+            self.assertFalse(artifact.entries[0].shareable)
+            self.assertFalse(artifact.entries[1].shareable)
+            for storage in artifact.storages.values():
+                storage.close()
 
     def test_low_memory_blob_stays_file_backed(self) -> None:
         data = b"cuda weights"
