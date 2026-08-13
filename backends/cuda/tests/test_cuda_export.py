@@ -18,6 +18,18 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _keep_triton_reduction_loads_loop_scoped,
+        )
+        from torch._inductor.codegen.triton import IndexingOptions
+
+        original_has_rmask = IndexingOptions.has_rmask
+        indexing = object.__new__(IndexingOptions)
+        with _keep_triton_reduction_loads_loop_scoped():
+            self.assertTrue(indexing.has_rmask())
+        self.assertIs(IndexingOptions.has_rmask, original_has_rmask)
+
     def test_low_memory_autotune_rehydrates_aliased_storage_for_full_run(self):
         from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones
         from torch._inductor.runtime.triton_heuristics import CachingAutotuner

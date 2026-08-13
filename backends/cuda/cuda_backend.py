@@ -60,6 +60,33 @@ def _is_cpu_clone_active() -> bool:
     return getattr(_CPU_CLONE_GUARD, "active", False)
 
 
+@contextlib.contextmanager
+def _keep_triton_reduction_loads_loop_scoped():
+    """Avoid PyTorch 2.13 CSE of loads across separate reduction loops.
+
+    PyTorch 2.13 can classify a reduction-loop load as loop-invariant and
+    retain its CSE value for a later reduction loop without emitting the
+    original definition in a shared scope. The generated Triton then refers
+    to an undefined temporary (for Qwen prefill, ``tmp4``). Conservatively
+    treating loads as reduction-masked keeps each definition in its own loop.
+
+    ``has_rmask`` is only consulted for this load-scoping decision, and this
+    context is enabled solely by the opt-in low-memory/Qwen compile path.
+    """
+    from torch._inductor.codegen.triton import IndexingOptions
+
+    orig_has_rmask = IndexingOptions.has_rmask
+
+    def _has_rmask(_self) -> bool:
+        return True
+
+    IndexingOptions.has_rmask = _has_rmask
+    try:
+        yield
+    finally:
+        IndexingOptions.has_rmask = orig_has_rmask
+
+
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
     """Allocate a zero-filled tensor matching ``x``'s size/stride/dtype on ``device``.
 
@@ -660,6 +687,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                     # `low_memory_mode="ON"` compile spec, since the
                     # monkey-patch can interact poorly with other models'
                     # AOTI compile pipelines.
+                    stack.enter_context(_keep_triton_reduction_loads_loop_scoped())
                     stack.enter_context(
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
