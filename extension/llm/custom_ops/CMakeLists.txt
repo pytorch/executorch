@@ -113,11 +113,15 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
   # TODO: This only works if we install portable_lib.so to
   # <site-packages>/executorch/extension/pybindings/.
   if(APPLE)
-    set(RPATH "@loader_path/../../pybindings")
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib;@loader_path/../../../../../.."
+    )
   else()
-    set(RPATH "$ORIGIN/../../pybindings")
+    set(RPATH
+        "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib:$ORIGIN/../../../../../.."
+    )
   endif()
-  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
+  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH "${RPATH}")
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind

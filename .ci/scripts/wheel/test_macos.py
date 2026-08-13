@@ -12,6 +12,8 @@ import test_base
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
+    test_base.test_native_library_paths()
+    test_base.test_uv_wheel_install()
     test_base.test_cmsis_nn_install()
 
     model_tests = [

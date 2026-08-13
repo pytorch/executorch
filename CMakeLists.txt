@@ -277,16 +277,11 @@ endif()
 
 add_subdirectory(third-party)
 
-# On Apple, pybind11 SHARED extension modules must not link libpython directly.
-# When python_add_library creates a SHARED library, it links Python::Python (via
-# pybind11::embed) which pulls in libpython. This conflicts with pybind11
-# >=3.0's multi-phase module init — the duplicate Python runtime causes a GIL
-# state crash at import time. This function replaces pybind11::embed with
-# pybind11::module (which links Python::Module instead of Python::Python —
-# headers and ABI only, no libpython) and adds -undefined dynamic_lookup for
-# symbol resolution. No-op on non-Apple platforms.
+# Unix pybind extension modules resolve Python symbols from the running
+# interpreter rather than linking a build-environment libpython. On Apple,
+# dynamic_lookup is also required for those symbols.
 function(strip_python_lib target)
-  if(NOT APPLE)
+  if(WIN32)
     return()
   endif()
   get_target_property(_libs ${target} LINK_LIBRARIES)
@@ -295,7 +290,9 @@ function(strip_python_lib target)
     list(APPEND _libs pybind11::module)
     set_target_properties(${target} PROPERTIES LINK_LIBRARIES "${_libs}")
   endif()
-  target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  if(APPLE)
+    target_link_options(${target} PRIVATE "LINKER:-undefined,dynamic_lookup")
+  endif()
 endfunction()
 
 # Size-optimized builds disable exceptions, RTTI, and unwind tables.
@@ -1057,7 +1054,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   # RPATH for _portable_lib.so
-  set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+  if(APPLE)
+    set(_portable_lib_rpath
+        "@loader_path/../../../torch/lib;@loader_path/../../../../.."
+    )
+  else()
+    set(_portable_lib_rpath "$ORIGIN/../../../torch/lib:$ORIGIN/../../../../..")
+  endif()
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # Always use static linking for pybindings to avoid runtime symbol
@@ -1166,20 +1169,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
-  # Set RPATH to find PyTorch and backend libraries relative to the installation
-  # location. This goes from executorch/extension/pybindings up to
-  # site-packages, then to torch/lib. If QNN is enabled, also add
-  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
-  # following error:
-  #
-  if(APPLE)
-    # Skip setting @loader_path for APPLE, since it causes error like ld:
-    # duplicate LC_RPATH '@loader_path' in '<site-packages>/torch/lib/
-    # libtorch_cpu.dylib'
-  else()
+  set_target_properties(
+    portable_lib PROPERTIES INSTALL_RPATH "${_portable_lib_rpath}"
+  )
+  if(NOT APPLE)
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_rpath}"
-                              INSTALL_RPATH "${_portable_lib_rpath}"
     )
   endif()
 

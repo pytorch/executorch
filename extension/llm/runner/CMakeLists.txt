@@ -133,10 +133,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   if(APPLE)
     set(RPATH
-        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib;@loader_path/../../../../../.."
     )
   else()
-    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
+    set(RPATH
+        "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib:$ORIGIN/../../../../../.."
+    )
   endif()
   set_target_properties(
     _llm_runner PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH "${RPATH}"

@@ -13,6 +13,9 @@ import test_base
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
+    test_base.test_native_library_paths()
+    test_base.test_uv_wheel_install()
+
     if platform.system() == "Linux":
         from executorch.extension.pybindings.portable_lib import (
             _get_registered_backend_names,

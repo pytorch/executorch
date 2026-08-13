@@ -868,6 +868,11 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
+        build_ext_command = self.distribution.get_command_obj("build_ext")
+        if not getattr(build_ext_command, "editable_mode", False):
+            # Wheel builds package libraries directly from the CMake build tree.
+            cmake_configuration_args += ["-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]
+
         # Use ClangCL on Windows.
         if _is_windows():
             cmake_configuration_args += ["-T ClangCL"]
