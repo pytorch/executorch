@@ -274,6 +274,7 @@ if(_executorch_runtime_library)
     EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
   )
 endif()
+
 if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # The imported targets are skipped, but the libraries themselves are present
   # and linkable by path, so the long-standing variables are still honoured.
