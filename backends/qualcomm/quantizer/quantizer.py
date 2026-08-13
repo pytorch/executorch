@@ -207,6 +207,15 @@ QUANT_CONFIG_DICT = {
         partial(get_qat_per_channel_quant_config),
         None,
     ),
+    (QuantDtype.use_16a8w, True): (
+        get_16a8w_qnn_qat_config,
+        partial(
+            get_qat_per_channel_quant_config,
+            act_dtype=torch.uint16,
+            weight_dtype=torch.int8,
+        ),
+        None,
+    ),
 }
 
 
