@@ -681,6 +681,7 @@ class TestEmit(unittest.TestCase):
 
         num_mm = 0
         num_add = 0
+        num_copy = 0
         num_other = 0
         for inst in program.execution_plan[0].chains[0].instructions:
             if not isinstance(inst.instr_args, KernelCall):
@@ -692,12 +693,93 @@ class TestEmit(unittest.TestCase):
                 num_mm += 1
             elif "add" in op:
                 num_add += 1
+            elif "copy" in op:
+                num_copy += 1
             else:
                 num_other += 1
 
         self.assertEqual(num_mm, 2)
         self.assertEqual(num_add, 1)
+        self.assertEqual(num_copy, 2)
         self.assertEqual(num_other, 0)
+
+    def test_emit_cond_output_lifetime(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_buffer(
+                    "state", torch.tensor([torch.nan], dtype=torch.float64)
+                )
+
+            def forward(self, data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                value = data[0].unsqueeze(0)
+                pred = value >= 0.0
+                first = torch_cond(
+                    pred,
+                    lambda x: x.clone(),
+                    lambda x: self.state.clone(),
+                    [value],
+                )
+                second = torch_cond(
+                    pred,
+                    lambda x: torch_cond(
+                        torch.isnan(self.state),
+                        lambda y: y.clone(),
+                        lambda y: y + 1.0,
+                        [x],
+                    ),
+                    lambda x: self.state.clone(),
+                    [first],
+                )
+                self.state.copy_(first)
+                return first, second
+
+        inputs = (
+            torch.tensor([5.0], dtype=torch.float64),
+            torch.tensor([6.0], dtype=torch.float64),
+        )
+        model = M().eval()
+        program = to_edge(export(model, (inputs[0],), strict=True)).to_executorch(
+            config=ExecutorchBackendConfig(
+                passes=[InitializedMutableBufferPass(["state"])],
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False,
+                    alloc_graph_output=True,
+                ),
+            )
+        )
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+        eager_model = M().eval()
+
+        for value in inputs:
+            actual = method.execute([value])
+            expected = eager_model(value)
+            for actual_output, expected_output in zip(actual, expected):
+                torch.testing.assert_close(actual_output, expected_output)
+
+    def test_emit_cond_dynamic_output(self) -> None:
+        class M(torch.nn.Module):
+            def forward(self, pred: torch.Tensor, data: torch.Tensor) -> torch.Tensor:
+                return torch_cond(
+                    pred,
+                    lambda x: x.clone(),
+                    lambda x: x.sin(),
+                    [data],
+                )
+
+        example_inputs = (torch.tensor(True), torch.arange(2, dtype=torch.float32))
+        exported = export(
+            M(),
+            example_inputs,
+            dynamic_shapes=({}, {0: Dim("length", min=1, max=8)}),
+            strict=True,
+        )
+        program = to_edge(exported).to_executorch()
+        method = Runtime.get().load_program(program.buffer).load_method("forward")
+
+        data = torch.arange(5, dtype=torch.float32)
+        actual = method.execute([torch.tensor(True), data])[0]
+        torch.testing.assert_close(actual, data)
 
     def test_emit_map(self) -> None:
         class Foo(torch.nn.Module):
