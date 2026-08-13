@@ -69,16 +69,14 @@ if(EXECUTORCH_BUILD_SHARED)
   # name something a consumer cannot link. Scoped to the shared build so a build
   # that does not opt in keeps the parent's public dependency.
   target_link_libraries(etdump PRIVATE flatccrt executorch_shared)
-else()
-  target_link_libraries(etdump PUBLIC flatccrt)
-  target_link_libraries(etdump PRIVATE executorch)
-endif()
-if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(etdump PROPERTIES OUTPUT_NAME executorch_etdump)
   executorch_target_soname_policy(etdump)
   # Ships beside libexecutorch.so in the wheel's lib/ directory, and needs it,
   # so it has to be able to find it from wherever the package is installed.
   executorch_target_shipped_runtime_path(etdump)
+else()
+  target_link_libraries(etdump PUBLIC flatccrt)
+  target_link_libraries(etdump PRIVATE executorch)
 endif()
 
 target_include_directories(

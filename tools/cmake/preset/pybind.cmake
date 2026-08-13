@@ -21,6 +21,12 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM_AOT ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
+# The wheel ships the profiler library and documents it as usable, so the tracer
+# has to be compiled in. Left off, every recording hook is preprocessed away and
+# a caller gets an empty trace with no error. The devtools directory is already
+# built for a shared or pybind build, which is all this option requires.
+set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
+set_overridable_option(EXECUTORCH_BUILD_DEVTOOLS ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
