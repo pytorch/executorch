@@ -55,7 +55,7 @@ def test_nsys_test_debug_results__single_input(caplog, request):
     keys = [
         "date_time",
         "eiq_neutron_sdk_version",
-        "eiq_nsys_version",
+        "nsys_version",
         "git_branch",
         "git_commit",
         "test_name",
@@ -122,7 +122,7 @@ class TestNsysDebugResults:
         keys = [
             "date_time",
             "eiq_neutron_sdk_version",
-            "eiq_nsys_version",
+            "nsys_version",
             "git_branch",
             "git_commit",
             "test_name",

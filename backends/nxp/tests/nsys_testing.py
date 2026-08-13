@@ -782,13 +782,19 @@ def get_executorch_git_info() -> dict[str, str]:
 def dump_debug_test_summary(test_name: str, test_dir: str):
     git_info = get_executorch_git_info()
 
+    # During development, the NSYS in virtual env is not used.
+    nsys_version = (
+        "Internal build from executorch-integration"
+        if NSYS_PATH is not None
+        else version("eiq_nsys")
+    )
     summary = {
         "test_name": test_name,
         "date_time": datetime.datetime.now().isoformat(),
         "git_branch": git_info["git_branch"],
         "git_commit": git_info["git_commit"],
         "eiq_neutron_sdk_version": version("eiq_neutron_sdk"),
-        "eiq_nsys_version": version("eiq_nsys"),
+        "eiq_nsys_version": nsys_version,
     }
     with open(os.path.join(test_dir, "summary.yaml"), "w") as f:
         yaml.dump(summary, f)
