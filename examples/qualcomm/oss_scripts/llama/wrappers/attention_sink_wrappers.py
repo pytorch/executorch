@@ -339,7 +339,7 @@ class AttentionSinkEvictor(Component):
         )
         num_data = 200
         data_generator = partial(
-            request.method_data[ATTENTION_SINK_EVICTOR].calibration_data.datasets,
+            request.method_data[ATTENTION_SINK_EVICTOR].quantization_data.calib_loader,
             kcache_shape=self.kv_cache_shape["k"],
             vcache_shape=self.kv_cache_shape["v"],
         )
@@ -415,8 +415,8 @@ class HybridAttentionSinkEvictor(Component):
                             kv_quant_attrs=kv_quant_attrs,
                         ),
                     ),
-                    calibration_data=Request.CalibrationData(
-                        datasets=partial(
+                    quantization_data=Request.QuantizationData(
+                        calib_loader=partial(
                             _calibration_data_generator, kv_quant_attrs=kv_quant_attrs
                         ),
                     ),
