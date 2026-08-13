@@ -51,6 +51,17 @@ def define_common_targets():
             "parse.py",
         ],
         base_module = "executorch.codegen",
+        resources = {
+            "templates/RegisterCodegenUnboxedKernels.cpp": "templates/RegisterCodegenUnboxedKernels.cpp",
+            "templates/Functions.h": "templates/Functions.h",
+            "templates/NativeFunctions.h": "templates/NativeFunctions.h",
+            "templates/RegisterKernels.cpp": "templates/RegisterKernels.cpp",
+            "templates/RegisterKernels.h": "templates/RegisterKernels.h",
+            "templates/RegisterSchema.cpp": "templates/RegisterSchema.cpp",
+            "templates/aten_interned_strings.h": "templates/aten_interned_strings.h",
+            "templates/RegisterDispatchDefinitions.ini": "templates/RegisterDispatchDefinitions.ini",
+            "templates/RegisterDispatchKeyCustomOps.cpp": "templates/RegisterDispatchKeyCustomOps.cpp",
+        },
         deps = [
             ":api",
         ],

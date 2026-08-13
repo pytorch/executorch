@@ -17,7 +17,6 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::string_view;
 using torch::executor::testing::TensorFactory;
 
 // Note: This file is used for testing op_gelu for *portable kernel specific*.

@@ -4,7 +4,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Callable
 
 import pytest
 import torch
@@ -351,6 +350,7 @@ def test_mean_dim_vgf_quant(test_data):
     pipeline = VgfPipeline[input_t](
         MeanDim(dim, keep_dim),
         (test_data_val,),
+        [],  # Quantized mean.dim may be decomposed to sum, avgpool, or both.
         [],
         symmetric_io_quantization=True,
         quantize=True,
@@ -358,40 +358,66 @@ def test_mean_dim_vgf_quant(test_data):
     pipeline.run()
 
 
-mean_input_t = tuple[torch.Tensor, bool]
-
-
 class MeanDefault(torch.nn.Module):
-    def forward(self, tensor: torch.Tensor, keepdim: bool):
-        return tensor.mean()
+    torch_op = "torch.ops.aten.mean.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_mean_default"
 
-    test_data_suite: dict[str, Callable[[], mean_input_t]] = {
-        "rank_2": lambda: (
-            torch.rand(1, 2),
-            False,
-        ),
-        "rank_2_keepdim": lambda: (torch.rand(5, 5), True),
-        "rank_4": lambda: (torch.rand(5, 1, 10, 1), False),
+    test_data_suite = {
+        "rank_1": lambda: (torch.rand(7),),
+        "rank_2": lambda: (torch.rand(2, 5),),
+        "rank_3": lambda: (torch.rand(2, 5, 7),),
+        "rank_4": lambda: (torch.rand(1, 5, 7, 3),),
     }
+
+    def forward(self, x: torch.Tensor):
+        return torch.mean(x)
 
 
 @common.parametrize("test_data", MeanDefault.test_data_suite)
 def test_mean_tosa_FP(test_data):
-    pipeline = TosaPipelineFP[mean_input_t](
+    pipeline = TosaPipelineFP[input_t](
         MeanDefault(),
         test_data(),
-        [],  # Might be sum, avgpool, or both
+        MeanDefault.torch_op,
+        MeanDefault.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", MeanDefault.test_data_suite)
 def test_mean_tosa_INT(test_data):
-    pipeline = TosaPipelineINT[mean_input_t](
+    pipeline = TosaPipelineINT[input_t](
         MeanDefault(),
         test_data(),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_vgf_no_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        MeanDefault(),
+        test_data(),
+        MeanDefault.torch_op,
+        MeanDefault.exir_op,
+        quantize=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDefault.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_vgf_quant(test_data):
+    pipeline = VgfPipeline[input_t](
+        MeanDefault(),
+        test_data(),
+        [],  # Quantized mean.default may be decomposed to sum, avgpool, or both.
+        [],
+        symmetric_io_quantization=True,
+        quantize=True,
     )
     pipeline.run()
 

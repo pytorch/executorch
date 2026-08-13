@@ -13,17 +13,12 @@
 
 from typing import Dict
 
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    register_cadence_pass,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch.fx.node import Argument
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class DecomposeAtenApproxGeluPass(ExportPass):
     """
     Decompose the aten gelu op with an approximate arg to a series of simpler ops

@@ -4,7 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.qualcomm._passes import DecomposeReciprocal, RemoveRedundancy
+from executorch.backends.qualcomm._passes import (
+    DecomposeReciprocal,
+    RecomposeHadamard,
+    RemoveRedundancy,
+)
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 
@@ -33,7 +37,7 @@ class QnnHtpPassManager(QnnPassManager):
 
     @classmethod
     def get_annotation_passes(cls):
-        passes = [DecomposeReciprocal]
+        passes = [DecomposeReciprocal, RecomposeHadamard]
         passes.extend(super().get_annotation_passes())
         return passes
 

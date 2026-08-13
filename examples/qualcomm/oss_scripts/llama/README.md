@@ -14,6 +14,7 @@ This file provides you the instructions to run LLM Decoder model, VLM model, and
  1. Gemma 2B
  1. Gemma2 2B
  1. Gemma3 1B
+ 1. Gemma4 E2B
  1. GLM 1.5B
  1. Granite3.3 2B
  1. Phi4-mini-instruct
@@ -155,6 +156,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android
 Default example using hybrid mode
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma3-1b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1
+```
+
+#### Gemma4 E2B
+Default example using hybrid mode
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --temperature 0 --model_mode hybrid --max_seq_len 1024 --prefill_ar_len 128 --decoder_model gemma4-e2b --prompt "I would like to learn python, could you teach me with a simple example?" --calib_tasks wikitext --calib_limit 1 --embedding-quantize '4,32'
 ```
 
 #### GLM 1.5B

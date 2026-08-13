@@ -226,6 +226,7 @@ def register_copy_op():
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.log10.default,
     ]
 )
 def register_unaryop_cpp_ops():
@@ -455,6 +456,15 @@ def register_quantizedlinearqcsnw_cpp_ops():
     ]
 )
 def register_quantizedlinear_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_q4gsw_backward.default)
+def register_linear_q4gsw_backward():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
@@ -1263,6 +1273,21 @@ def register_alias_copy():
 
 
 # =============================================================================
+# Unfold.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.unfold_copy.default)
+def register_unfold_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
 # Gather.cpp
 # =============================================================================
 
@@ -1743,6 +1768,74 @@ def register_rms_norm():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+    )
+
+
+# =============================================================================
+# FusedCe.cpp (training)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.fused_ce.default)
+def register_fused_ce():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=[utils.FP_T, utils.INT_T, utils.NONE_T],
+        outputs_dtypes=[utils.FP_T, utils.FP_T],
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
+    ]
+)
+def register_compare_scalar_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_not.default)
+def register_logical_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features("et_vk::adamw_step")
+def register_adamw_step():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_dW.default)
+def register_linear_dW():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.q4gsw_requant.default)
+def register_q4gsw_requant():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
     )
 
 

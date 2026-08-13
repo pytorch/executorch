@@ -134,6 +134,36 @@ c10::ScalarType executorch_to_torch_scalar_type(
   return static_cast<c10::ScalarType>(intermediate);
 }
 
+c10::Device executorch_to_torch_device(
+    executorch::runtime::etensor::Device device) {
+  switch (device.type()) {
+    case executorch::runtime::etensor::DeviceType::CPU:
+      return c10::Device(c10::DeviceType::CPU);
+    case executorch::runtime::etensor::DeviceType::CUDA:
+      return c10::Device(c10::DeviceType::CUDA, device.index());
+  }
+  // Aborting on an unknown device rather than falling back to CPU: a wrong
+  // label made the host read accelerator memory and segfault.
+  ET_CHECK_MSG(
+      false,
+      "Tensor reports device type %d, which this build cannot map to a PyTorch device",
+      static_cast<int>(device.type()));
+}
+
+std::optional<executorch::runtime::etensor::Device> torch_to_executorch_device(
+    c10::Device device) {
+  switch (device.type()) {
+    case c10::DeviceType::CPU:
+      return executorch::runtime::etensor::Device(
+          executorch::runtime::etensor::DeviceType::CPU);
+    case c10::DeviceType::CUDA:
+      return executorch::runtime::etensor::Device(
+          executorch::runtime::etensor::DeviceType::CUDA, device.index());
+    default:
+      return std::nullopt;
+  }
+}
+
 /*
  * Following makes two assumptions:
  * 1. aten_tensor's lifetime is longer than the liftime within which mutable_et
@@ -167,11 +197,14 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   std::vector<int64_t> at_tensor_strides(
       etensor.strides().begin(), etensor.strides().end());
 
-  at::Tensor t = at::from_blob(
-      etensor.mutable_data_ptr(),
-      at_tensor_sizes,
-      at_tensor_strides,
-      at::TensorOptions(dtype));
+  // Both are needed: the dispatch key comes from options, and target_device
+  // skips the pointer inspection that rejects an empty tensor's null pointer.
+  const c10::Device device = executorch_to_torch_device(etensor.device());
+  at::Tensor t = at::for_blob(etensor.mutable_data_ptr(), at_tensor_sizes)
+                     .strides(at_tensor_strides)
+                     .options(at::TensorOptions(dtype).device(device))
+                     .target_device(device)
+                     .make_tensor();
 
   check_tensor_meta(t, etensor);
   return t;

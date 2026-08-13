@@ -180,10 +180,21 @@ set(_mlx_metallib ${_mlx_binary_dir}/mlx/backend/metal/kernels/mlx.metallib)
 message(
   STATUS "Building MLX from submodule (ExternalProject): ${MLX_SOURCE_DIR}"
 )
+# Local patches applied to the MLX submodule before its build. Kept minimal and
+# idempotent (patches/apply.sh reverse-checks each before applying); a context
+# mismatch after an MLX bump fails loudly rather than silently no-op'ing. See
+# each patch file under patches/ for its rationale.
+set(_mlx_patches
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_nax_jit_sdk_gate.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_qmm_splitk_bk_align.patch
+    ${CMAKE_CURRENT_SOURCE_DIR}/patches/mlx_gather_mm_rhs_lda.patch
+)
 ExternalProject_Add(
   mlx_external
   SOURCE_DIR ${MLX_SOURCE_DIR}
   BINARY_DIR ${_mlx_binary_dir}
+  PATCH_COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply.sh
+                ${MLX_SOURCE_DIR} ${_mlx_patches}
   CMAKE_ARGS -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
              -DCMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD}
              -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
@@ -285,8 +296,12 @@ target_include_directories(
 # Link against MLX and executorch. mlx is an imported static lib (built by
 # mlx_external); it is only consumed at build time here, not re-exported, so
 # downstream consumers must link to mlx separately via the package config.
+# extension_llm_cache carries the off-graph KV-cache registry the backend binds
+# to in init(); it is defined under EXECUTORCH_BUILD_EXTENSION_LLM, which the
+# mlx preset enables.
 target_link_libraries(
-  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+  mlxdelegate PRIVATE mlx_schema executorch_core extension_llm_cache
+                      $<BUILD_INTERFACE:mlx>
 )
 
 executorch_target_link_options_shared_lib(mlxdelegate)

@@ -228,7 +228,7 @@ class TestPackLinearInt6(unittest.TestCase):
     def test_matmul_correct(self):
         _require_cuda(self)
         gt = self._make_q6k_gguf(256, nb=1)  # (256, 256)
-        intx = gt.to_intx_unpacked_to_int8_tensor()
+        intx = gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         q, scale = intx.qdata, intx.scale
         module = nn.Linear(256, 256, bias=False)
         pack_linear_for_cuda(module, {"weight": gt})
@@ -267,7 +267,7 @@ class TestPackLinearInt6(unittest.TestCase):
 
         gt = self._make_q6k_gguf(64, nb=1)  # (64, 256)
         # Reference: the shared Q6_K int8 decode, dequantized (w = q * scale).
-        intx = gt.to_intx_unpacked_to_int8_tensor()
+        intx = gt.to_intx_unpacked_to_int8_tensor(scale_dtype=torch.bfloat16)
         w_ref = (
             intx.qdata.to(torch.bfloat16)
             * intx.scale.to(torch.bfloat16).repeat_interleave(16, dim=-1)

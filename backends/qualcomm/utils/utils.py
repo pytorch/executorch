@@ -65,7 +65,7 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import QnnManagerContext
 
-from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
+from executorch.exir import ExirExportedProgram, to_edge
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.program._program import (
@@ -168,11 +168,20 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
         def forward(self, x):
             rank = x.dim()
-            x = x.reshape(*x.shape, 1) if rank == 3 else x.reshape(1, *x.shape, 1)
-            x = torch.transpose(x, 1, 2)
+            if rank == 3:
+                bsz, dim0, dim1 = x.size()
+                x = torch.reshape(x, (bsz, dim0, 1, dim1))
+            else:
+                dim0, dim1 = x.size()
+                x = torch.reshape(x, (1, dim0, 1, dim1))
+            x = torch.transpose(x, 1, 3)
             res = self.conv(x)
-            res = torch.transpose(res, 1, 2)
-            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            res = res.permute(0, 3, 1, 2)
+            res = (
+                res.squeeze(-1)
+                if rank == 3
+                else res.reshape(dim0, self.conv.weight.shape[0])
+            )
             return res
 
     def replace_linear(module: torch.nn.Module):
@@ -321,7 +330,7 @@ def get_decomp_table(passes_job) -> Dict[torch._ops.OperatorBase, Callable]:
             skip_decomp_op
             for skip_decomp_op in skip_decompositions
             if skip_decomp_op
-            not in AnnotateStack.decomp_ops + AnnotateUnbind.decomp_ops
+            not in AnnotateStack._SOURCE_OPS + AnnotateUnbind._SOURCE_OPS
         ]
     remove_decompositions(source_decompositions, skip_decompositions)
 
@@ -947,8 +956,6 @@ def from_context_binary(  # noqa: C901
     # temporarily remove the first parameter name.
     edge_prog_mgr = to_edge(
         {graph_name: bundle_prog["exported_program"]},
-        # do not alter name for custom op
-        compile_config=EdgeCompileConfig(_use_edge_ops=False),
     )
 
     # update meta with context binary

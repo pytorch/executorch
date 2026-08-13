@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -1006,6 +1006,7 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      linux-timeout: 120
 
   llm-server:
     needs: [changed-files, run-decision]

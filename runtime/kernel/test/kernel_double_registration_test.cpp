@@ -15,7 +15,6 @@
 
 using namespace ::testing;
 
-using executorch::runtime::ArrayRef;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Kernel;

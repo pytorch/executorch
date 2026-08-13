@@ -263,6 +263,13 @@ def _move_to_device_resize_kv(ep, location):
     return ep
 
 
+def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
+    value = spec.value.decode("utf-8").upper()
+    if value not in ["ON", "OFF"]:
+        raise ValueError(f"Invalid {spec.key}: {value}. Expected 'ON' or 'OFF'.")
+    return value == "ON"
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -496,12 +503,25 @@ class CudaBackend(AotiBackend, BackendDetails):
         # Parse compile_specs to check for platform
 
         platform = "linux"
+        emulate_precision_casts = True
+        max_autotune = True
+        autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
             if spec.key == "platform":
                 platform = spec.value.decode("utf-8")
-            if spec.key == "shim_library_path":
+            elif spec.key == "emulate_precision_casts":
+                emulate_precision_casts = _on_off_compile_spec_value(spec)
+            elif spec.key == "max_autotune":
+                max_autotune = _on_off_compile_spec_value(spec)
+            elif spec.key == "autotune_at_compile_time":
+                autotune_at_compile_time = _on_off_compile_spec_value(spec)
+            elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
+        options["emulate_precision_casts"] = emulate_precision_casts
+        options["max_autotune"] = max_autotune
+        if autotune_at_compile_time is not None:
+            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
         # Add platform-specific options
 
         if platform == "windows":
