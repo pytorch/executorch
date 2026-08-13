@@ -171,18 +171,6 @@ fbcode_target(_kind = executorch_generated_lib,
 )
 
 fbcode_target(_kind = python_unittest,
-    name = "test_pass_filter",
-    srcs = [
-        "tests/test_pass_filter.py",
-    ],
-    typing = True,
-    deps = [
-        ":pass_utils",
-        "//executorch/exir:pass_base",
-    ],
-)
-
-fbcode_target(_kind = python_unittest,
     name = "test_pass_utils",
     srcs = [
         "tests/test_pass_utils.py",
@@ -309,6 +297,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/cadence/aot:simplify_ops",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/backends/transforms:remove_permutes_around_elementwise_ops",
+        "//executorch/backends/transforms:replace_squeeze_unsqueeze_with_view",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",

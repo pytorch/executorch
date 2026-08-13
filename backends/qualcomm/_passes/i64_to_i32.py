@@ -41,6 +41,7 @@ class I64toI32(ExportPass):
     I64_IN_OPS = {
         exir_ops.edge.aten.gather.default: [2],
         exir_ops.edge.aten.scatter.src: [2],
+        exir_ops.edge.aten.scatter.value: [2],
     }
     copy_op = exir_ops.edge.aten._to_copy.default
 

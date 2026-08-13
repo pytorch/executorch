@@ -731,6 +731,21 @@ def test_group_norm(request, kwargs):
     GroupNorm.test(request, kwargs)  # noqa: F405
 
 
+# HadamardTransform is activation-16 only in QNN, so test 16a8w only.
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": False, "expected": Tolerance()},
+            id="16a8w",
+        ),
+    ],
+)
+@with_htp_context
+def test_hadamard(request, kwargs):
+    Hadamard.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_hardsigmoid(request, kwargs):
@@ -1137,6 +1152,12 @@ def test_reflection_pad_2d(request, kwargs):
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
+def test_reflection_pad_3d(request, kwargs):
+    ReflectionPad.test_5d(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
+@with_htp_context
 def test_relu(request, kwargs):
     Relu.test(request, kwargs)  # noqa: F405
 
@@ -1265,6 +1286,18 @@ def test_slice_copy(request, kwargs):
 @with_htp_context
 def test_slice_scatter(request, kwargs):
     SliceScatter.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_activation_dtype(
+    [
+        Tolerance(),
+        Tolerance(),
+        pytest.raises(AssertionError),
+    ]
+)
+@with_htp_context
+def test_scatter_value(request, kwargs):
+    ScatterValue.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])

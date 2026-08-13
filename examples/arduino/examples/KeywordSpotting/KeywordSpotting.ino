@@ -26,7 +26,7 @@
 //   mfcc_yes.h, mfcc_no.h, mfcc_up.h, mfcc_down.h, mfcc_left.h,
 //   mfcc_right.h, mfcc_on.h, mfcc_off.h, mfcc_stop.h, mfcc_go.h
 
-#include <ExecuTorchArduino.h>
+#include <ExecuTorch.h>
 #include <cstring>
 #include <utility>
 #if __has_include("model.h")
@@ -54,7 +54,21 @@ static const char* kLabels[] = {
     "silence", "unknown", "yes", "no", "up", "down",
     "left", "right", "on", "off", "stop", "go"};
 
-alignas(16) static uint8_t method_pool[28 * 1024];
+// 28 KB fails load_method with MemoryAllocationFailed (0x21), and going the
+// other way is not free: Zephyr takes a 32 KB stack and a 32 KB heap out of the
+// board's 128 KB before the sketch sees any, so an arena large enough to push
+// globals past ~64 KB overruns that reservation. arduino-cli's RAM figure does
+// not account for it and will look comfortable either way. See "Memory" in
+// ../../README.md.
+alignas(16) static uint8_t method_pool[40 * 1024];
+
+// ExecuTorch logs go to a weak hook so the library does not depend on Serial.
+// Without this the runtime's own diagnostics -- allocation failures, operator
+// mismatches -- are discarded, and errors surface only as bare hex codes.
+extern "C" void et_arduino_log(const char* msg) {
+  Serial.print("ET| ");
+  Serial.println(msg);
+}
 
 void setup() {
   Serial.begin(115200);

@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import functools
 import logging
+from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.arm._passes import ArmPassManager
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+from executorch.backends.arm.common.pipeline_config import (
+    ArmPassPipelineConfig,
+    LeakyReLULoweringConfig,
+)
 from executorch.backends.arm.constants import DISALLOW_TFA_META_KEY
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.quantizer.quantization_config import (
@@ -103,9 +108,38 @@ __all__ = [
     "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
     "get_uint8_io_quantization_config",
+    "get_vgf_snorm_quantization_config",
 ]
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _prefer_table_for_quantized_leaky_relu(
+    compile_spec: ArmCompileSpec,
+):
+    """Temporarily prefer TABLE lowering while preparing a quantized graph.
+
+    The transform-for-annotation pipeline runs before qparams are attached. If
+    LeakyReLU remains on the default DECOMPOSE setting there, quantized
+    leaky_relu nodes are broken into primitive ops too early and can no longer
+    reach InsertTableOpsPass later. Keep the compile-spec default unchanged for
+    normal FP/TOSA lowering and only override this choice while quantizer
+    preprocessing is running.
+
+    """
+    original_config = compile_spec._get_pass_pipeline_config()
+    if original_config.leaky_relu is LeakyReLULoweringConfig.TABLE:
+        yield
+        return
+
+    quantized_config = ArmPassPipelineConfig.from_dict(original_config.to_dict())
+    quantized_config.leaky_relu = LeakyReLULoweringConfig.TABLE
+    compile_spec.set_pass_pipeline_config(quantized_config)
+    try:
+        yield
+    finally:
+        compile_spec.set_pass_pipeline_config(original_config)
 
 
 def _wrap_vgf_quantization_config(
@@ -278,6 +312,48 @@ def get_symmetric_quantization_config(
         weight_quantization_spec,
         bias_quantization_spec,
         label,
+    )
+
+
+@functools.lru_cache
+def get_vgf_snorm_quantization_config(
+    is_per_channel: bool = True,
+    is_qat: bool = False,
+    weight_qmin: int = -127,
+    weight_qmax: int = 127,
+    eps: float = 2**-16,
+) -> VGFQuantizationConfig:
+    """Create a VGF config compatible with signed normalized sampled images.
+
+    Args:
+        is_per_channel (bool): Whether to use per-channel quantization for
+            weights.
+        is_qat (bool): Whether the configuration targets quantization aware
+            training.
+        weight_qmin (int): Minimum weight quantization value.
+        weight_qmax (int): Maximum weight quantization value.
+        eps (float): Minimum scale value used by observers.
+
+    Returns:
+        VGFQuantizationConfig: VGF quantization settings using the SNORM-safe
+        activation range ``[-127, 127]``.
+
+    """
+    config = get_symmetric_quantization_config(
+        is_per_channel=is_per_channel,
+        is_qat=is_qat,
+        act_qmin=-127,
+        act_qmax=127,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
+        eps=eps,
+    )
+    return VGFQuantizationConfig(
+        config.input_activation,
+        config.output_activation,
+        config.weight,
+        config.bias,
+        config.label,
     )
 
 
@@ -1045,8 +1121,9 @@ class _TOSAQuantizerV1(Quantizer):
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         self._set_disallow_tfa_for_nodes(model)
 
-        pass_manager = ArmPassManager(self.compile_spec)
-        return pass_manager.transform_for_annotation_pipeline(graph_module=model)
+        with _prefer_table_for_quantized_leaky_relu(self.compile_spec):
+            pass_manager = ArmPassManager(self.compile_spec)
+            return pass_manager.transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         model = self._annotate_for_static_quantization_config(model)
@@ -1280,8 +1357,9 @@ The following nodes are not marked for quantization and will not be decomposed i
 
         self._log_nonquantized_nodes(model)
 
-        pass_manager = ArmPassManager(self.compile_spec)
-        transformed_model = pass_manager.transform_for_annotation_pipeline(model)
+        with _prefer_table_for_quantized_leaky_relu(self.compile_spec):
+            pass_manager = ArmPassManager(self.compile_spec)
+            transformed_model = pass_manager.transform_for_annotation_pipeline(model)
 
         # Remove the temporary annotations
         return self._remove_annotations(transformed_model)

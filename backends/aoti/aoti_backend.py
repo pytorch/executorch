@@ -113,6 +113,23 @@ class AotiBackend(ABC):
         return
 
     @classmethod
+    def load_weights_blob(
+        cls, blob_path: str, compile_specs: List[CompileSpec]
+    ) -> tuple[Any, str]:
+        """Load an AOTI weights blob and return its data and SHA-256 digest."""
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        os.remove(blob_path)
+        return blob_data, hashlib.sha256(blob_data).hexdigest()
+
+    @classmethod
+    def materialize_weights_blob(
+        cls, paths: Any, compile_specs: List[CompileSpec]
+    ) -> Any:
+        """Materialize backend-specific weight outputs into an AOTI blob."""
+        return paths
+
+    @classmethod
     def move_program_to_device(
         cls,
         edge_program: ExportedProgram,
@@ -257,6 +274,8 @@ class AotiBackend(ABC):
                 edge_program_module, tuple(user_input_placeholders), options=options
             )
 
+            paths = cls.materialize_weights_blob(paths, compile_specs)
+
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 method_name = cls.method_name_from_compile_specs(compile_specs)
@@ -290,9 +309,7 @@ class AotiBackend(ABC):
         with open(so_path, "rb") as f:
             so_data = f.read()
 
-        # Read weights blob
-        with open(blob_path, "rb") as f:
-            blob_data = f.read()
+        blob_data, weights_blob_hash = cls.load_weights_blob(blob_path, compile_specs)
 
         # Create named data store
         named_data_store = NamedDataStore()
@@ -301,7 +318,7 @@ class AotiBackend(ABC):
         # keys (a method-name-only key collides). Runtime recovers them from
         # processed_bytes below.
         so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
-        weights_blob_key = hashlib.sha256(blob_data).hexdigest() + "_weights_blob"
+        weights_blob_key = weights_blob_hash + "_weights_blob"
 
         named_data_store.add_named_data(so_blob_key, so_data, 1, None)
         # Determine whether to save named data externally based on backend setting
@@ -314,7 +331,6 @@ class AotiBackend(ABC):
 
         # Clean up the generated files
         os.remove(so_path)
-        os.remove(blob_path)
 
         # Release device memory held by tensors that ``move_to_device_pass``
         # placed on the target device. Default impl is a no-op; concrete

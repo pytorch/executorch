@@ -18,11 +18,15 @@
 #include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/kernel/operator_registry.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <new>
 #include <vector>
+#if defined(__APPLE__) && defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 // parallel_for + get_thread_num have serial fallbacks without a threadpool.
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
@@ -698,6 +702,95 @@ Tensor& sdpa_with_kv_cache_out(
   return output;
 }
 
+ET_INLINE void vec_scale(float* data, float scale, int64_t size) {
+  int64_t idx = 0;
+#if defined(__APPLE__) && defined(__ARM_NEON)
+  constexpr int64_t vector_size = 4;
+  for (; idx + 2 * vector_size <= size; idx += 2 * vector_size) {
+    const float32x4_t data_vec0 = vld1q_f32(data + idx);
+    const float32x4_t data_vec1 = vld1q_f32(data + idx + vector_size);
+    vst1q_f32(data + idx, vmulq_n_f32(data_vec0, scale));
+    vst1q_f32(data + idx + vector_size, vmulq_n_f32(data_vec1, scale));
+  }
+  for (; idx + vector_size <= size; idx += vector_size) {
+    const float32x4_t data_vec = vld1q_f32(data + idx);
+    vst1q_f32(data + idx, vmulq_n_f32(data_vec, scale));
+  }
+#endif
+  for (; idx < size; ++idx) {
+    data[idx] *= scale;
+  }
+}
+
+ET_INLINE void vec_axpy(float* y, const float* x, float alpha, int64_t size) {
+  int64_t idx = 0;
+#if defined(__APPLE__) && defined(__ARM_NEON)
+  constexpr int64_t vector_size = 4;
+  for (; idx + 2 * vector_size <= size; idx += 2 * vector_size) {
+    const float32x4_t x_vec0 = vld1q_f32(x + idx);
+    const float32x4_t x_vec1 = vld1q_f32(x + idx + vector_size);
+    const float32x4_t y_vec0 = vld1q_f32(y + idx);
+    const float32x4_t y_vec1 = vld1q_f32(y + idx + vector_size);
+    vst1q_f32(y + idx, vmlaq_n_f32(y_vec0, x_vec0, alpha));
+    vst1q_f32(y + idx + vector_size, vmlaq_n_f32(y_vec1, x_vec1, alpha));
+  }
+  for (; idx + vector_size <= size; idx += vector_size) {
+    const float32x4_t x_vec = vld1q_f32(x + idx);
+    const float32x4_t y_vec = vld1q_f32(y + idx);
+    vst1q_f32(y + idx, vmlaq_n_f32(y_vec, x_vec, alpha));
+  }
+#endif
+  for (; idx < size; ++idx) {
+    y[idx] += x[idx] * alpha;
+  }
+}
+
+ET_INLINE void vec_state_update_and_output(
+    float* state,
+    const float* delta,
+    float* output,
+    float decay,
+    float key,
+    float query,
+    int64_t size) {
+  int64_t idx = 0;
+#if defined(__APPLE__) && defined(__ARM_NEON)
+  constexpr int64_t vector_size = 4;
+  for (; idx + 2 * vector_size <= size; idx += 2 * vector_size) {
+    const float32x4_t state_vec0 = vld1q_f32(state + idx);
+    const float32x4_t state_vec1 = vld1q_f32(state + idx + vector_size);
+    const float32x4_t delta_vec0 = vld1q_f32(delta + idx);
+    const float32x4_t delta_vec1 = vld1q_f32(delta + idx + vector_size);
+    const float32x4_t updated_vec0 =
+        vmlaq_n_f32(vmulq_n_f32(delta_vec0, key), state_vec0, decay);
+    const float32x4_t updated_vec1 =
+        vmlaq_n_f32(vmulq_n_f32(delta_vec1, key), state_vec1, decay);
+    const float32x4_t output_vec0 = vld1q_f32(output + idx);
+    const float32x4_t output_vec1 = vld1q_f32(output + idx + vector_size);
+    vst1q_f32(state + idx, updated_vec0);
+    vst1q_f32(state + idx + vector_size, updated_vec1);
+    vst1q_f32(output + idx, vmlaq_n_f32(output_vec0, updated_vec0, query));
+    vst1q_f32(
+        output + idx + vector_size,
+        vmlaq_n_f32(output_vec1, updated_vec1, query));
+  }
+  for (; idx + vector_size <= size; idx += vector_size) {
+    const float32x4_t state_vec = vld1q_f32(state + idx);
+    const float32x4_t delta_vec = vld1q_f32(delta + idx);
+    const float32x4_t updated_vec =
+        vmlaq_n_f32(vmulq_n_f32(delta_vec, key), state_vec, decay);
+    const float32x4_t output_vec = vld1q_f32(output + idx);
+    vst1q_f32(state + idx, updated_vec);
+    vst1q_f32(output + idx, vmlaq_n_f32(output_vec, updated_vec, query));
+  }
+#endif
+  for (; idx < size; ++idx) {
+    const float updated = state[idx] * decay + key * delta[idx];
+    state[idx] = updated;
+    output[idx] += updated * query;
+  }
+}
+
 // Shared full-sequence recurrence: streams the K x V state twice per token (see
 // the two-pass comments inline). Used by the T==1 decode path and as the exact
 // prefill fallback when decay contains non-positive entries -- the chunked
@@ -810,9 +903,7 @@ void channelwise_gated_delta_rule_recurrence(
           const float decay_value = decay_t[k_idx];
           const float key_value = k_t[k_idx];
           const auto* state_row = state_head + k_idx * v_head_dim;
-          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            v_pred[v_idx] += (state_row[v_idx] * decay_value) * key_value;
-          }
+          vec_axpy(v_pred, state_row, decay_value * key_value, v_head_dim);
         }
 
         // delta = beta * (v - v_pred).
@@ -826,16 +917,18 @@ void channelwise_gated_delta_rule_recurrence(
           auto* output_t = output_group + token * value_seq_stride;
           std::fill(output_t, output_t + v_head_dim, 0.0f);
           for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
-            const float updated_decay = decay_t[k_idx];
+            const float decay_value = decay_t[k_idx];
             const float key_value = k_t[k_idx];
             const float query_value = q_t[k_idx];
             auto* state_row = state_head + k_idx * v_head_dim;
-            for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-              const float updated =
-                  state_row[v_idx] * updated_decay + key_value * delta[v_idx];
-              state_row[v_idx] = updated;
-              output_t[v_idx] += updated * query_value;
-            }
+            vec_state_update_and_output(
+                state_row,
+                delta,
+                output_t,
+                decay_value,
+                key_value,
+                query_value,
+                v_head_dim);
           }
           continue;
         }
@@ -844,9 +937,33 @@ void channelwise_gated_delta_rule_recurrence(
           const float decay_value = decay_t[k_idx];
           const float key_value = k_t[k_idx];
           auto* state_row = state_head + k_idx * v_head_dim;
-          for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-            state_row[v_idx] =
-                state_row[v_idx] * decay_value + key_value * delta[v_idx];
+          int64_t idx = 0;
+#if defined(__APPLE__) && defined(__ARM_NEON)
+          constexpr int64_t vector_size = 4;
+          for (; idx + 2 * vector_size <= v_head_dim; idx += 2 * vector_size) {
+            const float32x4_t state_vec0 = vld1q_f32(state_row + idx);
+            const float32x4_t state_vec1 =
+                vld1q_f32(state_row + idx + vector_size);
+            const float32x4_t delta_vec0 = vld1q_f32(delta + idx);
+            const float32x4_t delta_vec1 = vld1q_f32(delta + idx + vector_size);
+            const float32x4_t updated_vec0 = vmlaq_n_f32(
+                vmulq_n_f32(state_vec0, decay_value), delta_vec0, key_value);
+            const float32x4_t updated_vec1 = vmlaq_n_f32(
+                vmulq_n_f32(state_vec1, decay_value), delta_vec1, key_value);
+            vst1q_f32(state_row + idx, updated_vec0);
+            vst1q_f32(state_row + idx + vector_size, updated_vec1);
+          }
+          for (; idx + vector_size <= v_head_dim; idx += vector_size) {
+            const float32x4_t state_vec = vld1q_f32(state_row + idx);
+            const float32x4_t delta_vec = vld1q_f32(delta + idx);
+            const float32x4_t updated_vec = vmlaq_n_f32(
+                vmulq_n_f32(state_vec, decay_value), delta_vec, key_value);
+            vst1q_f32(state_row + idx, updated_vec);
+          }
+#endif
+          for (; idx < v_head_dim; ++idx) {
+            state_row[idx] =
+                state_row[idx] * decay_value + key_value * delta[idx];
           }
         }
 
@@ -861,29 +978,12 @@ void channelwise_gated_delta_rule_recurrence(
           for (int64_t k_idx = 0; k_idx < k_head_dim; ++k_idx) {
             const float query_value = q_t[k_idx];
             const auto* state_row = state_head + k_idx * v_head_dim;
-            for (int64_t v_idx = 0; v_idx < v_head_dim; ++v_idx) {
-              output_t[v_idx] += state_row[v_idx] * query_value;
-            }
+            vec_axpy(output_t, state_row, query_value, v_head_dim);
           }
         }
       }
     }
   }
-}
-
-// T == 1 (autoregressive decode) route.
-void channelwise_gated_delta_rule_decode(
-    RuntimeContext& ctx,
-    const Tensor& query,
-    const Tensor& key,
-    const Tensor& value,
-    const Tensor& decay,
-    const Tensor& beta,
-    const Tensor& initial_state,
-    Tensor& out,
-    Tensor& final_state_out) {
-  channelwise_gated_delta_rule_recurrence(
-      ctx, query, key, value, decay, beta, initial_state, out, final_state_out);
 }
 
 // Chunk length for the chunkwise recurrence. Kept small so that
@@ -1151,9 +1251,7 @@ void channelwise_gated_delta_rule_chunked(
                   w_row[k_idx] += arj * eg_row[k_idx] * k_row[k_idx];
                 }
                 const float* __restrict__ v_row = v_c + j * v_head_dim;
-                for (const auto v_idx : c10::irange(v_head_dim)) {
-                  u_row[v_idx] += arj * v_row[v_idx];
-                }
+                vec_axpy(u_row, v_row, arj, v_head_dim);
               }
             }
 
@@ -1195,9 +1293,7 @@ void channelwise_gated_delta_rule_chunked(
                 for (const auto j : c10::irange(r + 1)) {
                   const float a = sc.Aqk[r * CHUNK_SIZE + j];
                   const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
-                  for (const auto v_idx : c10::irange(v_head_dim)) {
-                    o_row[v_idx] += a * pv_row[v_idx];
-                  }
+                  vec_axpy(o_row, pv_row, a, v_head_dim);
                 }
               }
             }
@@ -1237,16 +1333,12 @@ void channelwise_gated_delta_rule_chunked(
                   const float qrk = q_c[r * k_head_dim + k_idx] *
                       sc.eg[r * k_head_dim + k_idx];
                   const float* __restrict__ s_row = S + k_idx * v_head_dim;
-                  for (const auto v_idx : c10::irange(v_head_dim)) {
-                    o_row[v_idx] += qrk * s_row[v_idx];
-                  }
+                  vec_axpy(o_row, s_row, qrk, v_head_dim);
                 }
                 for (const auto j : c10::irange(r + 1)) {
                   const float a = sc.Aqk[r * CHUNK_SIZE + j];
                   const float* __restrict__ pv_row = sc.pv + j * v_head_dim;
-                  for (const auto v_idx : c10::irange(v_head_dim)) {
-                    o_row[v_idx] += a * pv_row[v_idx];
-                  }
+                  vec_axpy(o_row, pv_row, a, v_head_dim);
                 }
               }
             }
@@ -1263,15 +1355,11 @@ void channelwise_gated_delta_rule_chunked(
                 sc.de[r] = std::exp(gc_last - sc.gc[r * k_head_dim + k_idx]);
               }
               float* __restrict__ S_row = S + k_idx * v_head_dim;
-              for (const auto v_idx : c10::irange(v_head_dim)) {
-                S_row[v_idx] *= eg_last;
-              }
+              vec_scale(S_row, eg_last, v_head_dim);
               for (const auto r : c10::irange(cur)) {
                 const float c = k_c[r * k_head_dim + k_idx] * sc.de[r];
                 const float* __restrict__ pv_row = sc.pv + r * v_head_dim;
-                for (const auto v_idx : c10::irange(v_head_dim)) {
-                  S_row[v_idx] += c * pv_row[v_idx];
-                }
+                vec_axpy(S_row, pv_row, c, v_head_dim);
               }
             }
           } // chunk
@@ -1395,7 +1483,7 @@ std::tuple<Tensor&, Tensor&> channelwise_gated_delta_rule_out(
   // -- non-positive decay (log undefined) or tiny positive decay whose
   // within-chunk cumulative -log(decay) would overflow exp(-gc) to inf -> NaN.
   if (query.size(2) == 1) {
-    channelwise_gated_delta_rule_decode(
+    channelwise_gated_delta_rule_recurrence(
         ctx,
         query,
         key,

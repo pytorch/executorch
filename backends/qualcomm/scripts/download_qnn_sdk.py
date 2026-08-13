@@ -75,7 +75,7 @@ _QNN_CONFIG = _read_qnn_config()
 QNN_VERSION = _QNN_CONFIG.get("QNN_VERSION", "2.37.0.250724")
 QNN_ZIP_URL = _QNN_CONFIG.get(
     "QNN_ZIP_URL",
-    f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+    f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"  # @lint-ignore only half of a URL, the rest is on the next line
     f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip",
 )
 

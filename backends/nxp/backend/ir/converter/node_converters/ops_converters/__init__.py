@@ -43,6 +43,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.getitem_converter import (
     GetItemConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardswish_converter import (
+    HardswishConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import (
     HardTanhConverter,
 )
@@ -73,6 +76,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.neg_converter import (
     NegConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.pad_converter import (
+    PadConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
@@ -95,8 +101,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_tensor_converter import (
-    SliceTensorConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_copy_tensor_converter import (
+    SliceCopyTensorConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
@@ -137,6 +143,7 @@ __all__ = [
     "ConvolutionConverter",
     "ExpConverter",
     "GetItemConverter",
+    "HardswishConverter",
     "HardTanhConverter",
     "LeakyReluConverter",
     "LogConverter",
@@ -147,6 +154,7 @@ __all__ = [
     "MMConverter",
     "MulTensorConverter",
     "NegConverter",
+    "PadConverter",
     "PermuteCopyConverter",
     "PReLUConverter",
     "QDQPerChannelDequantizeConverter",
@@ -155,7 +163,7 @@ __all__ = [
     "ReLUConverter",
     "RsqrtConverter",
     "SigmoidConverter",
-    "SliceTensorConverter",
+    "SliceCopyTensorConverter",
     "SoftmaxConverter",
     "SubTensorConverter",
     "SumDimIntListConverter",

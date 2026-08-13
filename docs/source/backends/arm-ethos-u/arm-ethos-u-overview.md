@@ -73,19 +73,6 @@ Args:
 - **output_path**: Path to dump intermediate results to.
 
 ```python
-def EthosUCompileSpec.get_output_order_workaround(self) -> bool:
-```
-Gets whether the output order workaround is being applied.
-
-```python
-def EthosUCompileSpec.set_output_order_workaround(self, output_order_workaround: bool):
-```
-Sets whether to apply the output order workaround.
-
-Args:
-- **output_order_workaround**: Boolean indicating whether to apply the workaround.
-
-```python
 def EthosUCompileSpec.set_pass_pipeline_config(self, config: executorch.backends.arm.common.pipeline_config.ArmPassPipelineConfig) -> None:
 ```
 Set the configuration for the Arm pass pipeline.
@@ -102,8 +89,8 @@ See [Partitioner API](arm-ethos-u-partitioner.md) for more information of the Pa
 ## Quantization
 
 Since the Ethos-U backend is integer-only, all operators intended be executed on the NPU needs to be quantized. The Ethos-U quantizer supports
-[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html)  and
-[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html) quantization.
+[Post Training Quantization (PT2E)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_ptq.html)  and
+[Quantization-Aware Training (QAT)](https://docs.pytorch.org/ao/main/pt2e_quantization/pt2e_quant_qat.html) quantization.
 
 For more information on quantization, see [Quantization](arm-ethos-u-quantization.md) <!-- @lint-ignore -->
 
