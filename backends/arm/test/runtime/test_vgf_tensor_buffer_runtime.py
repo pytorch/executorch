@@ -18,11 +18,11 @@ from backends.arm.test.runtime._vgf_runtime_test_utils import (
     lower_in_tree_vgf,
     make_identity_grid,
     make_input_tensor,
-    xfail_if_legacy_model_converter_release,
+    xfail_if_model_converter_below_minimum_version,
 )
 from executorch.backends.arm.test import common
 
-pytestmark = xfail_if_legacy_model_converter_release()
+pytestmark = xfail_if_model_converter_below_minimum_version()
 
 
 class _IdentityGridSample(torch.nn.Module):
