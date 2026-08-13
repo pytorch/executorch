@@ -640,14 +640,8 @@ _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 # runs a build when imported, and duplicated deliberately so a rename on the packaging
 # side has to be made here too rather than silently agreeing with itself.
 _EXPECTED_CUDA_PACKAGES = {
-    "12": (
-        "nvidia-cuda-runtime-cu12",
-        "nvidia-curand-cu12",
-    ),
-    "13": (
-        "nvidia-cuda-runtime",
-        "nvidia-curand",
-    ),
+    "12": ("nvidia-cuda-runtime-cu12",),
+    "13": ("nvidia-cuda-runtime",),
 }
 
 
