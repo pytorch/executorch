@@ -45,10 +45,6 @@
 # that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
 # CMake removes the entry it recorded while building.
 #
-# EXECUTORCH_RUNTIME_LIBRARY_DIR -- Where the shipped libraries live. A consumer
-# that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
-# CMake removes the entry it recorded while building.
-#
 # EXECUTORCH_LIBRARIES    -- Libraries to link against: the prebuilt runtime and
 # the components the wheel shipped, except the ones documented below as opt in.
 # Not the Python extension, which carries unresolved interpreter symbols that
@@ -192,26 +188,6 @@ if(EXISTS "${_executorch_version_file}")
 endif()
 unset(_executorch_version_file)
 
-# Where the shipped libraries live. Computed here rather than beside the Python
-# extension, because a consumer on the older variables route is told to put this
-# in its INSTALL_RPATH, and a package built without that extension would
-# otherwise hand it an empty string and produce a binary that cannot start.
-if(_executorch_runtime_library)
-  get_filename_component(
-    EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
-  )
-endif()
-
-# Where the shipped libraries live. Computed here rather than beside the Python
-# extension, because a consumer on the older variables route is told to put this
-# in its INSTALL_RPATH, and a package built without that extension would
-# otherwise hand it an empty string and produce a binary that cannot start.
-if(_executorch_runtime_library)
-  get_filename_component(
-    EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
-  )
-endif()
-
 set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
                             "${_executorch_c10_include}"
 )
@@ -297,6 +273,17 @@ endfunction()
 
 # The prebuilt runtime.
 _executorch_find_library(_executorch_runtime_library libexecutorch)
+
+# Computed after the lookup above rather than beside the Python extension,
+# because a consumer on the older variables route is told to put this in its
+# INSTALL_RPATH, and reading it before the runtime library is found handed that
+# consumer an empty string.
+if(_executorch_runtime_library)
+  get_filename_component(
+    EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
+  )
+endif()
+
 if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # The imported targets are skipped, but the libraries themselves are present
   # and linkable by path, so the long-standing variables are still honoured.
