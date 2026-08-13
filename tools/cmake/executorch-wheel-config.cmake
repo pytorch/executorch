@@ -41,14 +41,22 @@
 # A consumer using these variables has to set it, because a compiler defaulting
 # to an older standard cannot parse them.
 #
+# EXECUTORCH_RUNTIME_LIBRARY_DIR -- Where the shipped libraries live. A consumer
+# that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
+# CMake removes the entry it recorded while building.
+#
+# EXECUTORCH_RUNTIME_LIBRARY_DIR -- Where the shipped libraries live. A consumer
+# that installs its own binary elsewhere adds this to its INSTALL_RPATH, because
+# CMake removes the entry it recorded while building.
+#
 # EXECUTORCH_LIBRARIES    -- Libraries to link against: the prebuilt runtime and
 # the components the wheel shipped, except the ones documented below as opt in.
 # Not the Python extension, which carries unresolved interpreter symbols that
 # only resolve inside an interpreter, so a standalone application linking it
 # fails with a page of PyUnicode_InternFromString errors. A project building a
-# custom operator against the extension asks for the _C target by
-# name, which is the long-standing contract for that and also carries the C++20
-# requirement PyTorch's headers need.
+# custom operator against the extension asks for the _C target by name, which is
+# the long-standing contract for that and also carries the C++20 requirement
+# PyTorch's headers need.
 #
 # EXECUTORCH_BUILD_VERSION -- The full version this package was built from,
 # including any prerelease suffix and local version label. Compare this when an
@@ -183,6 +191,26 @@ if(EXISTS "${_executorch_version_file}")
   endforeach()
 endif()
 unset(_executorch_version_file)
+
+# Where the shipped libraries live. Computed here rather than beside the Python
+# extension, because a consumer on the older variables route is told to put this
+# in its INSTALL_RPATH, and a package built without that extension would
+# otherwise hand it an empty string and produce a binary that cannot start.
+if(_executorch_runtime_library)
+  get_filename_component(
+    EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
+  )
+endif()
+
+# Where the shipped libraries live. Computed here rather than beside the Python
+# extension, because a consumer on the older variables route is told to put this
+# in its INSTALL_RPATH, and a package built without that extension would
+# otherwise hand it an empty string and produce a binary that cannot start.
+if(_executorch_runtime_library)
+  get_filename_component(
+    EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
+  )
+endif()
 
 set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
                             "${_executorch_c10_include}"
@@ -632,8 +660,8 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
 
-# Find prebuilt _C.<EXT_SUFFIX>.so. This is the legacy contract used
-# to build custom-op extensions against the Python module, and is kept working
+# Find prebuilt _C.<EXT_SUFFIX>.so. This is the legacy contract used to build
+# custom-op extensions against the Python module, and is kept working
 # independently of the runtime target above.
 
 # Find python
@@ -663,8 +691,8 @@ elseif(_executorch_runtime_library) # Tested on the located library rather than
   # application on an older CMake is exactly the case this branch exists to keep
   # working. A C++ application linking only the shared runtime does not need
   # Python at all, so a missing interpreter must not fail its configure. Skip
-  # locating the Python extension instead; the legacy _C target is
-  # simply not offered in that case.
+  # locating the Python extension instead; the legacy _C target is simply not
+  # offered in that case.
   message(
     STATUS
       "Python not usable, skipping the Python extension: ${SYSCONFIG_ERROR}"
@@ -699,9 +727,7 @@ if(NOT _C_LIBRARY)
   # by a 3.12 interpreter yields a suffix that names no file here, and the
   # package then reported itself as not found on a complete install. The shipped
   # extension carries its own suffix in its name, so take it from the package.
-  file(GLOB _C_matches
-       "${_executorch_package_root}/extension/pybindings/_C.*"
-  )
+  file(GLOB _C_matches "${_executorch_package_root}/extension/pybindings/_C.*")
   foreach(_candidate IN LISTS _C_matches)
     if(_candidate MATCHES "\\.(so|pyd|dylib)$")
       set(_C_LIBRARY "${_candidate}")
@@ -713,9 +739,7 @@ endif()
 
 if(_C_LIBRARY)
   set(EXECUTORCH_FOUND ON)
-  message(
-    STATUS "ExecuTorch portable library is found at ${_C_LIBRARY}"
-  )
+  message(STATUS "ExecuTorch portable library is found at ${_C_LIBRARY}")
   # Only when nothing else is linkable, which is the fused layout: a macOS wheel
   # ships this extension and no separate runtime library, so the appends above
   # never ran and this is the only thing there is to offer. On a split wheel the
@@ -724,10 +748,10 @@ if(_C_LIBRARY)
   # fails with a page of PyUnicode_InternFromString style errors.
   #
   # Measured both layouts: split gives the runtime and its components, fused
-  # gives _C. Callers who specifically want the extension, such as a
-  # custom operator project, ask for the target by name rather than relying on
-  # this, and that target carries the C++20 requirement PyTorch's headers need
-  # while the runtime components require C++17.
+  # gives _C. Callers who specifically want the extension, such as a custom
+  # operator project, ask for the target by name rather than relying on this,
+  # and that target carries the C++20 requirement PyTorch's headers need while
+  # the runtime components require C++17.
   if(NOT EXECUTORCH_LIBRARIES)
     list(APPEND EXECUTORCH_LIBRARIES _C)
   endif()
@@ -778,12 +802,6 @@ if(_C_LIBRARY)
     # every consumer and survives install, which would bake this machine's
     # package location into a library the consumer ships onward. A consumer that
     # installs elsewhere adds these to its own INSTALL_RPATH.
-    get_filename_component(
-      EXECUTORCH_RUNTIME_LIBRARY_DIR "${_executorch_runtime_library}" DIRECTORY
-    )
-    get_filename_component(
-      EXECUTORCH_PYTHON_EXTENSION_DIR "${_C_LIBRARY}" DIRECTORY
-    )
   endif()
 endif()
 
