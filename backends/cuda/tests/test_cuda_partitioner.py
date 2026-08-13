@@ -17,6 +17,7 @@ from executorch.backends.cuda.cuda_backend import (
     _encode_fqn_weight_manifest,
     _FQN_WEIGHTS_MAGIC,
     _materialize_fqn_weights,
+    _write_tensor_storage,
     CudaBackend,
 )
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
@@ -105,6 +106,128 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual((4, 1), artifact.entries[1].strides)
             for storage in artifact.storages.values():
                 storage.close()
+
+    def test_multimethod_materialization_reuses_source_storage(self) -> None:
+        source = torch.arange(16, dtype=torch.float32)
+        source_storage = source.untyped_storage()
+        source_key = (
+            "cpu",
+            -1,
+            source_storage.data_ptr(),
+            source_storage.nbytes(),
+            str(source.dtype),
+        )
+        del source_storage
+        first_value = source.clone()
+        second_value = source.clone()
+        first_weights = Weights(
+            {"weight": (first_value, TensorProperties(first_value))}
+        )
+        second_weights = Weights(
+            {"weight": (second_value, TensorProperties(second_value))}
+        )
+        cache = {}
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "executorch.backends.cuda.cuda_backend._write_tensor_storage",
+            wraps=_write_tensor_storage,
+        ) as writer:
+            first = _materialize_fqn_weights(
+                first_weights,
+                directory,
+                set(),
+                {"weight": source_key},
+                cache,
+            )
+            second = _materialize_fqn_weights(
+                second_weights,
+                directory,
+                set(),
+                {"weight": source_key},
+                cache,
+            )
+
+            self.assertEqual(1, writer.call_count)
+            first_key = first.entries[0].storage_key
+            second_key = second.entries[0].storage_key
+            self.assertEqual(first_key, second_key)
+            self.assertIs(first.storages[first_key], second.storages[second_key])
+            first.storages[first_key].close()
+
+    def test_multimethod_materialization_does_not_reuse_mutable_storage(
+        self,
+    ) -> None:
+        source = torch.arange(16, dtype=torch.float32)
+        source_storage = source.untyped_storage()
+        source_key = (
+            "cpu",
+            -1,
+            source_storage.data_ptr(),
+            source_storage.nbytes(),
+            str(source.dtype),
+        )
+        del source_storage
+        weights = Weights({"cache": (source, TensorProperties(source))})
+        cache = {}
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "executorch.backends.cuda.cuda_backend._write_tensor_storage",
+            wraps=_write_tensor_storage,
+        ) as writer:
+            artifacts = [
+                _materialize_fqn_weights(
+                    weights,
+                    directory,
+                    {"cache"},
+                    {"cache": source_key},
+                    cache,
+                )
+                for _ in range(2)
+            ]
+
+            self.assertEqual(2, writer.call_count)
+            self.assertEqual({}, cache)
+            for artifact in artifacts:
+                for storage in artifact.storages.values():
+                    storage.close()
+
+    def test_multimethod_materialization_requires_same_source_storage(self) -> None:
+        values = [torch.arange(16, dtype=torch.float32) for _ in range(2)]
+        source_keys = []
+        for value in values:
+            storage = value.untyped_storage()
+            source_keys.append(
+                (
+                    "cpu",
+                    -1,
+                    storage.data_ptr(),
+                    storage.nbytes(),
+                    str(value.dtype),
+                )
+            )
+            del storage
+        cache = {}
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "executorch.backends.cuda.cuda_backend._write_tensor_storage",
+            wraps=_write_tensor_storage,
+        ) as writer:
+            artifacts = [
+                _materialize_fqn_weights(
+                    Weights({"weight": (value, TensorProperties(value))}),
+                    directory,
+                    set(),
+                    {"weight": source_key},
+                    cache,
+                )
+                for value, source_key in zip(values, source_keys)
+            ]
+
+            self.assertEqual(2, writer.call_count)
+            self.assertEqual(2, len(cache))
+            for artifact in artifacts:
+                for storage in artifact.storages.values():
+                    storage.close()
 
     def test_identical_mutable_storages_remain_distinct_groups(self) -> None:
         first = torch.zeros(4)

@@ -65,6 +65,7 @@ _CPU_CLONE_GUARD = threading.local()
 
 _FQN_WEIGHTS_MAGIC = b"ETCUDAFQN1"
 _FQN_WEIGHTS_CAPTURE = threading.local()
+_FQN_WEIGHTS_MATERIALIZATION_CACHE = threading.local()
 
 
 @dataclass
@@ -87,9 +88,56 @@ class _FqnWeightArtifact:
 
 
 @dataclass
+class _CachedFqnWeightStorage:
+    storage_key: str
+    storage_nbytes: int
+    data: FileBackedData
+
+
+@dataclass
 class _FqnWeightCapture:
     mutated_fqns: set[str]
+    source_storage_keys: Dict[str, Tuple[Any, ...]]
+    materialization_cache: Optional[Dict[Tuple[Any, ...], _CachedFqnWeightStorage]] = (
+        None
+    )
     artifact: Optional[_FqnWeightArtifact] = None
+
+
+def _source_storage_keys_by_fqn(edge_program: Any) -> Dict[str, Tuple[Any, ...]]:
+    """Identify source storages that remain alive for one multimethod lowering.
+
+    Pointer identity is safe only within the surrounding ``preprocess_multimethod``
+    call: all input ExportedPrograms retain their source tensors for that complete
+    call. It deliberately is not a process-global content identity.
+    """
+    storage_keys: Dict[str, Tuple[Any, ...]] = {}
+    ambiguous_fqns: set[str] = set()
+    for values in (edge_program.state_dict, edge_program.constants):
+        for fqn, tensor in values.items():
+            if not isinstance(tensor, torch.Tensor) or tensor.is_meta:
+                continue
+            storage = tensor.untyped_storage()
+            storage_ptr = storage.data_ptr()
+            storage_nbytes = storage.nbytes()
+            del storage
+            if storage_ptr == 0:
+                continue
+            key = (
+                tensor.device.type,
+                tensor.device.index if tensor.device.index is not None else -1,
+                storage_ptr,
+                storage_nbytes,
+                str(tensor.dtype),
+            )
+            previous = storage_keys.get(fqn)
+            if previous is not None and previous != key:
+                ambiguous_fqns.add(fqn)
+            else:
+                storage_keys[fqn] = key
+    for fqn in ambiguous_fqns:
+        storage_keys.pop(fqn, None)
+    return storage_keys
 
 
 def _is_cpu_clone_active() -> bool:
@@ -373,10 +421,14 @@ def _write_tensor_storage(tensor: torch.Tensor, path: str) -> bytes:
     return digest.digest()
 
 
-def _materialize_fqn_weights(
+def _materialize_fqn_weights(  # noqa: C901
     weights: Any,
     directory: str,
     mutated_fqns: set[str],
+    source_storage_keys: Optional[Dict[str, Tuple[Any, ...]]] = None,
+    materialization_cache: Optional[
+        Dict[Tuple[Any, ...], _CachedFqnWeightStorage]
+    ] = None,
 ) -> _FqnWeightArtifact:
     """Turn AOTI ``Weights`` into content-addressed storage files + views."""
     # The graph can contain hundreds of independent storages.  Trimming around
@@ -387,6 +439,7 @@ def _materialize_fqn_weights(
     _trim_host_memory()
     entries: List[_FqnWeightEntry] = []
     storages: Dict[str, FileBackedData] = {}
+    source_storage_keys = source_storage_keys or {}
     records: List[Tuple[str, torch.Tensor, Any, Tuple[Any, ...], int]] = []
     record_indices_by_identity: Dict[Tuple[Any, ...], List[int]] = {}
 
@@ -440,26 +493,67 @@ def _materialize_fqn_weights(
                 f"({storage_nbytes} < {expected_storage_nbytes} bytes)"
             )
 
-        fd, storage_path = tempfile.mkstemp(
-            prefix=".cuda_weight_", suffix=".storage", dir=directory
+        group_fqns = {records[item][0] for item in record_indices}
+        source_keys = (
+            {
+                source_storage_keys[fqn]
+                for fqn in group_fqns
+                if fqn in source_storage_keys
+            }
+            if group_fqns.isdisjoint(mutated_fqns)
+            else set()
         )
-        os.close(fd)
-        try:
-            digest = _write_tensor_storage(candidate_tensor, storage_path)
-            storage_key = digest.hex() + "_cuda_weight_storage"
-            data = FileBackedData.move_from(storage_path, sha256=digest)
-        except Exception:
+        source_key = next(iter(source_keys)) if len(source_keys) == 1 else None
+        cache_key = (
+            (*source_key, storage_nbytes, str(candidate_tensor.dtype))
+            if source_key is not None
+            else None
+        )
+        cached = (
+            materialization_cache.get(cache_key)
+            if materialization_cache is not None and cache_key is not None
+            else None
+        )
+        if cached is not None and cached.storage_nbytes != storage_nbytes:
+            cached = None
+        if cached is not None:
+            storage_key = cached.storage_key
+            data = cached.data
+        else:
+            fd, storage_path = tempfile.mkstemp(
+                prefix=".cuda_weight_", suffix=".storage", dir=directory
+            )
+            os.close(fd)
             try:
-                os.remove(storage_path)
-            except OSError:
-                pass
-            raise
+                digest = _write_tensor_storage(candidate_tensor, storage_path)
+                storage_key = digest.hex() + "_cuda_weight_storage"
+                data = FileBackedData.move_from(storage_path, sha256=digest)
+            except Exception:
+                try:
+                    os.remove(storage_path)
+                except OSError:
+                    pass
+                raise
 
         existing = storages.get(storage_key)
         if existing is None:
             storages[storage_key] = data
-        else:
+            canonical_data = data
+        elif data is not existing and cached is None:
             data.close()
+            canonical_data = existing
+        else:
+            canonical_data = existing
+        if (
+            cached is None
+            and materialization_cache is not None
+            and cache_key is not None
+        ):
+            materialization_cache[cache_key] = _CachedFqnWeightStorage(
+                storage_key=storage_key,
+                storage_nbytes=storage_nbytes,
+                data=canonical_data,
+            )
         storage_info_by_identity[identity] = (
             storage_key,
             storage_nbytes,
@@ -672,7 +766,21 @@ class CudaBackend(AotiBackend, BackendDetails):
         return True
 
     @classmethod
-    def preprocess(
+    def preprocess_multimethod(
+        cls,
+        edge_programs: Dict[str, List[Any]],
+        compile_specs: Dict[str, List[List[CompileSpec]]],
+    ) -> Dict[str, List[PreprocessResult]]:
+        """Reuse immutable source storages across methods before D2H streaming."""
+        previous_cache = getattr(_FQN_WEIGHTS_MATERIALIZATION_CACHE, "current", None)
+        _FQN_WEIGHTS_MATERIALIZATION_CACHE.current = {}
+        try:
+            return super().preprocess_multimethod(edge_programs, compile_specs)
+        finally:
+            _FQN_WEIGHTS_MATERIALIZATION_CACHE.current = previous_cache
+
+    @classmethod
+    def preprocess(  # noqa: C901
         cls, edge_program: Any, compile_specs: List[CompileSpec]
     ) -> PreprocessResult:
         """Compile CUDA weights as independently addressable AOTI storages."""
@@ -680,7 +788,13 @@ class CudaBackend(AotiBackend, BackendDetails):
             getattr(edge_program.graph_signature, "buffers_to_mutate", {}).values()
         )
         previous_capture = getattr(_FQN_WEIGHTS_CAPTURE, "current", None)
-        capture = _FqnWeightCapture(mutated_fqns=mutated_fqns)
+        capture = _FqnWeightCapture(
+            mutated_fqns=mutated_fqns,
+            source_storage_keys=_source_storage_keys_by_fqn(edge_program),
+            materialization_cache=getattr(
+                _FQN_WEIGHTS_MATERIALIZATION_CACHE, "current", None
+            ),
+        )
         _FQN_WEIGHTS_CAPTURE.current = capture
         try:
             result = super().preprocess(edge_program, compile_specs)
@@ -785,7 +899,11 @@ class CudaBackend(AotiBackend, BackendDetails):
                 "CUDA structured weights must be materialized inside preprocess"
             )
         capture.artifact = _materialize_fqn_weights(
-            weights[0], os.path.dirname(blob_path), capture.mutated_fqns
+            weights[0],
+            os.path.dirname(blob_path),
+            capture.mutated_fqns,
+            capture.source_storage_keys,
+            capture.materialization_cache,
         )
 
         # Keep AotiBackend's existing path contract intact. The compatibility
