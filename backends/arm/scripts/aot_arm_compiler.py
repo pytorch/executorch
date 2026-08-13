@@ -33,6 +33,9 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
@@ -966,16 +969,7 @@ def _to_edge_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported_program,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
-        ),
+        compile_config=cortex_m_edge_compile_config(),
     )
 
     pass_manager = CortexMPassManager(
