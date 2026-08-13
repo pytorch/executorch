@@ -436,6 +436,7 @@ Please help update following table if you are contributing new operators:
 | GetSparseValues | &cross; |
 | GridSample | &check; |
 | GroupNorm | &check; |
+| HadamardTransform | &check; |
 | HardSwish | &check; |
 | InstanceNorm | &check; |
 | IsInf | &check; |

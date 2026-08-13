@@ -446,6 +446,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "replace_squeeze_unsqueeze_with_view",
+        srcs = ["replace_squeeze_unsqueeze_with_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            ":permute_pass_utils",
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_test(
         name = "test_permute_optimization_passes",
         srcs = [
@@ -462,6 +476,7 @@ def define_common_targets():
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
+            ":replace_squeeze_unsqueeze_with_view",
         ],
     )
 

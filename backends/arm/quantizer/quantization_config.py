@@ -548,6 +548,8 @@ class VGFQuantizationConfig(TOSAQuantizationConfig):
             return None
         if not isinstance(qspec, QuantizationSpec):
             raise ValueError("SNORM-compatible qparams require a QuantizationSpec.")
+        if qspec.quant_min == -127 and qspec.quant_max == 127:
+            return qspec
         return replace(qspec, quant_min=-127, quant_max=127)
 
     def get_input_act_qspec(self, node=None, input_node=None):
