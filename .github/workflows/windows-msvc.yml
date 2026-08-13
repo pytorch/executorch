@@ -67,6 +67,8 @@ jobs:
       contains(needs.changed-files.outputs.changed-files, '.ci/scripts/') ||
       contains(needs.changed-files.outputs.changed-files, '.github/workflows/windows-msvc.yml') ||
       needs.run-decision.outputs.is-full-run == 'true'
+    # test-infra's Windows setup assumes the AWS runner image; use the GitHub
+    # hosted Windows ARM64 image directly.
     runs-on: windows-11-arm
     timeout-minutes: 60
     steps:
