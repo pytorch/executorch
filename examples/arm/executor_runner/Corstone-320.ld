@@ -264,6 +264,8 @@ SECTIONS
   .ddr.bss (NOLOAD) :
   {
     . = ALIGN(16);
+    *(.bss.input_file_allocator_sec)
+    *(.bss.method_allocator_sec)
     *(input_file_allocator_sec)
     *(method_allocator_sec)
 #if (ETHOSU_ARENA == 1)
