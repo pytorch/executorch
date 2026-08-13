@@ -126,7 +126,19 @@ Vision adds `vision_encoder` to each method set.
 
 ## Build the runners
 
-Use the model-specific CMake workflow preset for the selected backend:
+From the repo root, the make targets build ExecuTorch with the backend and then
+the runners:
+
+```bash
+# CUDA
+make muse-glimmer-cuda
+
+# MLX
+make muse-glimmer-mlx
+```
+
+When ExecuTorch is already built for that backend, the model's CMake workflow
+preset rebuilds just the runners:
 
 ```bash
 # CUDA

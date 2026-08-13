@@ -8,10 +8,12 @@ from typing import Callable, ClassVar, Dict, Tuple
 import pytest
 import torch
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import PassResult
 
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
@@ -117,6 +119,31 @@ def test_fold_qdq_folds_default_partial_mul_qdq() -> None:
     assert not FoldAndAnnotateQParamsPass()._has_partial_binary_tensor_qdq_inputs(  # noqa: SLF001
         mul, {0: object()}  # type: ignore[dict-item]
     )
+
+
+def test_fold_qdq_erases_shared_input_dq_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    graph_module, add, _, _ = _partial_binary_qdq_graph(exir_ops.edge.aten.add.Tensor)
+    shared_dq = add.args[0]
+    assert isinstance(shared_dq, torch.fx.Node)
+    add.update_arg(1, shared_dq)
+
+    erase_calls: list[torch.fx.Node] = []
+    erase_node = graph_module.graph.erase_node
+
+    def record_erase(node: torch.fx.Node) -> None:
+        erase_calls.append(node)
+        erase_node(node)
+
+    monkeypatch.setattr(graph_module.graph, "erase_node", record_erase)
+    monkeypatch.setattr(
+        ArmPass,
+        "call",
+        lambda self, module: PassResult(module, True),
+    )
+
+    FoldAndAnnotateQParamsPass()(graph_module)
+
+    assert erase_calls.count(shared_dq) == 1
 
 
 @pytest.mark.parametrize(
