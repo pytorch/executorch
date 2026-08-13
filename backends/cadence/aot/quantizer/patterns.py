@@ -361,8 +361,6 @@ class BmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        # TODO: T240804887 This is actually a per-tensor variant,
-        # we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
     def fuse(self, gm: fx.GraphModule, anchor_node: fx.Node) -> fx.Node | None:
