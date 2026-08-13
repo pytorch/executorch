@@ -206,6 +206,14 @@ if(APPLE)
     coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
   )
 
+  # The profiler hooks in this delegate compile only when the sdk sources below
+  # are also built, because they import a header that ships with them. A build
+  # that turns the tracer on globally without those sources would fail here, so
+  # keep this target out of it rather than half enabling it.
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
+    target_compile_options(coremldelegate PRIVATE -UET_EVENT_TRACER_ENABLED)
+  endif()
+
   if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
     target_include_directories(
