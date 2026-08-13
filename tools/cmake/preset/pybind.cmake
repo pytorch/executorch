@@ -26,7 +26,6 @@ set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 # a caller gets an empty trace with no error. The devtools directory is already
 # built for a shared or pybind build, which is all this option requires.
 set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
-set_overridable_option(EXECUTORCH_BUILD_DEVTOOLS ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
