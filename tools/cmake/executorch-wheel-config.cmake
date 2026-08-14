@@ -86,6 +86,14 @@ if(_portable_lib_LIBRARY)
                # as
                # C++17 and fail against headers that need C++20.
                INTERFACE_COMPILE_FEATURES cxx_std_20
+               # The shipped libraries are compiled with the event tracer on,
+               # and
+               # the profiling scope classes declare their members inside that
+               # guard. Without it a consumer compiles a different, empty
+               # version
+               # of the same class, so its profiling scopes record nothing and
+               # report no error.
+               INTERFACE_COMPILE_DEFINITIONS ET_EVENT_TRACER_ENABLED
   )
 
   # The extension links the runtime rather than containing it, so it no longer
