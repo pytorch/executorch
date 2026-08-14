@@ -47,30 +47,25 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux the pip package carries everything a C++ application needs, so nothing has to be built
-from source. This walkthrough goes from an empty directory to a program that prints real numbers.
-Four steps, and each one can be checked before moving on.
+On Linux, `pip install executorch` ships the runtime as prebuilt shared libraries together with the
+headers and a CMake package. So a C++ program can use ExecuTorch without building it from source,
+and without knowing much CMake.
 
-#### Quickstart: from nothing to a running program
+#### Run your first model in four steps
 
-**Step 0. Install the package.** Any Python from 3.10 to 3.14 works:
+Copy these three files into an empty folder and follow along. No prior CMake knowledge needed.
+
+**1. Install, and make a model file.**
 
 ```
 pip install executorch
 ```
 
-Check that the C++ pieces are really there. This prints the directory holding the CMake package,
-and it is the same path used in step 2:
-
-```
-python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")'
-```
-
-**Step 1. Make a model file.** A C++ application loads a `.pte` file, which is a model that has
-already been exported. Nothing in C++ creates one, so make one in Python first:
+A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot
+create one, so make it in Python first:
 
 ```python
-# export_add.py
+# export.py
 import torch
 from executorch.exir import to_edge_transform_and_lower
 
@@ -82,168 +77,123 @@ example = (torch.ones(2, 2), torch.ones(2, 2))
 program = to_edge_transform_and_lower(
     torch.export.export(Add(), example)
 ).to_executorch()
-with open("add.pte", "wb") as handle:
-    handle.write(program.buffer)
+open("model.pte", "wb").write(program.buffer)
 ```
 
 ```
-python export_add.py
+python export.py
 ```
 
-That writes `add.pte`, about a kilobyte for this model.
-
-**Step 2. Write the application.** `Module` loads the file and `make_tensor_ptr` wraps plain arrays
-as inputs, so no ExecuTorch specific memory handling is needed:
+**2. Write the program.**
 
 ```cpp
 // main.cpp
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
-#include <iostream>
-
-using namespace executorch::extension;
-
-int main() {
-  Module module("add.pte");
-  std::array<float, 4> a{1, 2, 3, 4};
-  std::array<float, 4> b{10, 20, 30, 40};
-  auto x = make_tensor_ptr({2, 2}, a.data());
-  auto y = make_tensor_ptr({2, 2}, b.data());
-  const auto result = module.forward({x, y});
-  if (!result.ok()) {
-    std::cerr << "forward failed\n";
-    return 1;
-  }
-  const auto out = result->at(0).toTensor();
-  for (int i = 0; i < out.numel(); ++i) {
-    std::cout << out.const_data_ptr<float>()[i] << " ";
-  }
-  std::cout << "\n";
-  return 0;
-}
-```
-
-```cmake
-# CMakeLists.txt
-cmake_minimum_required(VERSION 3.24)
-project(my_app CXX)
-
-find_package(executorch REQUIRED COMPONENTS kernels_optimized)
-
-add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE executorch::runtime
-                                     executorch::kernels_optimized)
-```
-
-`executorch::runtime` is the engine, and `executorch::kernels_optimized` provides the operator
-implementations the model computes with. A model needs both: without a kernel component it loads
-and then fails to find an operator.
-
-**Step 3. Build it.** Point CMake at the directory printed in step 0:
-
-```
-cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
-cmake --build build
-```
-
-**Step 4. Run it.** Run from the directory holding `add.pte`, since the path in the source is
-relative:
-
-```
-./build/my_app
-```
-
-```
-11 22 33 44
-```
-
-Those are the two input arrays added together, which confirms the whole path works: the model file,
-the runtime, the kernels, and the tensor wrappers.
-
-Two things worth knowing when this does not work the first time:
-
-- `find_package(executorch)` needs CMake 3.28 or newer for imported targets such as
-  `executorch::runtime`. On an older CMake the package still works, but link against
-  `${EXECUTORCH_LIBRARIES}` instead and add `${EXECUTORCH_INCLUDE_DIRS}` yourself.
-- The shipped libraries already record where their neighbours live, so no `LD_LIBRARY_PATH` is
-  needed. If a library cannot be found at run time, check that the application was linked against
-  the installed package rather than a separate source build.
-
-#### The details
-
-
-On Linux, `pip install executorch` includes prebuilt shared libraries, the public
-headers, and a CMake package, so a C++ application can link the runtime without building
-ExecuTorch itself:
-
-```cmake
-# CMakeLists.txt
-cmake_minimum_required(VERSION 3.28)
-project(my_app CXX)
-
-find_package(executorch REQUIRED COMPONENTS kernels_optimized)
-
-add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE executorch::runtime
-                                     executorch::kernels_optimized)
-```
-
-Point CMake at the installed package when you configure:
-
-```
-cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
-cmake --build build
-```
-
-The application uses the same `Module` and `TensorPtr` APIs described above:
-
-```cpp
-// main.cpp
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-
 #include <cstdio>
-#include <vector>
 
 using namespace executorch::extension;
 
 int main() {
   Module module("model.pte");
 
-  std::vector<float> data(2 * 8, 1.0f);
-  auto input = make_tensor_ptr({2, 8}, data.data());
+  std::array<float, 4> a{1, 2, 3, 4};
+  std::array<float, 4> b{10, 20, 30, 40};
 
-  const auto result = module.forward(input);
+  const auto result = module.forward({make_tensor_ptr({2, 2}, a.data()),
+                                      make_tensor_ptr({2, 2}, b.data())});
   if (!result.ok()) {
     std::printf("forward failed: 0x%x\n", (unsigned)result.error());
     return 1;
   }
-  std::printf("ok, %zu outputs\n", result->size());
+
+  const auto out = result->at(0).toTensor();
+  for (int i = 0; i < out.numel(); ++i) {
+    std::printf("%g ", out.const_data_ptr<float>()[i]);
+  }
+  std::printf("\n");
   return 0;
 }
 ```
 
-#### What each component provides
+**3. Write six lines of CMake.**
 
-Ask for the components your model needs. A component the wheel was not built with is
-reported while CMake configures, rather than failing later at link time.
+```cmake
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.24)
+project(app CXX)
 
-| Component | What it provides |
+find_package(executorch REQUIRED COMPONENTS kernels_optimized)
+
+add_executable(app main.cpp)
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized)
+```
+
+Two lines matter. `find_package` finds the installed ExecuTorch, and `target_link_libraries` says
+which parts you want. Every model needs at least these two: `runtime` is the engine that executes a
+program, and a kernel component such as `kernels_optimized` provides the maths the model computes
+with. With only the engine, a model loads and then fails with a missing operator.
+
+**4. Build and run.**
+
+```
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
+cmake --build build
+./build/app
+```
+
+```
+11 22 33 44
+```
+
+That is the two input arrays added together. The long `python -c` part just prints where pip put the
+CMake package, so CMake can find it. Run `./build/app` from the folder holding `model.pte`, because
+the path in `main.cpp` is relative.
+
+#### Adding kernels and backends
+
+Add a component to both lines to get more. Nothing else in the program changes.
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_xnnpack)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_xnnpack)
+```
+
+These are the components the Linux package provides:
+
+| Component | What it gives you |
 | --- | --- |
+<<<<<<< HEAD
+| `runtime` | The engine. Always needed. |
+| `kernels_optimized` | Fast CPU operators. The usual choice. |
+| `kernels_quantized` | Operators for quantized models. |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. |
+| `backend_cuda` | The CUDA backend, in the CUDA package only. |
+| `backend_openvino` | The OpenVINO backend. |
+| `threadpool` | Multi-threaded execution. |
+| `etdump` | Profiling, to record what ran and how long it took. |
+| `extension_cuda` | Helpers to share a CUDA stream with your own code. |
+=======
 | `executorch::runtime` | the program loader and executor. Always present. |
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
 | `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. Link it only when you need it: see the note below. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
 | `executorch::threadpool` | the shared thread pool. |
 | `executorch::etdump` | the profiler. |
+>>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
 
-The runtime on its own loads a program but registers only primitive operators, not the
-kernels a model computes with, so a model that is not fully delegated needs a kernel
-component too. Linking a delegate is what registers it: a program delegated to XNNPACK
-fails to load in an application that did not link `executorch::backend_xnnpack`.
+A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
+model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure
+what a model needs, start with `runtime` and `kernels_optimized` and add what the error asks for.
 
+<<<<<<< HEAD
+If you would rather not choose, one variable links the common set:
+=======
 #### The quantized kernels are opt in
 
 `executorch::kernels_quantized` is the one component that `${EXECUTORCH_LIBRARIES}` does
@@ -261,66 +211,66 @@ out of the default set so that linking whatever the package offers cannot put yo
 position by accident.
 
 To require a minimum version, pass it to `find_package`:
+>>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
 
 ```cmake
-find_package(executorch 1.0 REQUIRED)
-```
-
-#### On CMake older than 3.28
-
-The example above needs CMake 3.28. Older versions write the `$ORIGIN` marker (the
-"look next to me" token in a library search path) incorrectly, which would leave you with
-a target that runs where it was built and fails once the application is copied
-elsewhere. Rather than hand you a target that behaves that way, the package defines no
-imported targets below 3.28 and exports plain variables instead.
-
-An imported target carries more than a library path, so on this route you have to apply
-the rest yourself. Linking the libraries alone does not compile:
-
-```cmake
-cmake_minimum_required(VERSION 3.19)
-project(my_app CXX)
-
 find_package(executorch REQUIRED)
-
-add_executable(my_app main.cpp)
-target_include_directories(my_app PRIVATE ${EXECUTORCH_INCLUDE_DIRS})
-target_compile_definitions(my_app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})
-target_link_libraries(my_app PRIVATE ${EXECUTORCH_LIBRARIES})
-set_property(TARGET my_app PROPERTY CXX_STANDARD ${EXECUTORCH_CXX_STANDARD})
-set_property(TARGET my_app PROPERTY CXX_STANDARD_REQUIRED ON)
+target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 ```
 
-On this route the application also has to record where the libraries live, or it runs
-from its build directory and then fails to start once installed with a message like
-`libexecutorch.so: cannot open shared object file`. CMake records the wheel's library
-directory while building, because the libraries are named by absolute path, but it removes
-that entry on install. Ask for it to be kept:
+The quantized kernels are deliberately left out of that variable, because loading
+`executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
+stops the runtime. Name `executorch::kernels_quantized` when you want them.
+
+#### Running on a GPU with the CUDA package
+
+The CUDA build is a separate package. Install it with the index for your CUDA version, for example
+CUDA 12.6:
+
+```
+pip install executorch --index-url https://download.pytorch.org/whl/cu126
+```
+
+Everything above stays the same. Add the CUDA backend to both CMake lines:
 
 ```cmake
-set_property(TARGET my_app PROPERTY INSTALL_RPATH "${EXECUTORCH_RUNTIME_LIBRARY_DIR}")
-target_link_options(my_app PRIVATE "LINKER:--enable-new-dtags")
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_cuda)
 ```
 
-The second line matters on Linux. Without it this linker records the older `DT_RPATH` tag, which is
-searched before `LD_LIBRARY_PATH` and also applies to your dependencies' own dependencies, so you
-could not point the application at a different build of the runtime. With it you get `DT_RUNPATH`,
-which only affects your application and stays overridable.
+The model has to be exported for CUDA as well, which needs a machine with a GPU:
 
-The imported target route does not need this on Linux: the package sets its search paths as
-explicit link options, and those survive installation.
+```python
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 
-On macOS it does need one line. CMake removes an entry that points at a directory holding a
-library the application linked, so the entry naming the wheel's own directory is deleted from
-the installed binary and it stops finding the runtime:
-
-```cmake
-set_property(TARGET my_app PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
+program = to_edge_transform_and_lower(
+    torch.export.export(model, example), partitioner=[CudaPartitioner([])]
+).to_executorch()
 ```
 
-An application deployed beside the libraries is unaffected either way, because the
-`@loader_path` and `$ORIGIN` entries are kept.
+By default the runtime copies inputs to the GPU and results back, so your program keeps passing
+ordinary CPU tensors and nothing else changes. Check that your GPU is supported first: the CUDA
+package works only where the PyTorch build you installed also supports the GPU.
 
+<<<<<<< HEAD
+#### When something does not work
+
+- `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
+  points somewhere else. Run the `python -c` line on its own and check the folder exists.
+- The program builds but fails to load the model: the path is relative, so run it from the folder
+  containing the `.pte` file.
+- A missing operator at run time: add a kernel component, usually
+  `executorch::kernels_optimized`.
+- The model fails to load complaining about a backend: link the backend it was exported for.
+- `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
+  CMake use `${EXECUTORCH_LIBRARIES}` and add `${EXECUTORCH_INCLUDE_DIRS}` to your includes.
+
+You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
+they find each other once the program links against the installed package.
+=======
 `EXECUTORCH_LIBRARIES` names the runtime and every component the wheel shipped, so you
 cannot choose components on this route. The quantized kernels are the exception described
 above, offered as `EXECUTORCH_QUANTIZED_KERNELS_LIBRARY` for a consumer that wants them:
@@ -330,6 +280,7 @@ target_link_libraries(my_app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
 ```
 
 Upgrade to CMake 3.28 and link the specific targets you need instead.
+>>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
 
 ### Building from source
 
