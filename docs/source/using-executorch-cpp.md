@@ -58,8 +58,12 @@ Copy these three files into an empty folder and follow along. No prior CMake kno
 **1. Install, and make a model file.**
 
 ```
-pip install executorch
+pip install executorch torch --extra-index-url https://download.pytorch.org/whl/cpu
 ```
+
+`torch` is named explicitly because the wheel does not depend on it, so you bring your own torch and
+keep the version under your control. You need it only to create a model file in step 1, not to run
+the C++ program.
 
 A C++ program loads a `.pte` file, which is a model that has already been exported. C++ cannot
 create one, so make it in Python first:
