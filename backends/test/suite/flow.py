@@ -5,6 +5,7 @@
 
 import logging
 import os
+import shutil
 
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -176,6 +177,18 @@ def _load_arm() -> list[TestFlow]:
     ]
 
 
+def _load_cortex_m() -> list[TestFlow]:
+    # Every case runs on the FVP. Without it each one fails the same way, which the
+    # flow's xfail list would report as expected.
+    if not shutil.which("FVP_Corstone_SSE-300_Ethos-U55"):
+        logger.info("Skipping Cortex-M flow registration: Corstone-300 FVP not on PATH")
+        return []
+
+    from executorch.backends.test.suite.flows.cortex_m import CORTEX_M_TEST_FLOW
+
+    return [CORTEX_M_TEST_FLOW]
+
+
 def all_flows() -> dict[str, TestFlow]:
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
@@ -188,6 +201,7 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_openvino, "OpenVINO")
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
+        + _register_flow(_load_cortex_m, "Cortex-M")
     )
 
     try:
