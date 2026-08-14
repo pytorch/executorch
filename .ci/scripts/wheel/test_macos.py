@@ -6,6 +6,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -30,15 +31,22 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as work_dir:
         test_cpp_sdk.run_tests(Path(work_dir))
 
-    test_base.run_tests(
-        model_tests=[
-            test_base.ModelTest(
-                model=Model.Mv3,
-                backend=Backend.XnnpackQuantizationDelegation,
-            ),
+    model_tests = [
+        test_base.ModelTest(
+            model=Model.Mv3,
+            backend=Backend.XnnpackQuantizationDelegation,
+        ),
+    ]
+    # The wheel declares coremltools only below 3.14, because that release publishes no build for
+    # it, so on 3.14 this case would fail on the missing import rather than exercise Core ML.
+    if sys.version_info < (3, 14):
+        model_tests.append(
             test_base.ModelTest(
                 model=Model.Mv3,
                 backend=Backend.CoreMlExportAndTest,
-            ),
-        ]
-    )
+            )
+        )
+    else:
+        print("Skipping the Core ML case: coremltools has no Python 3.14 build")
+
+    test_base.run_tests(model_tests=model_tests)
