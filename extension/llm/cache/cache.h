@@ -9,16 +9,18 @@
 #pragma once
 
 // Neutral, tensor-free, ET-independent KV-cache core shared across backends. A
-// cache exposes two faces recovered from the owning CacheBase* via
-// as_control()/as_planner() (static upcasts -- no dynamic_cast/RTTI, no
-// diamond): a runner-facing control face (SequenceControl) and a backend-facing
-// planner face (SequencePlanner). One controller (SequenceCache) drives all
-// layers and dispatches per-layer layout to a LayoutPolicy (flat = full
-// history, ring = sliding window), so a mixed model (e.g. gemma4's alternating
-// full/sliding-window layers) shares one logical length. Errors are plain C++
-// (bool / std::optional); cache_et.h adapts them to Error/Result for ET
+// cache exposes two faces recovered from the owning CacheBase* (static upcasts
+// -- no dynamic_cast/RTTI, no diamond): a runner-facing control face and a
+// backend-facing planner face. Which pair depends on the kind. A single-
+// sequence cache (SequenceCache) drives all layers from one logical length and
+// dispatches per-layer layout to a LayoutPolicy (flat = full history, ring =
+// sliding window), so a mixed model (e.g. gemma4's alternating full/sliding-
+// window layers) stays coherent. A cell cache holds many sequences over one
+// pool of per-token cells and plans a whole forward at once. Errors are plain
+// C++ (bool / std::optional); cache_et.h adapts them to Error/Result for ET
 // consumers.
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -29,27 +31,46 @@ namespace cache {
 
 class SequenceControl;
 class SequencePlanner;
+class BatchControl;
+class CellPlanner;
 
 // Registry ownership / erasure anchor. The registry owns a cache as a
-// CacheBase*; the runner recovers the control face and the backend recovers the
-// planner face through these accessors (each concrete cache returns `this`).
+// CacheBase*; the runner recovers a control face and the backend a planner
+// face through these accessors. A cache returns `this` from the pair it
+// implements and leaves the other pair null -- static upcasts, no RTTI.
 class CacheBase {
  public:
   virtual ~CacheBase() = default;
-  virtual SequenceControl* as_control() = 0;
-  virtual SequencePlanner* as_planner() = 0;
+  virtual SequenceControl* as_control() {
+    return nullptr;
+  }
+  virtual SequencePlanner* as_planner() {
+    return nullptr;
+  }
+  virtual BatchControl* as_batch_control() {
+    return nullptr;
+  }
+  virtual CellPlanner* as_cell_planner() {
+    return nullptr;
+  }
 };
 
-// Application (runner) face: lifecycle + admission, tensor-free.
-class SequenceControl {
+// What every cache exposes to the application: lifecycle + admission,
+// tensor-free.
+class CacheControl {
  public:
-  virtual ~SequenceControl() = default;
+  virtual ~CacheControl() = default;
   virtual bool can_extend(int n = 1) const = 0; // admission / hard-stop
   virtual int capacity() const = 0; // logical cap
+  virtual void clear() = 0; // reset for reuse
+};
+
+// Application face of a single-sequence cache: one length to rewind.
+class SequenceControl : public CacheControl {
+ public:
   // Truncate to new_len (agent backtracking); false = cannot grow, or the
   // target is older than an evicting layer still retains.
   virtual bool rewind(int new_len) = 0;
-  virtual void clear() = 0; // reset for reuse
 };
 
 // A contiguous span of physical rows in a layer's pool.
@@ -96,6 +117,36 @@ class LayoutPolicy {
   // Oldest logical position still retained given the current length (0 for
   // flat; length - window for ring). Used to bound rewind.
   virtual int retained_from(int length) const = 0;
+};
+
+// How a step's queries may attend the window the cache hands back: the cache
+// owns the semantic, the backend the mechanism. Mirrors the eager reference.
+enum class MaskKind : int {
+  None = 0, // one query over a window it may attend entirely
+  Causal = 1, // queries at the tail of the window, each seeing up to itself
+  Explicit = 2 // anything else: mask_bits says which cells are visible
+};
+
+// Application face of any multi-sequence cache, whatever its layout: the
+// sequence verbs, integer-only. A sequence exists while some slot lists it as
+// an owner -- begin_step or seq_cp brings it into being, its last freed slot
+// ends it.
+class BatchControl : public CacheControl {
+ public:
+  // Which sequence each of the next forward's tokens belongs to, one entry per
+  // token, and the admission gate: false = rejected, nothing changed. Deciding
+  // it here means a step that passes cannot later fail to place.
+  virtual bool begin_step(const int32_t* seq_ids, int n_tok) = 0;
+  // Give dst a claim on src's slots below `upto` (all of them when unset) -- a
+  // fork, zero-copy where sequences share a pool. A shared slot keeps one
+  // position, so only a prefix can be shared.
+  virtual void seq_cp(int32_t src, int32_t dst, std::optional<int> upto) = 0;
+  // Drop seq's claim on positions [p0, p1); a slot frees only once no sequence
+  // owns it, so removing a shared range reclaims nothing until the last owner
+  // lets go.
+  virtual void seq_rm(int32_t seq, int p0, std::optional<int> p1) = 0;
+  virtual int seq_len(int32_t seq) const = 0; // slots the sequence owns
+  virtual int next_pos(int32_t seq) const = 0; // one past its newest position
 };
 
 // Per-layer cache kind and its parameters.
