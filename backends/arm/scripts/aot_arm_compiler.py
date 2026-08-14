@@ -973,6 +973,7 @@ def _to_edge_cortex_m(
                 torch.ops.aten.hardsigmoid_.default,
                 torch.ops.aten.hardswish.default,
                 torch.ops.aten.hardswish_.default,
+                torch.ops.aten.silu.default,
             ],
             _check_ir_validity=False,
         ),
