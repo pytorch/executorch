@@ -21,6 +21,11 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM_AOT ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
+# The wheel ships the profiler library and documents it as usable, so the tracer
+# has to be compiled in. Left off, every recording hook is preprocessed away and
+# a caller gets an empty trace with no error. The devtools directory is already
+# built for a shared or pybind build, which is all this option requires.
+set_overridable_option(EXECUTORCH_ENABLE_EVENT_TRACER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
@@ -104,6 +109,19 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
   endif()
   set_overridable_option(EXECUTORCH_BUILD_OPENVINO OFF)
+  # Ship one shared runtime that both the pybind extension and standalone C++
+  # consumers link, so a process has a single backend registry. Linux only:
+  # macOS C++ consumers are served by the Swift package distribution, and the
+  # runtime has no export annotations for a Windows DLL.
+  #
+  # Not with the CUDA backend, whose libraries this build does not ship yet. The
+  # CUDA libraries currently reach the wheel carrying the absolute path of the
+  # directory they were linked in, which resolves only on the machine that built
+  # them. The shared build removes those paths, so enabling it here before the
+  # CUDA libraries ship would leave the extension unable to load at all.
+  if(NOT EXECUTORCH_BUILD_CUDA)
+    set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
+  endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
