@@ -36,6 +36,18 @@ fbcode_target(
 
 fbcode_target(
     _kind = python_library,
+    name = "edge_compile_config",
+    srcs = [
+        "edge_compile_config.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = python_library,
     name = "target_config",
     srcs = [
         "target_config.py",
