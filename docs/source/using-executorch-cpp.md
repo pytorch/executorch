@@ -223,6 +223,46 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::kernels_quantized)
 ```
 
+#### Running on a GPU with the CUDA package
+
+The CUDA build is a separate package. Install it with the index for your CUDA version, for example
+CUDA 12.6:
+
+```
+pip install executorch --index-url https://download.pytorch.org/whl/cu126
+```
+
+Everything above stays the same. Add the CUDA backend to both CMake lines:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_cuda)
+```
+
+The model has to be exported for CUDA as well, which needs a machine with a GPU:
+
+```python
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+
+program = to_edge_transform_and_lower(
+    torch.export.export(model, example), partitioner=[CudaPartitioner([])]
+).to_executorch()
+```
+
+By default the runtime copies inputs to the GPU and results back, so your program keeps passing
+ordinary CPU tensors and nothing else changes.
+
+One thing to check first: the package works only where the PyTorch build you installed also supports
+your GPU. If a model fails with a message about no kernel image being available for the device, your
+GPU is not in that PyTorch build. You can see what it covers with:
+
+```
+python -c 'import torch; print(torch.cuda.get_arch_list())'
+```
+
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
