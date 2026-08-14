@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Mapping, Optional, Sequence, Set, Tuple
+from typing import List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -66,10 +66,23 @@ class CacheConfig:
     sizing: CacheSizing = CacheSizing.DYNAMIC
     dtype: torch.dtype = torch.float32
     batch_size: int = 1
+    # Sliding window in positions; 0 = keep all history. An int applies to
+    # every layer, a list is per layer.
+    window: Union[int, Sequence[int]] = 0
 
     def __post_init__(self):
         if self.capacity <= 0:
             raise ValueError("capacity must be positive")
+        windows = [self.window] if isinstance(self.window, int) else self.window
+        if len(windows) not in (1, self.n_layers):
+            raise ValueError("window must be an int, or one entry per layer")
+        if any(w < 0 for w in windows):
+            raise ValueError("window must not be negative")
+
+    def window_for(self, layer_id: int) -> int:
+        if isinstance(self.window, int):
+            return self.window
+        return self.window[0] if len(self.window) == 1 else self.window[layer_id]
 
 
 @experimental(
@@ -154,23 +167,34 @@ class ContiguousReferenceCache:
             v_hist = self._v[layer_id]
         self._used[layer_id] = new_used
 
-        return k_hist, v_hist, self._spec(q_len, new_used, k.device)
+        return k_hist, v_hist, self._spec(layer_id, q_len, new_used, k.device)
 
-    @staticmethod
-    def _spec(q_len: int, total: int, device: torch.device) -> AttendSpec:
-        """The mask semantic for q_len new cells at the tail of a total window."""
-        if q_len == 1:
+    def _spec(
+        self, layer_id: int, q_len: int, total: int, device: torch.device
+    ) -> AttendSpec:
+        """The mask semantic for q_len new cells at the tail of a total window.
+
+        The new cells are at the tail, so query i attends keys up to
+        ``i + total - q_len``, and a sliding window bounds it from below at
+        ``i + total - q_len - window``. Whichever bound the fused kinds cannot
+        express is what makes the step EXPLICIT.
+        """
+        window = self.config.window_for(layer_id)
+        windowed = 0 < window < total
+        if q_len == 1 and not windowed:
             return AttendSpec(kind=MaskKind.NONE)
-        if q_len == total:
+        if q_len == total and not windowed:
             return AttendSpec(kind=MaskKind.CAUSAL)
-        # Continuation (chunked / multi-turn): the new cells are at the tail, so
-        # query i attends keys up to i + total - q_len. A backend whose causal is
-        # lower-right aligned fuses that as CAUSAL; torch's is_causal
-        # is upper-left, so the reference hands back the band itself.
+        # A backend whose causal is lower-right aligned fuses the upper bound
+        # (MLX does); torch's is_causal is upper-left, and neither expresses the
+        # window, so the reference hands back the band itself.
         offsets = torch.arange(total, device=device) - torch.arange(
             q_len, device=device
         ).unsqueeze(-1)
-        return AttendSpec(kind=MaskKind.EXPLICIT, mask=offsets <= total - q_len)
+        band = offsets <= total - q_len
+        if windowed:
+            band &= offsets > total - q_len - window
+        return AttendSpec(kind=MaskKind.EXPLICIT, mask=band)
 
 
 # A cell's owners are a bitset in a torch int64, so bit 63 (the sign bit) is out.

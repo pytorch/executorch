@@ -547,24 +547,120 @@ class ContiguousSpecTest(unittest.TestCase):
             CacheConfig(n_layers=1, n_kv_heads=2, head_dim=4, capacity=8)
         )
 
-    def _step(self, start, q_len):
+    def _update(self, start, q_len):
         kv = torch.randn(1, 2, q_len, 4)
         return self.cache.update_and_fetch(0, kv, kv, _positions(start, q_len))[2]
 
     def test_decode_is_unmasked(self):
-        self.assertEqual(self._step(0, 1).kind, MaskKind.NONE)
+        self.assertEqual(self._update(0, 1).kind, MaskKind.NONE)
 
     def test_fresh_prefill_is_causal(self):
-        self.assertEqual(self._step(0, 4).kind, MaskKind.CAUSAL)
+        self.assertEqual(self._update(0, 4).kind, MaskKind.CAUSAL)
 
     def test_continuation_is_an_explicit_lower_right_band(self):
-        self._step(0, 4)
-        spec = self._step(4, 3)  # 3 new cells at the tail of a 7-cell window
+        self._update(0, 4)
+        spec = self._update(4, 3)  # 3 new cells at the tail of a 7-cell window
         self.assertEqual(spec.kind, MaskKind.EXPLICIT)
         self.assertEqual(spec.mask.dtype, torch.bool)
         torch.testing.assert_close(
             spec.mask, torch.ones(3, 7, dtype=torch.bool).tril(7 - 3)
         )
+
+
+class WindowedSpecTest(unittest.TestCase):
+    # A sliding window bounds each query from below. The reference keeps the
+    # whole history and masks, so what is pinned here is the semantic a ring
+    # buffer has to reproduce, not the ring's addressing.
+
+    HEADS, DIM = 2, 4
+
+    def setUp(self):
+        torch.manual_seed(0)
+        self.scale = self.DIM**-0.5
+
+    def _cache(self, window):
+        return ContiguousReferenceCache(
+            CacheConfig(
+                n_layers=1,
+                n_kv_heads=self.HEADS,
+                head_dim=self.DIM,
+                capacity=32,
+                window=window,
+            )
+        )
+
+    def _update(self, cache, n, start):
+        kv = torch.randn(1, self.HEADS, n, self.DIM)
+        return cache.update_and_fetch(0, kv, kv, _positions(start, n))
+
+    def _attend(self, q, k, v, spec):
+        return attend(q, k, v, spec, self.scale, torch.float32)
+
+    def test_decode_attends_only_the_window(self):
+        window = 3
+        cache = self._cache(window)
+        self._update(cache, 5, 0)
+        k, v, spec = self._update(cache, 1, 5)
+
+        q = torch.randn(1, self.HEADS, 1, self.DIM)
+        torch.testing.assert_close(
+            self._attend(q, k, v, spec),
+            self._attend(  # the last `window` cells, unmasked
+                q,
+                k[:, :, -window:, :],
+                v[:, :, -window:, :],
+                AttendSpec(kind=MaskKind.NONE),
+            ),
+        )
+
+    def test_each_prefill_query_attends_its_own_window(self):
+        window = 2
+        cache = self._cache(window)
+        k, v, spec = self._update(cache, 4, 0)
+        self.assertEqual(spec.kind, MaskKind.EXPLICIT)
+
+        q = torch.randn(1, self.HEADS, 4, self.DIM)
+        out = self._attend(q, k, v, spec)
+        for i in range(4):  # query at position i sees (i - window, i]
+            lo = max(0, i - window + 1)
+            torch.testing.assert_close(
+                out[:, :, i : i + 1, :],
+                self._attend(
+                    q[:, :, i : i + 1, :],
+                    k[:, :, lo : i + 1, :],
+                    v[:, :, lo : i + 1, :],
+                    AttendSpec(kind=MaskKind.NONE),
+                ),
+            )
+
+    def test_layers_can_window_independently(self):
+        # gemma-style: only some layers are windowed, so one step yields two
+        # different semantics from the same cache.
+        cache = ContiguousReferenceCache(
+            CacheConfig(
+                n_layers=2,
+                n_kv_heads=self.HEADS,
+                head_dim=self.DIM,
+                capacity=32,
+                window=[0, 2],
+            )
+        )
+        kv = torch.randn(1, self.HEADS, 4, self.DIM)
+        pos = _positions(0, 4)
+        flat = cache.update_and_fetch(0, kv, kv, pos)[2]
+        windowed = cache.update_and_fetch(1, kv, kv, pos)[2]
+
+        self.assertEqual(flat.kind, MaskKind.CAUSAL)
+        self.assertEqual(windowed.kind, MaskKind.EXPLICIT)
+        offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)
+        torch.testing.assert_close(windowed.mask, (offsets <= 0) & (offsets > -2))
+
+    def test_window_wider_than_history_stays_fused(self):
+        # Nothing to bound from below, so the window must not force a mask.
+        for window in (0, 64):
+            cache = self._cache(window)
+            self.assertEqual(self._update(cache, 4, 0)[2].kind, MaskKind.CAUSAL)
+            self.assertEqual(self._update(cache, 1, 4)[2].kind, MaskKind.NONE)
 
 
 class AttendExplicitTest(unittest.TestCase):
