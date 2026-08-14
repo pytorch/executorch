@@ -95,15 +95,14 @@ logging.basicConfig(
 # helper or removed the utility everything needs.
 #
 # Only headers that nothing else the wheel installs includes belong here. A header other shipped headers
-# pull in must keep shipping even when it cannot be compiled on its own. Those are the ones listed
-# separately in the release test's own exemptions, which skip the compile check for a header that has to
-# ship anyway. The two lists are deliberately different: this one decides what ships, that one decides
-# what is compiled on its own.
+# pull in must keep shipping even when it cannot be compiled on its own.
 _UNSHIPPABLE_HEADERS = frozenset(
     {
         # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
         # headers. Those are a third-party library this wheel does not vendor.
         "runtime/executor/tensor_parser.h",
+        # A test helper, needing a test framework the wheel does not ship.
+        "runtime/core/testing_util/error_matchers.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
         # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
@@ -415,9 +414,12 @@ def _verify_cuda_runtime_matches_train(cmake_cache_dir: Optional[str]) -> None:
     linked = cache.get("CUDA_cudart_LIBRARY")
     if linked is None or not linked.value:
         return
-    # The major is the part that decides the soname, and it is the only part the declared
-    # package names, so compare that rather than the full version.
-    found = re.search(r"cuda-(\d+)\.", linked.value)
+    # Read the major from the resolved file name rather than from the recorded path, because the
+    # conventional way to name a toolkit is the versionless /usr/local/cuda symlink, which carries
+    # no version at all. Matching the directory accepted that spelling silently, which is the one
+    # the guard's own message tells the user to set. The resolved name ends in the soname the
+    # loader will ask for, which is the thing the declared package has to agree with.
+    found = re.search(r"libcudart\.so\.(\d+)", os.path.realpath(linked.value))
     if found is None or found.group(1) == train:
         return
     raise RuntimeError(

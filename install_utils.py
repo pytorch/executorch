@@ -171,20 +171,25 @@ def _selected_nvcc() -> List[str]:
         program = shlex.split(explicit) or [explicit]
         return [program[0], "--version"]
     # Follow CMake's COMPILER search, since that is what decides which nvcc compiles the sources:
-    # CUDACXX above, then PATH, then CUDA_PATH, then the conventional symlink. PATH has to come
-    # before the others. Measured with only PATH pointing at 13.0 on a box whose /usr/local/cuda is
-    # 12.8, CMake compiles with 13.0, so consulting the symlink first reported 12.8 and produced
-    # metadata for a train the binaries were not built with.
+    # CUDACXX above, then PATH, then CUDA_PATH. PATH has to come before CUDA_PATH. Measured with
+    # only PATH pointing at 13.0 on a box whose conventional symlink is 12.8, CMake compiles with
+    # 13.0, so consulting the symlink first reported 12.8 and produced metadata for a train the
+    # binaries were not built with.
+    #
+    # The list stops at CUDA_PATH because CMake's compiler search does:
+    # CMakeDetermineCUDACompiler.cmake sets its search paths to CUDA_PATH/bin and nothing else.
+    # Adding the conventional /usr/local/cuda symlink reported a toolkit on a box where CMake finds
+    # no compiler at all, which drops the CUDA sources silently, and the guard meant to catch that
+    # reads this same value.
     #
     # CUDAToolkit_ROOT is deliberately absent: it steers find_package(CUDAToolkit) but CMake's
     # compiler search ignores it, so reading it here names a compiler that will not be used.
     on_path = shutil.which("nvcc")
     if on_path:
         return [on_path, "--version"]
-    for root in (os.environ.get("CUDA_PATH"), "/usr/local/cuda"):
-        if not root:
-            continue
-        candidate = os.path.join(root, "bin", "nvcc")
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        candidate = os.path.join(cuda_path, "bin", "nvcc")
         if os.path.exists(candidate):
             return [candidate, "--version"]
     return ["nvcc", "--version"]
