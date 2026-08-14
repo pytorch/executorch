@@ -113,6 +113,7 @@ config = EdgeCompileConfig(
         torch.ops.aten.hardsigmoid_.default,
         torch.ops.aten.hardswish.default,
         torch.ops.aten.hardswish_.default,
+        torch.ops.aten.silu.default,
     ],
     _check_ir_validity=False,
     _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
