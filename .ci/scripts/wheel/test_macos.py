@@ -6,11 +6,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import tempfile
+from pathlib import Path
+
 import test_base
+import test_cpp_sdk
+import test_shared_libraries
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
     test_base.test_cmsis_nn_install()
+
+    # The wheel ships the runtime, the kernels, the delegate, the thread pool and
+    # the profiler as separate libraries here too, so check that each has exactly
+    # one owner and that all of them are loadable.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_shared_libraries.run_tests(Path(work_dir))
+
+    # And that a C++ application outside the wheel can actually use them. Nothing
+    # else covers this: the Python extension links those libraries itself, so it
+    # passes whether or not the package config names them or the shipped headers
+    # are complete.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_cpp_sdk.run_tests(Path(work_dir))
 
     test_base.run_tests(
         model_tests=[
