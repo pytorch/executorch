@@ -47,6 +47,132 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
+On Linux the pip package carries everything a C++ application needs, so nothing has to be built
+from source. This walkthrough goes from an empty directory to a program that prints real numbers.
+Four steps, and each one can be checked before moving on.
+
+#### Quickstart: from nothing to a running program
+
+**Step 0. Install the package.** Any Python from 3.10 to 3.14 works:
+
+```
+pip install executorch
+```
+
+Check that the C++ pieces are really there. This prints the directory holding the CMake package,
+and it is the same path used in step 2:
+
+```
+python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")'
+```
+
+**Step 1. Make a model file.** A C++ application loads a `.pte` file, which is a model that has
+already been exported. Nothing in C++ creates one, so make one in Python first:
+
+```python
+# export_add.py
+import torch
+from executorch.exir import to_edge_transform_and_lower
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+example = (torch.ones(2, 2), torch.ones(2, 2))
+program = to_edge_transform_and_lower(
+    torch.export.export(Add(), example)
+).to_executorch()
+with open("add.pte", "wb") as handle:
+    handle.write(program.buffer)
+```
+
+```
+python export_add.py
+```
+
+That writes `add.pte`, about a kilobyte for this model.
+
+**Step 2. Write the application.** `Module` loads the file and `make_tensor_ptr` wraps plain arrays
+as inputs, so no ExecuTorch specific memory handling is needed:
+
+```cpp
+// main.cpp
+#include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
+#include <iostream>
+
+using namespace executorch::extension;
+
+int main() {
+  Module module("add.pte");
+  std::array<float, 4> a{1, 2, 3, 4};
+  std::array<float, 4> b{10, 20, 30, 40};
+  auto x = make_tensor_ptr({2, 2}, a.data());
+  auto y = make_tensor_ptr({2, 2}, b.data());
+  const auto result = module.forward({x, y});
+  if (!result.ok()) {
+    std::cerr << "forward failed\n";
+    return 1;
+  }
+  const auto out = result->at(0).toTensor();
+  for (int i = 0; i < out.numel(); ++i) {
+    std::cout << out.const_data_ptr<float>()[i] << " ";
+  }
+  std::cout << "\n";
+  return 0;
+}
+```
+
+```cmake
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.24)
+project(my_app CXX)
+
+find_package(executorch REQUIRED COMPONENTS kernels_optimized)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE executorch::runtime
+                                     executorch::kernels_optimized)
+```
+
+`executorch::runtime` is the engine, and `executorch::kernels_optimized` provides the operator
+implementations the model computes with. A model needs both: without a kernel component it loads
+and then fails to find an operator.
+
+**Step 3. Build it.** Point CMake at the directory printed in step 0:
+
+```
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH="$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "share" / "cmake")')"
+cmake --build build
+```
+
+**Step 4. Run it.** Run from the directory holding `add.pte`, since the path in the source is
+relative:
+
+```
+./build/my_app
+```
+
+```
+11 22 33 44
+```
+
+Those are the two input arrays added together, which confirms the whole path works: the model file,
+the runtime, the kernels, and the tensor wrappers.
+
+Two things worth knowing when this does not work the first time:
+
+- `find_package(executorch)` needs CMake 3.28 or newer for imported targets such as
+  `executorch::runtime`. On an older CMake the package still works, but link against
+  `${EXECUTORCH_LIBRARIES}` instead and add `${EXECUTORCH_INCLUDE_DIRS}` yourself.
+- The shipped libraries already record where their neighbours live, so no `LD_LIBRARY_PATH` is
+  needed. If a library cannot be found at run time, check that the application was linked against
+  the installed package rather than a separate source build.
+
+#### The details
+
+
 On Linux, `pip install executorch` includes prebuilt shared libraries, the public
 headers, and a CMake package, so a C++ application can link the runtime without building
 ExecuTorch itself:
