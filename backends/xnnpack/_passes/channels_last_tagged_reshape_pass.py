@@ -14,6 +14,7 @@ from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
     is_dynamic_qdq,
+    is_qparam,
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
@@ -369,14 +370,11 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     def redirect_dynamic_uses_to_nhwc(
         input_node: torch.fx.Node, input_node_nhwc: torch.fx.Node
     ) -> None:
-        """Point the source node's consumers at its NHWC copy.
-
-        The graph output is left out: it has to keep returning the source in its
-        original memory format, and call() reads it as out_node.meta["val"], which
-        the copy does not carry until the pass retraces.
+        """Point the stepped-over quantize wrapper and its choose_qparams at the
+        NHWC copy; every other consumer keeps the source.
         """
         for user in list(input_node.users):
-            if user is input_node_nhwc or user.op == "output":
+            if not (is_dynamic_qdq(user) or is_qparam(user)):
                 continue
             user.replace_input_with(input_node, input_node_nhwc)
 
