@@ -183,6 +183,8 @@ These are the components the Linux package provides:
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
 | `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. Link it only when you need it: see the note below. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
+| `executorch::backend_cuda` | the CUDA delegate, in a CUDA wheel. |
+| `executorch::extension_cuda` | the CUDA stream helper, in a CUDA wheel. Lets you pick the CUDA stream a model runs on. |
 | `executorch::threadpool` | the shared thread pool. |
 | `executorch::etdump` | the profiler. |
 >>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
