@@ -83,20 +83,30 @@ if(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
   # A row that names both "12.0" and "12.0+PTX" collapses to the same entry
   # twice, which would duplicate a gencode on the compile line.
   list(REMOVE_DUPLICATES _executorch_cuda_arch_resolved)
-  # torch also accepts family names such as Ampere or All. They survive the
-  # translation above and then fail deep in a CUDA compile as an unsupported
-  # architecture, so reject them here where the message can name the cause.
+  # torch also accepts family names such as Ampere or Hopper, which its own
+  # select_compute_arch.cmake documents and has already turned into gencode
+  # flags by the time this directory is added. Dropped rather than rejected:
+  # failing here would break a configuration that builds today, and passing a
+  # name through to CMAKE_CUDA_ARCHITECTURES would reach nvcc, which only
+  # accepts numbers.
+  set(_executorch_cuda_arch_numeric)
   foreach(_arch IN LISTS _executorch_cuda_arch_resolved)
-    if(NOT _arch MATCHES "^[0-9]+[a-z]*(-real|-virtual)?$")
+    if(_arch MATCHES "^[0-9]+[a-z]*(-real|-virtual)?$")
+      list(APPEND _executorch_cuda_arch_numeric "${_arch}")
+    else()
       message(
-        FATAL_ERROR
-          "TORCH_CUDA_ARCH_LIST entry \"${_arch}\" is not a compute capability. "
-          "Name capabilities numerically, for example \"8.0 9.0\" or \"12.0+PTX\". "
-          "Family names such as Ampere or All are accepted by torch but not by nvcc."
+        STATUS
+          "executorch: leaving TORCH_CUDA_ARCH_LIST entry \"${_arch}\" to torch, since it names a "
+          "GPU family rather than a compute capability"
       )
     endif()
   endforeach()
-  set(CMAKE_CUDA_ARCHITECTURES "${_executorch_cuda_arch_resolved}")
+  # Left unset when nothing numeric remains, so torch's resolution is what
+  # decides. Setting it to an empty string would instead ask CMake to compile
+  # for no architecture at all.
+  if(_executorch_cuda_arch_numeric)
+    set(CMAKE_CUDA_ARCHITECTURES "${_executorch_cuda_arch_numeric}")
+  endif()
   message(
     STATUS
       "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"

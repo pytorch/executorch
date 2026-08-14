@@ -211,11 +211,15 @@ if(EXECUTORCH_BUILD_SHARED)
   # Named after what the library provides rather than after the target that
   # produces it, matching the optimized kernels next to it, so the shipped file
   # reads as libexecutorch_kernels_quantized.so. The target name stays as it is
-  # because a source build already refers to it.
-  set_target_properties(
-    executorch_quantized_ops PROPERTIES OUTPUT_NAME
-                                        executorch_kernels_quantized
-  )
+  # because a source build already refers to it. Only for the wheel, for the
+  # same reason as the optimized kernels: a source install has been shipping the
+  # old file name with a versioned soname.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set_target_properties(
+      executorch_quantized_ops PROPERTIES OUTPUT_NAME
+                                          executorch_kernels_quantized
+    )
+  endif()
   # Ships beside libexecutorch.so in the wheel's lib/ directory, so it resolves
   # the runtime from there rather than from wherever it was built.
   executorch_target_shipped_runtime_path(executorch_quantized_ops)
