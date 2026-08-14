@@ -528,7 +528,7 @@ def copy_files(genrule_name, target, file_list):
         default_outs = ["."],
     )
 
-def get_portable_lib_deps():
+def get_C_deps():
     return [
         "//executorch/kernels/portable/cpu:math_constants",
         "//executorch/kernels/portable/cpu:scalar_utils",
@@ -569,7 +569,7 @@ def build_portable_header_lib(name, oplist_header_name, feature = None, **kwargs
         **kwargs
     )
 
-def build_portable_lib(
+def build_C(
         name,
         et_operator_lib_deps = [],
         oplist_header_name = None,
@@ -651,7 +651,7 @@ def build_portable_lib(
         name = name,
         srcs = portable_source_files,
         exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        deps = get_portable_lib_deps() + [":" + portable_header_lib],
+        deps = get_C_deps() + [":" + portable_header_lib],
         compiler_flags = compiler_flags,
         # WARNING: using a deprecated API to avoid being built into a shared
         # library. In the case of dynamically loading so library we don't want
@@ -710,7 +710,7 @@ def build_optimized_lib(name, oplist_header_name, portable_header_lib, feature =
         # sleef needs to be added as a direct dependency of the operator target when building for Android,
         # or a linker error may occur. Not sure why this happens; it seems that platform deps of
         # dependencies are not transitive
-        deps = get_portable_lib_deps() + get_optimized_lib_deps() + [":" + portable_header_lib] + select({
+        deps = get_C_deps() + get_optimized_lib_deps() + [":" + portable_header_lib] + select({
             "ovr_config//os:android-arm64": [
                 "fbsource//third-party/sleef:sleef",
             ],
@@ -1038,8 +1038,8 @@ def executorch_generated_lib(
             kernel_deps.remove("//executorch/kernels/portable:operators")
 
             # Build portable lib.
-            portable_lib_name = name + "_portable_lib"
-            build_portable_lib(name = portable_lib_name, portable_header_lib = portable_header_lib, feature = feature, expose_operator_symbols = expose_operator_symbols, platforms = platforms)
+            portable_lib_name = name + "_C"
+            build_C(name = portable_lib_name, portable_header_lib = portable_header_lib, feature = feature, expose_operator_symbols = expose_operator_symbols, platforms = platforms)
             kernel_deps.append(":{}".format(portable_lib_name))
 
         if "//executorch/kernels/optimized:optimized_operators" in kernel_deps:
