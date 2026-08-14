@@ -1317,19 +1317,23 @@ def quantized_avg_pool2d_meta(
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
     padding_vals = _ensure_tuple2(padding)
+    # Input is NHWC-shaped [N, H, W, C] and plain contiguous. Derive the output
+    # spatial dims via the NCHW pooling helper, then emit an NHWC-shaped output.
+    n, h, w, c = input.shape
+    nchw = torch.empty((n, c, h, w), dtype=torch.float, device=input.device)
     output = F.avg_pool2d(
-        input.to(torch.float),
+        nchw,
         kernel,
         stride=stride_vals,
         padding=padding_vals,
         ceil_mode=ceil_mode,
         count_include_pad=False,
     )
+    out_n, out_c, out_h, out_w = output.shape
     return torch.empty(
-        output.shape,
+        (out_n, out_h, out_w, out_c),
         dtype=torch.int8,
         device=input.device,
-        memory_format=torch.channels_last,
     )
 
 
@@ -1346,6 +1350,8 @@ def quantized_avg_pool2d_impl(
     scratch: torch.Tensor,
 ) -> torch.Tensor:
     dequant_input = dequantize_per_tensor_cmsis(input, zero_point, multiplier, shift)
+    # Input is NHWC-shaped [N, H, W, C]; convert to NCHW for the reference pool.
+    dequant_input = dequant_input.permute(0, 3, 1, 2).contiguous()
 
     kernel = _ensure_tuple2(kernel_size)
     stride_vals = _ensure_tuple2(stride)
@@ -1362,7 +1368,8 @@ def quantized_avg_pool2d_impl(
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
-    return output.to(torch.int8)
+    # result is NCHW; return NHWC-shaped output to match the kernel contract.
+    return output.to(torch.int8).permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1416,10 +1423,11 @@ def _compute_max_pool2d_output_shape(
     padding: Sequence[int],
     dilation: Sequence[int],
 ) -> torch.Size:
+    # Input is NHWC-shaped [N, H, W, C].
     batch = input_shape[0]
-    channels = input_shape[1]
-    in_height = input_shape[2]
-    in_width = input_shape[3]
+    in_height = input_shape[1]
+    in_width = input_shape[2]
+    channels = input_shape[3]
 
     kernel_height, kernel_width = kernel_size
     stride_h, stride_w = stride
@@ -1432,7 +1440,7 @@ def _compute_max_pool2d_output_shape(
     out_width = (
         in_width + 2 * pad_w - dilation_w * (kernel_width - 1) - 1
     ) // stride_w + 1
-    return torch.Size([batch, channels, out_height, out_width])
+    return torch.Size([batch, out_height, out_width, channels])
 
 
 @register_fake("cortex_m::quantized_max_pool2d")  # type: ignore[misc]
@@ -1453,6 +1461,7 @@ def quantized_max_pool2d_meta(
     padding_vals = _ensure_tuple2(padding)
     dilation_vals = _ensure_tuple2(dilation)
 
+    # Input/output are NHWC-shaped [N, H, W, C] and plain contiguous.
     output_shape = _compute_max_pool2d_output_shape(
         input.shape, kernel, stride_vals, padding_vals, dilation_vals
     )
@@ -1460,7 +1469,6 @@ def quantized_max_pool2d_meta(
         output_shape,
         dtype=torch.int8,
         device=input.device,
-        memory_format=torch.channels_last,
     )
 
 
@@ -1495,8 +1503,10 @@ def quantized_max_pool2d_impl(
     if ceil_mode:
         raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
 
+    # Input is NHWC-shaped [N, H, W, C]; convert to NCHW for the reference pool.
+    input_nchw = input.permute(0, 3, 1, 2).contiguous()
     result = F.max_pool2d(
-        input,
+        input_nchw,
         kernel,
         stride=stride_vals,
         padding=padding_vals,
@@ -1504,4 +1514,5 @@ def quantized_max_pool2d_impl(
         ceil_mode=ceil_mode,
     )
     result = torch.clamp(result, activation_min, activation_max)
-    return result.to(torch.int8).contiguous(memory_format=torch.channels_last)
+    # result is NCHW; return NHWC-shaped output to match the kernel contract.
+    return result.to(torch.int8).permute(0, 2, 3, 1).contiguous()

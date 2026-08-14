@@ -251,10 +251,10 @@ def cmsis_nn_avgpool_buffer_size(
 ) -> list[int]:
     x = cast(torch.fx.Node, pool_node.args[0])
 
-    # Input is NCHW (PyTorch); CMSIS-NN's avgpool buffer sizer only needs the
-    # input channel count and output width.
-    _, c_in, _, _ = _shape_from_node(x)
-    _, _, _, out_w = _shape_from_node(pool_node)
+    # The cortex_m pool op consumes/produces NHWC-shaped [N, H, W, C] tensors.
+    # The avgpool buffer sizer only needs the input channel count and output width.
+    _, _, _, c_in = _shape_from_node(x)
+    _, _, out_w, _ = _shape_from_node(pool_node)
 
     return [
         int(

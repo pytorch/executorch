@@ -97,8 +97,7 @@ Tensor& quantized_avg_pool2d_out(
           activation_min,
           activation_max,
           pool_config,
-          true,
-          true)) {
+          /*allow_ceil_mode=*/true)) {
     return out;
   }
 

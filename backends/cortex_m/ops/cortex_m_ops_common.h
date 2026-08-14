@@ -143,6 +143,45 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
+// Strict channels_last check: true only when the tensor explicitly carries the
+// channels_last dim_order [0, 2, 3, 1]. Unlike is_channels_last_tensor(), it
+// does NOT treat unit-dim tensors as ambiguously channels_last, so a
+// dim-order-free contiguous NHWC tensor (dim_order [0, 1, 2, 3]) is never
+// misclassified.
+inline bool has_channels_last_dim_order(const Tensor& tensor) {
+  if (tensor.dim() != 4) {
+    return false;
+  }
+  constexpr executorch::aten::DimOrderType kChannelsLastDimOrder[] = {
+      0, 2, 3, 1};
+  executorch::aten::ArrayRef<executorch::aten::DimOrderType>
+      channels_last_order(kChannelsLastDimOrder, 4);
+  return tensor.dim_order() == channels_last_order;
+}
+
+// Logical (batch, height, width, channels) of a 4-D activation tensor under
+// either supported contract:
+//   - legacy channels_last: logical [N, C, H, W] (dim_order [0, 2, 3, 1]);
+//   - dim-order-free:       logical [N, H, W, C] (plain contiguous).
+// The CMSIS-NN kernels always operate on physically-NHWC data, so reading dims
+// this way lets them serve both previously-generated channels_last .pte files
+// and new contiguous ones through one code path.
+struct NhwcDims {
+  int64_t n;
+  int64_t h;
+  int64_t w;
+  int64_t c;
+};
+
+inline NhwcDims read_nhwc_dims(const Tensor& tensor) {
+  if (has_channels_last_dim_order(tensor)) {
+    return NhwcDims{
+        tensor.size(0), tensor.size(2), tensor.size(3), tensor.size(1)};
+  }
+  return NhwcDims{
+      tensor.size(0), tensor.size(1), tensor.size(2), tensor.size(3)};
+}
+
 inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
   if (tensor1.dim() != tensor2.dim()) {
     return false;
@@ -203,7 +242,6 @@ inline bool prepare_cmsis_pool2d_config(
     int64_t activation_min,
     int64_t activation_max,
     CmsisPool2DConfig& config,
-    bool require_channels_last = true,
     bool allow_ceil_mode = false) {
   if (input.dim() != 4 || output.dim() != 4) {
     ET_LOG(Error, "%s: tensors must be 4-D", op_name);
@@ -218,22 +256,17 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
-  if (input.size(0) != output.size(0) || input.size(1) != output.size(1)) {
+  // Read dims under either the legacy channels_last or the dim-order-free
+  // contiguous contract (both physically NHWC for CMSIS-NN).
+  const NhwcDims in_dims = read_nhwc_dims(input);
+  const NhwcDims out_dims = read_nhwc_dims(output);
+  if (in_dims.n != out_dims.n || in_dims.c != out_dims.c) {
     ET_LOG(
         Error,
         "%s: batch and channel dimensions must match between input and output",
         op_name);
     context.fail(Error::InvalidArgument);
     return false;
-  }
-
-  if (require_channels_last) {
-    if (!is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
-      ET_LOG(
-          Error, "%s: tensors must use channels_last dimension order", op_name);
-      context.fail(Error::InvalidArgument);
-      return false;
-    }
   }
 
   auto check_tuple_len = [&](const Int64ArrayRef& arr,
@@ -314,17 +347,17 @@ inline bool prepare_cmsis_pool2d_config(
 
   int32_t batch, channels, input_h, input_w, output_h, output_w;
   if (!check_int32_within_range(
-          context, op_name, input.size(0), "input batch", batch) ||
+          context, op_name, in_dims.n, "input batch", batch) ||
       !check_int32_within_range(
-          context, op_name, input.size(1), "input channels", channels) ||
+          context, op_name, in_dims.h, "input height", input_h) ||
       !check_int32_within_range(
-          context, op_name, input.size(2), "input height", input_h) ||
+          context, op_name, in_dims.w, "input width", input_w) ||
       !check_int32_within_range(
-          context, op_name, input.size(3), "input width", input_w) ||
+          context, op_name, in_dims.c, "input channels", channels) ||
       !check_int32_within_range(
-          context, op_name, output.size(2), "output height", output_h) ||
+          context, op_name, out_dims.h, "output height", output_h) ||
       !check_int32_within_range(
-          context, op_name, output.size(3), "output width", output_w)) {
+          context, op_name, out_dims.w, "output width", output_w)) {
     return false;
   }
 

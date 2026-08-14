@@ -21,7 +21,7 @@ class SharedQspecMulipleClusters(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 2,
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 4,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 4,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 8,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 8,
     }
@@ -30,7 +30,7 @@ class SharedQspecMulipleClusters(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 2,
         "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 4,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 4,
     }
 
     def forward(self, x):
@@ -71,7 +71,7 @@ class SharedQspecInputForkShared(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 5,
     }
@@ -80,7 +80,7 @@ class SharedQspecInputForkShared(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
         "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x, y):
@@ -96,7 +96,7 @@ class SharedQspecInputForkXShared(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_maximum_default": 1,
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 4,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 4,
     }
@@ -105,7 +105,7 @@ class SharedQspecInputForkXShared(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_maximum_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
         "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x, y):
@@ -120,7 +120,7 @@ class SharedQspecInputForkYShared(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_aten_squeeze_copy_dims": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 5,
     }
@@ -129,7 +129,7 @@ class SharedQspecInputForkYShared(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 2,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x, y):
@@ -187,7 +187,7 @@ class SharedQspecOutputForkShared(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 6,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 4,
     }
@@ -196,7 +196,7 @@ class SharedQspecOutputForkShared(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 3,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x):
@@ -213,7 +213,7 @@ class SharedQspecManyForks(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_aten_maximum_default": 2,
         "executorch_exir_dialects_edge__ops_aten_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 9,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,
     }
@@ -223,7 +223,7 @@ class SharedQspecManyForks(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_minimum_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_transpose_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x):
@@ -239,7 +239,7 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
     ops_before_transforms = {
         "executorch_exir_dialects_edge__ops_aten_add_Tensor": 1,
         "executorch_exir_dialects_edge__ops_aten_maximum_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 5,
         "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 4,
     }
@@ -248,7 +248,7 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
         "executorch_exir_dialects_edge__ops_cortex_m_maximum_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
         "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
     }
 
     def forward(self, x):
