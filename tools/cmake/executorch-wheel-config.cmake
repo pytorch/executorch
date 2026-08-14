@@ -616,6 +616,7 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 _executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+_executorch_define_component(backend_openvino executorch_backend_openvino)
 # The CUDA delegate and its stream helper, present only in a wheel built from a
 # CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
 # while configuring.
