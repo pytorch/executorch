@@ -74,11 +74,13 @@ Error XNNProfiler::end() {
       InvalidState,
       "XNNProfiler is not running. Ensure begin_execution() is called before end_execution().");
 
-  // Only collect when something will read the result. Collecting on every
-  // inference and then discarding it was pure overhead for a caller that never
-  // attached a tracer. log_operator_timings is left outside the tracer check
-  // because it has its own ENABLE_XNNPACK_PROFILING gate and serves the
-  // standalone profiling build rather than the tracer.
+  // Skip the retrieval when nothing will read the result, since a caller with
+  // no tracer discarded it. This does not remove the cost of profiling: the
+  // backend still creates XNNPACK with basic profiling enabled, so per-node
+  // timestamp storage and the timer reads around each operator remain.
+  // log_operator_timings stays outside the tracer check because its own
+  // ENABLE_XNNPACK_PROFILING gate serves the standalone profiling build rather
+  // than the tracer.
 #ifdef ENABLE_XNNPACK_PROFILING
   ET_CHECK_OK_OR_RETURN_ERROR(get_runtime_operator_timings());
 #else
