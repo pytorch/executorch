@@ -183,6 +183,7 @@ These are the components the Linux package provides:
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
 | `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. Link it only when you need it: see the note below. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
+| `executorch::backend_openvino` | the OpenVINO delegate. Present only in a wheel built with OpenVINO, and it loads the OpenVINO runtime at run time, so install that separately. |
 | `executorch::backend_cuda` | the CUDA delegate, in a CUDA wheel. |
 | `executorch::extension_cuda` | the CUDA stream helper, in a CUDA wheel. Lets you pick the CUDA stream a model runs on. |
 | `executorch::threadpool` | the shared thread pool. |
