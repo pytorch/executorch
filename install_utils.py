@@ -159,7 +159,17 @@ def _selected_nvcc() -> List[str]:
     if not explicit:
         explicit = os.environ.get("CUDACXX")
     if explicit:
-        return [explicit, "--version"]
+        # Only the program, because CMake accepts trailing options here and splits them off:
+        # measured, CUDACXX="/path/nvcc -allow-unsupported-compiler" still compiles with
+        # /path/nvcc. Passing the whole value as one program name found nothing, so a build
+        # that compiles fine reported no toolkit at all. That option is a common workaround
+        # on a newer host compiler, so the value is not unusual.
+        #
+        # Splitting also matches CMake on an unquoted path containing a space, which CMake
+        # reports as NOTFOUND rather than treating as one name, so this reads nothing exactly
+        # where the build would also refuse to compile.
+        program = shlex.split(explicit) or [explicit]
+        return [program[0], "--version"]
     # Follow CMake's COMPILER search, since that is what decides which nvcc compiles the sources:
     # CUDACXX above, then PATH, then CUDA_PATH, then the conventional symlink. PATH has to come
     # before the others. Measured with only PATH pointing at 13.0 on a box whose /usr/local/cuda is
