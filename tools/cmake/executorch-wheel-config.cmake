@@ -180,14 +180,15 @@ unset(_executorch_version_file)
 set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
                             "${_executorch_c10_include}"
 )
-# The same definitions the imported targets carry. A consumer on CMake older than
-# 3.28 gets no imported targets and links through EXECUTORCH_LIBRARIES instead,
-# and without the first of these it could not compile at all: the vendored c10
-# headers reach for a header generated inside a PyTorch build that no wheel can
-# carry. The tracer switch is here because the shipped libraries are compiled
-# with it, and the profiling scope classes declare their members inside that
-# guard, so a consumer compiling without it sees a smaller, empty version of the
-# same class and its profiling scopes record nothing while reporting no error.
+# The same definitions the imported targets carry. A consumer on CMake older
+# than 3.28 gets no imported targets and links through EXECUTORCH_LIBRARIES
+# instead, and without the first of these it could not compile at all: the
+# vendored c10 headers reach for a header generated inside a PyTorch build that
+# no wheel can carry. The tracer switch is here because the shipped libraries
+# are compiled with it, and the profiling scope classes declare their members
+# inside that guard, so a consumer compiling without it sees a smaller, empty
+# version of the same class and its profiling scopes record nothing while
+# reporting no error.
 set(EXECUTORCH_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
                                    ET_EVENT_TRACER_ENABLED
 )
@@ -353,6 +354,9 @@ elseif(_executorch_runtime_library)
   # target twice is an error, so only define it once and set the properties
   # either way.
   if(TARGET executorch::runtime)
+    # This file ran already in the same configure, because another subproject
+    # also called find_package. Redefining the target would be an error, so keep
+    # the one that is already there.
     message(
       STATUS "executorch: executorch::runtime is already defined, reusing it"
     )
