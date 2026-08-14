@@ -125,8 +125,11 @@ SOFTMAX_OP_PATTERNS = {
 
 ACTIVATION_OP_PATTERNS = {
     (torch.ops.aten.sigmoid.default,): CortexMActivationCheck,
+    (torch.ops.aten.sigmoid_.default,): CortexMActivationCheck,
     (torch.ops.aten.tanh.default,): CortexMActivationCheck,
+    (torch.ops.aten.tanh_.default,): CortexMActivationCheck,
     (torch.ops.aten.silu.default,): CortexMActivationCheck,
+    (torch.ops.aten.silu_.default,): CortexMActivationCheck,
     (torch.ops.aten.gelu.default,): CortexMActivationCheck,
 }
 
