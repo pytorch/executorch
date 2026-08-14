@@ -981,8 +981,9 @@ inline size_t coordinateToIndex(
     const executorch::aten::Tensor& tensor,
     const size_t* const coordinate) {
   size_t index = 0;
+  const auto strides = tensor.strides();
   for (const auto d : c10::irange(tensor.dim())) {
-    index += coordinate[d] * getTrailingDims(tensor, d);
+    index += coordinate[d] * static_cast<size_t>(strides[d]);
   }
   return index;
 }
@@ -995,11 +996,9 @@ inline size_t coordinateToIndex(
 inline void memoizeTrailingDims(
     const executorch::aten::Tensor& tensor,
     size_t trailing_dims_memo[kTensorDimensionLimit]) {
-  const auto tensorDim = tensor.dim();
-  size_t dims = 1;
-  for (int ii = tensorDim - 1; ii >= 0; --ii) {
-    trailing_dims_memo[ii] = dims;
-    dims *= static_cast<size_t>(tensor.size(ii));
+  const auto strides = tensor.strides();
+  for (const auto d : c10::irange(tensor.dim())) {
+    trailing_dims_memo[d] = static_cast<size_t>(strides[d]);
   }
 }
 
