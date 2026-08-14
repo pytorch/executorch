@@ -300,7 +300,7 @@ unsigned char __attribute__((
 constexpr size_t FAST_MEMORY_REGION_INDEX = 2;
 
 [[maybe_unused]] void et_pal_init(void) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   // Armv8.1-M Mainline cores (M55, M85) have the optional PMU extension.
   // Pre-Armv8.1-M cores lack ARM_PMU_*; et_pal_current_ticks() returns 0.
   ARM_PMU_Enable();
@@ -327,7 +327,7 @@ constexpr size_t FAST_MEMORY_REGION_INDEX = 2;
 }
 
 [[maybe_unused]] et_timestamp_t et_pal_current_ticks(void) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   return ARM_PMU_Get_CCNTR();
 #else
   return 0;
