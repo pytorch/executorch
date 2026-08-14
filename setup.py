@@ -389,6 +389,45 @@ def _cuda_libraries_built(cmake_cache_dir: Optional[str]) -> bool:
     return bool(_cuda_train())
 
 
+def _verify_cuda_runtime_matches_train(cmake_cache_dir: Optional[str]) -> None:
+    """Fail the build when the linked CUDA runtime is not the train being declared.
+
+    The declared packages come from the compiler version, while the library that actually gets
+    linked comes from find_package(CUDAToolkit). Those are normally the same toolkit, but
+    CUDAToolkit_ROOT steers the second and not the first, so they can split inside a single
+    find_package call: measured with the compiler at 13.0 and that variable at 12.8,
+    CUDAToolkit_VERSION reported 13.0.88 while the binary needed libcudart.so.12. Packaging
+    would then declare the CUDA 13 runtime for a wheel that cannot load without CUDA 12.
+
+    Read from the CMake cache rather than from the environment, because the cache records what
+    the build resolved rather than what was requested.
+    """
+    train = _cuda_train()
+    if not train:
+        return
+    cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
+    if not os.path.exists(cache_path):
+        return
+    cache = CMakeCache(cache_path=cache_path)
+    if not cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+        return
+    linked = cache.get("CUDA_cudart_LIBRARY")
+    if linked is None or not linked.value:
+        return
+    # The major is the part that decides the soname, and it is the only part the declared
+    # package names, so compare that rather than the full version.
+    found = re.search(r"cuda-(\d+)\.", linked.value)
+    if found is None or found.group(1) == train:
+        return
+    raise RuntimeError(
+        f"this build declares the CUDA {train} runtime but linked the CUDA "
+        f"{found.group(1)} one from {linked.value!r}, so the wheel would install and then "
+        "fail to load. The declared train follows the CUDA compiler while the linked "
+        "libraries follow find_package(CUDAToolkit), so point CUDACXX and CUDAToolkit_ROOT "
+        "at the same toolkit."
+    )
+
+
 def _cuda_dependencies() -> List[str]:
     """Runtime libraries a CUDA wheel needs but does not bundle.
 
@@ -1062,14 +1101,22 @@ def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
 
 
 def _write_runtime_paths(
-    library: Path, tool: str, original: str, found: List[str], entries: List[str]
+    library: Path,
+    tool: str,
+    original: str,
+    found: List[str],
+    entries: List[str],
+    is_mach_o: bool,
 ) -> None:
     """Record the filtered runtime search path back onto the library.
 
     ELF holds one value that is replaced outright. Mach-O holds one load command per entry
     with nothing to overwrite, so the difference is applied as deletes and adds.
+
+    Told which format this is rather than reading the suffix, because a macOS Python extension
+    is Mach-O while named .so, and deciding here produced patchelf syntax passed to otool.
     """
-    if library.suffix != ".dylib":
+    if not is_mach_o:
         rewritten = ":".join(entries)
         if rewritten == original:
             return
@@ -1208,8 +1255,12 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     the release tests treats a missing patchelf as a failure rather than a skip: the
     wheel-build environment has it, and that is where the guarantee belongs.
     """
-    is_mach_o = library.suffix == ".dylib"
-    if not is_mach_o and library.suffix != ".so" and ".so." not in library.name:
+    # Decided by the platform rather than the suffix, because a Python extension on macOS is
+    # Mach-O while being named .so: measured on a shipped macOS wheel, every .dylib came out
+    # clean and the extension still carried five build directories, because the suffix test sent
+    # it to patchelf, which does not exist there.
+    is_mach_o = sys.platform == "darwin"
+    if library.suffix not in (".dylib", ".so") and ".so." not in library.name:
         return
     # Same best effort contract on either platform: a build without the tools still
     # produces a working wheel, and the release check is where the guarantee is enforced.
@@ -1265,7 +1316,7 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     # which names the build machine and will not exist for a user who installed from an
     # index. Appended, so a path already present keeps its position.
     _append_relative_search_paths(entries, _package_relative_depth(library))
-    _write_runtime_paths(library, tool, original, found, entries)
+    _write_runtime_paths(library, tool, original, found, entries, is_mach_o)
 
 
 class CustomBuildPy(build_py):
@@ -1619,17 +1670,23 @@ class CustomBuild(build):
 
         # A row that names a CUDA train has already declared the NVIDIA runtime packages in
         # install_requires, which is set before any build runs and therefore cannot consult the
-        # build. If the toolkit is not reachable here, the wheel would ship no CUDA library while
+        # build. If no toolkit is reachable here, the wheel would ship no CUDA library while
         # still making pip fetch the CUDA runtime, so stop rather than publish that mismatch.
+        #
+        # Tested against the same detection that produced the train, not against the stricter
+        # (major, minor) validator. The validator rejects a toolkit whose minor is unlisted, and
+        # an explicit EXECUTORCH_BUILD_CUDA=ON deliberately builds on such a toolkit, so asking
+        # the validator here reported "no toolkit" on a machine whose toolkit had just been used
+        # to derive the train, and refused the one case the fallback above exists to support.
         if (
             not minimal_build
             and _cuda_train()
-            and not install_utils.is_cuda_available()
+            and install_utils._detected_cuda_major() is None
         ):
             raise RuntimeError(
-                "this row names a CUDA train but no usable CUDA toolkit was found, so the wheel "
-                "would declare the CUDA runtime and ship no CUDA library. Point CUDACXX or "
-                "CUDAToolkit_ROOT at a toolkit, or build the CPU row instead."
+                "this row names a CUDA train but no CUDA compiler was found, so the wheel "
+                "would declare the CUDA runtime and ship no CUDA library. Put nvcc on PATH or "
+                "point CUDACXX at it, or build the CPU row instead."
             )
 
         # Enable the CUDA delegate when a toolkit is present, unless the release row says this is a
@@ -1724,6 +1781,9 @@ class CustomBuild(build):
         cmake_cache = CMakeCache(
             cache_path=os.path.join(cmake_cache_dir, "CMakeCache.txt")
         )
+        # Checked here rather than after the build, because the cache already records which
+        # toolkit was resolved and reporting a mismatch is cheaper than compiling first.
+        _verify_cuda_runtime_matches_train(cmake_cache_dir)
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.

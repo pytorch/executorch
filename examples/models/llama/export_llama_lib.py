@@ -983,17 +983,24 @@ def _to_edge_and_lower_llama_xnnpack(
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+    enable_bf16: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
-    partitioners.append(get_xnnpack_partitioner(dynamic_quant_only_partitioner=True))
+    partitioners.append(
+        get_xnnpack_partitioner(
+            dynamic_quant_only_partitioner=True, enable_bf16=enable_bf16
+        )
+    )
 
     modelname = f"xnnpack_dq_{modelname}"
 
     if xnnpack_extended_ops:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=False, enable_bf16=enable_bf16
+            )
         )
         modelname = f"xnnpack_{modelname}"
 
