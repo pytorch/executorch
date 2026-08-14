@@ -39,9 +39,11 @@ class CortexMMaxPool2d(torch.nn.Module):
 class CortexMMaxPool2dPermutedView(torch.nn.Module):
     """A single-channel NHWC image permuted to NCHW.
 
-    The pool then sees a live view whose strides satisfy plain contiguity
-    while aten still reports it as channels-last, which is the one shape a
-    .contiguous() call cannot normalize.
+    With C == 1 the channels-last strides also satisfy plain contiguity, so
+    .contiguous() hands the reference back the very tensor it was given while
+    aten keeps dispatching on the memory-format hint. This case is what pins
+    the .to(memory_format=...) in quantized_max_pool2d_impl: it fails at the
+    dialect stage if that is written as .contiguous().
     """
 
     # The permute brings its own quant/dequant pair, so only the pool itself
