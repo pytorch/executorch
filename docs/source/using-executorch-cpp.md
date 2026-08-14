@@ -166,17 +166,31 @@ target_link_libraries(app PRIVATE executorch::runtime
 
 These are the components the Linux package provides:
 
-| Component | What it gives you |
-| --- | --- |
-| `runtime` | The engine. Always needed. |
-| `kernels_optimized` | Fast CPU operators. The usual choice. |
-| `kernels_quantized` | Operators for quantized models. |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. |
-| `backend_cuda` | The CUDA backend, in the CUDA package only. |
-| `backend_openvino` | The OpenVINO backend. |
-| `threadpool` | Multi-threaded execution. |
-| `etdump` | Profiling, to record what ran and how long it took. |
-| `extension_cuda` | Helpers to share a CUDA stream with your own code. |
+| Component | What it gives you | Where |
+| --- | --- | --- |
+| `runtime` | The engine. Always needed. | Linux, macOS |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
+| `kernels_quantized` | Operators for quantized models. | Linux, macOS |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
+| `threadpool` | Multi-threaded execution. | Linux, macOS |
+| `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
+
+To see what your own install offers, ask CMake:
+
+```cmake
+find_package(executorch REQUIRED)
+foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack
+                   threadpool etdump)
+  if(TARGET executorch::${_component})
+    message(STATUS "have ${_component}")
+  endif()
+endforeach()
+```
+
+On macOS the Core ML and MLX
+delegates are registered inside the Python extension rather than shipped as separate C++ libraries,
+so a C++ application there cannot link them as components; use them from Python, or build from
+source if you need them in C++.
 
 A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
 model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure
@@ -192,39 +206,6 @@ target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 The quantized kernels are deliberately left out of that variable, because loading
 `executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
 stops the runtime. Name `executorch::kernels_quantized` when you want them.
-
-#### Running on a GPU with the CUDA package
-
-The CUDA build is a separate package. Install it with the index for your CUDA version, for example
-CUDA 12.6:
-
-```
-pip install executorch --index-url https://download.pytorch.org/whl/cu126
-```
-
-Everything above stays the same. Add the CUDA backend to both CMake lines:
-
-```cmake
-find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda)
-
-target_link_libraries(app PRIVATE executorch::runtime
-                                  executorch::kernels_optimized
-                                  executorch::backend_cuda)
-```
-
-The model has to be exported for CUDA as well, which needs a machine with a GPU:
-
-```python
-from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-
-program = to_edge_transform_and_lower(
-    torch.export.export(model, example), partitioner=[CudaPartitioner([])]
-).to_executorch()
-```
-
-By default the runtime copies inputs to the GPU and results back, so your program keeps passing
-ordinary CPU tensors and nothing else changes. Check that your GPU is supported first: the CUDA
-package works only where the PyTorch build you installed also supports the GPU.
 
 #### When something does not work
 
