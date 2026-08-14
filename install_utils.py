@@ -222,7 +222,7 @@ def _detected_cuda_major() -> Optional[int]:
         result = subprocess.run(
             _selected_nvcc(), capture_output=True, text=True, check=True
         )
-    except (FileNotFoundError, subprocess.CalledProcessError, OSError):
+    except (subprocess.CalledProcessError, OSError):
         return None
     match = re.search(r"release (\d+)\.\d+", result.stdout)
     return int(match.group(1)) if match else None

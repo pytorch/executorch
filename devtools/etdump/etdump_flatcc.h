@@ -74,6 +74,7 @@ class ETDumpGen : public ::executorch::runtime::EventTracer {
  public:
   ETDumpGen(::executorch::runtime::Span<uint8_t> buffer = {nullptr, (size_t)0});
   ~ETDumpGen() override;
+  void clear_builder();
 
   void create_event_block(const char* name) override;
   virtual ::executorch::runtime::EventTracerEntry start_profiling(
