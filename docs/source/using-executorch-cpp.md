@@ -120,7 +120,7 @@ int main() {
 
 ```cmake
 # CMakeLists.txt
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(app CXX)
 
 find_package(executorch REQUIRED COMPONENTS kernels_optimized)
@@ -273,7 +273,25 @@ python -c 'import torch; print(torch.cuda.get_arch_list())'
   `executorch::kernels_optimized`.
 - The model fails to load complaining about a backend: link the backend it was exported for.
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
-  CMake use `${EXECUTORCH_LIBRARIES}` and add `${EXECUTORCH_INCLUDE_DIRS}` to your includes.
+  CMake the package still works, but you name variables instead of targets, and you have to pass on
+  the definitions and the C++20 requirement yourself:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.19)
+  project(app CXX)
+
+  find_package(executorch REQUIRED)
+
+  add_executable(app main.cpp)
+  target_include_directories(app PRIVATE ${EXECUTORCH_INCLUDE_DIRS})
+  target_compile_definitions(app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})
+  target_compile_features(app PRIVATE cxx_std_20)
+  target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
+  ```
+
+  Leaving out `EXECUTORCH_COMPILE_DEFINITIONS` fails with a missing
+  `torch/headeronly/macros/cmake_macros.h`, because the vendored headers look for a file that only
+  exists inside a PyTorch build.
 
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.
