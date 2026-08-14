@@ -254,11 +254,16 @@ target_link_libraries(app PRIVATE executorch::runtime
 
 The model has to be exported for CUDA as well, which needs a machine with a GPU:
 
+Exporting for CUDA needs the CUDA compiler (`nvcc`) on your `PATH`, because the backend compiles
+the model into GPU code ahead of time. `pip install` does not provide it, so install the CUDA
+Toolkit for this step. Check it with `nvcc --version`.
+
 ```python
 # export_cuda.py, the same model as before with one line added
 import torch
 from executorch.exir import to_edge_transform_and_lower
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.extension.export_util.utils import save_pte_program
 
 class Add(torch.nn.Module):
     def forward(self, x, y):
@@ -268,7 +273,24 @@ example = (torch.ones(2, 2), torch.ones(2, 2))
 program = to_edge_transform_and_lower(
     torch.export.export(Add(), example), partitioner=[CudaPartitioner([])]
 ).to_executorch()
-open("model.pte", "wb").write(program.buffer)
+save_pte_program(program, "model", ".")
+```
+
+`save_pte_program` is used instead of writing the buffer by hand because the CUDA backend puts its
+compiled GPU code and the model weights in a **separate data file** next to `model.pte`. Writing
+only the program file loses them, and a model with weights then fails when it runs.
+
+The backend chooses that file's name, so check what was written:
+
+```
+$ ls
+aoti_cuda_blob.ptd  model.pte
+```
+
+Load both from C++, passing the data file as the second argument:
+
+```cpp
+Module module("model.pte", "aoti_cuda_blob.ptd");
 ```
 
 The CUDA backend is still experimental, so exporting prints a warning saying so.
@@ -276,13 +298,19 @@ The CUDA backend is still experimental, so exporting prints a warning saying so.
 By default the runtime copies inputs to the GPU and results back, so your program keeps passing
 ordinary CPU tensors and nothing else changes.
 
-One thing to check first: the package works only where the PyTorch build you installed also supports
-your GPU. If a model fails with a message about no kernel image being available for the device, your
-GPU is not in that PyTorch build. You can see what it covers with:
+One thing to check first, and the numbers matter. If a model fails with a message about no kernel
+image being available for the device, your GPU is too old for these packages. They are built for
+**compute capability 8.0 and above**, which means an NVIDIA Ampere generation card or newer.
+
+Check your own GPU:
 
 ```
-python -c 'import torch; print(torch.cuda.get_arch_list())'
+python -c 'import torch; print(torch.cuda.get_device_capability())'
 ```
+
+A result below `(8, 0)` is not covered. Note that `torch.cuda.get_arch_list()` is not the right
+check here: PyTorch builds for a wider set than these packages do, so a GPU can appear in that list
+and still not be supported.
 
 #### When something does not work
 
