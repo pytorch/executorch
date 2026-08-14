@@ -475,3 +475,19 @@ TEST_F(OpPermuteCopyTest, DynamicShapeUnbound) {
   op_permute_copy_out(x, perm_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
+
+TEST_F(OpPermuteCopyTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // in[0][c][h][w] laid out channels-last, permuted to (0, 2, 3, 1)
+  Tensor in = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor expected =
+      tf.make({1, 2, 2, 3}, {1, 5, 9, 2, 6, 10, 3, 7, 11, 4, 8, 12});
+  Tensor out = tf.zeros_channels_last({1, 2, 2, 3});
+  const std::vector<int64_t> dims = {0, 2, 3, 1};
+
+  op_permute_copy_out(in, IntArrayRef(dims.data(), dims.size()), out);
+
+  EXPECT_TENSOR_CLOSE(out, tf.channels_last_like(expected));
+}

@@ -687,3 +687,20 @@ TEST_F(OpScatterSrcOutTest, ChannelsLastMatchesContiguous) {
 
   EXPECT_TENSOR_CLOSE(out, tf_data.channels_last_like(expected));
 }
+
+TEST_F(OpScatterValueOutTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  Tensor contiguous_in =
+      tf_data.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected =
+      tf_data.make({1, 3, 2, 2}, {1, 2, 3, 4, 99, 99, 99, 99, 9, 10, 11, 12});
+
+  Tensor self = tf_data.channels_last_like(contiguous_in);
+  Tensor index = tf_index.channels_last_like(tf_index.full({1, 1, 2, 2}, 1));
+  Tensor out = tf_data.zeros_channels_last({1, 3, 2, 2});
+  op_scatter_value_out(self, 1, index, 99.0, out);
+
+  EXPECT_TENSOR_CLOSE(out, tf_data.channels_last_like(expected));
+}
