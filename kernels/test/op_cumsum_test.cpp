@@ -286,3 +286,14 @@ TEST_F(OpCumSumOutTest, DISABLED_DynamicShapeUnbound) {
   Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+
+TEST_F(OpCumSumOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor self = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cumsum_out(self, 1, ScalarType::Float, out));
+}
