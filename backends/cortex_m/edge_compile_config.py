@@ -8,9 +8,9 @@ import torch
 from executorch.exir import EdgeCompileConfig
 
 # Ops that must survive to_edge for the Cortex-M passes to lower them directly.
-# Left to decompose, silu becomes sigmoid plus an elementwise mul and hardswish
-# becomes a clamp plus a mul, which costs an extra kernel and, for hardswish,
-# quantizes the gate on the producer's grid instead of using the exact int8 LUT.
+# Omitting one does not degrade gracefully. The activations decompose into a
+# multiply whose qparams are gone by then, which fails AtenToCortexMPass; linear
+# decomposes into addmm and silently stays on portable float kernels.
 _PRESERVE_OPS = (
     torch.ops.aten.linear.default,
     torch.ops.aten.hardsigmoid.default,
@@ -27,9 +27,14 @@ def cortex_m_edge_compile_config() -> EdgeCompileConfig:
     Shared by the AOT compiler and the test harness so the two cannot drift: an
     entry present in only one of them means the tests exercise a lowering users
     never get, or the reverse.
+
+    Edge-dialect validation is off because the backend's quantized graphs do not
+    pass it: enabling it fails the model tests with mismatched-dtype
+    SpecViolationErrors. That also makes a _core_aten_ops_exception_list pointless
+    here, since the verifier it feeds never runs. max_pool2d would need an entry if
+    validation is ever turned on.
     """
     return EdgeCompileConfig(
         preserve_ops=list(_PRESERVE_OPS),
         _check_ir_validity=False,
-        _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
     )

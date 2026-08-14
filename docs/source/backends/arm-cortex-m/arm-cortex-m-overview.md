@@ -110,8 +110,9 @@ from executorch.backends.cortex_m.edge_compile_config import (
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 # Use the backend's own configuration rather than hand-writing one. Ops such as
-# silu and hardswish must survive to_edge for the Cortex-M passes to lower them;
-# omitting one does not degrade gracefully, it fails the AtenToCortexMPass.
+# silu and hardswish must survive to_edge for the Cortex-M passes to lower them,
+# and omitting one does not degrade gracefully: an activation fails the
+# AtenToCortexMPass, and linear silently falls back to portable float kernels.
 config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
