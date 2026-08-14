@@ -1326,6 +1326,46 @@ def _merge_bufsizes(bufsizes: list[int], new_bufsizes: list[int]) -> list[int]:
     return bufsizes
 
 
+def _allocate_submodule_buffer(
+    size: int,
+    lifetime: List[int],
+    allocations: List[Tuple[List[int], int, int]],
+) -> int:
+    overlapping = sorted(
+        (offset, allocated_size)
+        for allocated_lifetime, offset, allocated_size in allocations
+        if Verifier.has_overlap(lifetime, allocated_lifetime)
+    )
+    offset = 0
+    for allocated_offset, allocated_size in overlapping:
+        if offset + size <= allocated_offset:
+            break
+        offset = max(offset, allocated_offset + allocated_size)
+    allocations.append((lifetime, offset, size))
+    return offset
+
+
+def _shift_submodule_allocations(
+    submodule: torch.fx.GraphModule, offsets: List[int]
+) -> None:
+    shifted_specs: Set[TensorSpec] = set()
+    for module in submodule.modules():
+        if not isinstance(module, torch.fx.GraphModule):
+            continue
+        for node in module.graph.nodes:
+            for spec in get_node_tensor_specs(node):
+                if spec in shifted_specs:
+                    continue
+                shifted_specs.add(spec)
+                if spec.mem_id is None or spec.mem_offset is None:
+                    continue
+                internal_assert(
+                    spec.mem_id < len(offsets),
+                    f"Missing submodule buffer offset for mem_id {spec.mem_id}",
+                )
+                spec.mem_offset += offsets[spec.mem_id]
+
+
 def _handle_submodule(
     algo: Callable[..., list[int]],
     parent_graph_module: torch.fx.GraphModule,
@@ -1365,37 +1405,71 @@ def _apply_algo_to_submodules(
     buffers.
     """
 
-    # Bufsizes for submodules.
     bufsizes: list[int] = []
+    allocations: Dict[int, List[Tuple[List[int], int, int]]] = defaultdict(list)
 
-    def _handle(
-        submodule_node: torch.fx.Node,
-        alloc_graph_input: bool = False,
-    ) -> None:
-        current_bufsizes = _handle_submodule(
-            algo,
-            graph_module,
-            alignment,
-            submodule_node,
-            graph_signature,
-            alloc_graph_input=alloc_graph_input,
-        )
-        nonlocal bufsizes
-        _merge_bufsizes(bufsizes, current_bufsizes)
+    for node_idx, node in enumerate(graph_module.graph.nodes):
+        submodule_nodes: List[torch.fx.Node] = []
+        alloc_graph_input = False
+        lifetime = [node_idx, node_idx]
 
-    for cond_node in get_cond_nodes(graph_module):
-        _handle(cast(torch.fx.Node, cond_node.args[1]))
-        _handle(cast(torch.fx.Node, cond_node.args[2]))
+        if node.target is torch.ops.higher_order.cond:
+            submodule_nodes = [
+                cast(torch.fx.Node, node.args[1]),
+                cast(torch.fx.Node, node.args[2]),
+            ]
+            # MoveCall lets branch outputs escape their submodule, so the arena
+            # cannot be reused until the corresponding cond outputs are dead.
+            output_lifetimes = [
+                cast(int, spec.lifetime[1])
+                for spec in get_node_tensor_specs(node)
+                if spec.lifetime[1] is not None
+            ]
+            if output_lifetimes:
+                lifetime[1] = max(output_lifetimes)
+        elif node.target is exir_while:
+            submodule_nodes = [
+                cast(torch.fx.Node, node.args[0]),
+                cast(torch.fx.Node, node.args[1]),
+            ]
+        elif node.target is torch.ops.higher_order.map_impl:
+            submodule_nodes = [cast(torch.fx.Node, node.args[0])]
+            alloc_graph_input = True
+        elif node.target is torch.ops.higher_order.scan:
+            submodule_nodes = [cast(torch.fx.Node, node.args[0])]
+            alloc_graph_input = True
+        else:
+            continue
 
-    for while_node in get_while_nodes(graph_module):
-        _handle(cast(torch.fx.Node, while_node.args[0]))
-        _handle(cast(torch.fx.Node, while_node.args[1]))
+        current_bufsizes: list[int] = []
+        for submodule_node in submodule_nodes:
+            _merge_bufsizes(
+                current_bufsizes,
+                _handle_submodule(
+                    algo,
+                    graph_module,
+                    alignment,
+                    submodule_node,
+                    graph_signature,
+                    alloc_graph_input=alloc_graph_input,
+                ),
+            )
 
-    for map_node in get_map_nodes(graph_module):
-        _handle(cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True)
+        offsets = [0] * len(current_bufsizes)
+        for mem_id, size in enumerate(current_bufsizes):
+            if mem_id == 0 or size == 0:
+                continue
+            offsets[mem_id] = _allocate_submodule_buffer(
+                size, lifetime, allocations[mem_id]
+            )
+            if len(bufsizes) <= mem_id:
+                bufsizes.extend([0] * (mem_id + 1 - len(bufsizes)))
+            bufsizes[mem_id] = max(bufsizes[mem_id], offsets[mem_id] + size)
 
-    for scan_node in get_scan_nodes(graph_module):
-        _handle(cast(torch.fx.Node, scan_node.args[0]), alloc_graph_input=True)
+        for submodule_node in submodule_nodes:
+            _shift_submodule_allocations(
+                getattr(graph_module, submodule_node.target), offsets
+            )
 
     # TODO: We can handle delegates the same way as map/cond/while.
     # Maybe populate the graph_module.meta["non_const_buffer_sizes"] for delegates.

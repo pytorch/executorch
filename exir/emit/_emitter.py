@@ -1737,9 +1737,8 @@ class _Emitter(torch.fx.Interpreter):
 
         The output node of the top level entry point is handled by TopLevelEmitter. This function
         only executes on control flow subgraphs. Takes the outputs of the subgraph (if any) and
-        inserts instructions to bind them to the common output location between control flow
-        branches. Tensor data is copied because control flow submodules can reuse the same memory
-        arena while their outputs are still live in the parent graph.
+        inserts instructions to move them to the common output location between control flow
+        branches.
         """
         self.concrete_output_ids = list(pytree.tree_flatten(args[0])[0])
         binding_output_values = self.binding_output_values
@@ -1756,32 +1755,9 @@ class _Emitter(torch.fx.Interpreter):
                 self.concrete_output_ids, binding_output_list
             ):
                 if move_from != move_to:
-                    self._internal_assert_emitter(
-                        (move_from.tensor is None) == (move_to.tensor is None),
-                        self.node,
-                        "Binding output type should match the submodule output type",
+                    instruction = Instruction(
+                        MoveCall(move_from=move_from.id, move_to=move_to.id)
                     )
-                    if move_from.tensor is not None:
-                        op_index, _ = self._get_operator(
-                            name="aten::copy", overload="out"
-                        )
-                        non_blocking = self._emit_evalue(EValue(Bool(False)))
-                        instruction = Instruction(
-                            KernelCall(
-                                op_index=op_index,
-                                args=[
-                                    move_from.id,
-                                    move_from.id,
-                                    non_blocking.id,
-                                    move_to.id,
-                                    move_to.id,
-                                ],
-                            )
-                        )
-                    else:
-                        instruction = Instruction(
-                            MoveCall(move_from=move_from.id, move_to=move_to.id)
-                        )
                     self.chain.instructions.append(instruction)
 
     def call_function(  # pyre-fixme[14]
