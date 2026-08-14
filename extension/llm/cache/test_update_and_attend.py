@@ -285,14 +285,17 @@ class CellCacheTest(unittest.TestCase):
     def tearDown(self):
         REGISTRY.uninstall(self.cache_key)
 
-    def _cache(self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC):
+    def _cache(
+        self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC, window=0, n_layers=None
+    ):
         cache = CellReferenceCache(
             CacheConfig(
-                n_layers=self.n_layers,
+                n_layers=self.n_layers if n_layers is None else n_layers,
                 n_kv_heads=self.n_kv_heads,
                 head_dim=self.head_dim,
                 capacity=capacity,
                 sizing=sizing,
+                window=window,
             )
         )
         REGISTRY.install(self.cache_key, cache)
@@ -468,6 +471,79 @@ class CellCacheTest(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 call()
+
+    def test_window_narrows_each_query_without_crossing_sequences(self):
+        cache = self._cache(window=2)
+        kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
+        cache.begin_step([0] * 4)
+        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 4))[2]
+
+        # offsets[i][j] = j - i, so <= 0 is causal and > -2 keeps the newest
+        # two: a band whose row 2 drops key 0, which plain causal would keep.
+        offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)
+        torch.testing.assert_close(spec.mask, (offsets <= 0) & (offsets > -2))
+
+        # a second sequence is bounded the same way, and still sees none of
+        # the first's cells even though they are inside its window
+        cache.begin_step([1, 1])
+        kv = torch.randn(1, self.n_kv_heads, 2, self.head_dim)
+        spec = cache.update_and_fetch(0, kv, kv, _positions(0, 2))[2]
+        expected = torch.zeros(2, 6, dtype=torch.bool)
+        expected[0, 4] = expected[1, 4] = expected[1, 5] = True
+        torch.testing.assert_close(spec.mask, expected)
+
+    def test_layers_can_window_independently(self):
+        # One cell table, but layers may disagree about the window: the mask is
+        # per policy, not per layer, so a mixed model costs one extra mask.
+        cache = self._cache(window=[0, 2])
+        kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
+        cache.begin_step([0] * 4)
+        pos = _positions(0, 4)
+        flat = cache.update_and_fetch(0, kv, kv, pos)[2].mask
+        windowed = cache.update_and_fetch(1, kv, kv, pos)[2].mask
+
+        offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)
+        torch.testing.assert_close(flat, offsets <= 0)
+        torch.testing.assert_close(windowed, (offsets <= 0) & (offsets > -2))
+
+    def test_layers_sharing_a_window_share_one_mask(self):
+        # The mask is per policy: two windowed layers get the same object, and
+        # the flat one a different mask, so a mixed model costs one extra.
+        cache = self._cache(window=[0, 2, 2], n_layers=3)
+        kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
+        cache.begin_step([0] * 4)
+        pos = _positions(0, 4)
+        flat = cache.update_and_fetch(0, kv, kv, pos)[2].mask
+        first = cache.update_and_fetch(1, kv, kv, pos)[2].mask
+        second = cache.update_and_fetch(2, kv, kv, pos)[2].mask
+
+        self.assertIs(first, second)
+        self.assertIsNot(flat, first)
+
+    def test_windowed_decode_attends_only_the_retained_cells(self):
+        window = 2
+        cache = self._cache(window=window)
+        kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
+        cache.begin_step([0] * 4)
+        cache.update_and_fetch(0, kv, kv, _positions(0, 4))
+
+        cache.begin_step([0])
+        kv = torch.randn(1, self.n_kv_heads, 1, self.head_dim)
+        k, v, spec = cache.update_and_fetch(0, kv, kv, _positions(4, 1))
+
+        q = torch.randn(1, self.n_heads, 1, self.head_dim)
+        scale = self.head_dim**-0.5
+        torch.testing.assert_close(
+            attend(q, k, v, spec, scale, torch.float32),
+            attend(  # the last `window` cells of its sequence, unmasked
+                q,
+                k[:, :, -window:, :],
+                v[:, :, -window:, :],
+                AttendSpec(kind=MaskKind.NONE),
+                scale,
+                torch.float32,
+            ),
+        )
 
     def test_admission_fails_before_the_forward(self):
         cache = self._cache(capacity=4)
@@ -652,7 +728,7 @@ class WindowedSpecTest(unittest.TestCase):
 
         self.assertEqual(flat.kind, MaskKind.CAUSAL)
         self.assertEqual(windowed.kind, MaskKind.EXPLICIT)
-        offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)
+        offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)  # j - i
         torch.testing.assert_close(windowed.mask, (offsets <= 0) & (offsets > -2))
 
     def test_window_wider_than_history_stays_fused(self):
