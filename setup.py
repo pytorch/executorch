@@ -1178,6 +1178,17 @@ setup(
                     is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
+                # Both _portable_lib and aoti_cuda_shims link this shared
+                # caller-stream helper. Keep the CUDA libraries together so
+                # _portable_lib can find them through its package-relative
+                # runtime path in a clean environment.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
+                    src_name="extension_cuda",
+                    dst="executorch/backends/cuda/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                ),
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
                     src_name="qnn_executorch_backend",
