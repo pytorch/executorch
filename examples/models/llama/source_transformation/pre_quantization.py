@@ -279,13 +279,14 @@ def _replace_embedding_with_quantized_group_embedding_for_pre_quantization(
     dtype: torch.dtype,
     bit_width: int,
     group_size: Optional[int] = None,
+    scales_precision: torch.dtype = torch.float32,
 ):
     def filter_fn(child: torch.nn.Module, cur_fqn: str) -> bool:
         # Only replace embedding layers where the checkpoint contains explicit scales
         scales_key = f"{cur_fqn}.scales"
         if isinstance(child, nn.Embedding) and scales_key in checkpoint:
             assert checkpoint[f"{cur_fqn}.weight"].dtype == torch.int8
-            assert checkpoint[scales_key].dtype == torch.float32
+            assert checkpoint[scales_key].dtype == scales_precision
             return True
         return False
 
@@ -297,6 +298,7 @@ def _replace_embedding_with_quantized_group_embedding_for_pre_quantization(
             group_size=group_size,
             dtype=dtype,
             packed=False,  # TODO(lunwenh): support packed embedding for pre-quantized
+            scales_precision=scales_precision,
         )
         return new_embedding
 
@@ -309,10 +311,15 @@ def transform_embedding_for_pre_quantization(
     dtype: torch.dtype,
     bit_width: int,
     group_size: Optional[int] = None,
+    scales_precision: Optional[torch.dtype] = None,
 ) -> torch.nn.Module:
     """
     Transform the model to be able to load pre-quantized checkpoints that
     are quantized with the given bit_width and group size for embedding.
+
+    ``scales_precision`` is the dtype the checkpoint stores embedding scales in;
+    it defaults to ``torch.float32`` to preserve the pre-existing contract
+    unless explicitly overridden.
     """
     if group_size is not None and group_size not in [0, 32, 64, 128, 256]:
         raise ValueError(
@@ -324,6 +331,7 @@ def transform_embedding_for_pre_quantization(
         dtype,
         bit_width,
         group_size,
+        scales_precision if scales_precision is not None else torch.float32,
     )
     return module
 
