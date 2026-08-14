@@ -173,3 +173,21 @@ TEST_F(OpTopkValuesTest, NonPartialSort) {
     EXPECT_TENSOR_EQ(indices, indices_expected);
   }
 }
+
+TEST_F(OpTopkValuesTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  Tensor in = tf.channels_last_like(tf.make(
+      {1, 4, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}));
+  Tensor values = tf.zeros_channels_last({1, 2, 2, 2});
+  Tensor indices = tf_long.zeros_channels_last({1, 2, 2, 2});
+
+  TempMemoryAllocator allocator = TempMemoryAllocator();
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context(
+      nullptr, &allocator);
+  torch::executor::aten::topk_outf(
+      context, in, 2, 1, true, true, values, indices);
+
+  EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
+}
