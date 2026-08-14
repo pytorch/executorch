@@ -2,6 +2,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Pytest hooks and fixtures for the Arm test suite."""
+
+from __future__ import annotations
 
 import logging
 import os
@@ -11,9 +14,7 @@ from typing import Any
 
 import pytest
 
-"""
-This file contains the pytest hooks, fixtures etc. for the Arm test suite.
-"""
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 # ==== Pytest hooks ====
@@ -41,8 +42,53 @@ def pytest_report_header(config):
     return config._test_seed_label
 
 
+def _mark_rife_vgf_xfails_for_model_converter_below_minimum_version(
+    items, reason: str
+) -> None:
+    for item in items:
+        nodeid = item.nodeid.lower()
+        if "test_rife.py" not in nodeid or "vgf_quant" not in nodeid:
+            continue
+        item.add_marker(pytest.mark.xfail(reason=reason, strict=False))
+
+
+def _has_rife_vgf_quant_tests(items) -> bool:
+    return any(
+        "test_rife.py" in item.nodeid.lower() and "vgf_quant" in item.nodeid.lower()
+        for item in items
+    )
+
+
 def pytest_collection_modifyitems(config, items):
-    pass
+    if not _has_rife_vgf_quant_tests(items):
+        return
+
+    try:
+        from executorch.backends.arm.vgf.model_converter import (
+            get_model_converter_minimum_version_failure_reason,
+            get_model_converter_version_text,
+            MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        )
+    except Exception:
+        logger.warning(
+            "Could not import the model-converter version helpers; leaving the "
+            "RIFE VGF quant tests unmarked.",
+            exc_info=True,
+        )
+        return
+
+    version_text = get_model_converter_version_text()
+    if version_text is None:
+        return
+
+    reason = get_model_converter_minimum_version_failure_reason(
+        version_text,
+        MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        requirement_name="the copied RIFE VGF quant tests",
+    )
+    if reason is None:
+        return
+    _mark_rife_vgf_xfails_for_model_converter_below_minimum_version(items, reason)
 
 
 def pytest_addoption(parser):
@@ -127,7 +173,6 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     RuntimeError instead of returning False.
 
     """
-
     if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:
