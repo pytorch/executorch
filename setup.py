@@ -1350,6 +1350,27 @@ class CustomBuildPy(build_py):
                     if os.path.isfile(os.path.join(_root, _f))
                 ]
 
+    def _copy_extra_files(self, src_to_dst, dst_root: str) -> None:
+        """Copy the non-Python files the package ships, filling in any placeholders."""
+        for src, dst in src_to_dst:
+            dst = os.path.join(dst_root, dst)
+
+            # When modifying the filesystem, use the self.* methods defined by
+            # Command to benefit from the same logging and dry_run logic as
+            # setuptools.
+
+            # Ensure that the destination directory exists.
+            self.mkpath(os.path.dirname(dst))
+            # Follow the example of the base build_py class by not preserving
+            # the mode. This ensures that the output file is read/write even if
+            # the input file is read-only. Copied unconditionally because the
+            # default is timestamp incremental, and a second build in the same
+            # checkout would then keep a configuration substituted for the
+            # previous build's settings.
+            self.copy_file(src, dst, preserve_mode=False, update=False)
+            if os.path.basename(dst) == "executorch-config.cmake":
+                _substitute_tracer_definition(dst, _tracer_cache_dir(self))
+
     def run(self):
         # Copy python files to the output directory. This set of files is
         # defined by the py_module list and package_data patterns.
@@ -1472,21 +1493,7 @@ class CustomBuildPy(build_py):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
-        for src, dst in src_to_dst:
-            dst = os.path.join(dst_root, dst)
-
-            # When modifying the filesystem, use the self.* methods defined by
-            # Command to benefit from the same logging and dry_run logic as
-            # setuptools.
-
-            # Ensure that the destination directory exists.
-            self.mkpath(os.path.dirname(dst))
-            # Follow the example of the base build_py class by not preserving
-            # the mode. This ensures that the output file is read/write even if
-            # the input file is read-only.
-            self.copy_file(src, dst, preserve_mode=False)
-            if os.path.basename(dst) == "executorch-config.cmake":
-                _substitute_tracer_definition(dst, _tracer_cache_dir(self))
+        self._copy_extra_files(src_to_dst, dst_root)
 
         # Copy CMake-generated Python directories that setuptools missed.
         # Setuptools discovers packages at configuration time, before CMake
@@ -1626,17 +1633,22 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
 
 
-def _substitute_tracer_definition(path: str, cmake_cache_dir: Optional[str]) -> None:
+def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
     """Fill in the tracer placeholder in an installed CMake configuration file.
 
     Read from the cache rather than assumed, because the option is set per platform and a builder can
     override it. A consumer compiling against the wrong setting gets a different object layout for
     the profiling scope classes, which fails silently.
     """
-    cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
-    enabled = os.path.exists(cache_path) and CMakeCache(
-        cache_path=cache_path
-    ).is_enabled("EXECUTORCH_ENABLE_EVENT_TRACER")
+    cache_path = os.path.join(cmake_cache_dir, "CMakeCache.txt")
+    if not os.path.exists(cache_path):
+        raise RuntimeError(
+            f"cannot read {cache_path}, so the tracer definition published to consumers cannot be "
+            "derived from what was built"
+        )
+    enabled = CMakeCache(cache_path=cache_path).is_enabled(
+        "EXECUTORCH_ENABLE_EVENT_TRACER"
+    )
     with open(path) as handle:
         contents = handle.read()
     with open(path, "w") as handle:
@@ -1648,9 +1660,23 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: Optional[str]) -> 
         )
 
 
-def _tracer_cache_dir(command) -> Optional[str]:
-    """The build directory holding CMakeCache.txt, or None when it cannot be resolved."""
-    return getattr(command.get_finalized_command("build"), "cmake_cache_dir", None)
+def _tracer_cache_dir(command) -> str:
+    """The build directory holding CMakeCache.txt.
+
+    Raises rather than falling back, because the value decides a compile definition that changes
+    object layout. A wrong answer is silent: the consumer compiles a different version of the
+    profiling scope classes and its traces come back empty with no error.
+    """
+    build_command = command.get_finalized_command("build")
+    cache_dir = getattr(build_command, "cmake_cache_dir", None)
+    if not cache_dir:
+        raise RuntimeError(
+            "cannot resolve the CMake cache directory while installing the CMake package, so the "
+            "tracer definition it publishes cannot be derived from what was built. This happens "
+            "when the build command did not run CMake, for example an editable install that "
+            "invokes build_py directly."
+        )
+    return os.path.abspath(cache_dir)
 
 
 class CustomBuild(build):
