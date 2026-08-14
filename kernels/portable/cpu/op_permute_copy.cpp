@@ -72,7 +72,11 @@ Tensor& permute_copy_out(
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
     for (const auto i : c10::irange(out.numel())) {
-      out_data[i] =
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      size_t out_coord[kTensorDimensionLimit];
+      indexToCoordinate(out, i, out_coord);
+
+      out_data[coordinateToIndex(out, out_coord)] =
           in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
               in, in_coord, trailing_dims_memo)];
       increment_coordinate_permuted(in, in_coord, dims);

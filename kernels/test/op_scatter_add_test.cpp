@@ -402,3 +402,21 @@ TEST_F(OpScatterAddOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpScatterAddOutTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  Tensor contiguous_in =
+      tf_data.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected =
+      tf_data.make({1, 3, 2, 2}, {1, 2, 3, 4, 15, 16, 17, 18, 9, 10, 11, 12});
+
+  Tensor self = tf_data.channels_last_like(contiguous_in);
+  Tensor index = tf_index.channels_last_like(tf_index.full({1, 1, 2, 2}, 1));
+  Tensor src = tf_data.channels_last_like(tf_data.full({1, 1, 2, 2}, 10));
+  Tensor out = tf_data.zeros_channels_last({1, 3, 2, 2});
+  op_scatter_add_out(self, 1, index, src, out);
+
+  EXPECT_TENSOR_CLOSE(out, tf_data.channels_last_like(expected));
+}
