@@ -709,6 +709,11 @@ _TORCH_LIBRARY_PREFIXES = (
     "libgomp",
     "libcudnn",
     "libcublas",
+    # Torch declares nvrtc in its own dependency list next to cublas, and the CUDA 12
+    # packages put each library in its own directory, so the hop that reaches cudart
+    # does not reach this one. It resolves the same way the rest of this list does,
+    # once the package that owns it is imported.
+    "libnvrtc",
 )
 
 

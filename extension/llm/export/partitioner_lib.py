@@ -8,7 +8,10 @@
 from typing import List, Optional
 
 
-def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
+def get_xnnpack_partitioner(
+    dynamic_quant_only_partitioner: bool = True,
+    enable_bf16: bool = False,
+):
     """
     Returns the XNNPACK partitioner.
 
@@ -17,6 +20,10 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
         If dynamic_quant_only_partitioner is True, then only dynamically quantized
         linear layers will be partitioned.
         Else, anything which can be will be partitioned greedily.
+    @arg enable_bf16:
+        Opt in to delegating bf16 nodes. Required to keep quantized linears
+        delegated when the model runs with bf16 activations; without it every
+        bf16 node fails the partitioner dtype check and falls back to portable.
     """
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
         XnnpackDynamicallyQuantizedPartitioner,
@@ -28,8 +35,8 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
         #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        return XnnpackDynamicallyQuantizedPartitioner()
-    return XnnpackPartitioner()
+        return XnnpackDynamicallyQuantizedPartitioner(enable_bf16=enable_bf16)
+    return XnnpackPartitioner(enable_bf16=enable_bf16)
 
 
 def get_vulkan_partitioner(
