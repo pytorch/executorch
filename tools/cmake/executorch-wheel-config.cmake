@@ -201,7 +201,7 @@ set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
 # version of the same class and its profiling scopes record nothing while
 # reporting no error.
 set(EXECUTORCH_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
-                                   ET_EVENT_TRACER_ENABLED
+                                   @EXECUTORCH_TRACER_DEFINITION@
 )
 # The standard the imported targets require as a compile feature. Exported as a
 # variable too, because a consumer on CMake older than 3.28 gets no imported
@@ -399,11 +399,12 @@ elseif(_executorch_runtime_library)
     add_library(executorch::runtime SHARED IMPORTED)
     set_target_properties(
       executorch::runtime
-      PROPERTIES IMPORTED_LOCATION "${_executorch_runtime_library}"
-                 INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-                 INTERFACE_COMPILE_FEATURES cxx_std_17
-                 INTERFACE_COMPILE_DEFINITIONS
-                 "C10_USING_CUSTOM_GENERATED_MACROS;ET_EVENT_TRACER_ENABLED"
+      PROPERTIES
+        IMPORTED_LOCATION "${_executorch_runtime_library}"
+        INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+        INTERFACE_COMPILE_FEATURES cxx_std_17
+        INTERFACE_COMPILE_DEFINITIONS
+        "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
     )
     # Consumers get the wheel's lib/ directory in their RUNPATH automatically,
     # because CMake adds the imported library's directory. Also record
@@ -507,11 +508,12 @@ function(_executorch_define_component _suffix _library_name)
   add_library(${_target} SHARED IMPORTED)
   set_target_properties(
     ${_target}
-    PROPERTIES IMPORTED_LOCATION "${_library}"
-               INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               INTERFACE_COMPILE_FEATURES cxx_std_17
-               INTERFACE_COMPILE_DEFINITIONS
-               "C10_USING_CUSTOM_GENERATED_MACROS;ET_EVENT_TRACER_ENABLED"
+    PROPERTIES
+      IMPORTED_LOCATION "${_library}"
+      INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+      INTERFACE_COMPILE_FEATURES cxx_std_17
+      INTERFACE_COMPILE_DEFINITIONS
+      "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
   )
   # Every component resolves the runtime from the same shared library, so record
   # that rather than leaving a consumer to link both by hand.
@@ -734,19 +736,20 @@ if(_portable_lib_LIBRARY)
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
     _portable_lib
-    PROPERTIES IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
-               INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-               # An interface requirement rather than CXX_STANDARD: an imported
-               # target compiles nothing itself, and CXX_STANDARD does not reach
-               # consumers, so a custom-op build linking this could still
-               # compile
-               # as C++17 and fail against headers that need C++20.
-               INTERFACE_COMPILE_FEATURES cxx_std_20
-               # The same definition the runtime target carries. A custom-op
-               # build that links only this target still compiles against the
-               # same headers and needs it too.
-               INTERFACE_COMPILE_DEFINITIONS
-               "C10_USING_CUSTOM_GENERATED_MACROS;ET_EVENT_TRACER_ENABLED"
+    PROPERTIES
+      IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+      # An interface requirement rather than CXX_STANDARD: an imported
+      # target compiles nothing itself, and CXX_STANDARD does not reach
+      # consumers, so a custom-op build linking this could still
+      # compile
+      # as C++17 and fail against headers that need C++20.
+      INTERFACE_COMPILE_FEATURES cxx_std_20
+      # The same definition the runtime target carries. A custom-op
+      # build that links only this target still compiles against the
+      # same headers and needs it too.
+      INTERFACE_COMPILE_DEFINITIONS
+      "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
   )
   # The extension links the runtime rather than containing it, so it no longer
   # satisfies the runtime symbols a custom-op library references. Put the
