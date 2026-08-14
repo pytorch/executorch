@@ -980,6 +980,8 @@ class CustomBuildPy(build_py):
             # the mode. This ensures that the output file is read/write even if
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
+            if os.path.basename(dst) == "executorch-config.cmake":
+                _substitute_tracer_definition(dst, _tracer_cache_dir(self))
 
         # Copy CMake-generated Python directories that setuptools missed.
         # Setuptools discovers packages at configuration time, before CMake
@@ -1117,6 +1119,33 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # TODO(dbort): For editable wheels, may need to update get_source_files(),
 # get_outputs(), and get_output_mapping() to satisfy
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
+
+
+
+def _substitute_tracer_definition(path: str, cmake_cache_dir: Optional[str]) -> None:
+    """Fill in the tracer placeholder in an installed CMake configuration file.
+
+    Read from the cache rather than assumed, because the option is set per platform and a builder can
+    override it. A consumer compiling against the wrong setting gets a different object layout for
+    the profiling scope classes, which fails silently.
+    """
+    cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
+    enabled = os.path.exists(cache_path) and CMakeCache(
+        cache_path=cache_path
+    ).is_enabled("EXECUTORCH_ENABLE_EVENT_TRACER")
+    with open(path) as handle:
+        contents = handle.read()
+    with open(path, "w") as handle:
+        handle.write(
+            contents.replace(
+                "@EXECUTORCH_TRACER_DEFINITION@",
+                "ET_EVENT_TRACER_ENABLED" if enabled else "",
+            )
+        )
+
+def _tracer_cache_dir(command) -> Optional[str]:
+    """The build directory holding CMakeCache.txt, or None when it cannot be resolved."""
+    return getattr(command.get_finalized_command("build"), "cmake_cache_dir", None)
 
 
 class CustomBuild(build):
