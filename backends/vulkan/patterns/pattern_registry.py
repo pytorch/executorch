@@ -42,10 +42,29 @@ class PatternMatch:
 def create_pattern_match_from_internal_match(
     internal_match: InternalMatch,
 ) -> PatternMatch:
+    # `nodes_map` maps every pattern node to its match in the target graph,
+    # INCLUDING the pattern's placeholders. A placeholder's match is the node
+    # that merely *feeds* the matched subgraph, which the fused op does not
+    # compute and the partitioner therefore has no reason to claim.
+    #
+    # This matters because `all_nodes` becomes VulkanPartitioner's
+    # `fusable_nodes`, and `_is_node_supported` returns True for any node in
+    # that set *before* it consults the op's `are_node_inputs_supported_fn`.
+    # Including the feeder nodes therefore silently waives their support
+    # checks: an `aten.index.Tensor` feeding the `hf_rope` pattern got
+    # delegated despite `check_index_tensor_node` rejecting non-1-D `self`,
+    # and Vulkan's 1-D-only gather then aborted in `virtual_resize` with
+    # "new sizes cannot modify the dimensionality of the tensor".
+    placeholder_matches = set(internal_match.placeholder_nodes)
+    matched_nodes = [
+        node
+        for node in internal_match.nodes_map.values()
+        if node not in placeholder_matches
+    ]
     return PatternMatch(
         internal_match.placeholder_nodes,
         internal_match.returning_nodes,
-        list(internal_match.nodes_map.values()),
+        matched_nodes,
     )
 
 
