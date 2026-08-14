@@ -190,7 +190,7 @@ set(EXECUTORCH_INCLUDE_DIRS "${_executorch_package_root}/include"
 # version of the same class and its profiling scopes record nothing while
 # reporting no error.
 set(EXECUTORCH_COMPILE_DEFINITIONS C10_USING_CUSTOM_GENERATED_MACROS
-                                   @EXECUTORCH_TRACER_DEFINITION@
+                                   "@EXECUTORCH_TRACER_DEFINITION@"
 )
 # The standard the imported targets require as a compile feature. Exported as a
 # variable too, because a consumer on CMake older than 3.28 gets no imported
