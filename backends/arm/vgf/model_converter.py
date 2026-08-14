@@ -6,14 +6,22 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess  # nosec B404 - invoked only for trusted local converter tools
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
 from typing import Optional
 
+from packaging.version import InvalidVersion, Version
+
 MODEL_CONVERTER_BINARY = "model-converter"
 _MODEL_CONVERTER_FALLBACK_BINARY = "model_converter"
+MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS = Version("0.10.0")
+_MODEL_CONVERTER_VERSION_PATTERN = re.compile(r"\b\d+\.\d+\.\d+(?:[A-Za-z0-9_.+-]*)?\b")
+_MODEL_CONVERTER_BUILD_VERSION_ALIASES = {
+    "d8c1b8e": Version("0.9.0"),
+}
 
 STATUS_OK = "PASS"
 STATUS_FAIL = "FAIL"
@@ -141,6 +149,67 @@ def _command_output(result: subprocess.CompletedProcess[str]) -> str:
     if not lines:
         return "<no output>"
     return "\n".join(lines[:4])
+
+
+def get_model_converter_version_text() -> str | None:
+    """Return the raw ``model-converter --version`` output, if available."""
+    binary = find_model_converter_binary()
+    if binary is None:
+        return None
+
+    executable = resolve_model_converter_executable(binary)
+    if executable is None:
+        return None
+
+    try:
+        result = subprocess.run(  # nosec B603 - trusted local converter tool
+            [str(executable), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            env=model_converter_env(),
+        )
+    except Exception:
+        return None
+
+    version_text = (result.stdout or result.stderr).strip()
+    return version_text or None
+
+
+def parse_model_converter_version(version_text: str) -> Version | None:
+    """Parse a comparable model-converter version from ``--version`` output."""
+    match = _MODEL_CONVERTER_VERSION_PATTERN.search(version_text)
+    if match is not None:
+        try:
+            return Version(match.group(0))
+        except InvalidVersion:
+            pass
+
+    for revision, version in _MODEL_CONVERTER_BUILD_VERSION_ALIASES.items():
+        if revision in version_text:
+            return version
+    return None
+
+
+def get_model_converter_minimum_version_failure_reason(
+    version_text: str,
+    minimum_version: Version,
+    *,
+    requirement_name: str,
+) -> str | None:
+    """Return a reason when the installed converter is unsupported.
+
+    The converter is unsupported when it is below ``minimum_version``.
+
+    """
+    version = parse_model_converter_version(version_text)
+    if version is None or version >= minimum_version:
+        return None
+    return (
+        f"{version_text} is below the minimum supported version "
+        f"{minimum_version} required for {requirement_name}"
+    )
 
 
 def check_model_converter_environment() -> ModelConverterEnvironmentCheck:

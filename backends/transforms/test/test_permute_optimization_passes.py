@@ -1492,6 +1492,335 @@ class RemovePermutesAcrossViewTest(unittest.TestCase):
 # ──────────────────────────────────────────────────────────────────────
 
 
+class RemovePermutesAroundRepeatInterleaveTest(unittest.TestCase):
+    """repeat_interleave lowers to unsqueeze -> expand_copy -> merging view_copy.
+
+    The triple is rank-preserving, so a permutation flows through it once the
+    interleaved dim is remapped. Shapes here mirror torchaudio's Stretch2d as it
+    appears in wavernn between two channels-last convolutions.
+    """
+
+    @staticmethod
+    def _interleave(
+        builder: GraphBuilder,
+        inp: object,
+        shape: list[int],
+        dim: int,
+        scale: int,
+    ) -> object:
+        """Emit unsqueeze(dim+1) -> expand_copy(scale) -> view_copy(merge)."""
+        unsqueezed = list(shape)
+        unsqueezed.insert(dim + 1, 1)
+        expanded = list(unsqueezed)
+        expanded[dim + 1] = scale
+        merged = list(shape)
+        merged[dim] *= scale
+
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(inp, dim + 1)
+        )
+        e = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default, args=(u, expanded)
+        )
+        return builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(e, merged)
+        )
+
+    def test_removes_permutes_around_repeat_interleave(self) -> None:
+        """permute(NHWC->NCHW) -> interleave(W) -> permute(NCHW->NHWC):
+        both permutes should cancel and the interleave move to the NHWC dim."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        v = self._interleave(builder, p1, [1, 1, 16, 20], dim=3, scale=2)
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.expand_copy.default), 1
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "RepeatInterleavePermutes"
+        )
+
+    def test_repeat_interleave_with_keyword_arguments(self) -> None:
+        """The matcher and rewrite support schema arguments passed by keyword."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default,
+            args=(p1,),
+            kwargs={"dim": 4},
+        )
+        e = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default,
+            args=(u,),
+            kwargs={"size": [1, 1, 16, 20, 2]},
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default,
+            args=(e,),
+            kwargs={"size": [1, 1, 16, 40]},
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = cast(PassResult, RemovePermutesAroundElementwiseOps()(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "RepeatInterleaveKwargs"
+        )
+
+    def test_repeat_interleave_rank_mismatch_is_not_rewritten(self) -> None:
+        """Reject a triple whose active boundary permutation has the wrong rank."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        interleaved = self._interleave(builder, p1, [1, 1, 16, 20], dim=3, scale=2)
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(interleaved, [0, 2, 3, 1]),
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+        start_permute = original.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.permute_copy.default
+        )[0]
+
+        class RankMismatchPass(RemovePermutesAroundElementwiseOps):
+            def get_permutation(self, node: torch.fx.Node) -> list[int] | None:
+                if node is start_permute:
+                    return [0, 2, 1]
+                return super().get_permutation(node)
+
+        result = cast(PassResult, RankMismatchPass()(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+        validate_numerics(
+            gm_before,
+            result.graph_module,
+            [x_data],
+            "RepeatInterleaveRankMismatch",
+        )
+
+    def test_repeat_interleave_after_nop_stretch(self) -> None:
+        """The wavernn region verbatim: a freq_scale=1 Stretch2d leaves a nop
+        unsqueeze/view pair ahead of the real interleave. The permutation must
+        round-trip across it and still reach the triple."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        u0 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 3)
+        )
+        v0 = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(u0, [1, 1, 16, 20])
+        )
+        v = self._interleave(builder, v0, [1, 1, 16, 20], dim=3, scale=2)
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = _canonicalize_and_remove_permutes(original)
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "RepeatInterleaveNopStretch"
+        )
+
+    def test_repeat_interleave_scale_four_on_middle_dim(self) -> None:
+        """Interleaving a non-trailing dim with a scale other than 2."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 3)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        v = self._interleave(builder, p1, [1, 3, 16, 20], dim=2, scale=4)
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "RepeatInterleaveMiddleDim"
+        )
+
+    def test_repeat_interleave_composes_with_elementwise(self) -> None:
+        """An interleave and a pointwise op in the same permuted region."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        mul = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(p1, p1))
+        v = self._interleave(builder, mul, [1, 1, 16, 20], dim=3, scale=2)
+        relu = builder.call_operator(op=exir_ops.edge.aten.hardtanh.default, args=(v,))
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(relu, [0, 2, 3, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "RepeatInterleaveElementwise"
+        )
+
+    def test_resnet_stretch_region(self) -> None:
+        """wavernn's resnet_stretch: the region enters through an unsqueeze at a
+        position the permutation moves, and leaves through squeeze_copy.dims."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 16)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 2, 1])
+        )
+        u1 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 1)
+        )
+        # freq_scale=1 Stretch2d leaves a nop unsqueeze/view pair.
+        u2 = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(u1, 3)
+        )
+        v2 = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(u2, [1, 1, 16, 8])
+        )
+        v3 = self._interleave(builder, v2, [1, 1, 16, 8], dim=3, scale=4)
+        sq = builder.call_operator(
+            op=exir_ops.edge.aten.squeeze_copy.dims, args=(v3, [1])
+        )
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(sq, [0, 2, 1])
+        )
+        builder.output([p2])
+        original = builder.get_graph_module()
+        gm_before = copy.deepcopy(original)
+
+        result = _canonicalize_and_remove_permutes(original)
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 0
+        )
+        validate_numerics(
+            gm_before, result.graph_module, [x_data], "ResnetStretchRegion"
+        )
+
+    def test_non_merging_view_after_expand_is_not_optimized(self) -> None:
+        """A view that is not the (dim, dim+1) merge is not layout-invariant,
+        so the region must be left alone."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 4)
+        )
+        e = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default, args=(u, [1, 1, 16, 20, 2])
+        )
+        # Squeezes the leading dim instead of merging dims 3 and 4.
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(e, [1, 16, 20, 2])
+        )
+        builder.output([v])
+        original = builder.get_graph_module()
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 1
+        )
+
+    def test_expand_with_extra_user_is_not_optimized(self) -> None:
+        """Rewriting the triple in place would corrupt a second consumer of the
+        expand, so the triple must not be claimed."""
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 16, 20, 1)
+        x = builder.placeholder("x", x_data)
+        p1 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(x, [0, 3, 1, 2])
+        )
+        u = builder.call_operator(
+            op=exir_ops.edge.aten.unsqueeze_copy.default, args=(p1, 4)
+        )
+        e = builder.call_operator(
+            op=exir_ops.edge.aten.expand_copy.default, args=(u, [1, 1, 16, 20, 2])
+        )
+        v = builder.call_operator(
+            op=exir_ops.edge.aten.view_copy.default, args=(e, [1, 1, 16, 40])
+        )
+        other = builder.call_operator(op=exir_ops.edge.aten.mul.Tensor, args=(e, e))
+        p2 = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default, args=(v, [0, 2, 3, 1])
+        )
+        builder.output([p2, other])
+        original = builder.get_graph_module()
+
+        p = RemovePermutesAroundElementwiseOps()
+        result = cast(PassResult, p(original))
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default), 2
+        )
+
+
 class RemovePermutesAroundElementwiseOpsTest(unittest.TestCase):
     def test_no_permutes_is_noop(self) -> None:
         """With no surrounding permutes, the pass makes no change."""

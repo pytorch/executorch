@@ -688,8 +688,11 @@ class QuantizedGroupEmbedding(torch.nn.Module):
         dtype=torch.half,
         packed=False,
         bitwidth: int = 8,
+        scales_precision: Optional[torch.dtype] = None,
     ) -> None:
         super().__init__()
+        if scales_precision is None:
+            scales_precision = torch.float16
         if group_size is None or group_size == 0:
             group_size = embedding_dim
         self.group_size = group_size
@@ -728,12 +731,15 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             self.register_buffer(
                 "scales",
                 torch.ones(
-                    (vocab_size, groups_per_row), dtype=torch.float16, device=device
+                    (vocab_size, groups_per_row),
+                    dtype=scales_precision,
+                    device=device,
                 ),
             )
         else:
             self.register_buffer(
-                "scales", torch.ones((vocab_size,), dtype=torch.float16, device=device)
+                "scales",
+                torch.ones((vocab_size,), dtype=scales_precision, device=device),
             )
 
     @torch.no_grad()
