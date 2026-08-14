@@ -184,7 +184,7 @@ To see what your own install offers, ask CMake:
 ```cmake
 find_package(executorch REQUIRED)
 foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack
-                   threadpool etdump)
+                   backend_cuda backend_openvino threadpool etdump extension_cuda)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
@@ -225,6 +225,63 @@ find_package(executorch REQUIRED COMPONENTS kernels_optimized kernels_quantized)
 target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::kernels_optimized
                                   executorch::kernels_quantized)
+```
+
+#### Running on a GPU with the CUDA package
+
+The CUDA build is a separate package. Install it with the index for your CUDA version, for example
+CUDA 12.6:
+
+```
+pip install executorch torch \
+  --index-url https://download.pytorch.org/whl/cu126 \
+  --extra-index-url https://pypi.org/simple
+```
+
+The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
+dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
+exporting a model for CUDA runs through torch.
+
+Everything above stays the same. Add the CUDA backend to both CMake lines:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_cuda)
+```
+
+The model has to be exported for CUDA as well, which needs a machine with a GPU:
+
+```python
+# export_cuda.py, the same model as before with one line added
+import torch
+from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+example = (torch.ones(2, 2), torch.ones(2, 2))
+program = to_edge_transform_and_lower(
+    torch.export.export(Add(), example), partitioner=[CudaPartitioner([])]
+).to_executorch()
+open("model.pte", "wb").write(program.buffer)
+```
+
+The CUDA backend is still experimental, so exporting prints a warning saying so.
+
+By default the runtime copies inputs to the GPU and results back, so your program keeps passing
+ordinary CPU tensors and nothing else changes.
+
+One thing to check first: the package works only where the PyTorch build you installed also supports
+your GPU. If a model fails with a message about no kernel image being available for the device, your
+GPU is not in that PyTorch build. You can see what it covers with:
+
+```
+python -c 'import torch; print(torch.cuda.get_arch_list())'
 ```
 
 #### When something does not work
