@@ -719,6 +719,22 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
 
     const size_t num_inputs = compute_graph->inputs().size();
     const size_t num_outputs = compute_graph->outputs().size();
+    // `args` carries the delegate call's inputs followed by its outputs. If the
+    // serialized graph disagrees about either count, the `args.size() -
+    // num_outputs` computed below underflows and every output access reads
+    // through a wild pointer, so report the mismatch rather than segfault on
+    // it. A mutated buffer serialized as a graph output is one way to reach
+    // this: nothing passes such a buffer to the delegate call, so it has no
+    // argument slot.
+    VK_CHECK_COND(
+        args.size() == num_inputs + num_outputs,
+        "Vulkan graph declares ",
+        num_inputs,
+        " inputs and ",
+        num_outputs,
+        " outputs, but the delegate call supplied ",
+        args.size(),
+        " arguments");
     bool should_propagate_resize = false;
 #ifdef ET_EVENT_TRACER_ENABLED
     runtime::EventTracer* event_tracer = context.event_tracer();
