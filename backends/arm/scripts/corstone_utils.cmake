@@ -25,7 +25,8 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   file(MAKE_DIRECTORY ${ETHOS_SDK_PATH}/../ethos_u)
   include(FetchContent)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  set(ethos_u_base_tag "26.02")
+  set(ethos_u_base_tag "26.05.1")
+  set(ethos_u_manifest_version "26.05")
   FetchContent_Declare(
     ethos_u
     GIT_REPOSITORY
@@ -43,7 +44,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   FetchContent_MakeAvailable(ethos_u)
   # Patch manifest to remove unused projects.
   set(patch_dir "${ET_DIR_PATH}/examples/arm/ethos-u-setup")
-  set(ethos_u_base_rev "26.02")
+  set(ethos_u_base_rev "26.05.1")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}" "${ethos_u_base_rev}" "${patch_dir}" "${ET_DIR_PATH}"
   )
@@ -54,12 +55,12 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   )
     execute_process(
       COMMAND ${Python3_EXECUTABLE} fetch_externals.py -c
-              ${ethos_u_base_tag}.json fetch
+              ${ethos_u_manifest_version}.json fetch
       WORKING_DIRECTORY ${ETHOS_SDK_PATH}
     )
   endif()
   # Patch core_software to remove unused projects.
-  set(core_software_base_rev "26.02")
+  set(core_software_base_rev "26.05")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_software" "${core_software_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
@@ -71,7 +72,7 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   # Cortex-M cores. Once the equivalent guards land upstream in
   # ethos-u/core_platform and ${core_platform_base_rev} is bumped past those
   # commits, delete the 0002 and 0003 patches.
-  set(core_platform_base_rev "26.02")
+  set(core_platform_base_rev "26.05")
   patch_ethos_u_repo(
     "${ETHOS_SDK_PATH}/core_platform" "${core_platform_base_rev}"
     "${patch_dir}" "${ET_DIR_PATH}"
