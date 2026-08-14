@@ -525,10 +525,10 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
 
   case "$QUANT_NAME" in
     kquant-17gb)
-      TARGET_GGUF_FILE="muse-glimmer-30B-kquant-17gb.gguf"
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"
       ;;
     kquant-dynamic)
-      TARGET_GGUF_FILE="muse-glimmer-30B-kquant-dynamic.gguf"
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
       ;;
   esac
 
@@ -547,8 +547,8 @@ if [ "$MODEL_NAME" = "muse_glimmer" ]; then
           --output-dir "${OUTPUT_DIR}"
       ;;
     dflash-image)
-      DRAFT_GGUF_FILE="dflash-kquant.gguf"
-      MMPROJ_GGUF_FILE="mmproj-kquant.gguf"
+      DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
+      MMPROJ_GGUF_FILE="mmproj-Muse-Glimmer-30B-Q4_K_M.gguf"
       python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${DRAFT_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
       python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${MMPROJ_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
       EXPORT_START_SECONDS=$SECONDS

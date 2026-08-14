@@ -93,7 +93,7 @@ if(_portable_lib_LIBRARY)
                # version
                # of the same class, so its profiling scopes record nothing and
                # report no error.
-               INTERFACE_COMPILE_DEFINITIONS ET_EVENT_TRACER_ENABLED
+               INTERFACE_COMPILE_DEFINITIONS @EXECUTORCH_TRACER_DEFINITION@
   )
 
   # The extension links the runtime rather than containing it, so it no longer
