@@ -166,63 +166,62 @@ target_link_libraries(app PRIVATE executorch::runtime
 
 These are the components the Linux package provides:
 
-| Component | What it gives you |
-| --- | --- |
-<<<<<<< HEAD
-| `runtime` | The engine. Always needed. |
-| `kernels_optimized` | Fast CPU operators. The usual choice. |
-| `kernels_quantized` | Operators for quantized models. |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. |
-| `backend_cuda` | The CUDA backend, in the CUDA package only. |
-| `backend_openvino` | The OpenVINO backend. |
-| `threadpool` | Multi-threaded execution. |
-| `etdump` | Profiling, to record what ran and how long it took. |
-| `extension_cuda` | Helpers to share a CUDA stream with your own code. |
-=======
-| `executorch::runtime` | the program loader and executor. Always present. |
-| `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
-| `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. Link it only when you need it: see the note below. |
-| `executorch::backend_xnnpack` | the XNNPACK delegate. |
-| `executorch::backend_cuda` | the CUDA delegate, in a CUDA wheel. |
-| `executorch::extension_cuda` | the CUDA stream helper, in a CUDA wheel. Lets you pick the CUDA stream a model runs on. |
-| `executorch::threadpool` | the shared thread pool. |
-| `executorch::etdump` | the profiler. |
->>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
+| Component | What it gives you | Where |
+| --- | --- | --- |
+| `runtime` | The engine. Always needed. | Linux, macOS |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
+| `kernels_quantized` | Operators for quantized models. | Linux, macOS |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
+| `threadpool` | Multi-threaded execution. | Linux, macOS |
+| `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
+
+To see what your own install offers, ask CMake:
+
+```cmake
+find_package(executorch REQUIRED)
+foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack
+                   threadpool etdump)
+  if(TARGET executorch::${_component})
+    message(STATUS "have ${_component}")
+  endif()
+endforeach()
+```
+
+On macOS the Core ML and MLX
+delegates are registered inside the Python extension rather than shipped as separate C++ libraries,
+so a C++ application there cannot link them as components; use them from Python, or build from
+source if you need them in C++.
 
 A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
 model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure
 what a model needs, start with `runtime` and `kernels_optimized` and add what the error asks for.
 
-<<<<<<< HEAD
 If you would rather not choose, one variable links the common set:
-=======
-#### The quantized kernels are opt in
-
-`executorch::kernels_quantized` is the one component that `${EXECUTORCH_LIBRARIES}` does
-not include, so you have to name it. The reason is a conflict with the Python side:
-`executorch.kernels.quantized` loads a plugin that carries its own copy of the same
-kernels, and the runtime stops when the same operator is registered twice:
-
-```
-Re-registering quantized_decomposed::add.out
-```
-
-That only affects a process holding both, for example an application that embeds a
-Python interpreter. A plain C++ application can link this component freely. It is kept
-out of the default set so that linking whatever the package offers cannot put you in that
-position by accident.
-
-To require a minimum version, pass it to `find_package`:
->>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
 
 ```cmake
 find_package(executorch REQUIRED)
 target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 ```
 
-The quantized kernels are deliberately left out of that variable, because loading
-`executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
-stops the runtime. Name `executorch::kernels_quantized` when you want them.
+The quantized kernels are deliberately left out of that variable. Here is why that matters in
+practice. The Python package `executorch.kernels.quantized` loads a plugin that carries its own copy
+of the same operators, so a process that both imports it and links the C++ component registers each
+operator twice, and the runtime stops with an error naming the operator, for example:
+
+```
+Re-registering quantized_decomposed::add.out, from <library>
+```
+
+So link `executorch::kernels_quantized` when your model needs quantized operators and you are not
+loading that Python plugin in the same process:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized kernels_quantized)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::kernels_quantized)
+```
 
 #### Running on a GPU with the CUDA package
 
@@ -254,10 +253,16 @@ program = to_edge_transform_and_lower(
 ```
 
 By default the runtime copies inputs to the GPU and results back, so your program keeps passing
-ordinary CPU tensors and nothing else changes. Check that your GPU is supported first: the CUDA
-package works only where the PyTorch build you installed also supports the GPU.
+ordinary CPU tensors and nothing else changes.
 
-<<<<<<< HEAD
+One thing to check first: the package works only where the PyTorch build you installed also supports
+your GPU. If a model fails with a message about no kernel image being available for the device, your
+GPU is not in that PyTorch build. You can see what it covers with:
+
+```
+python -c 'import torch; print(torch.cuda.get_arch_list())'
+```
+
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
@@ -272,17 +277,6 @@ package works only where the PyTorch build you installed also supports the GPU.
 
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.
-=======
-`EXECUTORCH_LIBRARIES` names the runtime and every component the wheel shipped, so you
-cannot choose components on this route. The quantized kernels are the exception described
-above, offered as `EXECUTORCH_QUANTIZED_KERNELS_LIBRARY` for a consumer that wants them:
-
-```cmake
-target_link_libraries(my_app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
-```
-
-Upgrade to CMake 3.28 and link the specific targets you need instead.
->>>>>>> e483ba3687 (Ship the quantized kernels as their own library)
 
 ### Building from source
 
