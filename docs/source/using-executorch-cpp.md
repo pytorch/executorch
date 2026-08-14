@@ -108,6 +108,7 @@ reported while CMake configures, rather than failing later at link time.
 | --- | --- |
 | `executorch::runtime` | the program loader and executor. Always present. |
 | `executorch::kernels_optimized` | CPU operator kernels. Needed for any operator a delegate does not claim. |
+| `executorch::kernels_quantized` | quantized operator kernels, for a quantized model. Link it only when you need it: see the note below. |
 | `executorch::backend_xnnpack` | the XNNPACK delegate. |
 | `executorch::threadpool` | the shared thread pool. |
 | `executorch::etdump` | the profiler. |
@@ -116,6 +117,22 @@ The runtime on its own loads a program but registers only primitive operators, n
 kernels a model computes with, so a model that is not fully delegated needs a kernel
 component too. Linking a delegate is what registers it: a program delegated to XNNPACK
 fails to load in an application that did not link `executorch::backend_xnnpack`.
+
+#### The quantized kernels are opt in
+
+`executorch::kernels_quantized` is the one component that `${EXECUTORCH_LIBRARIES}` does
+not include, so you have to name it. The reason is a conflict with the Python side:
+`executorch.kernels.quantized` loads a plugin that carries its own copy of the same
+kernels, and the runtime stops when the same operator is registered twice:
+
+```
+Re-registering quantized_decomposed::add.out
+```
+
+That only affects a process holding both, for example an application that embeds a
+Python interpreter. A plain C++ application can link this component freely. It is kept
+out of the default set so that linking whatever the package offers cannot put you in that
+position by accident.
 
 To require a minimum version, pass it to `find_package`:
 
@@ -179,8 +196,14 @@ An application deployed beside the libraries is unaffected either way, because t
 `@loader_path` and `$ORIGIN` entries are kept.
 
 `EXECUTORCH_LIBRARIES` names the runtime and every component the wheel shipped, so you
-cannot choose components on this route. Upgrade to CMake 3.28 and link the specific
-targets you need instead.
+cannot choose components on this route. The quantized kernels are the exception described
+above, offered as `EXECUTORCH_QUANTIZED_KERNELS_LIBRARY` for a consumer that wants them:
+
+```cmake
+target_link_libraries(my_app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
+```
+
+Upgrade to CMake 3.28 and link the specific targets you need instead.
 
 ### Building from source
 
