@@ -6,6 +6,7 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    DecomposeColIm,
     ExpandBroadcastTensorShape,
     FoldQDQ,
     InsertIOQDQ,
@@ -33,6 +34,7 @@ from executorch.backends.qualcomm.tests.models import (
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
+    Unfold,
 )
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -348,6 +350,140 @@ class TestPasses(unittest.TestCase):
                 torch.allclose(out, *ref, rtol=1e-6, atol=1e-6),
                 f"Output {i} mismatch: got {out}, expected {ref}",
             )
+
+    def test_decompose_im2col_matches_unfold(self):
+        """DecomposeColIm's im2col decomposition must produce the exact same
+        values as torch.nn.functional.unfold, across all three decomposition
+        branches:
+          - stride == kernel_size, square kernel -> pixel_unshuffle
+          - stride == kernel_size, non-square kernel -> qnn_custom.space_to_depth
+          - stride != kernel_size -> index_select gather + the tail above
+        """
+        cases = [
+            ((2, 4, 8, 8), (2, 2), (2, 2), (0, 0)),  # stride == kernel_size, square
+            ((2, 4, 9, 6), (3, 2), (3, 2), (0, 0)),  # stride == kernel_size, non-square
+            (
+                (2, 4, 8, 8),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+            ),  # stride != kernel_size, square kernel
+            (
+                (1, 2, 7, 9),
+                (2, 3),
+                (1, 1),
+                (0, 0),
+            ),  # stride != kernel_size, non-square kernel
+            (
+                (1, 3, 10, 10),
+                (3, 3),
+                (2, 2),
+                (0, 0),
+            ),  # stride != kernel_size, overlapping
+            (
+                (2, 4, 6, 6),
+                (2, 2),
+                (2, 2),
+                (1, 1),
+            ),  # nonzero padding, stride == kernel_size
+            (
+                (2, 4, 6, 6),
+                (2, 2),
+                (1, 1),
+                (1, 1),
+            ),  # nonzero padding, stride != kernel_size
+        ]
+        for shape, kernel_size, stride, padding in cases:
+            with self.subTest(
+                shape=shape, kernel_size=kernel_size, stride=stride, padding=padding
+            ):
+
+                x = torch.randn(*shape)
+                module = Unfold(kernel_size, stride, padding).eval()
+                ref = module(x)
+                exported_program = torch.export.export(module, (x,), strict=True)
+                ep = to_edge(
+                    exported_program,
+                    compile_config=EdgeCompileConfig(
+                        preserve_ops=[torch.ops.aten.im2col.default]
+                    ),
+                ).exported_program()
+                self.assertTrue(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in ep.graph_module.graph.nodes
+                    ),
+                    "im2col was decomposed in to_edge",
+                )
+                gm = DecomposeColIm()(ep.graph_module).graph_module
+                gm.recompile()
+
+                # Decomposition must actually have run: no im2col node left.
+                self.assertFalse(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in gm.graph.nodes
+                    ),
+                    "im2col node was not decomposed",
+                )
+
+                out = gm(x)
+                if isinstance(out, (list, tuple)):
+                    out = out[0]
+                self.assertTrue(
+                    torch.allclose(ref, out),
+                    f"unfold decomposition mismatch for kernel_size={kernel_size}, "
+                    f"stride={stride}: got {out}, expected {ref}",
+                )
+
+    def test_decompose_im2col_fallback(self):
+        """When stride < kernel_size, the index_select gather in
+        DecomposeColIm duplicates elements by roughly
+        (kernel_height/stride_height) * (kernel_width/stride_width).
+        Above DecomposeColIm._MAX_GATHER_EXPANSION_FACTOR, the pass must skip
+        decomposition rather than build an unbounded gather. Since QNN has no
+        node visitor for aten.im2col, the un-decomposed node then falls back
+        to CPU when lowered.
+        """
+        cases = [
+            # factor == (8/2)*(8/2) <= MAX_GATHER_EXPANSION_FACTOR: decomposed.
+            ((1, 1, 20, 20), (8, 8), (2, 2), True),
+            # factor == (9/2)*(9/2) > MAX_GATHER_EXPANSION_FACTOR: falls back.
+            ((1, 1, 20, 20), (9, 9), (2, 2), False),
+        ]
+        for shape, kernel_size, stride, should_decompose in cases:
+            with self.subTest(shape=shape, kernel_size=kernel_size, stride=stride):
+
+                x = torch.randn(*shape)
+                module = Unfold(kernel_size, stride).eval()
+
+                exported_program = torch.export.export(module, (x,), strict=True)
+                ep = to_edge(
+                    exported_program,
+                    compile_config=EdgeCompileConfig(
+                        preserve_ops=[torch.ops.aten.im2col.default]
+                    ),
+                ).exported_program()
+                self.assertTrue(
+                    any(
+                        n.target == exir_ops.edge.aten.im2col.default
+                        for n in ep.graph_module.graph.nodes
+                    ),
+                    "im2col was decomposed in to_edge",
+                )
+                gm = DecomposeColIm()(ep.graph_module).graph_module
+                gm.recompile()
+
+                im2col_present = any(
+                    n.target == exir_ops.edge.aten.im2col.default
+                    for n in gm.graph.nodes
+                )
+                self.assertNotEqual(
+                    im2col_present,
+                    should_decompose,
+                    f"im2col {'should' if should_decompose else 'should NOT'} be "
+                    f"decomposed for kernel_size={kernel_size}, stride={stride}",
+                )
 
     def test_resolve_debug_handle(self):
         name_handle_map = {

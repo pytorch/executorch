@@ -5360,12 +5360,16 @@ class Unfold(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(2, 128, 32, 32),)
+        inputs = (torch.randn(2, 128, 64, 64),)
         configs = [
             {"kernel_size": 2, "stride": 2, "padding": 0, "dilation": 1},
             {"kernel_size": 4, "stride": 4, "padding": 0, "dilation": 1},
             {"kernel_size": (2, 2), "stride": (2, 2), "padding": 0, "dilation": 1},
             {"kernel_size": (4, 4), "stride": (4, 4), "padding": 0, "dilation": 1},
+            {"kernel_size": (2, 2), "stride": (2, 1), "padding": 0, "dilation": 1},
+            {"kernel_size": (4, 4), "stride": (2, 2), "padding": 0, "dilation": 1},
+            {"kernel_size": (4, 2), "stride": (2, 2), "padding": 0, "dilation": 1},
+            {"kernel_size": (2, 2), "stride": (2, 2), "padding": (1, 1), "dilation": 1},
         ]
         for cfg in configs:
             with subtests.test(msg=str(cfg)):
@@ -5382,13 +5386,15 @@ class Unfold(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test_unsupported(subtests, qnn_config, quantizer, compile_spec, expected):
-        # stride != kernel_size is not supported by DecomposeColIm
-        inputs = (torch.randn(2, 128, 32, 32),)
+        # dilation != 1 is not supported by DecomposeColIm
+        inputs = (torch.randn(2, 128, 64, 64),)
         configs = [
-            {"kernel_size": (2, 2), "stride": (2, 1), "padding": 0, "dilation": 1},
-            {"kernel_size": (4, 4), "stride": (2, 2), "padding": 0, "dilation": 1},
-            {"kernel_size": (2, 2), "stride": (2, 2), "dilation": (2, 2)},
-            {"kernel_size": (2, 2), "stride": (2, 2), "padding": (1, 1)},
+            {
+                "kernel_size": (2, 2),
+                "stride": (2, 2),
+                "padding": (0, 0),
+                "dilation": (2, 2),
+            },
         ]
         for cfg in configs:
             with subtests.test(msg=str(cfg)):
@@ -5402,7 +5408,7 @@ class Unfold(torch.nn.Module):
                         metrics=metrics,
                     )
         inputs = (torch.randn(2, 128, 32),)
-        cfg = {"kernel_size": (2, 2), "stride": (2, 2)}
+        cfg = {"kernel_size": (2, 2), "stride": (2, 2), "padding": 0, "dilation": 1}
         with subtests.test(msg="Unsupported input shape"):
             with expected as metrics:
                 export_and_verify(

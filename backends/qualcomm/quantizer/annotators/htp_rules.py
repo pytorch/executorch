@@ -1265,7 +1265,11 @@ class PixelShuffle(GeneralOpDef):
 
 
 @register_annotator(
-    [torch.ops.aten.pixel_unshuffle.default], QnnConstants.OpSpaceToDepth.op_name
+    [
+        torch.ops.aten.pixel_unshuffle.default,
+        torch.ops.qnn_custom.space_to_depth.default,
+    ],
+    QnnConstants.OpSpaceToDepth.op_name,
 )
 class PixelUnshuffle(GeneralOpDef):
     @staticmethod
