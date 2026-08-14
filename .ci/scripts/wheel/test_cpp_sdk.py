@@ -656,14 +656,12 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
     shutil.copy2(consumer, deployed / "consumer")
     # Every directory the wheel ships a library in, not just lib/. The CUDA delegate records a
     # dependency on a library under backends/cuda/, so copying lib/ alone produced a deployment
-    # that cannot start, and this check could not see it.
-    for source in ("lib", "backends/cuda"):
-        directory = package_dir / source
-        if not directory.is_dir():
-            continue
-        for library in sorted(directory.glob(_library_file_name("lib*") + "*")):
-            if library.is_file() and not library.is_symlink():
-                shutil.copy2(library, deployed / library.name)
+    # that cannot start, and this check could not see it. Searched for rather than named, because
+    # a backend that ships its own library in a new directory would otherwise be left out of the
+    # copy and this check would pass on a deployment that cannot start.
+    for library in sorted(package_dir.rglob(_library_file_name("lib*") + "*")):
+        if library.is_file() and not library.is_symlink():
+            shutil.copy2(library, deployed / library.name)
 
     moved = deployed / "consumer"
     # Strip the absolute entry the build left behind, so only $ORIGIN can resolve the
@@ -968,6 +966,11 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
     # package: a platform that is not the one being built for, or a third-party library the wheel does not
     # carry. They ship because a source build includes them, and holding them to this rule would report a
     # defect with no available fix.
+    #
+    # Not the same list as the packaging one that decides which headers ship at all. That list removes a
+    # header no shipped header includes; this one keeps a header that has to ship because something else
+    # includes it, and skips only the attempt to compile it on its own. A header belongs in exactly one of
+    # the two.
     needs_more_than_the_wheel = (
         # These ship because other shipped headers include them, so they cannot be left out, and they do
         # not compile on their own: each needs a third-party library the wheel links but publishes no
