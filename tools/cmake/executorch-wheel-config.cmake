@@ -353,9 +353,6 @@ elseif(_executorch_runtime_library)
   # target twice is an error, so only define it once and set the properties
   # either way.
   if(TARGET executorch::runtime)
-    # This file ran already in the same configure, because another subproject
-    # also called find_package. Redefining the target would be an error, so keep
-    # the one that is already there.
     message(
       STATUS "executorch: executorch::runtime is already defined, reusing it"
     )

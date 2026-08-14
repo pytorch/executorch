@@ -94,14 +94,15 @@ logging.basicConfig(
 # helper or removed the utility everything needs.
 #
 # Only headers that nothing else the wheel installs includes belong here. A header other shipped headers
-# pull in must keep shipping even when it cannot be compiled on its own.
+# pull in must keep shipping even when it cannot be compiled on its own. Those are the ones listed
+# separately in the release test's own exemptions, which skip the compile check for a header that has to
+# ship anyway. The two lists are deliberately different: this one decides what ships, that one decides
+# what is compiled on its own.
 _UNSHIPPABLE_HEADERS = frozenset(
     {
         # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
         # headers. Those are a third-party library this wheel does not vendor.
         "runtime/executor/tensor_parser.h",
-        # A test helper, needing a test framework the wheel does not ship.
-        "runtime/core/testing_util/error_matchers.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
         # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
