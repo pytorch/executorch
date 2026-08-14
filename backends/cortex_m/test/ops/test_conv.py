@@ -359,22 +359,19 @@ def test_implementation_conv2d(test_case, cortex_m_target):
 
 
 @parametrize(
-    "case_name",
-    {
-        "conv2d_groups": ("conv2d_groups", "quantized_conv2d"),
-        "depthwise_conv2d": ("depthwise_conv2d", "quantized_depthwise_conv2d"),
-    },
+    "test_case",
+    {name: test_cases[name] for name in ("conv2d_groups", "depthwise_conv2d")},
 )
-def test_grouped_conv2d_bias_is_populated(case_name, cortex_m_target):
+def test_grouped_conv2d_bias_is_populated(test_case, cortex_m_target):
     """Assert a bias-less grouped convolution reaches the kernel with a bias.
+
     The numeric cases only cover this on the FVP leg and only while their
-    reference output stays clear of saturation, and the depthwise kernel offsets
-    the bias by whole channel blocks, so it takes hundreds of channels before a
-    missing bias shows up at all — far more than any case here."""
-    case_key, op_name = case_name
-    case = test_cases[case_key]
+    reference output stays clear of saturation, and the depthwise kernel
+    offsets the bias by whole channel blocks, so it takes hundreds of channels
+    before a missing bias shows up at all -- far more than any case here.
+    """
     tester = CortexMTester(
-        case.model, case.example_inputs, target_config=cortex_m_target
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )
     tester.quantize()
     tester.export()
@@ -382,8 +379,13 @@ def test_grouped_conv2d_bias_is_populated(case_name, cortex_m_target):
     tester.run_passes()
 
     module = tester.get_artifact(StageType.RUN_PASSES).exported_program().module()
-    target = getattr(exir_ops.edge.cortex_m, op_name).default
+    grouped_convs = (
+        exir_ops.edge.cortex_m.quantized_conv2d.default,
+        exir_ops.edge.cortex_m.quantized_depthwise_conv2d.default,
+    )
     [conv_node] = [
-        n for n in module.graph.nodes if n.op == "call_function" and n.target == target
+        n
+        for n in module.graph.nodes
+        if n.op == "call_function" and n.target in grouped_convs
     ]
     assert conv_node.args[2] is not None
