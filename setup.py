@@ -1626,7 +1626,6 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
 
 
-
 def _substitute_tracer_definition(path: str, cmake_cache_dir: Optional[str]) -> None:
     """Fill in the tracer placeholder in an installed CMake configuration file.
 
@@ -1647,6 +1646,7 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: Optional[str]) -> 
                 "ET_EVENT_TRACER_ENABLED" if enabled else "",
             )
         )
+
 
 def _tracer_cache_dir(command) -> Optional[str]:
     """The build directory holding CMakeCache.txt, or None when it cannot be resolved."""
