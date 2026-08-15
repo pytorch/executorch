@@ -18,8 +18,9 @@ MI300X (`gfx942`); CI is configured to exercise `gfx950`.
 - Python pybindings cannot allocate ROCm device memory; use a native runner such
   as `executor_runner`.
 - Installed CMake consumers must be able to find the HIP package.
-- Model runners do not yet claim ROCm support. The gfx950 CI job covers the
-  backend build, native runtime, AOTI export and execution, and Triton W4 tests.
+- Voxtral Realtime has an explicit ROCm workflow. Other model runners do not
+  claim ROCm support. The gfx950 CI job covers the backend build, native
+  runtime, AOTI export and execution, and Triton W4 tests.
 
 ## Build
 
@@ -37,3 +38,7 @@ A `libcudart` dependency is a configuration error.
 
 For an end-to-end export that proves Inductor emitted a Triton kernel, see
 [../../examples/cuda/README.md](../../examples/cuda/README.md).
+
+Voxtral Realtime additionally covers BF16 and packed W4/BF16 execution. See
+[../../examples/models/voxtral_realtime/README.md](../../examples/models/voxtral_realtime/README.md)
+and its `run_rocm_e2e.sh` example.

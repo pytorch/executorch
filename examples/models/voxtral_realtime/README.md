@@ -118,9 +118,12 @@ python export_voxtral_rt.py \
 | `mlx` | ✓ | ✓ | `4w`, `8w`, `nvfp4` (NVIDIA FP4 dtype) |
 | `cuda` | ✓ | ✓ | `4w`, `8w` |
 | `cuda-windows` | ✓ | ✓ | `4w`, `8w` |
+| `rocm` | ✓ | ✓ | BF16; packed linear `4w` and embedding `8w` |
 
 
-MLX and Metal backends provide Apple GPU acceleration. CUDA backend provides NVIDIA GPU acceleration via AOTInductor.
+MLX and Metal backends provide Apple GPU acceleration. CUDA provides NVIDIA GPU
+acceleration, and experimental ROCm support provides AMD GPU acceleration, both
+through AOTInductor.
 
 #### CUDA export examples
 
@@ -154,6 +157,80 @@ python export_voxtral_rt.py \
     --qlinear-packing-format tile_packed_to_4d \
     --qembedding 8w
 ```
+
+#### ROCm export examples
+
+ROCm support is experimental and currently validated only on MI300X (`gfx942`).
+It is never enabled automatically. Use a ROCm PyTorch build with its matching
+Triton AMD backend; do not run `install_executorch.sh`, because its dependency
+setup can replace ROCm PyTorch with a CPU build.
+
+The validated ROCm configurations use BF16 and optionally packed `4w` linear
+weights with an `8w` embedding. The exporter rejects other ROCm dtype and
+quantization combinations before loading the model.
+
+Start with the BF16 streaming baseline:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend rocm \
+    --dtype bf16 \
+    --streaming \
+    --sliding-window 2048 \
+    --output-dir ./voxtral_rt_rocm_bf16
+```
+
+The preferred W4/BF16 setup nibble-packs TorchAO weight-only INT4 tensors and
+runs the ExecuTorch Triton W4A16 kernel while keeping activations in BF16:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend rocm \
+    --dtype bf16 \
+    --streaming \
+    --sliding-window 2048 \
+    --output-dir ./voxtral_rt_rocm_w4_bf16 \
+    --qlinear-encoder 4w \
+    --qlinear 4w \
+    --qembedding 8w
+```
+
+Do not use CUDA's `tile_packed_to_4d` option on ROCm. That format requires the
+CUDA-only `_weight_int4pack_mm` fallback shim, which is intentionally not built
+or advertised by the ROCm backend. The exporter rejects that combination
+before model loading.
+
+The packed path performs dequantization inside the GPU kernel and does not
+materialize a full BF16 weight for each invocation.
+
+The default packed path retains the existing dynamic decoder export and uses
+the packed INT4 matmul kernel. CUDA and other non-ROCm exports are unchanged.
+Encoder linears also use packed INT4 matmul.
+
+An experimental ROCm-only matvec export is available for performance testing:
+
+```bash
+python export_voxtral_rt.py \
+    --model-path ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    --backend rocm \
+    --dtype bf16 \
+    --streaming \
+    --sliding-window 2048 \
+    --rocm-packed-matvec \
+    --output-dir ./voxtral_rt_rocm_w4_bf16_matvec \
+    --qlinear-encoder 4w \
+    --qlinear 4w \
+    --qembedding 8w
+```
+
+This specializes the decoder to its actual one-token runner input and uses a
+BF16-rounded packed matvec. On MI300X it roughly doubled decode throughput for
+the 30-second test clip, but greedy output differed from the dynamic matmul
+baseline. It is off by default; verify transcript quality and performance on
+the target GPU before enabling it. Kernel and export-graph tests cover this
+option, but CI does not run a full-model transcript check with it.
 
 #### Metal export examples
 
@@ -275,14 +352,14 @@ python export_voxtral_rt.py \
 
 > [!NOTE]
 > Omit `--streaming` from any export command above for offline mode.
-> CUDA and CUDA-Windows exports also produce an `aoti_cuda_blob.ptd` file alongside `model.pte`.
+> CUDA, CUDA-Windows, and ROCm exports also produce an `aoti_cuda_blob.ptd` file alongside `model.pte`.
 
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model-path` | (required) | Directory with `params.json` + `consolidated.safetensors` |
-| `--backend` | `xnnpack` | `xnnpack`, `mlx`, `metal`, `cuda`, `cuda-windows`, or `portable` |
+| `--backend` | `xnnpack` | `xnnpack`, `mlx`, `metal`, `cuda`, `cuda-windows`, `rocm`, or `portable` |
 | `--dtype` | `fp32` | Model dtype: `fp32` or `bf16` |
 | `--output-dir` | `./voxtral_rt_exports` | Output directory |
 | `--max-seq-len` | `4096` | KV cache length (offline mode only; ignored with `--streaming`) |
@@ -299,6 +376,7 @@ python export_voxtral_rt.py \
 | `--streaming` | off | Export streaming model with ring buffer KV caches (unlimited duration) |
 | `--max-enc-len` | `750` | Encoder sliding window size (streaming only) |
 | `--sliding-window` | from `params.json` | Decoder sliding window size (streaming only; ignored in offline mode). Smaller values reduce memory and improve decode speed but limit context |
+| `--rocm-packed-matvec` | off | Experimental fixed-shape packed INT4 decoder matvec; requires ROCm and decoder `4w` |
 
 **Notes:**
 - `fpa4w` quantization requires `--backend metal`.
@@ -315,10 +393,63 @@ building core libraries and the runner binary.
 make voxtral_realtime-cpu      # XNNPACK (CPU)
 make voxtral_realtime-metal    # Metal (Apple GPU)
 make voxtral_realtime-cuda     # CUDA (NVIDIA GPU)
+make voxtral_realtime-rocm     # ROCm (AMD GPU, experimental)
 ```
 
-All targets produce the runner binary at
-`cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner`.
+The CPU, CUDA, Metal, and MLX targets produce the runner at
+`cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner`. ROCm uses
+the isolated path below.
+
+### ROCm (experimental)
+
+From the ExecuTorch repository root, the explicit ROCm target builds and
+installs the LLM runtime and the model runner into a separate directory:
+
+```bash
+make voxtral_realtime-rocm
+```
+
+The equivalent workflows are:
+
+```bash
+cmake --workflow --preset llm-release-rocm
+cd examples/models/voxtral_realtime
+cmake --workflow --preset voxtral-realtime-rocm
+```
+
+The runner is written to
+`cmake-out-rocm-llm/examples/models/voxtral_realtime/voxtral_realtime_runner`.
+The separate directory keeps ROCm configuration out of default and CUDA build
+caches.
+
+For an end-to-end BF16 or W4/BF16 example:
+
+```bash
+examples/models/voxtral_realtime/run_rocm_e2e.sh \
+    ~/models/Voxtral-Mini-4B-Realtime-2602 \
+    /path/to/input-16khz-mono.wav \
+    w4-bf16 \
+    both \
+    /path/to/output
+```
+
+The third argument selects `bf16`, `w4-bf16`, or both precision modes. The
+fourth selects `streaming`, `offline`, or both execution modes. Set
+`ROCM_PACKED_MATVEC=1` to opt into the experimental fixed-shape decoder matvec.
+Set `ROCM_PATH` if ROCm is installed outside `/opt/rocm`.
+The script reports model export time, PTE/PTD sizes, and RTF computed as runner
+inference time divided by WAV duration.
+
+The AOTInductor-generated shared objects use the C++ runtime from the active
+Python environment. Add that runtime before launching the runner directly:
+
+```bash
+PYTHON_PREFIX="$(python -c 'import sys; print(sys.prefix)')"
+export LD_LIBRARY_PATH="$PYTHON_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+```
+
+Without it, systems with an older `/lib64/libstdc++.so.6` can fail while loading
+the extracted delegate library with a missing `GLIBCXX` version.
 
 ### CUDA-Windows
 
@@ -377,7 +508,8 @@ cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner \
 Omit `--streaming` for offline transcription (requires an offline-exported
 model and offline preprocessor).
 
-For CUDA backends (Linux and Windows), add `--data_path voxtral_rt_exports/aoti_cuda_blob.ptd`.
+For CUDA and ROCm, add
+`--data_path voxtral_rt_exports/aoti_cuda_blob.ptd`.
 
 **Windows (PowerShell):**
 
@@ -414,7 +546,7 @@ Ctrl+C stops recording and flushes remaining text.
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model_path` | `model.pte` | Path to exported model |
-| `--data_path` | (none) | Path to delegate data file (`.ptd`, required for CUDA) |
+| `--data_path` | (none) | Path to delegate data file (`.ptd`, required for CUDA and ROCm) |
 | `--tokenizer_path` | `tekken.json` | Path to Tekken tokenizer |
 | `--preprocessor_path` | (none) | Path to mel preprocessor `.pte` |
 | `--audio_path` | (none) | Path to 16kHz mono WAV file |
