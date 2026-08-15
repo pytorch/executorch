@@ -11,16 +11,15 @@ package org.pytorch.executorch
 import com.facebook.soloader.nativeloader.NativeLoaderDelegate
 
 /**
- * Desktop JVM-specific [NativeLoaderDelegate] that delegates library loading to
- * [NativeLibraryLoader].
+ * Desktop JVM [NativeLoaderDelegate] that loads native libraries via [NativeLibraryLoader], which
+ * extracts the binary for the current OS/arch from the classpath.
  *
- * This implementation maps requests to load "executorch" to the actual JNI library "executorch_jni"
- * built for desktop platforms.
+ * Installed by [ExecuTorchJvm.init]; the shared runtime passes the configured library name
+ * ("executorch_jni") straight through.
  */
 class JvmNativeLoaderDelegate : NativeLoaderDelegate {
   override fun loadLibrary(shortName: String, flags: Int): Boolean {
-    val libraryToLoad = if (shortName == "executorch") "executorch_jni" else shortName
-    NativeLibraryLoader.load(libraryToLoad)
+    NativeLibraryLoader.load(shortName)
     return true
   }
 

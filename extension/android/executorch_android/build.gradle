@@ -58,6 +58,10 @@ task copyTestRes(type: Exec) {
 }
 
 dependencies {
+    // Platform-neutral API (Module, Tensor, EValue, ...) shared with the desktop JVM artifact.
+    // Declared as `api` so consumers of executorch-android resolve executorch-java transitively,
+    // exactly like the classes that used to ship inside the AAR.
+    api project(':executorch_java')
     implementation 'com.facebook.fbjni:fbjni:0.7.0'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx

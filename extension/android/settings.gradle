@@ -21,6 +21,11 @@ plugins {
 
 rootProject.name = 'executorch'
 
+// Shared, platform-neutral Java API (no android.* — enforced by classpath).
+// Both the Android AAR and the desktop JVM jar depend on this module.
+include(':executorch_java')
+project(':executorch_java').projectDir = new File(rootDir, '../java')
+
 // Android module — only included when Android SDK is available
 if (System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null || new java.io.File(rootDir, "local.properties").exists()) {
     include('executorch_android')

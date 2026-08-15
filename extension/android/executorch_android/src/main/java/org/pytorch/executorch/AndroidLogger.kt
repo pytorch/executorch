@@ -10,21 +10,24 @@ package org.pytorch.executorch
 
 import android.util.Log as AndroidLog
 
-/** Android logging helper that forwards logs directly to android.util.Log. */
-internal object Log {
-  fun e(tag: String, msg: String) {
+/**
+ * Android [Logger] implementation that forwards ExecuTorch logs to `android.util.Log` (logcat).
+ * Installed automatically at process start by [ExecuTorchInitProvider].
+ */
+class AndroidLogger : Logger {
+  override fun e(tag: String, msg: String) {
     AndroidLog.e(tag, msg)
   }
 
-  fun w(tag: String, msg: String) {
+  override fun w(tag: String, msg: String) {
     AndroidLog.w(tag, msg)
   }
 
-  fun i(tag: String, msg: String) {
+  override fun i(tag: String, msg: String) {
     AndroidLog.i(tag, msg)
   }
 
-  fun d(tag: String, msg: String) {
+  override fun d(tag: String, msg: String) {
     AndroidLog.d(tag, msg)
   }
 }

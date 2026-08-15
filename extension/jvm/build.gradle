@@ -6,6 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// Desktop JVM (Linux / macOS / Windows) artifact for ExecuTorch.
+//
+// Thin sibling of :executorch_android: all platform-neutral API classes come from
+// :executorch_java. This module only adds the desktop-specific pieces:
+//   - ExecuTorchJvm.init(): installs the classpath-extracting native loader
+//   - JvmNativeLoaderDelegate / NativeLibraryLoader: per-OS native library delivery
+//   - Per-platform native jars published with Maven classifiers
+//     (executorch-jvm-<version>-linux-x86_64.jar, -macos-aarch64.jar, ...)
+
 apply plugin: 'kotlin'
 apply plugin: 'java-library'
 apply plugin: 'com.vanniktech.maven.publish'
@@ -25,34 +34,12 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
-sourceSets {
-    main {
-        kotlin {
-            srcDirs = ['../android/executorch_android/src/main/java', 'src/main/java']
-            exclude { element ->
-                element.file.path.contains("executorch_android") && element.file.name == "Log.kt"
-            }
-        }
-    }
-    test {
-        kotlin {
-            srcDirs = ['../android/executorch_android/src/test/java', 'src/test/java']
-        }
-    }
-}
-
-repositories {
-    google()
-    mavenCentral()
-}
-
 dependencies {
-    implementation 'com.facebook.fbjni:fbjni-java-only:0.7.0'
-    implementation 'com.facebook.soloader:nativeloader:0.10.5'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:${libs.versions.kotlin.get()}"
+    api project(':executorch_java')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.23"
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.assertj:assertj-core:3.27.2'
-    testImplementation "org.jetbrains.kotlin:kotlin-test:${libs.versions.kotlin.get()}"
+    testImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
 }
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
@@ -60,6 +47,43 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         jvmTarget = "17"
         freeCompilerArgs += ["-Xjvm-default=all"]
     }
+}
+
+// ---------------------------------------------------------------------------
+// Per-platform native jars.
+//
+// CI builds the JNI library for each desktop OS/arch with CMake
+// (extension/android/CMakeLists.txt, non-Android branch) and stages the binary as
+//   extension/cmake-out-jvm/<classifier>/libexecutorch_jni.{so,dylib}  (or executorch_jni.dll)
+// where <classifier> is e.g. linux-x86_64. Each staged binary is packaged as
+// executorch-jvm-<version>-<classifier>.jar containing
+//   native/<os>/<arch>/<library-file>
+// which NativeLibraryLoader extracts and loads at runtime. Classifiers whose
+// staging directory does not exist are skipped, so local builds publish the API
+// jar only.
+// ---------------------------------------------------------------------------
+def nativeClassifiers = [
+    'linux-x86_64', 'linux-aarch64',
+    'macos-x86_64', 'macos-aarch64',
+    'windows-x86_64', 'windows-aarch64',
+]
+
+def nativeJarTasks = []
+nativeClassifiers.each { classifier ->
+    def parts = classifier.split('-')
+    def osDir = parts[0]
+    def archDir = parts[1]
+    def taskName = 'jarNative' + classifier.split('-').collect { it.capitalize() }.join('')
+    def stagingDir = rootProject.file("../cmake-out-jvm/${classifier}")
+    def t = tasks.register(taskName, Jar) {
+        archiveClassifier.set(classifier)
+        destinationDirectory.set(layout.buildDirectory.dir("libs"))
+        from(stagingDir) {
+            into "native/${osDir}/${archDir}"
+        }
+        onlyIf { stagingDir.exists() }
+    }
+    nativeJarTasks.add([task: t, dir: stagingDir])
 }
 
 mavenPublishing {
@@ -89,8 +113,23 @@ mavenPublishing {
         }
         scm {
             url = "https://github.com/pytorch/executorch.git"
-            connection = "scm:git:https://github.com/pytorch/executorch"
+            connection = "scm:git:git@github.com:pytorch/executorch.git"
             developerConnection = "scm:git:git@github.com:pytorch/executorch.git"
+        }
+    }
+}
+
+// Attach each staged per-platform native jar to the Maven publication as a
+// classified artifact. Evaluated after the maven-publish plugin creates the
+// publication; unstaged platforms are omitted entirely.
+afterEvaluate {
+    publishing {
+        publications.withType(MavenPublication).configureEach { pub ->
+            nativeJarTasks.each { entry ->
+                if (entry.dir.exists()) {
+                    pub.artifact(entry.task.get())
+                }
+            }
         }
     }
 }
