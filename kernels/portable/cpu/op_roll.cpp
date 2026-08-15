@@ -73,6 +73,9 @@ Tensor& roll_out(
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
+    const bool out_is_default = executorch::runtime::is_contiguous_dim_order(
+        out.dim_order().data(), out.dim_order().size());
+
     for (const auto ix : c10::irange(out.numel())) {
       // @lint-ignore CLANGTIDY facebook-hte-CArray
       size_t coord[kTensorDimensionLimit];
@@ -85,7 +88,7 @@ Tensor& roll_out(
             (coord[d] + in.size(d) - dim_shifts[d] % in.size(d)) % in.size(d);
       }
 
-      out_data[coordinateToIndex(out, coord)] =
+      out_data[out_is_default ? ix : coordinateToIndex(out, coord)] =
           in_data[coordinateToIndex(in, shifted_coord)];
     }
   });
