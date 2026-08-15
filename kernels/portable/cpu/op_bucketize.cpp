@@ -32,9 +32,7 @@ inline bool check_bucketize_args(
     const Tensor& boundaries,
     bool out_int32,
     const Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(
-      boundaries.dim() == 1 ||
-      (boundaries.dim() == 0 && boundaries.numel() == 0));
+  ET_LOG_AND_RETURN_IF_FALSE(boundaries.dim() == 1);
   if (out_int32) {
     ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Int);
   } else {
@@ -248,11 +246,7 @@ Tensor& bucketize_Scalar_out(
   }
 
   ET_KERNEL_CHECK(
-      ctx,
-      boundaries.dim() == 1 ||
-          (boundaries.dim() == 0 && boundaries.numel() == 0),
-      InvalidArgument,
-      out);
+      ctx, boundaries.dim() == 1, InvalidArgument, out);
 
   // Resize out to 0-dim scalar tensor
   ET_KERNEL_CHECK(

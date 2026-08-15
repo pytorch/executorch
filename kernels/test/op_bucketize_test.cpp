@@ -234,3 +234,42 @@ TEST_F(OpBucketizeTest, ScalarOverloadIntInt32Out) {
       out);
   EXPECT_TENSOR_EQ(out, tf_int.make({}, {1}));
 }
+
+TEST_F(OpBucketizeTest, InvalidBoundariesDimThrows) {
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // 2D boundaries (invalid)
+  Tensor boundaries_2d = tf_float.make({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
+  Tensor self = tf_float.make({2}, {1.5f, 2.5f});
+  Tensor out = tf_long.zeros({2});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_bucketize_tensor_out(
+          self, boundaries_2d, /*out_int32=*/false, /*right=*/false, out));
+}
+
+TEST_F(OpBucketizeTest, InvalidOutputTypeMismatchThrows) {
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<ScalarType::Int> tf_int;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  Tensor boundaries = tf_float.make({3}, {1.0f, 2.0f, 3.0f});
+  Tensor self = tf_float.make({2}, {1.5f, 2.5f});
+
+  // out_int32=true but output is Long
+  Tensor out_long = tf_long.zeros({2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_bucketize_tensor_out(
+          self, boundaries, /*out_int32=*/true, /*right=*/false, out_long));
+
+  // out_int32=false but output is Int
+  Tensor out_int = tf_int.zeros({2});
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_bucketize_tensor_out(
+          self, boundaries, /*out_int32=*/false, /*right=*/false, out_int));
+}
+
