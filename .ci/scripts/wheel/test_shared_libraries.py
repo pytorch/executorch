@@ -454,6 +454,16 @@ def _wheel_cuda_train() -> str:
 _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
 
+# The exact dependency names packaging declares per CUDA train, mirroring
+# _CUDA_RUNTIME_PACKAGES in setup.py. Listed here rather than imported because setup.py
+# runs a build when imported, and duplicated deliberately so a rename on the packaging
+# side has to be made here too rather than silently agreeing with itself.
+_EXPECTED_CUDA_PACKAGES = {
+    "12": ("nvidia-cuda-runtime-cu12",),
+    "13": ("nvidia-cuda-runtime",),
+}
+
+
 # Each component the wheel ships as its own library, the symbols that identify it,
 # and the library that must own them. `required` says whether the owner has to be
 # present: the optimized kernels are optional, because a wheel built without them
@@ -1661,17 +1671,34 @@ def test_model_matches_eager_pytorch(work_dir: Path) -> None:
 
 
 def test_declared_dependencies_match_the_wheel_tag() -> None:
-    """A CPU wheel must not declare the CUDA runtime, and a CUDA wheel must declare it.
+    """A CPU wheel must not declare the CUDA runtime, and a CUDA wheel must declare its own train.
 
     The tag is what a user resolves against, so a mismatch is a promise the wheel cannot keep in
     either direction: a CPU wheel that pulls the CUDA packages costs a user hundreds of megabytes it
     never loads, and a CUDA wheel that declares nothing leaves the runtime unresolvable.
 
+    Declaring the wrong train is the quiet case, and the reason this checks the names rather than
+    only their presence. The CUDA 12 packages are published with a "-cu12" suffix and the CUDA 13
+    ones without, so a cu130 wheel that asked for the cu12 packages would install a runtime its
+    libraries cannot load, while looking correctly specified.
+
     This is metadata only, so no library check can see it. A CPU wheel that wrongly declared the CUDA
     runtime passed every other check in this file.
     """
     requirements = importlib.metadata.requires("executorch") or []
-    cuda = sorted(r.split()[0] for r in requirements if r.lower().startswith("nvidia"))
+
+    # Split off any environment marker AND any version specifier. The name, the specifier
+    # and the marker can arrive as one token, so taking the first whitespace-separated
+    # word left "nvidia-cuda-runtime-cu12==12.6.77" as the name and made a correctly
+    # specified wheel fail the moment any CUDA dependency gained a pin.
+    def distribution_name(requirement: str) -> str:
+        return re.split(r"[\s;\[<>=!~(]", requirement.strip(), maxsplit=1)[0]
+
+    cuda = sorted(
+        name
+        for name in (distribution_name(r) for r in requirements)
+        if name.lower().startswith("nvidia")
+    )
 
     # The local version segment of the installed version states what the wheel was built for.
     version = importlib.metadata.version("executorch")
@@ -1683,7 +1710,35 @@ def test_declared_dependencies_match_the_wheel_tag() -> None:
             f"version {version} says this is a CUDA wheel, but it declares no CUDA runtime "
             "packages, so nothing resolves the runtime it links"
         )
-        print(f"✓ this CUDA wheel declares the runtime ({len(cuda)} packages)")
+        # Compared as sets in both directions rather than as a name suffix: for CUDA 13 the
+        # expected suffix is the empty string and every name ends with that, so a suffix test
+        # accepted a name from any train whose spelling happened not to be one of the two
+        # literals it also excluded. Measured: a cu130 wheel declaring nvidia-cuda-runtime-cu11
+        # passed. The reverse check catches the other side of the same defect: a wheel that
+        # declares one package and omits the others still cannot load, and one-direction only
+        # would accept it.
+        train = local[len("cu") : len("cu") + 2]
+        expected = set(_EXPECTED_CUDA_PACKAGES.get(train, ()))
+        assert expected, (
+            f"version {version} names CUDA train {train}, which this check has no expected "
+            f"package list for. Add it beside the packaging list it mirrors."
+        )
+        actual = set(cuda)
+        wrong = sorted(actual - expected)
+        missing = sorted(expected - actual)
+        assert not wrong, (
+            f"version {version} is a CUDA {train} wheel, but it declares {wrong}, which belong to "
+            f"another CUDA train. Expected only {sorted(expected)}. A user would install a runtime "
+            "this wheel's libraries cannot load."
+        )
+        assert not missing, (
+            f"version {version} is a CUDA {train} wheel, but it does not declare {missing} "
+            f"(expected {sorted(expected)}). A user installing this wheel would end up without part "
+            "of the CUDA runtime the wheel's libraries need."
+        )
+        print(
+            f"✓ this CUDA {train} wheel declares its own runtime ({len(cuda)} packages)"
+        )
     else:
         assert not cuda, (
             f"version {version} is not a CUDA wheel, yet it declares {cuda}. A user installing it "
