@@ -349,6 +349,18 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
+# The pybind extension links the shared runtime, so a pybind build has to
+# produce it. Derived here rather than only in the pybind preset, because a
+# caller that sets EXECUTORCH_BUILD_PYBIND directly would otherwise link the
+# extension against a library the next configure of the same tree does not
+# build, and the import then fails on a missing libexecutorch. Limited to the
+# platforms where a shared runtime is supported at all.
+if(EXECUTORCH_BUILD_PYBIND AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"
+                                OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+)
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
+endif()
+
 # The tracer needs the etdump target, not the whole devtools umbrella. A pybind
 # or shared build adds that target on its own, so accept either route rather
 # than forcing an option that also pulls in submodules a wheel does not check
