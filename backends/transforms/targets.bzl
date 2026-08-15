@@ -504,6 +504,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":channels_last_ops",
+            ":remove_getitem_op",
             ":replace_ops_with_channels_last_variants",
             "//executorch/exir:lib",
             "fbsource//third-party/pypi/pytest:pytest",
