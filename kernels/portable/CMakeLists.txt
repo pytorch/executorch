@@ -110,6 +110,9 @@ if(EXECUTORCH_BUILD_SHARED)
   executorch_add_shared_library(
     executorch_portable_ops portable_ops_lib portable_kernels executorch_shared
   )
+  # This library holds no symbol a consumer names, only registration
+  # constructors, so a link with --as-needed would drop it and register nothing.
+  executorch_target_link_options_shared_lib(executorch_portable_ops)
 endif()
 
 # Build the portable custom ops AOT library for registering custom ops into
@@ -139,12 +142,12 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
   )
 
   if(APPLE)
-    set(RPATH "@loader_path/../../extensions/pybindings")
+    set(RPATH "@loader_path/../../extension/pybindings")
   else()
-    set(RPATH "\$ORIGIN/../../extensions/pybindings")
+    set(RPATH "\$ORIGIN/../../extension/pybindings")
   endif()
   set_target_properties(
-    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
-                                                                ${RPATH}
+    portable_custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                  "${RPATH}"
   )
 endif()
