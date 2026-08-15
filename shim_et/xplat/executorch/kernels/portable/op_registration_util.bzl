@@ -414,6 +414,14 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_bucketize",
+        deps = [
+            ":scalar_utils",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    ),
+    op_target(
         name = "op_cat",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
