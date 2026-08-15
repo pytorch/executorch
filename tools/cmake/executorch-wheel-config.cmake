@@ -13,16 +13,9 @@
 # target_link_libraries(my_app PRIVATE executorch::runtime)
 # ~~~
 #
-# This is the wheel's own contract, written by hand rather than generated,
-# because the wheel copies build products out of the build tree instead of
-# running an install step.
-#
-# It is NOT identical to the in-tree package config. That one exposes the
-# build's own bare target names, such as executorch and xnnpack_backend, while
-# this one exposes namespaced imported targets like executorch::runtime, because
-# a wheel consumer links prebuilt files rather than participating in the build.
-# Consumer code written against one therefore does not configure against the
-# other.
+# Targets here are namespaced, such as executorch::runtime, unlike the in-tree
+# package config which exposes the build's own bare target names. Code written
+# against one does not configure against the other.
 # -------
 #
 # Finds the ExecuTorch library
@@ -406,35 +399,13 @@ elseif(_executorch_runtime_library)
         INTERFACE_COMPILE_DEFINITIONS
         "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
     )
-    # Consumers get the wheel's lib/ directory in their RUNPATH automatically,
-    # because CMake adds the imported library's directory. Also record
-    # $ORIGIN-relative entries so an application deployed next to a copy of the
-    # runtime keeps working without relinking or LD_LIBRARY_PATH. $ORIGIN is a
-    # loader token, so it belongs only in RUNPATH, never in IMPORTED_LOCATION.
-    #
-    # $ORIGIN is named before the wheel's own directory. An application deployed
-    # beside a copy of the runtime has to find that copy, and the loader takes
-    # the first match, so putting the install directory first would keep sending
-    # a relocated application back to the original wheel for as long as it
-    # remains installed. That also makes a relocation test that deletes the
-    # original pass for the wrong reason.
-    #
-    # The cost, measured rather than assumed: a library that merely shares this
-    # SONAME and sits in the application's own directory will win. That is what
-    # $ORIGIN means in every package that uses it, and a package cannot offer
-    # relocation while also refusing to honour what the user placed beside their
-    # binary. The consequence worth worrying about, a delegate pairing with a
-    # different registry, is caught directly by the single-registry checks,
-    # which inspect what the shipped libraries define instead of trusting the
-    # loader's choice.
-    #
-    # The package's own library directory has to be added explicitly, as an
-    # option rather than by relying on CMake. CMake does put it in the
-    # consumer's search path because the imported library is named by absolute
-    # path, but it records that as a link-path rpath, and install(TARGETS)
-    # strips exactly those. Measured: a consumer runs from its build tree and
-    # then fails with exit 127 and two libraries not found once installed, while
-    # the $ORIGIN entries survive because they are set here as explicit options.
+    # $ORIGIN comes first so an application deployed beside its own copy of the
+    # runtime finds that copy. The loader takes the first match, so leading with
+    # the install directory would send a relocated application back to the
+    # wheel. $ORIGIN is a loader token, so it belongs in RUNPATH and never in
+    # IMPORTED_LOCATION. The package's own library directory is listed
+    # explicitly because CMake records it as a link-path rpath, which
+    # install(TARGETS) strips.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
       # $ORIGIN-relative entries so a relocated application keeps working. The
       # package's own directory does not need to be added here: CMake already
@@ -606,6 +577,12 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
     APPEND
     PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
   )
+  # Published in the variable as well, so the variables route carries it too. A
+  # consumer applying the variables rather than linking the target would
+  # otherwise compile the serial inline fallback against a threaded library.
+  if(NOT "ET_USE_THREADPOOL" IN_LIST EXECUTORCH_COMPILE_DEFINITIONS)
+    list(APPEND EXECUTORCH_COMPILE_DEFINITIONS ET_USE_THREADPOOL)
+  endif()
   # The definition selects a declaration, and the thread pool library holds the
   # only definition of what it declares, so a consumer linking just the runtime
   # would fail to link. Carried on the runtime rather than left to the caller,
@@ -802,6 +779,7 @@ foreach(_component ${executorch_FIND_COMPONENTS})
   else()
     set(executorch_${_component}_FOUND FALSE)
     if(executorch_FIND_REQUIRED_${_component})
+      set(EXECUTORCH_FOUND OFF)
       set(executorch_FOUND FALSE)
       # Naming the CMake version when that is the cause saves a consumer from
       # concluding the component is missing from the package, which is the wrong
