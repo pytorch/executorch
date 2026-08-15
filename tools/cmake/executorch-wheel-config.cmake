@@ -747,7 +747,7 @@ if(_C_LIBRARY)
   # so a project may link that name. Aliased rather than dropped, because
   # dropping it gives a bare "target not found" with no hint that the name
   # moved.
-  if(NOT TARGET _portable_lib)
+  if(NOT TARGET executorch::_portable_lib)
     add_library(executorch::_portable_lib ALIAS executorch::_C)
   endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.

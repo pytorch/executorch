@@ -910,7 +910,7 @@ find_package(executorch REQUIRED)
 add_library(custom_op_check SHARED custom_op.cpp)
 # The legacy contract: a custom-op library links the shipped Python extension,
 # which owns the operator registry it registers into.
-target_link_libraries(custom_op_check PRIVATE _C)
+target_link_libraries(custom_op_check PRIVATE executorch::_C)
 # The runtime headers include c10 headers, which belong to torch rather than to
 # this wheel, so an out-of-tree operator project supplies them the same way it
 # supplies torch itself. The package config does not and should not ship them.
