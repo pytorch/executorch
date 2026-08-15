@@ -249,13 +249,26 @@ target_link_libraries(app PRIVATE executorch::runtime
   add_executable(app main.cpp)
   target_include_directories(app PRIVATE ${EXECUTORCH_INCLUDE_DIRS})
   target_compile_definitions(app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})
-  target_compile_features(app PRIVATE cxx_std_20)
+  target_compile_features(app PRIVATE cxx_std_${EXECUTORCH_CXX_STANDARD})
   target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
+  set_target_properties(
+    app PROPERTIES INSTALL_RPATH "${EXECUTORCH_RUNTIME_LIBRARY_DIR}"
+  )
   ```
 
   Leaving out `EXECUTORCH_COMPILE_DEFINITIONS` fails with a missing
   `torch/headeronly/macros/cmake_macros.h`, because the vendored headers look for a file that only
   exists inside a PyTorch build.
+
+  `INSTALL_RPATH` matters once you run `cmake --install`. CMake gives your program a search path while
+  it sits in the build directory and removes that path when installing, so an installed program cannot
+  find the libraries unless you record where they live.
+
+  Quantized kernels are not part of `EXECUTORCH_LIBRARIES`, so add them when your model needs them:
+
+  ```cmake
+  target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
+  ```
 
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.
