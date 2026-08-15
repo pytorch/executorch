@@ -1391,8 +1391,14 @@ class CustomBuildPy(build_py):
             self.copy_file(src, dst, preserve_mode=False)
             if os.path.basename(dst) == "executorch-config.cmake":
                 tracer_cache_dir = _tracer_cache_dir(self)
-                if tracer_cache_dir is not None:
-                    _substitute_tracer_definition(dst, tracer_cache_dir)
+                if tracer_cache_dir is None:
+                    # Nothing built yet, so the definition cannot be derived. Remove the copy rather
+                    # than a file that cannot be consumed: a consumer compiling against an
+                    # unsubstituted placeholder fails on "macro names must be identifiers", while a
+                    # missing config reports that the package was not found.
+                    os.remove(dst)
+                    continue
+                _substitute_tracer_definition(dst, tracer_cache_dir)
 
     def run(self):
         # Copy python files to the output directory. This set of files is
