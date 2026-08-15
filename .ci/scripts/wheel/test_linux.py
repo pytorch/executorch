@@ -8,8 +8,11 @@
 
 import platform
 import sys
+import tempfile
+from pathlib import Path
 
 import test_base
+import test_shared_libraries
 from examples.models import Backend, Model
 
 if __name__ == "__main__":
@@ -41,6 +44,12 @@ if __name__ == "__main__":
             print("⚠ VulkanBackend not registered (expected for the default wheel)")
 
         test_base.test_cmsis_nn_install()
+
+        # The wheel ships the runtime, the kernels, the delegate, the thread
+        # pool and the profiler as separate shared libraries now, so check that
+        # each has exactly one owner and that all of them are loadable.
+        with tempfile.TemporaryDirectory() as work_dir:
+            test_shared_libraries.run_tests(Path(work_dir))
 
     model_tests = [
         test_base.ModelTest(
