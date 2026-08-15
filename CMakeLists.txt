@@ -1324,7 +1324,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # entry CMake records points back into it. An $ORIGIN relative entry resolves
   # the runtime wherever the extension is copied, so the copy works without a
   # post-build patch step that needs a tool the developer may not have.
-  if(NOT APPLE AND NOT WIN32)
+  if(APPLE)
+    set_property(
+      TARGET portable_lib
+      APPEND
+      PROPERTY BUILD_RPATH "@loader_path/../../lib"
+    )
+  elseif(NOT WIN32)
     set_property(
       TARGET portable_lib
       APPEND
