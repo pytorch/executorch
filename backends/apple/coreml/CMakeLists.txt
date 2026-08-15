@@ -206,6 +206,20 @@ if(APPLE)
     coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
   )
 
+  # The profiler hooks in this delegate compile only when the sdk sources below
+  # are also built, because they reach the model analyzer, which needs protobuf
+  # and the RTTI this build disables. Defining the macro here instead fails to
+  # compile on typeid in program_path.h. Safe to undefine for this target only
+  # while two conditions hold, neither of which the compiler enforces: the
+  # delegate calls none of the inline delegate tracer hooks, and it constructs
+  # no BackendInitContext, whose inline constructor also has a macro-dependent
+  # member initializer. It only takes that type by reference. A source added
+  # here that breaks either condition would give the linker two bodies of one
+  # inline function to choose between.
+  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
+    target_compile_options(coremldelegate PRIVATE -UET_EVENT_TRACER_ENABLED)
+  endif()
+
   if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
     target_include_directories(
