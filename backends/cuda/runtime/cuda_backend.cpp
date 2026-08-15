@@ -277,6 +277,15 @@ class ET_EXPERIMENTAL CudaBackend final
           return Error::InvalidArgument;
         }
       } else if (std::strcmp(option.key, kEnableCudaGraphForMethod) == 0) {
+#if defined(EXECUTORCH_USE_HIP)
+        // HIP ignores the graph-instantiation flag required by this path.
+        ET_LOG(
+            Error,
+            "Option %s is not supported on ROCm: HIP ignores graph "
+            "instantiation flags.",
+            kEnableCudaGraphForMethod);
+        return Error::NotSupported;
+#else
         if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
                 &option.value)) {
           set_cuda_graph_method(*val);
@@ -287,6 +296,7 @@ class ET_EXPERIMENTAL CudaBackend final
               kEnableCudaGraphForMethod);
           return Error::InvalidArgument;
         }
+#endif
       }
     }
     return Error::Ok;

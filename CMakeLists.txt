@@ -236,7 +236,9 @@ if(EXECUTORCH_ENABLE_BUNDLE_IO)
   add_definitions(-DET_BUNDLE_IO_ENABLED)
 endif()
 
-if(EXECUTORCH_BUILD_CUDA)
+if(EXECUTORCH_BUILD_ROCM)
+  add_definitions(-DCUDA_AVAILABLE=1 -DEXECUTORCH_USE_HIP=1)
+elseif(EXECUTORCH_BUILD_CUDA)
   add_definitions(-DCUDA_AVAILABLE=1)
 endif()
 
@@ -729,6 +731,25 @@ install(FILES tools/cmake/executorch-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
 )
 
+# Always overwrite backend dependency metadata to avoid stale requirements.
+set(_executorch_backend_dependencies "")
+if(EXECUTORCH_BUILD_ROCM)
+  string(APPEND _executorch_backend_dependencies
+         "find_dependency(hip CONFIG)\n"
+  )
+elseif(EXECUTORCH_BUILD_CUDA)
+  string(APPEND _executorch_backend_dependencies
+         "find_dependency(CUDAToolkit)\n"
+  )
+endif()
+configure_file(
+  tools/cmake/executorch-backend-dependencies.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch-backend-dependencies.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ExecuTorch
+)
+
 if(EXECUTORCH_BUILD_ARM_BAREMETAL
    OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX
    OR EXECUTORCH_BUILD_VGF
@@ -801,6 +822,7 @@ endif()
 # imported targets (e.g. MKL::MKL) aren't created in child directory scopes and
 # then duplicated when found again at root scope.
 if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_ROCM
    OR EXECUTORCH_BUILD_METAL
    OR EXECUTORCH_BUILD_PYBIND
 )
@@ -810,7 +832,7 @@ endif()
 # Backend-neutral caller-stream guard consumed by the CUDA AOTI backend (and the
 # vendored torch-tensorrt delegate). Built before backends/aoti and
 # backends/cuda, which link it.
-if(EXECUTORCH_BUILD_CUDA)
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/cuda)
   install(
     DIRECTORY extension/cuda/
@@ -821,12 +843,15 @@ if(EXECUTORCH_BUILD_CUDA)
   list(APPEND _executorch_extensions extension_cuda)
 endif()
 
-# Build common AOTI functionality if needed by CUDA or Metal backends
-if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_METAL)
+# Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
+if(EXECUTORCH_BUILD_CUDA
+   OR EXECUTORCH_BUILD_ROCM
+   OR EXECUTORCH_BUILD_METAL
+)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
 endif()
 
-if(EXECUTORCH_BUILD_CUDA)
+if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
   # Build CUDA-specific AOTI functionality
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
   # Add aoti_cuda_backend to backends - it transitively includes aoti_cuda_shims
@@ -1049,8 +1074,8 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
-  # Build common AOTI functionality if needed by CUDA or Metal backends
-  if(EXECUTORCH_BUILD_CUDA)
+  # Build common AOTI functionality if needed by CUDA, ROCm, or Metal backends.
+  if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
     # CUDA uses SlimTensor-based shims
     list(APPEND _dep_libs aoti_cuda_backend)
   elseif(EXECUTORCH_BUILD_METAL)
@@ -1101,7 +1126,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
-  if(EXECUTORCH_BUILD_CUDA)
+  if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
     string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
   endif()
 
