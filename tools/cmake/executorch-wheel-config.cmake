@@ -731,16 +731,16 @@ if(_C_LIBRARY)
   # and that target carries the C++20 requirement PyTorch's headers need while
   # the runtime components require C++17.
   if(NOT EXECUTORCH_LIBRARIES)
-    list(APPEND EXECUTORCH_LIBRARIES _C)
+    list(APPEND EXECUTORCH_LIBRARIES executorch::_C)
   endif()
-  if(TARGET _C)
+  if(TARGET executorch::_C)
     # This file ran already in the same configure, because another subproject
     # called find_package too. No in-tree target uses this name, so it can only
     # be the imported one defined below, and re-setting its properties to the
     # same values is harmless.
     message(STATUS "executorch: _C is already defined, reusing it")
   else()
-    add_library(_C STATIC IMPORTED)
+    add_library(executorch::_C STATIC IMPORTED)
   endif()
 
   # Earlier wheels named this extension _portable_lib in EXECUTORCH_LIBRARIES,
@@ -748,11 +748,11 @@ if(_C_LIBRARY)
   # dropping it gives a bare "target not found" with no hint that the name
   # moved.
   if(NOT TARGET _portable_lib)
-    add_library(_portable_lib ALIAS _C)
+    add_library(executorch::_portable_lib ALIAS executorch::_C)
   endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
-    _C
+    executorch::_C
     PROPERTIES
       IMPORTED_LOCATION "${_C_LIBRARY}"
       INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
@@ -779,7 +779,7 @@ if(_C_LIBRARY)
   # defined on CMake 3.28 or newer while this one has no such requirement.
   if(_executorch_runtime_library)
     set_property(
-      TARGET _C
+      TARGET executorch::_C
       APPEND
       PROPERTY INTERFACE_LINK_LIBRARIES "${_executorch_runtime_library}"
     )
