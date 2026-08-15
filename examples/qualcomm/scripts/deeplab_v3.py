@@ -41,23 +41,19 @@ def get_dataset(data_size, dataset_dir, download):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    dataset = list(
-        datasets.VOCSegmentation(
-            root=os.path.join(dataset_dir, "voc_image"),
-            year="2012",
-            image_set="val",
-            transform=preprocess,
-            download=download,
-        )
+    dataset = datasets.VOCSegmentation(
+        root=os.path.join(dataset_dir, "voc_image"),
+        year="2012",
+        image_set="val",
+        transform=preprocess,
+        download=download,
     )
 
     # prepare input data
-    random.shuffle(dataset)
+    indices = random.sample(range(len(dataset)), min(data_size, len(dataset)))
     inputs, targets = [], []
-    for index, data in enumerate(dataset):
-        if index >= data_size:
-            break
-        image, target = data
+    for index in indices:
+        image, target = dataset[index]
         inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
 
