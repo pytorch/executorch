@@ -1039,7 +1039,11 @@ class InstallerBuildExt(build_ext):
                 # from build_extension, and the editable copy needs the same repair or the
                 # import fails on a library the loader cannot find.
                 if isinstance(ext, BuiltExtension):
-                    _strip_absolute_runtime_paths(Path(inplace_file))
+                    build_command = self.get_finalized_command("build")
+                    cache_dir = getattr(build_command, "cmake_cache_dir", None)
+                    _strip_absolute_runtime_paths(
+                        Path(inplace_file), _cuda_libraries_built(cache_dir)
+                    )
 
             if ext._needs_stub:
                 inplace_stub = self._get_equivalent_stub(ext, inplace_file)
