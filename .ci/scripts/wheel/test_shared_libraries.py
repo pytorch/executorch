@@ -907,6 +907,13 @@ project(custom_op_check CXX)
 
 find_package(executorch REQUIRED)
 
+# An unknown name here would be passed to the linker as a plain library rather
+# than reported, so the include directories would silently not arrive and the
+# build would fail later on a missing header.
+if(NOT TARGET executorch::_C)
+  message(FATAL_ERROR "cannot link a target that does not exist: executorch::_C")
+endif()
+
 add_library(custom_op_check SHARED custom_op.cpp)
 # The legacy contract: a custom-op library links the shipped Python extension,
 # which owns the operator registry it registers into.
