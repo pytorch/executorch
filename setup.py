@@ -1361,13 +1361,16 @@ class CustomBuildPy(build_py):
 
             # Ensure that the destination directory exists.
             self.mkpath(os.path.dirname(dst))
+            # Remove any previous copy first, because copy_file skips a
+            # destination newer than its source. A second build in the same
+            # checkout would otherwise keep a configuration file that was
+            # substituted for the previous build's settings.
+            if os.path.exists(dst):
+                os.remove(dst)
             # Follow the example of the base build_py class by not preserving
             # the mode. This ensures that the output file is read/write even if
-            # the input file is read-only. Copied unconditionally because the
-            # default is timestamp incremental, and a second build in the same
-            # checkout would then keep a configuration substituted for the
-            # previous build's settings.
-            self.copy_file(src, dst, preserve_mode=False, update=False)
+            # the input file is read-only.
+            self.copy_file(src, dst, preserve_mode=False)
             if os.path.basename(dst) == "executorch-config.cmake":
                 _substitute_tracer_definition(dst, _tracer_cache_dir(self))
 
