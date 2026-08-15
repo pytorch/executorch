@@ -72,7 +72,6 @@ CORTEX_M_XFAILS = [
     "test_convnext_small",
     "test_densenet161",
     "test_maxvit_t",
-    "test_mnasnet1_0",
     "test_shufflenet_v2_x1_0",
     # 4.00 bytes per parameter: none of the convolutions lower, so the weights
     # stay fp32 and the 100 MiB program overruns the pool. Lowering conv1d
