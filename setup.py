@@ -248,6 +248,11 @@ def _cmake_args() -> List[str]:
         return raw.split()
 
 
+# Release rows that ship no CUDA. Named once because the build side and the metadata side both ask,
+# and a row recognised by only one of them builds CUDA libraries while declaring no runtime for them.
+_CPU_ROW_NAMES = ("cpu", "cpu-aarch64")
+
+
 def _row_is_cpu_only() -> bool:
     """Whether the release row this build belongs to names itself a CPU row.
 
@@ -260,7 +265,7 @@ def _row_is_cpu_only() -> bool:
         .strip()
         .lower()
     )
-    return raw == "cpu"
+    return raw in _CPU_ROW_NAMES
 
 
 def _cuda_train() -> str:
@@ -298,7 +303,7 @@ def _cuda_train() -> str:
     # A row spelled "cpu" is a CPU row regardless of CMAKE_ARGS. Recognised here so that a
     # local build named that way with no CMAKE_ARGS set does not fall through and raise on
     # the unsupported-train branch below.
-    if raw.lower() in ("cpu", "cpu-aarch64"):
+    if raw.lower() in _CPU_ROW_NAMES:
         return ""
     # Reduce to digits and match against the same (major, minor) trains the shell classifier
     # uses. Previously this took the first two digits and matched against major only, so a
@@ -885,13 +890,16 @@ class BuiltFile(_BaseExtension):
         """For a `BuiltFile`, we use self.dst as its inplace directory path.
         Need to handle directory vs file.
         """
-        # HACK: get rid of the leading "executorch" in ext.dst.
-        # This is because we don't have a root level "executorch" module.
-        package_dir = self.dst.removeprefix("executorch/")
-        # If dst is a file, use it's directory
-        if not package_dir.endswith("/"):
-            package_dir = os.path.dirname(package_dir)
-        return Path(package_dir)
+        # The destination is relative to the installed package, so resolve it against the same
+        # package directory an extension uses. Anchoring at the repo root instead only worked for
+        # destinations that already had a directory under src/executorch, and silently scattered
+        # the rest, which left the CMake package searching a directory nothing was copied into.
+        relative = self.dst.removeprefix("executorch/")
+        if not relative.endswith("/"):
+            relative = os.path.dirname(relative)
+        build_py = installer.get_finalized_command("build_py")
+        package_dir = os.path.abspath(build_py.get_package_dir("executorch"))
+        return Path(package_dir) / relative
 
 
 class BuiltExtension(_BaseExtension):
@@ -1281,7 +1289,9 @@ class CustomBuildPy(build_py):
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
             if os.path.basename(dst) == "executorch-config.cmake":
-                _substitute_tracer_definition(dst, _tracer_cache_dir(self))
+                tracer_cache_dir = _tracer_cache_dir(self)
+                if tracer_cache_dir is not None:
+                    _substitute_tracer_definition(dst, tracer_cache_dir)
 
     def run(self):
         # Copy python files to the output directory. This set of files is
@@ -1572,7 +1582,7 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
         )
 
 
-def _tracer_cache_dir(command) -> str:
+def _tracer_cache_dir(command) -> Optional[str]:
     """The build directory holding CMakeCache.txt.
 
     Raises rather than falling back, because the value decides a compile definition that changes
@@ -1582,12 +1592,10 @@ def _tracer_cache_dir(command) -> str:
     build_command = command.get_finalized_command("build")
     cache_dir = getattr(build_command, "cmake_cache_dir", None)
     if not cache_dir:
-        raise RuntimeError(
-            "cannot resolve the CMake cache directory while installing the CMake package, so the "
-            "tracer definition it publishes cannot be derived from what was built. This happens "
-            "when the build command did not run CMake, for example an editable install that "
-            "invokes build_py directly."
-        )
+        # None rather than an error, because nothing has been built yet: an editable install runs
+        # build_py before build_ext. The caller then leaves the file alone instead of guessing a
+        # setting, so no config claims a tracer state that nothing verified.
+        return None
     return os.path.abspath(cache_dir)
 
 
