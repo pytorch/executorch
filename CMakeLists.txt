@@ -1328,13 +1328,14 @@ if(EXECUTORCH_BUILD_PYBIND)
     set_property(
       TARGET portable_lib
       APPEND
-      PROPERTY BUILD_RPATH "@loader_path/../../lib"
+      PROPERTY BUILD_RPATH
+               "@loader_path/../../lib;@loader_path/../../src/executorch/lib"
     )
   elseif(NOT WIN32)
     set_property(
       TARGET portable_lib
       APPEND
-      PROPERTY BUILD_RPATH "$ORIGIN/../../lib"
+      PROPERTY BUILD_RPATH "$ORIGIN/../../lib;$ORIGIN/../../src/executorch/lib"
     )
   endif()
   # These libraries register their operators or their backend from a static
