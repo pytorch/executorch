@@ -98,3 +98,126 @@ def test_generate_8bit_table_values_matches_reference_for_qmin_minus_127() -> No
     assert torch.equal(lut_values, expected_lut_values)
     assert int(lut_values[0]) == int(lut_values[1])
     assert int(lut_values[zero_input_index]) == expected_zero_output
+
+
+def test_generate_16bit_identity_table_is_antisymmetric() -> None:
+    """Equal zero-point-zero qparams produce an antisymmetric full-range LUT."""
+    qargs = QuantArgs(
+        scale=1.0,
+        zp=0,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+
+    lut_values, lshift = InsertTableOpsPass.generate_16_bit_table_values(
+        torch.nn.Identity(),
+        qargs,
+        qargs,
+    )
+
+    assert lshift == -7
+    for i in range(len(lut_values) // 2):
+        neg_value = int(lut_values[i])
+        pos_value = int(lut_values[~i])
+        assert neg_value == -pos_value, (
+            "Expected a zero-point-zero identity LUT to be antisymmetric, but "
+            f"lut_values[{i}]={neg_value} and "
+            f"lut_values[{~i}]={pos_value}"
+        )
+
+
+def test_generate_16bit_full_range_identity_table_applies_zero_point_delta() -> None:
+    """Changing only zero point offsets each LUT value by output_zp - input_zp."""
+    input_qargs = QuantArgs(
+        scale=1.0,
+        zp=1,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+    output_qargs = QuantArgs(
+        scale=1.0,
+        zp=-1,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+
+    lut_values, lshift = InsertTableOpsPass.generate_16_bit_table_values(
+        torch.nn.Identity(),
+        input_qargs,
+        output_qargs,
+    )
+
+    table_input_codes = torch.arange(-32768, 32769, 128, dtype=torch.int32)
+    zero_point_delta = (
+        output_qargs.get_zp_per_tensor() - input_qargs.get_zp_per_tensor()
+    )
+    expected_lut_values = (table_input_codes + zero_point_delta).clamp(
+        output_qargs.qmin,
+        output_qargs.qmax,
+    )
+
+    assert lshift == -7
+    assert torch.equal(lut_values.to(torch.int32), expected_lut_values)
+
+
+def test_generate_16bit_full_range_identity_table_applies_scale_ratio() -> None:
+    """Changing only scale multiplies each LUT value by input / output scale."""
+    input_qargs = QuantArgs(
+        scale=0.5,
+        zp=0,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+    output_qargs = QuantArgs(
+        scale=1.0,
+        zp=0,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+
+    lut_values, lshift = InsertTableOpsPass.generate_16_bit_table_values(
+        torch.nn.Identity(),
+        input_qargs,
+        output_qargs,
+    )
+
+    table_input_codes = torch.arange(-32768, 32769, 128, dtype=torch.int32)
+    scale_ratio = (
+        input_qargs.get_scale_per_tensor() / output_qargs.get_scale_per_tensor()
+    )
+    expected_lut_values = (table_input_codes * scale_ratio).round().to(torch.int32)
+
+    assert lshift == -7
+    assert torch.equal(lut_values.to(torch.int32), expected_lut_values)
+
+
+def test_generate_16bit_table_clamps_endpoint_for_restricted_range() -> None:
+    """A restricted input qmax clamps the final LUT value."""
+    input_qargs = QuantArgs(
+        scale=1.0,
+        zp=0,
+        qmin=-32767,
+        qmax=30080,
+        dtype=torch.int16,
+    )
+    output_qargs = QuantArgs(
+        scale=1.0,
+        zp=0,
+        qmin=-32767,
+        qmax=32767,
+        dtype=torch.int16,
+    )
+
+    lut_values, lshift = InsertTableOpsPass.generate_16_bit_table_values(
+        torch.nn.Identity(),
+        input_qargs,
+        output_qargs,
+    )
+
+    assert lshift == -7
+    assert int(lut_values[-1]) == input_qargs.qmax

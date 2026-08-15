@@ -13,11 +13,7 @@ import sys
 from typing import cast, Optional
 
 import torch
-from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
-    register_cadence_pass,
-    RemoveOrReplacePassInterface,
-)
+from executorch.backends.cadence.aot.pass_utils import RemoveOrReplacePassInterface
 from executorch.backends.cadence.aot.utils import rebind
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -25,7 +21,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class SimplifySliceOpPass(RemoveOrReplacePassInterface):
     """
     Simplify the start and end indices of slice and slice_scatter ops.
@@ -174,7 +169,6 @@ class SimplifySliceOpPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=0))
 class BindOptionalArgsPass(ExportPass):
     """Bind all optional args and kwargs."""
 

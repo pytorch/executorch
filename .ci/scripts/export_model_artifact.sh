@@ -25,6 +25,7 @@ Arguments:
                  - nvidia/diar_streaming_sortformer_4spk-v2
                  - nvidia/parakeet-tdt
                  - facebook/dinov2-small-imagenet1k-1-layer
+                 - meta-models/Muse-Glimmer-30B-GGUF
 
   quant_name   Quantization type (optional, default: non-quantized)
                Options:
@@ -33,6 +34,8 @@ Arguments:
                  - quantized-int4-weight-only (CUDA only)
                  - quantized-int4-metal (Metal only)
                  - quantized-8da4w (XNNPACK only)
+                 - kquant-17gb (Muse Glimmer only)
+                 - kquant-dynamic (Muse Glimmer only)
 
   output_dir   Output directory for artifacts (optional, default: current directory)
 
@@ -40,6 +43,8 @@ Arguments:
                Supported modes:
                  - vr-streaming: Voxtral Realtime streaming mode
                  - vr-offline: Voxtral Realtime offline mode
+                 - solo-text: Muse Glimmer solo text mode
+                 - dflash-image: Muse Glimmer DFlash vision mode
 
 Examples:
   export_model_artifact.sh metal "openai/whisper-small"
@@ -53,6 +58,7 @@ Examples:
   export_model_artifact.sh xnnpack "nvidia/parakeet-tdt" "quantized-8da4w" "./output"
   export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "quantized-8da4w" "./output"
   export_model_artifact.sh xnnpack "mistralai/Voxtral-Mini-4B-Realtime-2602" "non-quantized" "./output" "vr-offline"
+  export_model_artifact.sh cuda "meta-models/Muse-Glimmer-30B-GGUF" "kquant-17gb" "./output" "solo-text"
 EOF
 }
 
@@ -89,9 +95,16 @@ if [ -n "$MODE" ]; then
         exit 1
       fi
       ;;
+    solo-text|dflash-image)
+      if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
+        echo "Error: Mode '$MODE' can only be used with Muse Glimmer model"
+        echo "Provided model: $HF_MODEL"
+        exit 1
+      fi
+      ;;
     *)
       echo "Error: Unsupported mode '$MODE'"
-      echo "Supported modes: vr-streaming, vr-offline"
+      echo "Supported modes: vr-streaming, vr-offline, solo-text, dflash-image"
       exit 1
       ;;
   esac
@@ -203,9 +216,17 @@ case "$HF_MODEL" in
     PREPROCESSOR_FEATURE_SIZE=""
     PREPROCESSOR_OUTPUT=""
     ;;
+  meta-models/Muse-Glimmer-30B-GGUF)
+    MODEL_NAME="muse_glimmer"
+    TASK=""
+    MAX_SEQ_LEN=""
+    EXTRA_PIP=""
+    PREPROCESSOR_FEATURE_SIZE=""
+    PREPROCESSOR_OUTPUT=""
+    ;;
   *)
     echo "Error: Unsupported model '$HF_MODEL'"
-    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF"
+    echo "Supported models: mistralai/Voxtral-Mini-3B-2507, mistralai/Voxtral-Mini-4B-Realtime-2602, openai/whisper-{small, medium, large, large-v2, large-v3, large-v3-turbo}, google/gemma-3-4b-it, Qwen/Qwen3-0.6B, nvidia/diar_streaming_sortformer_4spk-v2, nvidia/parakeet-tdt, facebook/dinov2-small-imagenet1k-1-layer, SocialLocalMobile/Qwen3.5-35B-A3B-HQQ-INT4, unsloth/gemma-4-31B-it-GGUF, meta-models/Muse-Glimmer-30B-GGUF"
     exit 1
     ;;
 esac
@@ -243,12 +264,35 @@ case "$QUANT_NAME" in
     fi
     EXTRA_ARGS="--qlinear 8da4w --qlinear_group_size 32 --qlinear_encoder 8da4w --qlinear_encoder_group_size 32"
     ;;
+  kquant-17gb|kquant-dynamic)
+    if [ "$HF_MODEL" != "meta-models/Muse-Glimmer-30B-GGUF" ]; then
+      echo "Error: Quantization '$QUANT_NAME' can only be used with Muse Glimmer model"
+      echo "Provided model: $HF_MODEL"
+      exit 1
+    fi
+    EXTRA_ARGS=""
+    ;;
   *)
     echo "Error: Unsupported quantization '$QUANT_NAME'"
-    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w"
+    echo "Supported quantizations: non-quantized, quantized-int4-tile-packed, quantized-int4-weight-only, quantized-int4-metal, quantized-8da4w, kquant-17gb, kquant-dynamic"
     exit 1
     ;;
 esac
+
+if [ "$MODEL_NAME" = "muse_glimmer" ]; then
+  if [ "$DEVICE" != "cuda" ]; then
+    echo "Error: Muse Glimmer is only supported with the cuda device"
+    exit 1
+  fi
+  if [ "$QUANT_NAME" != "kquant-17gb" ] && [ "$QUANT_NAME" != "kquant-dynamic" ]; then
+    echo "Error: Muse Glimmer requires quantization 'kquant-17gb' or 'kquant-dynamic'"
+    exit 1
+  fi
+  if [ "$MODE" != "solo-text" ] && [ "$MODE" != "dflash-image" ]; then
+    echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+    exit 1
+  fi
+fi
 
 echo "::group::Export $MODEL_NAME"
 
@@ -465,6 +509,73 @@ if [ "$MODEL_NAME" = "qwen3_5_moe" ]; then
 
   test -f "${OUTPUT_DIR}/model.pte"
   test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  ls -al "${OUTPUT_DIR}"
+
+  exit 0
+fi
+
+# Muse Glimmer: download the selected GGUFs and export the requested CUDA configuration.
+if [ "$MODEL_NAME" = "muse_glimmer" ]; then
+  pip install safetensors huggingface_hub gguf
+
+  LOCAL_MODEL_DIR=$(mktemp -d)
+  INDUCTOR_CACHE=$(mktemp -d "${RUNNER_TEMP:-/tmp}/inductor_cache_XXXXXX")
+  INDUCTOR_TMPDIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/tmpdir_XXXXXX")
+  trap 'rm -rf "$LOCAL_MODEL_DIR" "$INDUCTOR_CACHE" "$INDUCTOR_TMPDIR"' EXIT
+
+  case "$QUANT_NAME" in
+    kquant-17gb)
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"
+      ;;
+    kquant-dynamic)
+      TARGET_GGUF_FILE="Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
+      ;;
+  esac
+
+  python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${TARGET_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+  TARGET_GGUF_PATH="${LOCAL_MODEL_DIR}/${TARGET_GGUF_FILE}"
+
+  echo "::group::Export"
+  case "$MODE" in
+    solo-text)
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_solo \
+          --gguf "$TARGET_GGUF_PATH" \
+          --backend cuda \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
+    dflash-image)
+      DRAFT_GGUF_FILE="dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
+      MMPROJ_GGUF_FILE="mmproj-Muse-Glimmer-30B-Q4_K_M.gguf"
+      python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${DRAFT_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+      python -c "from huggingface_hub import hf_hub_download; hf_hub_download('${HF_MODEL}', '${MMPROJ_GGUF_FILE}', local_dir='${LOCAL_MODEL_DIR}')"
+      EXPORT_START_SECONDS=$SECONDS
+      TMPDIR="$INDUCTOR_TMPDIR" \
+      TORCHINDUCTOR_CACHE_DIR="$INDUCTOR_CACHE" \
+      python -m executorch.examples.models.muse_glimmer.export.export_dflash \
+          --target-gguf "$TARGET_GGUF_PATH" \
+          --draft-gguf "${LOCAL_MODEL_DIR}/${DRAFT_GGUF_FILE}" \
+          --mmproj "${LOCAL_MODEL_DIR}/${MMPROJ_GGUF_FILE}" \
+          --backend cuda \
+          --output-dir "${OUTPUT_DIR}"
+      ;;
+    *)
+      echo "Error: Muse Glimmer requires mode 'solo-text' or 'dflash-image'"
+      exit 1
+      ;;
+  esac
+  EXPORT_DURATION_SECONDS=$((SECONDS - EXPORT_START_SECONDS))
+  EXPORT_DURATION_MINUTES=$(awk -v seconds="$EXPORT_DURATION_SECONDS" 'BEGIN {printf "%.2f", seconds / 60}')
+  echo "Muse Glimmer took ${EXPORT_DURATION_MINUTES} minutes to export."
+  echo "::endgroup::"
+
+  test -f "${OUTPUT_DIR}/model.pte"
+  test -f "${OUTPUT_DIR}/aoti_cuda_blob.ptd"
+  if [ "$MODE" = "dflash-image" ]; then
+    test -f "${OUTPUT_DIR}/pos_embed.bin"
+  fi
   ls -al "${OUTPUT_DIR}"
 
   exit 0

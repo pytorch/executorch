@@ -173,6 +173,18 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class Conv3d(torch.nn.Module):
+    def __init__(self, stride):
+        super().__init__()
+        self.conv = torch.nn.Conv3d(2, 2, (2, 2, 2), stride=stride)
+
+    def forward(self, x):
+        return self.conv(x)
+
+    def get_inputs(self):
+        return (torch.randn(1, 2, 4, 4, 4),)
+
+
 class Conv2dDQSeq(torch.nn.Module):
     def __init__(self, transpose=False):
         super().__init__()
@@ -289,6 +301,41 @@ class TestConv2d(unittest.TestCase):
         for transpose in (True, False):
             for has_bias in (True, False):
                 self._test(Conv2d(bias=has_bias, transpose=transpose))
+
+    def test_fp32_conv2d_single_element_spatial_params(self) -> None:
+        # ATen broadcasts a single stride/padding/dilation value over every
+        # spatial dim, so a 2d conv can carry length-1 spatial params.
+        for transpose in (True, False):
+            self._test(
+                Conv2d(
+                    kernel_size=(3, 3),
+                    stride=(2,),
+                    padding=(1,),
+                    transpose=transpose,
+                )
+            )
+
+    def test_fp32_conv2d_single_element_dilation(self) -> None:
+        self._test(
+            Conv2d(
+                kernel_size=(3, 3),
+                stride=(1,),
+                padding=(1,),
+                dilation=(2,),
+            )
+        )
+
+    def test_fp32_conv3d_single_element_stride_doesnt_partition(self) -> None:
+        # XNNPACK has no conv3d support, and a length-1 stride must not make a 3d
+        # conv look 1d or 2d to the partitioner.
+        m = Conv3d(stride=(2,))
+        (
+            Tester(m, m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .run_method_and_compare_outputs()
+        )
 
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):

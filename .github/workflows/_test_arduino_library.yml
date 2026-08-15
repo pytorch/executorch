@@ -1,0 +1,115 @@
+name: Test Arduino library
+
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      timeout:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 90
+
+jobs:
+  run:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      job-name: arduino-library
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: ${{ inputs.timeout }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        # Schema headers come from a cmake build; the library build script
+        # refuses to run without them.
+        cmake -B cmake-out -DCMAKE_BUILD_TYPE=Release
+        cmake --build cmake-out --target program_schema -j$(nproc)
+
+        cd examples/arduino
+        ./build_arduino_library.sh
+
+        # A model exported against a different ExecuTorch commit than the one
+        # that built the library loads fine, resolves every operator, and then
+        # fails inside Method::execute. Catch that here rather than on a board.
+        python verify_models.py arduino_lib/ExecuTorch
+
+        # arduino-cli, the Uno Q core, and the Serial dependency the core
+        # hard-errors without.
+        # Pinned release tarballs rather than piping an installer script from a
+        # moving branch: reproducible, and one less thing to fail transiently.
+        ARDUINO_CLI_VERSION=1.5.1
+        ARDUINO_LINT_VERSION=1.3.0
+        # RUNNER_TEMP and GITHUB_WORKSPACE both point at host paths this
+        # container cannot write to, and HOME may too, so keep the toolchain
+        # and every arduino-cli directory somewhere local to the container.
+        ARDUINO_CI_DIR=/tmp/.arduino-ci
+        export ARDUINO_DIRECTORIES_USER="${ARDUINO_CI_DIR}/user"
+        export ARDUINO_DIRECTORIES_DATA="${ARDUINO_CI_DIR}/data"
+        export ARDUINO_DIRECTORIES_DOWNLOADS="${ARDUINO_CI_DIR}/downloads"
+        mkdir -p "${ARDUINO_DIRECTORIES_USER}" "${ARDUINO_DIRECTORIES_DATA}" \
+          "${ARDUINO_DIRECTORIES_DOWNLOADS}" "${ARDUINO_CI_DIR}/bin"
+        export PATH="${ARDUINO_CI_DIR}/bin:${PATH}"
+        curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+          "https://downloads.arduino.cc/arduino-cli/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
+          | tar xz -C "${ARDUINO_CI_DIR}/bin" arduino-cli
+        # Pinned so a failure here means a real incompatibility rather than an
+        # upstream release landing under us. Bump deliberately: the core went
+        # 0.55.2 -> 0.90.0 without warning, and the reported RAM ceiling doubled
+        # with it. Keep this matching what Library Manager users install.
+        #
+        # The Zephyr core pulls a ~1 GB toolchain from a GitHub release, which
+        # outruns arduino-cli's default HTTP timeout often enough to matter, and
+        # `core install` has no retry of its own.
+        arduino-cli config init --overwrite
+        arduino-cli config set network.connection_timeout 600s
+        arduino-cli core update-index
+
+        retry() {
+          local n=1
+          until "$@"; do
+            if [ "${n}" -ge 3 ]; then
+              echo "::error::'$*' failed after ${n} attempts"
+              return 1
+            fi
+            echo "attempt ${n} of 3 failed; retrying in $((n * 30))s"
+            sleep $((n * 30))
+            n=$((n + 1))
+          done
+        }
+        retry arduino-cli core install arduino:zephyr@0.90.0
+        retry arduino-cli lib install Arduino_RouterBridge@0.4.3
+
+        # link_mode=static is not optional. Dynamic is the board default and
+        # does a relocatable link, which makes --gc-sections inert: nothing
+        # unused is stripped and the build overflows flash.
+        FQBN="arduino:zephyr:unoq:link_mode=static"
+        for sketch in arduino_lib/ExecuTorch/examples/*/; do
+          echo "::group::compile $(basename "${sketch}")"
+          arduino-cli compile --fqbn "${FQBN}" \
+            --libraries arduino_lib "${sketch}"
+          echo "::endgroup::"
+        done
+
+        # The library is published through the Arduino Library Manager, which
+        # applies these rules at submission time.
+        curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+          "https://downloads.arduino.cc/arduino-lint/arduino-lint_${ARDUINO_LINT_VERSION}_Linux_64bit.tar.gz" \
+          | tar xz -C "${ARDUINO_CI_DIR}/bin" arduino-lint
+        cp ../../LICENSE arduino_lib/ExecuTorch/LICENSE
+        cp README.md arduino_lib/ExecuTorch/README.md
+        (cd arduino_lib/ExecuTorch && arduino-lint \
+          --project-type library --library-manager update --compliance strict)

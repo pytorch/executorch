@@ -60,6 +60,7 @@ from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
+from .recompose_hadamard import RecomposeHadamard
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
@@ -127,6 +128,7 @@ __all__ = [
     LayoutTransform,
     LiftConstantScalarOperands,
     LpaiPartitionFallbackSupport,
+    RecomposeHadamard,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,

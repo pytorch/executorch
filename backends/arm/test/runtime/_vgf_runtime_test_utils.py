@@ -42,8 +42,10 @@ from executorch.backends.arm.test.runner_utils import (
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 from executorch.backends.arm.vgf.model_converter import (
-    find_model_converter_binary,
-    model_converter_env,
+    get_model_converter_minimum_version_failure_reason,
+    get_model_converter_version_text,
+    MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+    parse_model_converter_version,
 )
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 from executorch.exir.pass_base import ExportPass
@@ -67,60 +69,37 @@ def ensure_glslc() -> None:
 
 
 @functools.lru_cache(maxsize=1)
-def _model_converter_is_legacy_release() -> tuple[bool, str]:
-    model_converter = find_model_converter_binary()
-    if model_converter is None:
+def _model_converter_supports_vgf_tests() -> tuple[bool, str]:
+    version_text = get_model_converter_version_text()
+    if version_text is None:
         warnings.warn(
             "Could not find model-converter while evaluating the VGF runtime "
-            "legacy-version xfail gate; assuming a newer/custom build.",
+            "minimum-version xfail gate; assuming a newer/custom build.",
             stacklevel=2,
         )
-        return False, ""
+        return True, ""
 
-    try:
-        result = subprocess.run(  # nosec B603 - trusted local tool
-            [model_converter, "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=model_converter_env(),
-        )
-    except Exception as exc:
-        warnings.warn(
-            "Failed to query model-converter --version while evaluating the VGF "
-            f"runtime legacy-version xfail gate ({exc}); assuming a newer/custom "
-            "build.",
-            stacklevel=2,
-        )
-        return False, ""
-
-    version_text = (result.stdout or result.stderr).strip()
-    if not version_text:
-        warnings.warn(
-            "model-converter --version returned no output while evaluating the VGF "
-            "runtime legacy-version xfail gate; assuming a newer/custom build.",
-            stacklevel=2,
-        )
-        return False, ""
-
-    if "d8c1b8e" in version_text:
-        return (
-            True,
-            "released model-converter build d8c1b8e predates required VGF custom "
-            "shader features; use a newer source build",
-        )
-
-    warnings.warn(
-        "model-converter legacy-version xfail gate expected d8c1b8e; detected "
-        f"{version_text!r}. Assuming a newer/custom build.",
-        stacklevel=2,
+    reason = get_model_converter_minimum_version_failure_reason(
+        version_text,
+        MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        requirement_name="these VGF runtime tests",
     )
-    return False, ""
+    if reason is not None:
+        return False, reason
+
+    if parse_model_converter_version(version_text) is None:
+        warnings.warn(
+            "Could not map model-converter version output to a comparable "
+            f"release while evaluating the VGF runtime minimum-version xfail "
+            f"gate; detected {version_text!r}. Assuming a newer/custom build.",
+            stacklevel=2,
+        )
+    return True, ""
 
 
-def xfail_if_legacy_model_converter_release() -> pytest.MarkDecorator:
-    is_legacy_release, reason = _model_converter_is_legacy_release()
-    return pytest.mark.xfail(is_legacy_release, reason=reason, strict=False)
+def xfail_if_model_converter_below_minimum_version() -> pytest.MarkDecorator:
+    supports_vgf_tests, reason = _model_converter_supports_vgf_tests()
+    return pytest.mark.xfail(not supports_vgf_tests, reason=reason, strict=False)
 
 
 def find_single_vgf_json(output_dir: Path) -> Path:

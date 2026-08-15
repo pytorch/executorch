@@ -383,6 +383,12 @@ class OpGroupNorm:
 
 
 @dataclass(init=False, frozen=True)
+class OpHadamardTransform:
+    op_name: str = "HadamardTransform"
+    param_scale: str = "scale"
+
+
+@dataclass(init=False, frozen=True)
 class OpHardSwish:
     op_name: str = "HardSwish"
 

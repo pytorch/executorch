@@ -6,11 +6,15 @@
 
 import inspect
 import itertools
+import math
 import random
 from functools import partial, reduce
 from operator import mul
 
 import torch
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
@@ -2207,6 +2211,51 @@ class GroupNorm(torch.nn.Module):
                         quantizer=quantizer,
                         compile_specs=compile_spec,
                         metrics=metrics,
+                    )
+
+
+class Hadamard(torch.nn.Module):
+    # linear / matmul / 1x1-conv with an orthonormal Hadamard weight; the QNN backend
+    # rewrites each into a single qnn_custom.hadamard_transform during annotation.
+    def __init__(self, variant, dim):
+        super().__init__()
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        if variant == "linear":
+            self.op = torch.nn.Linear(dim, dim, bias=False).eval()
+            self.op.weight.data.copy_(H)  # symmetric H -> x@H^T == x@H
+        elif variant == "conv":
+            self.op = torch.nn.Conv2d(dim, dim, 1, bias=False).eval()
+            self.op.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+        else:  # matmul
+            self.register_buffer("weight", H)
+        self.variant = variant
+
+    def forward(self, x):
+        if self.variant == "matmul":
+            return torch.matmul(x, self.weight)
+        return self.op(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        dim = 128
+        cases = {
+            "linear": (torch.randn(1, dim),),
+            "matmul": (torch.randn(1, dim),),
+            "conv": (torch.randn(1, dim, 4, 4),),
+        }
+        target = torch.ops.qnn_custom.hadamard_transform.default
+        for variant, inputs in cases.items():
+            with subtests.test(msg=f"variant:{variant}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(variant=variant, dim=dim),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                        expected_targets={target},
                     )
 
 
