@@ -318,9 +318,13 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # links that as well.
   foreach(
     _executorch_component IN
-    ITEMS libexecutorch_kernels_optimized libexecutorch_backend_xnnpack
-          libexecutorch_backend_cuda libexecutorch_extension_cuda
-          libexecutorch_threadpool libexecutorch_etdump
+    ITEMS libexecutorch_kernels_optimized
+          libexecutorch_backend_xnnpack
+          libexecutorch_backend_cuda
+          libexecutorch_extension_cuda
+          libexecutorch_backend_openvino
+          libexecutorch_threadpool
+          libexecutorch_etdump
   )
     _executorch_find_library(
       _executorch_component_library "${_executorch_component}"
