@@ -54,7 +54,7 @@ jobs:
 
       - name: Generate mypy stubs for C++ bindings
         run: |
-          cp extension/pybindings/pybindings.pyi extension/pybindings/_portable_lib.pyi
+          cp extension/pybindings/pybindings.pyi extension/pybindings/_C.pyi
 
       - name: Run mypy
         run: |

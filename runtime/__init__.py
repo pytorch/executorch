@@ -122,7 +122,7 @@ try:
     )
 except ModuleNotFoundError as e:
     raise ModuleNotFoundError(
-        "Prebuilt <site-packages>/extension/pybindings/_portable_lib.so "
+        "Prebuilt <site-packages>/extension/pybindings/_C.so "
         "is not found. Please reinstall ExecuTorch from pip."
     ) from e
 
