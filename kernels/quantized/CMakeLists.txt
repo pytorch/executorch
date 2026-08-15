@@ -197,4 +197,7 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_quantized_ops quantized_ops_lib quantized_kernels
     executorch_shared
   )
+  # This library holds no symbol a consumer names, only registration
+  # constructors, so a link with --as-needed would drop it and register nothing.
+  executorch_target_link_options_shared_lib(executorch_quantized_ops)
 endif()

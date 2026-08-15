@@ -206,13 +206,20 @@ if(APPLE)
     coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
   )
 
-  # The profiler hooks in this delegate compile only when the sdk sources below
-  # are also built, because they import a header that ships with them. A build
-  # that turns the tracer on globally without those sources would fail here, so
-  # keep this target out of it rather than half enabling it.
-  if(NOT EXECUTORCH_BUILD_DEVTOOLS)
-    target_compile_options(coremldelegate PRIVATE -UET_EVENT_TRACER_ENABLED)
+  # The tracer macro selects the body of inline delegate hooks, so undefining it
+  # for this target alone would put two definitions of the same inline function
+  # in one program and let link order decide which survives. What the guarded
+  # code actually needs is one logger source and its directory, so add those
+  # rather than changing the macro for this target.
+  if(EXECUTORCH_ENABLE_EVENT_TRACER AND NOT EXECUTORCH_BUILD_DEVTOOLS)
+    target_sources(
+      coremldelegate
+      PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/sdk/model_event_logger_impl.mm
+    )
   endif()
+  target_include_directories(
+    coremldelegate PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/sdk
+  )
 
   if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
