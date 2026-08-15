@@ -1316,6 +1316,18 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
+
+  # The editable install copies this extension out of the build tree, and the
+  # entry CMake records points back into it. An $ORIGIN relative entry resolves
+  # the runtime wherever the extension is copied, so the copy works without a
+  # post-build patch step that needs a tool the developer may not have.
+  if(NOT APPLE AND NOT WIN32)
+    set_property(
+      TARGET portable_lib
+      APPEND
+      PROPERTY BUILD_RPATH "$ORIGIN/../../lib"
+    )
+  endif()
   # These libraries register their operators or their backend from a static
   # initializer, so nothing here references a symbol from them and some linkers
   # drop them from DT_NEEDED. That surfaces at runtime as a missing kernel or an
