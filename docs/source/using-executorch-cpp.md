@@ -227,7 +227,13 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::kernels_quantized)
 ```
 
-#### Running on a GPU with the CUDA package
+##### What a Core ML trace shows
+
+On macOS a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in total.
+It does not record the individual operators inside the delegate, because that detail comes from the
+Core ML developer tools sources, and the wheel does not build them. An XNNPACK model records both.
+
+## Running on a GPU with the CUDA package
 
 The CUDA build is a separate package. Install it with the index for your CUDA version, for example
 CUDA 12.6:
