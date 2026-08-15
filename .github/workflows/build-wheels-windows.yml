@@ -9,6 +9,8 @@ on:
       - examples/**/*
       - pyproject.toml
       - setup.py
+      - docs/source/using-executorch-cpp.md
+      - install_utils.py
       - tools/cmake/**/*
   push:
     branches:

@@ -15,6 +15,7 @@ on:
       - install_utils.py
       - pyproject.toml
       - setup.py
+      - docs/source/using-executorch-cpp.md
       - tools/cmake/**/*
   push:
     branches:

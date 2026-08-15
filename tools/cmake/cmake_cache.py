@@ -45,7 +45,9 @@ class CMakeCache:
         if normalized in _TRUE_VALUES:
             return True
         try:
-            return int(normalized) != 0
+            # float rather than int, because CMake accepts a number written with a decimal point and
+            # treats any non-zero value as true.
+            return float(normalized) != 0.0
         except ValueError:
             return False
 

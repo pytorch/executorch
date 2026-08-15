@@ -18,7 +18,7 @@ A row is kept only when both of these hold:
   a PyTorch build is published for that CUDA version and architecture
 
 Running a real model before release is a separate gate, on hardware that has the matching
-GPU, so a row can be published for a CUDA version no machine here can execute.
+GPU, so this filter decides only which rows exist and not whether they were exercised.
 
 The values below are the current answers to those questions. They are written out rather
 than derived because each one is an external fact that can change independently.
@@ -50,10 +50,10 @@ DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"
 #   cu130   the generator's stable choice, and the default for accelerator consumers
 #   cu132   the newest, which consumers building against a current TensorRT need
 #
-# cu132 is included even though no machine here can execute it, because omitting it would
-# leave a published consumer row with no ExecuTorch wheel to pair with. The packaging
-# properties are checked on every row; executing a model is a release-gate step on hardware
-# that has the matching GPU.
+# cu132 is included because omitting it would leave a published consumer row with no
+# ExecuTorch wheel to pair with. It is executable on a device one minor behind, since CUDA
+# minor versions are compatible, so a cu132 wheel has been run end to end on a CUDA 13.0
+# device. The packaging properties are checked on every row regardless.
 SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
 
 # Python versions to publish, stated rather than derived for the same reason the CUDA
