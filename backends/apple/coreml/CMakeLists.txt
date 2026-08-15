@@ -206,6 +206,21 @@ if(APPLE)
     coremldelegate PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
   )
 
+  # The tracer macro selects the body of inline delegate hooks, so undefining it
+  # for this target alone would put two definitions of the same inline function
+  # in one program and let link order decide which survives. What the guarded
+  # code actually needs is one logger source and its directory, so add those
+  # rather than changing the macro for this target.
+  if(EXECUTORCH_ENABLE_EVENT_TRACER AND NOT EXECUTORCH_BUILD_DEVTOOLS)
+    target_sources(
+      coremldelegate
+      PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/sdk/model_event_logger_impl.mm
+    )
+  endif()
+  target_include_directories(
+    coremldelegate PRIVATE ${CMAKE_CURRENT_LIST_DIR}/runtime/sdk
+  )
+
   if(EXECUTORCH_BUILD_DEVTOOLS)
     target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
     target_include_directories(
