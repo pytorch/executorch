@@ -208,6 +208,9 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_quantized_ops quantized_ops_lib quantized_kernels
     executorch_shared
   )
+  # This library holds no symbol a consumer names, only registration
+  # constructors, so a link with --as-needed would drop it and register nothing.
+  executorch_target_link_options_shared_lib(executorch_quantized_ops)
   # Named after what the library provides rather than after the target that
   # produces it, matching the optimized kernels next to it, so the shipped file
   # reads as libexecutorch_kernels_quantized.so. The target name stays as it is

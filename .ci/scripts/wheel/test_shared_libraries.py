@@ -343,7 +343,11 @@ def _runtime_search_paths(library) -> list | None:
     )
     if result.returncode != 0:
         return None
-    return [entry for entry in result.stdout.strip().split(":") if entry]
+    # A library with no search path prints nothing, which is not the same as a search path holding
+    # an empty entry. The fields are kept rather than filtered, because the loader reads an empty
+    # entry as the process working directory and the caller rejects exactly that.
+    recorded = result.stdout.strip()
+    return recorded.split(":") if recorded else []
 
 
 def _assert_mach_o_architecture_matches(wheel: Path) -> None:
@@ -1362,6 +1366,14 @@ def test_wheel_platform_tag() -> None:
 
     wheels = _find_wheel_files()
     if not wheels:
+        # Failing rather than returning, because this is the only check that compares the declared
+        # platform tag against what the libraries need, and a silent return reads as a pass in the
+        # job summary. A caller that genuinely has no wheel says so.
+        assert os.environ.get("EXECUTORCH_TEST_WITHOUT_WHEEL"), (
+            "no built wheel was found to inspect, so the platform tag was never checked. Run this "
+            "from a tree where the wheel was built, or set EXECUTORCH_TEST_WITHOUT_WHEEL to state "
+            "that no wheel is expected"
+        )
         print("- no wheel file to inspect, skipping the platform tag check")
         return
 
