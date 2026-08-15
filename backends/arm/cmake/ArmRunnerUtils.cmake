@@ -46,62 +46,6 @@ function(verify_targets_exist)
   endforeach()
 endfunction()
 
-# Private function to isolate logic for building prim ops library.
-function(_arm_runner_create_prim_ops_lib)
-  # Parse arguments.
-  set(options INCLUDE_ALL_OPS)
-  set(one_value_args LIB_NAME SELECTED_OPS_YAML)
-  set(multi_value_args DEPS)
-  cmake_parse_arguments(
-    ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN}
-  )
-
-  set(_out_dir "${CMAKE_CURRENT_BINARY_DIR}/${ARG_LIB_NAME}")
-  set(_sources ${EXECUTORCH_ROOT}/kernels/prim_ops/register_prim_ops.cpp)
-
-  # Generate selected operator list if needed.
-  if(NOT ARG_INCLUDE_ALL_OPS)
-    set(_selected_prim_ops_header "${_out_dir}/selected_prim_ops.h")
-    set(_gen_selected_prim_ops_script
-        "${EXECUTORCH_ROOT}/codegen/tools/gen_selected_prim_ops.py"
-    )
-    set(_gen_selected_prim_ops_command
-        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_prim_ops
-        --op-selection-yaml-path=${ARG_SELECTED_OPS_YAML}
-        --output-dir=${_out_dir}
-    )
-    add_custom_command(
-      COMMENT "Generating selected_prim_ops.h for ${ARG_LIB_NAME}"
-      OUTPUT ${_selected_prim_ops_header}
-      COMMAND ${_gen_selected_prim_ops_command}
-      DEPENDS ${ARG_SELECTED_OPS_YAML} ${_gen_selected_prim_ops_script}
-      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
-    )
-    list(APPEND _sources ${_selected_prim_ops_header})
-  endif()
-
-  # Add prim ops registration library.
-  add_library(${ARG_LIB_NAME} ${_sources})
-  target_include_directories(
-    ${ARG_LIB_NAME} PRIVATE ${EXECUTORCH_ROOT}/kernels/prim_ops ${_out_dir}
-  )
-  if(NOT ARG_INCLUDE_ALL_OPS)
-    target_compile_definitions(
-      ${ARG_LIB_NAME} PRIVATE ET_PRIM_OPS_SELECTIVE_BUILD
-                              EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD
-    )
-  endif()
-  target_link_libraries(${ARG_LIB_NAME} PRIVATE ${ARG_DEPS})
-  executorch_target_link_options_shared_lib(${ARG_LIB_NAME})
-
-  # Add prim ops kernel library.
-  add_library(
-    ${ARG_LIB_NAME}_impl ${EXECUTORCH_ROOT}/kernels/prim_ops/et_copy_index.cpp
-                         ${EXECUTORCH_ROOT}/kernels/prim_ops/et_view.cpp
-  )
-  target_link_libraries(${ARG_LIB_NAME}_impl PRIVATE ${ARG_DEPS})
-endfunction()
-
 #[[
 Create a selected operator registration library for one operator family.
 
@@ -221,7 +165,7 @@ function(arm_runner_create_selected_ops_lib)
     if(_arm_runner_include_all_ops)
       list(APPEND _arm_runner_prim_ops_args INCLUDE_ALL_OPS)
     endif()
-    _arm_runner_create_prim_ops_lib(${_arm_runner_prim_ops_args})
+    gen_selected_prim_ops_lib(${_arm_runner_prim_ops_args})
     return()
   endif()
 

@@ -44,17 +44,17 @@ the serving path uses it to render prompts and tools.
 
 | File | Use |
 |---|---|
-| `muse-glimmer-30B-kquant-17gb.gguf` | Recommended target checkpoint |
-| `muse-glimmer-30B-kquant-dynamic.gguf` | Dynamic K-quant target checkpoint |
-| `mmproj-kquant.gguf` | Optional vision projector |
-| `dflash-kquant.gguf` | Optional DFlash draft checkpoint |
+| `Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf` | Recommended target checkpoint |
+| `Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf` | Dynamic K-quant target checkpoint |
+| `mmproj-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional vision projector |
+| `dflash-Muse-Glimmer-30B-Q4_K_M.gguf` | Optional DFlash draft checkpoint |
 
 Set paths once for the commands below:
 
 ```bash
-TARGET="$(find assets/quant -type f -name 'muse-glimmer-30B-kquant-17gb.gguf' -print -quit)"
-DRAFT="$(find assets/quant -type f -name 'dflash-kquant.gguf' -print -quit)"
-MMPROJ="$(find assets/quant -type f -name 'mmproj-kquant.gguf' -print -quit)"
+TARGET="$(find assets/quant -type f -name 'Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf' -print -quit)"
+DRAFT="$(find assets/quant -type f -name 'dflash-Muse-Glimmer-30B-Q4_K_M.gguf' -print -quit)"
+MMPROJ="$(find assets/quant -type f -name 'mmproj-Muse-Glimmer-30B-Q4_K_M.gguf' -print -quit)"
 BACKEND=cuda  # use mlx on macOS
 ```
 
@@ -126,7 +126,19 @@ Vision adds `vision_encoder` to each method set.
 
 ## Build the runners
 
-Use the model-specific CMake workflow preset for the selected backend:
+From the repo root, the make targets build ExecuTorch with the backend and then
+the runners:
+
+```bash
+# CUDA
+make muse-glimmer-cuda
+
+# MLX
+make muse-glimmer-mlx
+```
+
+When ExecuTorch is already built for that backend, the model's CMake workflow
+preset rebuilds just the runners:
 
 ```bash
 # CUDA

@@ -2230,29 +2230,30 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             args=args,
         )
 
-    def create_convolution_graph_module(
-        self, channels_last: Optional[bool] = None
-    ) -> torch.fx.GraphModule:
-        """Helper to create a convolution node.
-
-        convolution(
-            Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding,"
-            int[] dilation, int groups, bool channel_last=False) -> (Tensor Y)"
-        """
-        if channels_last:
-            x = torch.randn(1, 224, 224, 3)
-            w = torch.randn(16, 16, 16, 3)
-        else:
-            x = torch.randn(1, 3, 224, 224)
-            w = torch.randn(16, 3, 16, 16)
+    def create_convolution_graph_module(self) -> torch.fx.GraphModule:
+        """Helper to create an FP32 NCHW convolution node."""
+        x = torch.randn(1, 3, 224, 224)
+        w = torch.randn(16, 3, 16, 16)
         b = torch.randn(16)
         args = (x, w, b, (2, 2), (1, 1), (0, 0), 1)
-        if channels_last is not None:
-            args = args + (channels_last,)
         return single_op_builder(
             placeholders=(x, w, b),
             op=exir_ops.edge.cadence.conv2d.default,
             args=args,
+        )
+
+    def test_fp32_convolution_is_not_replaced(self) -> None:
+        gm = self.create_convolution_graph_module()
+
+        result = ReplaceConvWithChannelLastConvPass().call(gm)
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.cadence.conv2d.default), 1
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            0,
         )
 
     def create_quantized_convolution_graph_module(

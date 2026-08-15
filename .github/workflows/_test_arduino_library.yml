@@ -66,13 +66,36 @@ jobs:
         curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
           "https://downloads.arduino.cc/arduino-cli/arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz" \
           | tar xz -C "${ARDUINO_CI_DIR}/bin" arduino-cli
+        # Pinned so a failure here means a real incompatibility rather than an
+        # upstream release landing under us. Bump deliberately: the core went
+        # 0.55.2 -> 0.90.0 without warning, and the reported RAM ceiling doubled
+        # with it. Keep this matching what Library Manager users install.
+        #
+        # The Zephyr core pulls a ~1 GB toolchain from a GitHub release, which
+        # outruns arduino-cli's default HTTP timeout often enough to matter, and
+        # `core install` has no retry of its own.
+        arduino-cli config init --overwrite
+        arduino-cli config set network.connection_timeout 600s
         arduino-cli core update-index
-        arduino-cli core install arduino:zephyr
-        arduino-cli lib install Arduino_RouterBridge
 
-        # link_mode=static is not optional. The board defaults to Dynamic,
-        # which builds the sketch as a Zephyr loadable extension; a library
-        # this size never starts that way and prints nothing at all.
+        retry() {
+          local n=1
+          until "$@"; do
+            if [ "${n}" -ge 3 ]; then
+              echo "::error::'$*' failed after ${n} attempts"
+              return 1
+            fi
+            echo "attempt ${n} of 3 failed; retrying in $((n * 30))s"
+            sleep $((n * 30))
+            n=$((n + 1))
+          done
+        }
+        retry arduino-cli core install arduino:zephyr@0.90.0
+        retry arduino-cli lib install Arduino_RouterBridge@0.4.3
+
+        # link_mode=static is not optional. Dynamic is the board default and
+        # does a relocatable link, which makes --gc-sections inert: nothing
+        # unused is stripped and the build overflows flash.
         FQBN="arduino:zephyr:unoq:link_mode=static"
         for sketch in arduino_lib/ExecuTorch/examples/*/; do
           echo "::group::compile $(basename "${sketch}")"
@@ -89,4 +112,4 @@ jobs:
         cp ../../LICENSE arduino_lib/ExecuTorch/LICENSE
         cp README.md arduino_lib/ExecuTorch/README.md
         (cd arduino_lib/ExecuTorch && arduino-lint \
-          --project-type library --library-manager submit --compliance strict)
+          --project-type library --library-manager update --compliance strict)

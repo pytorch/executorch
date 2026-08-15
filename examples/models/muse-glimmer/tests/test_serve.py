@@ -13,11 +13,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from executorch.examples.llm_server.python import chat_template
-from executorch.examples.llm_server.python.errors import APIError
-from executorch.examples.llm_server.python.protocol import ChatCompletionRequest
-from executorch.examples.llm_server.python.session_runtime import PromptInput
-from executorch.examples.models.muse_glimmer.serving import serve
+# The serving stack is built on pydantic, which ships with the llm_server
+# extras (examples/llm_server/python/requirements.txt) rather than core
+# ExecuTorch, so skip instead of failing collection when it is absent.
+pytest.importorskip("pydantic", reason="requires llm_server serving dependencies")
+
+from executorch.examples.llm_server.python import chat_template  # noqa: E402
+from executorch.examples.llm_server.python.errors import APIError  # noqa: E402
+from executorch.examples.llm_server.python.protocol import (  # noqa: E402
+    ChatCompletionRequest,
+)
+from executorch.examples.llm_server.python.session_runtime import (  # noqa: E402
+    PromptInput,
+)
+from executorch.examples.models.muse_glimmer.serving import serve  # noqa: E402
 
 _HERE = pathlib.Path(serve.__file__).resolve().parent
 _LLM_SERVER_PYTHON = pathlib.Path(chat_template.__file__).resolve().parent

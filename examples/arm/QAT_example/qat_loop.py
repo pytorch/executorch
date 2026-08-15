@@ -51,8 +51,8 @@ EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
 from executorch.backends.arm.quantizer import (  # noqa: E402
-    get_symmetric_quantization_config,
     get_uint8_io_quantization_config,
+    get_vgf_snorm_quantization_config,
     VgfQuantizer,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner  # noqa: E402
@@ -663,7 +663,7 @@ def make_quantizer(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
-    global_config = get_symmetric_quantization_config(is_qat=is_qat)
+    global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
     quantizer.set_global(global_config)
 
     if io_quantization == "int8":
@@ -1363,7 +1363,7 @@ def execute_runtime_artifact(
     input_qparams: list[dict[str, Any]] | None,
     output_qparams: list[dict[str, Any]] | None,
     inputs: tuple[torch.Tensor, torch.Tensor],
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
     runtime_inputs: tuple[torch.Tensor, torch.Tensor]
     if input_qparams is None:
         runtime_inputs = inputs
@@ -1378,9 +1378,9 @@ def execute_runtime_artifact(
     output = outputs[0]
     if not isinstance(output, torch.Tensor):
         output = torch.as_tensor(output)
-    if output_qparams is None:
-        return output
-    return dequantize_tensor_from_runtime(output, output_qparams[0])
+    if output_qparams is not None:
+        output = dequantize_tensor_from_runtime(output, output_qparams[0])
+    return output, runtime_inputs
 
 
 def dump_runtime_comparison_outputs(
@@ -1389,6 +1389,7 @@ def dump_runtime_comparison_outputs(
     row_name: str,
     reference_output: torch.Tensor,
     runtime_output: torch.Tensor,
+    runtime_inputs: tuple[torch.Tensor, torch.Tensor],
 ) -> None:
     safe_row_name = row_name.replace("..", "__").replace("/", "_").replace("\\", "_")
     dump_dir = output_dir / "runtime_debug" / mode_name / safe_row_name
@@ -1399,6 +1400,14 @@ def dump_runtime_comparison_outputs(
     np.save(dump_dir / f"{mode_name}.npy", reference_cpu.numpy())
     np.save(dump_dir / f"{mode_name}_runtime.npy", runtime_cpu.numpy())
     np.save(dump_dir / f"{mode_name}_runtime_minus_{mode_name}.npy", diff_cpu.numpy())
+    for input_index, runtime_input in enumerate(runtime_inputs):
+        # We will feed the input npy array to the application running on device
+        # and the runtime expects the data to be stored in NHWC format.
+        input_nhwc = runtime_input.permute(0, 2, 3, 1).contiguous()
+        np.save(
+            dump_dir / f"input_{input_index}.npy",
+            input_nhwc.numpy(),
+        )
 
 
 def load_runtime_method_for_artifact(
@@ -1453,7 +1462,7 @@ def evaluate_runtime_artifact_rows(
             random_seed=args.random_seed,
         )
         try:
-            runtime_output = execute_runtime_artifact(
+            runtime_output, quantized_runtime_inputs = execute_runtime_artifact(
                 method,
                 input_qparams,
                 output_qparams,
@@ -1489,6 +1498,7 @@ def evaluate_runtime_artifact_rows(
                 rows[index]["name"],
                 reference_output,
                 runtime_output,
+                quantized_runtime_inputs,
             )
     return None
 

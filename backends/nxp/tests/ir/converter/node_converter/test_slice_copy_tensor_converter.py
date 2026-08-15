@@ -24,7 +24,6 @@ from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
 from executorch.backends.nxp.tests.ops_aliases import (
     Convolution,
     ExecutorchDelegateCall,
-    Slice,
     SliceCopy,
 )
 
@@ -35,7 +34,7 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-class TestSliceTensorConverter:
+class TestSliceCopyTensorConverter:
     @staticmethod
     def _slice_id(prefix, input_shape, dims, starts, ends):
         return f"{prefix}rank={len(input_shape)}_dims={str(dims)}_starts={str(starts)}_ends={str(ends)}"
@@ -70,7 +69,7 @@ class TestSliceTensorConverter:
         assert not graph_contains_any_of_ops(
             delegated_ep.graph, [ExecutorchDelegateCall]
         )
-        assert not graph_contains_any_of_ops(delegated_ep.graph, [Slice, SliceCopy])
+        assert not graph_contains_any_of_ops(delegated_ep.graph, [SliceCopy])
 
     @staticmethod
     def assert_not_delegated(model, input_shape):
@@ -80,7 +79,7 @@ class TestSliceTensorConverter:
         assert not graph_contains_any_of_ops(
             delegated_ep.graph, [ExecutorchDelegateCall]
         )
-        assert graph_contains_any_of_ops(delegated_ep.graph, [Slice, SliceCopy])
+        assert graph_contains_any_of_ops(delegated_ep.graph, [SliceCopy])
 
     @pytest.mark.parametrize(
         "input_shape, dims, starts, ends",

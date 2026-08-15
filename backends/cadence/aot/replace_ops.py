@@ -32,6 +32,9 @@ from executorch.backends.transforms.replace_nop_transpose_or_permute_with_view i
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
 )
+from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
+    ReplaceSqueezeAndUnsqueezeWithViewPass as _SharedReplaceSqueezeAndUnsqueezeWithViewPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -184,40 +187,10 @@ class ReplacePT2DequantWithCadenceDequantPass(RemoveOrReplacePassInterface):
         return True
 
 
-class ReplaceSqueezeAndUnsqueezeWithViewPass(RemoveOrReplacePassInterface):
-    """
-    When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
-    view_copy op
-    """
-
-    @property
-    def targets(self) -> list[EdgeOpOverload]:
-        return [
-            exir_ops.edge.aten.squeeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dim,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-        ]
-
-    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
-        # Get the output tensor shape
-        out_shape = node.meta["val"].shape
-
-        # Bail out if any dim is not an int (dynamic shape)
-        for dim in list(out_shape):
-            if not isinstance(dim, int):
-                return False
-
-        # Replace with view op with the new shape
-        with node.graph.inserting_before(node):
-            new_node = node.graph.call_function(
-                exir_ops.edge.aten.view_copy.default,
-                args=(node.args[0], list(out_shape)),
-            )
-            # Do not remove the metadata copy!
-            new_node.meta = node.meta
-        node.replace_all_uses_with(new_node)
-        return True
+class ReplaceSqueezeAndUnsqueezeWithViewPass(
+    _SharedReplaceSqueezeAndUnsqueezeWithViewPass
+):
+    pass
 
 
 class ReplaceFunctionallyEquivalentOpTargets(RemoveOrReplacePassInterface):
@@ -1028,9 +1001,6 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
     @property
     def targets(self) -> list[EdgeOpOverload]:
         return [
-            exir_ops.edge.cadence.conv1d.default,
-            exir_ops.edge.cadence.conv2d.default,
-            exir_ops.edge.cadence.conv3d.default,
             exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
@@ -1115,15 +1085,6 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
 
     def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
         assert isinstance(node.target, EdgeOpOverload)
-        quantized_op = node.target in {
-            exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
-            exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor,
-            exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
-        }
-
-        # Check if already in NHWC/NLC layout
-        if not quantized_op and len(node.args) == 8 and node.args[-1] is True:
-            return False
 
         # Get input shape to determine if it's 1D or 2D
         input_node = get_arg(node, "input", torch.fx.Node)
@@ -1131,22 +1092,17 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
         is_2d = len(input_shape) == 4
 
         # Determine the new op target
-        if quantized_op:
-            if is_2d:
-                new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
-            else:
-                assert len(input_shape) == 3
-                if (
-                    node.target
-                    == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
-                ):
-                    new_op = (
-                        exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
-                    )
-                else:
-                    new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
+        if is_2d:
+            new_op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         else:
-            new_op = node.target
+            assert len(input_shape) == 3
+            if (
+                node.target
+                == exir_ops.edge.cadence.quantized_depthwise_conv1d_ncl.per_tensor
+            ):
+                new_op = exir_ops.edge.cadence.quantized_depthwise_conv1d_nlc.per_tensor
+            else:
+                new_op = exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor
 
         graph = node.graph
 
@@ -1175,15 +1131,8 @@ class ReplaceConvWithChannelLastConvPass(RemoveOrReplacePassInterface):
                 # For regular conv: [OC, IC, KH, KW] -> [OC, KH, KW, IC]
                 weight_nhwc = self._change_nchw_to_nhwc(graph, weight_node)
 
-            # Non-quantized ops need to set the last optional argument to True
-            channel_last_arg = [] if quantized_op else [True]
-
             # Create new args with transposed input/weights
-            new_args = (
-                (input_nhwc, weight_nhwc)
-                + tuple(node.args[2:])
-                + tuple(channel_last_arg)
-            )
+            new_args = (input_nhwc, weight_nhwc) + tuple(node.args[2:])
 
             # Create the new conv operation
             new_conv = graph.call_function(new_op, new_args, node.kwargs)
