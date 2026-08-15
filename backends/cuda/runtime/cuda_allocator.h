@@ -8,8 +8,7 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
-
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/core/device_allocator.h>
 
 namespace executorch::backends::cuda {

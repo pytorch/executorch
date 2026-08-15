@@ -7,7 +7,7 @@
  */
 
 #include <c10/util/safe_numerics.h>
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
