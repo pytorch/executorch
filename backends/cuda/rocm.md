@@ -38,3 +38,6 @@ ldd cmake-out-rocm/backends/cuda/libaoti_cuda_shims.so | grep -E 'amdhip64|cudar
 ```
 
 A `libcudart` dependency is a configuration error.
+
+For an end-to-end export that proves Inductor emitted a Triton kernel, see
+[../../examples/cuda/README.md](../../examples/cuda/README.md).
