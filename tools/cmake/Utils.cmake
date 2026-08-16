@@ -432,13 +432,10 @@ endfunction()
 # and the version is what lets a later major coexist during an upgrade. That is
 # why the shared library support carries VERSION and SOVERSION.
 #
-# A wheel is the opposite case. The library and the only things that link it
-# ship in the same archive and are replaced together, so no version needs
-# pinning, and a versioned name actively hurts: `find_library(executorch)`
-# matches libexecutorch.so and not libexecutorch.so.1, so a consumer's
-# find_package could not locate it. The torch wheel ships plain names with
-# unversioned SONAMEs for the same reason. Offering an unversioned symlink
-# instead is not equivalent, because a wheel is a zip and the format has no
+# A wheel is the opposite case: the library and everything linking it ship
+# together and are replaced together, and a versioned name actively hurts
+# because find_library(executorch) matches libexecutorch.so and not
+# libexecutorch.so.1. A symlink is not an alternative, since a zip has no
 # portable symlink support.
 function(executorch_target_soname_policy target_name)
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
