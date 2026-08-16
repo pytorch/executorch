@@ -230,7 +230,7 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_SHARED
-  "Build a consolidated ExecuTorch shared library (Linux only)" BOOL OFF
+  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -350,10 +350,11 @@ define_overridable_option(
 # ------------------------------------------------------------------------------
 
 # The pybind extension links the shared runtime, so a pybind build has to
-# produce it. Derived here rather than only in the pybind preset, because a
-# caller that sets EXECUTORCH_BUILD_PYBIND directly would otherwise link the
-# extension against a library the next configure of the same tree does not
-# build, and the import then fails on a missing libexecutorch. Limited to the
+# produce it. The pybind preset sets this itself, so the derivation here is belt
+# and braces: set_overridable_option cannot override a value the cache already
+# holds, and define_overridable_option above created that entry, so this
+# assignment never takes effect. Kept because it documents the dependency
+# between the two options where a reader looks for it, and limited to the
 # platforms where a shared runtime is supported at all.
 if(EXECUTORCH_BUILD_PYBIND AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"
                                 OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
