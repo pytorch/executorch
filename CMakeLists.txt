@@ -768,16 +768,6 @@ install(
   FILES_MATCHING
   PATTERN "*.h"
 )
-# The macro changes the layout of the tracer scope objects, so a consumer that
-# compiles without it while linking libraries built with it has a different view
-# of those structs. add_definitions above is directory scoped and never reaches
-# a target's interface, so it does not survive export. Attached here instead,
-# where it travels with the target to every consumer of every install kind
-# rather than needing a separate mechanism per config file.
-if(EXECUTORCH_ENABLE_EVENT_TRACER)
-  target_compile_definitions(executorch_core INTERFACE ET_EVENT_TRACER_ENABLED)
-endif()
-
 install(
   TARGETS executorch executorch_core
   EXPORT ExecuTorchTargets
