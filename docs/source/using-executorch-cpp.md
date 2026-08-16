@@ -184,7 +184,7 @@ To see what your own install offers, ask CMake:
 ```cmake
 find_package(executorch REQUIRED)
 foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack
-                   threadpool etdump)
+                   backend_cuda backend_openvino threadpool etdump extension_cuda)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
@@ -226,6 +226,101 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::kernels_optimized
                                   executorch::kernels_quantized)
 ```
+
+##### What a Core ML trace shows
+
+On macOS a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in total.
+It does not record the individual operators inside the delegate, because that detail comes from the
+Core ML developer tools sources, and the wheel does not build them. An XNNPACK model records both.
+
+### Running on a GPU with the CUDA package
+
+The CUDA build is a separate package. Install it with the index for your CUDA version, for example
+CUDA 12.6:
+
+```
+pip install executorch torch \
+  --index-url https://download.pytorch.org/whl/cu126 \
+  --extra-index-url https://pypi.org/simple
+```
+
+CUDA wheels are built for Python 3.10 through 3.13. On a newer Python there is no CUDA wheel to
+install, so pip falls back to the CPU one.
+
+The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
+dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
+exporting a model for CUDA runs through torch.
+
+Everything above stays the same. Add the CUDA backend to both CMake lines:
+
+```cmake
+find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda)
+
+target_link_libraries(app PRIVATE executorch::runtime
+                                  executorch::kernels_optimized
+                                  executorch::backend_cuda)
+```
+
+The model has to be exported for CUDA as well, which needs a machine with a GPU:
+
+Exporting for CUDA needs the CUDA compiler (`nvcc`) on your `PATH`, because the backend compiles
+the model into GPU code ahead of time. `pip install` does not provide it, so install the CUDA
+Toolkit for this step. Check it with `nvcc --version`.
+
+```python
+# export_cuda.py, the same model as before with one line added
+import torch
+from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.extension.export_util.utils import save_pte_program
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+example = (torch.ones(2, 2), torch.ones(2, 2))
+program = to_edge_transform_and_lower(
+    torch.export.export(Add(), example), partitioner=[CudaPartitioner([])]
+).to_executorch()
+save_pte_program(program, "model", ".")
+```
+
+`save_pte_program` is used instead of writing the buffer by hand because the CUDA backend puts its
+model weights in a **separate data file** next to `model.pte`. The compiled GPU code stays
+inside `model.pte`. Writing only the program file loses the weights, so the model then fails when it
+runs.
+
+The backend chooses that file's name, so check what was written:
+
+```
+$ ls
+aoti_cuda_blob.ptd  model.pte
+```
+
+Load both from C++, passing the data file as the second argument:
+
+```cpp
+Module module("model.pte", "aoti_cuda_blob.ptd");
+```
+
+The CUDA backend is still experimental, so exporting prints a warning saying so.
+
+By default the runtime copies inputs to the GPU and results back, so your program keeps passing
+ordinary CPU tensors and nothing else changes.
+
+One thing to check first, and the numbers matter. If a model fails with a message about no kernel
+image being available for the device, your GPU is too old for these packages. They are built for
+**compute capability 8.0 and above**, which means an NVIDIA Ampere generation card or newer.
+
+Check your own GPU:
+
+```
+python -c 'import torch; print(torch.cuda.get_device_capability())'
+```
+
+A result below `(8, 0)` is not covered. Note that `torch.cuda.get_arch_list()` is not the right
+check here: PyTorch builds for a wider set than these packages do, so a GPU can appear in that list
+and still not be supported.
 
 #### When something does not work
 
