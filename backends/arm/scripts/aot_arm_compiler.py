@@ -33,6 +33,9 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
@@ -925,12 +928,16 @@ def _to_edge_cortex_m(
 
     def _to_channels_last(x):
         if isinstance(x, torch.Tensor):
-            if x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
-                logging.warning(
-                    "Converting input tensor with shape %s to channels_last",
-                    list(x.shape),
-                )
-                return x.to(memory_format=torch.channels_last)
+            if x.dim() == 4:
+                # Singleton channels can satisfy both contiguity checks while
+                # retaining NCHW strides, so always request the target format.
+                channels_last = x.to(memory_format=torch.channels_last)
+                if channels_last.stride() != x.stride():
+                    logging.warning(
+                        "Converting input tensor with shape %s to channels_last",
+                        list(x.shape),
+                    )
+                return channels_last
             return x
         elif isinstance(x, tuple):
             return tuple(_to_channels_last(t) for t in x)
@@ -962,16 +969,7 @@ def _to_edge_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported_program,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
-        ),
+        compile_config=cortex_m_edge_compile_config(),
     )
 
     pass_manager = CortexMPassManager(
@@ -979,7 +977,7 @@ def _to_edge_cortex_m(
     )
     edge._edge_programs["forward"] = pass_manager.transform()
 
-    return model_quant, edge
+    return model_quant, edge, example_inputs
 
 
 def _to_edge_no_delegate(
@@ -1078,7 +1076,7 @@ def main() -> None:  # noqa: C901
                 "(this target does not use delegated ops)."
             )
             args.delegate = False
-        model_quant, edge = _to_edge_cortex_m(
+        model_quant, edge, example_inputs = _to_edge_cortex_m(
             exported_program,
             args,
             model,

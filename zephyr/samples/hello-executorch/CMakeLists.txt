@@ -52,39 +52,6 @@ set(ET_PTE_FILE_PATH
           FORCE
 )
 
-execute_process(
-  COMMAND
-    python "${CMAKE_CURRENT_LIST_DIR}/../../../codegen/tools/gen_oplist.py"
-    --model_file_path=${ET_PTE_FILE_PATH}
-    --output_path=${CMAKE_CURRENT_BINARY_DIR}/temp.yaml
-  OUTPUT_VARIABLE CMD_RESULT
-)
-
-if(CMD_RESULT MATCHES "aten::" OR CMD_RESULT MATCHES "dim_order_ops::")
-  set(FOUND_OPS_IN_FILE "true")
-else()
-  set(FOUND_OPS_IN_FILE "false")
-endif()
-
-if(${FOUND_OPS_IN_FILE})
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL
-      "${ET_PTE_FILE_PATH}"
-      CACHE STRING "Select operators from this ExecuTorch model" FORCE
-  )
-  set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS ON)
-  message(
-    "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-else()
-  set(EXECUTORCH_SELECT_OPS_LIST "")
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  set(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS OFF)
-  message(
-    "gen_oplist: No non-delegated ops were found in ${ET_PTE_FILE_PATH}; no ops added to build"
-  )
-endif()
-
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(executorch_executor_runner)
 
@@ -122,9 +89,8 @@ else()
   message(STATUS "Using predefined EXECUTORCH_DIR=${EXECUTORCH_DIR}")
 endif()
 
-# Set EXECUTORCH_ROOT for the Codegen.cmake file
-set(EXECUTORCH_ROOT ${EXECUTORCH_DIR})
 include(${EXECUTORCH_DIR}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_DIR}/backends/arm/cmake/ArmRunnerUtils.cmake)
 
 # Ensure the portable kernels target exists even when portable ops are disabled
 # in the global build.
@@ -136,42 +102,41 @@ if(NOT TARGET portable_kernels)
   )
   unset(EXECUTORCH_PORTABLE_BUILD_KERNELS_ONLY)
 endif()
-set(EXECUTORCH_OPS_LIB "")
-if(_EXECUTORCH_GEN_ZEPHYR_PORTABLE_OPS)
-  include(${EXECUTORCH_DIR}/tools/cmake/Codegen.cmake)
-  if(NOT DEFINED EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD)
-    set(EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD "")
-  endif()
-  gen_selected_ops(
+set(_executorch_zephyr_selected_ops_libs)
+if(NOT DEFINED EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD)
+  set(EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD "")
+endif()
+
+arm_runner_create_selected_ops_lib(
+  LIB_NAME
+  "cpu_portable_ops_lib"
+  FUNCTIONS_YAML
+  "${EXECUTORCH_DIR}/kernels/portable/functions.yaml"
+  OPS_FROM_MODEL
+  "${ET_PTE_FILE_PATH}"
+  KERNEL_LIBS
+  portable_kernels
+  DEPS
+  executorch
+  DTYPE_SELECTIVE_BUILD
+  "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
+)
+list(APPEND _executorch_zephyr_selected_ops_libs cpu_portable_ops_lib)
+
+if(TARGET cortex_m_kernels)
+  arm_runner_create_selected_ops_lib(
     LIB_NAME
-    "cpu_portable_ops_lib"
-    OPS_SCHEMA_YAML
-    ""
-    ROOT_OPS
-    "${EXECUTORCH_SELECT_OPS_LIST}"
-    INCLUDE_ALL_OPS
-    ""
+    "zephyr_cortex_m_ops_lib"
+    CUSTOM_OPS_YAML
+    "${EXECUTORCH_DIR}/backends/cortex_m/ops/operators.yaml"
     OPS_FROM_MODEL
-    "${EXECUTORCH_SELECT_OPS_MODEL}"
-    DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
-  )
-  generate_bindings_for_kernels(
-    LIB_NAME "cpu_portable_ops_lib" FUNCTIONS_YAML
-    ${EXECUTORCH_DIR}/kernels/portable/functions.yaml DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
-  )
-  gen_operators_lib(
-    LIB_NAME
-    "cpu_portable_ops_lib"
+    "${ET_PTE_FILE_PATH}"
     KERNEL_LIBS
-    portable_kernels
+    cortex_m_kernels
     DEPS
     executorch
-    DTYPE_SELECTIVE_BUILD
-    "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
-  set(EXECUTORCH_OPS_LIB "cpu_portable_ops_lib")
+  list(APPEND _executorch_zephyr_selected_ops_libs zephyr_cortex_m_ops_lib)
 endif()
 
 set(_local_flatcc_root ${CMAKE_BINARY_DIR}/flatcc_src)
@@ -229,26 +194,7 @@ endif()
 
 # Link with ExecuTorch and our operators library
 target_link_libraries(app PRIVATE libexecutorch)
-if(EXECUTORCH_OPS_LIB)
-  target_link_libraries(app PRIVATE ${EXECUTORCH_OPS_LIB})
-endif()
-if(CONFIG_CPU_CORTEX_M)
-  if(TARGET cortex_m_ops_lib)
-    target_link_libraries(app PRIVATE cortex_m_ops_lib)
-  endif()
-  if(TARGET cortex_m_kernels)
-    executorch_target_link_options_shared_lib(cortex_m_kernels)
-    target_link_libraries(app PRIVATE cortex_m_kernels)
-  endif()
-endif()
-if(TARGET quantized_kernels)
-  executorch_target_link_options_shared_lib(quantized_kernels)
-  target_link_libraries(app PRIVATE quantized_kernels)
-endif()
-if(TARGET portable_kernels)
-  executorch_target_link_options_shared_lib(portable_kernels)
-  target_link_libraries(app PRIVATE portable_kernels)
-endif()
+target_link_libraries(app PRIVATE ${_executorch_zephyr_selected_ops_libs})
 if(TARGET executorch_delegate_ethos_u)
   executorch_target_link_options_shared_lib(executorch_delegate_ethos_u)
   target_link_libraries(app PRIVATE executorch_delegate_ethos_u)

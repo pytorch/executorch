@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from sdpa_softmax.wgsl - DO NOT EDIT.
-// wgsl-sha256: bdd45cf344663533b243153200c507f41a90295751924e70452abcd5da4cdd5a
+// wgsl-sha256: 774a372c0eae85b6656618408e40fff4b8af5647ea5353b51d3a34b9b6a7ac8a
 inline constexpr const char* kSdpaSoftmaxWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
@@ -26,15 +26,16 @@ struct Params {
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
-const WG_SIZE: u32 = 64u;
+// wg_size must be a power of two (the tree reduction halves the stride).
+override wg_size: u32 = 64u;
 
 // WGSL forbids literal -inf; a large finite negative inits the running max.
 const NEG_INF: f32 = -1.0e30;
 
-var<workgroup> shared_max: array<f32, WG_SIZE>;
-var<workgroup> shared_sum: array<f32, WG_SIZE>;
+var<workgroup> shared_max: array<f32, wg_size>;
+var<workgroup> shared_sum: array<f32, wg_size>;
 
-@compute @workgroup_size(WG_SIZE, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>,
@@ -58,14 +59,14 @@ fn main(
         break;
       }
       local_max = max(local_max, t_in[base + x]);
-      x = x + WG_SIZE;
+      x = x + wg_size;
     }
   }
   shared_max[worker_id] = local_max;
 
   // Reduce max. workgroupBarrier() calls are in uniform control flow.
   workgroupBarrier();
-  var stride: u32 = WG_SIZE / 2u;
+  var stride: u32 = wg_size / 2u;
   loop {
     if (stride == 0u) {
       break;
@@ -87,13 +88,13 @@ fn main(
         break;
       }
       local_sum = local_sum + exp(t_in[base + x] - row_max);
-      x = x + WG_SIZE;
+      x = x + wg_size;
     }
   }
   shared_sum[worker_id] = local_sum;
 
   workgroupBarrier();
-  stride = WG_SIZE / 2u;
+  stride = wg_size / 2u;
   loop {
     if (stride == 0u) {
       break;
@@ -115,7 +116,7 @@ fn main(
         break;
       }
       t_out[base + x] = exp(t_in[base + x] - row_max) * inv;
-      x = x + WG_SIZE;
+      x = x + wg_size;
     }
   }
 }

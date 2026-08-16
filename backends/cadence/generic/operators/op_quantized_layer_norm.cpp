@@ -24,14 +24,11 @@ namespace generic {
 namespace native {
 
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
-using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::impl::generic::kernels::dequantize;
 using ::impl::generic::kernels::quantize;
-using std::optional;
 
 // Compute quantized layer_norm. The current implementation assumes that the
 // input is per-tensor quantized.

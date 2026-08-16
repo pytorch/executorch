@@ -277,8 +277,7 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         return all(isinstance(dim, numbers.Integral) for dim in shape_like)
 
     def to_torch_tensor() -> torch.Tensor:
-        if array.dtype.type is np.void:
-            # If dtype is void, "cheat" and use the output_tensor dtype.
+        if output_tensor.dtype == torch.bfloat16 or array.dtype.type is np.void:
             return torch.frombuffer(array, dtype=output_tensor.dtype)
         return torch.from_numpy(array)
 
@@ -286,12 +285,12 @@ def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
         tensor = to_torch_tensor()
         if is_concrete_shape(shape):
             tensor = tensor.reshape([shape[i] for i in NHWC_ORDER])
-        return tensor.permute(NHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
+        return tensor.permute(NHWC_INVERSE_ORDER).contiguous()
     elif dim_order == NNHWC_ORDER:
         tensor = to_torch_tensor()
         if is_concrete_shape(shape):
             tensor = tensor.reshape([shape[i] for i in NNHWC_ORDER])
-        return tensor.permute(NNHWC_INVERSE_ORDER)
+        return tensor.permute(NNHWC_INVERSE_ORDER).contiguous()
     else:
         tensor = to_torch_tensor()
 

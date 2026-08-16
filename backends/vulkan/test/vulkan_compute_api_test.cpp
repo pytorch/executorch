@@ -1058,7 +1058,7 @@ TEST_F(VulkanComputeAPITest, vec_test) {
     ASSERT_TRUE(v[2] == 10);
   }
 
-  // Test initalization from temporary vec
+  // Test initialization from temporary vec
   {
     utils::uvec3 v = make_temp_ivec3(4, 5, 10);
     ASSERT_TRUE(v[0] == 4);
@@ -3072,7 +3072,7 @@ void test_to_copy() {
         std::bitset<32>(*reinterpret_cast<uint32_t*>(&input)).to_string() +
         "), expected output = " + std::to_string(expected_output) + "(0b" +
         std::bitset<16>(*expected_bits).to_string() +
-        "), recieved output = " + std::to_string(output) + "(0b" +
+        "), received output = " + std::to_string(output) + "(0b" +
         std::bitset<16>(*output_bits).to_string() + ")";
 
     std::cout << msg << std::endl;

@@ -1,0 +1,16 @@
+# @noautodeps
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "schema",
+    srcs = [
+        "__init__.py",
+        "schema.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools:serializer",
+        "//caffe2:torch",
+    ],
+)

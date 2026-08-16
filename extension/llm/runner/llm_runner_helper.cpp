@@ -189,7 +189,10 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     float temperature,
     const std::string& method_name,
     Module::LoadMode load_mode) {
-  if (data_path.has_value()) {
+  // An empty path is not a path. Callers that build the optional from a
+  // language whose "no value" is an empty string would otherwise reach the
+  // loader with "", which fails to open and takes the whole load down with it.
+  if (data_path.has_value() && !data_path.value().empty()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
     return create_text_llm_runner(
@@ -271,10 +274,47 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
   float init_temp = temperature == -1.0f ? 0.0f : temperature;
   auto sampler = std::make_unique<Sampler>(vocab_size, init_temp);
 
+  auto stats = std::make_unique<Stats>();
+
+  auto method_names_result = module->method_names();
+  const std::unordered_set<std::string> method_names = method_names_result.ok()
+      ? method_names_result.get()
+      : std::unordered_set<std::string>{};
+
+  // A two-method PTE exports kPrefillMethod/kDecodeMethod instead of a single
+  // forward method, so fall back to kPrefillMethod when the requested method is
+  // absent. An explicitly requested method that does exist always wins.
+  std::string prefill_method_name = method_name;
+  if (method_names.count(prefill_method_name) == 0 &&
+      method_names.count(kPrefillMethod) > 0) {
+    prefill_method_name = kPrefillMethod;
+  }
+
   // Create text_decoder_runner
-  ET_LOG(Info, "Using method: %s", method_name.c_str());
+  ET_LOG(Info, "Using method: %s", prefill_method_name.c_str());
   auto text_decoder_runner = std::make_unique<TextDecoderRunner>(
-      module.get(), io_manager.get(), method_name, std::move(sampler));
+      module.get(),
+      io_manager.get(),
+      prefill_method_name,
+      std::move(sampler),
+      stats.get());
+
+  // The decode stage gets its own decoder runner when the PTE exports a
+  // separate decode method; otherwise both stages share text_decoder_runner.
+  std::unique_ptr<TextDecoderRunner> decode_text_decoder_runner;
+  if (method_names.count(kDecodeMethod) > 0 &&
+      prefill_method_name != kDecodeMethod) {
+    ET_LOG(Info, "Using decode method: %s", kDecodeMethod);
+    decode_text_decoder_runner = std::make_unique<TextDecoderRunner>(
+        module.get(),
+        io_manager.get(),
+        kDecodeMethod,
+        std::make_unique<Sampler>(vocab_size, init_temp),
+        stats.get());
+  }
+  TextDecoderRunner* decode_runner = decode_text_decoder_runner
+      ? decode_text_decoder_runner.get()
+      : text_decoder_runner.get();
 
   // Create text_prefiller
   auto text_prefiller = std::make_unique<TextPrefiller>(
@@ -284,10 +324,9 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       metadata.at(kMaxSeqLen));
 
   // Create text_token_generator with stats
-  auto stats = std::make_unique<Stats>();
   auto text_token_generator = std::make_unique<TextTokenGenerator>(
       tokenizer.get(),
-      text_decoder_runner.get(),
+      decode_runner,
       metadata.at(kUseKVCache),
       std::move(eos_ids),
       stats.get());
@@ -302,7 +341,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       std::move(io_manager),
       std::move(text_token_generator),
       std::move(stats),
-      temperature);
+      temperature,
+      std::move(decode_text_decoder_runner));
 }
 
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(
@@ -318,7 +358,7 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
-  if (data_path.has_value()) {
+  if (data_path.has_value() && !data_path.value().empty()) {
     module = std::make_unique<Module>(model_path, data_path.value(), load_mode);
   } else {
     module = std::make_unique<Module>(model_path, load_mode);

@@ -50,6 +50,9 @@ class PybindingsTest(unittest.TestCase):
                 print("can't load aten lib")
 
         assert kernel_mode is not None
+        # Only the portable build converts an incoming tensor, so a test for
+        # that conversion has to skip under the aten build.
+        self.kernel_mode = kernel_mode
         self.load_fn = runtime._load_for_executorch_from_buffer
         self.load_prog_fn = runtime._load_program_from_buffer
         self.runtime = runtime
@@ -733,3 +736,53 @@ class PybindingsTest(unittest.TestCase):
         )
         with self.assertRaises(RuntimeError):
             executorch_module_bundled_no_data.forward(inputs)
+
+    def test_method_rejects_input_on_unrepresentable_device(self):
+        # The conversion used to label every input CPU, so an input whose memory
+        # the host cannot read was described as host memory, and the failure
+        # surfaced later as a crash instead of an error naming the input.
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        with self.assertRaises(RuntimeError) as caught:
+            executorch_module.forward([inputs[0].to("meta"), inputs[1]])
+        message = str(caught.exception)
+        # Asserts the device is named as Python spells it, since an uppercased or
+        # index-less name would not match what the caller passed.
+        self.assertIn("is on device meta", message)
+        self.assertIn("only CPU and CUDA tensors", message)
+
+    def test_method_accepts_a_cpu_input_after_the_device_check(self):
+        # The rejection tests above pass for a change that throws on every input, so this
+        # asserts the other half: an ordinary CPU input still converts and runs. Without it
+        # the pair does not distinguish "rejects what it cannot represent" from "rejects
+        # everything".
+        exported_program, inputs = create_program(ModuleAdd())
+        executorch_module = self.load_fn(exported_program.buffer)
+
+        executorch_output = executorch_module.forward(inputs)[0]
+
+        self.assertTrue(
+            torch.allclose(executorch_output, inputs[0] + inputs[1]),
+            "a CPU input must still reach the method and produce the same result",
+        )
+
+    def test_program_method_rejects_input_on_unrepresentable_device(self):
+        # The other conversion site, reached through a loaded program rather than a
+        # module. It got the same treatment, and without this it had no test: before
+        # the change this path aborted the process rather than raising.
+        if self.kernel_mode != "portable":
+            self.skipTest("only the portable build converts the input tensor")
+
+        exported_program, inputs = create_program(ModuleAdd())
+        program = self.load_prog_fn(exported_program.buffer)
+        method = program.load_method("forward")
+
+        with self.assertRaises(RuntimeError) as caught:
+            method.set_inputs([inputs[0].to("meta"), inputs[1]])
+        message = str(caught.exception)
+        self.assertIn("is on device meta", message)
+        self.assertIn("only CPU and CUDA tensors", message)

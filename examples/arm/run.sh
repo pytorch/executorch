@@ -6,6 +6,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer build-and-run helper. This command-line interface is not a public
+# API and may change without deprecation.
 
 set -eu
 
@@ -47,7 +50,6 @@ model_explorer=false
 perf_overlay=false
 visualize_tosa=false
 visualize_pte=false
-model_converter=false
 specify_ethosu_scratch=false
 extra_build_flags=""
 preset_file="${et_root_dir}/tools/cmake/preset/arm_baremetal.cmake"
@@ -58,6 +60,7 @@ parallel_jobs=1
 
 function help() {
     echo "Usage: $(basename $0) [options]"
+    echo "Note: this developer workflow script is not a stable public API."
     echo "Options:"
     echo "  --model_name=<MODEL>                   Model file .py/.pth/.pt, builtin model or a model from examples/models. Passed to aot_arm_compiler"
     echo "  --model_input=<INPUT>                  Provide model input .pt file to override the input in the model file. Passed to aot_arm_compiler"
@@ -253,10 +256,9 @@ function check_setup () {
         hash arm-none-eabi-gcc \
             || { echo "Could not find arm-none-eabi-gcc on PATH, ${_setup_msg}"; return 1; }
     elif [[ ${target} =~ "vgf" ]]; then
-        model_converter=$(which model-converter || true)
-        echo "${model_converter}"
-        [[ -z "${model_converter}" || "${model_converter}" == "model-converter not found" ]] \
-            && { echo "Could not find model-converter, ${_setup_msg}"; return 1; }
+        if ! python3 -m executorch.backends.arm.vgf.check_env --aot; then
+            return 1
+        fi
     fi
 
     return 0

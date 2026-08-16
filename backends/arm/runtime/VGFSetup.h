@@ -21,6 +21,8 @@ using executorch::runtime::CompileSpec;
 // We use the platform and runtime environment provided by the Vulkan delegate
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+
 namespace executorch {
 namespace backends {
 namespace vgf {
@@ -67,6 +69,14 @@ typedef struct SegmentState {
   VkDataGraphPipelineSessionARM vk_session = VK_NULL_HANDLE;
   VkShaderModule vk_shader = VK_NULL_HANDLE;
   std::array<uint32_t, 3> dispatch_shape = {1, 1, 1};
+
+  // to work with data provide by arm neural statistics api
+  bool neural_statistics_bind_point_available = false;
+  VkDeviceMemory neural_statistics_memory = VK_NULL_HANDLE;
+  VkDeviceSize neural_statistics_memory_size = 0;
+  bool neural_statistics_memory_host_visible = false;
+  bool neural_statistics_memory_host_coherent = false;
+  std::string neural_statistics_status;
 } SegmentState;
 
 typedef struct ResourceAlloc {
@@ -148,6 +158,12 @@ class VgfRepr {
   static void unmap_io(IO* io) {
     (void)io;
   }
+
+  // to work with arm neural statistics data
+  std::vector<VgfNeuralStatisticsSegmentContext>
+  get_neural_statistics_segment_contexts() const;
+
+  std::string collect_neural_statistics_metadata() const;
 
   ~VgfRepr() {
     free_vgf();

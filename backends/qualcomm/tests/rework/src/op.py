@@ -6,11 +6,15 @@
 
 import inspect
 import itertools
+import math
 import random
 from functools import partial, reduce
 from operator import mul
 
 import torch
+
+# Also registers torch.ops.qnn_custom.hadamard_transform (asserted in Hadamard.test).
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 from executorch.backends.qualcomm.tests.rework.conftest import (
     export_and_verify,
@@ -255,6 +259,58 @@ class Add(torch.nn.Module):
                         compile_specs=compile_spec,
                         metrics=metrics,
                     )
+
+
+class AddMM(torch.nn.Module):
+    def __init__(self, alpha, beta):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, bias, input, mat2):
+        return torch.addmm(bias, input, mat2, alpha=self.alpha, beta=self.beta)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        for alpha, beta in [(1, 2), (2, 1), (2, 3)]:
+            with subtests.test(msg=f"alpha={alpha}, beta={beta}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(alpha=alpha, beta=beta),
+                        inputs=(
+                            torch.randn(8),
+                            torch.randn(4, 3),
+                            torch.randn(3, 8),
+                        ),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class Alias(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        alias_x = torch.ops.aten.alias.default(x)
+        return self.relu(alias_x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=(torch.randn(1, 10),),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class AMax(torch.nn.Module):
@@ -1398,6 +1454,39 @@ class Div(torch.nn.Module):
                 )
 
 
+class DivWithRoundingMode(torch.nn.Module):
+    def __init__(self, rounding_mode):
+        super().__init__()
+        self.rounding_mode = rounding_mode
+        self.scalar = 2.0
+
+    def forward(self, *x):
+        return (
+            torch.div(x[0], x[1], rounding_mode=self.rounding_mode)
+            if len(x) > 1
+            else torch.div(x[0], self.scalar, rounding_mode=self.rounding_mode)
+        )
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        inputs = [
+            (torch.randn(2, 3), torch.randn(2, 3).abs() + 1e-6),
+            (torch.randn(2, 3),),
+        ]
+        for input, mode in itertools.product(inputs, [None, "trunc", "floor"]):
+            with subtests.test(msg=f"rounding_mode={mode}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(rounding_mode=mode),
+                        inputs=input,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class Einsum(torch.nn.Module):
     def __init__(self, equation):
         super().__init__()
@@ -1615,6 +1704,28 @@ class ExpM1(torch.nn.Module):
         with expected as metrics:
             export_and_verify(
                 module=__class__(),
+                inputs=(torch.randn(1, 2, 3, 4),),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
+
+class Fill(torch.nn.Module):
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def forward(self, x):
+        return torch.add(x, torch.fill(x, self.value))
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(value=3.14),
                 inputs=(torch.randn(1, 2, 3, 4),),
                 qnn_config=qnn_config,
                 quantizer=quantizer,
@@ -2100,6 +2211,51 @@ class GroupNorm(torch.nn.Module):
                         quantizer=quantizer,
                         compile_specs=compile_spec,
                         metrics=metrics,
+                    )
+
+
+class Hadamard(torch.nn.Module):
+    # linear / matmul / 1x1-conv with an orthonormal Hadamard weight; the QNN backend
+    # rewrites each into a single qnn_custom.hadamard_transform during annotation.
+    def __init__(self, variant, dim):
+        super().__init__()
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        if variant == "linear":
+            self.op = torch.nn.Linear(dim, dim, bias=False).eval()
+            self.op.weight.data.copy_(H)  # symmetric H -> x@H^T == x@H
+        elif variant == "conv":
+            self.op = torch.nn.Conv2d(dim, dim, 1, bias=False).eval()
+            self.op.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+        else:  # matmul
+            self.register_buffer("weight", H)
+        self.variant = variant
+
+    def forward(self, x):
+        if self.variant == "matmul":
+            return torch.matmul(x, self.weight)
+        return self.op(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        dim = 128
+        cases = {
+            "linear": (torch.randn(1, dim),),
+            "matmul": (torch.randn(1, dim),),
+            "conv": (torch.randn(1, dim, 4, 4),),
+        }
+        target = torch.ops.qnn_custom.hadamard_transform.default
+        for variant, inputs in cases.items():
+            with subtests.test(msg=f"variant:{variant}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(variant=variant, dim=dim),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                        expected_targets={target},
                     )
 
 
@@ -3647,6 +3803,21 @@ class ReflectionPad(torch.nn.Module):
                         metrics=metrics,
                     )
 
+    @staticmethod
+    @unpack_fixtures
+    def test_5d(qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(1, 3, 6, 8, 8),)
+        padding = (1, 1, 1, 1, 1, 1)
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(3, padding),
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
+
 
 class Relu(torch.nn.Module):
     def __init__(self):
@@ -4009,6 +4180,40 @@ class Rsqrt(torch.nn.Module):
                     )
 
 
+class ScatterSrc(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, data, index, src):
+        return torch.scatter(data, self.dim, index, src)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        inputs = [
+            (
+                torch.zeros(3, 5),
+                torch.tensor(
+                    [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                    dtype=torch.int64,
+                ),
+                torch.randn(3, 5),
+            ),
+        ]
+        for dim, (data, index, src) in itertools.product([-1, 1], inputs):
+            with subtests.test(msg=f"dim={dim}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim),
+                        inputs=(data, index, src),
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class ScaledDotProductAttention(torch.nn.Module):
     def __init__(self, scale, is_causal, use_mask):
         super().__init__()
@@ -4068,6 +4273,85 @@ class ScaledDotProductAttention(torch.nn.Module):
                             scale=scale, is_causal=is_causal, use_mask=False
                         ),
                         inputs=qkv,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class ScatterValue(torch.nn.Module):
+    def __init__(self, dim, value):
+        super().__init__()
+        self.dim = dim
+        self.value = value
+
+    def forward(self, data, index):
+        return torch.scatter(data, self.dim, index, self.value)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        cases = [
+            # (dim, value, data_shape, index_tensor)
+            (
+                1,
+                0.5,
+                (3, 5),
+                torch.tensor(
+                    [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0], [1, 0, 3, 4, 2]],
+                    dtype=torch.int64,
+                ),
+            ),
+            (
+                0,
+                1.0,
+                (3, 5),
+                torch.tensor(
+                    [[2, 1, 0, 1, 2], [0, 2, 1, 2, 0], [1, 0, 2, 0, 1]],
+                    dtype=torch.int64,
+                ),
+            ),
+        ]
+        for dim, value, data_shape, index in cases:
+            with subtests.test(msg=f"dim:{dim}, value:{value}"):
+                inputs = (torch.rand(*data_shape), index)
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim, value=value),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class SelectScatter(torch.nn.Module):
+    def __init__(self, dim, index):
+        super().__init__()
+        self.dim = dim
+        self.index = index
+
+    def forward(self, x, y):
+        return x.select_scatter(y, dim=self.dim, index=self.index)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        cases = [
+            (0, 2, (torch.randn(4, 8), torch.randn(8))),
+            (1, 0, (torch.randn(3, 4, 5), torch.randn(3, 5))),
+            (1, -1, (torch.randn(3, 4, 5), torch.randn(3, 5))),
+            (-1, 2, (torch.randn(3, 4, 5), torch.randn(3, 4))),
+            (3, 1, (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4))),
+        ]
+        for dim, index, inputs in cases:
+            with subtests.test(msg=f"dim={dim}_index={index}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim, index=index),
+                        inputs=inputs,
                         qnn_config=qnn_config,
                         quantizer=quantizer,
                         compile_specs=compile_spec,
@@ -4323,6 +4607,38 @@ class Softmax(torch.nn.Module):
                     )
 
 
+class Sort(torch.nn.Module):
+    def __init__(self, dim, descending):
+        super().__init__()
+        self.dim = dim
+        self.descending = descending
+
+    def forward(self, x):
+        sorted_values, sorted_indices = torch.sort(
+            x, dim=self.dim, descending=self.descending
+        )
+        return sorted_values
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(1, 2, 3, 4),)
+        # QNN only supports sort along the last dimension
+        dims = [-1]
+        descendings = [True, False]
+        for dim, descending in itertools.product(dims, descendings):
+            with subtests.test(msg=f"dim:{dim}, descending:{descending}"):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(dim=dim, descending=descending),
+                        inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
 class Split(torch.nn.Module):
     def __init__(self, split_size_or_sections, dim):
         super().__init__()
@@ -4507,6 +4823,27 @@ class SwapAxes(torch.nn.Module):
                         compile_specs=compile_spec,
                         metrics=metrics,
                     )
+
+
+class Tan(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.tan(x)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=(torch.randn(2, 5, 1, 3),),
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class Tanh(torch.nn.Module):
@@ -5025,6 +5362,41 @@ class Where(torch.nn.Module):
                     export_and_verify(
                         module=module,
                         inputs=inputs,
+                        qnn_config=qnn_config,
+                        quantizer=quantizer,
+                        compile_specs=compile_spec,
+                        metrics=metrics,
+                    )
+
+
+class Var(torch.nn.Module):
+    def __init__(self, dim, correction, keepdim):
+        super().__init__()
+        self.dim = dim
+        self.correction = correction
+        self.keepdim = keepdim
+
+    def forward(self, x):
+        return torch.var(
+            x, dim=self.dim, correction=self.correction, keepdim=self.keepdim
+        )
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, quantizer, compile_spec, expected):
+        dims = [-1, [0, 2]]
+        corrections = [0, 1]
+        keepdims = [False, True]
+        for dim, correction, keepdim in itertools.product(dims, corrections, keepdims):
+            with subtests.test(
+                msg=f"dim:{dim}, correction:{correction}, keepdim:{keepdim}"
+            ):
+                with expected as metrics:
+                    export_and_verify(
+                        module=__class__(
+                            dim=dim, correction=correction, keepdim=keepdim
+                        ),
+                        inputs=(torch.randn(3, 4, 5),),
                         qnn_config=qnn_config,
                         quantizer=quantizer,
                         compile_specs=compile_spec,

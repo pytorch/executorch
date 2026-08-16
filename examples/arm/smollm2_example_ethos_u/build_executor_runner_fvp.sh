@@ -3,6 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Example build helper. This command-line interface is not a public API and may
+# change without deprecation.
 
 set -euo pipefail
 
@@ -20,6 +23,7 @@ memory_mode="Dedicated_Sram_512KB"
 usage() {
   cat <<EOF
 Usage: $(basename "$0") --pte=PATH [options]
+Note: this example build script is not a stable public API.
 
 Options:
   --pte=PATH             PTE to include in the runner ELF.

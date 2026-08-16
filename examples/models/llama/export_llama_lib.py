@@ -566,6 +566,19 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--use_moe_quantized_op",
+        action="store_true",
+        default=False,
+        help=(
+            "Replace eager MoE feed-forward modules with the "
+            "`llama::quantized_moe_ffn` portable-runtime custom op (INT4 "
+            "weights, INT8 dyn-quant activations via torchao). On aarch64 "
+            "with ENABLE_QUANTIZED_MOE_FFN the optimized torchao kernel is "
+            "used; otherwise a portable reference fallback runs."
+        ),
+    )
+
+    parser.add_argument(
         "-qat",
         "--use_qat",
         default=False,
@@ -809,6 +822,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
             quantize_with_hqq=llm_config.quantization.use_hqq,
+            use_moe_quantized_op=llm_config.model.use_moe_quantized_op,
         )
     )
 
@@ -969,17 +983,24 @@ def _to_edge_and_lower_llama_xnnpack(
     generate_etrecord: bool = False,
     verbose: bool = False,
     gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
+    enable_bf16: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
     # Order matters here, dynamic quantization should be applied first when both xnnpack and xnnpack_extended_ops are enabled
-    partitioners.append(get_xnnpack_partitioner(dynamic_quant_only_partitioner=True))
+    partitioners.append(
+        get_xnnpack_partitioner(
+            dynamic_quant_only_partitioner=True, enable_bf16=enable_bf16
+        )
+    )
 
     modelname = f"xnnpack_dq_{modelname}"
 
     if xnnpack_extended_ops:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=False, enable_bf16=enable_bf16
+            )
         )
         modelname = f"xnnpack_{modelname}"
 
@@ -1712,6 +1733,7 @@ def _get_source_transforms(  # noqa
     use_torchao_kernels_linear: bool = False,
     use_torchao_kernels_tied_embedding: bool = False,
     quantize_with_hqq: bool = True,
+    use_moe_quantized_op: bool = False,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1768,6 +1790,17 @@ def _get_source_transforms(  # noqa
             )
 
             transforms.append(inject_fast_hadamard_transform_native_for_spin_quant)
+
+    if use_moe_quantized_op:
+        from .source_transformation.moe import replace_moe_with_quantized_op
+
+        transforms.append(
+            partial(
+                replace_moe_with_quantized_op,
+                group_size=group_size or 32,
+                weight_nbit=4,
+            )
+        )
 
     if embedding_quantize:
         """

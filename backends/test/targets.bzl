@@ -12,7 +12,6 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "graph_builder.py",
             ],
-            typing = True,
             deps = [
                 "//caffe2:torch",
                 "//executorch/exir:pass_base",
@@ -24,7 +23,6 @@ def define_common_targets(is_fbcode = False):
             srcs = [
                 "program_builder.py",
             ],
-            typing = True,
             deps = [
                 ":graph_builder",
                 "//caffe2:torch",
@@ -71,7 +69,7 @@ def define_common_targets(is_fbcode = False):
             deps = multi_method_delegate_test_deps,
             env = modules_env,
             modifiers = [
-                "ovr_config//build_mode/constraints:sanitizer",
+                "ovr_config//build_mode/constraints:build_mode[sanitizer]",
                 "ovr_config//build_mode:sanitizer_type[tsan]",
             ],
         )

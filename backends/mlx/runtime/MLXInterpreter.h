@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "MLXCache.h"
 #include "MLXExecutor.h"
 
 #include <mlx/array.h>
@@ -290,6 +291,86 @@ inline void exec_sdpa(const SdpaNode& n, ExecutionState& st, StreamOrDevice s) {
 
   array out = fast::scaled_dot_product_attention(
       Q, K, V, static_cast<float>(n.scale), mask_mode, mask_arr, sinks, s);
+  st.set_tensor(n.out, std::move(out));
+}
+
+inline void exec_update_and_attend(
+    const UpdateAndAttendNode& n,
+    ExecutionState& st,
+    StreamOrDevice s) {
+  if (!st.cache) {
+    throw std::runtime_error("update_and_attend: no cache installed");
+  }
+  if (!n.layer_id) {
+    throw std::runtime_error("update_and_attend: layer_id is not set");
+  }
+  if (!n.scale) {
+    throw std::runtime_error("update_and_attend: scale is not set");
+  }
+  // The cache does the KV write + read and declares the mask; the handler owns
+  // the query side (q, scale) and calls SDPA.
+  const array& q = st.const_tensor_ref(n.q);
+  // The run's start is position[0], read host-side so the cache stays pure
+  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest -- casting first would instead build a fresh array per
+  // layer and sync on each one.
+  auto pos = st.const_tensor_ref(n.position);
+  eval(pos);
+  int position;
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      position = pos.data<int32_t>()[0];
+      break;
+    case ::mlx::core::int64:
+      position = static_cast<int>(pos.data<int64_t>()[0]);
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
+  AttendSpec spec = st.cache->update_and_fetch(
+      *n.layer_id,
+      position,
+      st.const_tensor_ref(n.k),
+      st.const_tensor_ref(n.v),
+      s);
+  // Match stored K/V to the query dtype before SDPA (no-op when equal; the
+  // storage precision may differ from the compute dtype).
+  array K = spec.K.dtype() == q.dtype() ? spec.K : astype(spec.K, q.dtype(), s);
+  array V = spec.V.dtype() == q.dtype() ? spec.V : astype(spec.V, q.dtype(), s);
+  // MLX takes the mask as a mode string plus an optional tensor. Switch rather
+  // than test for Causal: None and Explicit both map to "" and are told apart
+  // only by spec.mask, so an Explicit with no mask would silently attend
+  // unmasked.
+  std::string mask_mode;
+  switch (spec.kind) {
+    case AttendSpec::Mask::None:
+      break;
+    case AttendSpec::Mask::Causal:
+      mask_mode = "causal";
+      break;
+    case AttendSpec::Mask::Explicit:
+      if (!spec.mask) {
+        throw std::runtime_error(
+            "update_and_attend: Explicit mask kind with no mask tensor");
+      }
+      break;
+  }
+  array out = fast::scaled_dot_product_attention(
+      q,
+      K,
+      V,
+      static_cast<float>(*n.scale),
+      mask_mode,
+      spec.mask,
+      std::nullopt,
+      s);
+  // Honor the op's output-dtype contract (unset -> SDPA's native output).
+  if (n.out_dtype) {
+    out = astype(out, resolve_dtype(*n.out_dtype), s);
+  }
   st.set_tensor(n.out, std::move(out));
 }
 
@@ -872,7 +953,10 @@ exec_gather_mm(const GatherMmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
-  array Y = gather_mm(A, B, lhs_idx, rhs_idx, n.sorted_indices, s);
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
+  array Y = gather_mm(A, B, lhs_idx, rhs_idx, sorted, s);
   st.set_tensor(n.out, std::move(Y));
 }
 
@@ -895,6 +979,9 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
     rhs_idx = st.const_tensor_ref(*n.rhs_indices);
   }
 
+  bool sorted = n.sorted_indices_flag.has_value()
+      ? (resolve_int(*n.sorted_indices_flag, st) != 0)
+      : n.sorted_indices;
   array Y = gather_qmm(
       X,
       Wq,
@@ -906,7 +993,7 @@ exec_gather_qmm(const GatherQmmNode& n, ExecutionState& st, StreamOrDevice s) {
       n.group_size,
       n.bits,
       n.mode,
-      n.sorted_indices,
+      sorted,
       s);
   st.set_tensor(n.out, std::move(Y));
 }
@@ -1958,6 +2045,10 @@ class Interpreter {
         break;
       case OpCode::SDPA:
         ops::exec_sdpa(std::get<SdpaNode>(instr.node), st, s);
+        break;
+      case OpCode::UPDATE_AND_ATTEND:
+        ops::exec_update_and_attend(
+            std::get<UpdateAndAttendNode>(instr.node), st, s);
         break;
       case OpCode::ADD:
         ops::exec_add(std::get<AddNode>(instr.node), st, s);

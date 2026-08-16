@@ -240,6 +240,48 @@ void gemm(
 void gemm(
     TransposeType transa, TransposeType transb,
     int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const BFloat16 *a, int64_t lda,
+    const BFloat16 *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<BFloat16, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const float alpha,
+    const Half *a, int64_t lda,
+    const Half *b, int64_t ldb,
+    const float beta,
+    float *c, int64_t ldc) {
+  normalize_last_dims(transa, transb, m, n, k, &lda, &ldb, &ldc);
+  gemm_impl<Half, float, float>(
+      transa, transb,
+      m, n, k,
+      alpha,
+      a, lda,
+      b, ldb,
+      beta,
+      c, ldc);
+}
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
     const complex<float> alpha,
     const complex<float> *a, int64_t lda,
     const complex<float> *b, int64_t ldb,

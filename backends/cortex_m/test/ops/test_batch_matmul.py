@@ -48,6 +48,46 @@ class CortexMBmmConstantRhs(torch.nn.Module):
         return torch.bmm(lhs, self.rhs)
 
 
+class CortexMMatmul(torch.nn.Module):
+    """``torch.matmul`` is captured as ``aten.matmul.default`` at annotation time
+    and only decomposes to ``bmm`` at ``to_edge`` -- after quantization -- so it
+    would never receive qparams. The pre-annotation matmul->bmm rewrite makes it
+    lower to ``cortex_m.quantized_batch_matmul`` for both rank-3 @ rank-3 and
+    rank>3 (leading batch dims folded to 3D and reshaped back)."""
+
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_batch_matmul_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_matmul_default": 0,
+    }
+
+    def forward(self, lhs, rhs):
+        return torch.matmul(lhs, rhs)
+
+
+class CortexMMatmulBroadcast(torch.nn.Module):
+    """Broadcasting rank-3 matmul whose batch dims differ ([1,4,8] @ [2,8,4] ->
+    [2,4,4]). ``aten.bmm`` requires equal batch dims, so this must NOT be
+    rewritten to bmm; it falls through, stays ``aten.matmul`` -> fp32, and is not
+    lowered (no cortex_m_quantized_batch_matmul)."""
+
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_batch_matmul_default": 0,
+        "executorch_exir_dialects_edge__ops_aten_bmm_default": 1,
+    }
+
+    def forward(self, lhs, rhs):
+        return torch.matmul(lhs, rhs)
+
+
 test_cases = {
     "bmm_small": McuTestCase(
         CortexMBmm(),
@@ -84,6 +124,22 @@ const_rhs_test_cases = {
 }
 
 
+matmul_test_cases = {
+    "matmul_rank3": McuTestCase(
+        CortexMMatmul(),
+        (torch.randn(2, 4, 8), torch.randn(2, 8, 4)),
+    ),
+    "matmul_rank4": McuTestCase(
+        CortexMMatmul(),
+        (torch.randn(1, 4, 16, 8), torch.randn(1, 4, 8, 16)),
+    ),
+    "matmul_broadcast_rank3": McuTestCase(
+        CortexMMatmulBroadcast(),
+        (torch.randn(1, 4, 8), torch.randn(2, 8, 4)),
+    ),
+}
+
+
 @parametrize("test_case", test_cases)
 def test_dialect_batch_matmul(test_case, cortex_m_target):
     tester = CortexMTester(
@@ -98,6 +154,18 @@ def test_dialect_batch_matmul(test_case, cortex_m_target):
 
 @parametrize("test_case", const_rhs_test_cases)
 def test_dialect_batch_matmul_const_rhs(test_case, cortex_m_target):
+    tester = CortexMTester(
+        test_case.model, test_case.example_inputs, target_config=cortex_m_target
+    )
+    tester.test_dialect(
+        test_case.model.ops_before_transforms,
+        test_case.model.ops_after_transforms,
+        qtol=1,
+    )
+
+
+@parametrize("test_case", matmul_test_cases)
+def test_dialect_matmul(test_case, cortex_m_target):
     tester = CortexMTester(
         test_case.model, test_case.example_inputs, target_config=cortex_m_target
     )

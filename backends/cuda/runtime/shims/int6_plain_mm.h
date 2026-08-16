@@ -35,14 +35,20 @@ extern "C" {
  *           32-weight chunk as hi_even_packed[4] then hi_odd_packed[4]; each
  *           byte holds the four 2-bit highs of one dp4a word, bit field j
  *           (bits 2j..2j+1) = high 2 bits of that word's j-th even/odd weight.
- *   scale : [N, K//group_size] bf16 per-group scales (row-major).
- * W6A8 dp4a matvec: dynamically quantizes activations to INT8, reconstructs
- * full 6-bit weight bytes, then uses dp4a for fused int6xint8 dot products.
+ *   scale : [N, K//group_size] int8 per-group signed scale codes (row-major),
+ *           decoded with a per-256-super-block [N, K//256] fp16 ``steps``: the
+ *           group scale is ``scale_code * steps[:, g // (256 // group_size)]``.
+ *           This mirrors GGUF Q6_K's own per-super-block fp16 ``d``
+ * granularity. W6A8 dp4a matvec: dynamically quantizes activations to INT8,
+ * reconstructs full 6-bit weight bytes, then uses dp4a for fused int6xint8 dot
+ * products.
  *
  * @param self     Input activation [M, K] bf16
  * @param ql       Low-nibble plane [N, K/2] uint8
  * @param qh       High-2-bit plane [N, K/4] uint8
- * @param scale    Per-group scales [N, K//group_size] bf16
+ * @param scale    Per-group scale codes [N, K//group_size] int8
+ * @param steps    Per-256-super-block scale step [N, K//256] fp16 (scale =
+ *                 code * steps[:, g // (256 // group_size)])
  * @param group_size Quantization group size (multiple of 8; e.g. 16 for Q6_K)
  * @param ret0     Output [M, N] bf16
  */
@@ -51,6 +57,7 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_int6_plain_mm(
     Tensor* ql,
     Tensor* qh,
     Tensor* scale,
+    Tensor* steps,
     int64_t group_size,
     Tensor** ret0);
 

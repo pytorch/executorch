@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from . import (
+    custom_ops,
     node_visitor,
     op_abs,
     op_adaptive_avg_pool2d,
@@ -49,6 +50,7 @@ from . import (
     op_grid_sampler_2d,
     op_group_norm,
     op_gt,
+    op_hadamard_transform,
     op_hardsigmoid,
     op_hardswish,
     op_hardtanh,
@@ -99,6 +101,7 @@ from . import (
     op_slice_copy,
     op_slice_scatter,
     op_softmax,
+    op_sort,
     op_space_to_depth,
     op_split_with_sizes,
     op_sqrt,
@@ -120,6 +123,7 @@ from . import (
 )
 
 __all__ = [
+    custom_ops,
     node_visitor,
     op_abs,
     op_adaptive_avg_pool2d,
@@ -164,6 +168,7 @@ __all__ = [
     op_grid_sampler_2d,
     op_group_norm,
     op_gt,
+    op_hadamard_transform,
     op_hardswish,
     op_hardtanh,
     op_hardsigmoid,
@@ -214,6 +219,7 @@ __all__ = [
     op_slice_copy,
     op_slice_scatter,
     op_softmax,
+    op_sort,
     op_space_to_depth,
     op_split_with_sizes,
     op_squeeze,

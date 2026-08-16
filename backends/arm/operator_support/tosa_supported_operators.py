@@ -9,7 +9,6 @@ used by the TOSA partitioner to decide if FX nodes are eligible for delegation.
 
 """
 
-
 import operator
 import typing
 from typing import final, Optional, Sequence, Type
@@ -41,6 +40,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
+    EthosU55ResizeCheck,
 )
 from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
     TOSA_PRO_FP_SupportList,
@@ -343,6 +343,7 @@ def _negative_checks(
     additional_checks: Optional[Sequence[OperatorSupportBase]],
 ) -> list[OperatorSupportBase]:
     checks: list[OperatorSupportBase] = [RankCheck(reporter, MAX_RANK)]
+    checks.append(CheckKnownUnsupportedTOSASemantics(reporter))
 
     if not tosa_spec.support_extension("int64"):
         checks.append(CheckInt64InputsAndOutputs(exported_program, reporter, tosa_spec))
@@ -363,6 +364,7 @@ def _negative_checks(
 
     if tosa_spec.is_U55_subset:
         checks.append(EthosU55NotSupported(reporter))
+        checks.append(EthosU55ResizeCheck(reporter))
         checks.append(EthosU55DtypeSupport(reporter))
         checks.append(EthosU55CastCheck(reporter))
 
@@ -372,11 +374,66 @@ def _negative_checks(
     return checks
 
 
+_ARGMAX_OPS = (
+    torch.ops.aten.argmax.default,
+    exir_ops.edge.aten.argmax.default,
+)
+
+_TO_DIM_ORDER_COPY_OPS = (
+    torch.ops.dim_order_ops._to_dim_order_copy.default,
+    exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+)
+
+
+def _argmax_all_users_cast_to_int32(node: fx.Node) -> bool:
+    # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
+    # when every user immediately narrows aten.argmax's int64 result:
+    #
+    #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
+    if node.target not in _ARGMAX_OPS or not node.users:
+        return False
+
+    return all(
+        user.target in _TO_DIM_ORDER_COPY_OPS
+        and user.kwargs.get("dtype") == torch.int32
+        for user in node.users
+    )
+
+
+class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
+    """Reject ops whose TOSA lowering is known to differ from PyTorch."""
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        self.reporter = reporter
+
+    def _check_argmax(self, node: fx.Node) -> bool:
+        if _argmax_all_users_cast_to_int32(node):
+            return True
+
+        self.reporter.report_reject(
+            node,
+            "TOSA ARGMAX produces int32 but aten.argmax returns int64.",
+        )
+        return False
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        if node.target in (
+            torch.ops.aten.argmax.default,
+            exir_ops.edge.aten.argmax.default,
+        ):
+            return self._check_argmax(node)
+
+        return True
+
+
 def tosa_support_factory(
     tosa_spec: TosaSpecification,
     exported_program: ExportedProgram,
     reporter: WhyNoPartitionReporter,
     additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
+    additional_positive_checks: Optional[Sequence[OperatorSupportBase]] = None,
 ) -> OperatorSupportBase:
     """Create an OperatorSupport composite for a TOSA spec.
 
@@ -389,12 +446,16 @@ def tosa_support_factory(
         reporter (WhyNoPartitionReporter): Reporter for rejections.
         additional_checks (Optional[Sequence[OperatorSupportBase]]): Extra
             negative checks to apply.
+        additional_positive_checks (Optional[Sequence[OperatorSupportBase]]):
+            Extra positive checks to add to the support list.
 
     Returns:
         OperatorSupportBase: Composite checker for the given spec.
 
     """
     positive_checks = _positive_checks(tosa_spec, exported_program, reporter)
+    if additional_positive_checks:
+        positive_checks.extend(additional_positive_checks)
     negative_checks = _negative_checks(
         tosa_spec, exported_program, reporter, additional_checks
     )
@@ -720,16 +781,33 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     def has_rejected_int64_output(
         self, node: torch.fx.Node, tensor_list: Sequence[typing.Any]
     ) -> bool:
-        if node.target in (
-            torch.ops.aten.argmax.default,
-            exir_ops.edge.aten.argmax.default,
-        ):
+        if node.target in _ARGMAX_OPS:
             return not self._is_tosa_argmax_supported(node)
+
         return any(
             tensor.dtype == torch.int64
             for tensor in tensor_list
             if isinstance(tensor, FakeTensor)
         )
+
+    def _is_argmax_int32_cast(
+        self,
+        node: torch.fx.Node,
+        input_node: torch.fx.Node,
+    ) -> bool:
+        if node.target not in _TO_DIM_ORDER_COPY_OPS:
+            return False
+
+        if node.kwargs.get("dtype") != torch.int32:
+            return False
+
+        if input_node.target not in _ARGMAX_OPS:
+            return False
+
+        if not _argmax_all_users_cast_to_int32(input_node):
+            return False
+
+        return self._is_tosa_argmax_supported(input_node)
 
     def _is_tosa_argmax_dtype_supported(
         self, node: torch.fx.Node, input_dtype: torch.dtype
@@ -829,6 +907,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             tensor_in = get_first_fake_tensor(input_node)
             if tensor_in.dtype != torch.int64:
                 continue
+
+            # aten.argmax is nominally int64, but TOSA ARGMAX produces int32.
+            # Allow the explicit argmax -> int32 narrowing pattern so both nodes
+            # can be placed in the same delegate.
+            if self._is_argmax_int32_cast(node, input_node):
+                continue
+
             # Constant placeholder
             if (
                 input_node.op != "call_function"

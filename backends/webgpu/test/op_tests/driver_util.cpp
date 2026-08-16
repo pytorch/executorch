@@ -49,12 +49,14 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
       InputRef ir;
       ir.path = join(base, ie.at("path").get<std::string>());
       ir.shape = ie.at("shape").get<std::vector<int>>();
+      ir.dtype = ie.value("dtype", std::string("float32"));
       m.inputs.push_back(std::move(ir));
     }
     const auto& g = e.at("golden");
     m.golden.path = join(base, g.at("path").get<std::string>());
     m.golden.shape = g.at("shape").get<std::vector<int>>();
     m.golden.output_index = g.value("output_index", 0);
+    m.golden.dtype = g.value("dtype", std::string("float32"));
     m.atol = e.value("atol", 1e-3f);
     m.rtol = e.value("rtol", 1e-3f);
     m.required = e.value("required", true);
@@ -64,6 +66,20 @@ std::vector<ManifestEntry> parse_manifest(const std::string& manifest_path) {
   return out;
 }
 
+std::vector<int32_t> load_int32_bin(const std::string& path, size_t numel) {
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  std::vector<int32_t> g(numel);
+  const size_t n = std::fread(g.data(), sizeof(int32_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
 std::vector<float> load_fp32_bin(const std::string& path, size_t numel) {
   FILE* f = std::fopen(path.c_str(), "rb");
   if (!f) {
@@ -71,6 +87,34 @@ std::vector<float> load_fp32_bin(const std::string& path, size_t numel) {
   }
   std::vector<float> g(numel);
   const size_t n = std::fread(g.data(), sizeof(float), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
+std::vector<int8_t> load_int8_bin(const std::string& path, size_t numel) {
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  std::vector<int8_t> g(numel);
+  const size_t n = std::fread(g.data(), sizeof(int8_t), numel, f);
+  std::fclose(f);
+  if (n != numel) {
+    return {};
+  }
+  return g;
+}
+
+std::vector<int64_t> load_int64_bin(const std::string& path, size_t numel) {
+  FILE* f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    return {};
+  }
+  std::vector<int64_t> g(numel);
+  const size_t n = std::fread(g.data(), sizeof(int64_t), numel, f);
   std::fclose(f);
   if (n != numel) {
     return {};

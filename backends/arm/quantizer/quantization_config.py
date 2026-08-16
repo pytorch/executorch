@@ -11,8 +11,7 @@ quantization specs consumed by the annotator.
 
 """
 
-
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, cast, Optional
 
 import torch
@@ -21,10 +20,129 @@ from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
+    FixedQParamsQuantizationSpec,
     QuantizationSpec,
     QuantizationSpecBase,
     SharedQuantizationSpec,
 )
+
+
+def _is_canonical_flow_offset_grid_sampler(node: Node) -> bool:  # noqa: C901
+    if node.target != torch.ops.aten.grid_sampler.default or len(node.args) < 5:
+        return False
+    if tuple(node.args[2:5]) != (0, 1, True):
+        return False
+    image = node.args[0]
+    if not isinstance(image, Node):
+        return False
+    image_value = image.meta.get("val")
+    output_value = node.meta.get("val")
+    if (
+        not isinstance(image_value, torch.Tensor)
+        or len(image_value.shape) != 4
+        or int(image_value.shape[0]) != 1
+        or int(image_value.shape[1]) not in (3, 4)
+        or not isinstance(output_value, torch.Tensor)
+        or tuple(output_value.shape) != tuple(image_value.shape)
+    ):
+        return False
+    grid = node.args[1]
+    if not isinstance(grid, Node) or grid.target != torch.ops.aten.permute.default:
+        return False
+    permutation = grid.args[1]
+    if not isinstance(permutation, (list, tuple)) or list(permutation) != [0, 2, 3, 1]:
+        return False
+    add = grid.args[0]
+    if not isinstance(add, Node) or add.target != torch.ops.aten.add.Tensor:
+        return False
+    if len(add.args) > 2 and add.args[2] != 1:
+        return False
+    if add.kwargs.get("alpha", 1) != 1:
+        return False
+    for base_grid, flow_slice in (
+        (add.args[0], add.args[1]),
+        (add.args[1], add.args[0]),
+    ):
+        if not isinstance(flow_slice, Node) or flow_slice.target not in (
+            torch.ops.aten.slice.Tensor,
+            torch.ops.aten.slice_copy.Tensor,
+        ):
+            continue
+        flow, dim, start, end, *step = flow_slice.args
+        if dim != 1 or (start, end) not in ((0, 2), (2, 4)):
+            continue
+        if (
+            step not in ([], [1])
+            or flow_slice.kwargs.get("step", 1) != 1
+            or not isinstance(flow, Node)
+        ):
+            continue
+        flow_value = flow.meta.get("val")
+        while isinstance(base_grid, Node) and base_grid.target in (
+            torch.ops.aten.to.dtype,
+            torch.ops.aten.to.dtype_layout,
+            torch.ops.aten.alias.default,
+        ):
+            base_grid = base_grid.args[0]
+        if not isinstance(base_grid, Node):
+            continue
+        base_value = base_grid.meta.get("val")
+        if (
+            not isinstance(flow_value, torch.Tensor)
+            or len(flow_value.shape) != 4
+            or tuple(flow_value.shape[:2]) != (1, 4)
+        ):
+            continue
+        height, width = map(int, flow_value.shape[2:])
+        if height <= 1 or width <= 1:
+            continue
+        if tuple(image_value.shape[2:]) != (height, width):
+            continue
+        if not isinstance(base_value, torch.Tensor) or tuple(base_value.shape) != (
+            1,
+            2,
+            height,
+            width,
+        ):
+            continue
+        if base_grid.target != torch.ops.aten.cat.default or base_grid.args[1] != 1:
+            continue
+        axes = base_grid.args[0]
+        if not isinstance(axes, (list, tuple)) or len(axes) != 2:
+            continue
+
+        def matches_axis(axis_node, axis):
+            if not isinstance(axis_node, Node) or axis_node.target not in (
+                torch.ops.aten.expand.default,
+                torch.ops.aten.expand_copy.default,
+            ):
+                return False
+            view = axis_node.args[0]
+            if not isinstance(view, Node) or view.target not in (
+                torch.ops.aten.view.default,
+                torch.ops.aten.view_copy.default,
+            ):
+                return False
+            linspace = view.args[0]
+            if (
+                not isinstance(linspace, Node)
+                or linspace.target != torch.ops.aten.linspace.default
+            ):
+                return False
+            if linspace.kwargs.get("dtype") not in (None, torch.float32):
+                return False
+            extent = width if axis == 3 else height  # noqa: B023
+            expected_view = [1, 1, 1, width] if axis == 3 else [1, 1, height, 1]  # noqa: B023  # fmt: skip
+            expected_expand = [1, -1, height, -1] if axis == 3 else [1, -1, -1, width]  # noqa: B023  # fmt: skip
+            return (
+                tuple(linspace.args[:3]) == (-1.0, 1.0, extent)
+                and list(view.args[1]) == expected_view
+                and list(axis_node.args[1]) == expected_expand
+            )
+
+        if matches_axis(axes[0], 3) and matches_axis(axes[1], 2):
+            return True
+    return False
 
 
 @dataclass(eq=True, frozen=True)
@@ -155,7 +273,6 @@ class QuantizationConfig:
                 floating-point.
 
         """
-
         if self.bias is None or node is None:
             return None
 
@@ -258,6 +375,10 @@ class QuantizationConfig:
 class TOSAQuantizationConfig(QuantizationConfig):
     """Configures quantization, while enforcing TOSA specific constraints."""
 
+    quantize_grid_sampler_grid = False
+
+    # Ops whose output range matches their input's, so reusing the input qspec
+    # costs no resolution. Ops that compress the value range do not belong here.
     SHARED_OUTPUT_ACT_QSPEC_PATTERNS = {
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.upsample_bilinear2d.vec,
@@ -266,8 +387,6 @@ class TOSAQuantizationConfig(QuantizationConfig):
         torch.ops.aten.max_pool2d.default,
         torch.ops.aten.mean.default,
         torch.ops.aten.mean.dim,
-        torch.ops.aten.silu.default,
-        torch.ops.aten.silu_.default,
     }
 
     SHARED_INPUT_ACT_QSPEC_PATTERNS = {
@@ -306,12 +425,14 @@ class TOSAQuantizationConfig(QuantizationConfig):
             else:
                 return SharedQuantizationSpec((node.args[0], node))
         elif node.target == torch.ops.aten.grid_sampler.default:
-            if input_node != node.args[0]:
+            if input_node == node.args[0]:
+                input_act_qspec = super().get_input_act_qspec(node, input_node)
+                return _get_fixed_qparams_qspec(
+                    node.target, _fixed_input_qspec_ops, input_act_qspec
+                )
+            if not self.quantize_grid_sampler_grid:
                 return None
-            input_act_qspec = super().get_input_act_qspec(node, input_node)
-            return _get_fixed_qparams_qspec(
-                node.target, _fixed_input_qspec_ops, input_act_qspec
-            )
+            return super().get_input_act_qspec(node, input_node)
         elif node.target in _fixed_input_qspec_ops:
             input_act_qspec = super().get_input_act_qspec(node, input_node)
             return _get_fixed_qparams_qspec(
@@ -355,9 +476,9 @@ class TOSAQuantizationConfig(QuantizationConfig):
 
         If node is a pooling or upsample operator, returns a shared quantization spec.
         If no weight spec is configured, return ``None``.
+        If node is a `to.dtype` operator, returns a fixed quantization spec if the input is integer and the output is float32.
 
         """
-
         if node is None:
             return super().get_output_act_qspec()
         # MLETORCH-1853: Fix lazy import when moving files around
@@ -373,8 +494,98 @@ class TOSAQuantizationConfig(QuantizationConfig):
             return _get_fixed_qparams_qspec(
                 node.target, _fixed_output_qspec_ops, output_act_qspec
             )
+        if node.target == torch.ops.aten.to.dtype:
+            from executorch.backends.arm.quantizer.quantizer_support import CastCheck
+
+            input_node = node.all_input_nodes[0]
+            input_val = input_node.meta.get("val", None)
+            output_val = node.meta.get("val", None)
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_integer(input_val.dtype, output_val.dtype)
+            ):
+                return None
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_integer_to_float(input_val.dtype, output_val.dtype)
+                and output_val.dtype == torch.float32
+            ):
+                return FixedQParamsQuantizationSpec(
+                    dtype=input_val.dtype,
+                    scale=1.0,
+                    zero_point=0,
+                    quant_min=torch.iinfo(input_val.dtype).min,
+                    quant_max=torch.iinfo(input_val.dtype).max,
+                    qscheme=torch.per_tensor_symmetric,
+                    is_dynamic=False,
+                )
+            if (
+                isinstance(input_val, torch.Tensor)
+                and isinstance(output_val, torch.Tensor)
+                and CastCheck.is_float_identity(input_val.dtype, output_val.dtype)
+            ):
+                return SharedQuantizationSpec((input_node, node))
+            return super().get_output_act_qspec(node)
         if node.target not in self.SHARED_OUTPUT_ACT_QSPEC_PATTERNS:
             return super().get_output_act_qspec()
         if len(node.args) == 0:
             return super().get_output_act_qspec()
         return SharedQuantizationSpec((cast(Node, node.args[0]), node))
+
+
+class VGFQuantizationConfig(TOSAQuantizationConfig):
+    """Configure quantization for VGF-specific lowering paths."""
+
+    quantize_grid_sampler_grid = True
+
+    @staticmethod
+    def _snorm_compatible_qspec(
+        qspec: Optional[QuantizationSpecBase],
+    ) -> Optional[QuantizationSpecBase]:
+        if qspec is None:
+            return None
+        if not isinstance(qspec, QuantizationSpec):
+            raise ValueError("SNORM-compatible qparams require a QuantizationSpec.")
+        if qspec.quant_min == -127 and qspec.quant_max == 127:
+            return qspec
+        return replace(qspec, quant_min=-127, quant_max=127)
+
+    def get_input_act_qspec(self, node=None, input_node=None):
+        """Return the input activation spec for a VGF graph node.
+
+        Args:
+            node (Optional[Node]): Node whose input spec is requested.
+            input_node (Optional[Node]): Input node whose spec is requested.
+
+        Returns:
+            Optional[QuantizationSpecBase]: Input activation spec, or ``None``.
+
+        """
+        if (
+            node is not None
+            and input_node is not None
+            and _is_canonical_flow_offset_grid_sampler(node)
+            and input_node == node.args[0]
+        ):
+            qspec = QuantizationConfig.get_input_act_qspec(self, node, input_node)
+            if isinstance(qspec, QuantizationSpec) and qspec.dtype == torch.int8:
+                return self._snorm_compatible_qspec(qspec)
+        return super().get_input_act_qspec(node, input_node)
+
+    def get_output_act_qspec(self, node=None):
+        """Return the output activation spec for a VGF graph node.
+
+        Args:
+            node (Optional[Node]): Node whose output spec is requested.
+
+        Returns:
+            Optional[QuantizationSpecBase]: Output activation spec, or ``None``.
+
+        """
+        if node is not None and _is_canonical_flow_offset_grid_sampler(node):
+            qspec = QuantizationConfig.get_output_act_qspec(self, node)
+            if isinstance(qspec, QuantizationSpec) and qspec.dtype == torch.int8:
+                return self._snorm_compatible_qspec(qspec)
+        return super().get_output_act_qspec(node)

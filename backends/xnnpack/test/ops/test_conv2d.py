@@ -173,6 +173,18 @@ class Conv2dPermute(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class Conv3d(torch.nn.Module):
+    def __init__(self, stride):
+        super().__init__()
+        self.conv = torch.nn.Conv3d(2, 2, (2, 2, 2), stride=stride)
+
+    def forward(self, x):
+        return self.conv(x)
+
+    def get_inputs(self):
+        return (torch.randn(1, 2, 4, 4, 4),)
+
+
 class Conv2dDQSeq(torch.nn.Module):
     def __init__(self, transpose=False):
         super().__init__()
@@ -290,6 +302,41 @@ class TestConv2d(unittest.TestCase):
             for has_bias in (True, False):
                 self._test(Conv2d(bias=has_bias, transpose=transpose))
 
+    def test_fp32_conv2d_single_element_spatial_params(self) -> None:
+        # ATen broadcasts a single stride/padding/dilation value over every
+        # spatial dim, so a 2d conv can carry length-1 spatial params.
+        for transpose in (True, False):
+            self._test(
+                Conv2d(
+                    kernel_size=(3, 3),
+                    stride=(2,),
+                    padding=(1,),
+                    transpose=transpose,
+                )
+            )
+
+    def test_fp32_conv2d_single_element_dilation(self) -> None:
+        self._test(
+            Conv2d(
+                kernel_size=(3, 3),
+                stride=(1,),
+                padding=(1,),
+                dilation=(2,),
+            )
+        )
+
+    def test_fp32_conv3d_single_element_stride_doesnt_partition(self) -> None:
+        # XNNPACK has no conv3d support, and a length-1 stride must not make a 3d
+        # conv look 1d or 2d to the partitioner.
+        m = Conv3d(stride=(2,))
+        (
+            Tester(m, m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .run_method_and_compare_outputs()
+        )
+
     def test_fp32_conv2d_permute(self) -> None:
         for transpose in (True, False):
             for perm_order in list(itertools.permutations([0, 1, 2, 3])):
@@ -309,6 +356,126 @@ class TestConv2d(unittest.TestCase):
                 Conv2d(transpose=transpose),
                 quant_config=get_symmetric_quantization_config(is_per_channel=True),
             )
+
+    def test_qs8_conv2d_even_kernel_same_padding(self) -> None:
+        # An even-kernel 'same'-padding conv decomposes into
+        # dequant -> constant_pad_nd -> convolution. The pad and conv are pulled
+        # into one partition and both delegate (the pad as a quantized
+        # XNNStaticConstantPad), so neither survives in the top-level graph.
+        for has_bias in (True, False):
+            m = Conv2d(
+                in_channels=2,
+                out_channels=4,
+                kernel_size=(4, 4),
+                stride=(1, 1),
+                padding="same",
+                bias=has_bias,
+            )
+            tester = Tester(m.eval(), m.get_inputs())
+            tester.quantize(
+                Quantize(quantization_config=get_symmetric_quantization_config())
+            )
+            (
+                tester.export()
+                .check_count({"torch.ops.aten.conv2d": 1})
+                .to_edge_transform_and_lower()
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                        "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    ]
+                )
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(qtol=2)
+            )
+
+    def test_qs8_conv2d_depthwise_even_kernel_same_padding(self) -> None:
+        # Depthwise is a standard (non-transposed) 2D conv, so its even-'same' pad
+        # is delegated alongside the conv too. Assert it still fully delegates and is
+        # numerically correct.
+        m = Conv2d(
+            in_channels=4,
+            out_channels=4,
+            groups=4,
+            kernel_size=(4, 4),
+            stride=(1, 1),
+            padding="same",
+        )
+        tester = Tester(m.eval(), m.get_inputs())
+        tester.quantize(
+            Quantize(quantization_config=get_symmetric_quantization_config())
+        )
+        (
+            tester.export()
+            .check_count({"torch.ops.aten.conv2d": 1})
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=2)
+        )
+
+    class EvenSamePadFlatten(torch.nn.Module):
+        # Reproduces the failure where an even-kernel 'same' conv is followed by a
+        # shape-dependent op. The flatten bakes a fixed view over the conv's padded
+        # output extent; if the pad's spatial contribution is dropped from the graph
+        # the conv output shrinks and the view becomes invalid.
+        def __init__(self):
+            super().__init__()
+            self.conv = torch.nn.Conv2d(1, 16, (2, 1), padding="same")
+
+        def forward(self, x):
+            out = torch.reshape(x, (1, 1, 256, 1))
+            out = self.conv(out)
+            return torch.flatten(out, 1)
+
+        def get_inputs(self):
+            return (torch.randn(1, 1, 256, 1),)
+
+    def test_fp32_even_kernel_same_padding_flatten(self) -> None:
+        m = self.EvenSamePadFlatten().eval()
+        (
+            Tester(m, m.get_inputs())
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs()
+        )
+
+    def test_qs8_even_kernel_same_padding_flatten(self) -> None:
+        m = self.EvenSamePadFlatten().eval()
+        (
+            Tester(m, m.get_inputs())
+            .quantize(Quantize(quantization_config=get_symmetric_quantization_config()))
+            .export()
+            .to_edge_transform_and_lower()
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default",
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                ]
+            )
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(qtol=2)
+        )
 
     def test_fp32_conv2d_seq(self) -> None:
         for transpose in (True, False):

@@ -282,7 +282,7 @@ class OpAvgPool2DOutTest : public OperatorTest {
             padding_vec.data(), padding_vec.size());
     bool ceil_mode = false;
     bool count_include_pad = true;
-    std::optional<int64_t> divisor_override = std::optional<int64_t>(10);
+    int64_t divisor_override = 10;
     executorch::aten::Tensor out = tfFloat.zeros({2, 3, 3, 4});
     executorch::aten::Tensor out_expected = tfFloat.make(
         {2, 3, 3, 4},

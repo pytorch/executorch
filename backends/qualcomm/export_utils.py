@@ -37,6 +37,10 @@ from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchLpaiTargetEnv,
     QnnExecuTorchOpPackageOptions,
 )
+from executorch.backends.qualcomm.utils.check_qnn_version import (
+    get_sdk_build_id,
+    is_qnn_sdk_version_less_than,
+)
 from executorch.backends.qualcomm.utils.constants import (
     HEXAGON_SDK_ROOT,
     HEXAGON_TOOLS_ROOT,
@@ -47,10 +51,8 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_lpai_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     get_qnn_context_binary_alignment,
-    get_sdk_build_id,
     get_soc_to_htp_arch_map,
     get_soc_to_lpai_hw_ver_map,
-    is_qnn_sdk_version_less_than,
     to_edge_transform_and_lower_to_qnn,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -501,7 +503,7 @@ def build_executorch_binary(
     model: torch.nn.Module,  # noqa: B006
     qnn_config: QnnConfig,
     file_name: str,
-    dataset: List[torch.Tensor] | Callable[[torch.fx.GraphModule], None],
+    dataset: List[Tuple[torch.Tensor, ...]],
     quant_dtype: Optional[QuantDtype] = None,
     custom_quantizer: Optional[QnnQuantizer] = None,
     metadata=None,
@@ -518,7 +520,7 @@ def build_executorch_binary(
         model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
         qnn_config: (QnnConfig): A config class that saves qnn lowering and execution configuration.
         file_name (str): Name for the output binary file (.pte).
-        dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
+        dataset (List[Tuple[torch.Tensor, ...]]): A dataset for quantization calibration.
         quant_dtype (QuantDtype, optional): Data type for quantization.
         custom_quantizer (Callable, optional): Custom quantizer.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
@@ -959,9 +961,6 @@ def _ptq_calibrate(captured_model, quantizer, dataset):
     annotated_model = prepare_pt2e(captured_model, quantizer)
     print("Quantizing(PTQ) the model...")
     # calibration
-    if callable(dataset):
-        dataset(annotated_model)
-    else:
-        for data in dataset:
-            annotated_model(*data)
+    for data in dataset:
+        annotated_model(*data)
     return annotated_model

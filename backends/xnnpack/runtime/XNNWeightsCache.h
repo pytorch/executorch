@@ -223,6 +223,19 @@ class XNNWeightsCache {
   // in mmap_regions_, so delete_packed_data() can munmap when ref_count==0.
   std::unordered_map<void*, size_t> file_ptr_to_region_index_;
 
+  // Set by look_up when the kernel pointer is not in unpacked_data_to_name_
+  // (i.e., the constant is unnamed / embedded in the delegate blob). Checked
+  // by reserve_space to route unnamed constants to heap instead of the
+  // file-backed mmap — unnamed entries can never be found by name on reload,
+  // so persisting them to disk wastes space and triggers spurious saves.
+  bool last_lookup_unnamed_{false};
+
+  // True after load_packed_cache succeeds. When set, reserve_space routes
+  // to heap — all named entries are already in the file, so any new
+  // reserve_space is a re-pack (e.g., XNNPACK internal re-pack for a
+  // different runtime context) that doesn't need to persist.
+  bool loaded_from_disk_{false};
+
   // See mutex() for the locking contract — caller-owned, no internal
   // use within this class.
   std::mutex instance_mutex_;
