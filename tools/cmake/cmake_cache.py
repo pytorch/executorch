@@ -7,7 +7,11 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-_FALSE_VALUES = {"off", "0", "", "no"}
+# Deliberately stricter than CMake. CMake decides false by exclusion, so anything that is not one
+# of its false constants is true, including values like "2.0" and "enabled". Here an unrecognised
+# spelling reads as off, because this decides whether a component's libraries are packaged and
+# shipping a component whose libraries were never built is worse than shipping one fewer.
+_TRUE_VALUES = {"on", "true", "yes", "y"}
 
 
 @dataclass
@@ -35,9 +39,17 @@ class CMakeCache:
 
     @staticmethod
     def _is_truthy(value: Optional[str]) -> bool:
-        if (value is None) or (value.lower().strip() in _FALSE_VALUES):
+        if value is None:
             return False
-        return True
+        normalized = value.strip().lower()
+        if normalized in _TRUE_VALUES:
+            return True
+        try:
+            # float rather than int, because CMake accepts a number written with a decimal point and
+            # treats any non-zero value as true.
+            return float(normalized) != 0.0
+        except ValueError:
+            return False
 
     @staticmethod
     def read_cmake_cache(cache_path: str) -> Dict[str, CacheValue]:
