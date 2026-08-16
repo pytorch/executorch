@@ -139,24 +139,50 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
             ${TORCH_INCLUDE_DIRS}
   )
   # TODO: This only works if we install portable_lib.so to
-  # <site-packages>/executorch/extension/pybindings/.
+  # <site-packages>/executorch/extension/pybindings/. torch is three directories
+  # up from here, and this library links it directly, so the hop has to be
+  # recorded or the only route is the absolute path from the machine that built
+  # the wheel.
   if(APPLE)
-    set(RPATH "@loader_path/../../pybindings")
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+    )
   else()
-    set(RPATH "$ORIGIN/../../pybindings")
+    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
   endif()
-  set_target_properties(custom_ops_aot_lib PROPERTIES INSTALL_RPATH ${RPATH})
+  if(EXECUTORCH_BUILD_SHARED)
+    # Also on the built artifact, not only on install. Packaging copies this
+    # library out of the build tree rather than running an install step, so
+    # without this the built file carries whatever the linker recorded. Scoped
+    # to the shared build so a build that does not opt in keeps the parent's
+    # install-only behaviour.
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                           "${RPATH}"
+    )
+  else()
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES INSTALL_RPATH "${RPATH}"
+    )
+  endif()
+  executorch_target_shared_runtime_path(
+    custom_ops_aot_lib "extension/llm/custom_ops"
+    "executorch/extension/llm/custom_ops"
+  )
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
     # the ops in PyTorch and ExecuTorch through pybind
     target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
-  else()
+  elseif(NOT EXECUTORCH_BUILD_SHARED)
     # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
     # ops in PyTorch
     target_link_libraries(
       custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
     )
+  else()
+    target_link_libraries(custom_ops_aot_lib PUBLIC kernels_util_all_deps)
   endif()
+  executorch_target_link_shared_runtime(custom_ops_aot_lib)
 
   target_link_libraries(
     custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
