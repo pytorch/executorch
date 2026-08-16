@@ -1191,15 +1191,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # RPATH for the Python extension. It sits in
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-<<<<<<< HEAD
-  # and the wheel's own lib/ directory is two.
-  set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
-  # An editable install copies this extension into a package directory whose
-  # subdirectories are symlinks to the checkout, and the loader resolves the
-  # origin token against the real path, so the runtime sits two levels up and
-  # then inside src/executorch/lib rather than beside the copy.
-  string(APPEND _portable_lib_rpath ":$ORIGIN/../../src/executorch/lib")
-=======
   # and the wheel's own lib/ directory is two. Mach-O spells the loader relative
   # token differently and takes a list rather than a colon joined string, so
   # both differ here while the layout reasoning does not.
@@ -1210,12 +1201,16 @@ if(EXECUTORCH_BUILD_PYBIND)
     set(_python_extension_origin "$ORIGIN")
     set(_python_extension_rpath_separator ":")
   endif()
-<<<<<<< HEAD
-  set(_portable_lib_rpath "${_portable_lib_origin}/../../../torch/lib")
->>>>>>> 993f2c4a94 (Ship linkable libraries in the macOS wheel)
-=======
   set(_python_extension_rpath "${_python_extension_origin}/../../../torch/lib")
->>>>>>> 987930bf7f (Name the Python extension after what it contains)
+  # An editable install copies this extension into a package directory whose
+  # subdirectories are symlinks to the checkout, and the loader resolves the
+  # origin token against the real path, so the runtime sits two levels up and
+  # then inside src/executorch/lib rather than beside the copy.
+  string(
+    APPEND
+    _python_extension_rpath
+    "${_python_extension_rpath_separator}${_python_extension_origin}/../../src/executorch/lib"
+  )
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
