@@ -446,10 +446,8 @@ elseif(_executorch_runtime_library)
       set_property(
         TARGET executorch::runtime
         APPEND
-        PROPERTY INTERFACE_LINK_OPTIONS
-                 "LINKER:-rpath,@loader_path"
+        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
                  "LINKER:-rpath,@loader_path/../lib"
-                 "LINKER:-rpath,${_executorch_package_root}/lib"
                  "LINKER:-rpath,${_executorch_package_root}/lib"
       )
     endif()
@@ -555,10 +553,8 @@ function(_executorch_define_component _suffix _library_name)
     set_property(
       TARGET ${_target}
       APPEND
-      PROPERTY INTERFACE_LINK_OPTIONS
-               "LINKER:-rpath,@loader_path"
+      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
                "LINKER:-rpath,@loader_path/../lib"
-               "LINKER:-rpath,${_executorch_package_root}/lib"
                "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
