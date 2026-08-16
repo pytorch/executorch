@@ -1003,22 +1003,6 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_shared PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
   )
 
-  # The macro changes the layout of the tracer scope objects, so a consumer
-  # compiling without it while linking libraries built with it has a different
-  # view of those structs, with no diagnostic. add_definitions is directory
-  # scoped and does not survive export, and attaching it to the core alone does
-  # not reach a consumer either: executorch links the core PRIVATE and
-  # portable_kernels exports it under LINK_ONLY, so usage requirements do not
-  # travel. It has to sit on every target a consumer is handed.
-  if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    target_compile_definitions(
-      executorch_core INTERFACE ET_EVENT_TRACER_ENABLED
-    )
-    target_compile_definitions(executorch INTERFACE ET_EVENT_TRACER_ENABLED)
-    target_compile_definitions(
-      executorch_shared INTERFACE ET_EVENT_TRACER_ENABLED
-    )
-  endif()
   # Link executorch without WHOLE_ARCHIVE because its INTERFACE link options
   # (from executorch_target_link_options_shared_lib) already force
   # whole-archive. Everything else is pulled in through link options rather than
@@ -1045,6 +1029,25 @@ if(EXECUTORCH_BUILD_SHARED)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/executorch.pc
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   )
+endif()
+
+# The macro changes the layout of the tracer scope objects, so a consumer
+# compiling without it while linking libraries built with it has a different
+# view of those structs, with no diagnostic. add_definitions is directory scoped
+# and does not survive export, and attaching it to the core alone does not reach
+# a consumer either: executorch links the core PRIVATE and portable_kernels
+# exports it under LINK_ONLY, so usage requirements do not travel. It has to sit
+# on every target a consumer is handed, at the outer scope so it applies to a
+# static install too, and after the shared block so the shared target exists
+# when it is named.
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  target_compile_definitions(executorch_core INTERFACE ET_EVENT_TRACER_ENABLED)
+  target_compile_definitions(executorch INTERFACE ET_EVENT_TRACER_ENABLED)
+  if(TARGET executorch_shared)
+    target_compile_definitions(
+      executorch_shared INTERFACE ET_EVENT_TRACER_ENABLED
+    )
+  endif()
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
