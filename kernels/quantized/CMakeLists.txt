@@ -164,14 +164,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-# The thread pool carries the define that switches parallel_for from a serial
-# fallback to the real threaded implementation, so without it quantize,
-# dequantize and choose_qparams run on one core. Guarded because a bare metal
-# target builds these kernels without a thread pool at all, where the serial
-# fallback is the only correct choice.
 target_link_libraries(
   quantized_kernels PRIVATE executorch_core kernels_util_all_deps
 )
+# The thread pool carries the define that switches parallel_for from a serial
+# fallback to the real threaded implementation. Without it choose_qparams runs
+# on one core, as does the ARM path in quantize. Guarded because a bare metal
+# target builds these kernels without a thread pool at all, where the serial
+# fallback is the only correct choice.
 if(TARGET extension_threadpool)
   target_link_libraries(quantized_kernels PRIVATE extension_threadpool)
 endif()
@@ -200,8 +200,19 @@ if(EXECUTORCH_BUILD_SHARED)
   # This library holds no symbol a consumer names, only registration
   # constructors, so a link with --as-needed would drop it and register nothing.
   executorch_target_link_options_shared_lib(executorch_quantized_ops)
-  # Ships beside libexecutorch.so, so it resolves the runtime from there rather
-  # than from wherever it was built. Without this the installed library has an
-  # empty search path and a consumer that links it cannot start.
+  # Named after what the library provides rather than after the target that
+  # produces it, matching the optimized kernels next to it, so the shipped file
+  # reads as libexecutorch_kernels_quantized.so. The target name stays as it is
+  # because a source build already refers to it. Only for the wheel, for the
+  # same reason as the optimized kernels: a source install has been shipping the
+  # old file name with a versioned soname.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set_target_properties(
+      executorch_quantized_ops PROPERTIES OUTPUT_NAME
+                                          executorch_kernels_quantized
+    )
+  endif()
+  # Ships beside libexecutorch.so in the wheel's lib/ directory, so it resolves
+  # the runtime from there rather than from wherever it was built.
   executorch_target_shipped_runtime_path(executorch_quantized_ops)
 endif()
