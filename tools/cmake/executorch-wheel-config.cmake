@@ -747,22 +747,34 @@ if(_C_LIBRARY)
 
   # The extension names the shipped runtime by absolute path, so a consumer
   # links but cannot start once its binary moves unless the same search paths
-  # the runtime target publishes are attached here too.
-  if(APPLE)
-    set(_executorch_extension_link_options
-        "LINKER:-rpath,@loader_path" "LINKER:-rpath,@loader_path/../lib"
-        "LINKER:-rpath,${_executorch_package_root}/lib"
-    )
-  else()
-    # Matches the runtime target: without this the linker records DT_RPATH,
-    # which is searched ahead of LD_LIBRARY_PATH and is inherited by a
-    # dependency's dependencies, so a consumer could not point a locally built
-    # runtime at their own application.
-    set(_executorch_extension_link_options
-        "LINKER:--enable-new-dtags" "LINKER:-rpath,$ORIGIN"
-        "LINKER:-rpath,$ORIGIN/../lib"
-        "LINKER:-rpath,${_executorch_package_root}/lib"
-    )
+  # the runtime target publishes are attached here too. The relative entries use
+  # the origin token, which CMake writes incorrectly before 3.28, so an older
+  # consumer would record a malformed path. The absolute package directory has
+  # no token and is always safe, so publish that alone rather than nothing: an
+  # in-place build still finds the runtime, and no consumer receives a corrupted
+  # entry.
+  set(_executorch_extension_paths_are_safe ON)
+  if(CMAKE_VERSION VERSION_LESS 3.28)
+    set(_executorch_extension_paths_are_safe OFF)
+  endif()
+  set(_executorch_extension_link_options
+      "LINKER:-rpath,${_executorch_package_root}/lib"
+  )
+  if(_executorch_extension_paths_are_safe)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      # Matches the runtime target: without this the linker records DT_RPATH,
+      # which is searched ahead of LD_LIBRARY_PATH and is inherited by a
+      # dependency's dependencies, so a consumer could not point a locally built
+      # runtime at their own application.
+      list(PREPEND _executorch_extension_link_options
+           "LINKER:--enable-new-dtags" "LINKER:-rpath,$ORIGIN"
+           "LINKER:-rpath,$ORIGIN/../lib"
+      )
+    elseif(APPLE)
+      list(PREPEND _executorch_extension_link_options
+           "LINKER:-rpath,@loader_path" "LINKER:-rpath,@loader_path/../lib"
+      )
+    endif()
   endif()
   set_property(
     TARGET executorch::_C
