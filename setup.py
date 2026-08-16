@@ -1301,11 +1301,12 @@ class CustomBuildPy(build_py):
             if os.path.basename(dst) == "executorch-config.cmake":
                 tracer_cache_dir = _tracer_cache_dir(self)
                 if tracer_cache_dir is None:
-                    # Nothing built yet, so the definition cannot be derived. Remove the copy rather
-                    # than a file that cannot be consumed: a consumer compiling against an
-                    # unsubstituted placeholder fails on "macro names must be identifiers", while a
-                    # missing config reports that the package was not found.
-                    os.remove(dst)
+                    # An editable install reaches here because setuptools runs build_py before
+                    # build_ext, so no cache exists yet. Publishing nothing would leave a developer
+                    # with no find_package at all, so derive the definition from the arguments that
+                    # configure the build: the setting is knowable without the cache, and absent
+                    # means off, which is the project default.
+                    _substitute_tracer_definition_from_args(dst)
                     continue
                 _substitute_tracer_definition(dst, tracer_cache_dir)
 
@@ -1596,6 +1597,26 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
                 "ET_EVENT_TRACER_ENABLED" if enabled else "",
             )
         )
+
+
+def _substitute_tracer_definition_from_args(destination) -> None:
+    """Substitute the tracer definition using the arguments that configure the build.
+
+    Used when no CMake cache exists yet, which is the normal case for an editable install. Reading the
+    same arguments CMake will read keeps the shipped config consistent with the build it describes.
+    """
+    enabled = False
+    for argument in os.environ.get("CMAKE_ARGS", "").split():
+        if argument.startswith("-DEXECUTORCH_ENABLE_EVENT_TRACER"):
+            value = argument.split("=", 1)[-1].strip().upper()
+            enabled = value in ("ON", "1", "TRUE", "YES")
+    text = Path(destination).read_text()
+    Path(destination).write_text(
+        text.replace(
+            "@EXECUTORCH_TRACER_DEFINITION@",
+            "ET_EVENT_TRACER_ENABLED" if enabled else "",
+        )
+    )
 
 
 def _tracer_cache_dir(command) -> Optional[str]:
