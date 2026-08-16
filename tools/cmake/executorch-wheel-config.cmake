@@ -379,8 +379,9 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
       "instead. Linking it is not sufficient on its own: an imported target would also carry the "
       "include directories, the compile definitions and the C++ standard, so here a consumer has "
       "to apply EXECUTORCH_INCLUDE_DIRS, EXECUTORCH_COMPILE_DEFINITIONS and "
-      "EXECUTORCH_CXX_STANDARD itself. The prebuilt Python extension is still defined here, with the absolute
-#   package path only, so it links in place but is not relocatable."
+      "EXECUTORCH_CXX_STANDARD itself. The prebuilt Python extension is still "
+      "defined, with the absolute package path only, so it links in place but is "
+      "not relocatable."
   )
 elseif(_executorch_runtime_library)
   set(EXECUTORCH_FOUND ON)
