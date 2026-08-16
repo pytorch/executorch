@@ -115,6 +115,14 @@ else()
   # torch sets this to OFF on purpose and drives nvcc with its own gencode
   # flags, so there is nothing to choose here and overriding it would replace a
   # working set of architectures with one value.
+  #
+  # An empty value is a different case: nothing selected the architectures, and
+  # an empty list makes nvcc fall back to its built-in compute_50, which current
+  # CUDA rejects outright. Ask CMake to detect the builder's GPU instead, which
+  # is what a source build wants.
+  if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES native)
+  endif()
   message(
     STATUS "CUDA architectures left to torch: ${CMAKE_CUDA_ARCHITECTURES}"
   )
