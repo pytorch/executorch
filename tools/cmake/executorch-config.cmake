@@ -45,7 +45,6 @@ else()
   set(required_lib_list executorch executorch_core portable_kernels)
   set(EXECUTORCH_LIBRARIES)
 endif()
-set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
     ${_root}/lib
