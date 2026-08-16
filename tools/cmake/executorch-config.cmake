@@ -121,17 +121,21 @@ endforeach()
 # The ARM baremetal size test's CMAKE_TOOLCHAIN_FILE apparently doesn't prevent
 # our attempts to find_library(dl) from succeeding when building ExecuTorch, but
 # that call finds the host system's libdl and there is no actual libdl available
-# when building for the actual final baremetal.
-get_property(
-  FIXED_EXECUTORCH_CORE_LINK_LIBRARIES
-  TARGET executorch_core
-  PROPERTY INTERFACE_LINK_LIBRARIES
-)
-list(REMOVE_ITEM FIXED_EXECUTORCH_CORE_LINK_LIBRARIES $<LINK_ONLY:dl>)
-set_property(
-  TARGET executorch_core PROPERTY INTERFACE_LINK_LIBRARIES
-                                  ${FIXED_EXECUTORCH_CORE_LINK_LIBRARIES}
-)
+# when building for the actual final baremetal. Guarded because a shared install
+# need not export the static core, and reading a property off a target that does
+# not exist is a hard error in every consumer's find_package.
+if(TARGET executorch_core)
+  get_property(
+    FIXED_EXECUTORCH_CORE_LINK_LIBRARIES
+    TARGET executorch_core
+    PROPERTY INTERFACE_LINK_LIBRARIES
+  )
+  list(REMOVE_ITEM FIXED_EXECUTORCH_CORE_LINK_LIBRARIES $<LINK_ONLY:dl>)
+  set_property(
+    TARGET executorch_core PROPERTY INTERFACE_LINK_LIBRARIES
+                                    ${FIXED_EXECUTORCH_CORE_LINK_LIBRARIES}
+  )
+endif()
 
 # Expose MLX library and metallib path for downstream consumers
 if(TARGET mlxdelegate)

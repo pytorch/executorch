@@ -1699,10 +1699,21 @@ def _substitute_tracer_definition_from_args(destination) -> None:
     Used when no CMake cache exists yet, which is the normal case for an editable install. Reading the
     same arguments CMake will read keeps the shipped config consistent with the build it describes.
     """
+    # CMake accepts both -DNAME=VALUE and -D NAME=VALUE, and only the first spelling was read,
+    # so the second published the tracer-off layout while the libraries carried the tracer-on
+    # one. Both spellings are handled here. Absent still means off, because an editable install
+    # legitimately reaches this before any cache exists and a consumer must receive a usable
+    # definition rather than a raw placeholder.
+    tokens = os.environ.get("CMAKE_ARGS", "").split()
     enabled = False
-    for argument in os.environ.get("CMAKE_ARGS", "").split():
+    for index, argument in enumerate(tokens):
+        setting = None
         if argument.startswith("-DEXECUTORCH_ENABLE_EVENT_TRACER"):
-            value = argument.split("=", 1)[-1].strip().upper()
+            setting = argument[2:]
+        elif argument == "-D" and index + 1 < len(tokens):
+            setting = tokens[index + 1]
+        if setting and setting.startswith("EXECUTORCH_ENABLE_EVENT_TRACER"):
+            value = setting.split("=", 1)[-1].strip().upper()
             enabled = value in ("ON", "1", "TRUE", "YES")
     text = Path(destination).read_text()
     Path(destination).write_text(
