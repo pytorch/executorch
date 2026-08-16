@@ -1453,6 +1453,16 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
                 cmake_build_args += ["--target", "mlxdelegate"]
 
+            # Named explicitly because nothing else links it. The other shipped
+            # libraries are built as dependencies of the Python extension, but a C++
+            # application is the only consumer of this one, so without naming it the
+            # target is generated and never built, and packaging then looks for a file
+            # that does not exist.
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED") and (
+                cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED")
+            ):
+                cmake_build_args += ["--target", "executorch_quantized_ops"]
+
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]
                 cmake_build_args += ["--target", "quantized_ops_aot_lib"]
@@ -1568,6 +1578,19 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # The quantized kernels, as their own library rather than code
+                # fused into the AOT-only extension beside the Python bindings.
+                # A C++ application running a quantized model could not link
+                # them before.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
+                    src_name="libexecutorch_kernels_quantized.so",
+                    dst="executorch/lib/libexecutorch_kernels_quantized.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
                 # Install the XNNPACK delegate beside them, so a process has one
