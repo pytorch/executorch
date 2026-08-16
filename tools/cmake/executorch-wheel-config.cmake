@@ -446,8 +446,11 @@ elseif(_executorch_runtime_library)
       set_property(
         TARGET executorch::runtime
         APPEND
-        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+        PROPERTY INTERFACE_LINK_OPTIONS
+                 "LINKER:-rpath,@loader_path"
                  "LINKER:-rpath,@loader_path/../lib"
+                 "LINKER:-rpath,${_executorch_package_root}/lib"
+                 "LINKER:-rpath,${_executorch_package_root}/lib"
       )
     endif()
   endif()
@@ -552,8 +555,11 @@ function(_executorch_define_component _suffix _library_name)
     set_property(
       TARGET ${_target}
       APPEND
-      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+      PROPERTY INTERFACE_LINK_OPTIONS
+               "LINKER:-rpath,@loader_path"
                "LINKER:-rpath,@loader_path/../lib"
+               "LINKER:-rpath,${_executorch_package_root}/lib"
+               "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
   if(NOT _component_OPT_IN)
@@ -749,6 +755,13 @@ if(_C_LIBRARY)
   # moved.
   if(NOT TARGET executorch::_portable_lib)
     add_library(executorch::_portable_lib ALIAS executorch::_C)
+  endif()
+  # A project built against an earlier wheel links this bare name, which that
+  # wheel defined and advertised through EXECUTORCH_LIBRARIES. Kept as an alias
+  # so the one target carries the properties and the old name cannot drift from
+  # the new one.
+  if(NOT TARGET _portable_lib)
+    add_library(_portable_lib ALIAS executorch::_C)
   endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
