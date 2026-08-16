@@ -1194,6 +1194,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
   # and the wheel's own lib/ directory is two.
   set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+  # An editable install copies this extension into a package directory whose
+  # subdirectories are symlinks to the checkout, and the loader resolves the
+  # origin token against the real path, so the runtime sits two levels up and
+  # then inside src/executorch/lib rather than beside the copy.
+  string(APPEND _portable_lib_rpath ":$ORIGIN/../../src/executorch/lib")
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
@@ -1316,25 +1321,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   executorch_target_link_shared_runtime(portable_lib)
-
-  # The editable install copies this extension out of the build tree, and the
-  # entry CMake records points back into it. An $ORIGIN relative entry resolves
-  # the runtime wherever the extension is copied, so the copy works without a
-  # post-build patch step that needs a tool the developer may not have.
-  if(APPLE)
-    set_property(
-      TARGET portable_lib
-      APPEND
-      PROPERTY BUILD_RPATH
-               "@loader_path/../../lib;@loader_path/../../src/executorch/lib"
-    )
-  elseif(NOT WIN32)
-    set_property(
-      TARGET portable_lib
-      APPEND
-      PROPERTY BUILD_RPATH "$ORIGIN/../../lib;$ORIGIN/../../src/executorch/lib"
-    )
-  endif()
   # These libraries register their operators or their backend from a static
   # initializer, so nothing here references a symbol from them and some linkers
   # drop them from DT_NEEDED. That surfaces at runtime as a missing kernel or an
