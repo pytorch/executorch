@@ -749,6 +749,26 @@ if(_C_LIBRARY)
     add_library(executorch::_C STATIC IMPORTED)
   endif()
 
+  # The extension names the shipped runtime by absolute path, so a consumer
+  # links but cannot start once its binary moves unless the same search paths
+  # the runtime target publishes are attached here too.
+  if(APPLE)
+    set(_executorch_extension_link_options
+        "LINKER:-rpath,@loader_path" "LINKER:-rpath,@loader_path/../lib"
+        "LINKER:-rpath,${_executorch_package_root}/lib"
+    )
+  else()
+    set(_executorch_extension_link_options
+        "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
+        "LINKER:-rpath,${_executorch_package_root}/lib"
+    )
+  endif()
+  set_property(
+    TARGET executorch::_C
+    APPEND
+    PROPERTY INTERFACE_LINK_OPTIONS ${_executorch_extension_link_options}
+  )
+
   # Earlier wheels named this extension _portable_lib in EXECUTORCH_LIBRARIES,
   # so a project may link that name. Aliased rather than dropped, because
   # dropping it gives a bare "target not found" with no hint that the name

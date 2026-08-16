@@ -113,6 +113,10 @@ if(EXECUTORCH_BUILD_SHARED)
   # This library holds no symbol a consumer names, only registration
   # constructors, so a link with --as-needed would drop it and register nothing.
   executorch_target_link_options_shared_lib(executorch_portable_ops)
+  # Ships beside libexecutorch.so, so it resolves the runtime from there rather
+  # than from wherever it was built. Without this the installed library has an
+  # empty search path and a consumer that links it cannot start.
+  executorch_target_shipped_runtime_path(executorch_portable_ops)
 endif()
 
 # Build the portable custom ops AOT library for registering custom ops into
