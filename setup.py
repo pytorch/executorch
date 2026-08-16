@@ -463,7 +463,7 @@ def _cuda_dependencies() -> List[str]:
 # need. An unused hop costs nothing at load time, while a missing one produces a wheel that installs
 # and then fails to load, and a per-library mapping would have to be revisited every time a library
 # moves.
-_SIBLING_LIBRARY_DIRECTORIES = ("backends/cuda", "lib")
+_SIBLING_LIBRARY_DIRECTORIES = ("backends/cuda", "lib", "src/executorch/lib")
 
 
 def _sibling_library_search_paths(depth: int = 1) -> List[str]:
