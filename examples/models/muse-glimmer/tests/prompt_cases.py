@@ -22,8 +22,8 @@ PATCH_ID = 200092
 IMAGE_MARKER = "<img>"
 
 # Tokens the image span costs beyond the patches themselves. Zero: the canonical
-# format is a bare <|patch|> run, which is what OnyxProcessor.replace_image_token
-# emits and what meta_reference_implementation splices on.
+# format is a bare <|patch|> run, which is what the Muse Glimmer processor's
+# replace_image_token method emits and what meta_reference_implementation splices on.
 IMAGE_WRAPPER_TOKENS = 0
 
 HF_DIR_ENV = "MUSE_GLIMMER_HF_DIR"
