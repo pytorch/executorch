@@ -1098,6 +1098,21 @@ if((EXECUTORCH_BUILD_PYBIND OR EXECUTORCH_BUILD_SHARED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
+# A shared runtime cannot produce an installable package on its own: the shared
+# target is not part of any install rule, so an install would ship every
+# component that links the runtime without shipping the runtime. The two presets
+# that enable a shared build also enable the bindings, which is the path that
+# packages it, so refuse anything else rather than emit a tree whose components
+# cannot resolve libexecutorch.
+if(EXECUTORCH_BUILD_SHARED AND NOT EXECUTORCH_BUILD_PYBIND)
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_SHARED needs EXECUTORCH_BUILD_PYBIND, which is what packages the "
+      "shared runtime. Enable the bindings, or build with EXECUTORCH_BUILD_SHARED=OFF and "
+      "link the static executorch target."
+  )
+endif()
+
 if(EXECUTORCH_BUILD_PYBIND)
 
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)

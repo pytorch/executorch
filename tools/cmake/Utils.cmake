@@ -435,6 +435,13 @@ function(executorch_target_shared_runtime_path target_name wheel_subdir
   # Up out of the subdirectory, then into the package's lib/.
   string(REGEX REPLACE "[^/]+" ".." _up "${wheel_subdir}")
   set(_paths "${_origin}/${_up}/lib")
+  # A checkout has neither the wheel directory nor the install prefix, and the
+  # only place the runtime exists is the package directory, which is a symlink
+  # farm. The loader resolves the origin token against the real path, so
+  # reaching it takes the same hops plus src/executorch. Emitting it here keeps
+  # a source build working without a post-link rewrite, which needs a tool the
+  # install path does not provide.
+  string(APPEND _paths "${_separator}${_origin}/${_up}/src/executorch/lib")
   # Made absolute lexically, so a destination that is already absolute, as a
   # ${CMAKE_INSTALL_LIBDIR} based one becomes, is handled the same as a prefix
   # relative one.

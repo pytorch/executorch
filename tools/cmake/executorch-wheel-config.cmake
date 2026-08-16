@@ -448,6 +448,7 @@ elseif(_executorch_runtime_library)
         APPEND
         PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
                  "LINKER:-rpath,@loader_path/../lib"
+                 "LINKER:-rpath,${_executorch_package_root}/lib"
       )
     endif()
   endif()
@@ -554,6 +555,7 @@ function(_executorch_define_component _suffix _library_name)
       APPEND
       PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
                "LINKER:-rpath,@loader_path/../lib"
+               "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
   if(NOT _component_OPT_IN)
