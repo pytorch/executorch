@@ -86,6 +86,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+    # The route to the runtime, through the same helper every other target uses.
+    # Written by hand here before, in two separate blocks that between them
+    # recorded only the wheel layout and only when the wheel flag was set, so a
+    # plain -DEXECUTORCH_BUILD_SHARED=ON build produced a library with no route
+    # to the runtime it links.
+    executorch_target_shared_runtime_path(
+      quantized_ops_aot_lib "kernels/quantized" "executorch/kernels/quantized"
+    )
 
     # Register quantized ops to portable_lib, so that they're available via
     # pybindings.
@@ -126,24 +134,47 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # libraries will look like "@rpath/_portable_lib.cpython-310-darwin.so",
       # so we can add an LC_RPATH entry to look in a directory relative to the
       # installed location of our _portable_lib.so file. To see these LC_*
-      # values, run `otool -l libquantized_ops_lib.dylib`.
+      # values, run `otool -l libquantized_ops_lib.dylib`. "extension", not
+      # "extensions": the plural directory does not exist, so the parent's path
+      # reached nothing and this library could not find the extension it needs.
+      # torch is three directories up from here, and this library links it
+      # directly, so the hop has to be recorded or the only route is the
+      # absolute path from the build machine.
       if(APPLE)
-        set(RPATH "@loader_path/../../extensions/pybindings")
+        set(RPATH
+            "@loader_path/../../extension/pybindings;@loader_path/../../../torch/lib"
+        )
       else()
-        set(RPATH "$ORIGIN/../../extensions/pybindings")
+        set(RPATH
+            "$ORIGIN/../../extension/pybindings:$ORIGIN/../../../torch/lib"
+        )
+      endif()
+      # Appended rather than assigned. The helper above already recorded the
+      # route to the runtime, and overwriting the property here would drop it.
+      get_target_property(_existing quantized_ops_aot_lib INSTALL_RPATH)
+      if(_existing)
+        set(RPATH "${_existing}:${RPATH}")
       endif()
       set_target_properties(
-        quantized_ops_aot_lib PROPERTIES BUILD_RPATH ${RPATH} INSTALL_RPATH
-                                                              ${RPATH}
+        quantized_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                                "${RPATH}"
       )
     endif()
   endif()
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
+# The thread pool carries the define that switches parallel_for from a serial
+# fallback to the real threaded implementation, so without it quantize,
+# dequantize and choose_qparams run on one core. Guarded because a bare metal
+# target builds these kernels without a thread pool at all, where the serial
+# fallback is the only correct choice.
 target_link_libraries(
   quantized_kernels PRIVATE executorch_core kernels_util_all_deps
 )
+if(TARGET extension_threadpool)
+  target_link_libraries(quantized_kernels PRIVATE extension_threadpool)
+endif()
 target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
@@ -166,4 +197,11 @@ if(EXECUTORCH_BUILD_SHARED)
     executorch_quantized_ops quantized_ops_lib quantized_kernels
     executorch_shared
   )
+  # This library holds no symbol a consumer names, only registration
+  # constructors, so a link with --as-needed would drop it and register nothing.
+  executorch_target_link_options_shared_lib(executorch_quantized_ops)
+  # Ships beside libexecutorch.so, so it resolves the runtime from there rather
+  # than from wherever it was built. Without this the installed library has an
+  # empty search path and a consumer that links it cannot start.
+  executorch_target_shipped_runtime_path(executorch_quantized_ops)
 endif()
