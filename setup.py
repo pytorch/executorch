@@ -2074,6 +2074,18 @@ setup(
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
+                # The OpenVINO delegate, so a C++ application can link it from the
+                # wheel. Only the adapter ships here: the OpenVINO runtime itself is
+                # loaded at run time and comes from the openvino extra.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/openvino/%BUILD_TYPE%/",
+                    src_name="*executorch_backend_openvino" + _dynamic_lib_suffix(),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_OPENVINO",
+                    ],
+                ),
                 # Install the XNNPACK delegate beside them, so a process has one
                 # copy of it instead of one per component that uses it.
                 BuiltFile(

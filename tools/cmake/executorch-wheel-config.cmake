@@ -309,9 +309,13 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # links that as well.
   foreach(
     _executorch_component IN
-    ITEMS libexecutorch_kernels_optimized libexecutorch_backend_xnnpack
-          libexecutorch_backend_cuda libexecutorch_extension_cuda
-          libexecutorch_threadpool libexecutorch_etdump
+    ITEMS libexecutorch_kernels_optimized
+          libexecutorch_backend_xnnpack
+          libexecutorch_backend_cuda
+          libexecutorch_extension_cuda
+          libexecutorch_backend_openvino
+          libexecutorch_threadpool
+          libexecutorch_etdump
   )
     _executorch_find_library(
       _executorch_component_library "${_executorch_component}"
@@ -598,6 +602,7 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 _executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+_executorch_define_component(backend_openvino executorch_backend_openvino)
 # The CUDA delegate and its stream helper, present only in a wheel built from a
 # CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
 # while configuring.
