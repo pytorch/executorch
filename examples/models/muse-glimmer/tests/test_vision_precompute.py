@@ -8,7 +8,7 @@
 
 Verifies the host-side precomputed tensors (patchify, positional-embedding
 interpolation, 2D-RoPE, sparse permutation, block-diagonal masks, pixel-shuffle
-permutation) match the eager ``OnyxVisionEncoder`` math. Runs on CPU.
+permutation) match the eager ``MuseGlimmerVisionEncoder`` math. Runs on CPU.
 """
 
 import unittest
@@ -88,7 +88,7 @@ class Rope2DTest(unittest.TestCase):
         grid_h = grid_w = 5
         cos, sin = make_2d_rope(grid_h, grid_w, cfg)
 
-        # Eager reference (OnyxVisionEncoder._make_2d_rope), inline.
+        # Eager reference (MuseGlimmerVisionEncoder._make_2d_rope), inline.
         head_dim = cfg.head_dim
         half_dim = head_dim // 2
         quarter = half_dim // 2

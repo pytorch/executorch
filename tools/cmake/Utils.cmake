@@ -444,10 +444,18 @@ function(executorch_target_soname_policy target_name)
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     return()
   endif()
-  set_target_properties(
-    ${target_name} PROPERTIES VERSION "${PROJECT_VERSION}"
-                              SOVERSION "${PROJECT_VERSION_MAJOR}"
-  )
+  # project() leaves PROJECT_VERSION empty when called without VERSION, and it
+  # does so in the calling scope, so a backend that declares its own project so
+  # it can build standalone is versionless here even when the top level set a
+  # version. Passing that through produces a file named libfoo.so. with a
+  # trailing dot, and bakes the dot into the soname. Guarded so a versionless
+  # library gets an unversioned name instead.
+  if(PROJECT_VERSION)
+    set_target_properties(
+      ${target_name} PROPERTIES VERSION "${PROJECT_VERSION}"
+                                SOVERSION "${PROJECT_VERSION_MAJOR}"
+    )
+  endif()
 endfunction()
 
 # Create and install a shared library composed from dependency libraries. The

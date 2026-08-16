@@ -252,7 +252,8 @@ copy_to_host(const executorch::aten::Tensor& src, void* dst, size_t num_bytes) {
   return Error::Ok;
 }
 
-// Muse Glimmer image special-token ids (from the tokenizer / OnyxConfig).
+// Muse Glimmer image special-token ids (from the tokenizer /
+// MuseGlimmerConfig).
 
 // Preprocess one image file, run the exported vision_encoder, and copy the
 // resulting soft-token embeddings ([num_soft_tokens, hidden] bf16) to host.
