@@ -1014,6 +1014,21 @@ class InstallerBuildExt(build_ext):
             self._ran_build = True
             self.run_command("build")
         super().run()
+        if self.editable_mode:
+            # The first substitution runs before any cache exists, so it reads the command line
+            # and falls back to off. The preset this build uses turns the tracer on without
+            # passing anything, so that fallback published the wrong struct layout for an
+            # ordinary editable install. The build has produced a cache by now, so replace the
+            # best effort value with what the build actually configured.
+            self._resubstitute_tracer_definition()
+
+    def _resubstitute_tracer_definition(self) -> None:
+        cache_dir = _tracer_cache_dir(self)
+        if cache_dir is None:
+            return
+        for destination in _TRACER_DEFINITION_PATHS:
+            if os.path.exists(destination):
+                _substitute_tracer_definition(destination, cache_dir)
 
     def copy_extensions_to_source(self) -> None:
         """For each extension in `ext_modules`, we need to copy the extension
@@ -1401,6 +1416,7 @@ class CustomBuildPy(build_py):
                     # configure the build: the setting is knowable without the cache, and absent
                     # means off, which is the project default.
                     _substitute_tracer_definition_from_args(dst)
+                    _TRACER_DEFINITION_PATHS.append(dst)
                     continue
                 _substitute_tracer_definition(dst, tracer_cache_dir)
 
@@ -1691,6 +1707,10 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
                 "ET_EVENT_TRACER_ENABLED" if enabled else "",
             )
         )
+
+
+# Where the first substitution wrote, so the post-build pass knows which files to correct.
+_TRACER_DEFINITION_PATHS: list = []
 
 
 def _substitute_tracer_definition_from_args(destination) -> None:
