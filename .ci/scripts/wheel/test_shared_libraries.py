@@ -52,6 +52,14 @@ _THREADPOOL_SYMBOLS = ("executorch::extension::threadpool::get_threadpool",)
 # the operators are registered twice, which aborts at startup.
 _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 
+# The quantized kernels, whose own library the wheel ships when they are built.
+# A separate group because they have a separate owner, and because a wheel built
+# without them ships neither the library nor these symbols.
+_QUANTIZED_KERNEL_SYMBOLS = (
+    "torch::executor::native::quantize_per_tensor_out",
+    "torch::executor::native::dequantize_per_tensor_out",
+)
+
 # The registry entry points, kept separate from the kernel implementations above.
 # A library that carries its own copy of these has its own registration code, which
 # is what this split is meant to prevent: one owner of the operator table. Checking
@@ -284,7 +292,37 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     return False
 
 
-def _assert_single_definer(symbols, what: str, owner: str | None = None) -> None:
+def _is_export_only(library: Path) -> bool:
+    """Whether a library exists to export a model rather than to run one.
+
+    The ahead-of-time operator libraries register kernels into torch so a model can be
+    exported, and they link torch to do it. They deliberately carry their own copy of
+    the kernels, because the copy a C++ application links is registered into a table
+    those libraries never read.
+
+    Named by the caller per component rather than excluded everywhere. Counting them for
+    the component they duplicate would report a duplicate that is not one, and excusing
+    them for every component would stop this catching a second registry hiding inside
+    one of them.
+
+    Matched on both the torch dependency and the name marker, because either alone
+    misfires: several shipped libraries link torch without being export-side, and a
+    name check alone would accept a runtime library that adopted the suffix.
+    """
+    if _tool("readelf") is None:
+        return library.name.endswith("_aot_lib.so")
+    dynamic = subprocess.run(
+        [_tool("readelf"), "-d", str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+    return "libtorch.so" in dynamic and "_aot_lib" in library.name
+
+
+def _assert_single_definer(
+    symbols, what: str, owner: str | None = None, allow_export_copy: bool = False
+) -> None:
     """At most one shipped library may define each of `symbols`.
 
     The owner is named where one is expected, because counting definers alone does
@@ -295,11 +333,25 @@ def _assert_single_definer(symbols, what: str, owner: str | None = None) -> None
     A component the wheel does not ship at all is a valid configuration, not a
     fault. Delegates and kernel sets are build options, so a wheel built without one
     has zero definers and is reported as such. What must never happen is two.
+
+    `allow_export_copy` excuses the export-side libraries for one component only. The
+    quantized kernels genuinely exist twice, once in the runtime library and once in the
+    library torch loads at export time, because each side registers into a table the
+    other never reads. Loading both into one process does abort on the second
+    registration, so what this check enforces for that component is one owner among the
+    runtime libraries, not the absence of the export copy. Excusing every component
+    would disarm the check where duplication is a real fault: two of these libraries
+    defined the backend registry symbols in one released wheel and not in the release
+    before it, so the duplication this catches does happen.
     """
     assert _tool("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
-    libraries = _shipped_shared_objects(package_dir)
+    libraries = [
+        library
+        for library in _shipped_shared_objects(package_dir)
+        if not (allow_export_copy and _is_export_only(library))
+    ]
     assert libraries, f"no shared libraries found under {package_dir}"
 
     # Every symbol is resolved before anything is reported, so a component that is only
@@ -372,6 +424,12 @@ _OWNED_COMPONENTS = (
         "libexecutorch_kernels_optimized.so",
         False,
     ),
+    (
+        "set of quantized kernels",
+        _QUANTIZED_KERNEL_SYMBOLS,
+        "libexecutorch_kernels_quantized.so",
+        True,
+    ),
     # The third-party code these libraries bundle, checked separately from the
     # wrappers above. A wrapper can have a single owner while the implementation
     # underneath it is bundled into two of these, which is two real thread pools or
@@ -398,6 +456,15 @@ _OWNED_COMPONENTS = (
 )
 
 
+# The one component that legitimately exists twice. The quantized kernels are compiled into the runtime
+# library and again into the library torch loads at export time, because each side registers into a
+# table the other never reads, so a second definer there is expected rather than a fault. A process
+# that loads both does abort on the second registration, which is why this is named per component and
+# the check stays armed for the other ten, where a second definer means two registries or two thread
+# pools in one process.
+_COMPONENTS_WITH_AN_EXPORT_COPY = frozenset({"set of quantized kernels"})
+
+
 def test_each_component_has_one_owner() -> None:
     """No component may be defined by more than one library the wheel ships.
 
@@ -415,7 +482,12 @@ def test_each_component_has_one_owner() -> None:
             f"the wheel ships no {owner}, which owns the {what}. Either packaging "
             "dropped it or the build did not produce it."
         )
-        _assert_single_definer(symbols, what, owner if present else None)
+        _assert_single_definer(
+            symbols,
+            what,
+            owner if present else None,
+            allow_export_copy=what in _COMPONENTS_WITH_AN_EXPORT_COPY,
+        )
 
 
 def test_python_extensions_import() -> None:
@@ -1229,15 +1301,41 @@ def test_extension_contains_no_component() -> None:
         ).stdout.splitlines()
         if "NEEDED" in line
     }
+    # Only the libraries whose code the extension used to contain. Those are the ones
+    # this split moved out of it, so the extension must now resolve them from outside or
+    # a retention option silently failed.
+    #
+    # Not every shipped library serves Python. The quantized kernels and the CUDA
+    # delegate exist for a C++ application: Python registers quantized operators through
+    # the torch-linked ahead-of-time library at export time, and never loads the CUDA
+    # delegate from this extension at all. Requiring a dependency on those would demand
+    # the extension link code it has no use for.
     shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
     assert shipped, (
         f"the wheel installed no runtime libraries under {package_dir / 'lib'}, so this check would "
         "compare the extension against nothing and pass"
     )
-    unused = sorted(shipped - needed)
+    expected = {
+        name
+        for name in shipped
+        if not any(
+            marker in name
+            for marker in ("kernels_quantized", "backend_cuda", "extension_cuda")
+        )
+    }
+    unused = sorted(expected - needed)
     assert not unused, (
         f"the wheel ships {unused} but {extension.name} does not depend on them, so "
         "either they are dead weight or a retention option did not hold"
+    )
+
+    # Two shipped libraries register the same quantized operators, one for export and one for a C++
+    # application, and the runtime treats a repeat registration as fatal. Reaching both from one process
+    # aborts it, and the only thing preventing that is this extension not depending on the run-time one.
+    assert not any("kernels_quantized" in name for name in needed), (
+        f"{extension.name} depends on the run-time quantized library, which registers the same operators "
+        "as the export-time one it already loads. The runtime aborts on a repeat registration, so "
+        "importing this extension would kill the process."
     )
 
     # Positive proof that the extension resolves these from elsewhere, rather than
@@ -1272,7 +1370,7 @@ def test_extension_contains_no_component() -> None:
     print(
         f"✓ {extension.name} ({extension.stat().st_size // 1024} KiB) contains no "
         f"component, imports the runtime symbols it uses, and depends on all "
-        f"{len(shipped)} shipped libraries"
+        f"{len(expected)} shipped libraries it used to contain"
     )
 
 
@@ -1316,6 +1414,7 @@ def test_shipped_library_names_are_expected() -> None:
     known = (
         "libexecutorch",
         "libexecutorch_kernels_optimized",
+        "libexecutorch_kernels_quantized",
         "libexecutorch_backend_xnnpack",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
