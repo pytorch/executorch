@@ -116,17 +116,14 @@ else()
   # flags, so there is nothing to choose here and overriding it would replace a
   # working set of architectures with one value.
   #
-  # An empty value is a different case: nothing selected the architectures, and
-  # an empty list makes nvcc fall back to its built-in compute_50, which current
-  # CUDA rejects outright. Ask CMake to detect the builder's GPU instead, which
-  # is what a source build wants.
+  # An empty value is a different case from OFF: nothing chose the
+  # architectures, and an empty list makes nvcc fall back to its built-in
+  # compute_50, which current CUDA rejects outright. Detection is not the answer
+  # either, because on a machine with no usable device it resolves to an
+  # architecture nvcc already warns it will stop supporting. Name the two the
+  # release rows build for, so a source build produces device code that runs on
+  # the same GPUs the wheels target.
   if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
-    # An empty list makes nvcc fall back to its own default, which current CUDA
-    # rejects outright. Detection is not the answer either: on a machine without
-    # a usable device it resolves to an architecture nvcc already warns it will
-    # stop supporting. Name the two datacentre architectures the release rows
-    # build for, so a source build produces device code that runs on the same
-    # GPUs the wheels target.
     set(CMAKE_CUDA_ARCHITECTURES "80;86")
   endif()
   message(

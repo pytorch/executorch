@@ -241,9 +241,18 @@ function(_executorch_find_library _output _base_name)
       ""
       PARENT_SCOPE
   )
-  file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
-       "${_executorch_package_root}/lib/${_base_name}.so.*"
-  )
+  # Mach-O puts the version before the suffix, libfoo.1.dylib, where ELF puts it
+  # after, libfoo.so.1, so the versioned pattern differs and not just the
+  # suffix.
+  if(APPLE)
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.dylib"
+         "${_executorch_package_root}/lib/${_base_name}.*.dylib"
+    )
+  else()
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
+         "${_executorch_package_root}/lib/${_base_name}.so.*"
+    )
+  endif()
   list(LENGTH _matches _count)
   if(_count EQUAL 0)
     return()
@@ -432,6 +441,17 @@ elseif(_executorch_runtime_library)
                  "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
                  "LINKER:-rpath,${_executorch_package_root}/lib"
       )
+    elseif(APPLE)
+      # Same purpose, in Mach-O spelling. The token differs, and there is no
+      # weaker older variant of the load command, so the tag selection flag has
+      # no counterpart here.
+      set_property(
+        TARGET executorch::runtime
+        APPEND
+        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+                 "LINKER:-rpath,@loader_path/../lib"
+                 "LINKER:-rpath,${_executorch_package_root}/lib"
+      )
     endif()
   endif()
 endif()
@@ -501,9 +521,11 @@ function(_executorch_define_component _suffix _library_name)
       PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
     )
   endif()
-  # Guarded on Linux because these are GNU linker options. A wheel only ships
-  # these components on Linux, so a consumer configured for another system is
-  # either cross-compiling from the wrong package or has nothing to retain.
+  # Spelled per platform because the options and the loader relative token
+  # differ. ELF takes $ORIGIN and needs a flag to choose the newer tag; Mach-O
+  # takes @loader_path and has no weaker older variant to choose against. A
+  # consumer configured for any other system is either cross-compiling from the
+  # wrong package or has nothing to retain.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_property(
       TARGET ${_target}
@@ -525,6 +547,17 @@ function(_executorch_define_component _suffix _library_name)
                # --no-as-needed applies only to what follows within the pushed
                # state, so the pop restores whatever the consumer had.
                "LINKER:--push-state,--no-as-needed,${_library},--pop-state"
+    )
+  elseif(APPLE)
+    # Mach-O spelling of the same two search paths. There is no --no-as-needed
+    # equivalent to bracket: the linker records a dependency on a dylib it was
+    # given, so nothing needs to be forced to stay.
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+               "LINKER:-rpath,@loader_path/../lib"
+               "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
   if(NOT _component_OPT_IN)
