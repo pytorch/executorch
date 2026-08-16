@@ -29,7 +29,22 @@ include(CMakeFindDependencyMacro)
 find_package(tokenizers CONFIG)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
-set(required_lib_list executorch executorch_core portable_kernels)
+# Included before the library list is built, because the list depends on which
+# runtime this install actually contains.
+include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
+
+# A shared build installs libexecutorch.a and libexecutorch.so side by side, and
+# naming the static targets as well as the shared one gives a consumer two
+# kernel registries, which aborts during registration before main. The shared
+# library already contains the core and the whole-archived extensions, so it is
+# the whole runtime on its own.
+if(TARGET executorch-shared)
+  set(required_lib_list portable_kernels)
+  set(EXECUTORCH_LIBRARIES executorch-shared)
+else()
+  set(required_lib_list executorch executorch_core portable_kernels)
+  set(EXECUTORCH_LIBRARIES)
+endif()
 set(EXECUTORCH_LIBRARIES)
 set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
@@ -49,8 +64,6 @@ foreach(lib ${required_lib_list})
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 set(EXECUTORCH_FOUND ON)
-
-include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 set(optional_lib_list
     aoti_cuda_backend
