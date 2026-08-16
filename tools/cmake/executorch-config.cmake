@@ -34,10 +34,15 @@ set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 # A shared build installs libexecutorch.a and libexecutorch.so side by side, and
-# naming the static targets as well as the shared one gives a consumer two
+# naming the static runtime as well as the shared one gives a consumer two
 # kernel registries, which aborts during registration before main. The shared
-# library already contains the core and the whole-archived extensions, so it is
-# the whole runtime on its own.
+# library carries the core, so it replaces the static runtime, but measurement
+# shows it does not contain the kernels: dropping the kernels target here leaves
+# a consumer with no operators at all. That target still pulls the static core
+# in behind it, so a second copy remains present. On Linux both copies resolve
+# to the executable's and it runs; on macOS each image binds its own, so the two
+# diverge. Removing the last copy needs a shared kernels library, which is a
+# change to what gets built.
 if(TARGET executorch-shared)
   set(required_lib_list portable_kernels)
   set(EXECUTORCH_LIBRARIES executorch-shared)
