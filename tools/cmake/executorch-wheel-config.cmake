@@ -758,8 +758,13 @@ if(_C_LIBRARY)
         "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   else()
+    # Matches the runtime target: without this the linker records DT_RPATH,
+    # which is searched ahead of LD_LIBRARY_PATH and is inherited by a
+    # dependency's dependencies, so a consumer could not point a locally built
+    # runtime at their own application.
     set(_executorch_extension_link_options
-        "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
+        "LINKER:--enable-new-dtags" "LINKER:-rpath,$ORIGIN"
+        "LINKER:-rpath,$ORIGIN/../lib"
         "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
