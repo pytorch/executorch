@@ -1038,12 +1038,15 @@ class InstallerBuildExt(build_ext):
                 # reach them are relative to where it was built. The wheel path repairs that
                 # from build_extension, and the editable copy needs the same repair or the
                 # import fails on a library the loader cannot find.
-                if isinstance(ext, BuiltExtension):
-                    build_command = self.get_finalized_command("build")
-                    cache_dir = getattr(build_command, "cmake_cache_dir", None)
-                    _strip_absolute_runtime_paths(
-                        Path(inplace_file), _cuda_libraries_built(cache_dir)
-                    )
+                # Not restricted by class: both classes copy a file that records paths, and
+                # the shipped libraries are the sibling class, so testing for one of them
+                # left every library carrying a build directory and an empty entry that the
+                # loader reads as the working directory.
+                build_command = self.get_finalized_command("build")
+                cache_dir = getattr(build_command, "cmake_cache_dir", None)
+                _strip_absolute_runtime_paths(
+                    Path(inplace_file), _cuda_libraries_built(cache_dir)
+                )
 
             if ext._needs_stub:
                 inplace_stub = self._get_equivalent_stub(ext, inplace_file)
