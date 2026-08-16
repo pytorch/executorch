@@ -28,9 +28,15 @@ Error QnnGraph::Configure(const std::string& graph_name) {
     return Error::Ok;
   }
 
+  const auto cache_state = context_->GetCacheState();
   Qnn_GraphHandle_t graph_handle = nullptr;
-  if (context_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
-    // retrieve QNN Graph
+  if (
+      cache_state == QnnBackendCache::DESERIALIZE ||
+      cache_state == QnnBackendCache::ONLINE_PREPARE) {
+    // DESERIALIZE restores graphs from a context binary. ONLINE_PREPARE
+    // registers graphs from DLC in QnnContext::Configure before reaching here.
+    // In both cases the graph already exists in the context and must be
+    // retrieved instead of created.
     error = qnn_interface.qnn_graph_retrieve(
         context_->GetHandle(), graph_name.c_str(), &graph_handle);
     if (error != QNN_SUCCESS) {
@@ -42,8 +48,8 @@ Error QnnGraph::Configure(const std::string& graph_name) {
       return Error::Internal;
     }
   } else if (
-      context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
-      context_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
+      cache_state == QnnBackendCache::SERIALIZE ||
+      cache_state == QnnBackendCache::MULTI_GRAPH) {
     error = qnn_interface.qnn_graph_create(
         context_->GetHandle(),
         graph_name.c_str(),
@@ -55,27 +61,32 @@ Error QnnGraph::Configure(const std::string& graph_name) {
           "qnn_graph_create failed. Error  %d", QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
-  } else if (context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
-    QNN_EXECUTORCH_LOG_INFO(
-        "Skip qnn_graph_create, graph has already been composed from Dlc.");
   } else {
     QNN_EXECUTORCH_LOG_ERROR("QNN context cache is invalid.");
     return Error::Internal;
   }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      graph_handle != nullptr,
+      Internal,
+      "QNN graph handle is null after configuring graph %s.",
+      graph_name.c_str());
 
   // book keep valid handle of created graph
   handle_[graph_name] = graph_handle;
   // The profiler needs to be created after the backend is created.
   profile_[graph_name] =
       std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
-  if (context_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
+  if (
+      cache_state == QnnBackendCache::DESERIALIZE ||
+      cache_state == QnnBackendCache::ONLINE_PREPARE) {
     ET_CHECK_OR_RETURN_ERROR(
         AfterRetrieveGraph(graph_name) == Error::Ok,
         Internal,
         "Fail to configure after retrieving the graph.");
   } else if (
-      context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
-      context_->GetCacheState() == QnnBackendCache::MULTI_GRAPH) {
+      cache_state == QnnBackendCache::SERIALIZE ||
+      cache_state == QnnBackendCache::MULTI_GRAPH) {
     ET_CHECK_OR_RETURN_ERROR(
         AfterCreateGraph(graph_name) == Error::Ok,
         Internal,

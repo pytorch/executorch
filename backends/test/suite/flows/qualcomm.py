@@ -12,12 +12,14 @@ def _create_qnn_flow(
     per_channel_linear=False,
     is_qat=False,
     use_fp16=True,
+    online_prepare=False,
 ) -> TestFlow:
     if quantize and quant_dtype is None:
         raise RuntimeError("Quant dtype must be provided when quantize is true.")
 
     def create_tester(*args, **kwargs) -> QualcommTester:
         kwargs["use_fp16"] = (use_fp16,)
+        kwargs["online_prepare"] = online_prepare
         return QualcommTester(*args, **kwargs)
 
     def create_quantize_stage() -> Quantize:
@@ -41,6 +43,7 @@ def _create_qnn_flow(
 
 
 QNN_TEST_FLOW = _create_qnn_flow("qnn")
+QNN_ONLINE_PREPARE_TEST_FLOW = _create_qnn_flow("qnn_online_prepare", online_prepare=True)
 QNN_16A16W_TEST_FLOW = _create_qnn_flow(
     "qnn_16a16w", quantize=True, quant_dtype=QuantDtype.use_16a16w, use_fp16=False
 )
