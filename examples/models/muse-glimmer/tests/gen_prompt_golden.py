@@ -11,29 +11,6 @@
 
 Only lengths, the special-token skeleton, and a digest of the full id sequence
 are written. The text ids themselves stay out of the repo.
-
-Re-validating after a regeneration
-----------------------------------
-``tokenizer.json`` and the golden are pinned to each other by sha256, so drift is
-caught automatically and the checks below are not worth running on a schedule.
-Run them once whenever you bump the pinned revision, to confirm the new
-tokenizer still agrees with the independent sources.
-
-1. tiktoken over ``l4_200k_base`` from the quantized repo. A different BPE
-   implementation reading a different vocab file. Build the Encoding as
-   ``meta_reference_implementation/standalone_inference.py`` does, registering
-   ``tokenizer_config.json``'s ``extra_special_tokens`` at ``200000 + index``,
-   then compare ``encode(prompt, allowed_special="all")`` against this
-   tokenizer for every case prompt. Last run: identical ids, all 7 cases.
-
-2. The vocab embedded in ``onyx-rl_v2-q4km-gs128.gguf``. Compare all 202048
-   id-to-string pairs against ``tokenizer.json``. Last run: zero mismatches.
-
-3. ``transformers`` with the Onyx wheel from the transformers_onyx repo, to
-   check assembly rather than the BPE. Pass ``current_date`` explicitly: the
-   template calls ``strftime_now``, so a rendering left to default is not
-   reproducible tomorrow. Last run: ``apply_chat_template`` output matched a
-   raw encode of the same text, 64 ids.
 """
 
 import json
