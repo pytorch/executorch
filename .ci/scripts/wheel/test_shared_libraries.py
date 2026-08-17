@@ -406,6 +406,16 @@ def _assert_mach_o_architecture_matches(wheel: Path) -> None:
     print(f"\u2713 the wheel is tagged for the architecture it contains ({declared})")
 
 
+def _shipped_object_patterns() -> list[str]:
+    """Filename patterns for every shipped loadable object.
+
+    Both suffixes are listed because a Mach-O Python extension is a .so by convention, so a
+    dylib-only pattern silently drops the extension on macOS, which is the one artifact these
+    checks exist to verify.
+    """
+    return ["*.dylib*", "*.so*"]
+
+
 def _dynamic_lib_suffix() -> str:
     """The loadable library suffix on this platform, including the dot."""
     return ".dylib" if sys.platform == "darwin" else ".so"
@@ -445,7 +455,11 @@ def _shipped_shared_objects(package_dir: Path):
     """
     found = [
         path
-        for path in sorted(package_dir.rglob(f"*{_dynamic_lib_suffix()}*"))
+        for path in sorted(
+            item
+            for pattern in _shipped_object_patterns()
+            for item in package_dir.rglob(pattern)
+        )
         if path.is_file() and not path.is_symlink()
     ]
     assert (
