@@ -43,9 +43,9 @@
 # Not the Python extension, which carries unresolved interpreter symbols that
 # only resolve inside an interpreter, so a standalone application linking it
 # fails with a page of PyUnicode_InternFromString errors. A project building a
-# custom operator against the extension asks for the _portable_lib target by
-# name, which is the long-standing contract for that and also carries the C++20
-# requirement PyTorch's headers need.
+# custom operator against the extension asks for the _C target by name, which is
+# the long-standing contract for that and also carries the C++20 requirement
+# PyTorch's headers need.
 #
 # EXECUTORCH_BUILD_VERSION -- The full version this package was built from,
 # including any prerelease suffix and local version label. Compare this when an
@@ -642,8 +642,8 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
 
-# Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
-# to build custom-op extensions against the Python module, and is kept working
+# Find prebuilt _C.<EXT_SUFFIX>.so. This is the legacy contract used to build
+# custom-op extensions against the Python module, and is kept working
 # independently of the runtime target above.
 
 # Find python
@@ -673,14 +673,14 @@ elseif(_executorch_runtime_library) # Tested on the located library rather than
   # application on an older CMake is exactly the case this branch exists to keep
   # working. A C++ application linking only the shared runtime does not need
   # Python at all, so a missing interpreter must not fail its configure. Skip
-  # locating the Python extension instead; the legacy _portable_lib target is
-  # simply not offered in that case.
+  # locating the Python extension instead; the legacy _C target is simply not
+  # offered in that case.
   message(
     STATUS
       "Python not usable, skipping the Python extension: ${SYSCONFIG_ERROR}"
   )
   set(EXT_SUFFIX "")
-  set(_portable_lib_LIBRARY "")
+  set(_C_LIBRARY "")
 else()
   message(
     FATAL_ERROR
@@ -693,39 +693,35 @@ if(EXT_SUFFIX)
   # package root: the path and the file name are both already known, so a search
   # only adds the consumer's find-root rules, which reroot an absolute wheel
   # path into a cross-compile sysroot and report a present extension as missing.
-  set(_portable_lib_candidate
-      "${_executorch_package_root}/extension/pybindings/_portable_lib${EXT_SUFFIX}"
+  set(_C_candidate
+      "${_executorch_package_root}/extension/pybindings/_C${EXT_SUFFIX}"
   )
-  if(EXISTS "${_portable_lib_candidate}")
-    set(_portable_lib_LIBRARY "${_portable_lib_candidate}")
+  if(EXISTS "${_C_candidate}")
+    set(_C_LIBRARY "${_C_candidate}")
   else()
-    set(_portable_lib_LIBRARY "")
+    set(_C_LIBRARY "")
   endif()
 endif()
 
-if(NOT _portable_lib_LIBRARY)
+if(NOT _C_LIBRARY)
   # The interpreter that answered above is whichever python3 is on PATH, which
   # is not necessarily the one this wheel was built for. A cp310 wheel inspected
   # by a 3.12 interpreter yields a suffix that names no file here, and the
   # package then reported itself as not found on a complete install. The shipped
   # extension carries its own suffix in its name, so take it from the package.
-  file(GLOB _portable_lib_matches
-       "${_executorch_package_root}/extension/pybindings/_portable_lib.*"
-  )
-  foreach(_candidate IN LISTS _portable_lib_matches)
+  file(GLOB _C_matches "${_executorch_package_root}/extension/pybindings/_C.*")
+  foreach(_candidate IN LISTS _C_matches)
     if(_candidate MATCHES "\\.(so|pyd|dylib)$")
-      set(_portable_lib_LIBRARY "${_candidate}")
+      set(_C_LIBRARY "${_candidate}")
       break()
     endif()
   endforeach()
-  unset(_portable_lib_matches)
+  unset(_C_matches)
 endif()
 
-if(_portable_lib_LIBRARY)
+if(_C_LIBRARY)
   set(EXECUTORCH_FOUND ON)
-  message(
-    STATUS "ExecuTorch portable library is found at ${_portable_lib_LIBRARY}"
-  )
+  message(STATUS "ExecuTorch portable library is found at ${_C_LIBRARY}")
   # Only when nothing else is linkable, which is the fused layout: a macOS wheel
   # ships this extension and no separate runtime library, so the appends above
   # never ran and this is the only thing there is to offer. On a split wheel the
@@ -734,27 +730,79 @@ if(_portable_lib_LIBRARY)
   # fails with a page of PyUnicode_InternFromString style errors.
   #
   # Measured both layouts: split gives the runtime and its components, fused
-  # gives _portable_lib. Callers who specifically want the extension, such as a
-  # custom operator project, ask for the target by name rather than relying on
-  # this, and that target carries the C++20 requirement PyTorch's headers need
-  # while the runtime components require C++17.
+  # gives _C. Callers who specifically want the extension, such as a custom
+  # operator project, ask for the target by name rather than relying on this,
+  # and that target carries the C++20 requirement PyTorch's headers need while
+  # the runtime components require C++17.
   if(NOT EXECUTORCH_LIBRARIES)
-    list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
+    list(APPEND EXECUTORCH_LIBRARIES executorch::_C)
   endif()
-  if(TARGET _portable_lib)
+  if(TARGET executorch::_C)
     # This file ran already in the same configure, because another subproject
     # called find_package too. No in-tree target uses this name, so it can only
     # be the imported one defined below, and re-setting its properties to the
     # same values is harmless.
-    message(STATUS "executorch: _portable_lib is already defined, reusing it")
+    message(STATUS "executorch: _C is already defined, reusing it")
   else()
-    add_library(_portable_lib STATIC IMPORTED)
+    add_library(executorch::_C STATIC IMPORTED)
+  endif()
+
+  # The extension names the shipped runtime by absolute path, so a consumer
+  # links but cannot start once its binary moves unless the same search paths
+  # the runtime target publishes are attached here too. The relative entries use
+  # the origin token, which CMake writes incorrectly before 3.28, so an older
+  # consumer would record a malformed path. The absolute package directory has
+  # no token and is always safe, so publish that alone rather than nothing: an
+  # in-place build still finds the runtime, and no consumer receives a corrupted
+  # entry.
+  set(_executorch_extension_paths_are_safe ON)
+  if(CMAKE_VERSION VERSION_LESS 3.28)
+    set(_executorch_extension_paths_are_safe OFF)
+  endif()
+  set(_executorch_extension_link_options
+      "LINKER:-rpath,${_executorch_package_root}/lib"
+  )
+  if(_executorch_extension_paths_are_safe)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      # Matches the runtime target: without this the linker records DT_RPATH,
+      # which is searched ahead of LD_LIBRARY_PATH and is inherited by a
+      # dependency's dependencies, so a consumer could not point a locally built
+      # runtime at their own application.
+      list(PREPEND _executorch_extension_link_options
+           "LINKER:--enable-new-dtags" "LINKER:-rpath,$ORIGIN"
+           "LINKER:-rpath,$ORIGIN/../lib"
+      )
+    elseif(APPLE)
+      list(PREPEND _executorch_extension_link_options
+           "LINKER:-rpath,@loader_path" "LINKER:-rpath,@loader_path/../lib"
+      )
+    endif()
+  endif()
+  set_property(
+    TARGET executorch::_C
+    APPEND
+    PROPERTY INTERFACE_LINK_OPTIONS ${_executorch_extension_link_options}
+  )
+
+  # Earlier wheels named this extension _portable_lib in EXECUTORCH_LIBRARIES,
+  # so a project may link that name. Aliased rather than dropped, because
+  # dropping it gives a bare "target not found" with no hint that the name
+  # moved.
+  if(NOT TARGET executorch::_portable_lib)
+    add_library(executorch::_portable_lib ALIAS executorch::_C)
+  endif()
+  # A project built against an earlier wheel links this bare name, which that
+  # wheel defined and advertised through EXECUTORCH_LIBRARIES. Kept as an alias
+  # so the one target carries the properties and the old name cannot drift from
+  # the new one.
+  if(NOT TARGET _portable_lib)
+    add_library(_portable_lib ALIAS executorch::_C)
   endif()
   # PyTorch requires C++20, so pybindings must be compiled with C++20.
   set_target_properties(
-    _portable_lib
+    executorch::_C
     PROPERTIES
-      IMPORTED_LOCATION "${_portable_lib_LIBRARY}"
+      IMPORTED_LOCATION "${_C_LIBRARY}"
       INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
       # An interface requirement rather than CXX_STANDARD: an imported
       # target compiles nothing itself, and CXX_STANDARD does not reach
@@ -780,7 +828,7 @@ if(_portable_lib_LIBRARY)
   # every version, so a consumer on an older CMake can still link the extension.
   if(_executorch_runtime_library)
     set_property(
-      TARGET _portable_lib
+      TARGET executorch::_C
       APPEND
       PROPERTY INTERFACE_LINK_LIBRARIES "${_executorch_runtime_library}"
     )
