@@ -109,6 +109,13 @@ if(TARGET vulkan_backend AND LIB_TORCH)
     )
   endif()
   vulkan_op_test(
+    vulkan_general_sdpa_test ${CMAKE_CURRENT_SOURCE_DIR}/sdpa_test.cpp
+    test_utils
+  )
+  target_compile_definitions(
+    vulkan_general_sdpa_test PRIVATE VULKAN_GENERAL_SDPA_ONLY
+  )
+  vulkan_op_test(
     vulkan_update_cache_with_indices_test
     ${CMAKE_CURRENT_SOURCE_DIR}/update_cache_with_indices_test.cpp test_utils
   )
