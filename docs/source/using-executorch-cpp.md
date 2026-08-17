@@ -207,7 +207,7 @@ target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 
 The quantized kernels are deliberately left out of that variable, because loading
 `executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
-stops the runtime. Name `executorch::kernels_quantized` when you want them.
+stops the runtime.
 
 #### When something does not work
 
