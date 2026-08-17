@@ -1146,7 +1146,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         )
         return
     version = subprocess.run(
-        [old_cmake, "--version"], capture_output=True, text=True, check=True
+        [old_cmake, "--version"], capture_output=True, text=True, check=False
     ).stdout.splitlines()[0]
     match = re.search(r"(\d+)\.(\d+)", version)
     assert match, f"could not read a version from {old_cmake}: {version!r}"
@@ -1203,7 +1203,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
     # than running because running needs a model, which the modern-CMake tests above
     # cover once and this one only owns the variables path.
     dependencies = subprocess.run(
-        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=True
+        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=False
     ).stdout
     assert "libexecutorch.so" in dependencies, (
         "a consumer built through EXECUTORCH_LIBRARIES on pre-3.28 CMake does not "

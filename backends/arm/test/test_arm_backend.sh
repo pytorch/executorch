@@ -143,7 +143,6 @@ test_run_tosa() {
 test_pytest_ops_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
@@ -153,7 +152,6 @@ test_pytest_ops_ethos_u55() {
 test_pytest_models_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -201,7 +199,6 @@ test_run_ethos_u55() {
 test_pytest_ops_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
@@ -212,7 +209,6 @@ test_pytest_ops_ethos_u85() {
 test_pytest_models_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -342,8 +338,6 @@ test_deit_e2e_ethos_u() {
 # ------------------------------------
 test_model_smollm2_135M_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
-
-    backends/arm/scripts/build_executorch.sh
 
     # Build pte for smollm2
     python3 -m extension.llm.export.export_llm \
