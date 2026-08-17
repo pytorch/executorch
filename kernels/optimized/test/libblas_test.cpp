@@ -11,6 +11,10 @@
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <string>
 #include <vector>
 
 #define TEST_FORALL_SUPPORTED_CTYPES(_, N)   \
@@ -44,6 +48,68 @@ bool check_all_equal_to(std::vector<T>& arr, const float value) {
   }
   return true;
 }
+
+template <typename T>
+std::vector<T> make_values(size_t n, uint32_t seed) {
+  std::vector<T> v(n);
+  uint32_t state = seed;
+  for (size_t i = 0; i < n; ++i) {
+    state = state * 1664525u + 1013904223u;
+    v[i] = static_cast<T>(
+        static_cast<float>(state >> 8) / static_cast<float>(1 << 23) - 1.0f);
+  }
+  return v;
+}
+
+template <typename T>
+float reference_dot(const T* a, const T* b, int64_t len) {
+  float sum = 0;
+  for (int64_t i = 0; i < len; ++i) {
+    sum += static_cast<float>(a[i]) * static_cast<float>(b[i]);
+  }
+  return sum;
+}
+
+// Column-major c = beta * c + alpha * (op(a) @ b), accumulated in fp32, mirror-
+// ing the generic gemm_{transa,notrans}_ templates the bf16 specializations
+// replace.
+template <typename T>
+void reference_gemm(
+    bool transa,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    float alpha,
+    const T* a,
+    int64_t lda,
+    const T* b,
+    int64_t ldb,
+    float beta,
+    std::vector<float>& c,
+    int64_t ldc) {
+  for (int64_t i = 0; i < m; ++i) {
+    for (int64_t j = 0; j < n; ++j) {
+      float dot = 0;
+      for (int64_t l = 0; l < k; ++l) {
+        const float av = transa ? static_cast<float>(a[i * lda + l])
+                                : static_cast<float>(a[l * lda + i]);
+        dot += av * static_cast<float>(b[j * ldb + l]);
+      }
+      c[j * ldc + i] =
+          beta == 0 ? alpha * dot : beta * c[j * ldc + i] + alpha * dot;
+    }
+  }
+}
+
+void expect_near_relative(float actual, float expected, const char* context) {
+  EXPECT_NEAR(actual, expected, 1e-4f * std::max(1.0f, std::abs(expected)))
+      << context;
+}
+
+// Straddle the vectorized main-loop, cleanup-loop and scalar-tail boundaries of
+// the bfdot paths: 128 and 32 bf16 per iteration on x86, 32 and 8 on ARM.
+constexpr int64_t kDotLengths[] =
+    {0, 1, 7, 8, 15, 16, 31, 32, 33, 63, 64, 96, 127, 128, 129, 160, 255, 257};
 
 } // namespace
 
@@ -79,4 +145,123 @@ void test_matmul_ones() {
 
 TEST(BlasTest, MatmulOnes) {
   TEST_FORALL_SUPPORTED_CTYPES(test_matmul_ones, 25);
+}
+
+// bf16_dot_with_fp32_arith has three implementations -- ARM bfdot, x86
+// AVX512-BF16 and the portable fp32 fallback -- selected by compile-time
+// support and runtime cpuinfo. Only the one this host dispatches to is covered
+// by a given run.
+TEST(BlasTest, BF16DotMatchesScalarAccumulation) {
+  using torch::executor::BFloat16;
+
+  for (const int64_t len : kDotLengths) {
+    const auto a = make_values<BFloat16>(len, 1);
+    const auto b = make_values<BFloat16>(len, 2);
+
+    const float actual =
+        executorch::cpublas::internal::bf16_dot_with_fp32_arith(
+            a.data(), b.data(), len);
+
+    expect_near_relative(
+        actual,
+        reference_dot(a.data(), b.data(), len),
+        ("len=" + std::to_string(len)).c_str());
+  }
+}
+
+// The bf16-in/float-out gemm specializations used by custom SDPA.
+TEST(BlasTest, BF16FloatGemmMatchesScalarAccumulation) {
+  using executorch::aten::BFloat16;
+  using executorch::cpublas::TransposeType;
+
+  constexpr int64_t kM = 3;
+  constexpr int64_t kN = 5;
+
+  for (const bool transa : {false, true}) {
+    for (const int64_t k : kDotLengths) {
+      if (k == 0) {
+        continue;
+      }
+      // Pad the leading dimensions so a stride bug can't hide behind tightly
+      // packed operands.
+      const int64_t lda = (transa ? k : kM) + 2;
+      const int64_t ldb = k + 3;
+      const int64_t ldc = kM + 1;
+
+      const auto a = make_values<BFloat16>(lda * (transa ? kM : k), 3);
+      const auto b = make_values<BFloat16>(ldb * kN, 4);
+
+      for (const float alpha : {1.0f, -0.5f}) {
+        for (const float beta : {0.0f, 1.0f, 0.25f}) {
+          auto c = make_values<float>(ldc * kN, 5);
+          auto expected = c;
+
+          // clang-format off
+          reference_gemm(
+              transa,
+              kM, kN, k,
+              alpha,
+              a.data(), lda,
+              b.data(), ldb,
+              beta,
+              expected, ldc);
+
+          executorch::cpublas::gemm(
+              transa ? TransposeType::Transpose : TransposeType::NoTranspose,
+              TransposeType::NoTranspose,
+              kM, kN, k,
+              alpha,
+              a.data(), lda,
+              b.data(), ldb,
+              beta,
+              c.data(), ldc);
+          // clang-format on
+
+          const std::string context = "transa=" + std::to_string(transa) +
+              " k=" + std::to_string(k) + " alpha=" + std::to_string(alpha) +
+              " beta=" + std::to_string(beta);
+          for (int64_t j = 0; j < kN; ++j) {
+            for (int64_t i = 0; i < kM; ++i) {
+              expect_near_relative(
+                  c[j * ldc + i], expected[j * ldc + i], context.c_str());
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// beta == 0 must overwrite c rather than read it, so uninitialized garbage in
+// the output cannot poison the result.
+TEST(BlasTest, BF16FloatGemmBetaZeroIgnoresOutput) {
+  using executorch::aten::BFloat16;
+  using executorch::cpublas::TransposeType;
+
+  constexpr int64_t kM = 3;
+  constexpr int64_t kN = 5;
+  constexpr int64_t kK = 40;
+
+  const auto a = make_values<BFloat16>(kK * kM, 6);
+  const auto b = make_values<BFloat16>(kK * kN, 7);
+
+  for (const bool transa : {false, true}) {
+    std::vector<float> c(kM * kN, std::numeric_limits<float>::quiet_NaN());
+
+    // clang-format off
+    executorch::cpublas::gemm(
+        transa ? TransposeType::Transpose : TransposeType::NoTranspose,
+        TransposeType::NoTranspose,
+        kM, kN, kK,
+        1.0f,
+        a.data(), transa ? kK : kM,
+        b.data(), kK,
+        0.0f,
+        c.data(), kM);
+    // clang-format on
+
+    for (const float v : c) {
+      EXPECT_FALSE(std::isnan(v)) << "transa=" << transa;
+    }
+  }
 }

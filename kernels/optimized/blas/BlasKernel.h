@@ -15,6 +15,7 @@
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
 
 #include <array>
+#include <vector>
 
 namespace executorch {
 namespace cpublas {
@@ -140,6 +141,42 @@ float bf16_dot_with_fp32_arith(
     int64_t len);
 } // namespace internal
 
+// Used by custom SDPA's attn@V. Serial on purpose: SDPA already parallelizes
+// its outer head loop, and executorch's threadpool deadlocks on a nested
+// parallel_for.
+// clang-format off
+template <>
+inline typename std::enable_if<
+    !std::is_same<torch::executor::BFloat16, float>::value,
+    void>::type
+gemm_notrans_<torch::executor::BFloat16, float, float>(
+    int64_t m, int64_t n, int64_t k,
+    float alpha,
+    const torch::executor::BFloat16 *a, int64_t lda,
+    const torch::executor::BFloat16 *b, int64_t ldb,
+    float beta,
+    float *c, int64_t ldc) {
+  // a's k-dimension is strided by lda; bf16_dot_with_fp32_arith needs it
+  // contiguous.
+  std::vector<torch::executor::BFloat16> a_row(k);
+  for (int64_t i = 0; i < m; ++i) {
+    for (int64_t l = 0; l < k; ++l) {
+      a_row[l] = a[l * lda + i];
+    }
+    const torch::executor::BFloat16 *b_ = b;
+    for (int64_t j = 0; j < n; ++j) {
+      const float dot = internal::bf16_dot_with_fp32_arith(a_row.data(), b_, k);
+      b_ += ldb;
+      if (beta == 0) {
+        c[j * ldc + i] = alpha * dot;
+      } else {
+        c[j * ldc + i] = beta * c[j * ldc + i] + alpha * dot;
+      }
+    }
+  }
+}
+// clang-format on
+
 // clang-format off
 template <typename scalar_t, typename opmath_t, typename out_t = scalar_t>
 void gemm_transa_(
@@ -208,6 +245,32 @@ inline void gemm_transa_<torch::executor::BFloat16, torch::executor::BFloat16, t
       a_ += lda;
     }
   });
+}
+
+// Used by custom SDPA's q@k.T; both k-dimensions are already contiguous.
+// Serial for the same reason as the gemm_notrans_ specialization above.
+template <>
+inline void gemm_transa_<torch::executor::BFloat16, float, float>(
+    int64_t m, int64_t n, int64_t k,
+    float alpha,
+    const torch::executor::BFloat16 *a, int64_t lda,
+    const torch::executor::BFloat16 *b, int64_t ldb,
+    float beta,
+    float *c, int64_t ldc) {
+  const auto *a_ = a;
+  for (int i = 0; i < m; ++i) {
+    const auto *b_ = b;
+    for (int j = 0; j < n; ++j) {
+      const float dot = internal::bf16_dot_with_fp32_arith(a_, b_, k);
+      b_ += ldb;
+      if (beta == 0) {
+        c[j*ldc+i] = alpha*dot;
+      } else {
+        c[j*ldc+i] = beta*c[j*ldc+i]+alpha*dot;
+      }
+    }
+    a_ += lda;
+  }
 }
 // clang-format on
 
