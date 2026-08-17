@@ -94,7 +94,18 @@ target_compile_options(
 )
 
 # Link against ExecuTorch core libraries
-target_link_libraries(cuda_platform PRIVATE executorch_core ${CMAKE_DL_LIBS})
+target_link_libraries(cuda_platform PRIVATE ${CMAKE_DL_LIBS})
+if(TARGET executorch_shared)
+  # Resolve the runtime from the shared library rather than from the static
+  # core, for the same reason the backend below does: the shims library that
+  # ships in the wheel links this one, so taking the static core here gives a
+  # process that also loads the shipped runtime two platform layers, and a
+  # register_pal call through the runtime never reaches the shims. Linking the
+  # shared runtime leaves one platform layer the process has.
+  target_link_libraries(cuda_platform PRIVATE executorch_shared)
+else()
+  target_link_libraries(cuda_platform PRIVATE executorch_core)
+endif()
 
 install(
   TARGETS cuda_platform
