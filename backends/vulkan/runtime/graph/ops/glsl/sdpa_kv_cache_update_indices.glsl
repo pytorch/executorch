@@ -104,6 +104,8 @@ void main() {
   }
 
   const int c = t_indices[s];
+  // Invalid positions are deliberately ignored. Exported ring indices are in
+  // range; native coverage pins this fail-closed behavior for malformed input.
   if (c < 0 || c >= C) {
     return;
   }

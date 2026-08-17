@@ -18,6 +18,8 @@ $if IO_STORAGE == "buffer":
   #define ATTN_WEIGHTS_BUFFER
 $if V_CACHE_STORAGE == "buffer":
   #define V_CACHE_BUFFER
+$if RING:
+  #define SDPA_RING_CACHE
 
 #define V_LAYOUT DHSB
 #define OUT_LAYOUT DHSB
@@ -43,6 +45,8 @@ $if GQA:
   #define MAX_GROUP_SIZE 8
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
+$if V_CACHE_STORAGE != IO_STORAGE:
+  ${define_required_extensions(V_CACHE_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 
@@ -59,8 +63,10 @@ ${layout_declare_ubo(B, "int", "input_pos")}
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
-$if GQA:
+$if GQA or RING:
   ${layout_declare_spec_const(C, "int", "group_size", "1")}
+$if RING:
+  ${layout_declare_spec_const(C, "int", "window_size", "1")}
 
 #include "sdpa_fp_attn_weight_tile_load.glslh"
 #include "sdpa_fp_v_cache_tile_load.glslh"
@@ -118,9 +124,19 @@ void main() {
   // First query head in this group.
   const int q_h_base = kv_h * G;
 
-  // current context length
-  const int context_len = input_pos + S;
+  int logical_input_pos = input_pos;
+#ifdef SDPA_RING_CACHE
+  logical_input_pos = min(input_pos, window_size - 1);
+#endif
+  const int context_len = logical_input_pos + S;
   const int context_texel_len = div_up_4(context_len);
+  int cache_start = 0;
+#ifdef SDPA_RING_CACHE
+  cache_start = max(input_pos - window_size + 1, 0);
+  if (cache_start >= C) {
+    cache_start %= C;
+  }
+#endif
 
   // bounds check
   if (d4 >= D4 || s >= S || kv_h >= KV_H) {
@@ -159,10 +175,10 @@ void main() {
     // partial final tile (uniform branch, see partial_n_tile).
     if (partial_n_tile) {
       load_v_cache_tile_with_checks(
-          w_tile, d4, c, kv_h, D4, context_len, C, KV_H);
+          w_tile, d4, c, kv_h, D4, context_len, C, KV_H, cache_start);
     } else {
       load_v_cache_tile_no_checks(
-          w_tile, d4, c, kv_h, D4, context_len, C, KV_H);
+          w_tile, d4, c, kv_h, D4, context_len, C, KV_H, cache_start);
     }
 
     [[unroll]] for (int g = 0; g < MAX_GROUP_SIZE; ++g) {
@@ -188,7 +204,7 @@ void main() {
       const int c = mul_4(c4);
 
       load_v_cache_tile_with_checks(
-          w_tile, d4, c, kv_h, D4, context_len, C, KV_H);
+          w_tile, d4, c, kv_h, D4, context_len, C, KV_H, cache_start);
 
       [[unroll]] for (int g = 0; g < MAX_GROUP_SIZE; ++g) {
         if (g >= G) {
@@ -282,9 +298,19 @@ void main() {
     kv_h = q_h / (Q_H / KV_H);
   }
 
-  // current context length
-  const int context_len = input_pos + S;
+  int logical_input_pos = input_pos;
+#ifdef SDPA_RING_CACHE
+  logical_input_pos = min(input_pos, window_size - 1);
+#endif
+  const int context_len = logical_input_pos + S;
   const int context_texel_len = div_up_4(context_len);
+  int cache_start = 0;
+#ifdef SDPA_RING_CACHE
+  cache_start = max(input_pos - window_size + 1, 0);
+  if (cache_start >= C) {
+    cache_start %= C;
+  }
+#endif
 
   // bounds check
   if (d4 >= D4 || s >= S || q_h >= Q_H) {
@@ -320,7 +346,8 @@ void main() {
       D4,
       context_len,
       C,
-      KV_H);
+      KV_H,
+      cache_start);
 
     fp_accumulate_with_fp_weight(out_tile, attn_weight_tile, w_tile);
   }
@@ -346,7 +373,8 @@ void main() {
         D4,
         context_len,
         C,
-        KV_H);
+        KV_H,
+        cache_start);
 
       fp_accumulate_with_fp_weight(out_tile, attn_weight_tile, w_tile);
     }

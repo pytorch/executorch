@@ -9,6 +9,7 @@ sdpa_compute_attn_weights_coop:
     DTYPE: float
     IO_STORAGE: texture3d
     K_CACHE_STORAGE: texture3d
+    RING: false
     TILE_K4: 1
     TILE_N4: 1
   generate_variant_forall:
@@ -16,6 +17,7 @@ sdpa_compute_attn_weights_coop:
       parameter_names: [IO_STORAGE, K_CACHE_STORAGE]
       combos:
         - parameter_values: [texture3d, texture3d]
+        - parameter_values: [texture3d, buffer]
         - parameter_values: [buffer, texture3d]
         - parameter_values: [buffer, buffer]
     DTYPE:
@@ -23,3 +25,5 @@ sdpa_compute_attn_weights_coop:
       - VALUE: half
   shader_variants:
     - NAME: sdpa_compute_attn_weights_coop
+    - NAME: sdpa_compute_attn_weights_coop_ring
+      RING: true
