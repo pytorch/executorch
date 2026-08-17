@@ -1645,24 +1645,6 @@ def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
 _TRACER_DEFINITION_PATHS: list = []
 
 
-def _cmake_argument_list() -> list:
-    """CMAKE_ARGS split the way a shell would, tolerating an unbalanced quote.
-
-    shlex is the correct rule for a value that names a shell argument list: it strips the quotes
-    from a quoted value, which a whitespace split leaves in place, and it keeps a quoted path
-    containing a space in one piece. It raises on an unbalanced quote, and a path holding an
-    apostrophe is enough to trigger that, so fall back rather than let a module scope exception
-    surface as a traceback during the build.
-    """
-    import shlex
-
-    raw = os.environ.get("CMAKE_ARGS", "")
-    try:
-        return shlex.split(raw)
-    except ValueError:
-        return raw.split()
-
-
 def _substitute_tracer_definition_from_args(destination) -> None:
     """Substitute the tracer definition using the arguments that configure the build.
 
@@ -1674,7 +1656,7 @@ def _substitute_tracer_definition_from_args(destination) -> None:
     # one. Both spellings are handled here. Absent still means off, because an editable install
     # legitimately reaches this before any cache exists and a consumer must receive a usable
     # definition rather than a raw placeholder.
-    tokens = _cmake_argument_list()
+    tokens = _cmake_args()
     enabled = False
     for index, argument in enumerate(tokens):
         setting = None
@@ -1752,7 +1734,7 @@ class CustomBuild(build):
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
         # package.
-        cmake_configuration_args += [item for item in _cmake_argument_list() if item]
+        cmake_configuration_args += [item for item in _cmake_args() if item]
         if minimal_build:
             cmake_configuration_args += _minimal_cmake_flags()
 
