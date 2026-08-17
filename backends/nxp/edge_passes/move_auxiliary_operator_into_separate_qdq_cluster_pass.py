@@ -3,35 +3,34 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import operator
-
 import torch
 
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
 from executorch.backends.nxp.neutron_partitioner import QDQClusterRecognizer
-from executorch.backends.nxp.tests.ops_aliases import PermuteCopy
 
-# noinspection PyProtectedMember
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.nxp.ops_aliases import (
+    AdaptiveAvgPool2D,
+    AddMM,
+    AvgPool2D,
+    Clone,
+    CloneDimOrder,
+    Convolution,
+    DequantizePerTensor,
+    GetItem,
+    HardTanh,
+    MaxPool2DWithIndices,
+    MM,
+    PermuteCopy,
+    QuantizePerTensor,
+    Relu,
+    Sigmoid,
+    SqueezeCopy,
+    Tanh,
+    UnsqueezeCopy,
+    ViewCopy,
+)
 from torch.fx import Node
 from torch.fx.passes.infra.pass_base import PassResult
-
-# Operator aliases for better readability.
-AddMM = exir_ops.edge.aten.addmm.default
-AvgPool2D = exir_ops.edge.aten.avg_pool2d.default
-MaxPool2D = exir_ops.edge.aten.max_pool2d_with_indices.default
-Conv = exir_ops.edge.aten.convolution.default
-Clone = exir_ops.edge.aten.clone.default
-CloneDimOrder = exir_ops.edge.dim_order_ops._clone_dim_order.default
-Getitem = operator.getitem
-HardTanh = exir_ops.edge.aten.hardtanh.default
-MM = exir_ops.edge.aten.mm.default
-Relu = exir_ops.edge.aten.relu.default
-Sigmoid = exir_ops.edge.aten.sigmoid.default
-SqueezeCopy = exir_ops.edge.aten.squeeze_copy.dims
-Tanh = exir_ops.edge.aten.tanh.default
-UnsqueezeCopy = exir_ops.edge.aten.unsqueeze_copy.default
-ViewCopy = exir_ops.edge.aten.view_copy.default
 
 
 def insert_qdq_pair_after_node(
@@ -41,7 +40,7 @@ def insert_qdq_pair_after_node(
     with graph.inserting_after(anchor):
         quantize_op = graph.create_node(
             op="call_function",
-            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            target=QuantizePerTensor,
             args=(),  # Will be added later.
         )
         quantize_op.meta = anchor.meta
@@ -50,7 +49,7 @@ def insert_qdq_pair_after_node(
     with graph.inserting_after(quantize_op):
         dequantize_op = graph.create_node(
             op="call_function",
-            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            target=DequantizePerTensor,
             args=(quantize_op,) + q_params,
         )
         dequantize_op.meta = quantize_op.meta
@@ -65,8 +64,7 @@ def _is_dequantize(node_: Node) -> bool:
     return (
         hasattr(node_, "op")
         and node_.op == "call_function"
-        and node_.target
-        == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+        and node_.target == DequantizePerTensor
     )
 
 
@@ -74,8 +72,7 @@ def _is_quantize(node_: Node) -> bool:
     return (
         hasattr(node_, "op")
         and node_.op == "call_function"
-        and node_.target
-        == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+        and node_.target == QuantizePerTensor
     )
 
 
@@ -117,7 +114,7 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             PermuteCopy,
         ],
         ViewCopy: [Clone, CloneDimOrder],
-        Conv: [
+        Convolution: [
             ViewCopy,  # For 1D conv
         ],
         # AvgPool1D is represented in edge as Unsqueeze -> AvgPool2D -> Squeeze. The reshaping nodes must be moved out
@@ -126,9 +123,15 @@ class MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,
             UnsqueezeCopy,
         ],
-        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Getitem -> Squeeze. The reshaping nodes must be moved out
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> GetItem -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
-        MaxPool2D: [
+        MaxPool2DWithIndices: [
+            ViewCopy,
+            UnsqueezeCopy,
+        ],
+        # AdaptiveAvgPool1D is represented in edge as Unsqueeze -> AdaptiveAvgPool2D -> Squeeze. The reshaping nodes
+        # must be moved out of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AdaptiveAvgPool2D: [
             ViewCopy,
             UnsqueezeCopy,
         ],
@@ -222,7 +225,7 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             Sigmoid,
             Tanh,
         ],
-        Conv: [
+        Convolution: [
             HardTanh,
             Relu,
             Sigmoid,
@@ -236,9 +239,15 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             ViewCopy,
             SqueezeCopy,
         ],
-        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> Getitem -> Squeeze. The reshaping nodes must be moved out
+        # MaxPool1D is represented in edge as Unsqueeze -> MaxPool2D -> GetItem -> Squeeze. The reshaping nodes must be moved out
         #  of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
-        Getitem: [
+        GetItem: [
+            ViewCopy,
+            SqueezeCopy,
+        ],
+        # AdaptiveAvgPool1D is represented in edge as Unsqueeze -> AdaptiveAvgPool2D -> Squeeze. The reshaping nodes
+        # must be moved out of the cluster. Instead of [Un]squeeze, ViewCopy can be used as well.
+        AdaptiveAvgPool2D: [
             ViewCopy,
             SqueezeCopy,
         ],
@@ -278,7 +287,7 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
             #  satisfy the requirements of the `QDQClusterRecognizer`.
             actual_main_cluster_node = (
                 main_cluster_node
-                if main_cluster_node.target != Getitem
+                if main_cluster_node.target != GetItem
                 else main_cluster_node.args[0]
             )
             cluster = QDQClusterRecognizer().get_qdq_cluster(actual_main_cluster_node)
