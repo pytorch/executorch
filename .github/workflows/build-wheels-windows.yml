@@ -5,9 +5,13 @@ on:
     paths:
       - .ci/**/*
       - .github/workflows/build-wheels-windows.yml
+      - '**/CMakeLists.txt'
       - examples/**/*
       - pyproject.toml
       - setup.py
+      - docs/source/using-executorch-cpp.md
+      - install_utils.py
+      - tools/cmake/**/*
   push:
     branches:
       - nightly
