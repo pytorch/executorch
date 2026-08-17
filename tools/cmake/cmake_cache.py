@@ -39,17 +39,21 @@ class CMakeCache:
 
     @staticmethod
     def _is_truthy(value: Optional[str]) -> bool:
+        """Whether a cache value reads as true, by CMake's rule.
+
+        CMake decides false by exclusion, comparing against its false constants as strings without
+        parsing a number. So a bare 0 is false while 0.0 is true, and any word it does not recognise,
+        enabled for instance, is true. Two readers in this tree previously used a whitelist of true
+        words plus a numeric test, which made an unrecognised word false and disagreed both with CMake
+        and with each other. That mismatch let packaging declare no CUDA runtime for a build CMake had
+        already turned CUDA on for.
+        """
         if value is None:
             return False
         normalized = value.strip().lower()
-        if normalized in _TRUE_VALUES:
-            return True
-        try:
-            # float rather than int, because CMake accepts a number written with a decimal point and
-            # treats any non-zero value as true.
-            return float(normalized) != 0.0
-        except ValueError:
+        if normalized in {"off", "false", "n", "no", "0", "", "ignore", "notfound"}:
             return False
+        return not normalized.endswith("-notfound")
 
     @staticmethod
     def read_cmake_cache(cache_path: str) -> Dict[str, CacheValue]:
