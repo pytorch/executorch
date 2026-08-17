@@ -216,8 +216,8 @@ def _minimal_packages() -> List[str]:
 # the CUDA runtime and cuRAND and nothing else, and the generated model library embeds its kernels
 # rather than compiling them at run time, so there is no runtime compiler to satisfy either.
 _CUDA_RUNTIME_PACKAGES = {
-    "12": ("nvidia-cuda-runtime-cu12",),
-    "13": ("nvidia-cuda-runtime",),
+    "12": ("nvidia-cuda-runtime-cu12", "nvidia-curand-cu12"),
+    "13": ("nvidia-cuda-runtime", "nvidia-curand"),
 }
 
 # Where each train installs its libraries under site-packages. CUDA 13 collects them in
@@ -228,7 +228,7 @@ _CUDA_RUNTIME_PACKAGES = {
 # searches what is recorded here, so a missing directory leaves a shipped library unable to find
 # a package that is installed, and an extra one implies a dependency the wheel does not have.
 _CUDA_LIBRARY_DIRECTORIES = {
-    "12": ("nvidia/cuda_runtime/lib",),
+    "12": ("nvidia/cuda_runtime/lib", "nvidia/curand/lib"),
     "13": ("nvidia/cu13/lib",),
 }
 
@@ -248,8 +248,10 @@ def _cmake_args() -> List[str]:
         return raw.split()
 
 
-# Release rows that ship no CUDA. Named once because the build side and the metadata side both ask,
-# and a row recognised by only one of them builds CUDA libraries while declaring no runtime for them.
+# Release rows that ship no CUDA. Only the metadata side reads this. The shell classifier is
+# deliberately broader, treating every name it does not recognise as CPU, so the two do not
+# agree on rows like rocm or xpu and are not meant to. What matters is that a row this side
+# calls CPU declares no CUDA runtime, which is what the list is for.
 _CPU_ROW_NAMES = ("cpu", "cpu-aarch64")
 
 
@@ -300,11 +302,26 @@ def _cuda_train() -> str:
         return ""
 
     raw = os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or ""
-    # A row spelled "cpu" is a CPU row regardless of CMAKE_ARGS. Recognised here so that a
-    # local build named that way with no CMAKE_ARGS set does not fall through and raise on
-    # the unsupported-train branch below.
-    if raw.lower() in _CPU_ROW_NAMES:
+    # A row spelled "cpu" is a CPU row, unless the caller asked for CUDA explicitly. The
+    # shortcut exists so a local build named that way with nothing requested does not fall
+    # through and raise on the unsupported-train branch below. It must not swallow an explicit
+    # request, because that request still reaches CMake, which builds the CUDA libraries: the
+    # wheel would then carry them with no dependency declared and no path to the runtime.
+    if raw.lower() in _CPU_ROW_NAMES and not install_utils.is_cmake_option_on(
+        _cmake_args(), "EXECUTORCH_BUILD_CUDA", default=False
+    ):
         return ""
+    if raw.lower() in _CPU_ROW_NAMES:
+        # Reached only when the caller turned CUDA on for a CPU row. Refused rather than
+        # guessed, because the option already reached CMake and built the libraries, so
+        # declaring nothing would ship them with no runtime dependency and no way to find
+        # it. Named here so the reader is not sent to add "cpu" to a list of CUDA trains.
+        raise RuntimeError(
+            f"the build names a CPU row while also asking for CUDA "
+            f"(EXECUTORCH_BUILD_CUDA=ON in CMAKE_ARGS). Those contradict: the CUDA "
+            f"libraries would be built and shipped with no runtime dependency declared. "
+            f"Pick one, either drop the option or name a CUDA row instead of {raw!r}."
+        )
     # Reduce to digits and match against the same (major, minor) trains the shell classifier
     # uses. Previously this took the first two digits and matched against major only, so a
     # row spelled with an unsupported minor (say cu125) was classified CPU by the shell and
@@ -1716,9 +1733,7 @@ class CustomBuild(build):
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
         # package.
-        cmake_configuration_args += [
-            item for item in re.split(r"\s+", os.environ.get("CMAKE_ARGS", "")) if item
-        ]
+        cmake_configuration_args += [item for item in _cmake_args() if item]
         if minimal_build:
             cmake_configuration_args += _minimal_cmake_flags()
 
