@@ -17,6 +17,7 @@ Run (in an env where the custom op is built):
     python -m executorch.extension.llm.custom_ops.bench_channelwise_gated_delta_rule
 """
 
+import itertools
 import time
 
 import torch
@@ -26,21 +27,29 @@ from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 _OP = torch.ops.llama.channelwise_gated_delta_rule.default
 
 
-def _make_inputs(b: int, h: int, t: int, k: int, v: int):
+def _make_inputs(b: int, h: int, t: int, k: int, v: int, scalar_decay: bool = False):
+    decay_shape = [b, h, t] if scalar_decay else [b, h, t, k]
     return (
         torch.randn(b, h, t, k),
         torch.randn(b, h, t, k),
         torch.randn(b, h, t, v),
-        torch.rand(b, h, t, k),
+        torch.rand(decay_shape),
         torch.rand(b, h, t),
         torch.randn(b, h, k, v),
     )
 
 
 def _bench_one(
-    b: int, h: int, t: int, k: int, v: int, iters: int, warmup: int
+    b: int,
+    h: int,
+    t: int,
+    k: int,
+    v: int,
+    iters: int,
+    warmup: int,
+    scalar_decay: bool = False,
 ) -> tuple[float, float]:
-    q, key, val, decay, beta, state = _make_inputs(b, h, t, k, v)
+    q, key, val, decay, beta, state = _make_inputs(b, h, t, k, v, scalar_decay)
     for _ in range(warmup):
         _OP(q, key, val, decay, beta, state)
     start = time.perf_counter()
@@ -68,10 +77,27 @@ def main() -> None:
         f"channelwise_gated_delta_rule microbenchmark "
         f"(K=V={k}, fp32, 1 thread, state={32 * k * v * 4 // 1024}KB)"
     )
-    print(f"{'config':<15}{'B':>3}{'H':>4}{'T':>6}{'ms/call':>12}{'us/token':>12}")
-    for label, b, h, t, iters in configs:
-        ms, us = _bench_one(b, h, t, k, v, iters=iters, warmup=max(10, iters // 10))
-        print(f"{label:<15}{b:>3}{h:>4}{t:>6}{ms:>12.4f}{us:>12.3f}")
+    print(
+        f"{'config':<15}{'decay':<12}{'B':>3}{'H':>4}{'T':>6}"
+        f"{'ms/call':>12}{'us/token':>12}"
+    )
+    for (label, b, h, t, iters), scalar_decay in itertools.product(
+        configs, (False, True)
+    ):
+        ms, us = _bench_one(
+            b,
+            h,
+            t,
+            k,
+            v,
+            iters=iters,
+            warmup=max(10, iters // 10),
+            scalar_decay=scalar_decay,
+        )
+        print(
+            f"{label:<15}{'scalar' if scalar_decay else 'channelwise':<12}"
+            f"{b:>3}{h:>4}{t:>6}{ms:>12.4f}{us:>12.3f}"
+        )
 
 
 if __name__ == "__main__":
