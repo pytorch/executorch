@@ -273,7 +273,10 @@ def python_is_compatible():
 
         python_version = packaging.version.parse(platform.python_version())
         version_range = packaging.specifiers.SpecifierSet(version_specifier)
-        if python_version not in version_range:
+        # Pass prereleases=True so pre-release interpreters (e.g. 3.15.0b4) are
+        # accepted when they fall within the supported range; SpecifierSet
+        # excludes pre-releases by default.
+        if not version_range.contains(python_version, prereleases=True):
             print(
                 f'ERROR: ExecuTorch does not support python version {python_version}: must satisfy "{version_specifier}"',
                 file=sys.stderr,
