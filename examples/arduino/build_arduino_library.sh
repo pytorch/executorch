@@ -189,18 +189,22 @@ for yaml in "$TORCHGEN/packaged/ATen/native/tags.yaml" \
   fi
 done
 
-# The exporter and the runtime must be the same ExecuTorch. A pip release wheel
-# can be months behind this checkout, and a model exported against one schema
-# fails at Method::execute against a library built from another.
-ET_PY=$("$PYTHON" -c "import executorch; print(next(iter(executorch.__path__), ''))" 2>/dev/null || echo "")
-case "$ET_PY" in
-  "$ET_ROOT"*) ;;
-  "") echo "  NOTE: no executorch Python package found; the library will build but" ;
-      echo "        you cannot export models with this interpreter." ;;
-  *)  echo "  WARNING: $PYTHON imports executorch from $ET_PY, not $ET_ROOT." ;
-      echo "           Models exported with it may not match this library. See" ;
-      echo "           'Keeping this working' in examples/arduino/README.md." ;;
-esac
+# The exporter and the runtime must be the same ExecuTorch. A model exported
+# against one operator schema fails at Method::execute against a library built
+# from another, and nothing in that error says so. Compare what the installed
+# package was built from against this checkout; an install from here lands in
+# site-packages, so the path alone tells us nothing.
+ET_PY_SHA=$("$PYTHON" -c "import executorch.version as v; print(getattr(v, 'git_version', ''))" 2>/dev/null || echo "")
+ET_GIT_SHA=$(git -C "$ET_ROOT" rev-parse HEAD 2>/dev/null || echo "")
+if [ -z "$ET_PY_SHA" ]; then
+  echo "  NOTE: no executorch Python package found. The library will build, but"
+  echo "        you cannot export models with $PYTHON."
+elif [ -n "$ET_GIT_SHA" ] && [ "$ET_PY_SHA" != "$ET_GIT_SHA" ]; then
+  echo "  WARNING: $PYTHON has executorch built from ${ET_PY_SHA:0:12}, this tree"
+  echo "           is at ${ET_GIT_SHA:0:12}. Models exported with it may not match"
+  echo "           the library. Run ./install_executorch.sh, or see 'Keeping this"
+  echo "           working' in examples/arduino/README.md."
+fi
 
 CODEGEN_OUT="$ET_SRC/codegen"
 CORTEX_M_YAML="$ET_ROOT/backends/cortex_m/ops/operators.yaml"
@@ -310,6 +314,30 @@ for candidate in \
   fi
 done
 
+# Nothing vendors CMSIS-NN into a plain checkout -- the Cortex-M backend pulls
+# it with FetchContent at cmake time -- so fetch it at the revision that backend
+# pins. Without it the Cortex-M ops compile against headers that are not there.
+if [ -z "$CMSIS_NN" ]; then
+  CMSIS_NN_PIN=$(sed -n '/set(CMSIS_NN_VERSION/,/)/p' \
+    "$ET_ROOT/backends/cortex_m/CMakeLists.txt" | grep -oE '"[0-9a-f]{40}"' | tr -d '"')
+  if [ -z "$CMSIS_NN_PIN" ]; then
+    echo "ERROR: could not read CMSIS_NN_VERSION from backends/cortex_m/CMakeLists.txt"
+    exit 1
+  fi
+  CMSIS_NN="$ET_ROOT/third-party/cmsis-nn"
+  echo "  Fetching CMSIS-NN at ${CMSIS_NN_PIN:0:12} (pinned by the Cortex-M backend)"
+  rm -rf "$CMSIS_NN"
+  git init -q "$CMSIS_NN"
+  git -C "$CMSIS_NN" remote add origin https://github.com/ARM-software/CMSIS-NN.git
+  if ! git -C "$CMSIS_NN" fetch -q --depth 1 origin "$CMSIS_NN_PIN"; then
+    echo "ERROR: could not fetch CMSIS-NN $CMSIS_NN_PIN."
+    echo "       Clone it yourself to third-party/cmsis-nn, or point the build at"
+    echo "       an existing copy."
+    exit 1
+  fi
+  git -C "$CMSIS_NN" checkout -q FETCH_HEAD
+fi
+
 if [ -n "$CMSIS_NN" ]; then
   mkdir -p "$OUT_DIR/src/cmsis-nn"
   cp -r "$CMSIS_NN/Source" "$OUT_DIR/src/cmsis-nn/"
@@ -331,7 +359,8 @@ if [ -n "$CMSIS_NN" ]; then
   echo "[5/7] CMSIS-NN copied from $CMSIS_NN"
 else
   CMSIS_NN_REV="absent"
-  echo "[5/7] WARNING: CMSIS-NN not found. Cortex-M ops will not link."
+  echo "ERROR: CMSIS-NN unavailable; the Cortex-M ops cannot link without it."
+  exit 1
 fi
 
 # CMSIS Core headers (for arm_math_types.h)

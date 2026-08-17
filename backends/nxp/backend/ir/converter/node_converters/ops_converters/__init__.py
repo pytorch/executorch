@@ -101,8 +101,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
     SigmoidConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_tensor_converter import (
-    SliceTensorConverter,
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.slice_copy_tensor_converter import (
+    SliceCopyTensorConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
@@ -163,7 +163,7 @@ __all__ = [
     "ReLUConverter",
     "RsqrtConverter",
     "SigmoidConverter",
-    "SliceTensorConverter",
+    "SliceCopyTensorConverter",
     "SoftmaxConverter",
     "SubTensorConverter",
     "SumDimIntListConverter",

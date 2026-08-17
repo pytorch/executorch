@@ -14,6 +14,9 @@ from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
 )
+from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
+    ReplaceQuantNodesPass,
+)
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -167,6 +170,7 @@ if __name__ == "__main__":
             _check_ir_validity=False,
         ),
     )
+    edge_encoder = edge_encoder.transform([ReplaceQuantNodesPass()])
     edge_manager = edge_encoder.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )

@@ -321,6 +321,25 @@ class TestSourceTransformStage(unittest.TestCase):
         # verify the result model is NOT the same object as the original
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
+    @patch("executorch.export.stages.quantize_")
+    @patch("executorch.export.stages.unwrap_tensor_subclass")
+    def test_run_in_place_does_not_copy_the_model(
+        self, mock_unwrap: Mock, mock_quantize: Mock
+    ) -> None:
+        from torchao.core.config import AOBaseConfig
+
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.ao_quantization_configs = [
+            AOQuantizationConfig(ao_base_config=Mock(spec=AOBaseConfig))
+        ]
+
+        stage = SourceTransformStage(mock_recipe, in_place=True)
+        stage.run(PipelineArtifact(data=self.models_dict, context={}))
+
+        # The caller's own model is quantized rather than a copy of it.
+        self.assertIs(mock_quantize.call_args[0][0], self.model)
+        self.assertIs(stage.get_artifacts().data["forward"], self.model)
+
 
 class TestQuantizeStage(unittest.TestCase):
     def setUp(self) -> None:

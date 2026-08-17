@@ -296,8 +296,12 @@ target_include_directories(
 # Link against MLX and executorch. mlx is an imported static lib (built by
 # mlx_external); it is only consumed at build time here, not re-exported, so
 # downstream consumers must link to mlx separately via the package config.
+# extension_llm_cache carries the off-graph KV-cache registry the backend binds
+# to in init(); it is defined under EXECUTORCH_BUILD_EXTENSION_LLM, which the
+# mlx preset enables.
 target_link_libraries(
-  mlxdelegate PRIVATE mlx_schema executorch_core $<BUILD_INTERFACE:mlx>
+  mlxdelegate PRIVATE mlx_schema executorch_core extension_llm_cache
+                      $<BUILD_INTERFACE:mlx>
 )
 
 executorch_target_link_options_shared_lib(mlxdelegate)

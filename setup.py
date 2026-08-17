@@ -5,9 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Part of this code is from pybind11 cmake_example:
-# https://github.com/pybind/cmake_example/blob/master/setup.py so attach the
-# license below.
+# Part of this code is from pybind11 cmake_example, so attach the license below.
+# That project has since dropped setup.py, so this points at the last revision
+# that still had it instead of at a branch.
+# https://github.com/pybind/cmake_example/blob/7a94877f581a14de4de1a096fb053a55fc2a66bf/setup.py
 
 # Copyright (c) 2016 The Pybind Development Team, All rights reserved.
 #

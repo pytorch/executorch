@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
@@ -60,6 +60,23 @@ jobs:
         conda activate test_env_${{ matrix.python-version }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
+
+  test-arduino-library:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_arduino_library.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/pull.yml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/cortex_m/') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/arduino/') ||
+      contains(needs.changed-files.outputs.changed-files, 'kernels/portable/') ||
+      contains(needs.changed-files.outputs.changed-files, 'runtime/') ||
+      contains(needs.changed-files.outputs.changed-files, 'schema/')
+    name: test-arduino-library
+    uses: ./.github/workflows/_test_arduino_library.yml
+    permissions:
+      id-token: write
+      contents: read
 
   test-minimal-wheel-linux:
     needs: changed-files

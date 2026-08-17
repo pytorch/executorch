@@ -356,6 +356,12 @@ def test_lpai_partition_fallback_support(request, kwargs):
     LpaiPartitionFallbackSupport.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
+@repack_pass_fixtures
+def test_recompose_hadamard(request, kwargs):
+    RecomposeHadamard.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_recompose_pad_maxpool2d(request, kwargs):

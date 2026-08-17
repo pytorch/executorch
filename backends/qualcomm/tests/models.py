@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import List, Optional, Tuple, Union
 
 import torch
+
+from executorch.backends.qualcomm.builders.custom_ops import _hadamard_matrix
 
 # module with related operator only
 
@@ -1682,6 +1685,44 @@ class Linear(torch.nn.Module):
         return self.linear(x)
 
 
+class HadamardLinear(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.linear = torch.nn.Linear(dim, dim, bias=False).eval()
+        # nn.Linear computes x @ Wᵀ; the Hadamard matrix is symmetric so
+        # x @ Hᵀ == x @ H, matching hadamard_transform(x).
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.linear.weight.data.copy_(H)
+
+    def forward(self, x):
+        return self.linear(x)
+
+
+class HadamardMatMul(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # The Hadamard matrix is symmetric, so matmul(x, H) applies the transform
+        # along the last dim of x, matching hadamard_transform(x).
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.register_buffer("weight", H)
+
+    def forward(self, x):
+        return torch.matmul(x, self.weight)
+
+
+class HadamardConv(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        # A 1x1 conv mixing channels is a matmul over the channel dim; a Hadamard
+        # filter makes it equivalent to hadamard_transform along channels.
+        self.conv = torch.nn.Conv2d(dim, dim, kernel_size=1, bias=False).eval()
+        H = _hadamard_matrix(dim, "cpu", torch.float32) / math.sqrt(dim)
+        self.conv.weight.data.copy_(H.reshape(dim, dim, 1, 1))
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 class LinearLeakyReLU(torch.nn.Module):
     def __init__(self, negative_slope=0.01):
         super().__init__()
@@ -3049,3 +3090,12 @@ class ZeroDimTensor(torch.nn.Module):
         input1 = torch.zeros(1)
         selected_element = torch.select(input1, 0, 0)
         return torch.add(x, selected_element)
+
+
+# rank-0 input `counter` that is both broadcast (arange + counter) and mutated in place;
+# exercises ExpandBroadcastTensorShape's rank promotion and the USER_INPUT_MUTATION write-back.
+class BroadcastAndMutate(torch.nn.Module):
+    def forward(self, x, counter):
+        position = torch.arange(x.shape[-1]) + counter
+        counter.add_(x.shape[-1])
+        return x + position.to(x.dtype)

@@ -10,6 +10,7 @@ The Neutron delegate supports the following quantization schemes:
 - Static quantization with 8-bit symmetric weights and 8-bit asymmetric activations (via the PT2E quantization flow), per-tensor granularity.
     - Following operators are supported at this moment: 
       - `aten.abs.default`
+      - `aten.adaptive_avg_pool1d.default`
       - `aten.adaptive_avg_pool2d.default`
       - `aten.add.Tensor`
       - `aten.addmm.default`
@@ -27,8 +28,8 @@ The Neutron delegate supports the following quantization schemes:
       - `aten.dropout.default`
       - `aten.exp.default`
       - `aten.flatten.using_ints`
-      - `aten.hardtanh.default`
-      - `aten.hardtanh_.default`
+      - `aten.hardswish.default` and `aten.hardswish_.default`
+      - `aten.hardtanh.default` and `aten.hardtanh_.default`
       - `aten.leaky_relu.default` and `aten.leaky_relu_.default`
       - `aten.linear.default`
       - `aten.log.default`
@@ -45,6 +46,7 @@ The Neutron delegate supports the following quantization schemes:
       - `aten.prelu.default`
       - `aten.relu.default` and `aten.relu_.default`
       - `aten.reshape.default`
+      - `aten.rsqrt.default`
       - `aten.sigmoid.default`
       - `aten.slice.Tensor`
       - `aten.softmax.int`

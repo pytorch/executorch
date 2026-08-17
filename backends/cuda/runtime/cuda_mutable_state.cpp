@@ -642,10 +642,17 @@ Error mutable_state_rebind_for_execute(CudaDelegateHandle* handle) {
       return Error::Ok;
     }
     auto cit = m.contexts.find(hit->second);
-    if (cit != m.contexts.end() &&
-        (!cit->second.sessions.empty() ||
-         cit->second.rebound_handles.find(handle) !=
-             cit->second.rebound_handles.end())) {
+    if (cit != m.contexts.end()) {
+      const auto desc = cit->second.desc.find(handle);
+      const bool known_stateless =
+          desc != cit->second.desc.end() && desc->second.empty();
+      const bool requires_active_session =
+          (!known_stateless && !cit->second.sessions.empty()) ||
+          cit->second.rebound_handles.find(handle) !=
+              cit->second.rebound_handles.end();
+      if (!requires_active_session) {
+        return Error::Ok;
+      }
       ET_LOG(
           Error, "mutable_state: active session is required for this handle");
       return Error::InvalidState;

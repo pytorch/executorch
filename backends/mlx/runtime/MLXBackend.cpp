@@ -6,10 +6,14 @@
 // LICENSE file in the root directory of this source tree.
 //
 
+#include "MLXCache.h"
 #include "MLXExecutor.h"
 #include "MLXInterpreter.h"
 #include "MLXLoader.h"
+#include "MLXSequenceCache.h"
 #include "mlx_mutable_state.h"
+
+#include <executorch/extension/llm/cache/cache_registry.h>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -177,6 +181,11 @@ struct MLXHandle {
   int clear_cache_interval_{0};
   uint64_t execute_count_{0};
 
+  // Keep-alive for the off-graph KV cache bound in init(). state.cache is a
+  // non-owning view of the same object, so the cache must outlive the handle
+  // even if the runner's session is torn down first.
+  std::shared_ptr<::executorch::extension::llm::cache::CacheBase> cache_shared;
+
   // Keep the constant buffers alive for zero-copy constants
   // Each FreeableBuffer must outlive the MLX arrays that reference it
   std::vector<FreeableBuffer> constant_buffers;
@@ -309,6 +318,32 @@ class MLXBackend final : public ::executorch::runtime::BackendInterface {
       // Bind execution state (reused across execute() calls)
       handle->state.bind(
           handle->program, handle->constants, handle->mutable_buffers);
+
+      // Bind the off-graph KV cache, if the runner installed one under a key it
+      // passed as a runtime spec. Bound before the init chain runs so an
+      // update_and_attend node there sees the same cache execute() will.
+      if (auto spec = context.get_runtime_spec<const char*>(kCacheKeyKey);
+          spec.ok() && spec.get() != nullptr && *spec.get() != '\0') {
+        const char* cache_key = spec.get();
+        handle->cache_shared =
+            cache::CacheRegistry::global().get(std::string(cache_key));
+        if (!handle->cache_shared) {
+          throw std::runtime_error(
+              std::string("init: cache_key '") + cache_key +
+              "' is not installed in the CacheRegistry");
+        }
+        // Cross-cast from the neutral ownership anchor to this backend's
+        // tensor-typed op face; the two are deliberately unrelated bases (see
+        // MLXCache.h), so nullptr here means the key names another backend's
+        // cache.
+        handle->state.cache =
+            dynamic_cast<MLXCache*>(handle->cache_shared.get());
+        if (handle->state.cache == nullptr) {
+          throw std::runtime_error(
+              std::string("init: cache under key '") + cache_key +
+              "' is not an MLX cache");
+        }
+      }
 
       // Run init chain if present.
       // SAFETY: The >= 0 check ensures init_chain_idx is non-negative, so the
@@ -516,6 +551,18 @@ namespace {
 auto cls = MLXBackend();
 Backend backend{kMLXBackendId, &cls};
 static auto success_with_compiler = register_backend(backend);
+
+// Cache kind is named by the builder tag rather than an enum on the config: a
+// runner asks the registry for (backend_id, kind) and gets back a neutral
+// CacheBase it installs under a cache_key. Adding a kind is a new builder here.
+const int cache_builders_registered = [] {
+  cache::CacheBuilderRegistry::global().register_builder(
+      kMLXBackendId, "seq", [](const cache::CacheConfig& cfg) {
+        return std::shared_ptr<cache::CacheBase>(
+            std::make_shared<MLXSequenceCache>(cfg));
+      });
+  return 0;
+}();
 } // namespace
 
 } // namespace mlx

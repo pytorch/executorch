@@ -4,17 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""`aten.logical_and.default` module + configs for the WebGPU op-test framework.
+"""Delegation coverage for logical AND with packed truth-table inputs."""
 
-`LogicalAndModule` derives its two bool operands on-GPU from float inputs
-(`a > 0`, `b > 0` via the delegated `gt.Tensor` against a baked zero buffer), so
-the only runtime inputs are the two float tensors (the op-test framework is
-float-input-only). `a`/`b` use distinct seeds so the two bool masks differ (each
-~50% True, independent -> AND ~25% True), a real mix that a wrong op (e.g. OR)
-would fail. Output is bool (byte-exact golden). `LogicalAndTest` is the
-export-delegation smoke test.
-"""
-
+import math
 import unittest
 
 import torch
@@ -32,29 +24,40 @@ class LogicalAndModule(torch.nn.Module):
         return torch.logical_and(a > self.z, b > self.z)
 
 
-def _la_gen(seed):
-    # Distinct per-input seed so the two derived bool masks differ.
-    def g(shape):
-        gen = torch.Generator().manual_seed(seed)
-        return torch.randn(*shape, generator=gen, dtype=torch.float32)
-
-    return g
-
-
-la_gen_a = _la_gen(0)
-la_gen_b = _la_gen(1)
+LOGICAL_BINARY_CASES = (
+    ("2d", (4, 8)),
+    ("3d", (2, 3, 8)),
+    ("sq", (16, 16)),
+    ("words63", (252,)),
+    ("words64", (256,)),
+    ("words65", (260,)),
+)
 
 
-# All shapes have numel % 4 == 0 (bool tensors pack 4 bytes/word).
-SHAPES = [(4, 8), (2, 3, 8), (16, 16)]
+def _logical_binary_gen(pattern):
+    def generate(shape):
+        numel = math.prod(shape)
+        if numel == 0 or numel % len(pattern) != 0:
+            raise ValueError("logical-binary test shapes must have numel % 4 == 0")
+        return (
+            torch.tensor(pattern, dtype=torch.float32)
+            .repeat(numel // len(pattern))
+            .reshape(shape)
+        )
+
+    return generate
+
+
+logical_binary_gen_a = _logical_binary_gen((-1.0, -1.0, 1.0, 1.0))
+logical_binary_gen_b = _logical_binary_gen((-1.0, 1.0, -1.0, 1.0))
 
 
 class LogicalAndTest(unittest.TestCase):
     def test_export_delegates(self) -> None:
-        for shape in SHAPES:
-            with self.subTest(shape=shape):
-                a = la_gen_a(shape)
-                b = la_gen_b(shape)
+        for case_name, shape in LOGICAL_BINARY_CASES:
+            with self.subTest(case=case_name, shape=shape):
+                a = logical_binary_gen_a(shape)
+                b = logical_binary_gen_b(shape)
                 ep = torch.export.export(LogicalAndModule(shape).eval(), (a, b))
                 edge = to_edge_transform_and_lower(
                     ep, partitioner=[VulkanPartitioner()]

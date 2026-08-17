@@ -17,10 +17,8 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
     get_overload_packet,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -74,7 +72,6 @@ slice_or_select_overloadpkt = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
     """
     If the graph is branched with the following pattern:
@@ -245,7 +242,6 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
     Advances a quantize op above data-movement ops to reduce data volume.
@@ -420,7 +416,6 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PostponeDequantizeOpBelowUseChainPass(ExportPass):
     """
     If the consumer of dequantize is a linear chain of view, transpose, permute,
@@ -561,7 +556,6 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         return PassResult(self.graph_module, overall_modified)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class SinkOpsCloserToUsePass(RemoveOrReplacePassInterface):
     """
     Assume that the dequantize op D = dequantize(I) has only a single user.
@@ -612,7 +606,6 @@ class SinkOpsCloserToUsePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
     """
     Assume that the input I to a quantize op Q = quantize(I) has only a single
@@ -697,14 +690,12 @@ class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
     _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
 ):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
     """Move matching single-use permutes after a cat.
 
@@ -738,6 +729,9 @@ class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
             # pyre-ignore[6]
             list[torch.fx.Node] | tuple[torch.fx.Node, ...],
         )
+        # Moving one reused permute after cat makes it process the larger output.
+        if inputs and all(inp is inputs[0] for inp in inputs):
+            return None
 
         unpermuted_inputs: List[torch.fx.Node] = []
         common_permutation: Optional[Tuple[int, ...]] = None
@@ -793,7 +787,6 @@ class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
     """Move slice_copy ops before permute_copy to reduce permute data volume.
 
@@ -870,7 +863,6 @@ class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
     """Move a slice_copy above a view_copy when the slice is re-expressible as a
     single slice on one dim of the pre-view tensor.
@@ -1103,7 +1095,6 @@ class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
         return None
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PropagateSlice(RemoveOrReplacePassInterface):
     """Propagate slice_copy before element-wise ops when the cost model
     indicates it reduces total data movement.
@@ -1290,7 +1281,6 @@ _DEQUANT_OVERLOAD_PACKETS = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
     """Split a cat node so that quantize consumers get their own copy.
 

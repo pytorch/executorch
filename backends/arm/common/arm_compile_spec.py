@@ -21,8 +21,6 @@ from executorch.backends.arm.common.pipeline_config import (
     SoftmaxDecompositionConfig,
 )
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.exir._warnings import deprecated
-
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -48,7 +46,6 @@ class ArmCompileSpec(ABC):
     _OUTPUT_FORMAT_KEY = "output_format"
     _DEBUG_ARTIFACT_KEY = "debug_artifact_path"
     _DEBUG_MODE_KEY = "dump_debug_info"
-    _OUTPUT_REORDER_KEY = "ouput_reorder_workaround"
     _TRANSFORM_PIPELINE_CONFIG_KEY = "transform_pipeline_config"
     _PRESERVE_IO_QUANT_KEY = "preserve_io_quantization"
     _TOSA_DEV_MODE = "tosa_sw_dev_mode"
@@ -59,7 +56,6 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str],
         path_for_intermediates: str | None = None,
         tosa_debug_mode: DebugMode | None = None,
-        output_order_workaround: bool = False,
         pipeline_config: ArmPassPipelineConfig | None = None,
         preserve_io_quantization: bool = False,
         tosa_dev_mode: bool | None = None,
@@ -70,17 +66,9 @@ class ArmCompileSpec(ABC):
         self.path_for_intermediates = path_for_intermediates
         self.tosa_debug_mode = tosa_debug_mode
         self._pipeline_config = pipeline_config
-        self.output_order_workaround = output_order_workaround
         self.preserve_io_quantization = preserve_io_quantization
         self._warn_if_redundant_preserve_io_quantization()
         self.tosa_dev_mode = tosa_dev_mode
-        if output_order_workaround:
-            warnings.warn(
-                "ArmCompileSpec(output_order_workaround=True) is deprecated and will be "
-                "removed in v1.5; please remove this flag.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
     @classmethod
     def _from_list(cls, compile_specs: list[CompileSpec]):  # noqa: C901
@@ -89,7 +77,6 @@ class ArmCompileSpec(ABC):
         compiler_flags: list[str] | None = None
         path_for_intermediates: str | None = None
         tosa_debug_mode: ArmCompileSpec.DebugMode | None = None
-        output_order_workaround: bool = False
         pipeline_config: ArmPassPipelineConfig | None = None
         preserve_io_quantization: bool = False
         tosa_dev_mode: bool | None = None
@@ -129,14 +116,6 @@ class ArmCompileSpec(ABC):
                         "More than one tosa_debug_mode entry in compile spec."
                     )
                 tosa_debug_mode = ArmCompileSpec.DebugMode[val]
-            elif key == ArmCompileSpec._OUTPUT_REORDER_KEY:
-                output_order_workaround = val  # type: ignore[assignment]
-                if output_order_workaround:
-                    warnings.warn(
-                        "The 'output_order_workaround' compile spec entry is deprecated and will be removed in v1.5; please remove this entry.",
-                        DeprecationWarning,
-                        stacklevel=2,
-                    )
             elif key == ArmCompileSpec._TRANSFORM_PIPELINE_CONFIG_KEY:
                 if pipeline_config is not None:
                     raise ValueError(
@@ -172,7 +151,6 @@ class ArmCompileSpec(ABC):
             compiler_flags=compiler_flags,
             path_for_intermediates=path_for_intermediates,
             tosa_debug_mode=tosa_debug_mode,
-            output_order_workaround=output_order_workaround,
             pipeline_config=pipeline_config,
             preserve_io_quantization=preserve_io_quantization,
             tosa_dev_mode=tosa_dev_mode,
@@ -234,14 +212,6 @@ class ArmCompileSpec(ABC):
             compile_spec.append(
                 CompileSpec(
                     ArmCompileSpec._DEBUG_MODE_KEY, self.tosa_debug_mode.name.encode()
-                )
-            )
-
-        if not self.output_order_workaround:
-            compile_spec.append(
-                CompileSpec(
-                    ArmCompileSpec._OUTPUT_REORDER_KEY,
-                    bytes(self.output_order_workaround),
                 )
             )
 
@@ -358,26 +328,6 @@ class ArmCompileSpec(ABC):
         """
         self.tosa_dev_mode = tosa_dev_mode
         return self
-
-    @deprecated(
-        "set_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
-    )
-    def set_output_order_workaround(self, output_order_workaround: bool):
-        """Sets whether to apply the output order workaround.
-
-        Args:
-            output_order_workaround: Boolean indicating whether to apply the workaround.
-
-        """
-        self.output_order_workaround = output_order_workaround
-        return self
-
-    @deprecated(
-        "get_output_order_workaround() is deprecated and will be removed in v1.5; please remove this call."
-    )
-    def get_output_order_workaround(self) -> bool:
-        """Gets whether the output order workaround is being applied."""
-        return self.output_order_workaround
 
     @classmethod
     @abstractmethod

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
@@ -58,40 +59,31 @@ class SoftmaxConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        """Check if the softmax operation can be executed on Neutron hardware.
-
-        Hardware constraints:
-        1. Input rank must be >= 2 (Neutron does not support 1D)
-        2. Channels must be a multiple of num_macs
-        3. Channels < 4096 / num_pipes * 4
-        4. Total spatial size (N*H*W) <= 4096
-        5. (channels * spatial_size) / num_macs <= 65536
+        """Hardware constraints:
+        1. Input and Output must be INT8/UINT8
+        2. Channels <= 2040
+        3. Total spatial size (N*H*W) <= 4096
+        4. Total size (channels * spatial_size) <= 524288
         """
-        input_shape = node.meta["val"].shape
-
-        # Constraint 1: Neutron does not support 1D SoftMax
-        if len(input_shape) == 1:
+        # Constraint 1: Input and Output must be INT8/UINT8.
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
             return False
 
-        num_macs = neutron_target_spec.get_num_macs()
-        num_pipes = neutron_target_spec.get_num_pipes()
+        # Constraint 2: Channel size limit
         channels = SoftmaxConverter._get_channels(node)
+        if channels > 2040:
+            return False
+
+        # Constraint 3: Spatial size limit
         total_spatial_size = SoftmaxConverter._get_total_spatial_size(node)
-
-        # Constraint 2: Channels must be a multiple of num_macs
-        if channels % num_macs != 0:
-            return False
-
-        # Constraint 3: Channel size limit
-        if channels >= 4096 / num_pipes * 4:
-            return False
-
-        # Constraint 4: Spatial size limit
         if total_spatial_size > 4096:
             return False
 
-        # Constraint 5: Total processing size limit
-        if channels * total_spatial_size / num_macs > 65536:
+        # Constraint 4: Total processing size limit
+        if channels * total_spatial_size > 524288:
             return False
 
         return True

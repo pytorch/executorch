@@ -14,7 +14,7 @@
 # Usage:
 #   ./copy_sources.sh --executorch-root <path> --build-dir <path> \
 #                     --pack-staging <path>
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACK_DIR="$(cd "$SCRIPT_DIR/../../cmsis_pack" && pwd)"
@@ -115,7 +115,7 @@ cp -r "${PACK_SRC}/src/kernels" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying extension sources..."
 mkdir -p "${PACK_SRC}/src/extension"
-for d in data_loader memory_allocator runner_util; do
+for d in data_loader memory_allocator runner_util tensor; do
     if [[ -d "${EXECUTORCH_ROOT}/extension/$d" ]]; then
         cp -r "${EXECUTORCH_ROOT}/extension/$d" "${PACK_SRC}/src/extension/"
     fi
@@ -138,6 +138,18 @@ for candidate in \
         break
     fi
 done
+# A pack without the generated flatbuffers schema headers compiles nothing:
+# every consumer fails at executorch/schema/program_generated.h. Fail here
+# rather than shipping a broken archive.
+for required in program_generated.h scalar_type_generated.h; do
+    if [[ ! -f "${PACK_SRC}/src/schema/${required}" ]]; then
+        echo "ERROR: ${required} not found in the CMake build tree." >&2
+        echo "  Looked in: ${BUILD_DIR}/schema/include/executorch/schema" >&2
+        echo "  Run the ExecuTorch CMake configure+build first so BUILD_DIR" >&2
+        echo "  contains the generated schema headers (see build_pack.sh -h)." >&2
+        exit 1
+    fi
+done
 cp -r "${PACK_SRC}/src/schema" "${PACK_SRC}/include/executorch/"
 
 echo "  Copying generated flatbuffers headers..."
@@ -150,14 +162,27 @@ for candidate in \
         break
     fi
 done
-
-# Flatbuffers headers are redistributed inside the pack; ship the
-# upstream Apache-2.0 LICENSE alongside per its terms.
-if [[ -f "${EXECUTORCH_ROOT}/third-party/flatbuffers/LICENSE" ]] \
-   && [[ -d "${PACK_SRC}/include/flatbuffers" ]]; then
-    cp "${EXECUTORCH_ROOT}/third-party/flatbuffers/LICENSE" \
-       "${PACK_SRC}/include/flatbuffers/LICENSE"
+# Same rule as the schema headers: the pack bundles flatbuffers/, and the
+# runtime does not compile without it. Refuse to produce a pack missing it.
+if [[ ! -f "${PACK_SRC}/include/flatbuffers/flatbuffers.h" ]]; then
+    echo "ERROR: flatbuffers headers not found in the CMake build tree." >&2
+    echo "  Looked in: ${BUILD_DIR}/third-party/{flatbuffers,flatc_ep}/include" >&2
+    echo "  Run the ExecuTorch CMake configure+build first so BUILD_DIR" >&2
+    echo "  contains the flatc external-project headers." >&2
+    exit 1
 fi
+
+# Flatbuffers headers are redistributed inside the pack, so shipping the
+# upstream Apache-2.0 LICENSE alongside them is a condition of that
+# redistribution -- a pack without it must not be published.
+if [[ ! -f "${EXECUTORCH_ROOT}/third-party/flatbuffers/LICENSE" ]]; then
+    echo "ERROR: third-party/flatbuffers/LICENSE not found in the source tree." >&2
+    echo "  The pack redistributes the flatbuffers headers and must ship" >&2
+    echo "  their licence. Run: git submodule update --init third-party/flatbuffers" >&2
+    exit 1
+fi
+cp "${EXECUTORCH_ROOT}/third-party/flatbuffers/LICENSE" \
+   "${PACK_SRC}/include/flatbuffers/LICENSE"
 
 echo "  Creating c10 and torch include paths..."
 C10_DIR="${PACK_SRC}/src/runtime/core/portable_type/c10/c10"

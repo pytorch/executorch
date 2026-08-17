@@ -78,7 +78,79 @@ function(fetch_ethos_u_content ETHOS_SDK_PATH ET_DIR_PATH)
   )
 endfunction()
 
+function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
+  if("${MEMORY_MODE}" STREQUAL "Dedicated_Sram")
+    set(${OUT_VAR}
+        0x60000
+        PARENT_SCOPE
+    )
+    return()
+  endif()
+
+  if(NOT "${MEMORY_MODE}" MATCHES "^Dedicated_Sram_([0-9]+)(KB|MB)$")
+    message(
+      FATAL_ERROR
+        "Unsupported Dedicated_Sram MEMORY_MODE ${MEMORY_MODE}. Expected Dedicated_Sram_<size>KB, Dedicated_Sram_<size>MB, or Dedicated_Sram."
+    )
+  endif()
+
+  set(_fast_scratch_value "${CMAKE_MATCH_1}")
+  set(_fast_scratch_unit "${CMAKE_MATCH_2}")
+  if(_fast_scratch_unit STREQUAL "KB")
+    math(EXPR _fast_scratch_size "${_fast_scratch_value} * 1024")
+  else()
+    math(EXPR _fast_scratch_size "${_fast_scratch_value} * 1024 * 1024")
+  endif()
+
+  set(${OUT_VAR}
+      ${_fast_scratch_size}
+      PARENT_SCOPE
+  )
+endfunction()
+
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
+    # Both model and scratch in DRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA dram)
+  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+    # Model in DRAM, scratch in SRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA sram)
+  else()
+    message(
+      FATAL_ERROR
+        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
+    )
+  endif()
+
+  # Set ETHOSU_MODEL/ARENA to 0 or 1 depending on MEMORY_MODEL/ARENA: sram -> 0,
+  # dram -> 1.
+  set(_ethosu_memory_regions sram dram)
+  list(FIND _ethosu_memory_regions "${MEMORY_MODEL}" ETHOSU_MODEL)
+  list(FIND _ethosu_memory_regions "${MEMORY_ARENA}" ETHOSU_ARENA)
+
+  # Make sure each value is visible to its consumer. core_platform declares
+  # MEMORY_* as cache variables. Parent-scope linker-script preprocessing reads
+  # ETHOSU_* after this function returns.
+
+  set(ETHOSU_MODEL
+      ${ETHOSU_MODEL}
+      PARENT_SCOPE
+  )
+  set(ETHOSU_ARENA
+      ${ETHOSU_ARENA}
+      PARENT_SCOPE
+  )
+  set(MEMORY_MODEL
+      "${MEMORY_MODEL}"
+      CACHE STRING "Memory config for model" FORCE
+  )
+  set(MEMORY_ARENA
+      "${MEMORY_ARENA}"
+      CACHE STRING "Memory config for arena" FORCE
+  )
+
   if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
     add_subdirectory(
       ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target
@@ -89,20 +161,6 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
     )
   else()
     message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
-  endif()
-  if(MEMORY_MODE MATCHES "Dedicated_Sram")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=1
-    )
-  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=0
-    )
-  else()
-    message(
-      FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
-    )
   endif()
 endfunction()
 
@@ -341,7 +399,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
                   ETHOSU_TA_HISTBIN_1=0
                   ETHOSU_TA_HISTCNT_1=0
       )
-    elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
+    elseif(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -389,7 +447,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
         "corstone-320"
         PARENT_SCOPE
     )
-    if(MEMORY_MODE MATCHES "Dedicated_Sram")
+    if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -465,7 +523,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
         "corstone-320"
         PARENT_SCOPE
     )
-    if(MEMORY_MODE MATCHES "Dedicated_Sram")
+    if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
       target_compile_definitions(
         ethosu_target_common
         INTERFACE # Configure NPU architecture timing adapters This is just
@@ -577,7 +635,7 @@ function(configure_timing_adapters SYSTEM_CONFIG MEMORY_MODE)
               NPU_REGIONCFG_6=0
               NPU_REGIONCFG_7=0
     )
-  elseif(MEMORY_MODE MATCHES "Dedicated_Sram")
+  elseif(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
     target_compile_definitions(
       ethosu_core_driver
       PRIVATE NPU_QCONFIG=3

@@ -35,6 +35,7 @@ from executorch.backends.mlx import (  # noqa: F401 - registers mlx ops  # noqa:
     custom_ops,
     ops,
 )
+from executorch.backends.mlx.builder.op_helpers import torch_dtype_to_scalar_type
 from executorch.backends.mlx.llm.sampling import SamplingHead
 from torch.export import Dim
 
@@ -8313,3 +8314,145 @@ class MoeScatterOutputsTest(OpTestCase):
             "x": {0: batch_dim},
             "expert_indices": {0: batch_dim},
         }
+
+
+# Off-graph KV cache (kvcache::update_and_attend)
+class UpdateAndAttendModel(nn.Module):
+    """Multi-layer attention over the off-graph cache, one op call per layer."""
+
+    def __init__(self, n_layers: int, head_dim: int, out_dtype: torch.dtype):
+        super().__init__()
+        self.n_layers = n_layers
+        self.out_dtype = out_dtype
+        self.scale = head_dim**-0.5
+
+    def forward(self, q, k, v, position):
+        # Layers are summed, not chained: a chained query would arrive in
+        # out_dtype, and the two implementations disagree on compute precision
+        # for a half-precision query -- the MLX handler attends in the query's
+        # dtype, the eager reference always promotes to fp32. Keeping q as the
+        # graph input holds both at fp32. Distinct K/V per layer keeps each
+        # layer's cells apart.
+        total = None
+        for layer in range(self.n_layers):
+            kv_scale = layer + 1
+            out = torch.ops.kvcache.update_and_attend(
+                q,
+                k * kv_scale,
+                v * kv_scale,
+                position,
+                layer,
+                self.scale,
+                self.out_dtype,
+            )
+            total = out if total is None else total + out
+        return total
+
+
+@register_test
+class UpdateAndAttendTest(OpTestCase):
+    """Eager reference cache vs MLX runtime, through the delegate."""
+
+    name = "update_and_attend"
+    rtol = 1e-3
+    atol = 1e-3
+    expected_node_counts = {"UpdateAndAttendNode": 2}
+
+    n_layers = 2
+    n_heads = 4
+    n_kv_heads = 2
+    head_dim = 8
+    export_seq_len = 3
+    capacity = 16
+
+    def __init__(
+        self,
+        test_seq_len: int = 3,
+        out_dtype: torch.dtype = torch.float32,
+        kv_dtype: torch.dtype = torch.float32,
+    ):
+        self.test_seq_len = test_seq_len
+        self.out_dtype = out_dtype
+        self.kv_dtype = kv_dtype  # KV *storage* precision, not the op's output
+
+        parts = [] if test_seq_len == self.export_seq_len else ["decode"]
+        if out_dtype != torch.float32:
+            parts.append(f"{str(out_dtype).split('.')[-1]}_out")
+        if kv_dtype != torch.float32:
+            parts.append(f"{str(kv_dtype).split('.')[-1]}_kv")
+        self.name = "_".join(["update_and_attend", *parts])
+
+        self.kv_cache = ",".join(
+            str(x)
+            for x in [
+                self.capacity,
+                self.n_layers,
+                self.n_kv_heads,
+                self.head_dim,
+                torch_dtype_to_scalar_type(kv_dtype),
+            ]
+        )
+
+    @classmethod
+    def get_test_configs(cls) -> List["UpdateAndAttendTest"]:
+        return [
+            cls(),  # prefill: T=3, Causal
+            cls(test_seq_len=1),  # decode-shaped: T=1, Mask::None
+            cls(out_dtype=torch.float16),  # output contract != operand dtype
+            cls(kv_dtype=torch.float16),  # KV stored as Half, computed in fp32
+        ]
+
+    def create_model(self) -> nn.Module:
+        return UpdateAndAttendModel(self.n_layers, self.head_dim, self.out_dtype)
+
+    def _inputs(self, seq_len: int) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, self.n_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.randn(1, self.n_kv_heads, seq_len, self.head_dim),
+            torch.arange(seq_len, dtype=torch.int32).reshape(seq_len, 1),
+        )
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.export_seq_len)
+
+    def create_test_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return self._inputs(self.test_seq_len)
+
+    def get_dynamic_shapes(self) -> Optional[Dict[str, any]]:
+        # Prefill and decode run the same graph, so no length may be baked in.
+        seq = Dim("kv_seq", min=1, max=self.capacity)
+        return {
+            "q": {2: seq},
+            "k": {2: seq},
+            "v": {2: seq},
+            "position": {0: seq},
+        }
+
+    def compute_expected_outputs(self, model, test_inputs):
+        # The op dispatches to whichever cache is active, so the eager run needs
+        # an oracle cache installed for its duration.
+        from executorch.extension.llm.cache.reference_cache import (
+            CacheConfig,
+            ContiguousReferenceCache,
+        )
+        from executorch.extension.llm.cache.update_and_attend import REGISTRY
+
+        key = f"{self.name}-oracle"
+        REGISTRY.install(
+            key,
+            ContiguousReferenceCache(
+                CacheConfig(
+                    n_layers=self.n_layers,
+                    n_kv_heads=self.n_kv_heads,
+                    head_dim=self.head_dim,
+                    capacity=self.capacity,
+                    dtype=self.kv_dtype,  # must match the runtime pool's storage
+                )
+            ),
+        )
+        try:
+            with REGISTRY.active(key):
+                return model(*test_inputs)
+        finally:
+            REGISTRY.uninstall(key)

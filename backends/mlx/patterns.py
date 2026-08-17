@@ -22,6 +22,7 @@ from executorch.backends.mlx.builder.op_helpers import (
     emit_quantized_biases,
     emit_quantized_gather,
     emit_stop_position,
+    mlx_qparams_supported,
     parse_dequant_int4_node,
     parse_dequant_mx_node,
     parse_dequant_node,
@@ -84,6 +85,44 @@ def _unpack_int4_to_intx_fields(
     scale_nk = scale.t().contiguous()
     zero_point_nk = zero_point.t().contiguous() - 8
     return q, scale_nk, zero_point_nk
+
+
+def _affine_qparams_lower(
+    qdata_node: Node, scale_node: Node, group_size: int, bits: int
+) -> bool:
+    """Whether the affine handlers can repack these params, from meta alone.
+
+    ``qdata`` is ``(rows, in_features)`` int8 and ``scale`` is
+    ``[..., in_features // weight_group_size]``.
+    """
+    qdata = qdata_node.meta.get("val", None)
+    scale = scale_node.meta.get("val", None)
+    if qdata is None or scale is None:
+        return False
+    if qdata.dim() != 2 or qdata.dtype != torch.int8:
+        return False
+    in_features, num_groups = qdata.shape[-1], scale.shape[-1]
+    if not isinstance(in_features, int) or not isinstance(num_groups, int):
+        return False
+    return mlx_qparams_supported(in_features, num_groups, group_size, bits)
+
+
+def _int4_qparams_lower(qdata_node: Node, scale_node: Node, group_size: int) -> bool:
+    """Same, for the ``Int4Tensor`` layout that _unpack_int4_to_intx_fields reads.
+
+    ``qdata`` is ``(N, K//2)`` nibble-packed single-byte values and ``scale`` is
+    ``(K // weight_group_size, N)`` -- note the transpose relative to affine.
+    """
+    qdata = qdata_node.meta.get("val", None)
+    scale = scale_node.meta.get("val", None)
+    if qdata is None or scale is None:
+        return False
+    if qdata.dim() != 2 or qdata.element_size() != 1 or scale.dim() != 2:
+        return False
+    packed_cols, num_groups = qdata.shape[-1], scale.shape[0]
+    if not isinstance(packed_cols, int) or not isinstance(num_groups, int):
+        return False
+    return mlx_qparams_supported(2 * packed_cols, num_groups, group_size, 4)
 
 
 @REGISTRY.register_pattern(name="INDEX_COPY")
@@ -892,6 +931,9 @@ class QuantizedLinearHandler(PatternHandler):
             out_dtype=out_dtype,
         )
 
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _affine_qparams_lower(self.qdata, self.scale, self.group_size, self.bits)
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
 
@@ -1021,6 +1063,9 @@ class QuantizedEmbeddingHandler(PatternHandler):
             bits=bits,
             out_dtype=out_dtype,
         )
+
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _affine_qparams_lower(self.qdata, self.scale, self.group_size, self.bits)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
@@ -1396,6 +1441,9 @@ class Int4QuantizedLinearHandler(PatternHandler):
             return None
         return cls(head, [dequant], qdata, scale, zero_point, group_size, out_dtype)
 
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _int4_qparams_lower(self.qdata, self.scale, self.group_size)
+
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head
         x_node = n.args[0]
@@ -1490,6 +1538,9 @@ class Int4QuantizedEmbeddingHandler(PatternHandler):
             return None
         qdata, scale, zero_point, group_size, out_dtype = parsed
         return cls(head, [dequant], qdata, scale, zero_point, group_size, out_dtype)
+
+    def supported(self, P: MLXProgramBuilder, n: Node) -> bool:
+        return _int4_qparams_lower(self.qdata, self.scale, self.group_size)
 
     def __call__(self, P: MLXProgramBuilder, n: Node) -> Slot:
         assert n == self.head

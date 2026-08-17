@@ -221,6 +221,7 @@ def test_generate_parses_warm_resume_metrics():
                 "total_ms": 40.0,
                 "prefill_tok_s": 800.0,
                 "decode_tok_s": 40.0,
+                "vision_encoder_ms": 123.5,
             },
         )
     )
@@ -237,6 +238,16 @@ def test_generate_parses_warm_resume_metrics():
     assert st.total_ms == 40.0
     assert st.prefill_tok_s == 800.0
     assert st.decode_tok_s == 40.0
+    assert st.vision_encoder_ms == 123.5
+
+
+def test_generate_defaults_missing_vision_encoder_metric_to_none():
+    proc = _FakeProc(_lines({"done": True}))
+    seen = {}
+    WorkerClient(proc).generate(
+        "hi", _Cfg(), stats_callback=lambda stats: seen.update(stats=stats)
+    )
+    assert seen["stats"].vision_encoder_ms is None
 
 
 def test_spawn_worker_waits_for_ready():

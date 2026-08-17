@@ -682,6 +682,32 @@ class TestMovePermuteAfterConcat(unittest.TestCase):
         placeholder_nodes = converted.graph.find_nodes(op="placeholder")
         self.assertEqual(cat_nodes[0].args[0], placeholder_nodes)
 
+    def test_repeated_permute_input_not_moved(self) -> None:
+        x_data = torch.randn(1, 16, 32)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_x], 2),
+        )
+        builder.output([cat])
+
+        result = transform_and_check_numerics(
+            builder.get_graph_module(),
+            (x_data,),
+            MovePermuteAfterConcat(),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            get_compute_nodes_in_gm(result.graph_module),
+            [exir_ops.edge.aten.permute_copy, exir_ops.edge.aten.cat],
+        )
+
     def test_different_permutations_not_moved(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(2, 3, 4))

@@ -400,11 +400,11 @@ class PadConvModule(torch.nn.Module):
 
 
 class MaxPool2dModule(torch.nn.Module):
-    def __init__(self, padding=0):
+    def __init__(self, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.max_pool2d = torch.nn.MaxPool2d(
-            kernel_size=3, stride=2, padding=padding, dilation=1
+            kernel_size=kernel_size, stride=stride, padding=padding, dilation=1
         )
 
     def forward(self, x):
@@ -426,7 +426,7 @@ class MaxPool2dConvModule(torch.nn.Module):
 
 
 class AvgPool2dModule(torch.nn.Module):
-    def __init__(self, count_include_pad, padding=0, kernel_size=3, stride=2):
+    def __init__(self, count_include_pad=True, padding=0, kernel_size=3, stride=2):
         super().__init__()
 
         self.avg_pool = torch.nn.AvgPool2d(
@@ -455,6 +455,16 @@ class AvgPool2dConvModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.avg_pool(x)
+
+
+class AdaptiveAvgPool1dModule(torch.nn.Module):
+    def __init__(self, output_size):
+        super().__init__()
+
+        self.adaptive_avg_pool = torch.nn.AdaptiveAvgPool1d(output_size=output_size)
+
+    def forward(self, x):
+        return self.adaptive_avg_pool(x)
 
 
 class AdaptiveAvgPool2dModule(torch.nn.Module):
