@@ -11,6 +11,9 @@
 #include "MLXCache.h"
 #include "MLXExecutor.h"
 
+#include <algorithm>
+#include <vector>
+
 #include <mlx/array.h>
 #include <mlx/fast.h>
 #include <mlx/mlx.h>
@@ -310,20 +313,33 @@ inline void exec_update_and_attend(
   // The cache does the KV write + read and declares the mask; the handler owns
   // the query side (q, scale) and calls SDPA.
   const array& q = st.const_tensor_ref(n.q);
-  // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // One position per query token, read host-side so the cache stays pure graph
+  // + integer bookkeeping. Every layer of a step reads the same position
   // tensor, so evaluating it in place costs one sync for the first layer and
   // nothing for the rest -- casting first would instead build a fresh array per
   // layer and sync on each one.
   auto pos = st.const_tensor_ref(n.position);
   eval(pos);
-  int position;
+  const int length = static_cast<int>(pos.size());
+  if (length != static_cast<int>(st.const_tensor_ref(n.k).shape(2))) {
+    throw std::runtime_error(
+        "update_and_attend: position must hold one entry per query token");
+  }
+  // int32 is passed straight through; only an int64 input needs narrowing.
+  std::vector<int32_t> int32_positions;
+  const int32_t* positions = nullptr;
   switch (pos.dtype()) {
     case ::mlx::core::int32:
-      position = pos.data<int32_t>()[0];
+      positions = pos.data<int32_t>();
       break;
     case ::mlx::core::int64:
-      position = static_cast<int>(pos.data<int64_t>()[0]);
+      int32_positions.resize(static_cast<size_t>(length));
+      std::transform(
+          pos.data<int64_t>(),
+          pos.data<int64_t>() + length,
+          int32_positions.begin(),
+          [](int64_t p) { return static_cast<int32_t>(p); });
+      positions = int32_positions.data();
       break;
     default:
       throw std::runtime_error(
@@ -332,7 +348,8 @@ inline void exec_update_and_attend(
   }
   AttendSpec spec = st.cache->update_and_fetch(
       *n.layer_id,
-      position,
+      positions,
+      length,
       st.const_tensor_ref(n.k),
       st.const_tensor_ref(n.v),
       s);
