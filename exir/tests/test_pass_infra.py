@@ -8,11 +8,13 @@
 # pyre-strict
 
 import unittest
+from typing import Any
 
 import executorch.exir as exir
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import (
+    _extend_faketensor_cache_builtins,
     ExportedProgramPassBase,
     ExportedProgramPassResult,
     ExportPass,
@@ -27,6 +29,8 @@ from executorch.exir.program import to_edge
 from torch.export import Dim, export, ExportedProgram
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
+from torch._library import utils as _library_utils
+from torch._subclasses import FakeTensorMode
 
 
 class TestPassInfra(unittest.TestCase):
@@ -226,6 +230,132 @@ class TestProxyValueSymbolicCoercions(unittest.TestCase):
 
         with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
             float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
+
+
+class TestExportPassFastCopy(unittest.TestCase):
+    def test_empty_targeted_ops_does_not_fall_back_to_target_ops(self) -> None:
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class EmptyTargetedOpsPass(ExportPass):
+            targeted_ops: set[object] = set()
+            target_ops = {exir_ops.edge.aten.add.Tensor}
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        graph_module = (
+            to_edge(export(AddModule(), (torch.randn(2),), strict=True))
+            .exported_program()
+            .graph_module
+        )
+        pass_ = EmptyTargetedOpsPass()
+
+        pass_(graph_module)
+
+        self.assertEqual(pass_.operator_calls, 0)
+
+    def test_fast_copy_fallback_is_side_effect_free(self) -> None:
+        class RootModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.branch = torch.nn.Module()
+                self.branch.register_buffer("weight", torch.ones(2))
+
+        root = RootModule()
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        weight = graph.get_attr("branch.weight")
+        unresolved = graph.call_function(torch.ops.aten.neg.default, (x,))
+        cold_node = graph.call_function(torch.ops.aten.add.Tensor, (weight, unresolved))
+        graph.output(cold_node)
+        graph_module = torch.fx.GraphModule(root, graph)
+
+        class TargetedPass(ExportPass):
+            targeted_ops = {torch.ops.aten.mul.Tensor}
+
+        pass_ = TargetedPass()
+        pass_.tracer = pass_.ExportTracer(pass_, graph_module.graph._codegen)
+        interpreter = pass_.ExportInterpreter(pass_, graph_module)
+
+        with self.assertRaises(RuntimeError):
+            interpreter._fast_copy_node(cold_node)
+
+        self.assertEqual(list(pass_.tracer.graph.nodes), [])
+        self.assertFalse(hasattr(pass_.tracer.root, "branch"))
+        self.assertEqual(interpreter._node_remap, {})
+
+    def test_fast_copy_falls_back_for_unmapped_placeholder(self) -> None:
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        cold_node = graph.call_function(torch.ops.aten.add.Tensor, (x, x))
+        graph.output(cold_node)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        class TargetedPass(ExportPass):
+            targeted_ops = {torch.ops.aten.mul.Tensor}
+
+        pass_ = TargetedPass()
+        pass_.tracer = pass_.ExportTracer(pass_, graph_module.graph._codegen)
+        interpreter = pass_.ExportInterpreter(pass_, graph_module)
+
+        with self.assertRaises(RuntimeError):
+            interpreter._fast_copy_node(cold_node)
+
+        self.assertEqual(list(pass_.tracer.graph.nodes), [])
+        self.assertEqual(interpreter._node_remap, {})
+
+
+class TestExportPassFakeTensorCache(unittest.TestCase):
+    def test_extension_restores_builtin_predicate_after_exception(self) -> None:
+        op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+        fake_tensor_mode = FakeTensorMode()
+        original_is_builtin = _library_utils.is_builtin
+
+        self.assertFalse(original_is_builtin(op))
+        with self.assertRaisesRegex(RuntimeError, "test failure"):
+            with _extend_faketensor_cache_builtins(fake_tensor_mode):
+                self.assertTrue(_library_utils.is_builtin(op))
+                raise RuntimeError("test failure")
+
+        self.assertIs(_library_utils.is_builtin, original_is_builtin)
+
+    def test_extension_replaces_nonbuiltin_bypass_with_cache_entry(self) -> None:
+        op = torch.ops.quantized_decomposed.quantize_per_tensor.default
+        fake_tensor_mode = FakeTensorMode()
+        fake_x = fake_tensor_mode.from_tensor(torch.randn(4))
+        FakeTensorMode.cache_clear()
+
+        try:
+            with fake_tensor_mode:
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+            bypasses = FakeTensorMode.cache_info().bypasses
+            self.assertEqual(bypasses.get("non-builtin"), 1)
+
+            with fake_tensor_mode, _extend_faketensor_cache_builtins(
+                fake_tensor_mode
+            ):
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+                after_miss = FakeTensorMode.cache_info()
+                op(fake_x, 0.1, 0, -128, 127, torch.int8)
+                after_hit = FakeTensorMode.cache_info()
+
+            self.assertEqual(after_miss.misses, 1)
+            self.assertEqual(after_hit.hits, after_miss.hits + 1)
+        finally:
+            FakeTensorMode.cache_clear()
 
 
 class TestExportedProgramPassManager(unittest.TestCase):
