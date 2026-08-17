@@ -45,6 +45,11 @@ class TestFlow:
     skip_patterns: list[str] = field(default_factory=lambda: [])
     """ Tests with names containing any substrings in this list are skipped. """
 
+    xfail_patterns: list[str] = field(default_factory=lambda: [])
+    """ Tests with names containing any substrings in this list are expected to fail.
+    They still run, so the report keeps recording how they fail; the marker is strict,
+    so one that starts passing is reported rather than silently ignored. """
+
     param_skip_reasons: dict[str, dict[Any, str]] = field(default_factory=dict)
     """ Skip tests with a given reason when a pytest parameter matches a given value."""
 
@@ -69,6 +74,9 @@ class TestFlow:
                 return True, values_to_skip[parameter]
 
         return False, ""
+
+    def should_xfail_test(self, test_name: str) -> bool:
+        return any(pattern in test_name for pattern in self.xfail_patterns)
 
     def __str__(self):
         return self.name
@@ -178,8 +186,7 @@ def _load_arm() -> list[TestFlow]:
 
 
 def _load_cortex_m() -> list[TestFlow]:
-    # Every case runs on the FVP. Without it each one fails the same way, which the
-    # flow's xfail list would report as expected.
+    # Every case runs on the FVP, so without it the whole flow fails the same way.
     if not shutil.which("FVP_Corstone_SSE-300_Ethos-U55"):
         logger.info("Skipping Cortex-M flow registration: Corstone-300 FVP not on PATH")
         return []
