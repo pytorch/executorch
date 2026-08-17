@@ -764,12 +764,26 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[i]->toTensor().numel(),
             equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
-        VK_CHECK_COND(
-            args[i]->isTensor(),
-            "Cannot handle symint arg to graph that is not derived from a "
-            "scalar tensor at the moment.");
-        bool was_updated = maybe_update_scalar_tensor(
-            compute_graph, iref, args[i]->toTensor());
+        // A SymInt input may arrive either as a scalar tensor (the convention
+        // when the value was lifted from one) or as a plain Int EValue, which
+        // is what the emitter produces when the Method's schema declares the
+        // argument as SymInt. Accept both.
+        bool was_updated = false;
+        if (args[i]->isTensor()) {
+          was_updated = maybe_update_scalar_tensor(
+              compute_graph, iref, args[i]->toTensor());
+        } else if (args[i]->isInt()) {
+          const int32_t cur_val = compute_graph->read_symint(iref);
+          const int32_t new_val = static_cast<int32_t>(args[i]->toInt());
+          if (new_val != cur_val) {
+            compute_graph->set_symint(iref, new_val);
+            was_updated = true;
+          }
+        } else {
+          VK_THROW(
+              "Could not handle symint arg: caller's EValue is neither "
+              "a scalar tensor nor an Int.");
+        }
         // Since symint inputs may impact tensor's sizes, trigger a resize if
         // any symbolic integer shapes are updated.
         should_propagate_resize = should_propagate_resize || was_updated;
@@ -846,6 +860,32 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[o]->toTensor().mutable_data_ptr(),
             args[o]->toTensor().numel(),
             equivalent_scalar_type(args[o]->toTensor().scalar_type()));
+      } else if (compute_graph->val_is_symint(oref)) {
+        // Mirror of the input path: write the graph's current SymInt value
+        // into the caller's slot, which may be either a scalar tensor or a
+        // plain Int EValue.
+        const int32_t out_val = compute_graph->read_symint(oref);
+        if (args[o]->isTensor()) {
+          executorch::aten::Tensor& dst = args[o]->toTensor();
+          const auto dtype = dst.scalar_type();
+          if (dtype == executorch::aten::ScalarType::Int) {
+            *dst.mutable_data_ptr<int32_t>() = out_val;
+          } else if (dtype == executorch::aten::ScalarType::Long) {
+            *dst.mutable_data_ptr<int64_t>() = static_cast<int64_t>(out_val);
+          } else {
+            VK_THROW(
+                "Could not handle symint output with destination tensor dtype ",
+                static_cast<int>(dtype));
+          }
+        } else if (args[o]->isInt()) {
+          // Overwrite the EValue's int payload in place. EValue stores its int
+          // as int64_t, so a SymInt fits without truncation.
+          *args[o] = EValue(static_cast<int64_t>(out_val));
+        } else {
+          VK_THROW(
+              "Could not handle symint output: caller's EValue is neither "
+              "a scalar tensor nor an Int.");
+        }
       }
       // TensorRef values represent constant tensors which will not have been
       // modified by the graph execution. Therefore, if a constant tensor is
