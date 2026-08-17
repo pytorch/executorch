@@ -57,6 +57,7 @@ import os
 import re
 import shutil
 import site
+import stat
 import subprocess
 import sys
 from distutils import log  # type: ignore[import-not-found]
@@ -185,6 +186,13 @@ def _base_dependencies() -> List[str]:
         "packaging",
         "pandas>=2.2.2; python_version >= '3.10'",
         "parameterized",
+        # backends/qualcomm/__init__.py cannot be imported from a clean install
+        # without both of these. It reads the CPU vendor to disable an mkldnn path on
+        # AMD, and the module it imports first does a module-scope `import requests`,
+        # so declaring only the cpuinfo half leaves the import failing on the line
+        # before.
+        "py-cpuinfo",
+        "requests",
         "pytorch-tokenizers",
         "pyyaml",
         "ruamel.yaml",
@@ -502,13 +510,16 @@ class BuiltFile(_BaseExtension):
         """For a `BuiltFile`, we use self.dst as its inplace directory path.
         Need to handle directory vs file.
         """
-        # HACK: get rid of the leading "executorch" in ext.dst.
-        # This is because we don't have a root level "executorch" module.
-        package_dir = self.dst.removeprefix("executorch/")
-        # If dst is a file, use it's directory
-        if not package_dir.endswith("/"):
-            package_dir = os.path.dirname(package_dir)
-        return Path(package_dir)
+        # The destination is relative to the installed package, so resolve it against the same
+        # package directory an extension uses. Anchoring at the repo root instead only worked for
+        # destinations that already had a directory under src/executorch, and silently scattered
+        # the rest, which left the CMake package searching a directory nothing was copied into.
+        relative = self.dst.removeprefix("executorch/")
+        if not relative.endswith("/"):
+            relative = os.path.dirname(relative)
+        build_py = installer.get_finalized_command("build_py")
+        package_dir = os.path.abspath(build_py.get_package_dir("executorch"))
+        return Path(package_dir) / relative
 
 
 class BuiltExtension(_BaseExtension):
@@ -612,6 +623,25 @@ class InstallerBuildExt(build_ext):
             self._ran_build = True
             self.run_command("build")
         super().run()
+        if self.editable_mode:
+            # The first substitution runs before any cache exists, so it reads the command line
+            # and falls back to off. The preset this build uses turns the tracer on without
+            # passing anything, so that fallback published the wrong struct layout for an
+            # ordinary editable install. The build has produced a cache by now, so replace the
+            # best effort value with what the build actually configured.
+            self._resubstitute_tracer_definition()
+
+    def _resubstitute_tracer_definition(self) -> None:
+        cache_dir = _tracer_cache_dir(self)
+        if cache_dir is None:
+            return
+        for source, destination in _TRACER_DEFINITION_PATHS:
+            if os.path.exists(destination):
+                # The first pass consumed the placeholder, so restore the template before
+                # substituting again. Without this there is nothing left to replace and the
+                # correction silently does nothing.
+                shutil.copyfile(source, destination)
+                _substitute_tracer_definition(destination, cache_dir)
 
     def copy_extensions_to_source(self) -> None:
         """For each extension in `ext_modules`, we need to copy the extension
@@ -643,6 +673,12 @@ class InstallerBuildExt(build_ext):
             # used.
             if os.path.exists(regular_file) or not ext.optional:
                 self.copy_file(regular_file, inplace_file, level=self.verbose)
+                # A copied extension still names its libraries by soname, and the entries that
+                # reach them are relative to where it was built. The wheel path repairs that
+                # from build_extension, and the editable copy needs the same repair or the
+                # import fails on a library the loader cannot find.
+                if isinstance(ext, BuiltExtension):
+                    _strip_absolute_runtime_paths(Path(inplace_file))
 
             if ext._needs_stub:
                 inplace_stub = self._get_equivalent_stub(ext, inplace_file)
@@ -671,8 +707,133 @@ class InstallerBuildExt(build_ext):
         # but that would clobber the X bit on any executables. TODO(dbort): This
         # probably won't work on Windows.
         if not os.access(src_file, os.W_OK):
-            # Make the file writable. This should respect the umask.
-            os.chmod(src_file, os.stat(src_file).st_mode | 0o222)
+            # The owner only. A mode of 0o222 would also grant write to the group
+            # and to everyone, and chmod takes an absolute mode so no umask
+            # narrows it, which turned a 0o555 build output into 0o777.
+            os.chmod(src_file, os.stat(src_file).st_mode | stat.S_IWUSR)
+
+        # The destination too, and before the rewrite below, which opens the file
+        # for writing. copy_file preserves mode here on purpose, because this path
+        # also copies flatc and preserve_mode=False would drop its executable bit,
+        # so a read-only source arrives read-only.
+        #
+        # This mode is the one the wheel archives, so widening it here ships a
+        # world-writable library.
+        if not os.access(dst_file, os.W_OK):
+            os.chmod(dst_file, os.stat(dst_file).st_mode | stat.S_IWUSR)
+
+        _strip_absolute_runtime_paths(dst_file)
+
+
+def _origin_token() -> str:
+    """The loader's own-directory token, spelled differently by the two formats."""
+    return "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
+
+
+def _strip_absolute_runtime_paths(library: Path) -> None:
+    """Remove unusable runtime search paths from a library the wheel ships.
+
+    These libraries are copied out of the build tree rather than installed, so they
+    still carry every directory the linker recorded while resolving their
+    dependencies. Two kinds of entry are removed:
+
+    - a directory inside this build, which names the machine that produced the
+      wheel and cannot exist for a user
+    - an empty entry, which the loader reads as the process working directory
+
+    Other absolute entries are kept. The Python extensions link torch and resolve it
+    through the directory the linker recorded, so dropping that would stop them
+    importing in an environment where torch is not beside them.
+
+    Best effort, because the tool cannot be guaranteed on PATH: the pip package does not
+    reliably provide a binary inside a build venv, so failing the build here would break
+    building from source on a machine that simply lacks it. It is declared as a build
+    requirement so a release build gets it.
+
+    A CPU wheel built without it still works, with the absolute paths left in place. A CUDA
+    wheel does not: the delegate under backends/cuda/ reaches its dependency in lib/ only
+    through the paths written here, so without the rewrite that edge is missing.
+
+    What must not happen is both this and its check going quiet together, which is how
+    a wheel carrying build-machine directories could ship unnoticed. So the check in
+    the release tests treats a missing patchelf as a failure rather than a skip: the
+    wheel-build environment has it, and that is where the guarantee belongs.
+    """
+    if library.suffix != ".so" and ".so." not in library.name:
+        return
+    patchelf = shutil.which("patchelf")
+    if patchelf is None:
+        return
+    result = subprocess.run(
+        [patchelf, "--print-rpath", os.fspath(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+    original = result.stdout.strip()
+    if not original:
+        # No runtime search path at all, which is nothing to clean. patchelf prints
+        # the same empty string for an absent tag and for one holding a single empty
+        # entry, so there is nothing to distinguish here and nothing to do either way.
+        return
+
+    def keep(entry: str) -> bool:
+        if not entry:
+            # The loader reads an empty entry as the process working directory.
+            return False
+        if not entry.startswith("/"):
+            return True
+        # Absolute, so decide by what it points at. A directory inside this build
+        # cannot exist for a user.
+        #
+        # A torch lib directory is dropped when a relative route to torch is already
+        # recorded, since that route is what resolves torch on an installed wheel
+        # while the absolute one only names a directory from the machine that built
+        # it. It is kept when no relative route exists, because then it is the only
+        # way this library finds torch.
+        #
+        # Anything else absolute is a dependency the environment provides and the
+        # wheel has no relative answer for.
+        #
+        # Matched as whole path components rather than as substrings. A bare
+        # "/cmake-out" also matches "/home/user/cmake-outputs/torchlibs", which is
+        # an unrelated directory a user could really have, and stripping it breaks
+        # a dependency the library legitimately resolves there.
+        if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
+            return False
+        parts = entry.split("/")
+        # The setuptools staging directory is spelled build/lib.<platform>-<pyver>,
+        # for example lib.linux-x86_64-cpython-312. A bare startswith("lib.") also
+        # stripped a real user path like /opt/acme/lib.v2, so match the whole shape.
+        return not any(
+            part == "pip-out"
+            or part == "cmake-out"
+            or re.fullmatch(r"lib\.[^/]+-(cpython-\d+|\d+(?:\.\d+)*)", part)
+            for part in parts
+        )
+
+    # Whether the library can still reach torch without the absolute entry. Read
+    # inside keep, which closes over this scope.
+    has_relative_torch_route = any(
+        not entry.startswith("/") and entry.rstrip("/").endswith("/torch/lib")
+        for entry in original.split(":")
+    )
+    # An editable install copies this extension into a package directory whose
+    # subdirectories are symlinks to the checkout, and the loader resolves the origin
+    # token against the real path, so the runtime sits inside src/executorch/lib rather
+    # than beside the copy. Nothing else adds a relative route at this point.
+    hop = _origin_token() + "/../../src/executorch/lib"
+    rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
+    if hop not in rewritten.split(":"):
+        rewritten = rewritten + ":" + hop if rewritten else hop
+    if rewritten == original:
+        return
+    subprocess.run(
+        [patchelf, "--set-rpath", rewritten, os.fspath(library)],
+        check=True,
+    )
 
 
 class CustomBuildPy(build_py):
@@ -702,6 +863,41 @@ class CustomBuildPy(build_py):
                     for _f in self.manifest_files[_pkg]
                     if os.path.isfile(os.path.join(_root, _f))
                 ]
+
+    def _copy_extra_files(self, src_to_dst, dst_root: str) -> None:
+        """Copy the non-Python files the package ships, filling in any placeholders."""
+        for src, dst in src_to_dst:
+            dst = os.path.join(dst_root, dst)
+
+            # When modifying the filesystem, use the self.* methods defined by
+            # Command to benefit from the same logging and dry_run logic as
+            # setuptools.
+
+            # Ensure that the destination directory exists.
+            self.mkpath(os.path.dirname(dst))
+            # Remove any previous copy first, because copy_file skips a
+            # destination newer than its source. A second build in the same
+            # checkout would otherwise keep a configuration file that was
+            # substituted for the previous build's settings.
+            if os.path.exists(dst):
+                os.remove(dst)
+            # Follow the example of the base build_py class by not preserving
+            # the mode. This ensures that the output file is read/write even if
+            # the input file is read-only.
+            self.copy_file(src, dst, preserve_mode=False)
+            if os.path.basename(dst) == "executorch-config.cmake":
+                tracer_cache_dir = _tracer_cache_dir(self)
+                if tracer_cache_dir is None:
+                    # An editable install reaches here because setuptools runs build_py before
+                    # build_ext, so no cache exists yet. Publishing nothing would leave a developer
+                    # with no find_package at all, so write a best effort value from the command
+                    # line. The preset this build uses turns the tracer on without passing
+                    # anything, so this guess is usually wrong: the pass after the build restores
+                    # the template and substitutes what the cache actually says.
+                    _substitute_tracer_definition_from_args(dst)
+                    _TRACER_DEFINITION_PATHS.append((os.path.abspath(src), dst))
+                    continue
+                _substitute_tracer_definition(dst, tracer_cache_dir)
 
     def run(self):
         # Copy python files to the output directory. This set of files is
@@ -768,19 +964,7 @@ class CustomBuildPy(build_py):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
-        for src, dst in src_to_dst:
-            dst = os.path.join(dst_root, dst)
-
-            # When modifying the filesystem, use the self.* methods defined by
-            # Command to benefit from the same logging and dry_run logic as
-            # setuptools.
-
-            # Ensure that the destination directory exists.
-            self.mkpath(os.path.dirname(dst))
-            # Follow the example of the base build_py class by not preserving
-            # the mode. This ensures that the output file is read/write even if
-            # the input file is read-only.
-            self.copy_file(src, dst, preserve_mode=False)
+        self._copy_extra_files(src_to_dst, dst_root)
 
         # Copy CMake-generated Python directories that setuptools missed.
         # Setuptools discovers packages at configuration time, before CMake
@@ -831,6 +1015,85 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
 # TODO(dbort): For editable wheels, may need to update get_source_files(),
 # get_outputs(), and get_output_mapping() to satisfy
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
+
+
+def _substitute_tracer_definition(path: str, cmake_cache_dir: str) -> None:
+    """Fill in the tracer placeholder in an installed CMake configuration file.
+
+    Read from the cache rather than assumed, because the option is set per platform and a builder can
+    override it. A consumer compiling against the wrong setting gets a different object layout for
+    the profiling scope classes, which fails silently.
+    """
+    cache_path = os.path.join(cmake_cache_dir, "CMakeCache.txt")
+    if not os.path.exists(cache_path):
+        raise RuntimeError(
+            f"cannot read {cache_path}, so the tracer definition published to consumers cannot be "
+            "derived from what was built"
+        )
+    enabled = CMakeCache(cache_path=cache_path).is_enabled(
+        "EXECUTORCH_ENABLE_EVENT_TRACER"
+    )
+    with open(path) as handle:
+        contents = handle.read()
+    with open(path, "w") as handle:
+        handle.write(
+            contents.replace(
+                "@EXECUTORCH_TRACER_DEFINITION@",
+                "ET_EVENT_TRACER_ENABLED" if enabled else "",
+            )
+        )
+
+
+# Where the first substitution wrote, so the post-build pass knows which files to correct.
+_TRACER_DEFINITION_PATHS: list = []
+
+
+def _substitute_tracer_definition_from_args(destination) -> None:
+    """Substitute the tracer definition using the arguments that configure the build.
+
+    Used when no CMake cache exists yet, which is the normal case for an editable install. Reading the
+    same arguments CMake will read keeps the shipped config consistent with the build it describes.
+    """
+    # CMake accepts both -DNAME=VALUE and -D NAME=VALUE, and only the first spelling was read,
+    # so the second published the tracer-off layout while the libraries carried the tracer-on
+    # one. Both spellings are handled here. Absent still means off, because an editable install
+    # legitimately reaches this before any cache exists and a consumer must receive a usable
+    # definition rather than a raw placeholder.
+    tokens = os.environ.get("CMAKE_ARGS", "").split()
+    enabled = False
+    for index, argument in enumerate(tokens):
+        setting = None
+        if argument.startswith("-DEXECUTORCH_ENABLE_EVENT_TRACER"):
+            setting = argument[2:]
+        elif argument == "-D" and index + 1 < len(tokens):
+            setting = tokens[index + 1]
+        if setting and setting.startswith("EXECUTORCH_ENABLE_EVENT_TRACER"):
+            value = setting.split("=", 1)[-1].strip().upper()
+            enabled = value in ("ON", "1", "TRUE", "YES")
+    text = Path(destination).read_text()
+    Path(destination).write_text(
+        text.replace(
+            "@EXECUTORCH_TRACER_DEFINITION@",
+            "ET_EVENT_TRACER_ENABLED" if enabled else "",
+        )
+    )
+
+
+def _tracer_cache_dir(command) -> Optional[str]:
+    """The build directory holding CMakeCache.txt.
+
+    Raises rather than falling back, because the value decides a compile definition that changes
+    object layout. A wrong answer is silent: the consumer compiles a different version of the
+    profiling scope classes and its traces come back empty with no error.
+    """
+    build_command = command.get_finalized_command("build")
+    cache_dir = getattr(build_command, "cmake_cache_dir", None)
+    if not cache_dir:
+        # None rather than an error, because nothing has been built yet: an editable install runs
+        # build_py before build_ext. The caller then leaves the file alone instead of guessing a
+        # setting, so no config claims a tracer state that nothing verified.
+        return None
+    return os.path.abspath(cache_dir)
 
 
 class CustomBuild(build):
@@ -1090,6 +1353,74 @@ setup(
             []
             if _is_minimal_build()
             else [
+                # Install the shared runtime the Python extension links, rather
+                # than having the extension contain its own copy. Named without a
+                # version, so a consumer's find_library(executorch) resolves it: that
+                # matches libexecutorch.so and not libexecutorch.so.1. A version is
+                # only useful where something upgrades the library independently of
+                # what links it, which never happens inside a wheel.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/",
+                    src_name="libexecutorch.so",
+                    dst="executorch/lib/libexecutorch.so",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the profiler next to it, as its own library rather than
+                # code fused into the Python extension, so a process has one copy of
+                # it however many consumers load.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
+                    src_name="libexecutorch_etdump.so",
+                    dst="executorch/lib/libexecutorch_etdump.so",
+                    # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
+                    # the devtools subdirectory itself, so the library exists
+                    # whenever the shared build does. The Python extension carries a
+                    # hard dependency on it, so requiring the option here left a
+                    # wheel whose extension could not load at all.
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
+                ),
+                # Install the shared thread pool next to it. It is a separate
+                # library so that a process has one pool rather than one per
+                # component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
+                    src_name="libexecutorch_threadpool.so",
+                    dst="executorch/lib/libexecutorch_threadpool.so",
+                    # The target only exists when both of its dependencies are
+                    # enabled, so packaging has to require them too or a shared
+                    # build with either turned off looks for a file that was
+                    # never built.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_PTHREADPOOL",
+                        "EXECUTORCH_BUILD_CPUINFO",
+                    ],
+                ),
+                # Install the merged CPU kernels beside them, so the operators are
+                # registered once per process rather than once per component.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/configurations/",
+                    src_name="libexecutorch_kernels_optimized.so",
+                    dst="executorch/lib/libexecutorch_kernels_optimized.so",
+                    # The target is only created when the optimized kernels are
+                    # enabled, so packaging has to require that too rather than
+                    # looking for a file a shared build may never have produced.
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # Install the XNNPACK delegate beside them, so a process has one
+                # copy of it instead of one per component that uses it.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
+                    src_name="libexecutorch_backend_xnnpack.so",
+                    dst="executorch/lib/libexecutorch_backend_xnnpack.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_XNNPACK",
+                    ],
+                ),
                 # Install the prebuilt pybindings extension wrapper for the runtime,
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
@@ -1168,6 +1499,23 @@ setup(
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
                     src_name="aoti_cuda_shims",
+                    dst="executorch/backends/cuda/",
+                    is_dynamic_lib=True,
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
+                ),
+                # The stream helper the library above records as a dependency. It was
+                # never shipped, and resolved only because the copied library still
+                # carried the absolute directory it was linked in, which exists on a
+                # build machine and nowhere else. Stripping that path is what made the
+                # omission visible as a failed import.
+                #
+                # Shipped beside its consumer rather than in lib/, because that
+                # directory only exists in the shared build and this has to work
+                # without it. The glob covers both names the target can have: the
+                # shared build renames it to advertise it as a wheel component.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
+                    src_name="*extension_cuda",
                     dst="executorch/backends/cuda/",
                     is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],

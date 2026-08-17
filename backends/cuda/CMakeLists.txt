@@ -160,8 +160,8 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart CUDA::curand
-                            extension_cuda ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart extension_cuda
+                            ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -170,13 +170,8 @@ else()
   target_link_libraries(
     aoti_cuda_shims
     PRIVATE cuda_platform
-    PUBLIC -Wl,--whole-archive
-           aoti_common_shims_slim
-           -Wl,--no-whole-archive
-           CUDA::cudart
-           CUDA::curand
-           extension_cuda
-           ${CMAKE_DL_LIBS}
+    PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
+           CUDA::cudart extension_cuda ${CMAKE_DL_LIBS}
   )
 endif()
 
