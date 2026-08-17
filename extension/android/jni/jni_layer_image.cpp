@@ -343,14 +343,17 @@ Java_org_pytorch_executorch_extension_image_ImageProcessor_nativeProcessYuv(
   if (out == nullptr) {
     return;
   }
-  // The last row of each plane is only read up to `width`, not a full stride.
-  // Leave the dimension and stride checks themselves to process_yuv_into;
-  // clamp to 0 here so a bad input cannot produce a negative bound.
+  // The last row of each plane is only read up to `width`, not a full stride,
+  // and the chroma plane's very last byte is never read -- see the clamp in
+  // yuv_to_rgba_semi_planar, which exists because a CameraX plane stops one
+  // byte short of it. Leave the dimension and stride checks themselves to
+  // process_yuv_into; clamp to 0 here so a bad input cannot produce a negative
+  // bound.
   const int64_t yRequired = width > 0 && height > 0
       ? static_cast<int64_t>(yStride) * (height - 1) + width
       : 0;
   const int64_t uvRequired = width > 0 && height > 0
-      ? static_cast<int64_t>(uvStride) * (height / 2 - 1) + width
+      ? static_cast<int64_t>(uvStride) * (height / 2 - 1) + width - 1
       : 0;
   const uint8_t* y = directBytes(env, yPlane, yCapacity, yRequired, "yPlane");
   if (y == nullptr) {

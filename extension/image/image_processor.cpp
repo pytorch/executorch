@@ -133,10 +133,22 @@ void yuv_to_rgba_semi_planar(
     const uint8_t* uv_row = uv_plane + (y / 2) * uv_stride;
     uint8_t* out_row = rgba_out + y * rgba_stride;
 
+    // Every Android camera hands the interleaved chroma plane over as a view
+    // that stops one byte short of its last pair -- planes[1] and planes[2]
+    // point one byte apart into the same allocation, so whichever one a caller
+    // passes is missing an end byte. Clamping the final pair of the final
+    // chroma row costs the chroma of four corner pixels and lets the plane a
+    // camera actually provides be decoded, instead of requiring a byte that
+    // never arrives.
+    const int32_t last_index =
+        ((y / 2) == (height / 2 - 1)) ? width - 2 : width - 1;
+
     for (int32_t x = 0; x < width; ++x) {
       const int32_t uv_idx = (x / 2) * 2;
-      const uint8_t u = is_nv12 ? uv_row[uv_idx] : uv_row[uv_idx + 1];
-      const uint8_t v = is_nv12 ? uv_row[uv_idx + 1] : uv_row[uv_idx];
+      const int32_t first = uv_idx < last_index ? uv_idx : last_index;
+      const int32_t second = uv_idx + 1 < last_index ? uv_idx + 1 : last_index;
+      const uint8_t u = is_nv12 ? uv_row[first] : uv_row[second];
+      const uint8_t v = is_nv12 ? uv_row[second] : uv_row[first];
 
       const int32_t d = u - 128;
       const int32_t e = v - 128;

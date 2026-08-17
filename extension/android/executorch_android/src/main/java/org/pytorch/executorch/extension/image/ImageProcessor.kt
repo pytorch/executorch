@@ -186,12 +186,14 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
    * interleaved chroma plane as [uvPlane]: `planes[1].buffer` for [YuvFormat.NV12], or
    * `planes[2].buffer` for [YuvFormat.NV21]. Both buffers must be direct.
    *
-   * Only semi-planar chroma is supported. Check `planes[1].pixelStride == 2` before calling;
-   * a stride of 1 means fully planar I420, which this path cannot consume.
+   * Only semi-planar chroma is supported. Check `planes[1].pixelStride == 2` before calling; a
+   * stride of 1 means fully planar I420, which this path cannot consume.
    *
-   * Both buffers are bounds-checked against the strides and dimensions given here. The decode
-   * reads the interleaved chroma plane through `uvStride * (height / 2 - 1) + width`, so a plane
-   * buffer that a camera HAL trimmed below that is rejected rather than read past its end.
+   * Both buffers are bounds-checked against the strides and dimensions given here, so a plane a
+   * camera HAL trimmed short is rejected rather than read past its end. The chroma bound stops one
+   * byte short of the last pair, because that is where a CameraX plane ends: `planes[1]` and
+   * `planes[2]` are views one byte apart into the same allocation, so whichever one is passed is
+   * missing an end byte, and the decode clamps its last chroma pair to match.
    *
    * @param yPlane Direct buffer holding the luma plane.
    * @param yStride Row stride of the luma plane, in bytes.
@@ -293,9 +295,8 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
       orientation: ImageOrientation = ImageOrientation.UP,
   ): LongArray {
     val handle = requireHandle()
-    return nativeComputeOutputShape(handle, inputWidth, inputHeight, orientation.exifCode).map {
-      it.toLong()
-    }
+    return nativeComputeOutputShape(handle, inputWidth, inputHeight, orientation.exifCode)
+        .map { it.toLong() }
         .toLongArray()
   }
 
