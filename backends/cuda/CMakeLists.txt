@@ -76,10 +76,21 @@ if(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
   # bare "120", so the extra entry only duplicates a gencode that is already
   # there.
   set(_executorch_cuda_arch_resolved "")
+  # Mapped to CMake's explicit kinds rather than left bare. A bare number asks
+  # nvcc for both the binary and the portable form, which measured at about 2.5x
+  # the device code for a four architecture row. Only the newest needs the
+  # portable form, since that is what lets a device newer than every entry here
+  # run this code by compiling it on load.
   foreach(_arch IN LISTS _executorch_cuda_arch_list)
     string(REGEX REPLACE "\\+PTX$" "" _arch "${_arch}")
-    list(APPEND _executorch_cuda_arch_resolved "${_arch}")
+    list(APPEND _executorch_cuda_arch_resolved "${_arch}-real")
+    set(_executorch_cuda_arch_newest "${_arch}")
   endforeach()
+  if(_executorch_cuda_arch_newest)
+    list(APPEND _executorch_cuda_arch_resolved
+         "${_executorch_cuda_arch_newest}-virtual"
+    )
+  endif()
   # A row that names both "12.0" and "12.0+PTX" collapses to the same entry
   # twice, which would duplicate a gencode on the compile line.
   list(REMOVE_DUPLICATES _executorch_cuda_arch_resolved)
@@ -180,7 +191,18 @@ target_compile_options(
 )
 
 # Link against ExecuTorch core libraries
-target_link_libraries(cuda_platform PRIVATE executorch_core ${CMAKE_DL_LIBS})
+target_link_libraries(cuda_platform PRIVATE ${CMAKE_DL_LIBS})
+if(TARGET executorch_shared)
+  # Resolve the runtime from the shared library rather than from the static
+  # core, for the same reason the backend below does: the shims library that
+  # ships in the wheel links this one, so taking the static core here gives a
+  # process that also loads the shipped runtime two platform layers, and a
+  # register_pal call through the runtime never reaches the shims. Linking the
+  # shared runtime leaves one platform layer the process has.
+  target_link_libraries(cuda_platform PRIVATE executorch_shared)
+else()
+  target_link_libraries(cuda_platform PRIVATE executorch_core)
+endif()
 
 install(
   TARGETS cuda_platform
