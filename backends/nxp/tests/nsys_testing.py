@@ -25,6 +25,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     torch_type_to_numpy_type,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.tests.config_importer import test_config
 from executorch.backends.nxp.tests.dataset_creator import (
     create_quantized_variant_of_dataset,
@@ -44,7 +45,6 @@ from executorch.backends.nxp.tests.graph_verifier import GraphVerifier
 from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
-from executorch.backends.nxp.tests.ops_aliases import ExecutorchDelegateCall
 from executorch.backends.nxp.tests.outputs_dir_importer import outputs_dir
 from executorch.backends.nxp.tests.utils import save_pte_program, store_txt_input_tensor
 

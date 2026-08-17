@@ -18,6 +18,7 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator as Ops,
 )
+from executorch.backends.nxp.ops_aliases import AddTensor, Clamp, ExecutorchDelegateCall
 from executorch.backends.nxp.tests.executorch_pipeline import (
     ModelInputSpec,
     to_quantized_edge_program,
@@ -25,11 +26,6 @@ from executorch.backends.nxp.tests.executorch_pipeline import (
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    AddTensor,
-    Clamp,
-    ExecutorchDelegateCall,
-)
 from executorch.backends.nxp.tests.use_qat import *  # noqa: F403 F401
 
 
