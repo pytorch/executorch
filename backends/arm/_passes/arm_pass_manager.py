@@ -584,7 +584,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeGeluPass(),
                 DecomposeAddSubAlphaPass(),
                 DecomposeGroupedConvPass(),
-                DecomposeUnfoldToGatherPass(),
+                DecomposeUnfoldToGatherPass(use_slice=self.tosa_spec.is_U55_subset),
                 DecomposeEmbeddingPass(),
                 DecomposeIndexSelectToGatherPass(),
                 CastInt64BuffersToInt32Pass(exported_program),
