@@ -55,6 +55,41 @@ _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
 # The quantized kernels, whose own library the wheel ships when they are built.
 # A separate group because they have a separate owner, and because a wheel built
 # without them ships neither the library nor these symbols.
+# The CUDA delegate and its stream helper, for a wheel built from a CUDA index. The
+# stream helper matters most: two copies means two notions of the caller's stream, so
+# work queued through one is invisible to the other.
+# A strongly defined symbol, chosen by reading the built library rather than guessed. The
+# CudaBackend methods are emitted weak, and a weak definition can be replaced at load time by a
+# strong one elsewhere, so naming one of those would count a definition that may not be the one
+# the process uses.
+_CUDA_BACKEND_SYMBOLS = ("executorch::backends::cuda::load_library",)
+_CUDA_STREAM_SYMBOLS = ("executorch::extension::cuda::getCallerStream",)
+
+# The AOTI shim layer and the stream-guard state that lives with it. This is the state that was
+# genuinely duplicated: extracting the shims with a PUBLIC whole-archive replayed the extraction at
+# every consumer's link, so the guard's thread_local and these shims landed in three shipped binaries
+# at once, and a stream selected through one copy was invisible to the other two. The row above cannot
+# catch that, because its symbol only ever existed in one unconditionally shared library.
+_AOTI_SHIM_SYMBOLS = (
+    "aoti_torch_empty_strided",
+    "aoti_torch_delete_tensor_object",
+    "executorch::backends::cuda::CUDAStreamGuard::create",
+    # From the CUDA sources rather than the C++ ones. The build drops every .cu file when no working
+    # compiler is found, and the library is still produced from its .cpp sources, so a check that
+    # names only C++ symbols passes on a library missing every kernel it was gated for. Every
+    # kernel shim is listed rather than a sample, because a partially built library is exactly the
+    # failure this row exists to catch.
+    "aoti_torch_cuda__weight_int4pack_mm",
+    "aoti_torch_cuda_int4_plain_mm",
+    "aoti_torch_cuda_int5_plain_mm",
+    "aoti_torch_cuda_int6_plain_mm",
+    "aoti_torch_cuda_int8_plain_mm",
+    "aoti_torch_cuda_rand",
+    "aoti_torch_cuda_randint_low_out",
+    "aoti_torch_cuda_sort_stable",
+    "aoti_torch_cuda_guard_set_index",
+)
+
 _QUANTIZED_KERNEL_SYMBOLS = (
     "torch::executor::native::quantize_per_tensor_out",
     "torch::executor::native::dequantize_per_tensor_out",
@@ -300,24 +335,29 @@ def _is_export_only(library: Path) -> bool:
     the kernels, because the copy a C++ application links is registered into a table
     those libraries never read.
 
-    Named by the caller per component rather than excluded everywhere. Counting them for
-    the component they duplicate would report a duplicate that is not one, and excusing
-    them for every component would stop this catching a second registry hiding inside
-    one of them.
+    Excluded from the single-owner check for the one component that genuinely has two
+    copies. Counting them there would report a duplicate for something that is not one,
+    and the alternative, making them resolve the kernels from the shipped library, would
+    mean an export-time library depending on a runtime layout it never uses.
 
-    Matched on both the torch dependency and the name marker, because either alone
-    misfires: several shipped libraries link torch without being export-side, and a
-    name check alone would accept a runtime library that adopted the suffix.
+    Recognised by linking torch, which is the property that makes a library export-side.
+    Python extensions link torch too and are not export-side operator libraries, so they
+    are excluded by their interpreter suffix rather than by an operator-library name,
+    which keeps the test's verdict the same whether or not readelf is installed.
     """
+    if ".cpython-" in library.name or library.name.endswith(".pyd"):
+        return False
+    if library.name.endswith("_aot_lib.so"):
+        return True
     if _tool("readelf") is None:
-        return library.name.endswith("_aot_lib.so")
+        return False
     dynamic = subprocess.run(
         [_tool("readelf"), "-d", str(library)],
         capture_output=True,
         text=True,
         check=False,
     ).stdout
-    return "libtorch.so" in dynamic and "_aot_lib" in library.name
+    return "libtorch.so" in dynamic
 
 
 def _assert_single_definer(
@@ -398,6 +438,22 @@ def _assert_single_definer(
     print(f"✓ single {what}{where} across {len(libraries)} shipped libraries")
 
 
+def _wheel_cuda_train() -> str:
+    """The CUDA train the installed wheel was built for, or "" for a CPU wheel.
+
+    Read from the local version segment, which is the only place the wheel states what
+    it was built for. `1.5.0+cu126` gives "126".
+    """
+    local = importlib.metadata.version("executorch").partition("+")[2]
+    return local[2:] if local.startswith("cu") else ""
+
+
+# Marker for a row whose owner is required only when the wheel is a CUDA wheel. A
+# sentinel rather than a boolean, because the answer is not known until the installed
+# wheel is inspected, and a row cannot call that at import time.
+_REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
+
+
 # Each component the wheel ships as its own library, the symbols that identify it,
 # and the library that must own them. `required` says whether the owner has to be
 # present: the optimized kernels are optional, because a wheel built without them
@@ -430,6 +486,29 @@ _OWNED_COMPONENTS = (
         "libexecutorch_kernels_quantized.so",
         True,
     ),
+    # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
+    # which is decided at check time rather than here: a fixed False meant a wheel
+    # tagged +cu126 carrying no CUDA library at all passed every check in this file,
+    # while a fixed True would fail every CPU wheel. The marker is the string these
+    # rows are keyed on below.
+    (
+        "CUDA delegate",
+        _CUDA_BACKEND_SYMBOLS,
+        "libexecutorch_backend_cuda.so",
+        _REQUIRED_ON_A_CUDA_WHEEL,
+    ),
+    (
+        "CUDA stream helper",
+        _CUDA_STREAM_SYMBOLS,
+        "libexecutorch_extension_cuda.so",
+        _REQUIRED_ON_A_CUDA_WHEEL,
+    ),
+    (
+        "AOTI shim layer",
+        _AOTI_SHIM_SYMBOLS,
+        "libaoti_cuda_shims.so",
+        _REQUIRED_ON_A_CUDA_WHEEL,
+    ),
     # The third-party code these libraries bundle, checked separately from the
     # wrappers above. A wrapper can have a single owner while the implementation
     # underneath it is bundled into two of these, which is two real thread pools or
@@ -455,7 +534,6 @@ _OWNED_COMPONENTS = (
     ),
 )
 
-
 # The one component that legitimately exists twice. The quantized kernels are compiled into the runtime
 # library and again into the library torch loads at export time, because each side registers into a
 # table the other never reads, so a second definer there is expected rather than a fault. A process
@@ -473,10 +551,17 @@ def test_each_component_has_one_owner() -> None:
     registers into a table nothing else reads shows up as an operator missing at run
     time rather than as a link error.
     """
-    shipped = {
-        path.name for path in _shipped_runtime_libraries(_installed_package_dir())
-    }
+    # Every shipped shared object, not only the ones under lib/. One owner, libaoti_cuda_shims.so,
+    # ships under backends/cuda/, and scanning lib/ alone reported it as absent, which each row
+    # treats as an acceptable state and so would have skipped the check entirely.
+    shipped = {path.name for path in _shipped_shared_objects(_installed_package_dir())}
+    on_a_cuda_wheel = bool(_wheel_cuda_train())
     for what, symbols, owner, required in _OWNED_COMPONENTS:
+        if required == _REQUIRED_ON_A_CUDA_WHEEL:
+            # Resolved here rather than in the table, because it depends on the installed
+            # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
+            # all and still pass, which is the whole point of these three rows.
+            required = on_a_cuda_wheel
         present = any(name.startswith(owner) for name in shipped)
         assert present or not required, (
             f"the wheel ships no {owner}, which owns the {what}. Either packaging "
@@ -1181,7 +1266,8 @@ def test_no_absolute_runtime_paths() -> None:
     )
 
     offenders = {}
-    checked = 0
+    inspected = 0
+    with_a_runtime_path = 0
     for library in sorted(package_dir.rglob("*.so*")):
         if not library.is_file() or library.is_symlink():
             continue
@@ -1193,6 +1279,7 @@ def test_no_absolute_runtime_paths() -> None:
         )
         if result.returncode != 0:
             continue
+        inspected += 1
         # An absent RPATH and one containing a single empty entry both print as an
         # empty string, so treat empty output as "no runtime path" rather than as an
         # empty entry. A library with nothing to search is fine; the defect is
@@ -1200,7 +1287,7 @@ def test_no_absolute_runtime_paths() -> None:
         raw = result.stdout.strip()
         if not raw:
             continue
-        checked += 1
+        with_a_runtime_path += 1
         bad = []
         for entry in raw.split(":"):
             if not entry:
@@ -1226,13 +1313,15 @@ def test_no_absolute_runtime_paths() -> None:
         "the build tree that produced the wheel or, for an empty entry, the process "
         f"working directory: {offenders}"
     )
-    assert checked, (
-        f"no shipped library under {package_dir} carries a runtime search path, so this check examined "
-        "nothing and would pass on a wheel that shipped no libraries at all"
+    # Counted separately, because a wheel whose libraries all had their runtime paths removed
+    # entirely would satisfy a readable-file count while this check examined no path at all.
+    assert with_a_runtime_path, (
+        f"none of the {inspected} shipped libraries under {package_dir} carries a runtime search path, "
+        "so this check examined nothing. The shipped libraries need a relative path to reach each other."
     )
     print(
-        f"✓ none of the {checked} shipped libraries searches a build-tree or empty "
-        "runtime path"
+        f"✓ none of the {with_a_runtime_path} shipped libraries with a runtime path searches a "
+        f"build-tree or empty directory ({inspected} inspected)"
     )
 
 
@@ -1269,12 +1358,17 @@ def test_extension_contains_no_component() -> None:
     #
     # The bundled third-party groups are left out on purpose. That code is also linked by torch, and the
     # extension links torch, so seeing those symbols there says nothing about this split.
-    # Only components whose owning library is actually in this wheel. One of them is optional, so a build
-    # with it turned off ships no owner, and asserting the extension does not define its symbols would
-    # reject a configuration the table itself marks as supported.
-    shipped = {
-        path.name for path in _shipped_runtime_libraries(_installed_package_dir())
-    }
+    # Only components whose owning library is actually in this wheel. A build with an optional component
+    # turned off ships no owner, and asserting the extension does not define its symbols would reject a
+    # configuration the table itself marks as supported. Required rows are kept regardless, because their
+    # owner missing is a packaging fault the owner check reports.
+    shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
+    # Guarded here rather than further down, so it protects the filter that uses it: a wheel that
+    # installed no runtime libraries would otherwise compare the extension against an empty set and pass.
+    assert shipped, (
+        f"the wheel installed no runtime libraries under {package_dir / 'lib'}, so this check would "
+        "compare the extension against nothing and pass"
+    )
     owned = tuple(
         symbol
         for _, symbols, owner, required in _OWNED_COMPONENTS
@@ -1305,23 +1399,20 @@ def test_extension_contains_no_component() -> None:
     # this split moved out of it, so the extension must now resolve them from outside or
     # a retention option silently failed.
     #
-    # Not every shipped library serves Python. The quantized kernels and the CUDA
-    # delegate exist for a C++ application: Python registers quantized operators through
-    # the torch-linked ahead-of-time library at export time, and never loads the CUDA
-    # delegate from this extension at all. Requiring a dependency on those would demand
-    # the extension link code it has no use for.
-    shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
-    assert shipped, (
-        f"the wheel installed no runtime libraries under {package_dir / 'lib'}, so this check would "
-        "compare the extension against nothing and pass"
-    )
+    # Not every shipped library serves Python. The quantized kernels exist for a C++
+    # application, since Python registers those operators through the torch-linked
+    # ahead-of-time library at export time, and requiring a dependency would demand the
+    # extension link code it has no use for.
+    #
+    # The CUDA delegate is NOT in that category. The build deliberately links it into the
+    # extension with a retention option, so it does carry a dependency, and excluding it
+    # switched off the one check that would notice if that retention stopped working. The
+    # stream helper stays excluded because the extension reaches it only through the
+    # delegate's public link, with no retention of its own to protect.
     expected = {
         name
         for name in shipped
-        if not any(
-            marker in name
-            for marker in ("kernels_quantized", "backend_cuda", "extension_cuda")
-        )
+        if not any(marker in name for marker in ("kernels_quantized", "extension_cuda"))
     }
     unused = sorted(expected - needed)
     assert not unused, (
@@ -1383,11 +1474,13 @@ def test_shipped_library_names_are_expected() -> None:
     and still passed every symbol check, because those checks only ask how many
     definers a symbol has, never whether a file belongs in the wheel at all.
 
-    Two properties catch it. A library's recorded soname matches its file name, or a
-    consumer records a dependency the wheel does not contain. And its name is one
-    packaging knows how to produce, which is what a leftover from an older layout
-    fails. A wheel ships unversioned names on purpose, so the name itself carries no
-    version to check.
+    Two properties catch it. Its name is one packaging knows how to produce, which is
+    what a leftover from an older layout fails. And its recorded soname matches its
+    file name, or a consumer records a dependency the wheel does not contain.
+
+    The names are unversioned, because these libraries ship one file each with no
+    symlink chain, and a versioned name without the usual symlinks is harder to load
+    rather than safer.
     """
     package_dir = _installed_package_dir()
     lib_dir = package_dir / "lib"
@@ -1415,6 +1508,13 @@ def test_shipped_library_names_are_expected() -> None:
         "libexecutorch",
         "libexecutorch_kernels_optimized",
         "libexecutorch_kernels_quantized",
+        "libexecutorch_backend_cuda",
+        "libexecutorch_extension_cuda",
+        # The same library under the name a non-shared build gives it. The shared
+        # build renames it to match the other shipped components; every other build
+        # leaves this spelling, and the shim layer records whichever one exists as a
+        # dependency, so both have to ship and both are expected here.
+        "libextension_cuda",
         "libexecutorch_backend_xnnpack",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",

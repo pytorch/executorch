@@ -16,14 +16,24 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-find_package(CUDAToolkit REQUIRED)
-
 # SHARED on purpose: the caller-stream thread-local must have a single
 # definition across every shared object in the process (see export.h). A static
 # copy linked into multiple shared libraries would create multiple thread-locals
 # and silently break the caller-stream handshake.
 add_library(extension_cuda SHARED caller_stream.cpp)
-target_link_libraries(extension_cuda PUBLIC CUDA::cudart)
+if(EXECUTORCH_BUILD_SHARED)
+  # Named after what it provides rather than after the target, matching the
+  # other libraries the wheel ships. The target name stays as it is because the
+  # rest of the build already refers to it.
+  set_target_properties(
+    extension_cuda PROPERTIES OUTPUT_NAME executorch_extension_cuda
+  )
+  executorch_target_soname_policy(extension_cuda)
+endif()
+# No CUDA headers or libraries: caller_stream.cpp uses cudaStream_t as an opaque
+# handle and calls no CUDA function, so it compiles without cuda_runtime.h and
+# needs no libcudart. Anything else that links this library and does call CUDA
+# links the runtime itself.
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})
 target_compile_options(
   extension_cuda PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_common_compile_options}>"
