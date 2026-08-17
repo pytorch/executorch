@@ -121,7 +121,13 @@ else()
   # CUDA rejects outright. Ask CMake to detect the builder's GPU instead, which
   # is what a source build wants.
   if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
-    set(CMAKE_CUDA_ARCHITECTURES native)
+    # An empty list makes nvcc fall back to its own default, which current CUDA
+    # rejects outright. Detection is not the answer either: on a machine without
+    # a usable device it resolves to an architecture nvcc already warns it will
+    # stop supporting. Name the two datacentre architectures the release rows
+    # build for, so a source build produces device code that runs on the same
+    # GPUs the wheels target.
+    set(CMAKE_CUDA_ARCHITECTURES "80;86")
   endif()
   message(
     STATUS "CUDA architectures left to torch: ${CMAKE_CUDA_ARCHITECTURES}"
