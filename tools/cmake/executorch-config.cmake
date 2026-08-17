@@ -58,9 +58,9 @@ if(TARGET executorch-shared)
       WARNING
         "executorch: this shared install links two kernel registries on macOS, so operators "
         "registered by your application are not visible to code running inside the shared "
-        "runtime. Link the static runtime instead by configuring with "
-        "EXECUTORCH_BUILD_SHARED=OFF if your program depends on registration crossing that "
-        "boundary."
+        "runtime. If your program depends on registration crossing that boundary, rebuild "
+        "and reinstall ExecuTorch with EXECUTORCH_BUILD_SHARED=OFF, which installs the "
+        "static runtime this config then hands out instead."
     )
   endif()
 else()
