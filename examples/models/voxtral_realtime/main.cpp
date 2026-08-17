@@ -57,6 +57,11 @@ DEFINE_int32(
     "are exhausted.");
 DEFINE_bool(streaming, false, "Use streaming transcription mode.");
 DEFINE_bool(
+    profile_methods,
+    false,
+    "Report aggregate preprocessor, encoder, embedding, decoder, and sampling "
+    "wall times.");
+DEFINE_bool(
     mic,
     false,
     "Live microphone mode: read raw 16kHz float32 PCM from stdin.");
@@ -89,6 +94,7 @@ void sigint_handler(int) {
 voxtral_realtime::StreamingTranscribeConfig make_streaming_config() {
   voxtral_realtime::StreamingTranscribeConfig config;
   config.temperature = static_cast<float>(FLAGS_temperature);
+  config.profile_methods = FLAGS_profile_methods;
   return config;
 }
 
@@ -273,6 +279,7 @@ int main(int argc, char** argv) {
     voxtral_realtime::OfflineTranscribeConfig offline_config;
     offline_config.temperature = static_cast<float>(FLAGS_temperature);
     offline_config.max_new_tokens = FLAGS_offline_max_new_tokens;
+    offline_config.profile_methods = FLAGS_profile_methods;
     num_generated = runner.transcribe(
         audio_data.data(),
         static_cast<int64_t>(audio_data.size()),
