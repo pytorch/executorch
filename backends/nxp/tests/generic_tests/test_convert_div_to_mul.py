@@ -13,6 +13,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     ConvertDivToMulPass,
     NeutronAtenPassManager,
 )
+from executorch.backends.nxp.ops_aliases import MulTensor
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -22,7 +23,6 @@ from executorch.backends.nxp.tests.models import (
     StaticDivLinearModel,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import MulTensor
 
 
 @pytest.fixture(autouse=True)

@@ -305,6 +305,69 @@ def test_the_delegate_registers() -> None:
     print(f"✓ the delegate registers: CudaBackend among {len(registered)} backend(s)")
 
 
+def test_a_model_runs_through_the_delegate() -> None:
+    """Export a model to the CUDA delegate and run it, comparing against eager.
+
+    Every other check in this file reads a shipped artifact. This one executes, because a wheel whose
+    libraries are all present and correctly linked can still fail to compute, and nothing above would
+    notice. The x86_64 rows land on a GPU runner, so this is the row where that can be proven.
+
+    Skipped with the reason rather than silently on a row with no device, so a green result never stands
+    for work that did not happen.
+    """
+    import torch
+
+    if not torch.cuda.is_available():
+        print(
+            "SKIP: no CUDA device on this runner, so the delegate cannot execute here. "
+            "This row still verifies the shipped libraries, their declared dependencies, "
+            "their loader paths and the device code they carry."
+        )
+        return
+
+    capability = torch.cuda.get_device_capability(0)
+    device = f"sm_{capability[0]}{capability[1]}"
+    if device not in torch.cuda.get_arch_list():
+        print(
+            f"SKIP: the installed torch carries no code for {device}, so nothing can run on this "
+            f"device regardless of what the wheel ships."
+        )
+        return
+
+    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+    from executorch.exir import to_edge_transform_and_lower
+    from executorch.extension.pybindings.portable_lib import (
+        _load_for_executorch_from_buffer,
+    )
+
+    class Add(torch.nn.Module):
+        def forward(self, x, y):
+            return x + y
+
+    example = (torch.randn(4, 8), torch.randn(4, 8))
+    eager = Add()(*example)
+
+    exported = torch.export.export(Add().eval(), example)
+    lowered = to_edge_transform_and_lower(
+        exported, partitioner=[CudaPartitioner([])]
+    ).to_executorch()
+
+    # The program has to actually carry the delegate, or this test passes while proving nothing about it.
+    assert b"CudaBackend" in lowered.buffer, (
+        "the exported program contains no CUDA delegate, so running it would not exercise the "
+        "shipped delegate at all"
+    )
+
+    # Loaded from the buffer rather than a file, and the output is brought back to host, because the
+    # delegate returns device memory and comparing it against an eager result on the host otherwise
+    # fails with an invalid argument rather than a mismatch.
+    module = _load_for_executorch_from_buffer(lowered.buffer)
+    actual = module.forward(list(example))[0]
+
+    torch.testing.assert_close(actual.cpu(), eager, rtol=1e-3, atol=1e-3)
+    print(f"PASS: a CUDA-delegated model ran on {device} and matched eager")
+
+
 if __name__ == "__main__":
     assert platform.system() == "Linux", "the CUDA rows are Linux only"
 
@@ -314,6 +377,7 @@ if __name__ == "__main__":
     test_device_code_covers_the_row()
     test_portable_device_code_is_present()
     test_the_delegate_registers()
+    test_a_model_runs_through_the_delegate()
 
     # The backend registrations a CPU Linux row asserts also apply here: the CUDA build enables
     # OpenVINO on every Linux architecture and downloads the QNN SDK on x86_64, so a CUDA wheel
