@@ -29,8 +29,27 @@ include(CMakeFindDependencyMacro)
 find_package(tokenizers CONFIG)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
-set(required_lib_list executorch executorch_core portable_kernels)
-set(EXECUTORCH_LIBRARIES)
+# Included before the library list is built, because the list depends on which
+# runtime this install actually contains.
+include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
+
+# A shared build installs libexecutorch.a and libexecutorch.so side by side, and
+# naming the static runtime as well as the shared one gives a consumer two
+# kernel registries, which aborts during registration before main. The shared
+# library carries the core, so it replaces the static runtime, but measurement
+# shows it does not contain the kernels: dropping the kernels target here leaves
+# a consumer with no operators at all. That target still pulls the static core
+# in behind it, so a second copy remains present. On Linux both copies resolve
+# to the executable's and it runs; on macOS each image binds its own, so the two
+# diverge. Removing the last copy needs a shared kernels library, which is a
+# change to what gets built.
+if(TARGET executorch-shared)
+  set(required_lib_list portable_kernels)
+  set(EXECUTORCH_LIBRARIES executorch-shared)
+else()
+  set(required_lib_list executorch executorch_core portable_kernels)
+  set(EXECUTORCH_LIBRARIES)
+endif()
 set(EXECUTORCH_INCLUDE_DIRS
     ${_root}/include ${_root}/include/executorch/runtime/core/portable_type/c10
     ${_root}/lib
@@ -49,8 +68,6 @@ foreach(lib ${required_lib_list})
   list(APPEND EXECUTORCH_LIBRARIES ${lib})
 endforeach()
 set(EXECUTORCH_FOUND ON)
-
-include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 
 set(optional_lib_list
     aoti_cuda_backend
@@ -109,17 +126,21 @@ endforeach()
 # The ARM baremetal size test's CMAKE_TOOLCHAIN_FILE apparently doesn't prevent
 # our attempts to find_library(dl) from succeeding when building ExecuTorch, but
 # that call finds the host system's libdl and there is no actual libdl available
-# when building for the actual final baremetal.
-get_property(
-  FIXED_EXECUTORCH_CORE_LINK_LIBRARIES
-  TARGET executorch_core
-  PROPERTY INTERFACE_LINK_LIBRARIES
-)
-list(REMOVE_ITEM FIXED_EXECUTORCH_CORE_LINK_LIBRARIES $<LINK_ONLY:dl>)
-set_property(
-  TARGET executorch_core PROPERTY INTERFACE_LINK_LIBRARIES
-                                  ${FIXED_EXECUTORCH_CORE_LINK_LIBRARIES}
-)
+# when building for the actual final baremetal. Guarded because a shared install
+# need not export the static core, and reading a property off a target that does
+# not exist is a hard error in every consumer's find_package.
+if(TARGET executorch_core)
+  get_property(
+    FIXED_EXECUTORCH_CORE_LINK_LIBRARIES
+    TARGET executorch_core
+    PROPERTY INTERFACE_LINK_LIBRARIES
+  )
+  list(REMOVE_ITEM FIXED_EXECUTORCH_CORE_LINK_LIBRARIES $<LINK_ONLY:dl>)
+  set_property(
+    TARGET executorch_core PROPERTY INTERFACE_LINK_LIBRARIES
+                                    ${FIXED_EXECUTORCH_CORE_LINK_LIBRARIES}
+  )
+endif()
 
 # Expose MLX library and metallib path for downstream consumers
 if(TARGET mlxdelegate)
