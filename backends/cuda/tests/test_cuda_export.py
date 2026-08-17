@@ -5,10 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from types import SimpleNamespace
 from typing import Tuple
 
 import torch
-from executorch.backends.cuda.cuda_backend import CudaBackend
+from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones, CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.examples.models.toy_model import SdpaModule
 from executorch.exir import EdgeCompileConfig, schema, to_edge_transform_and_lower
@@ -17,6 +18,29 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_low_memory_clone_rehydrates_emptied_tensor_for_autotuning(self):
+        read_only = torch.empty_strided((2, 3), (3, 1))
+        mutated = torch.empty_strided((2, 3), (3, 1))
+        read_only.untyped_storage().resize_(0)
+        mutated.untyped_storage().resize_(0)
+
+        from torch._inductor.runtime.triton_heuristics import CachingAutotuner
+
+        autotuner = object.__new__(CachingAutotuner)
+        autotuner.fn = SimpleNamespace(arg_names=["read_only", "mutated"])
+        autotuner.mutated_arg_names = ["mutated"]
+
+        with _compile_time_cpu_clones(torch.device("cuda")):
+            cloned_args, _ = autotuner.maybe_clone_args(set(), read_only, mutated)
+
+        for clone in cloned_args:
+            self.assertEqual(clone.shape, read_only.shape)
+            self.assertEqual(clone.stride(), read_only.stride())
+            self.assertEqual(
+                clone.untyped_storage().nbytes(), 6 * read_only.element_size()
+            )
+            self.assertEqual(torch.count_nonzero(clone), 0)
+
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="emulate_precision_casts", value=b"OFF")]
