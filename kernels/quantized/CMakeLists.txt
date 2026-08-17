@@ -153,8 +153,19 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # route to the runtime, and overwriting the property here would drop it.
       get_target_property(_existing quantized_ops_aot_lib INSTALL_RPATH)
       if(_existing)
-        set(RPATH "${_existing}:${RPATH}")
+        # Mach-O keeps one entry per load command, so the two are a CMake list
+        # there. Joining them with a colon produced a single unusable path
+        # containing both, and the library then found neither the runtime nor
+        # the extension.
+        if(APPLE)
+          set(RPATH "${_existing};${RPATH}")
+        else()
+          set(RPATH "${_existing}:${RPATH}")
+        endif()
       endif()
+      # Quoted, because on Apple this is a list: unquoted it expands into
+      # separate arguments and the trailing entries are read as further property
+      # keywords, leaving the search path empty.
       set_target_properties(
         quantized_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
                                                                 "${RPATH}"
