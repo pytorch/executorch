@@ -46,7 +46,9 @@ layout(push_constant) uniform PushConstants {
 shared T shared_min[NUM_OUTPUTS_PER_WG][NUM_WORKERS_PER_OUTPUT];
 shared T shared_max[NUM_OUTPUTS_PER_WG][NUM_WORKERS_PER_OUTPUT];
 
-const float SMALL_SCALE_THRESHOLD = 6.1e-5;
+// Keep fp16 scales above the normal-value boundary on devices that flush
+// denormals to zero.
+const float SMALL_SCALE_THRESHOLD = 6.25e-5;
 
 void calculate_scale_and_zero_point(
     float min_val,

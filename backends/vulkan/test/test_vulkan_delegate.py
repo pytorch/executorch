@@ -8,6 +8,7 @@
 
 import ctypes
 import functools
+import os
 import unittest
 from typing import Tuple
 
@@ -45,7 +46,7 @@ except:
     pass
 
 
-def disable_test(reason):
+def disable_test(reason, enable_env=None):
     """Disable a test while still reporting it as executed.
 
     Some test runners do not handle skipped results consistently, so this keeps
@@ -55,6 +56,8 @@ def disable_test(reason):
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
+            if enable_env is not None and os.getenv(enable_env) == "1":
+                return fn(*args, **kwargs)
             print(f"DISABLED_TEST: {fn.__qualname__}: {reason}")
             return None
 
@@ -2935,7 +2938,10 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
-    @disable_test("Cannot run on swiftshader due to no 8-bit int support")
+    @disable_test(
+        "Cannot run on swiftshader due to no 8-bit int support",
+        enable_env="ETVK_RUN_8DA4W_TESTS",
+    )
     def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
         """
         Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.
@@ -2973,7 +2979,9 @@ class TestVulkanBackend(unittest.TestCase):
                 quantize_(
                     self,
                     Int8DynamicActivationIntxWeightConfig(
-                        weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
+                        weight_dtype=torch.int4,
+                        weight_granularity=PerGroup(self.group_size),
+                        intx_choose_qparams_algorithm="hqq_scale_only",
                     ),
                 )
                 unwrap_tensor_subclass(self)
@@ -2996,6 +3004,57 @@ class TestVulkanBackend(unittest.TestCase):
         # Use higher tolerance since quantization introduces some error
         self.lower_module_and_test_output(
             quantized_linear_module, sample_inputs, atol=1e-2, rtol=1e-2
+        )
+
+        # Exercise the dynamic GEMV shader with sparse outliers. Ignoring
+        # activation quantization degenerates to weight-only 4w math and
+        # diverges well beyond the 8da4w tolerance.
+        outlier_input = torch.randn(size=(1, 1, in_features), dtype=torch.float32) * 0.2
+        outlier_input[0, 0, 17] = -264.0
+        outlier_input[0, 0, 731] = 135.0
+        self.lower_module_and_test_output(
+            quantized_linear_module,
+            (outlier_input,),
+            atol=1e-2,
+            rtol=1e-2,
+        )
+
+        # The dynamic quantization producer converts fp16 input to fp32 before
+        # applying the reciprocal scale. Exercise a value on a rounding
+        # boundary so the GEMV consumer must match the producer's fp32
+        # quantization instead of re-quantizing in fp16.
+        half_linear_module = TorchAO8da4wQuantizedLinearModule(
+            in_features=128,
+            out_features=8,
+            bias=bias,
+            group_size=128,
+        ).half()
+        with torch.no_grad():
+            half_linear_module.linear.weight.zero_()
+            half_linear_module.linear.weight[:, 2] = 1.0
+        half_linear_module = half_linear_module.apply_8da4w_quantization()
+        boundary_input = torch.zeros(size=(1, 128), dtype=torch.float16)
+        boundary_input[0, 0] = -0.005001068115234375
+        boundary_input[0, 1] = 0.01152801513671875
+        boundary_input[0, 2] = 0.0081939697265625
+        self.lower_module_and_test_output(
+            half_linear_module,
+            (boundary_input,),
+            atol=2e-5,
+            rtol=0.0,
+            compile_options={"storage_type_override": VkStorageType.BUFFER},
+        )
+
+        # Keep a near-silent fp16 row finite on devices that flush half
+        # denormals to zero.
+        near_silent_input = torch.zeros(size=(1, 128), dtype=torch.float16)
+        near_silent_input[0, 2] = 0.001
+        self.lower_module_and_test_output(
+            half_linear_module,
+            (near_silent_input,),
+            atol=1e-4,
+            rtol=0.0,
+            compile_options={"storage_type_override": VkStorageType.BUFFER},
         )
 
         # Test with GEMM pattern (batch_size > 1)
