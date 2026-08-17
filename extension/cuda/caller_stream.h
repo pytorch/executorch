@@ -8,11 +8,18 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <optional>
 #include <type_traits>
 
 #include <executorch/extension/cuda/export.h>
+
+// Declared here rather than including <cuda_runtime.h>, so this header compiles
+// against a distribution that ships it without a CUDA toolkit. A stream is only
+// ever stored and handed back below, never dereferenced, so the handle is all
+// this interface needs. Repeating the declaration CUDA itself makes is
+// well-formed, so a consumer that also includes <cuda_runtime.h> is unaffected,
+// in either include order.
+typedef struct CUstream_st* cudaStream_t;
 
 namespace executorch::extension::cuda {
 
