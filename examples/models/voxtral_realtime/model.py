@@ -425,6 +425,38 @@ class SDPA(nn.Module):
         return y.view(bsz, seqlen, self.dim).to(dtype=input_dtype)
 
 
+class VulkanRingSDPA(nn.Module):
+    """Sliding-window SDPA over a wrapped Vulkan KV cache."""
+
+    def __init__(self, n_heads: int, head_dim: int, window_size: int):
+        super().__init__()
+        self.dim = n_heads * head_dim
+        self.window_size = window_size
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz: int,
+        seqlen: int,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        del mask
+        input_dtype = q.dtype
+        start_pos = input_pos[0].item()
+        torch._check_is_size(start_pos)
+        y = torch.ops.et_vk.ring_sdpa(
+            q.to(dtype=torch.float32),
+            k.to(dtype=torch.float32),
+            v.to(dtype=torch.float32),
+            start_pos,
+            self.window_size,
+        )
+        return y.reshape(bsz, seqlen, self.dim).to(dtype=input_dtype)
+
+
 def _build_attn_mask(
     input_pos: torch.Tensor,
     max_seq_len: int,
@@ -726,6 +758,13 @@ class LMAttention(nn.Module):
                     config.sliding_window, self.n_kv_heads, self.head_dim
                 )
                 self.sdpa = StandardSDPA(self.n_heads, self.n_kv_heads, self.head_dim)
+            elif self.backend == "vulkan":
+                self.kv_cache = RingKVCache(
+                    config.sliding_window, self.n_kv_heads, self.head_dim
+                )
+                self.sdpa = VulkanRingSDPA(
+                    self.n_heads, self.head_dim, config.sliding_window
+                )
             else:
                 self.kv_cache = RingKVCache(
                     config.sliding_window, self.n_kv_heads, self.head_dim
@@ -891,15 +930,18 @@ class MistralDecoder(nn.Module):
             freqs_cos = freqs.cos()
             freqs_sin = freqs.sin()
 
-            # Sliding window mask from the ring buffer, computed once for
-            # all 26 layers.
-            seqlen = input_pos.shape[0]
-            attn_mask = self.layers[0].attention.kv_cache.create_causal_mask(
-                input_pos[0],
-                seqlen,
-                bool_mask=self.bool_mask,
-                dtype=input_embeds.dtype,
-            )
+            if self.config.backend == "vulkan":
+                attn_mask = None
+            else:
+                # Sliding window mask from the ring buffer, computed once for
+                # all 26 layers.
+                seqlen = input_pos.shape[0]
+                attn_mask = self.layers[0].attention.kv_cache.create_causal_mask(
+                    input_pos[0],
+                    seqlen,
+                    bool_mask=self.bool_mask,
+                    dtype=input_embeds.dtype,
+                )
         else:
             # Precomputed RoPE table lookup.
             freqs_cos = self.freqs_cos[input_pos]
@@ -1140,14 +1182,14 @@ class StandardRingKVCache(nn.Module):
 
 
 class StreamingAudioEncoderExport(nn.Module):
-    """Streaming encoder: processes one 8-mel-frame chunk at a time.
+    """Streaming encoder for one or more contiguous 8-mel-frame chunks.
 
     Shares conv/transformer/adapter weights with the offline encoder.
     Owns separate KV caches and SDPA for incremental KV-cached attention.
     Conv states are maintained as internal buffers.
 
     Forward:
-        mel_chunk(1,128,8) + enc_input_pos(4,) -> audio_embeds(1,1,3072)
+        mel_chunk(1,128,8*N) + enc_input_pos(4*N,) -> audio_embeds(1,N,3072)
     """
 
     def __init__(self, model: VoxtralRealtimeModel, max_enc_len: int = 750):
@@ -1217,6 +1259,16 @@ class StreamingAudioEncoderExport(nn.Module):
                 config.enc_n_heads,
                 config.enc_n_heads,
                 config.enc_head_dim,
+            )
+        elif config.backend == "vulkan":
+            self.kv_caches = nn.ModuleList(
+                [
+                    RingKVCache(max_enc_len, config.enc_n_heads, config.enc_head_dim)
+                    for _ in range(config.enc_n_layers)
+                ]
+            )
+            self.sdpa = VulkanRingSDPA(
+                config.enc_n_heads, config.enc_head_dim, max_enc_len
             )
         else:
             self.kv_caches = nn.ModuleList(
@@ -1293,15 +1345,13 @@ class StreamingAudioEncoderExport(nn.Module):
         self.conv1_state.mul_(1.0 - is_start)
         self.conv2_state.mul_(1.0 - is_start)
 
-        # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding)
-        # (1, 128, 2+8=10) -> conv1(k=3, s=1) -> (1, 1280, 8)
+        # Conv1: cat state + chunk, raw Conv1d (no CausalConv1d padding).
         conv1_input = torch.cat([self.conv1_state, mel_chunk], dim=2)
         conv1_out = F.gelu(self.conv1(conv1_input))
         # Update conv1 state with last 2 frames from mel_chunk
         self.conv1_state.copy_(mel_chunk[:, :, -2:])
 
-        # Conv2: cat state + conv1_out, raw Conv1d
-        # (1, 1280, 2+8=10) -> conv2(k=3, s=2) -> (1, 1280, 4)
+        # Conv2: cat state + conv1_out, raw Conv1d.
         conv2_input = torch.cat([self.conv2_state, conv1_out], dim=2)
         conv2_out = F.gelu(self.conv2(conv2_input))
         # Update conv2 state with last 2 frames from conv1_out
@@ -1314,25 +1364,27 @@ class StreamingAudioEncoderExport(nn.Module):
         freqs_cos = freqs.cos()
         freqs_sin = freqs.sin()
 
-        # Sliding window mask — identical for all layers, compute once.
         T = x.size(1)
-        # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
-        mask = self.kv_caches[0].create_causal_mask(
-            enc_input_pos[0], T, bool_mask=self.bool_mask, dtype=x.dtype
-        )
+        if self.backend == "vulkan":
+            mask = None
+        else:
+            # Pass start position as tensor (not .item()) to avoid unbacked symbols in AOTI
+            mask = self.kv_caches[0].create_causal_mask(
+                enc_input_pos[0], T, bool_mask=self.bool_mask, dtype=x.dtype
+            )
 
         for i, layer in enumerate(self.layers):
             x = self._streaming_encoder_layer(
                 x, freqs_cos, freqs_sin, enc_input_pos, mask, layer, i
             )
 
-        x = self.enc_norm(x)  # (1, 4, 1280)
+        x = self.enc_norm(x)
 
-        # Downsample: concat 4 consecutive frames -> (1, 1, 5120)
+        # Downsample by concatenating consecutive encoder frames.
         B, T, D = x.shape
         x = x.reshape(B, T // self.downsample_factor, D * self.downsample_factor)
 
-        audio_embeds = self.adapter(x)  # (1, 1, 3072)
+        audio_embeds = self.adapter(x)
 
         return audio_embeds
 
@@ -1415,9 +1467,11 @@ def load_model(
             f"Unknown backend '{backend}'. Must be one of {_VALID_BACKENDS}."
         )
 
-    # Import MLX custom ops for mlx backend
+    # Import backend custom ops before model construction.
     if backend == "mlx":
         import executorch.backends.mlx.custom_ops as _mlx_custom_ops  # noqa: F401
+    elif backend == "vulkan":
+        import executorch.backends.vulkan.custom_ops_lib as _vk_custom_ops  # noqa: F401
 
     from safetensors import safe_open
 
