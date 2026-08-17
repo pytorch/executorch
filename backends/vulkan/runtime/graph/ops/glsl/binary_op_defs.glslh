@@ -59,4 +59,31 @@ COMPUTE_VEC4_T power_of(COMPUTE_VEC4_T x, COMPUTE_VEC4_T y) {
 
 #endif // COMPUTE_VEC4_T
 
+#ifdef IS_REMAINDER_OP
+
+COMPUTE_T remainder_of(COMPUTE_T x, COMPUTE_T y) {
+  if (y == 1 || y == -1) {
+    return COMPUTE_T(0);
+  }
+  COMPUTE_T result = x - (x / y) * y;
+  if (result != 0 && ((result < 0) != (y < 0))) {
+    result += y;
+  }
+  return result;
+}
+
+#ifdef COMPUTE_VEC4_T
+
+COMPUTE_VEC4_T remainder_of(COMPUTE_VEC4_T x, COMPUTE_VEC4_T y) {
+  COMPUTE_VEC4_T result;
+  for (int i = 0; i < 4; i++) {
+    result[i] = remainder_of(x[i], y[i]);
+  }
+  return result;
+}
+
+#endif // COMPUTE_VEC4_T
+
+#endif // IS_REMAINDER_OP
+
 #endif // BINARY_OP_DEFS_GLSLH

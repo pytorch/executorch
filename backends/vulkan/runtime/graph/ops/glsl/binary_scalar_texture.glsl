@@ -34,6 +34,8 @@ $if IS_COMPARISON_OP:
   #define VEC4_OUT_T ${texel_load_type("uint8", STORAGE)}
 $else:
   #define VEC4_OUT_T VEC4_T
+$if IS_REMAINDER_OP:
+  #define IS_REMAINDER_OP
 
 #define op(X, Y) ${OPERATOR}
 

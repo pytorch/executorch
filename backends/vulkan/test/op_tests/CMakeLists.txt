@@ -109,6 +109,10 @@ if(TARGET vulkan_backend AND LIB_TORCH)
     )
   endif()
   vulkan_op_test(
+    vulkan_remainder_scalar_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/remainder_scalar_test.cpp test_utils
+  )
+  vulkan_op_test(
     vulkan_rope_test ${CMAKE_CURRENT_SOURCE_DIR}/rotary_embedding_test.cpp
     test_utils
   )
