@@ -18,6 +18,7 @@ from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
 from executorch.backends.nxp.backend.edge_helper import (
     try_get_tensor_constant_from_node,
 )
+from executorch.backends.nxp.ops_aliases import AddTensor, MulTensor, SubTensor
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import neutron_target_spec
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -31,7 +32,6 @@ from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
     lower_run_compare,
 )
-from executorch.backends.nxp.tests.ops_aliases import AddTensor, MulTensor, SubTensor
 
 
 @pytest.fixture(autouse=True)
