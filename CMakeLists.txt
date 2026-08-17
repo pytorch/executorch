@@ -193,17 +193,16 @@ if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
 endif()
 
 if(EXECUTORCH_BUILD_SHARED)
-  # Linux only, and said here rather than left to fail somewhere downstream. The
-  # shared build names libraries with an ELF soname, records $ORIGIN runtime
-  # paths, and uses GNU linker options to keep a registration-only library on a
-  # link line. None of that applies on Apple, which is served by the Swift
-  # package distribution, or on Windows, where the runtime carries no export
-  # annotations for a DLL. Enabling it elsewhere failed much later and less
-  # clearly, when packaging looked for a .so the build never emitted.
-  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Said here rather than left to fail somewhere downstream, where packaging
+  # looked for a library the build never emitted. Windows is still refused:
+  # there the runtime carries no export annotations, so a DLL would link against
+  # nothing, which is a missing capability rather than a different spelling of
+  # one.
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT APPLE)
     message(
-      FATAL_ERROR "EXECUTORCH_BUILD_SHARED is supported on Linux only, not "
-                  "${CMAKE_SYSTEM_NAME}."
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_SHARED is supported on Linux and macOS only, not "
+        "${CMAKE_SYSTEM_NAME}."
     )
   endif()
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -1212,8 +1211,17 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # RPATH for _portable_lib.so. It sits in
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-  # and the wheel's own lib/ directory is two.
-  set(_portable_lib_rpath "$ORIGIN/../../../torch/lib")
+  # and the wheel's own lib/ directory is two. Mach-O spells the loader relative
+  # token differently and takes a list rather than a colon joined string, so
+  # both differ here while the layout reasoning does not.
+  if(APPLE)
+    set(_portable_lib_origin "@loader_path")
+    set(_portable_lib_rpath_separator ";")
+  else()
+    set(_portable_lib_origin "$ORIGIN")
+    set(_portable_lib_rpath_separator ":")
+  endif()
+  set(_portable_lib_rpath "${_portable_lib_origin}/../../../torch/lib")
   # An editable install copies this extension into a package directory whose
   # subdirectories are symlinks to the checkout, and the loader resolves the
   # origin token against the real path, so the runtime sits two levels up and
@@ -1268,12 +1276,20 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_CUDA)
-    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/cuda")
+    string(
+      APPEND
+      _portable_lib_rpath
+      "${_portable_lib_rpath_separator}${_portable_lib_origin}/../../backends/cuda"
+    )
   endif()
 
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
-    string(APPEND _portable_lib_rpath ":$ORIGIN/../../backends/qualcomm")
+    string(
+      APPEND
+      _portable_lib_rpath
+      "${_portable_lib_rpath_separator}${_portable_lib_origin}/../../backends/qualcomm"
+    )
   endif()
 
   if(EXECUTORCH_BUILD_ENN)
