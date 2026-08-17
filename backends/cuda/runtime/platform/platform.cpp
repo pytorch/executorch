@@ -82,7 +82,7 @@ executorch::runtime::Result<void*> load_library(
   static std::once_flag symbols_promoted_flag;
   std::call_once(symbols_promoted_flag, []() {
     Dl_info info;
-    // Get info about a symbol we know exists in the Python extension
+    // Get info about a symbol we know exists in this backend library
     if (dladdr((void*)&load_library, &info) && info.dli_fname) {
       // Re-open with RTLD_GLOBAL | RTLD_NOLOAD to promote symbols
       void* handle =
