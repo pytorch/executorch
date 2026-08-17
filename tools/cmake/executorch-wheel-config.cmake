@@ -810,12 +810,29 @@ if(_C_LIBRARY)
       # compile
       # as C++17 and fail against headers that need C++20.
       INTERFACE_COMPILE_FEATURES cxx_std_20
-      # The same definition the runtime target carries. A custom-op
+      # The runtime's definitions. The thread pool one is appended below rather
+      # than listed here, A custom-op
       # build that links only this target still compiles against the
       # same headers and needs it too.
       INTERFACE_COMPILE_DEFINITIONS
       "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
   )
+  # because it depends on whether this wheel shipped that component. Without it
+  # a consumer compiles the serial inline copies of parallel_for while the
+  # shipped libraries carry the real ones, and the serial version wins wherever
+  # it was inlined, with no diagnostic. It does not arrive transitively because
+  # the runtime is attached here as a file path, not as the target.
+  set(_executorch_extension_needs_threadpool OFF)
+  if("ET_USE_THREADPOOL" IN_LIST EXECUTORCH_COMPILE_DEFINITIONS)
+    set(_executorch_extension_needs_threadpool ON)
+  endif()
+  if(_executorch_extension_needs_threadpool)
+    set_property(
+      TARGET executorch::_C
+      APPEND
+      PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
+    )
+  endif()
   # The extension links the runtime rather than containing it, so it no longer
   # satisfies the runtime symbols a custom-op library references. Put the
   # shipped runtime on this target's interface, which is where the definitions
