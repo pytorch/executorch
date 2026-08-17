@@ -277,9 +277,8 @@ def _mach_o_runtime_paths(binary) -> list:
     string, so they are read rather than split.
     """
     otool = _tool("otool")
-    assert otool is not None, "otool is required to read a Mach-O runtime search path"
     listing = subprocess.run(
-        [otool, "-l", str(binary)], capture_output=True, text=True, check=False
+        [otool, "-l", str(binary)], capture_output=True, text=True, check=True
     ).stdout
     entries = []
     lines = listing.splitlines()
@@ -334,6 +333,9 @@ def _tool(name: str) -> str:
     directly, so a tool installed into that environment is present on disk and
     invisible to a PATH search.
     """
+    # _tool returns the bare name when a PATH search fails, so it never returns None and an
+    # `is not None` assert on its result can never fire. Callers check the subprocess result
+    # instead, which is what actually surfaces a missing tool.
     found = shutil.which(name)
     if found:
         return found
@@ -376,7 +378,7 @@ def _export(work_dir: Path, mode: str) -> tuple:
         [sys.executable, str(script), str(model), mode],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert result.returncode == 0, (
         f"exporting the {mode} model failed, so the C++ side cannot be checked "
@@ -410,7 +412,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert configured.returncode == 0, (
         f"a consumer requesting {list(components)} could not configure against the "
@@ -420,7 +422,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert built.returncode == 0, (
         f"a consumer requesting {list(components)} compiled against the shipped "
@@ -466,7 +468,7 @@ def _run_consumer(
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
         env=environment,
     )
     assert result.returncode == 0, (
@@ -512,7 +514,7 @@ def test_runtime_alone_links_but_cannot_compute(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
         env=environment,
     )
     combined = result.stdout + result.stderr
@@ -592,7 +594,7 @@ def test_delegated_model_needs_the_delegate_component(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
         env=environment,
     )
     assert result.returncode != 0, (
@@ -680,7 +682,7 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
             [sys.executable, "-m", "pip", "install", "--quiet", "patchelf"],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         patchelf = _tool("patchelf")
     assert shutil.which("patchelf") or Path(patchelf).is_file(), (
@@ -709,23 +711,19 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
         # One entry per load command, so each unwanted one is deleted individually and the
         # fallback is added only when stripping emptied the list.
         install_name_tool = _tool("install_name_tool")
-        assert install_name_tool is not None, (
-            "install_name_tool is required to strip the wheel's absolute directory from the "
-            "relocated application, and without it this check passes for the wrong reason"
-        )
         for entry in entries:
             if entry in kept:
                 continue
             subprocess.run(
                 [install_name_tool, "-delete_rpath", entry, str(moved)],
                 capture_output=True,
-                check=False,
+                check=True,
             )
         if not kept:
             subprocess.run(
                 [install_name_tool, "-add_rpath", "@loader_path", str(moved)],
                 capture_output=True,
-                check=False,
+                check=True,
             )
     else:
         subprocess.run(
@@ -858,7 +856,7 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
             ],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         accepted = result.returncode == 0
         assert accepted == must_accept, (
@@ -915,7 +913,7 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert configured.returncode == 0, (
         "configuring an application that uses the profiler failed:\n"
@@ -925,7 +923,7 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert built.returncode == 0, (
         "an application that constructs the profiler failed to build against the installed wheel, so the "
@@ -995,7 +993,7 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
             [_tool("c++"), "-std=c++20", *includes, "-fsyntax-only", str(source)],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         if skipped:
             skipped_names.append(relative.as_posix())
@@ -1127,7 +1125,7 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
             ],
             capture_output=True,
             text=True,
-            check=False,
+            check=True,
         )
         if result.returncode != 0:
             missing = re.findall(r"undefined reference to `([^']+)'", result.stderr)
@@ -1193,7 +1191,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert configured.returncode == 0, (
         "the documented example does not configure against the installed package:\n"
@@ -1203,7 +1201,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=False,
+        check=True,
     )
     assert built.returncode == 0, (
         "the documented example does not build against the installed package, so a "
@@ -1318,7 +1316,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         ],
         [old_cmake, "--build", str(build_dir)],
     ):
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
         assert result.returncode == 0, (
             "a consumer on CMake older than 3.28 could not build against the wheel "
             f"through the documented variables:\n"
@@ -1445,7 +1443,7 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
         ],
         [_tool("cmake"), "--build", str(build_dir)],
     ):
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
         assert result.returncode == 0, (
             "an application linking only ${EXECUTORCH_LIBRARIES} could not be built:\n"
             f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
