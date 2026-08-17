@@ -85,6 +85,42 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
+# Headers swept in by a directory copy that a consumer of the wheel cannot use, because each needs
+# something the wheel does not carry. Publishing one is worse than leaving it out: the failure arrives in
+# someone else's project rather than here.
+#
+# Matched on the path ending, not the bare file name. Two different headers here share the name
+# tensor_util.h, one a widely included utility and one a test helper, so a name match either kept the test
+# helper or removed the utility everything needs.
+#
+# Only headers that nothing else the wheel installs includes belong here. A header other shipped headers
+# pull in must keep shipping even when it cannot be compiled on its own.
+_UNSHIPPABLE_HEADERS = frozenset(
+    {
+        # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
+        # headers. Those are a third-party library this wheel does not vendor.
+        "runtime/executor/tensor_parser.h",
+        # A test helper, needing a test framework the wheel does not ship.
+        "runtime/core/testing_util/error_matchers.h",
+        # Reads processor details through cpuinfo, whose headers the wheel does not publish.
+        "extension/threadpool/cpuinfo_utils.h",
+        # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
+        # publish either. The component it belongs to is a link dependency the runtime carries, not
+        # something a consumer includes.
+        "extension/threadpool/threadpool.h",
+        # Declares CPUCachingAllocator, whose implementation is in a component no shipped library links,
+        # so including it compiles and then fails at link time with an undefined reference.
+        "extension/memory_allocator/cpu_caching_malloc_allocator.h",
+        # Declares BundledModule, which is built only for the Python bindings, so its implementation is in
+        # the Python extension. A C++ application cannot link that, and building the source instead needs
+        # bundled-program headers the wheel does not publish.
+        "extension/module/bundled_module.h",
+        # Declares FileDescriptorDataLoader, whose implementation is in no CMake target at all, so no
+        # shipped library defines it. Including it compiles and then fails at link time.
+        "extension/data_loader/file_descriptor_data_loader.h",
+    }
+)
+
 try:
     from tools.cmake.cmake_cache import CMakeCache
 except ImportError:
@@ -942,10 +978,21 @@ class CustomBuildPy(build_py):
                     "tools/cmake/executorch-wheel-config.cmake",
                     "share/cmake/executorch-config.cmake",
                 ),
+                # And again where CMake looks when a consumer points CMAKE_PREFIX_PATH at the
+                # package root, which is the ordinary way to use an installed package. CMake
+                # searches <prefix>/lib/cmake/<name>, not <prefix>/share/cmake directly, so
+                # without this copy the root is not a usable prefix and a consumer needs a
+                # path that names this project's layout. The first location stays because the
+                # existing contract uses it.
+                (
+                    "tools/cmake/executorch-wheel-config.cmake",
+                    "lib/cmake/executorch/executorch-config.cmake",
+                ),
             ]
-            # Copy all the necessary headers into include/executorch/ so that they can
-            # be found in the pip package. This is the subset of headers that are
-            # essential for building custom ops extensions.
+            # The headers the package installs. Two audiences now: a custom-operator
+            # build, which needs the kernel and tensor helpers, and a C++ application
+            # using the shipped libraries as an SDK, which needs the documented entry
+            # points as well.
             # TODO: Use cmake to gather the headers instead of hard-coding them here.
             # For example:
             # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
@@ -958,9 +1005,40 @@ class CustomBuildPy(build_py):
                 "extension/kernel_util/",
                 "extension/tensor/",
                 "extension/threadpool/",
+                # Module is how the documentation tells a C++ application to load and
+                # run a program. Without it the package ships the libraries to do that
+                # and no way to call them, which the C++ consumer check catches.
+                "extension/module/",
+                # Module's constructors take unique_ptr to the runtime's allocator
+                # and loader bases, whose headers already ship. These supply the
+                # concrete subclasses a caller has to construct to pass one, such as
+                # MallocMemoryAllocator and FileDataLoader.
+                "extension/memory_allocator/",
+                "extension/data_loader/",
+                # The MergedDataMap and FlatTensorDataMap entry points, whose
+                # implementations ship inside libexecutorch.so. The .ptd file header
+                # is included too, so a caller writing or reading a .ptd by hand has
+                # its declarations.
+                "extension/named_data_map/merged_data_map.h",
+                "extension/flat_tensor/flat_tensor_data_map.h",
+                "extension/flat_tensor/serialize/flat_tensor_header.h",
+                # ETDump, whose library the package ships as a component. A profiler
+                # that cannot be included is a library nobody can call.
+                #
+                # The whole directory except the filter, which includes a regular
+                # expression library the wheel does not carry and whose implementation
+                # is not in the shipped library either. Publishing a header that cannot
+                # be included is worse than not publishing it, because the failure
+                # arrives at compile time in someone else's project.
+                "devtools/etdump/etdump_flatcc.h",
+                "devtools/etdump/emitter.h",
+                "devtools/etdump/utils.h",
+                "devtools/etdump/data_sinks/",
             ]:
-                src_list = Path(include_dir).rglob("*.h")
-                for src in src_list:
+                # A directory entry publishes everything under it, and a file entry publishes
+                # just that file. Some directories hold headers a consumer cannot compile
+                # against, so those are named individually rather than swept in.
+                for src in _headers_to_install(Path(include_dir)):
                     src_to_dst.append(
                         (str(src), os.path.join("include/executorch", str(src)))
                     )
@@ -985,6 +1063,93 @@ class CustomBuildPy(build_py):
                     dst_file = os.path.join(dst_dir, rel_path)
                     self.mkpath(os.path.dirname(dst_file))
                     self.copy_file(src_file, dst_file, preserve_mode=False)
+
+        if not _is_minimal_build():
+            self._write_cmake_version_file(dst_root)
+
+    def _write_cmake_version_file(self, dst_root: str) -> None:
+        """Write the CMake package version file, so `find_package(executorch 1.2)` works.
+
+        Generated rather than copied, because the version is only known here:
+        version.txt gives the base and BUILD_VERSION overrides it for a nightly. A
+        checked-in file would go stale the first time either changed.
+        """
+        template = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "tools",
+            "cmake",
+            "executorch-wheel-config-version.cmake.in",
+        )
+        with open(template) as handle:
+            contents = handle.read()
+        # Only the numeric release part. A Python version can carry a local segment
+        # such as "1.5.0+cpu" or a development suffix, and `find_package(executorch
+        # 1.5.0+cpu)` is rejected by CMake as an invalid argument, so a consumer could
+        # not name the version this file reports. Strip to the dotted numbers CMake
+        # can compare, which is what a consumer asks for in practice.
+        # Two variables with different jobs. CMake compares PACKAGE_VERSION, so it has to be the
+        # numeric release and nothing else. EXECUTORCH_BUILD_VERSION is documented as the full
+        # version, which is what a consumer pinning an exact build compares against, so filling it
+        # from the numeric part would make that comparison pass against a different wheel.
+        build_version = Version.string()
+        cmake_version = re.match(r"\d+(?:\.\d+)*", build_version)
+        if not cmake_version:
+            # A version file claiming 0 would satisfy every version request, which is worse than
+            # not building at all.
+            raise RuntimeError(
+                f"cannot derive a numeric CMake version from {build_version!r}; the version file "
+                "would claim 0 and satisfy every version request"
+            )
+        contents = contents.replace("@EXECUTORCH_VERSION@", cmake_version.group(0))
+        contents = contents.replace("@EXECUTORCH_BUILD_VERSION@", build_version)
+        # CMake only reads a version file that sits beside the configuration file it found, so this
+        # goes to both locations the configuration is installed to. Writing it to one would leave a
+        # version request silently unchecked when the other location was used.
+        for destination in (
+            os.path.join(dst_root, "share", "cmake", "executorch-config-version.cmake"),
+            os.path.join(
+                dst_root,
+                "lib",
+                "cmake",
+                "executorch",
+                "executorch-config-version.cmake",
+            ),
+        ):
+            self.mkpath(os.path.dirname(destination))
+            with open(destination, "w") as handle:
+                handle.write(contents)
+
+
+def _headers_to_install(entry: Path):
+    """The headers a copy list entry publishes, skipping any a consumer could not or should not use.
+
+    A directory entry publishes everything under it, and a file entry publishes just that file. A header a
+    consumer cannot compile is worse than an absent one, because the failure lands in their project rather
+    than here, and the directory entries sweep in a few of those.
+
+    Test directories are skipped as a whole rather than by name. They hold mocks and stubs for this
+    project's own tests, nothing the wheel installs includes them, and a consumer linking a mock allocator
+    or a stub platform would get behaviour no release intends. Matched on any part starting with "test", so
+    a directory named testing_util counts too, which a plain equality check missed.
+    """
+    candidates = entry.rglob("*.h") if entry.is_dir() else [entry]
+    return [
+        src
+        for src in candidates
+        if not _is_unshippable_header(src)
+        and not any(part.startswith("test") for part in src.parts[:-1])
+    ]
+
+
+def _is_unshippable_header(src: Path) -> bool:
+    """Whether a header is on the list of ones a consumer of the wheel could not compile.
+
+    Compared on the path ending rather than the file name. Two headers here are both called
+    tensor_util.h, one a utility that many shipped headers include and one a test helper, so matching the
+    bare name either kept the helper or removed the utility everything needs.
+    """
+    posix = src.as_posix()
+    return any(posix.endswith(entry) for entry in _UNSHIPPABLE_HEADERS)
 
 
 class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
