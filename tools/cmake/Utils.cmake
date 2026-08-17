@@ -396,9 +396,26 @@ function(executorch_target_shipped_runtime_path target_name)
   else()
     set(_origin "$ORIGIN")
   endif()
+  # Appended rather than assigned, because a caller may have set INSTALL_RPATH
+  # to reach its own dependencies and replacing it silently drops them from the
+  # installed library. The origin entry goes first, since the shipped libraries
+  # sit beside this target, and anything the caller asked for follows as a
+  # fallback.
+  get_target_property(
+    _executorch_existing_install_rpath ${target_name} INSTALL_RPATH
+  )
+  if(NOT _executorch_existing_install_rpath)
+    set(_executorch_existing_install_rpath "${CMAKE_INSTALL_RPATH}")
+  endif()
+  set(_executorch_install_rpath "${_origin}")
+  foreach(_entry IN LISTS _executorch_existing_install_rpath)
+    if(NOT _entry STREQUAL "${_origin}")
+      list(APPEND _executorch_install_rpath "${_entry}")
+    endif()
+  endforeach()
   set_target_properties(
-    ${target_name} PROPERTIES BUILD_RPATH "${_origin}" INSTALL_RPATH
-                                                       "${_origin}"
+    ${target_name} PROPERTIES BUILD_RPATH "${_origin}"
+                              INSTALL_RPATH "${_executorch_install_rpath}"
   )
 endfunction()
 

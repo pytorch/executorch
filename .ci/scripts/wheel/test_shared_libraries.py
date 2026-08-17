@@ -681,6 +681,15 @@ _EXPECTED_CUDA_PACKAGES = {
 # stopped matching when the libraries were renamed while the others kept working.
 _OWNED_COMPONENTS = (
     ("backend registry", _REGISTRY_SYMBOLS, _library_file_name("libexecutorch"), True),
+    # The platform layer, which two shipped libraries each carried their own copy of, so a
+    # register_pal call through one did not reach the other. Listed here so the ownership check
+    # that already exists catches a regression rather than a later reader discovering it.
+    (
+        "platform layer",
+        ("et_pal_emit_log_message",),
+        _library_file_name("libexecutorch"),
+        True,
+    ),
     (
         "operator registry",
         _KERNEL_REGISTRY_SYMBOLS,
