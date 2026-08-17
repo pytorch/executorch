@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,8 @@ class DefaultModelLoaderAdapter:
     .. note::
         This adapter is designed for **text-only causal LM** models.
         For multimodal models (vision/audio encoders), use a specialized adapter
-        (e.g., ``MultiModalModelLoaderAdapter``) that handles separate encoder/decoder
+        (e.g., ``MLLMLoaderAdapter``) that handles separate encoder/decoder
         loading via ``AutoModel`` or ``AutoModelForSpeechSeq2Seq``.
-
-    .. note::
-        Calibration data is **not** produced here -- see
-        ``CalibrationDataAdapter``.
     """
 
     #: Batch size and sequence length of the generated example inputs. HTP has no
@@ -48,6 +44,11 @@ class DefaultModelLoaderAdapter:
     ) -> Any:
         """Load a causal LM model from HuggingFace hub or local path.
 
+        The model-preparation strategy consumes every loader through the same
+        component/graph map shape. A plain HuggingFace causal LM has no split
+        decoder graphs or extra components, so this adapter wraps the loaded
+        module as the single text-decoder ``GRAPH_FORWARD`` graph.
+
         Args:
             model_name: HuggingFace model ID or local path.
             extra_options: Additional options. Supported keys:
@@ -56,7 +57,9 @@ class DefaultModelLoaderAdapter:
                 - ``attn_implementation``: attention implementation to use.
 
         Returns:
-            The loaded nn.Module in eval mode.
+            ``{ARTIFACT_TEXT_DECODER: {GRAPH_FORWARD: module}}``. The
+            default HuggingFace path is the single-component, single-graph case
+            of the registry loaders' component/graph contract.
         """
         import torch
         from transformers import AutoModelForCausalLM
@@ -79,7 +82,14 @@ class DefaultModelLoaderAdapter:
         model.eval()
 
         logger.info("Model loaded successfully")
-        return model
+        from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+            ARTIFACT_TEXT_DECODER,
+        )
+        from executorch.backends.qualcomm.genai_pipeline.graph_names import (
+            GRAPH_FORWARD,
+        )
+
+        return {ARTIFACT_TEXT_DECODER: {GRAPH_FORWARD: model}}
 
     def load_tokenizer(
         self,
@@ -104,6 +114,28 @@ class DefaultModelLoaderAdapter:
 
         logger.info("Tokenizer loaded successfully")
         return tokenizer
+
+    def apply_module_transforms(
+        self,
+        module: Any,
+        module_transforms: Optional[Sequence[Callable[[Any], Any]]] = None,
+    ) -> Any:
+        """Apply transforms to module.
+
+        Args:
+            module: The module to be transformed.
+            module_transforms: Transforms to apply in order.
+
+        Returns:
+            The transformed module.
+        """
+        if not module_transforms:
+            return module
+
+        logger.debug("Applying %d module transforms", len(module_transforms))
+        for transform in module_transforms:
+            module = transform(module)
+        return module
 
     def get_example_inputs(
         self,
@@ -149,6 +181,28 @@ class DefaultModelLoaderAdapter:
         )
         # int64 token ids: the embedding lookup indexes with them.
         return (torch.zeros((batch_size, ar_len), dtype=torch.int64),)
+
+    def get_metadata(self, module: Any) -> Dict[str, Any]:
+        """Read constant metadata from a graph module when it exposes it."""
+        model_provided = getattr(module, "get_metadata", None)
+        if callable(model_provided):
+            logger.debug("Using metadata provided by the model")
+            return model_provided()
+        return {}
+
+    def get_inference(
+        self,
+        meta: Any,
+        example_inputs: Any,
+        extra_options: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """No inference helper is currently provided by this adapter.
+
+        The HuggingFace default adapter does not currently use a model-specific
+        inference helper during the workflow, so this method always returns
+        ``None``.
+        """
+        return None
 
     def export_tokenizer(
         self,

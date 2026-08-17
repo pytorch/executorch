@@ -7,8 +7,12 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+)
+from executorch.backends.qualcomm.genai_pipeline.graph_names import GRAPH_FORWARD
 from executorch.backends.qualcomm.genai_pipeline.strategies.model_preparation.default_model_loader_adapter import (
     DefaultModelLoaderAdapter,
 )
@@ -18,6 +22,27 @@ TEST_SPECIAL_TOKENS_MAP = "special_tokens_map.json"
 TEST_TOKENIZER_JSON = "tokenizer.json"
 TEST_TOKENIZER_MODEL = "tokenizer.model"
 TEST_ADDED_TOKENS = "added_tokens.json"
+
+
+class TestLoadModel(unittest.TestCase):
+    def setUp(self):
+        self.adapter = DefaultModelLoaderAdapter()
+
+    def test_returns_component_graph_map(self):
+        model = MagicMock()
+        model.eval.return_value = None
+
+        with patch(
+            "transformers.AutoModelForCausalLM.from_pretrained",
+            return_value=model,
+        ):
+            result = self.adapter.load_model("test-model")
+
+        self.assertEqual(
+            result,
+            {ARTIFACT_TEXT_DECODER: {GRAPH_FORWARD: model}},
+        )
+        model.eval.assert_called_once_with()
 
 
 class TestExportTokenizer(unittest.TestCase):

@@ -6,7 +6,13 @@
 
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import call, MagicMock, patch
+
+from executorch.backends.qualcomm.genai_pipeline.artifact_keys import (
+    ARTIFACT_TEXT_DECODER,
+    ARTIFACT_TOK_EMBEDDING,
+    ARTIFACT_VISION_ENCODER,
+)
 
 from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_input_config import (
     ModelPreparationInputConfig,
@@ -14,11 +20,12 @@ from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_input
 from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_output_config import (
     ModelPreparationOutputConfig,
 )
-from executorch.backends.qualcomm.genai_pipeline.datasets.default_calibration_data_adapter import (
-    DEFAULT_NUM_SAMPLES,
-    DEFAULT_SEQ_LENGTH,
-)
 from executorch.backends.qualcomm.genai_pipeline.exceptions import StageError
+from executorch.backends.qualcomm.genai_pipeline.graph_names import (
+    DECODER_GRAPH_NAMES,
+    GRAPH_FORWARD,
+    TOK_EMBEDDING_GRAPH_NAMES,
+)
 from executorch.backends.qualcomm.genai_pipeline.strategies.model_preparation.executorch_model_preparation_strategy import (
     ExecuTorchModelPreparationStrategy,
 )
@@ -29,34 +36,67 @@ from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
     make_test_context,
 )
 
+DEFAULT_GRAPH_NAME = GRAPH_FORWARD
+DECODE_GRAPH_NAME = DECODER_GRAPH_NAMES[0]
+TOK_EMBEDDING_GRAPH_NAME = TOK_EMBEDDING_GRAPH_NAMES[0]
+
+
+def _make_modules():
+    return {
+        ARTIFACT_TEXT_DECODER: {
+            DEFAULT_GRAPH_NAME: MagicMock(name=DEFAULT_GRAPH_NAME),
+            DECODE_GRAPH_NAME: MagicMock(name=DECODE_GRAPH_NAME),
+        },
+        ARTIFACT_TOK_EMBEDDING: {
+            DEFAULT_GRAPH_NAME: MagicMock(name=DEFAULT_GRAPH_NAME),
+            TOK_EMBEDDING_GRAPH_NAME: MagicMock(name=TOK_EMBEDDING_GRAPH_NAME),
+        },
+        ARTIFACT_VISION_ENCODER: {
+            DEFAULT_GRAPH_NAME: MagicMock(name=DEFAULT_GRAPH_NAME),
+        },
+    }
+
 
 def _make_mock_adapter():
     """Create a mock model loader adapter with sensible defaults."""
     adapter = MagicMock()
-    adapter.load_model.return_value = MagicMock(name="model_module")
+    modules = _make_modules()
     tokenizer = MagicMock(name="tokenizer")
     # Default to "no chat template" so tests opt in explicitly.
     tokenizer.chat_template = None
+
+    text_decoder_metadata = [
+        (
+            modules[ARTIFACT_TEXT_DECODER][DEFAULT_GRAPH_NAME],
+            {"get_max_context_len": 1024},
+        ),
+        (
+            modules[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME],
+            {"get_max_context_len": 1024},
+        ),
+    ]
+
+    def _get_metadata(model):
+        for graph_module, metadata in text_decoder_metadata:
+            if model is graph_module:
+                return metadata
+        return {}
+
+    adapter.load_model.return_value = modules
+    adapter.get_example_inputs.side_effect = lambda model: (model,)
+    adapter.get_metadata.side_effect = _get_metadata
+    adapter.apply_module_transforms.side_effect = (
+        lambda module, module_transforms: module
+    )
     adapter.load_tokenizer.return_value = tokenizer
-    adapter.get_example_inputs.return_value = (MagicMock(name="example_input"),)
+    adapter.get_inference.return_value = MagicMock(name="inference")
     adapter.export_tokenizer.return_value = Path("/tmp/tokenizer/tokenizer.json")
     return adapter
 
 
-def _make_mock_calibration_adapter():
-    """Create a mock calibration data adapter with sensible defaults."""
-    adapter = MagicMock()
-    adapter.generate_calibration_data.return_value = [(MagicMock(),)]
-    return adapter
-
-
-def _make_strategy(loader=None, calibration=None):
-    """Build the strategy with both adapters mocked by default."""
+def _make_strategy(loader=None):
     return ExecuTorchModelPreparationStrategy(
-        model_loader_adapter=loader if loader is not None else _make_mock_adapter(),
-        calibration_data_adapter=(
-            calibration if calibration is not None else _make_mock_calibration_adapter()
-        ),
+        model_loader_adapter=loader if loader is not None else _make_mock_adapter()
     )
 
 
@@ -77,166 +117,249 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
         self.assertIsInstance(_make_strategy(), ModelPreparationStrategy)
 
     def test_default_adapters_created_when_none_provided(self):
-        """Both adapters fall back to their default implementations."""
+        """Adapters fall back to their default implementations."""
         with patch(
             "executorch.backends.qualcomm.genai_pipeline.strategies.model_preparation."
             "default_model_loader_adapter.DefaultModelLoaderAdapter"
-        ) as mock_loader_cls, patch(
-            "executorch.backends.qualcomm.genai_pipeline.datasets."
-            "default_calibration_data_adapter.DefaultCalibrationDataAdapter"
-        ) as mock_calib_cls:
+        ) as mock_loader_cls:
             strategy = ExecuTorchModelPreparationStrategy()
 
             mock_loader_cls.assert_called_once()
-            mock_calib_cls.assert_called_once()
             self.assertIs(strategy.adapter, mock_loader_cls.return_value)
-            self.assertIs(
-                strategy.calibration_data_adapter, mock_calib_cls.return_value
-            )
 
-    def test_custom_adapters_injected(self):
-        """Both adapters are used when provided via the constructor."""
+    def test_custom_adapter_injected(self):
         loader = _make_mock_adapter()
-        calibration = _make_mock_calibration_adapter()
-        strategy = _make_strategy(loader, calibration)
+        strategy = _make_strategy(loader)
         self.assertIs(strategy.adapter, loader)
-        self.assertIs(strategy.calibration_data_adapter, calibration)
 
     def test_invoke_happy_path(self):
         """Full model preparation pipeline runs successfully end-to-end."""
         loader = _make_mock_adapter()
-        calibration = _make_mock_calibration_adapter()
-        strategy = _make_strategy(loader, calibration)
+        strategy = _make_strategy(loader)
+        modules = loader.load_model.return_value
+        text_decoder_forward = modules[ARTIFACT_TEXT_DECODER][DEFAULT_GRAPH_NAME]
+        text_decoder_kv_forward = modules[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME]
+        tok_embedding_forward = modules[ARTIFACT_TOK_EMBEDDING][DEFAULT_GRAPH_NAME]
+        tok_embedding_kv_forward = modules[ARTIFACT_TOK_EMBEDDING][
+            TOK_EMBEDDING_GRAPH_NAME
+        ]
+        vision_encoder_forward = modules[ARTIFACT_VISION_ENCODER][DEFAULT_GRAPH_NAME]
 
         result = strategy.invoke(make_test_context(), _make_valid_input_config())
 
         self.assertIsInstance(result, ModelPreparationOutputConfig)
-        self.assertIs(result.model_module, loader.load_model.return_value)
+        self.assertEqual(
+            result.model_module,
+            {
+                ARTIFACT_TEXT_DECODER: text_decoder_forward,
+                ARTIFACT_TOK_EMBEDDING: tok_embedding_forward,
+                ARTIFACT_VISION_ENCODER: vision_encoder_forward,
+            },
+        )
         self.assertIs(result.tokenizer, loader.load_tokenizer.return_value)
         self.assertEqual(
-            result.calibration_data,
-            calibration.generate_calibration_data.return_value,
+            result.example_inputs,
+            {
+                ARTIFACT_TEXT_DECODER: {
+                    DEFAULT_GRAPH_NAME: (text_decoder_forward,),
+                    DECODE_GRAPH_NAME: (text_decoder_kv_forward,),
+                },
+                ARTIFACT_TOK_EMBEDDING: {
+                    DEFAULT_GRAPH_NAME: (tok_embedding_forward,),
+                    TOK_EMBEDDING_GRAPH_NAME: (tok_embedding_kv_forward,),
+                },
+                ARTIFACT_VISION_ENCODER: {
+                    DEFAULT_GRAPH_NAME: (vision_encoder_forward,),
+                },
+            },
         )
+        self.assertEqual(
+            result.meta,
+            {
+                ARTIFACT_TEXT_DECODER: {
+                    DEFAULT_GRAPH_NAME: {"get_max_context_len": 1024},
+                    DECODE_GRAPH_NAME: {"get_max_context_len": 1024},
+                }
+            },
+        )
+        self.assertIs(result.inference, loader.get_inference.return_value)
 
-    def test_invoke_calls_loader_in_correct_order(self):
-        """The loader is driven in order: load_model → load_tokenizer → example inputs."""
+    def test_invoke_builds_example_inputs_for_each_component_graph(self):
         loader = _make_mock_adapter()
         strategy = _make_strategy(loader)
+        modules = loader.load_model.return_value
+        expected_modules = [
+            modules[ARTIFACT_TEXT_DECODER][DEFAULT_GRAPH_NAME],
+            modules[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME],
+            modules[ARTIFACT_TOK_EMBEDDING][DEFAULT_GRAPH_NAME],
+            modules[ARTIFACT_TOK_EMBEDDING][TOK_EMBEDDING_GRAPH_NAME],
+            modules[ARTIFACT_VISION_ENCODER][DEFAULT_GRAPH_NAME],
+        ]
 
         strategy.invoke(make_test_context(), _make_valid_input_config())
 
-        self.assertEqual(
-            [c[0] for c in loader.method_calls],
-            ["load_model", "load_tokenizer", "get_example_inputs"],
+        loader.get_example_inputs.assert_has_calls(
+            [call(module) for module in expected_modules],
+            any_order=False,
         )
 
-    def test_invoke_example_inputs_derived_from_the_loaded_model(self):
-        """``example_inputs`` come from the model, not from the calibration data.
-
-        The exported graph's positional signature (zero-initialized KV caches,
-        fixed AR length) is a property of the model; the calibration dataset is
-        in fact derived *from* it, so the dependency must not be inverted.
-        """
+    def test_invoke_builds_metadata_for_each_component_graph(self):
         loader = _make_mock_adapter()
-        calibration = _make_mock_calibration_adapter()
-        strategy = _make_strategy(loader, calibration)
+        strategy = _make_strategy(loader)
+        modules = loader.load_model.return_value
+        expected_modules = [
+            modules[ARTIFACT_TEXT_DECODER][DEFAULT_GRAPH_NAME],
+            modules[ARTIFACT_TEXT_DECODER][DECODE_GRAPH_NAME],
+            modules[ARTIFACT_TOK_EMBEDDING][DEFAULT_GRAPH_NAME],
+            modules[ARTIFACT_TOK_EMBEDDING][TOK_EMBEDDING_GRAPH_NAME],
+            modules[ARTIFACT_VISION_ENCODER][DEFAULT_GRAPH_NAME],
+        ]
 
         result = strategy.invoke(make_test_context(), _make_valid_input_config())
 
-        loader.get_example_inputs.assert_called_once_with(
-            model=loader.load_model.return_value,
-            extra_options=None,
+        loader.get_metadata.assert_has_calls(
+            [call(module) for module in expected_modules],
+            any_order=False,
         )
-        self.assertIs(result.example_inputs, loader.get_example_inputs.return_value)
+        self.assertNotIn(ARTIFACT_VISION_ENCODER, result.meta)
 
-    def test_invoke_example_input_options_forwarded(self):
-        """example_input_options from extra_options reach get_example_inputs."""
+    def test_invoke_selects_first_graph_module_before_module_transforms(self):
         loader = _make_mock_adapter()
         strategy = _make_strategy(loader)
-        example_opts = {"ar_len": 128}
-        input_config = _make_valid_input_config(
-            extra_options={"example_input_options": example_opts}
-        )
-
-        strategy.invoke(make_test_context(), input_config)
-
-        loader.get_example_inputs.assert_called_once_with(
-            model=loader.load_model.return_value,
-            extra_options=example_opts,
-        )
-
-    def test_invoke_generates_calibration_data_from_dataset_adapter(self):
-        """Calibration data comes from the dataset adapter, using the loaded tokenizer."""
-        loader = _make_mock_adapter()
-        calibration = _make_mock_calibration_adapter()
-        strategy = _make_strategy(loader, calibration)
-
-        strategy.invoke(make_test_context(), _make_valid_input_config())
-
-        calibration.generate_calibration_data.assert_called_once_with(
-            tokenizer=loader.load_tokenizer.return_value,
-            num_samples=DEFAULT_NUM_SAMPLES,
-            seq_length=DEFAULT_SEQ_LENGTH,
-            extra_options=None,
-        )
-
-    def test_invoke_passes_model_name_to_load_model(self):
-        """load_model receives model_name from input config."""
-        loader = _make_mock_adapter()
-        strategy = _make_strategy(loader)
-
-        strategy.invoke(
-            make_test_context(), _make_valid_input_config(model_name="llama3_2-1b")
-        )
-
-        loader.load_model.assert_called_once_with(
-            model_name="llama3_2-1b",
-            extra_options=None,
-        )
-
-    def test_invoke_passes_model_name_to_load_tokenizer(self):
-        """load_tokenizer receives model_name from input config."""
-        loader = _make_mock_adapter()
-        strategy = _make_strategy(loader)
-
-        strategy.invoke(
-            make_test_context(), _make_valid_input_config(model_name="llama3_2-1b")
-        )
-
-        loader.load_tokenizer.assert_called_once_with(
-            model_name="llama3_2-1b",
-            extra_options=None,
-        )
-
-    def test_invoke_custom_calibration_params_from_extra_options(self):
-        """Calibration params from extra_options override the defaults."""
-        calibration = _make_mock_calibration_adapter()
-        strategy = _make_strategy(calibration=calibration)
-        calibration_options = {"dataset": "wikitext"}
+        text_transform = MagicMock(name="text_transform")
         input_config = _make_valid_input_config(
             extra_options={
-                "num_calibration_samples": 64,
-                "calibration_seq_length": 256,
-                "calibration_options": calibration_options,
+                "model_options": {
+                    "module_transforms": {ARTIFACT_TEXT_DECODER: [text_transform]}
+                }
             }
         )
 
-        strategy.invoke(make_test_context(), input_config)
+        result = strategy.invoke(make_test_context(), input_config)
 
-        _, kwargs = calibration.generate_calibration_data.call_args
-        self.assertEqual(kwargs["num_samples"], 64)
-        self.assertEqual(kwargs["seq_length"], 256)
-        self.assertEqual(kwargs["extra_options"], calibration_options)
+        loader.apply_module_transforms.assert_has_calls(
+            [
+                call(
+                    loader.load_model.return_value[ARTIFACT_TEXT_DECODER][
+                        DEFAULT_GRAPH_NAME
+                    ],
+                    module_transforms=[text_transform],
+                ),
+                call(
+                    loader.load_model.return_value[ARTIFACT_TOK_EMBEDDING][
+                        DEFAULT_GRAPH_NAME
+                    ],
+                    module_transforms=[],
+                ),
+                call(
+                    loader.load_model.return_value[ARTIFACT_VISION_ENCODER][
+                        DEFAULT_GRAPH_NAME
+                    ],
+                    module_transforms=[],
+                ),
+            ],
+            any_order=False,
+        )
+        self.assertIs(
+            result.model_module[ARTIFACT_TEXT_DECODER],
+            loader.load_model.return_value[ARTIFACT_TEXT_DECODER][DEFAULT_GRAPH_NAME],
+        )
+        self.assertIs(
+            result.model_module[ARTIFACT_TOK_EMBEDDING],
+            loader.load_model.return_value[ARTIFACT_TOK_EMBEDDING][DEFAULT_GRAPH_NAME],
+        )
 
-    def test_invoke_no_tokenizer_export_by_default(self):
-        """export_tokenizer is NOT called when export_tokenizer option is absent."""
+    def test_get_component_module_does_not_filter_by_deploy_graph_name(self):
+        strategy = _make_strategy()
+        text_decoder_kv_forward = MagicMock(name="text_decoder_kv_forward")
+        tok_embedding_kv_forward = MagicMock(name="tok_embedding_kv_forward")
+
+        result = strategy._get_component_module(
+            {
+                ARTIFACT_TEXT_DECODER: {DECODE_GRAPH_NAME: text_decoder_kv_forward},
+                ARTIFACT_TOK_EMBEDDING: {
+                    TOK_EMBEDDING_GRAPH_NAME: tok_embedding_kv_forward
+                },
+                ARTIFACT_VISION_ENCODER: {},
+            }
+        )
+
+        self.assertEqual(
+            result,
+            {
+                ARTIFACT_TEXT_DECODER: text_decoder_kv_forward,
+                ARTIFACT_TOK_EMBEDDING: tok_embedding_kv_forward,
+            },
+        )
+
+    def test_get_component_module_does_not_mutate_graph_modules(self):
+        strategy = _make_strategy()
+        text_decoder_forward = MagicMock(name="text_decoder_forward")
+        text_decoder_kv_forward = MagicMock(name="text_decoder_kv_forward")
+        modules = {
+            ARTIFACT_TEXT_DECODER: {
+                DEFAULT_GRAPH_NAME: text_decoder_forward,
+                DECODE_GRAPH_NAME: text_decoder_kv_forward,
+            }
+        }
+
+        result = strategy._get_component_module(modules)
+
+        self.assertEqual(result, {ARTIFACT_TEXT_DECODER: text_decoder_forward})
+        self.assertEqual(
+            modules,
+            {
+                ARTIFACT_TEXT_DECODER: {
+                    DEFAULT_GRAPH_NAME: text_decoder_forward,
+                    DECODE_GRAPH_NAME: text_decoder_kv_forward,
+                }
+            },
+        )
+
+    def test_invoke_passes_tokenizer_options_to_load_tokenizer(self):
         loader = _make_mock_adapter()
         strategy = _make_strategy(loader)
+        tokenizer_options = {"use_fast": False}
 
-        result = strategy.invoke(make_test_context(), _make_valid_input_config())
+        strategy.invoke(
+            make_test_context(),
+            _make_valid_input_config(
+                extra_options={"tokenizer_options": tokenizer_options}
+            ),
+        )
 
-        loader.export_tokenizer.assert_not_called()
-        self.assertIsNone(result.runtime_tokenizer_path)
+        loader.load_tokenizer.assert_called_once_with(
+            model_name="test_model",
+            extra_options=tokenizer_options,
+        )
+
+    def test_invoke_builds_inference_from_meta_and_example_inputs(self):
+        loader = _make_mock_adapter()
+        strategy = _make_strategy(loader)
+        extra = {"embedding_quantize": "4a"}
+
+        result = strategy.invoke(
+            make_test_context(), _make_valid_input_config(extra_options=extra)
+        )
+
+        loader.get_inference.assert_called_once_with(
+            result.meta,
+            result.example_inputs,
+            extra_options=extra,
+        )
+
+    def test_invoke_rejects_unkeyed_module_transforms(self):
+        strategy = _make_strategy()
+        input_config = _make_valid_input_config(
+            extra_options={"model_options": {"module_transforms": []}}
+        )
+
+        with self.assertRaises(StageError) as cm:
+            strategy.invoke(make_test_context(), input_config)
+
+        self.assertEqual(cm.exception.stage_name, "model_preparation")
+        self.assertIsInstance(cm.exception.original_exception, ValueError)
+        self.assertIn("module_transforms", str(cm.exception.original_exception))
 
     def test_invoke_exports_tokenizer_when_requested(self):
         """export_tokenizer is called when export_tokenizer=True in extra_options."""
@@ -259,33 +382,8 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
             result.runtime_tokenizer_path, Path("/tmp/tokenizer/tokenizer.json")
         )
 
-    def test_invoke_extracts_chat_template_from_tokenizer(self):
-        """A chat template on the tokenizer is carried into the output config."""
-        loader = _make_mock_adapter()
-        loader.load_tokenizer.return_value.chat_template = "{{ messages }}"
-        strategy = _make_strategy(loader)
-
-        result = strategy.invoke(make_test_context(), _make_valid_input_config())
-
-        self.assertEqual(result.chat_template, "{{ messages }}")
-
-    def test_invoke_chat_template_from_extra_options_when_tokenizer_has_none(self):
-        """extra_options supplies the chat template only as a fallback."""
-        strategy = _make_strategy()
-        input_config = _make_valid_input_config(
-            extra_options={"chat_template": "fallback"}
-        )
-
-        result = strategy.invoke(make_test_context(), input_config)
-
-        self.assertEqual(result.chat_template, "fallback")
-
     def test_invoke_chat_template_prefers_tokenizer_over_extra_options(self):
-        """With both present the tokenizer wins: extra_options is only a fallback.
-
-        Pins the precedence itself -- the single-source tests above would still
-        pass if the two branches were swapped.
-        """
+        """A chat template on the tokenizer is carried into the output config."""
         loader = _make_mock_adapter()
         loader.load_tokenizer.return_value.chat_template = "tokenizer_template"
         strategy = _make_strategy(loader)
@@ -329,19 +427,7 @@ class TestExecuTorchModelPreparationStrategy(unittest.TestCase):
         self.assertIsInstance(cm.exception.original_exception, RuntimeError)
         self.assertIn("model load failed", str(cm.exception))
 
-    def test_invoke_calibration_adapter_exception_wrapped_in_stage_error(self):
-        """Failures in the dataset adapter surface as a model_preparation StageError."""
-        calibration = _make_mock_calibration_adapter()
-        calibration.generate_calibration_data.side_effect = ValueError("no dataset")
-        strategy = _make_strategy(calibration=calibration)
-
-        with self.assertRaises(StageError) as cm:
-            strategy.invoke(make_test_context(), _make_valid_input_config())
-        self.assertEqual(cm.exception.stage_name, "model_preparation")
-        self.assertIsInstance(cm.exception.original_exception, ValueError)
-
     def test_invoke_stage_error_not_double_wrapped(self):
-        """StageError from adapter is re-raised directly."""
         loader = _make_mock_adapter()
         original_error = StageError(
             stage_name="model_preparation", message="inner error"

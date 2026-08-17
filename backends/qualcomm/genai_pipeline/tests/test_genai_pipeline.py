@@ -13,6 +13,9 @@ from executorch.backends.qualcomm.genai_pipeline.configs.compilation_output_conf
 from executorch.backends.qualcomm.genai_pipeline.configs.inference_output_config import (
     InferenceOutputConfig,
 )
+from executorch.backends.qualcomm.genai_pipeline.configs.model_preparation_output_config import (
+    ModelPreparationOutputConfig,
+)
 from executorch.backends.qualcomm.genai_pipeline.configs.quantization_output_config import (
     QuantizationOutputConfig,
 )
@@ -31,6 +34,9 @@ from executorch.backends.qualcomm.genai_pipeline.stages.compilation_stage import
 from executorch.backends.qualcomm.genai_pipeline.stages.inference_stage import (
     InferenceStage,
 )
+from executorch.backends.qualcomm.genai_pipeline.stages.model_preparation_stage import (
+    ModelPreparationStage,
+)
 from executorch.backends.qualcomm.genai_pipeline.stages.quantization_stage import (
     QuantizationStage,
 )
@@ -39,6 +45,9 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.compilation.compilat
 )
 from executorch.backends.qualcomm.genai_pipeline.strategies.inference.inference_strategy import (
     InferenceStrategy,
+)
+from executorch.backends.qualcomm.genai_pipeline.strategies.model_preparation.model_preparation_strategy import (
+    ModelPreparationStrategy,
 )
 from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantization_strategy import (
     QuantizationStrategy,
@@ -55,7 +64,7 @@ TEST_MOCK_BACKEND_TYPE = MagicMock(name="kHtpBackend")
 
 class _MockQuantizationStrategy(QuantizationStrategy):
     def invoke(self, context, input_config):
-        return QuantizationOutputConfig(quantized_model="mock_quantized_model")
+        return QuantizationOutputConfig(graphs={"mock": "graphs"})
 
 
 class _MockCompilationStrategy(CompilationStrategy):
@@ -215,9 +224,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
 
     def test_quantization_receives_soc_model(self):
         mock_quant = MagicMock(spec=QuantizationStrategy)
-        mock_quant.invoke.return_value = QuantizationOutputConfig(
-            quantized_model="quantized"
-        )
+        mock_quant.invoke.return_value = QuantizationOutputConfig(graphs={})
 
         test_soc = "SM8650"
         proxy = EngineProxy(
@@ -236,6 +243,58 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         args, _ = mock_quant.invoke.call_args
         input_config = args[1]
         self.assertEqual(input_config.soc_model, test_soc)
+
+    def test_model_preparation_receives_full_extra_options(self):
+        mock_model_prep = MagicMock(spec=ModelPreparationStrategy)
+        mock_model_prep.invoke.return_value = ModelPreparationOutputConfig()
+        extra_options = {
+            "model_options": {"model_arch": MagicMock(name="model_arch")},
+            "quantize_options": {"quant_dtype": MagicMock(name="quant_dtype")},
+            "dataset_options": MagicMock(name="dataset_options"),
+        }
+        proxy = EngineProxy(
+            {STAGE_MODEL_PREPARATION: EngineType.EXECUTORCH},
+            backend_type=TEST_MOCK_BACKEND_TYPE,
+        )
+        pipeline = GenAIPipeline(
+            model_preparation_stage=ModelPreparationStage(mock_model_prep),
+            quantization_stage=None,
+            compilation_stage=None,
+            inference_stage=None,
+            engine_proxy=proxy,
+        )
+
+        pipeline.invoke(make_test_context(extra_options=extra_options))
+
+        args, _ = mock_model_prep.invoke.call_args
+        input_config = args[1]
+        self.assertEqual(input_config.extra_options, extra_options)
+
+    def test_quantization_receives_full_extra_options(self):
+        mock_quant = MagicMock(spec=QuantizationStrategy)
+        mock_quant.invoke.return_value = QuantizationOutputConfig(graphs={})
+        extra_options = {
+            "model_options": {"model_arch": MagicMock(name="model_arch")},
+            "quantize_options": {"quant_dtype": MagicMock(name="quant_dtype")},
+            "dataset_options": MagicMock(name="dataset_options"),
+        }
+        proxy = EngineProxy(
+            {STAGE_QUANTIZATION: EngineType.EXECUTORCH},
+            backend_type=TEST_MOCK_BACKEND_TYPE,
+        )
+        pipeline = GenAIPipeline(
+            model_preparation_stage=None,
+            quantization_stage=QuantizationStage(mock_quant),
+            compilation_stage=None,
+            inference_stage=None,
+            engine_proxy=proxy,
+        )
+
+        pipeline.invoke(make_test_context(extra_options=extra_options))
+
+        args, _ = mock_quant.invoke.call_args
+        input_config = args[1]
+        self.assertEqual(input_config.extra_options, extra_options)
 
     def test_compilation_receives_backend_type(self):
         mock_compile = MagicMock(spec=CompilationStrategy)
