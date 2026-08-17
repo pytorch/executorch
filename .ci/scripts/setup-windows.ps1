@@ -22,7 +22,7 @@ $env:CMAKE_ARGS = "$env:CMAKE_ARGS -DCMAKE_CXX_STANDARD=20"
 # (setup.py) auto-enables EXECUTORCH_BUILD_CUDA whenever the detected nvcc
 # version is in SUPPORTED_CUDA_VERSIONS. CPU-only jobs install CPU torch, so a
 # CUDA build of _portable_lib then fails to load its CUDA DLLs at import time
-# ("DLL load failed while importing _portable_lib"). Force a CPU-only build
+# ("DLL load failed while importing _C"). Force a CPU-only build
 # when the caller asks for it.
 if ($cpuOnly -eq 'true') {
     $env:CMAKE_ARGS = "$env:CMAKE_ARGS -DEXECUTORCH_BUILD_CUDA=OFF"
