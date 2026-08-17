@@ -213,11 +213,12 @@ def _minimal_packages() -> List[str]:
 # name that may not exist.
 #
 # Only what a shipped library actually loads. Measured on a built wheel, the CUDA libraries need
-# the CUDA runtime and cuRAND and nothing else, and the generated model library embeds its kernels
+# the CUDA runtime and nothing else, because cuRAND is used only through its
+# device-side header API, which compiles into the object rather than linking a library, and the generated model library embeds its kernels
 # rather than compiling them at run time, so there is no runtime compiler to satisfy either.
 _CUDA_RUNTIME_PACKAGES = {
-    "12": ("nvidia-cuda-runtime-cu12", "nvidia-curand-cu12"),
-    "13": ("nvidia-cuda-runtime", "nvidia-curand"),
+    "12": ("nvidia-cuda-runtime-cu12",),
+    "13": ("nvidia-cuda-runtime",),
 }
 
 # Where each train installs its libraries under site-packages. CUDA 13 collects them in
@@ -228,7 +229,7 @@ _CUDA_RUNTIME_PACKAGES = {
 # searches what is recorded here, so a missing directory leaves a shipped library unable to find
 # a package that is installed, and an extra one implies a dependency the wheel does not have.
 _CUDA_LIBRARY_DIRECTORIES = {
-    "12": ("nvidia/cuda_runtime/lib", "nvidia/curand/lib"),
+    "12": ("nvidia/cuda_runtime/lib",),
     "13": ("nvidia/cu13/lib",),
 }
 

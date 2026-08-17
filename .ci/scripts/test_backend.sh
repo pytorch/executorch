@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -86,7 +86,6 @@ if [[ "$FLOW" == *arm* ]]; then
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
-        backends/arm/scripts/build_executorch.sh
         backends/arm/test/setup_testing.sh
     fi
 
