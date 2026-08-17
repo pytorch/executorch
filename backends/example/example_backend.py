@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import hashlib
 from typing import final, List
 
 from executorch.backends.example.example_backend_delegate_passes.merge_to_dim_pass import (
@@ -37,5 +38,13 @@ class ExampleBackend(BackendDetails):
         assert graph_module_res is not None
         graph_module_res = MergeToDimPass()(graph_module_res.graph_module)
         assert graph_module_res is not None
-        processed_bytes = str(graph_module_res.graph_module.graph)
-        return PreprocessResult(bytes(processed_bytes, encoding="utf8"))
+        processed_bytes = bytes(
+            str(graph_module_res.graph_module.graph), encoding="utf8"
+        )
+        return PreprocessResult(
+            processed_bytes,
+            # Log a small, non-static fingerprint of the compiled blob into the
+            # ETRecord (via lowered_module.meta) so it can be inspected after the
+            # ETRecord is parsed back.
+            _delegate_info_meta=hashlib.sha256(processed_bytes).hexdigest(),
+        )
