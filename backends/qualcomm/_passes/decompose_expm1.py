@@ -22,7 +22,10 @@ class DecomposeExpM1(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.target == torch.ops.aten.special_expm1.default:
+            if node.target in {
+                torch.ops.aten.special_expm1.default,
+                torch.ops.aten.expm1.default,
+            }:
                 input_node = node.args[0]
                 with graph_module.graph.inserting_after(input_node):
                     exp_op = torch.ops.aten.exp.default

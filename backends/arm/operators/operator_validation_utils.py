@@ -199,6 +199,8 @@ def adjust_pooling_pad_if_needed(
     numerator = input_size - kernel_size + 2 * pad
     if ceil_mode:
         output_size = (numerator + stride - 1) // stride + 1
+        if (output_size - 1) * stride >= input_size + pad:
+            output_size -= 1
     else:
         output_size = numerator // stride + 1
 

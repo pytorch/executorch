@@ -13,19 +13,20 @@
 namespace executorch::backends::webgpu {
 
 // @generated from linear_vec4.wgsl - DO NOT EDIT.
-// wgsl-sha256: 2d456961a1145cf9858237deb59fd0b37f390dfc253894b240914d2cbe056b66
+// wgsl-sha256: 900bc546260898ede5281dae5cfced8a5712c2d011d0e0e2742bf19350796dc8
 inline constexpr const char* kLinearVec4WGSL = R"(
 struct Params {
   M: u32,
   N: u32,
   K: u32,
-  pad_: u32,
+  has_bias: u32,
 };
 
 @group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> weight: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+@group(0) @binding(4) var<storage, read> bias: array<f32>;
 
 const TILE: u32 = 32u;
 const TILE4: u32 = 8u;
@@ -93,7 +94,11 @@ fn main(
       let r = row0 + tr + ir;
       let c = col0 + tc + ic;
       if (r < params.M && c < params.N) {
-        out[r * params.N + c] = acc[ir][ic];
+        var v = acc[ir][ic];
+        if (params.has_bias != 0u) {
+          v = v + bias[c];
+        }
+        out[r * params.N + c] = v;
       }
     }
   }

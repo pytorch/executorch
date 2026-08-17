@@ -17,10 +17,8 @@ import torch
 import torch.fx
 from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
 from executorch.backends.cadence.aot.pass_utils import (
-    CadencePassAttribute,
     get_arg,
     get_overload_packet,
-    register_cadence_pass,
     RemoveOrReplacePassInterface,
 )
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -74,7 +72,6 @@ slice_or_select_overloadpkt = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=2))
 class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
     """
     If the graph is branched with the following pattern:
@@ -245,7 +242,6 @@ class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
         return result
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
     """
     Advances a quantize op above data-movement ops to reduce data volume.
@@ -420,7 +416,6 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         return PassResult(graph_module, False)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PostponeDequantizeOpBelowUseChainPass(ExportPass):
     """
     If the consumer of dequantize is a linear chain of view, transpose, permute,
@@ -561,7 +556,6 @@ class PostponeDequantizeOpBelowUseChainPass(ExportPass):
         return PassResult(self.graph_module, overall_modified)
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class SinkOpsCloserToUsePass(RemoveOrReplacePassInterface):
     """
     Assume that the dequantize op D = dequantize(I) has only a single user.
@@ -612,7 +606,6 @@ class SinkOpsCloserToUsePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
     """
     Assume that the input I to a quantize op Q = quantize(I) has only a single
@@ -697,14 +690,103 @@ class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
     _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
 ):
     pass
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
+    """Move matching single-use permutes after a cat.
+
+    For example,
+
+        cat(
+            [
+                permute(x[80, 16, 32], [1, 2, 0]),  # [16, 32, 80]
+                permute(y[1, 16, 32], [1, 2, 0]),   # [16, 32, 1]
+            ],
+            dim=2,
+        )  # [16, 32, 81]
+
+    becomes
+
+        permute(cat([x, y], dim=0), [1, 2, 0])
+                # cat: [81, 16, 32], output: [16, 32, 81]
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    @staticmethod
+    def _match_inputs(
+        cat_node: torch.fx.Node,
+    ) -> Optional[Tuple[List[torch.fx.Node], Tuple[int, ...]]]:
+        inputs = get_arg(
+            cat_node,
+            "tensors",
+            # pyre-ignore[6]
+            list[torch.fx.Node] | tuple[torch.fx.Node, ...],
+        )
+        # Moving one reused permute after cat makes it process the larger output.
+        if inputs and all(inp is inputs[0] for inp in inputs):
+            return None
+
+        unpermuted_inputs: List[torch.fx.Node] = []
+        common_permutation: Optional[Tuple[int, ...]] = None
+        for permute_node in inputs:
+            if (
+                permute_node.target != exir_ops.edge.aten.permute_copy.default
+                or len(permute_node.users) != 1
+            ):
+                return None
+
+            permute_input = cast(torch.fx.Node, permute_node.args[0])
+            dims = get_arg(
+                permute_node,
+                "dims",
+                # pyre-ignore[6]
+                list[int] | tuple[int, ...],
+            )
+            rank = len(dims)
+            permutation = tuple(dim % rank for dim in dims)
+            if common_permutation is None:
+                common_permutation = permutation
+            elif permutation != common_permutation:
+                return None
+            unpermuted_inputs.append(permute_input)
+
+        return unpermuted_inputs, cast(Tuple[int, ...], common_permutation)
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        match = self._match_inputs(node)
+        if match is None:
+            return False
+        inputs, permutation = match
+
+        output_cat_dim = get_arg(node, "dim", int) % len(permutation)
+        input_cat_dim = permutation[output_cat_dim]
+        graph = node.graph
+
+        with graph.inserting_before(node):
+            new_cat = graph.call_function(
+                exir_ops.edge.aten.cat.default,
+                args=(inputs, input_cat_dim),
+            )
+            new_cat.meta["val"] = exir_ops.edge.aten.cat.default(
+                [inp.meta["val"] for inp in inputs], input_cat_dim
+            )
+            new_permute = graph.call_function(
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_cat, list(permutation)),
+            )
+            new_permute.meta = node.meta.copy()
+
+        node.replace_all_uses_with(new_permute)
+        return True
+
+
 class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
     """Move slice_copy ops before permute_copy to reduce permute data volume.
 
@@ -781,7 +863,6 @@ class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
         return True
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
     """Move a slice_copy above a view_copy when the slice is re-expressible as a
     single slice on one dim of the pre-view tensor.
@@ -1014,7 +1095,6 @@ class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
         return None
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class PropagateSlice(RemoveOrReplacePassInterface):
     """Propagate slice_copy before element-wise ops when the cost model
     indicates it reduces total data movement.
@@ -1201,7 +1281,6 @@ _DEQUANT_OVERLOAD_PACKETS = {
 }
 
 
-@register_cadence_pass(CadencePassAttribute(opt_level=1))
 class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
     """Split a cat node so that quantize consumers get their own copy.
 
@@ -1268,6 +1347,7 @@ class CadenceReorderOpsInGraph:
         # Hoist/sink nodes closer to their SSA def/use
         HoistOpsCloserToDefPass,
         SinkOpsCloserToUsePass,
+        MovePermuteAfterConcat,
         # For quantize/dequantize ops, move them above/below their def chain.
         # This is a more aggressive optimization than just hoisting/sinking
         # nodes closer to their def/use.

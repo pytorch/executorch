@@ -25,12 +25,16 @@ def cuda_shim_cpp_unittest(name):
         ),
     )
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
-    The directory containing this targets.bzl file should also contain both
-    TARGETS and BUCK files that call this function.
+    Uses fbcode-only macros (cpp_unittest, re_test_utils) and kwargs
+    (keep_gpu_sections), so we early-return outside fbcode to preserve
+    pre-migration behavior (this dir was originally TARGETS-only).
     """
+    if not is_fbcode:
+        return
+
     cuda_shim_cpp_unittest("aoti_torch_empty_strided")
     cuda_shim_cpp_unittest("aoti_torch_delete_tensor_object")
     cuda_shim_cpp_unittest("aoti_torch_create_tensor_from_blob_v2")

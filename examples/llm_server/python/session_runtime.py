@@ -55,6 +55,9 @@ class GenerationOptions:
 
     max_new_tokens: int
     temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = 0
+    seed: int = 0
     stop: list[str] = field(default_factory=list)
 
 
@@ -76,6 +79,7 @@ class GenStats:
     total_ms: float = 0.0
     prefill_tok_s: float = 0.0
     decode_tok_s: float = 0.0
+    vision_encoder_ms: Optional[float] = None
     # Exact token ids generated this turn, for an adapter's transcript
     # store. Empty when the worker doesn't report them (e.g. a stop-trimmed turn).
     generated_token_ids: list = field(default_factory=list)
@@ -88,6 +92,9 @@ class GenStats:
 class _WorkerRequest:
     max_new_tokens: int
     temperature: float
+    top_p: float
+    top_k: int
+    seed: int
     stop: list[str]
     session_id: Optional[str]
     prompt_segments: Optional[list]
@@ -125,6 +132,7 @@ class _GenerationBridge:
         self._stats.total_ms = getattr(s, "total_ms", 0.0)
         self._stats.prefill_tok_s = getattr(s, "prefill_tok_s", 0.0)
         self._stats.decode_tok_s = getattr(s, "decode_tok_s", 0.0)
+        self._stats.vision_encoder_ms = getattr(s, "vision_encoder_ms", None)
         self._stats.generated_token_ids = getattr(s, "generated_token_ids", [])
 
     def run(self) -> None:
@@ -223,6 +231,9 @@ class SessionRuntime:
         req = _WorkerRequest(
             max_new_tokens=options.max_new_tokens,
             temperature=options.temperature,
+            top_p=options.top_p,
+            top_k=options.top_k,
+            seed=options.seed,
             stop=list(options.stop),
             session_id=session_id,
             prompt_segments=prompt.segments,

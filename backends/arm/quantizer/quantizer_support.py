@@ -155,6 +155,7 @@ FUSED_RELU_OP_PATTERNS = (
 ALL_QPARAM_OP_PATTERNS = (
     [(target,) for target in _one_to_one]
     + ACTIVATION_FUNCTION_PATTERNS
+    + combo_pattern(BATCH_NORM_OPS)
     + CONV_OP_PATTERNS
     + LINEAR_OP_PATTERNS
     + BINARY_OP_PATTERNS
@@ -168,6 +169,7 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.zeros_like.default,),
         (torch.ops.aten._softmax.default,),
         (torch.ops.aten.softmax.int,),
+        (torch.ops.aten.div.Scalar,),
         (torch.ops.aten.div.Tensor,),
         (torch.ops.aten.div_.Tensor,),
         (torch.ops.aten.div.Tensor_mode,),
@@ -185,6 +187,7 @@ ALL_QPARAM_OP_PATTERNS = (
         (torch.ops.aten.var.correction,),
         (torch.ops.aten.leaky_relu.default,),
         (torch.ops.aten.leaky_relu_.default,),
+        (torch.ops.aten.prelu.default,),
         (torch.ops.aten.linalg_vector_norm.default,),
         (torch.ops.aten.log_softmax.int,),
         (torch.ops.aten.round.default,),

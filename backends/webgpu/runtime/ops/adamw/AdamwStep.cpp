@@ -97,78 +97,26 @@ void adamw_step_impl(WebGPUGraph& graph, const std::vector<int>& args) {
       utils::make_uniform(device, &params, sizeof(params));
   graph.add_uniform_buffer_bytes(sizeof(params));
 
-  WGPUShaderSourceWGSL wgsl_desc = {};
-  wgsl_desc.chain.sType = WGPUSType_ShaderSourceWGSL;
-  wgsl_desc.code = {kAdamwStepWGSL, WGPU_STRLEN};
-  WGPUShaderModuleDescriptor shader_desc = {};
-  shader_desc.nextInChain = &wgsl_desc.chain;
-  WGPUShaderModule shader = wgpuDeviceCreateShaderModule(device, &shader_desc);
-
-  WGPUBindGroupLayoutEntry entries[5] = {};
-  for (uint32_t i = 0; i <= 2; i++) {
-    entries[i].binding = i;
-    entries[i].visibility = WGPUShaderStage_Compute;
-    entries[i].buffer.type = WGPUBufferBindingType_Storage;
-  }
-  entries[3].binding = 3;
-  entries[3].visibility = WGPUShaderStage_Compute;
-  entries[3].buffer.type = WGPUBufferBindingType_ReadOnlyStorage;
-  entries[4].binding = 4;
-  entries[4].visibility = WGPUShaderStage_Compute;
-  entries[4].buffer.type = WGPUBufferBindingType_Uniform;
-
-  WGPUBindGroupLayoutDescriptor bgl_desc = {};
-  bgl_desc.entryCount = 5;
-  bgl_desc.entries = entries;
-  WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(device, &bgl_desc);
-
-  WGPUPipelineLayoutDescriptor pl_desc = {};
-  pl_desc.bindGroupLayoutCount = 1;
-  pl_desc.bindGroupLayouts = &bgl;
-  WGPUPipelineLayout pipeline_layout =
-      wgpuDeviceCreatePipelineLayout(device, &pl_desc);
-
   WGPUConstantEntry wg_size_constant = {};
   wg_size_constant.key = {"wg_size", WGPU_STRLEN};
   wg_size_constant.value = static_cast<double>(wg_size);
 
-  WGPUComputePipelineDescriptor pipeline_desc = {};
-  pipeline_desc.layout = pipeline_layout;
-  pipeline_desc.compute.module = shader;
-  pipeline_desc.compute.entryPoint = {"main", WGPU_STRLEN};
-  pipeline_desc.compute.constantCount = 1;
-  pipeline_desc.compute.constants = &wg_size_constant;
-  WGPUComputePipeline pipeline =
-      wgpuDeviceCreateComputePipeline(device, &pipeline_desc);
+  utils::ComputePipelineBundle bundle = utils::make_compute_pipeline(
+      device,
+      kAdamwStepWGSL,
+      {
+          {0, WGPUBufferBindingType_Storage, param.buffer, param.nbytes},
+          {1, WGPUBufferBindingType_Storage, m.buffer, m.nbytes},
+          {2, WGPUBufferBindingType_Storage, v.buffer, v.nbytes},
+          {3, WGPUBufferBindingType_ReadOnlyStorage, grad.buffer, grad.nbytes},
+          {4, WGPUBufferBindingType_Uniform, uniform_buffer, sizeof(params)},
+      },
+      &wg_size_constant,
+      1);
 
-  WGPUBindGroupEntry bg_entries[5] = {};
-  bg_entries[0].binding = 0;
-  bg_entries[0].buffer = param.buffer;
-  bg_entries[0].size = param.nbytes;
-  bg_entries[1].binding = 1;
-  bg_entries[1].buffer = m.buffer;
-  bg_entries[1].size = m.nbytes;
-  bg_entries[2].binding = 2;
-  bg_entries[2].buffer = v.buffer;
-  bg_entries[2].size = v.nbytes;
-  bg_entries[3].binding = 3;
-  bg_entries[3].buffer = grad.buffer;
-  bg_entries[3].size = grad.nbytes;
-  bg_entries[4].binding = 4;
-  bg_entries[4].buffer = uniform_buffer;
-  bg_entries[4].size = sizeof(params);
+  graph.add_dispatch(
+      {bundle.pipeline, bundle.bind_group, workgroup_count, "adamw_step"});
 
-  WGPUBindGroupDescriptor bg_desc = {};
-  bg_desc.layout = bgl;
-  bg_desc.entryCount = 5;
-  bg_desc.entries = bg_entries;
-  WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(device, &bg_desc);
-
-  graph.add_dispatch({pipeline, bind_group, workgroup_count, "adamw_step"});
-
-  wgpuShaderModuleRelease(shader);
-  wgpuBindGroupLayoutRelease(bgl);
-  wgpuPipelineLayoutRelease(pipeline_layout);
   graph.own_uniform_buffer(uniform_buffer);
 }
 

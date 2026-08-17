@@ -12,6 +12,9 @@ from typing import Any, Optional
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
@@ -24,7 +27,6 @@ from executorch.backends.test.harness.stages import (
     ToEdge,
     ToExecutorch,
 )
-from executorch.exir import EdgeCompileConfig
 
 
 class CortexMQuantize(Quantize):
@@ -35,26 +37,7 @@ class CortexMQuantize(Quantize):
 
 class CortexMToEdge(ToEdge):
     def __init__(self):
-        config = EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-                # silu naturally decomposes to sigmoid*x at the to_edge step.
-                # Preserve it so the LUT lowering can collapse it into a single
-                # cortex_m.quantized_activation call rather than emitting an
-                # extra elementwise mul. Set globally because no per-test
-                # opt-out exists today; any new cortex_m test that uses SiLU
-                # must therefore expect a single aten.silu op in the edge graph
-                # (not sigmoid+mul).
-                torch.ops.aten.silu.default,
-            ],
-            _check_ir_validity=False,
-            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        )
-        super().__init__(config)
+        super().__init__(cortex_m_edge_compile_config())
 
 
 class CortexMRunPasses(RunPasses):

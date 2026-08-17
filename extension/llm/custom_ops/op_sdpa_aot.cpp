@@ -438,7 +438,9 @@ std::tuple<at::Tensor, at::Tensor> channelwise_gated_delta_rule_aten(
     const at::Tensor& decay,
     const at::Tensor& beta,
     const at::Tensor& initial_state) {
-  auto output = at::empty_like(value);
+  auto output = at::empty(
+      {query.size(0), query.size(1), query.size(2), value.size(3)},
+      query.options());
   auto final_state = at::empty_like(initial_state);
   channelwise_gated_delta_rule_out_aten(
       query, key, value, decay, beta, initial_state, output, final_state);

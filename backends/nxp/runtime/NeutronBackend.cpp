@@ -290,6 +290,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
     auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
 
+    // allocateInstance returns raw, uninitialized memory (no constructor runs),
+    // so set the driver-config timeout explicitly.
+    cfg->mcfg.timeoutSeconds = 60;
+
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
     //    cfg->numoutputs

@@ -6,17 +6,24 @@
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55ResizeCheck,
+)
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
 )
 from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
+from executorch.exir.backend.utils import WhyNoPartitionReporter
+from executorch.exir.dialects._ops import ops as exir_ops
 
 aten_op = "torch.ops.aten.upsample_nearest2d.vec"
 exir_op = "executorch_exir_dialects_edge__ops_aten_upsample_nearest2d_vec"
@@ -75,7 +82,15 @@ test_data_suite_fp16 = {
 }
 
 test_data_u55 = {
-    "rand_double_size": lambda: (torch.rand(2, 4, 8, 3), (16, 6), None, True),
+    "rand_double_scale": lambda: (torch.rand(1, 4, 8, 3), None, 2.0, True),
+    "rand_double_scale_different_shape": lambda: (
+        torch.rand(1, 2, 4, 3),
+        None,
+        2.0,
+        True,
+    ),
+    "rand_quadruple_size": lambda: (torch.rand(1, 4, 8, 3), (32, 12), None, True),
+    "rand_octuple_size": lambda: (torch.rand(1, 4, 8, 3), (64, 24), None, True),
 }
 
 test_data_suite_dynamic = {
@@ -447,56 +462,118 @@ def test_upsample_nearest2d_vec_vgf_quant_a16w8_interpolate(
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_nearest2d_vec_u55_INT_Upsample_not_delegated(
-    test_data: torch.Tensor,
-):
+def test_upsample_nearest2d_vec_u55_INT_Upsample(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
-    pipeline = OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         Upsample(size, scale_factor),
         (test_data,),
-        {exir_op: 1},
-        n_expected_delegates=0,
-        quantize=True,
-        u55_subset=True,
+        aten_op,
+        exir_op,
     )
-
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_nearest2d_vec_u55_INT_Interpolate_not_delegated(
-    test_data: torch.Tensor,
-):
+def test_upsample_nearest2d_vec_u55_INT_Interpolate(test_data: torch.Tensor):
     test_data, size, scale_factor, compare_outputs = test_data()
-    pipeline = OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         Interpolate(size, scale_factor),
         (test_data,),
-        {exir_op: 1},
-        n_expected_delegates=0,
-        quantize=True,
-        u55_subset=True,
+        aten_op,
+        exir_op,
     )
-
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_u55)
 @common.XfailIfNoCorstone300
-def test_upsample_nearest2d_vec_u55_INT_UpsamplingBilinear2d_not_delegated(
+def test_upsample_nearest2d_vec_u55_INT_UpsamplingNearest2d(
     test_data: torch.Tensor,
 ):
     test_data, size, scale_factor, compare_outputs = test_data()
-    pipeline = OpNotSupportedPipeline[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         UpsamplingNearest2d(size, scale_factor),
+        (test_data,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+def test_upsample_nearest2d_vec_u55_INT_unsupported_scale_not_delegated():
+    # 2.25 rounds a 2x2 input to 4x4, which looks like a supported 2x resize from shapes alone.
+    test_data = torch.rand(1, 4, 2, 2)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Interpolate(None, 2.25),
         (test_data,),
         {exir_op: 1},
         n_expected_delegates=0,
         quantize=True,
         u55_subset=True,
     )
-
     pipeline.run()
+
+
+def test_upsample_nearest2d_vec_u55_INT_unsupported_batch_not_delegated():
+    test_data = torch.rand(2, 4, 8, 3)
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Interpolate(None, 2.0),
+        (test_data,),
+        {exir_op: 1},
+        n_expected_delegates=0,
+        quantize=True,
+        u55_subset=True,
+    )
+    pipeline.run()
+
+
+def test_upsample_nearest2d_vec_u55_INT_dynamic_batch_not_delegated():
+    test_data = torch.rand(2, 4, 8, 3)
+    batch = torch.export.Dim("batch", min=1, max=4)
+    tester = ArmTester(
+        Interpolate(None, 2.0),
+        (test_data,),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={"x": {0: batch}},
+    )
+    tester.quantize().export().to_edge().partition()
+
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.upsample_nearest2d.vec in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets
+
+
+def test_upsample_nearest2d_vec_u55_INT_dynamic_spatial_size_not_delegated():
+    test_data = torch.rand(1, 4, 8, 3)
+    input_height = torch.export.Dim("input_height", min=4, max=12)
+    input_width = torch.export.Dim("input_width", min=2, max=6)
+    tester = ArmTester(
+        Interpolate((16, 6), None),
+        (test_data,),
+        common.get_u55_compile_spec(),
+        dynamic_shapes={"x": {2: input_height, 3: input_width}},
+    )
+    tester.quantize().export().to_edge()
+    resize_node = next(
+        node
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+        if node.target == exir_ops.edge.aten.upsample_nearest2d.vec
+    )
+    assert not EthosU55ResizeCheck(WhyNoPartitionReporter()).is_node_supported(
+        {}, resize_node
+    )
+
+    tester.partition()
+    targets = {
+        node.target
+        for node in tester.stages[tester.cur].artifact.exported_program().graph.nodes
+    }
+    assert exir_ops.edge.aten.upsample_nearest2d.vec in targets
+    assert torch.ops.higher_order.executorch_call_delegate not in targets
 
 
 @common.parametrize("test_data", test_data_suite_dynamic)

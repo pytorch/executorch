@@ -52,6 +52,7 @@ def define_arm_tests():
     test_files += [
         "quantizer/test_generic_annotater.py",
         "quantizer/test_uint8_io_quantization.py",
+        "quantizer/test_vgf_snorm_quantization.py",
     ]
 
     # Misc tests
@@ -76,10 +77,6 @@ def define_arm_tests():
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
-    # Deprecation tests
-    test_files += [
-        "deprecation/test_arm_compile_spec_deprecation.py",
-    ]
 
     # These import the top-level executorch.backends.arm package, whose
     # __init__ eagerly imports torch. Pulling that into pytest collection fails

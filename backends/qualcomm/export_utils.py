@@ -503,7 +503,7 @@ def build_executorch_binary(
     model: torch.nn.Module,  # noqa: B006
     qnn_config: QnnConfig,
     file_name: str,
-    dataset: List[torch.Tensor] | Callable[[torch.fx.GraphModule], None],
+    dataset: List[Tuple[torch.Tensor, ...]],
     quant_dtype: Optional[QuantDtype] = None,
     custom_quantizer: Optional[QnnQuantizer] = None,
     metadata=None,
@@ -520,7 +520,7 @@ def build_executorch_binary(
         model (torch.nn.Module): The model to be converted into an ExecuTorch binary.
         qnn_config: (QnnConfig): A config class that saves qnn lowering and execution configuration.
         file_name (str): Name for the output binary file (.pte).
-        dataset (List[torch.Tensor] | Callable): A dataset for quantization calibration.
+        dataset (List[Tuple[torch.Tensor, ...]]): A dataset for quantization calibration.
         quant_dtype (QuantDtype, optional): Data type for quantization.
         custom_quantizer (Callable, optional): Custom quantizer.
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
@@ -961,9 +961,6 @@ def _ptq_calibrate(captured_model, quantizer, dataset):
     annotated_model = prepare_pt2e(captured_model, quantizer)
     print("Quantizing(PTQ) the model...")
     # calibration
-    if callable(dataset):
-        dataset(annotated_model)
-    else:
-        for data in dataset:
-            annotated_model(*data)
+    for data in dataset:
+        annotated_model(*data)
     return annotated_model

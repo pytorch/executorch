@@ -8,6 +8,7 @@ from typing import Any, Deque, Dict, Hashable, List, Set, Tuple, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmPass
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._ops import OpOverload
@@ -29,6 +30,14 @@ class FuseDuplicateUsersPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+
+    # A fused RESCALE feeds its single output tensor to every original consumer.
+    # Later passes and the Vela compiler assume each integer RESCALE feeds one
+    # consumer, so collapsing duplicate RESCALE users onto a shared node corrupts
+    # integer outputs (observed as all-zero results on Ethos-U). Exclude RESCALE
+    # from fusion; the op-count wins this pass targets are on FP graphs, which
+    # carry no rescales.
+    _excluded_targets = frozenset({exir_ops.backend.tosa.RESCALE.default})
 
     def call(self, graph_module: GraphModule) -> PassResult:
         graph = graph_module.graph
@@ -93,6 +102,9 @@ class FuseDuplicateUsersPass(ArmPass):
                 continue
 
             if user.op != "call_function":
+                continue
+
+            if user.target in self._excluded_targets:
                 continue
 
             target_key = self._get_target_key(user.target)

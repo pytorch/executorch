@@ -365,6 +365,12 @@ OP_CASES = {
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
         None,
     ),
+    "concat": OpCase(
+        torch.ops.aten.concat.default,
+        _build_module(lambda x, y: torch.ops.aten.concat.default([x, y], 1)),
+        (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
     "concatenate": OpCase(
         torch.ops.aten.concatenate.default,
         _build_module(lambda x, y: torch.ops.aten.concatenate.default([x, y], 1)),

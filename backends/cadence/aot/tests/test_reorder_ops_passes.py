@@ -23,6 +23,7 @@ from executorch.backends.cadence.aot.pass_utils import (
 from executorch.backends.cadence.aot.reorder_ops import (
     AdvanceQuantizeOpAboveDefChainPass,
     AdvanceQuantizeOpAboveDefInBranchPass,
+    MovePermuteAfterConcat,
     MoveSliceBeforePermutePass,
     MoveSliceBeforeViewPass,
     PostponeDequantizeOpBelowUseChainPass,
@@ -637,6 +638,154 @@ class TestReorderPasses(unittest.TestCase):
         self.assertTrue(nodes[1] == exir_ops.edge.aten.permute_copy)
         self.assertTrue(nodes[2] == exir_ops.edge.aten.view_copy)
         self.assertTrue(nodes[3] == exir_ops.edge.aten.permute_copy)
+
+
+class TestMovePermuteAfterConcat(unittest.TestCase):
+    def test_matching_single_user_permutes_moved_after_cat(self) -> None:
+        x_data = torch.randn(1, 16, 32)
+        y_data = torch.randn(80, 16, 32)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        y = builder.placeholder("y", y_data)
+        permutation = [1, 2, 0]
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, permutation),
+        )
+        permuted_y = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(y, permutation),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_y], 2),
+        )
+        builder.output([cat])
+
+        result = transform_and_check_numerics(
+            builder.get_graph_module(),
+            (x_data, y_data),
+            MovePermuteAfterConcat(),
+        )
+
+        self.assertTrue(result.modified)
+        converted = result.graph_module
+        self.assertEqual(
+            get_compute_nodes_in_gm(converted),
+            [exir_ops.edge.aten.cat, exir_ops.edge.aten.permute_copy],
+        )
+        cat_nodes = converted.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.cat.default
+        )
+        self.assertEqual(len(cat_nodes), 1)
+        self.assertEqual(cat_nodes[0].args[1], 0)
+        placeholder_nodes = converted.graph.find_nodes(op="placeholder")
+        self.assertEqual(cat_nodes[0].args[0], placeholder_nodes)
+
+    def test_repeated_permute_input_not_moved(self) -> None:
+        x_data = torch.randn(1, 16, 32)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_x], 2),
+        )
+        builder.output([cat])
+
+        result = transform_and_check_numerics(
+            builder.get_graph_module(),
+            (x_data,),
+            MovePermuteAfterConcat(),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            get_compute_nodes_in_gm(result.graph_module),
+            [exir_ops.edge.aten.permute_copy, exir_ops.edge.aten.cat],
+        )
+
+    def test_different_permutations_not_moved(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(2, 3, 4))
+        y = builder.placeholder("y", torch.randn(4, 3, 5))
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
+        )
+        permuted_y = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(y, [1, 0, 2]),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_y], 2),
+        )
+        builder.output([cat])
+
+        result = cast(PassResult, MovePermuteAfterConcat()(builder.get_graph_module()))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+
+    def test_permute_with_another_user_not_moved(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 32))
+        y = builder.placeholder("y", torch.randn(80, 16, 32))
+        permutation = [1, 2, 0]
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, permutation),
+        )
+        permuted_y = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(y, permutation),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_y], 2),
+        )
+        other_user = builder.call_operator(
+            exir_ops.edge.aten.abs.default,
+            args=(permuted_x,),
+        )
+        builder.output([cat, other_user])
+
+        result = cast(PassResult, MovePermuteAfterConcat()(builder.get_graph_module()))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+
+    def test_non_permuted_input_not_moved(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 16, 32))
+        y = builder.placeholder("y", torch.randn(16, 32, 80))
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, y], 2),
+        )
+        builder.output([cat])
+
+        result = cast(PassResult, MovePermuteAfterConcat()(builder.get_graph_module()))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            1,
+        )
 
 
 class TestMoveSliceBeforePermutePass(unittest.TestCase):

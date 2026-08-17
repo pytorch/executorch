@@ -63,11 +63,21 @@ def maybe_cast(value: torch.Tensor, dtype: Optional[torch.dtype]) -> torch.Tenso
     if type(value) is torch.Tensor:
         return value.to(dtype)
 
-    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from executorch.extension.llm.export import (
+        ExportableGGUFTensor,
+        ExportableInt4Tensor,
+        ExportableMXTensor,
+        ExportableNVFP4Tensor,
+    )
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
-    castable = (ExportableGGUFTensor, ExportableInt4Tensor, IntxUnpackedToInt8Tensor)
+    castable = (
+        ExportableGGUFTensor,
+        ExportableInt4Tensor,
+        ExportableMXTensor,
+        ExportableNVFP4Tensor,
+        IntxUnpackedToInt8Tensor,
+    )
     return value.to(dtype) if isinstance(value, castable) else value
 
 
@@ -124,15 +134,24 @@ def fuse_along_output(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
             f"{[type(t).__name__ for t in tensors]}"
         )
 
-    from executorch.extension.llm.export.gguf import ExportableGGUFTensor
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from executorch.extension.llm.export import (
+        ExportableGGUFTensor,
+        ExportableInt4Tensor,
+        ExportableMXTensor,
+        ExportableNVFP4Tensor,
+    )
     from torchao.quantization import IntxUnpackedToInt8Tensor
 
-    # Per-data-field concat axis (the output-channel dim) by subclass layout.
+    # Per-data-field concat axis (the output-channel dim) by subclass layout. An
+    # axis of ``None`` means the field is not per-output-channel (e.g. NVFP4's
+    # scalar ``per_tensor_scale``): it must match across inputs and is kept as-is.
     axis_by_field = {
         ExportableInt4Tensor: {"qdata": 0, "scale": 1, "zero_point": 1},
         IntxUnpackedToInt8Tensor: {"qdata": 0, "scale": 0, "zero_point": 0},
         ExportableGGUFTensor: {"raw": 0},
+        # NVFP4/MX store qdata (N, ...) and scale (N, K//group) N-major.
+        ExportableNVFP4Tensor: {"qdata": 0, "scale": 0, "per_tensor_scale": None},
+        ExportableMXTensor: {"qdata": 0, "scale": 0},
     }.get(type(first))
     if axis_by_field is None:
         raise TypeError(
@@ -158,10 +177,22 @@ def _fuse_subclass(
                     "fuse_along_output: cannot fuse tensors with different "
                     f"'{name}' ({getattr(t, name)!r} != {ref!r})"
                 )
-    fused_data = [
-        torch.cat([getattr(t, name) for t in tensors], dim=axis_by_field[name])
-        for name in first.tensor_data_names
-    ]
+    fused_data = []
+    for name in first.tensor_data_names:
+        axis = axis_by_field[name]
+        if axis is None:
+            # Not per-output-channel (e.g. a scalar per-tensor scale): must
+            # match across all inputs; keep the first.
+            ref = getattr(first, name)
+            for t in tensors[1:]:
+                if not torch.equal(getattr(t, name), ref):
+                    raise ValueError(
+                        "fuse_along_output: cannot fuse tensors with different "
+                        f"'{name}'"
+                    )
+            fused_data.append(ref)
+        else:
+            fused_data.append(torch.cat([getattr(t, name) for t in tensors], dim=axis))
     return type(first)(*fused_data, *attrs)
 
 
@@ -173,7 +204,7 @@ def _to_exportable_int4(w: torch.Tensor, *, repack_intx: bool) -> torch.Tensor:
     representation (raising if it carries activation quantization, which int4
     export can't represent). Any other tensor is returned unchanged.
     """
-    from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+    from executorch.extension.llm.export import ExportableInt4Tensor
     from torchao.quantization import IntxUnpackedToInt8Tensor
     from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 

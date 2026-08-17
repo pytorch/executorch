@@ -28,7 +28,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u run_swin2sr_e2e_vgf)
+    TEST_SUITES=(run_ootb_tests_ethos_u run_ootb_tests_tosa run_ootb_tests_vgf run_deit_e2e_ethos_u run_mobilesam_e2e_ethos_u run_swin2sr_e2e_vgf)
 else
     TEST_SUITES=("$1")
 fi
@@ -160,6 +160,143 @@ run_deit_e2e_ethos_u() {
         -C mps4_board.uart0.shutdown_on_eot=1 \
         -a "${elf}" \
         -C mps4_board.subsystem.ethosu.extra_args="--fast"
+
+    echo "${FUNCNAME}: PASS"
+}
+
+run_mobilesam_e2e_ethos_u() {
+    echo "$FUNCNAME: Export, build, and run the MobileSAM e2e test"
+
+    local example_dir="${et_root_dir}/examples/arm/mobilesam_prompt_segmentation_example_ethos_u"
+    local work_root="${et_root_dir}/arm_test/mobilesam_ootb_smoke"
+    local export_dir="${work_root}/export"
+    local artifact_dir="${work_root}/artifacts"
+    local debug_dir="${work_root}/debug"
+    local et_build_dir="${work_root}/cmake-out-arm"
+    local quantized_aot_build_dir="${work_root}/quantized_ops_aot"
+    local build_dir="${work_root}/runtime"
+    local mobile_sam_source="${work_root}/mobile_sam/source"
+    local image_path="${et_root_dir}/examples/models/dinov2/dog.jpg"
+    local pte_path="${export_dir}/mobilesam_prompt_smoke.pte"
+    local metadata_path="${export_dir}/mobilesam_prompt_smoke.json"
+    local fvp_log="${work_root}/fvp.log"
+    local toolchain_file="${et_root_dir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+    local input_size=448
+    local fvp_timelimit="${FVP_TIMELIMIT:-300}"
+    echo "${FUNCNAME}: Work directory: ${work_root}; existing artifacts will be reused if present"
+
+    mkdir -p "${export_dir}" "${artifact_dir}" "${debug_dir}" "${build_dir}"
+
+    setup_path_script=${et_root_dir}/examples/arm/arm-scratch/setup_path.sh
+    source ${setup_path_script}
+
+    source ${et_root_dir}/backends/arm/scripts/utils.sh
+    local n_proc="$(get_parallel_jobs)"
+
+    echo "${FUNCNAME}: Building ExecuTorch (if needed)"
+    cmake --preset arm-baremetal -B "${et_build_dir}"
+    cmake --build "${et_build_dir}" --target install -j"$n_proc"
+
+    echo "${FUNCNAME}: Building host quantized AOT library"
+    local python_executable
+    python_executable="$(python3 -c 'import sys; print(sys.executable)')"
+    cmake \
+        -S "${et_root_dir}" \
+        -B "${quantized_aot_build_dir}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF \
+        -DPYTHON_EXECUTABLE="${python_executable}"
+    cmake --build "${quantized_aot_build_dir}" --target quantized_ops_aot_lib -j"$n_proc"
+
+    local quantized_ops_library
+    quantized_ops_library="$(
+        find "${quantized_aot_build_dir}/kernels/quantized" \
+            -name 'libquantized_ops_aot_lib.*' \
+            -type f \
+            -print \
+            -quit
+    )"
+    [[ -n "${quantized_ops_library}" ]] || {
+        echo "${FUNCNAME}: Missing quantized AOT library under ${quantized_aot_build_dir}"
+        return 1
+    }
+
+    echo "${FUNCNAME}: Installing example requirements"
+    pip install -r "${example_dir}/requirements.txt"
+
+    echo "${FUNCNAME}: Preparing pinned MobileSAM source"
+    python3 "${example_dir}/model_export/prepare_mobilesam.py" \
+        --source-dir "${mobile_sam_source}"
+
+    echo "${FUNCNAME}: Exporting quantized MobileSAM PTE"
+    env EXECUTORCH_QUANTIZED_OPS_AOT_LIBRARY="${quantized_ops_library}" \
+        python3 "${example_dir}/model_export/export_mobilesam.py" \
+        --output-path "${pte_path}" \
+        --calibration-image "${image_path}" \
+        --eval-image "${image_path}" \
+        --mobile-sam-source "${mobile_sam_source}" \
+        --input-size "${input_size}" \
+        --point 219 193 \
+        --num-calibration-samples 1 \
+        --num-eval-samples 1 \
+        --num-debug-samples 1 \
+        --minimum-fp32-quantized-iou 0.9 \
+        --artifact-dir "${artifact_dir}" \
+        --debug-output-dir "${debug_dir}"
+
+    for artifact in \
+        "${pte_path}" \
+        "${metadata_path}" \
+        "${export_dir}/mobilesam_prompt_smoke_delegation.txt" \
+        "${export_dir}/mobilesam_prompt_smoke_metrics.json"; do
+        [[ -f "${artifact}" ]] || {
+            echo "${FUNCNAME}: Missing export artifact ${artifact}"
+            return 1
+        }
+    done
+
+    echo "${FUNCNAME}: Configuring the MobileSAM application"
+    cmake \
+        -U "LIB_*" \
+        -U executorch_DIR \
+        -S "${example_dir}/runtime" \
+        -B "${build_dir}" \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}" \
+        -DET_PTE_FILE_PATH="${pte_path}" \
+        -DMODEL_METADATA_PATH="${metadata_path}" \
+        -DIMAGE_PATH="${image_path}" \
+        -DMASK_THRESHOLD=0.0 \
+        -DET_SEGMENTATION_DUMP_MASK=ON \
+        -DPYTHON_EXECUTABLE="${python_executable}" \
+        -DET_BUILD_DIR_PATH="${et_build_dir}"
+
+    echo "${FUNCNAME}: Building mobilesam_prompt_segmentation_example"
+    cmake --build "${build_dir}" -j"$n_proc" --target mobilesam_prompt_segmentation_example
+
+    local elf="${build_dir}/mobilesam_prompt_segmentation_example"
+
+    echo "${FUNCNAME}: Running on FVP"
+    backends/arm/scripts/run_fvp.sh \
+        --elf="${elf}" \
+        --target=ethos-u85-256 \
+        --timeout="${fvp_timelimit}" \
+        --semihosting-cwd="${build_dir}" \
+        --fast | tee "${fvp_log}"
+
+    grep -q "Model executed successfully." "${fvp_log}" || {
+        echo "${FUNCNAME}: FVP run did not report successful execution"
+        return 1
+    }
+
+    python3 "${example_dir}/runtime/visualize_fvp_output.py" \
+        --fvp-log "${fvp_log}" \
+        --input-image "${image_path}" \
+        --metadata "${metadata_path}" \
+        --reference-mask "${debug_dir}/dog/quantized_mask.png" \
+        --minimum-iou 0.9 \
+        --output-dir "${work_root}/fvp_visual"
 
     echo "${FUNCNAME}: PASS"
 }

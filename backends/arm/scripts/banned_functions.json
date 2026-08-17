@@ -1,0 +1,107 @@
+{
+  "banned_functions": [
+    {
+      "names": ["alloca"],
+      "replacements": ["malloc", "new"]
+    },
+    {
+      "names": ["gets"],
+      "replacements": ["fgets"]
+    },
+    {
+      "names": ["memcpy"],
+      "replacements": ["memcpy_s"]
+    },
+    {
+      "names": ["wmemcpy"],
+      "replacements": ["wmemcpy_s"]
+    },
+    {
+      "names": ["memmove"],
+      "replacements": ["memmove_s"]
+    },
+    {
+      "names": ["wmemmove"],
+      "replacements": ["wmemmove_s"]
+    },
+    {
+      "names": ["readdir_r"],
+      "replacements": ["readdir"]
+    },
+    {
+      "names": ["scanf", "wscanf", "_tscanf", "sscanf", "swscanf", "_stscanf"],
+      "replacements": ["fgets"]
+    },
+    {
+      "names": [
+        "strcat",
+        "wcscat",
+        "_tcscat",
+        "_mbscat",
+        "StrCat",
+        "lstrcat",
+        "lStrCatBuff",
+        "_tccat",
+        "_mbccat",
+        "_ftcscat",
+        "strncat",
+        "wcsncat",
+        "_tcsncat",
+        "_mbsncat",
+        "_mbsnbcat",
+        "StrCatN",
+        "StrNCat",
+        "lstrncat",
+        "lstrcatn"
+      ],
+      "replacements": ["strcat_s", "strncat_s"]
+    },
+    {
+      "names": [
+        "strcpy",
+        "wcscpy",
+        "_tcscpy",
+        "_mbscpy",
+        "StrCpy",
+        "lstrcpy",
+        "_tccpy",
+        "_mbccpy",
+        "_ftcscpy",
+        "strncpy",
+        "wcsncpy",
+        "_tcsncpy",
+        "_mbsncpy",
+        "_mbsnbcpy",
+        "StrCpyN",
+        "StrNCpy",
+        "lstrcpyn"
+      ],
+      "replacements": ["strcpy_s", "strncpy_s"]
+    },
+    {
+      "names": ["strlen"],
+      "replacements": ["strnlen_s"]
+    },
+    {
+      "names": ["wcslen"],
+      "replacements": ["wcsnlen_s"]
+    },
+    {
+      "names": ["strtok", "_tcstok", "wcstok", "_mbstok"],
+      "replacements": ["strtok_s"]
+    },
+    {
+      "names": [
+        "wsprintf",
+        "sprintf",
+        "swprintf",
+        "_stprintf",
+        "wvsprintf",
+        "vsprintf",
+        "_vstprintf",
+        "vswprintf"
+      ],
+      "replacements": ["snprintf", "snprintf_s"]
+    }
+  ]
+}

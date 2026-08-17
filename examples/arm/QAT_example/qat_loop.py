@@ -20,6 +20,7 @@ By default the fixed input shape is 768x384.
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import importlib
 import json
@@ -29,7 +30,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast, Iterable
+from typing import Any, cast, Iterable, Sequence
 
 import numpy as np
 import torch
@@ -50,12 +51,16 @@ EXECUTORCH_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(EXECUTORCH_ROOT))
 
 from executorch.backends.arm.quantizer import (  # noqa: E402
-    get_symmetric_quantization_config,
     get_uint8_io_quantization_config,
+    get_vgf_snorm_quantization_config,
     VgfQuantizer,
 )
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner  # noqa: E402
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower  # noqa: E402
+from executorch.exir.passes.quantize_io_pass import (  # noqa: E402
+    quantize_input,
+    quantize_output,
+)
 from executorch.extension.export_util.utils import save_pte_program  # noqa: E402
 
 DEFAULT_WIDTH = 768
@@ -77,6 +82,15 @@ class FrameTriple:
 class QuantizedModel:
     model: torch.nn.Module
     coverage: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ExportedArtifact:
+    name: str
+    artifact_dir: Path
+    pte_path: Path | None
+    io_qparams_path: Path | None
+    io_qparams_payload: dict[str, Any] | None
 
 
 class RIFEWrapper(torch.nn.Module):
@@ -134,6 +148,17 @@ def load_rife_model(model_root: Path, checkpoint: Path | None) -> torch.nn.Modul
             f"Missing RIFE checkpoint keys: {incompatible_keys.missing_keys}"
         )
     return RIFEWrapper(flownet).eval()
+
+
+def clone_model(
+    model: torch.nn.Module,
+    *,
+    channels_last: bool = False,
+) -> torch.nn.Module:
+    cloned_model = copy.deepcopy(model).eval()
+    if channels_last:
+        cast(Any, cloned_model).to(memory_format=torch.channels_last)
+    return cloned_model
 
 
 def resolve_path(path_text: str, base_dir: Path) -> Path:
@@ -309,9 +334,15 @@ def load_triple_tensors(
     if triple.synthetic:
         index_text = triple.name.rsplit("_", maxsplit=1)[-1]
         generator = torch.Generator().manual_seed(random_seed + int(index_text))
-        input0 = torch.rand((1, 3, height, width), generator=generator)
-        input1 = torch.rand((1, 3, height, width), generator=generator)
-        target = torch.rand((1, 3, height, width), generator=generator)
+        input0 = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
+        input1 = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
+        target = torch.rand((1, 3, height, width), generator=generator).contiguous(
+            memory_format=torch.channels_last
+        )
         return (input0, input1), target
 
     if triple.input0 is None or triple.input1 is None or triple.target is None:
@@ -326,7 +357,10 @@ def load_triple_tensors(
         )
         for path in (triple.input0, triple.input1, triple.target)
     ]
-    input0, input1, target = [frame.unsqueeze(0) for frame in frames]
+    input0, input1, target = [
+        frame.unsqueeze(0).contiguous(memory_format=torch.channels_last)
+        for frame in frames
+    ]
     return (input0, input1), target
 
 
@@ -494,10 +528,13 @@ def run_model(
     inputs: tuple[torch.Tensor, torch.Tensor],
 ) -> torch.Tensor:
     with torch.no_grad():
-        output = model(*inputs)
+        output = model(
+            inputs[0].contiguous(memory_format=torch.channels_last),
+            inputs[1].contiguous(memory_format=torch.channels_last),
+        )
     if not isinstance(output, torch.Tensor):
         raise TypeError(f"Expected tensor output, got {type(output)}")
-    return output
+    return output.contiguous(memory_format=torch.channels_last)
 
 
 def target_name(target: Any) -> str:
@@ -626,7 +663,7 @@ def make_quantizer(
         VgfCompileSpec, VgfCompileSpec()._set_preserve_io_quantization(True)
     )
     quantizer = VgfQuantizer(compile_spec, use_composable_quantizer=True)
-    global_config = get_symmetric_quantization_config(is_qat=is_qat)
+    global_config = get_vgf_snorm_quantization_config(is_qat=is_qat)
     quantizer.set_global(global_config)
 
     if io_quantization == "int8":
@@ -648,17 +685,38 @@ def make_vgf_compile_spec(output_dir: Path) -> VgfCompileSpec:
     return compile_spec
 
 
+def quant_args_to_dict(quant_args: Sequence[Any]) -> dict[str, Any]:
+    scale, zero_point, qmin, qmax, dtype = quant_args
+    return {
+        "scale": float(scale),
+        "zero_point": int(zero_point),
+        "qmin": int(qmin),
+        "qmax": int(qmax),
+        "dtype": str(dtype),
+    }
+
+
 def build_ptq_model(
     model: torch.nn.Module,
     calibration_inputs: list[tuple[torch.Tensor, torch.Tensor]],
     *,
     io_quantization: str,
 ) -> QuantizedModel:
+    model = clone_model(model, channels_last=True)
+    calibration_inputs = [
+        (
+            inputs[0].contiguous(memory_format=torch.channels_last),
+            inputs[1].contiguous(memory_format=torch.channels_last),
+        )
+        for inputs in calibration_inputs
+    ]
     exported_model = export(model, calibration_inputs[0], strict=True).module(
         check_guards=False
     )
+    cast(Any, exported_model).to(memory_format=torch.channels_last)
     quantizer = make_quantizer(is_qat=False, io_quantization=io_quantization)
     prepared_model = prepare_pt2e(exported_model, quantizer)
+    cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_eval(prepared_model)
 
     with torch.no_grad():
@@ -666,6 +724,7 @@ def build_ptq_model(
             prepared_model(*inputs)
 
     converted_model = convert_pt2e(prepared_model)
+    cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
         model=converted_model,
         coverage=quantization_coverage(converted_model),
@@ -680,19 +739,37 @@ def build_qat_model(
     lr: float,
     io_quantization: str,
 ) -> QuantizedModel:
+    model = clone_model(model, channels_last=True)
+    training_samples = [
+        (
+            (
+                inputs[0].contiguous(memory_format=torch.channels_last),
+                inputs[1].contiguous(memory_format=torch.channels_last),
+            ),
+            target.contiguous(memory_format=torch.channels_last),
+        )
+        for inputs, target in training_samples
+    ]
     exported_model = export(model, training_samples[0][0], strict=True).module(
         check_guards=False
     )
+    cast(Any, exported_model).to(memory_format=torch.channels_last)
     quantizer = make_quantizer(is_qat=True, io_quantization=io_quantization)
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
+    cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
     optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
 
     for step in range(steps):
         total_loss = 0.0
         for inputs, target in training_samples:
-            prediction = prepared_model(*inputs)
-            loss = F.mse_loss(prediction, target)
+            prediction = prepared_model(*inputs).contiguous(
+                memory_format=torch.channels_last
+            )
+            loss = F.mse_loss(
+                prediction,
+                target.contiguous(memory_format=torch.channels_last),
+            )
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -704,6 +781,7 @@ def build_qat_model(
 
     prepared_model = move_exported_model_to_eval(prepared_model)
     converted_model = convert_pt2e(prepared_model)
+    cast(Any, converted_model).to(memory_format=torch.channels_last)
     return QuantizedModel(
         model=converted_model,
         coverage=quantization_coverage(converted_model),
@@ -716,12 +794,24 @@ def export_vgf_artifact(
     *,
     output_dir: Path,
     name: str,
+    io_quantization: str,
     save_pte: bool,
-) -> Path:
+) -> ExportedArtifact:
     artifact_dir = output_dir / f"vgf_{name}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     compile_spec = make_vgf_compile_spec(artifact_dir)
     partitioner = VgfPartitioner(compile_spec)
+    cast(Any, model).to(memory_format=torch.channels_last)
+    inputs = (
+        inputs[0].contiguous(memory_format=torch.channels_last),
+        inputs[1].contiguous(memory_format=torch.channels_last),
+    )
+    pte_path = artifact_dir / f"rife_{name}_vgf.pte" if save_pte else None
+    io_qparams_path = (
+        artifact_dir / f"rife_{name}_vgf_io_qparams.json"
+        if io_quantization != "none"
+        else None
+    )
 
     print(f"[vgf] exporting {name} model to {artifact_dir} ...")
     aten_dialect = export(model, args=inputs, strict=True)
@@ -730,11 +820,43 @@ def export_vgf_artifact(
         partitioner=[partitioner],
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
+    io_qparams_payload: dict[str, Any] | None = None
+    if io_quantization != "none":
+        edge_program = edge_program_manager.exported_program()
+        input_qparams = [
+            quantize_input(edge_program, input_index)
+            for input_index in range(len(inputs))
+        ]
+        output_qparams = [quantize_output(edge_program, 0)]
+        edge_program.graph_module.graph.eliminate_dead_code()
+        edge_program.graph_module.recompile()
+        io_qparams_payload = {
+            "input_qparams": [
+                quant_args_to_dict(quant_args) for quant_args in input_qparams
+            ],
+            "output_qparams": [
+                quant_args_to_dict(quant_args) for quant_args in output_qparams
+            ],
+        }
+        if io_qparams_path is None:
+            raise RuntimeError("Expected an IO qparams output path")
+        write_json(io_qparams_path, io_qparams_payload)
     if save_pte:
-        pte_path = artifact_dir / f"rife_{name}_vgf.pte"
+        if pte_path is None:
+            raise RuntimeError("Expected a PTE output path")
         save_pte_program(edge_program_manager.to_executorch(), str(pte_path))
         print(f"[vgf] wrote {pte_path}")
-    return artifact_dir
+    if io_qparams_payload is not None:
+        if io_qparams_path is None:
+            raise RuntimeError("Expected an IO qparams output path")
+        print(f"[vgf] wrote {io_qparams_path}")
+    return ExportedArtifact(
+        name=name,
+        artifact_dir=artifact_dir,
+        pte_path=pte_path,
+        io_qparams_path=io_qparams_path,
+        io_qparams_payload=io_qparams_payload,
+    )
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -777,6 +899,10 @@ def write_markdown_report(
     for key, label in (
         ("eager_psnr", "Eager PSNR"),
         ("eager_ssim", "Eager SSIM"),
+        ("eager_channels_last_psnr", "Eager Channels-Last PSNR"),
+        ("eager_channels_last_ssim", "Eager Channels-Last SSIM"),
+        ("eager_channels_last_vs_eager_mae", "Eager Channels-Last vs eager MAE"),
+        ("eager_channels_last_vs_eager_sqnr", "Eager Channels-Last vs eager SQNR"),
         ("ptq_psnr", "PTQ PSNR"),
         ("ptq_ssim", "PTQ SSIM"),
         ("ptq_vs_eager_mae", "PTQ vs eager MAE"),
@@ -1112,9 +1238,10 @@ def export_requested_vgf_artifacts(
     triples: list[FrameTriple],
     ptq_model: torch.nn.Module | None,
     qat_model: torch.nn.Module | None,
-) -> None:
+) -> dict[str, ExportedArtifact]:
+    artifacts: dict[str, ExportedArtifact] = {}
     if args.export_vgf == "none":
-        return
+        return artifacts
 
     inputs, _target = load_triple_tensors(
         triples[0],
@@ -1126,23 +1253,26 @@ def export_requested_vgf_artifacts(
     if args.export_vgf in ("ptq", "all"):
         if ptq_model is None:
             raise RuntimeError("PTQ VGF export requested, but PTQ was not built.")
-        export_vgf_artifact(
+        artifacts["ptq"] = export_vgf_artifact(
             ptq_model,
             inputs,
             output_dir=args.output_dir,
             name="ptq",
+            io_quantization=args.io_quantization,
             save_pte=args.save_pte,
         )
     if args.export_vgf in ("qat", "all"):
         if qat_model is None:
             raise RuntimeError("QAT VGF export requested, but QAT was not built.")
-        export_vgf_artifact(
+        artifacts["qat"] = export_vgf_artifact(
             qat_model,
             inputs,
             output_dir=args.output_dir,
             name="qat",
+            io_quantization=args.io_quantization,
             save_pte=args.save_pte,
         )
+    return artifacts
 
 
 def update_row_with_prediction_metrics(
@@ -1167,21 +1297,279 @@ def update_row_with_delta_metrics(
         row[f"{prefix}_{key}"] = value
 
 
+def qparam_dtype(dtype_text: str) -> torch.dtype:
+    if dtype_text == "torch.int8":
+        return torch.int8
+    if dtype_text == "torch.uint8":
+        return torch.uint8
+    raise ValueError(f"Unsupported runtime qparam dtype: {dtype_text}")
+
+
+def quantize_tensor_for_runtime(
+    tensor: torch.Tensor,
+    quant_args: dict[str, Any],
+) -> torch.Tensor:
+    scale = float(quant_args["scale"])
+    zero_point = int(quant_args["zero_point"])
+    qmin = int(quant_args["qmin"])
+    qmax = int(quant_args["qmax"])
+    dtype = qparam_dtype(str(quant_args["dtype"]))
+    quantized = torch.round(tensor / scale + zero_point)
+    quantized = quantized.clamp(qmin, qmax).to(dtype)
+    return quantized.contiguous(memory_format=torch.channels_last)
+
+
+def dequantize_tensor_from_runtime(
+    tensor: torch.Tensor,
+    quant_args: dict[str, Any],
+) -> torch.Tensor:
+    scale = float(quant_args["scale"])
+    zero_point = int(quant_args["zero_point"])
+    dequantized = (tensor.to(torch.float32) - zero_point) * scale
+    return dequantized.contiguous(memory_format=torch.channels_last)
+
+
+def try_get_runtime() -> tuple[Any | None, list[str]]:
+    warnings: list[str] = []
+    try:
+        from executorch.runtime import Runtime
+    except Exception as error:
+        warnings.append(
+            "ExecuTorch runtime Python bindings are unavailable; "
+            f"skipping runtime numerics ({type(error).__name__}: {error})."
+        )
+        return None, warnings
+
+    try:
+        runtime = Runtime.get()
+    except Exception as error:
+        warnings.append(
+            "ExecuTorch runtime initialization failed; "
+            f"skipping runtime numerics ({type(error).__name__}: {error})."
+        )
+        return None, warnings
+
+    if not runtime.backend_registry.is_available("VgfBackend"):
+        warnings.append(
+            "VgfBackend is not available in this ExecuTorch runtime build; "
+            "skipping runtime numerics."
+        )
+        return None, warnings
+    return runtime, warnings
+
+
+def execute_runtime_artifact(
+    method: Any,
+    input_qparams: list[dict[str, Any]] | None,
+    output_qparams: list[dict[str, Any]] | None,
+    inputs: tuple[torch.Tensor, torch.Tensor],
+) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+    runtime_inputs: tuple[torch.Tensor, torch.Tensor]
+    if input_qparams is None:
+        runtime_inputs = inputs
+    else:
+        runtime_inputs = (
+            quantize_tensor_for_runtime(inputs[0], input_qparams[0]),
+            quantize_tensor_for_runtime(inputs[1], input_qparams[1]),
+        )
+    outputs = method.execute(runtime_inputs)
+    if not outputs:
+        raise RuntimeError("Runtime returned no outputs")
+    output = outputs[0]
+    if not isinstance(output, torch.Tensor):
+        output = torch.as_tensor(output)
+    if output_qparams is not None:
+        output = dequantize_tensor_from_runtime(output, output_qparams[0])
+    return output, runtime_inputs
+
+
+def dump_runtime_comparison_outputs(
+    output_dir: Path,
+    mode_name: str,
+    row_name: str,
+    reference_output: torch.Tensor,
+    runtime_output: torch.Tensor,
+    runtime_inputs: tuple[torch.Tensor, torch.Tensor],
+) -> None:
+    safe_row_name = row_name.replace("..", "__").replace("/", "_").replace("\\", "_")
+    dump_dir = output_dir / "runtime_debug" / mode_name / safe_row_name
+    dump_dir.mkdir(parents=True, exist_ok=True)
+    reference_cpu = reference_output.detach().cpu()
+    runtime_cpu = runtime_output.detach().cpu()
+    diff_cpu = runtime_cpu - reference_cpu
+    np.save(dump_dir / f"{mode_name}.npy", reference_cpu.numpy())
+    np.save(dump_dir / f"{mode_name}_runtime.npy", runtime_cpu.numpy())
+    np.save(dump_dir / f"{mode_name}_runtime_minus_{mode_name}.npy", diff_cpu.numpy())
+    for input_index, runtime_input in enumerate(runtime_inputs):
+        # We will feed the input npy array to the application running on device
+        # and the runtime expects the data to be stored in NHWC format.
+        input_nhwc = runtime_input.permute(0, 2, 3, 1).contiguous()
+        np.save(
+            dump_dir / f"input_{input_index}.npy",
+            input_nhwc.numpy(),
+        )
+
+
+def load_runtime_method_for_artifact(
+    runtime: Any,
+    mode_name: str,
+    artifact: ExportedArtifact,
+) -> tuple[Any, list[dict[str, Any]] | None, list[dict[str, Any]] | None] | str:
+    if artifact.pte_path is None:
+        return f"No .pte was written for {mode_name}; skipping runtime numerics."
+    try:
+        program = runtime.load_program(str(artifact.pte_path))
+        method = program.load_method("forward")
+        if method is None:
+            raise RuntimeError(f"No forward method found in {artifact.pte_path}")
+    except Exception as error:
+        return (
+            f"{mode_name} runtime initialization failed; skipping runtime numerics "
+            f"({type(error).__name__}: {error})."
+        )
+    return (
+        method,
+        (
+            None
+            if artifact.io_qparams_payload is None
+            else artifact.io_qparams_payload["input_qparams"]
+        ),
+        (
+            None
+            if artifact.io_qparams_payload is None
+            else artifact.io_qparams_payload["output_qparams"]
+        ),
+    )
+
+
+def evaluate_runtime_artifact_rows(
+    args: argparse.Namespace,
+    triples: list[FrameTriple],
+    rows: list[dict[str, Any]],
+    mode_name: str,
+    prefix: str,
+    method: Any,
+    input_qparams: list[dict[str, Any]] | None,
+    output_qparams: list[dict[str, Any]] | None,
+    reference_model: torch.nn.Module | None,
+) -> str | None:
+    for index, triple in enumerate(triples):
+        inputs, target = load_triple_tensors(
+            triple,
+            height=args.height,
+            width=args.width,
+            preprocess=args.preprocess,
+            random_seed=args.random_seed,
+        )
+        try:
+            runtime_output, quantized_runtime_inputs = execute_runtime_artifact(
+                method,
+                input_qparams,
+                output_qparams,
+                inputs,
+            )
+        except Exception as error:
+            for processed_row in rows[:index]:
+                for key in list(processed_row):
+                    if key.startswith(f"{prefix}_"):
+                        del processed_row[key]
+            mode_name = prefix.removesuffix("_runtime")
+            return (
+                f"{mode_name} runtime execution failed; skipping remaining runtime numerics "
+                f"({type(error).__name__}: {error})."
+            )
+        update_row_with_prediction_metrics(
+            rows[index],
+            prefix=prefix,
+            prediction=runtime_output,
+            target=target,
+        )
+        if reference_model is not None:
+            reference_output = run_model(reference_model, inputs)
+            update_row_with_delta_metrics(
+                rows[index],
+                prefix=f"{prefix}_vs_{mode_name}",
+                prediction=runtime_output,
+                reference=reference_output,
+            )
+            dump_runtime_comparison_outputs(
+                args.output_dir,
+                mode_name,
+                rows[index]["name"],
+                reference_output,
+                runtime_output,
+                quantized_runtime_inputs,
+            )
+    return None
+
+
+def evaluate_runtime_artifacts(
+    args: argparse.Namespace,
+    triples: list[FrameTriple],
+    artifacts: dict[str, ExportedArtifact],
+    rows: list[dict[str, Any]],
+    reference_models: dict[str, torch.nn.Module],
+) -> list[str]:
+    if not artifacts:
+        return []
+    runtime, warnings = try_get_runtime()
+    if runtime is None:
+        for warning in warnings:
+            print(f"[runtime] warning: {warning}")
+        return warnings
+
+    for mode_name, artifact in sorted(artifacts.items()):
+        prefix = f"{mode_name}_runtime"
+        runtime_artifact = load_runtime_method_for_artifact(
+            runtime, mode_name, artifact
+        )
+        if isinstance(runtime_artifact, str):
+            warnings.append(runtime_artifact)
+            continue
+        method, input_qparams, output_qparams = runtime_artifact
+        execution_warning = evaluate_runtime_artifact_rows(
+            args,
+            triples,
+            rows,
+            mode_name,
+            prefix,
+            method,
+            input_qparams,
+            output_qparams,
+            reference_models.get(mode_name),
+        )
+        if execution_warning is None:
+            continue
+        warnings.append(execution_warning)
+        continue
+
+    for warning in warnings:
+        print(f"[runtime] warning: {warning}")
+    return warnings
+
+
 def print_progress(index: int, total: int, row: dict[str, Any]) -> None:
     progress = f"{index + 1}/{total} {row['name']}"
     if "eager_psnr" in row:
         progress += f" eager_psnr={row['eager_psnr']:.3f}"
+    if "eager_channels_last_psnr" in row:
+        progress += f" eager_cl_psnr={row['eager_channels_last_psnr']:.3f}"
     if "ptq_psnr" in row:
         progress += f" ptq_psnr={row['ptq_psnr']:.3f}"
     if "qat_psnr" in row:
         progress += f" qat_psnr={row['qat_psnr']:.3f}"
+    if "ptq_runtime_psnr" in row:
+        progress += f" ptq_runtime_psnr={row['ptq_runtime_psnr']:.3f}"
+    if "qat_runtime_psnr" in row:
+        progress += f" qat_runtime_psnr={row['qat_runtime_psnr']:.3f}"
     print(progress)
 
 
 def evaluate_triples(
     args: argparse.Namespace,
     triples: list[FrameTriple],
-    model: torch.nn.Module,
+    eager_model: torch.nn.Module,
+    eager_channels_last_model: torch.nn.Module | None,
     ptq_model: torch.nn.Module | None,
     qat_model: torch.nn.Module | None,
 ) -> list[dict[str, Any]]:
@@ -1205,13 +1593,29 @@ def evaluate_triples(
         }
         eager_output = None
         if run_eager:
-            eager_output = run_model(model, inputs)
+            eager_output = run_model(eager_model, inputs)
             update_row_with_prediction_metrics(
                 row,
                 prefix="eager",
                 prediction=eager_output,
                 target=target,
             )
+            if eager_channels_last_model is not None:
+                eager_channels_last_output = run_model(
+                    eager_channels_last_model, inputs
+                )
+                update_row_with_prediction_metrics(
+                    row,
+                    prefix="eager_channels_last",
+                    prediction=eager_channels_last_output,
+                    target=target,
+                )
+                update_row_with_delta_metrics(
+                    row,
+                    prefix="eager_channels_last_vs_eager",
+                    prediction=eager_channels_last_output,
+                    reference=eager_output,
+                )
 
         if ptq_model is not None:
             ptq_output = run_model(ptq_model, inputs)
@@ -1222,7 +1626,7 @@ def evaluate_triples(
                 target=target,
             )
             if eager_output is None:
-                eager_output = run_model(model, inputs)
+                eager_output = run_model(eager_model, inputs)
             update_row_with_delta_metrics(
                 row,
                 prefix="ptq_vs_eager",
@@ -1239,7 +1643,7 @@ def evaluate_triples(
                 target=target,
             )
             if eager_output is None:
-                eager_output = run_model(model, inputs)
+                eager_output = run_model(eager_model, inputs)
             update_row_with_delta_metrics(
                 row,
                 prefix="qat_vs_eager",
@@ -1254,7 +1658,9 @@ def evaluate_triples(
 
 
 def build_aggregate(
-    args: argparse.Namespace, rows: list[dict[str, Any]]
+    args: argparse.Namespace,
+    rows: list[dict[str, Any]],
+    runtime_warnings: list[str],
 ) -> dict[str, Any]:
     aggregate: dict[str, Any] = {
         "triple_count": len(rows),
@@ -1265,8 +1671,21 @@ def build_aggregate(
         "io_quantization": args.io_quantization,
         "data_source": "random" if rows and rows[0].get("synthetic") else "frames",
         "random_seed": args.random_seed,
+        "runtime_warnings": runtime_warnings,
     }
-    for prefix in ("eager", "ptq", "ptq_vs_eager", "qat", "qat_vs_eager"):
+    for prefix in (
+        "eager",
+        "eager_channels_last",
+        "eager_channels_last_vs_eager",
+        "ptq",
+        "ptq_vs_eager",
+        "qat",
+        "qat_vs_eager",
+        "ptq_runtime",
+        "ptq_runtime_vs_ptq",
+        "qat_runtime",
+        "qat_runtime_vs_qat",
+    ):
         aggregate.update(aggregate_metrics(rows, prefix))
     return aggregate
 
@@ -1303,6 +1722,59 @@ def write_outputs(
     print(f"Wrote {args.output_dir / 'report.md'}")
 
 
+def print_summary(aggregate: dict[str, Any]) -> None:
+    print("")
+    print("== Summary ==")
+    for prefix, label in (
+        ("eager", "eager"),
+        ("eager_channels_last", "eager_channels_last"),
+        ("ptq", "ptq"),
+        ("ptq_runtime", "ptq_runtime"),
+        ("qat", "qat"),
+        ("qat_runtime", "qat_runtime"),
+    ):
+        if f"{prefix}_psnr_mean" not in aggregate:
+            continue
+        summary = (
+            f"{label}: "
+            f"psnr={format_metric(aggregate.get(f'{prefix}_psnr_mean'))} "
+            f"ssim={format_metric(aggregate.get(f'{prefix}_ssim_mean'))}"
+        )
+        if prefix == "ptq_runtime":
+            mae_key = "ptq_runtime_vs_ptq_mae_mean"
+            sqnr_key = "ptq_runtime_vs_ptq_sqnr_mean"
+            if mae_key in aggregate:
+                summary += (
+                    f" vs_ptq_mae={format_metric(aggregate.get(mae_key))}"
+                    f" vs_ptq_sqnr={format_metric(aggregate.get(sqnr_key))}"
+                )
+            print(summary)
+            continue
+        if prefix == "qat_runtime":
+            mae_key = "qat_runtime_vs_qat_mae_mean"
+            sqnr_key = "qat_runtime_vs_qat_sqnr_mean"
+            if mae_key in aggregate:
+                summary += (
+                    f" vs_qat_mae={format_metric(aggregate.get(mae_key))}"
+                    f" vs_qat_sqnr={format_metric(aggregate.get(sqnr_key))}"
+                )
+            print(summary)
+            continue
+        mae_key = f"{prefix}_vs_eager_mae_mean"
+        sqnr_key = f"{prefix}_vs_eager_sqnr_mean"
+        if mae_key in aggregate:
+            summary += (
+                f" vs_eager_mae={format_metric(aggregate.get(mae_key))}"
+                f" vs_eager_sqnr={format_metric(aggregate.get(sqnr_key))}"
+            )
+        print(summary)
+    runtime_warnings = cast(list[str], aggregate.get("runtime_warnings", []))
+    if runtime_warnings:
+        print("runtime_warnings:")
+        for warning in runtime_warnings:
+            print(f"  - {warning}")
+
+
 def main() -> int:
     args = parse_args()
     validate_args(args)
@@ -1319,13 +1791,41 @@ def main() -> int:
     print(f"Data source: {source}")
 
     model = load_rife_model(args.model_root, args.checkpoint)
+    eager_channels_last_model = clone_model(model, channels_last=True)
     ptq_model, qat_model, quantization_reports = build_requested_quantized_models(
         args,
         model,
         triples,
     )
-    rows = evaluate_triples(args, triples, model, ptq_model, qat_model)
-    write_outputs(args, build_aggregate(args, rows), rows, quantization_reports)
+    rows = evaluate_triples(
+        args,
+        triples,
+        model,
+        eager_channels_last_model,
+        ptq_model,
+        qat_model,
+    )
+    artifacts = export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
+    reference_models = {
+        name: reference_model
+        for name, reference_model in (("ptq", ptq_model), ("qat", qat_model))
+        if reference_model is not None
+    }
+    runtime_warnings = evaluate_runtime_artifacts(
+        args,
+        triples,
+        artifacts,
+        rows,
+        reference_models,
+    )
+    aggregate = build_aggregate(args, rows, runtime_warnings)
+    write_outputs(
+        args,
+        aggregate,
+        rows,
+        quantization_reports,
+    )
+    print_summary(aggregate)
     export_requested_vgf_artifacts(args, triples, ptq_model, qat_model)
     return 0
 

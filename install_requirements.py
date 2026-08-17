@@ -16,7 +16,7 @@ from install_utils import determine_torch_url, is_intel_mac_os, python_is_compat
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
-TORCHAO_NIGHTLY_VERSION = "0.18.0.dev20260715"
+TORCHAO_NIGHTLY_VERSION = "0.18.0.dev20260729"
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.

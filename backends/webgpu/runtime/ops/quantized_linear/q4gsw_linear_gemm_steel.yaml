@@ -3,6 +3,7 @@ q4gsw_linear_gemm_steel:
     DTYPE: float
     PWDQ: false
     ACC: float
+    BK: 16
   shader_variants:
     - NAME: q4gsw_linear_gemm_steel
       DTYPE: float
@@ -20,3 +21,8 @@ q4gsw_linear_gemm_steel:
       DTYPE: half
       PWDQ: true
       ACC: half
+    - NAME: q4gsw_steel_bk64
+      DTYPE: half
+      PWDQ: true
+      ACC: half
+      BK: 64

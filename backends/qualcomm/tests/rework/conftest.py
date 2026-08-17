@@ -10,7 +10,6 @@ import logging
 import os
 import random
 import subprocess
-
 import tempfile
 import time
 import traceback
@@ -18,6 +17,7 @@ import xml.etree.ElementTree as et
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, List, Tuple
 
@@ -53,6 +53,7 @@ TOTAL_TEST_COUNT = "total_test_count"
 # et framework messages
 EXCEPTION_EXIR_PROGRAM = "exir/program"
 EXCEPTION_FROM_PASSES = "backends/qualcomm/_passes"
+EXCEPTION_FROM_PREPROCESS = "backends/qualcomm/qnn_preprocess"
 
 
 def check_exception(msg):
@@ -60,6 +61,16 @@ def check_exception(msg):
         return msg in traceback.format_exc()
 
     return partial(_check, msg)
+
+
+# extend this to tests that are agnostic across SoCs.
+@dataclass
+class Property:
+    soc_model: str = "SM8850"
+
+
+def default_property():
+    return Property()
 
 
 class Metrics(ABC):
@@ -465,10 +476,11 @@ def export_and_verify(
     quantizer: QnnQuantizer,
     compile_specs: List[Any],
     metrics: Metrics,
+    expected_targets: set = None,
 ):
     with calibrate(module, [inputs], quantizer) as exported_module:
+        nodes = {node.target for node in exported_module.graph.nodes}
         if quantizer is not None:
-            nodes = {node.target for node in exported_module.graph.nodes}
             q_and_dq = {
                 torch.ops.quantized_decomposed.quantize_per_tensor.default,
                 torch.ops.quantized_decomposed.dequantize_per_tensor.default,
@@ -478,6 +490,10 @@ def export_and_verify(
                 torch.ops.torchao.dequantize_affine.default,
             }
             assert nodes.intersection(q_and_dq), EXPECT_NOT_ANNOTATED
+        if expected_targets is not None:
+            assert (
+                expected_targets <= nodes
+            ), f"expected {expected_targets - nodes} in exported graph"
 
     delegated_prog = to_edge_transform_and_lower_to_qnn(
         module=exported_module,

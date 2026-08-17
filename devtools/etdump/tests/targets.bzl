@@ -1,6 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
@@ -33,3 +34,16 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
     )
+
+    if is_fbcode:
+        python_unittest(
+            name = "serialize_test",
+            srcs = [
+                "serialize_test.py",
+            ],
+            deps = [
+                "//executorch/devtools/etdump:schema_flatcc",
+                "//executorch/devtools/etdump:serialize",
+                "//executorch/exir/_serialize:lib",
+            ],
+        )

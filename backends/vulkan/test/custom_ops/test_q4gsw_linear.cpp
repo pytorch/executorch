@@ -269,6 +269,8 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {32, 64, 32, 16},
       {32, 128, 64, 32},
       {32, 256, 128, 64},
+      {256, 128, 128, 32}, // M=256 > K=128; all dims < kRefDimSizeLimit
+
       // Coopmat-eligible correctness shapes (M%64==0, N%64==0, K%32==0,
       // group_size%32==0). The Buffer+Half variant fires linear_q4gsw_coopmat /
       // linear_dq8ca_q4gsw_coopmat and is validated against the CPU reference.

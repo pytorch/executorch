@@ -8,7 +8,6 @@
 
 from typing import Optional, Tuple, Union
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 
@@ -181,29 +180,27 @@ def test_div_scalar_vgf_no_quant(test_data: input_t1):
     pipeline.run()
 
 
+aten_ops_quant = [
+    "torch.ops.aten.reciprocal.default",
+    "torch.ops.aten.mul.Tensor",
+]
+
+exir_ops_quant = [
+    "executorch_exir_dialects_edge__ops_aten_reciprocal_default",
+    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+]
+
+
 @common.parametrize("test_data", test_data_suite_scalar)
-@pytest.mark.xfail(
-    reason=(
-        "Quantized div.Scalar is rewritten to div.Tensor after the initial "
-        "quantizer support match, so it misses DecomposeDivPass and remains "
-        "outside the VGF delegate. MLETORCH-2366"
-    ),
-    strict=True,
-)
 @common.SkipIfNoModelConverter
 def test_div_scalar_vgf_quant(test_data: input_t1):
-    """Test Tensor / Scalar division (VGF INT).
-
-    The quantized scalar path is rewritten before the ATen and should not be
-    checked as div.Scalar. We keep expected op lists empty, matching the
-    existing quantized div.Tensor test.
-
-    """
+    """Test Tensor / Scalar division (VGF INT)."""
     pipeline = VgfPipeline[input_t1](
         DivScalar(),
         test_data(),
-        [],
-        [],
+        aten_op=aten_ops_quant,
+        exir_op=exir_ops_quant,
         quantize=True,
+        use_to_edge_transform_and_lower=False,
     )
     pipeline.run()

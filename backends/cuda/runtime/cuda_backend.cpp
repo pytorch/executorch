@@ -330,10 +330,18 @@ class ET_EXPERIMENTAL CudaBackend final
         so_blob_key.c_str(),
         static_cast<uint32_t>(aoti_dso_buffer.error()));
 
-    // Generate dynamic temporary file path
+    // Generate a unique temporary file path. so_blob_key already selected the
+    // blob above and is deliberately kept out of the filename: it can be an
+    // untrusted, variable-length payload key, so embedding it risks path
+    // traversal and cross-key collisions. Uniqueness comes from the pid
+    // (across processes) and an atomic counter (within a process, since two
+    // identical CUDA partitions would otherwise clobber each other's .so).
+    static std::atomic<uint64_t> so_file_counter{0};
     filesystem::path temp_dir = filesystem::temp_directory_path();
-    filesystem::path so_path =
-        temp_dir / (so_blob_key + to_string(get_process_id()) + ".so");
+    filesystem::path so_path = temp_dir /
+        ("executorch_cuda_" + to_string(get_process_id()) + "_" +
+         to_string(so_file_counter.fetch_add(1, std::memory_order_relaxed)) +
+         ".so");
 
     // Create a temporary file
     ofstream outfile(so_path, ios::binary);

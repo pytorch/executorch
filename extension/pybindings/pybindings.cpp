@@ -103,6 +103,7 @@ using torch::executor::ETDumpGen;
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
+using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
 #endif // !USE_ATEN_LIB
 
@@ -794,18 +795,35 @@ struct PyModule final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
         input_dim_order.push_back(std::move(dim_order));
+        // The runtime has two device types, so a device outside that pair
+        // cannot be represented at all and the tensor would carry a label that
+        // does not describe its memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " + method_name +
+              " is on device " + at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device = mapped_device.value_or(
+            torch::executor::Device(torch::executor::DeviceType::CPU));
         input_tensors.emplace_back(
             type,
             dim,
             input_sizes.back().data(),
             nullptr,
             input_dim_order.back().data(),
-            input_strides.back().data());
+            input_strides.back().data(),
+            torch::executor::TensorShapeDynamism::STATIC,
+            device.type(),
+            device.index());
 
         torch::executor::Tensor temp =
             torch::executor::Tensor(&input_tensors.back());
@@ -1128,11 +1146,26 @@ struct PyMethod final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
+        // Record where the buffer actually lives. The conversion copied every
+        // other property and left the device at CPU, so an accelerator buffer
+        // was described as host memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " +
+              method_->method_meta().name() + " is on device " +
+              at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device =
+            mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
         TensorPtr tensor = for_blob(
                                mutable_tensor_data_ptr_no_cow(at_tensor),
                                std::move(sizes),
@@ -1140,6 +1173,7 @@ struct PyMethod final {
                                .strides(std::move(strides))
                                .dim_order(std::move(dim_order))
                                .dynamism(aten::TensorShapeDynamism::STATIC)
+                               .device(device)
                                .make_tensor_ptr();
         input_tensors.push_back(tensor);
         EValue evalue(input_tensors.back());

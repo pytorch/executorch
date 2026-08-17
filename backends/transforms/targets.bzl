@@ -409,6 +409,7 @@ def define_common_targets():
         srcs = ["remove_permutes_around_elementwise_ops.py"],
         visibility = [
             "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             ":permute_pass_utils",
@@ -445,6 +446,20 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "replace_squeeze_unsqueeze_with_view",
+        srcs = ["replace_squeeze_unsqueeze_with_view.py"],
+        visibility = [
+            "//executorch/backends/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            ":permute_pass_utils",
+            "//caffe2:torch",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     runtime.python_test(
         name = "test_permute_optimization_passes",
         srcs = [
@@ -461,5 +476,36 @@ def define_common_targets():
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
+            ":replace_squeeze_unsqueeze_with_view",
+        ],
+    )
+
+    runtime.python_library(
+        name = "replace_ops_with_channels_last_variants",
+        srcs = [
+            "replace_ops_with_channels_last_variants.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            "//executorch/exir:pass_base",
+            "//executorch/exir:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_replace_ops_with_channels_last_variants",
+        srcs = [
+            "test/test_replace_ops_with_channels_last_variants.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_ops",
+            ":replace_ops_with_channels_last_variants",
+            "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

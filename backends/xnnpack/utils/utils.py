@@ -74,6 +74,33 @@ def normalize_mean_dims(mean_dims: Sequence[int] | int | None, rank: int) -> Lis
     return normalized_dims
 
 
+def normalize_pool2d_args(
+    node: torch.fx.Node, has_dilation: bool
+) -> Tuple[List[int], List[int], List[int], List[int]]:
+    """Return (kernel, stride, padding, dilation) for a pool2d node as 2-element lists.
+
+    Applies the aten schema defaults: an int or 1-element list broadcasts to both
+    dimensions, an omitted or empty stride means kernel_size, padding defaults to
+    0 and dilation to 1.
+    """
+    args = node.args
+
+    def pair(index: int, default: Optional[List[int]] = None) -> List[int]:
+        value = args[index] if len(args) > index else None
+        if isinstance(value, int):
+            return [value, value]
+        values = list(value) if value is not None else []
+        if not values:
+            return cast(List[int], default)
+        return [values[0], values[0]] if len(values) == 1 else [values[0], values[1]]
+
+    kernel = pair(1)
+    stride = pair(2, kernel)
+    padding = pair(3, [0, 0])
+    dilation = pair(4, [1, 1]) if has_dilation else [1, 1]
+    return kernel, stride, padding, dilation
+
+
 def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:
     """
     Checks if the current node is only consumed by a relu node and can be fused,

@@ -91,6 +91,10 @@ test_modules = {
         AvgPool2d(3, (1, 2), 1, True, True),
         (torch.rand(1, 1, 14, 14),),
     ),
+    "ceil_mode_count_include_pad_kernel_stride": lambda: (
+        AvgPool2d(3, 3, 1, True, True),
+        (torch.rand(1, 1, 5, 5),),
+    ),
     "divisor_override": lambda: (
         AvgPool2d(3, 2, 1, False, False, divisor_override=2),
         (torch.rand(1, 1, 14, 14),),

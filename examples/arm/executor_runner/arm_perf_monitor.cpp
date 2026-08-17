@@ -1,4 +1,4 @@
-/* Copyright 2024-2025 Arm Limited and/or its affiliates.
+/* Copyright 2024-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ namespace {
 
 // Returns the Armv8.1-M PMU cycle counter; 0 on cores without it.
 static inline uint64_t arm_pmu_cycles() {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   return ARM_PMU_Get_CCNTR();
 #else
   return 0;
@@ -139,7 +139,7 @@ void StartMeasurements() {
 }
 
 void StopMeasurements(int num_inferences) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);

@@ -98,6 +98,28 @@ class ExportableNVFP4Tensor(TorchAOBaseTensor):
             output_dtype=dtype,
         )
 
+    def to(self, *args, **kwargs) -> "ExportableNVFP4Tensor":
+        """Move device and/or set the output dtype *without* dequantizing.
+
+        Mirrors ``ExportableInt4Tensor.to``: the packed ``qdata`` (uint32) and
+        ``scale`` (uint8 E4M3 block scales) only move across devices -- neither
+        is a floating scale, so casting to the activation dtype must not touch
+        their bit patterns. ``per_tensor_scale`` (a float32 scalar) follows the
+        device only, and ``orig_dtype`` (the dequantized output dtype) follows
+        ``dtype``. Use :meth:`dequantize` to materialize a dense tensor.
+        """
+        kwargs = self._get_to_kwargs(*args, **kwargs)
+        device = kwargs.pop("device")
+        dtype = kwargs.pop("dtype")
+        assert dtype.is_floating_point, f"expected a floating dtype; got {dtype}"
+        return ExportableNVFP4Tensor(
+            self.qdata.to(device),
+            self.scale.to(device),
+            self.per_tensor_scale.to(device),
+            self.block_size,
+            dtype,
+        )
+
     __torch_function__ = torch._C._disabled_torch_function_impl
 
 

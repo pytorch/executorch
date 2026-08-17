@@ -82,7 +82,7 @@ class NeutronCompileSpecBuilder:
         :param config: Neutron accelerator configuration, e.g. "imxrt700"
         :param intermediates_dir: Directory to store intermediate artifact files.
         :param extra_flags: Extra flags for the Neutron compiler
-        :param operators_not_to_delegate: List of operators that should not be delegated
+        :param operators_not_to_delegate: List of operators that will not be delegated
         :param use_neutron_for_format_conversion: If True, the EdgeProgramToIRConverter will insert `Transpose` ops to
                                                 ensure that the IO matches the executorch partition, which will be
                                                 delegated to Neutron.

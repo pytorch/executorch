@@ -77,7 +77,11 @@ For Cortex-M testing, use a Cortex-M target and bundled I/O:
   - End-to-end DEiT-Tiny image classification flow for Ethos-U, including
   model fine-tuning, export, bare-metal runtime build, and Corstone-320 FVP
   execution.
-- [image_classification_example_vgf](image_classification_example_vgf/) -
+ - [mobilesam_prompt_segmentation_example_ethos_u](mobilesam_prompt_segmentation_example_ethos_u/)
+   - End-to-end MobileSAM prompt segmentation flow for Ethos-U, including
+   export, quantization, debug mask generation, bare-metal runtime build, and
+   Corstone-320 FVP execution.
+ - [image_classification_example_vgf](image_classification_example_vgf/) -
   DEiT-Tiny image classification flow for VGF host execution.
 - [super_resolution_example_vgf](super_resolution_example_vgf) - Swin2SR image
   super-resolution.

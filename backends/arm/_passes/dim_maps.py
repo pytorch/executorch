@@ -363,6 +363,53 @@ class ViewMap:
             return None
         return source_dims
 
+    def map_reduction_after_view(
+        self,
+        source_shape: Sequence[_Dim],
+        source_dims: int | Sequence[int],
+    ) -> tuple[list[_Dim], list[int]] | None:
+        """Map ``reduce(view(x), dims)`` to ``view(reduce(x, mapped_dims))``.
+
+        Returns the new view shape and reduction dims for:
+
+            view(reduce(x, source_dims), self.target_shape)
+            == reduce(view(x, new_shape), target_dims)
+
+        """
+        target_shape = self.remap_target_shape(source_shape)
+        if target_shape is None:
+            return None
+
+        target_dims = self.map_dim(source_dims)
+        if target_dims is None or not self._is_contiguous_nonempty(target_dims):
+            return None
+        return target_shape, target_dims
+
+    def map_reduction_before_view(
+        self,
+        target_dims: int | Sequence[int],
+    ) -> tuple[list[int], list[_Dim]] | None:
+        """Map ``view(reduce(x, dims))`` to ``reduce(view(x), mapped_dims)``.
+
+        Returns the reduction dims and output view shape for:
+
+            reduce(view(x, self.target_shape), target_dims)
+            == view(reduce(x, source_dims), output_shape)
+
+        """
+        source_dims = self.map_dim_inverse(target_dims)
+        if source_dims is None or not self._is_contiguous_nonempty(source_dims):
+            return None
+
+        try:
+            normalized_target_dims = _normalize_dims(target_dims, self.target_rank)
+        except AssertionError:
+            return None
+
+        return source_dims, self._reduce_shape(
+            self.target_shape, normalized_target_dims
+        )
+
     def map_permutation(
         self,
         source_permutation: Sequence[int],
@@ -446,6 +493,8 @@ class ViewMap:
         )
 
     def remap_target_shape(self, source_shape: Sequence[_Dim]) -> list[_Dim] | None:
+        if not self.is_valid_map:
+            return None
         if len(source_shape) != self.source_rank:
             return None
 
@@ -469,6 +518,8 @@ class ViewMap:
                 target_shape[target_axis] = target_dim
 
         if not same_numel(source_shape, target_shape):
+            return None
+        if self._has_zero_dim(target_shape):
             return None
         if not self._preserves_source_axis_order(source_shape, source_to_target_axes):
             return None
@@ -551,6 +602,8 @@ class ViewMap:
             for target_axes in source_to_target_axes[:slice_dim]
             for target_axis in target_axes
         ]
+        if not prev_target_axes:
+            return None
         next_target_axes = [
             target_axis
             for target_axes in source_to_target_axes[slice_dim + 1 :]
@@ -809,6 +862,24 @@ class ViewMap:
         return all(
             group_to_axes[group].issubset(normalized_dims) for group in selected_groups
         )
+
+    @staticmethod
+    def _is_contiguous_nonempty(dims: Sequence[int]) -> bool:
+        sorted_dims = sorted(set(dims))
+        return bool(sorted_dims) and sorted_dims == list(
+            range(sorted_dims[0], sorted_dims[-1] + 1)
+        )
+
+    @staticmethod
+    def _reduce_shape(shape: Sequence[_Dim], dims: Sequence[int]) -> list[_Dim]:
+        reduced_shape = list(shape)
+        for dim in dims:
+            reduced_shape[dim] = 1
+        return reduced_shape
+
+    @staticmethod
+    def _has_zero_dim(shape: Sequence[_Dim]) -> bool:
+        return any(_dim_equals(dim, 0) for dim in shape)
 
     @classmethod
     def _build_groups(

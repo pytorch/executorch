@@ -9,9 +9,11 @@ cancellation, and worker shutdown. A fake worker stands in for the WorkerClient
 (no model, GPU, or subprocess). asyncio.run keeps the test bodies sync."""
 
 import asyncio
+import logging
 import threading
 
 from executorch.examples.llm_server.python import session_runtime as session_runtime_mod
+from executorch.examples.llm_server.python.serving_chat import ServingChat
 from executorch.examples.llm_server.python.session_runtime import (
     GenerationOptions,
     GenStats,
@@ -101,6 +103,7 @@ def test_generate_stream_yields_and_fills_stats():
                 total_ms = 10.0
                 prefill_tok_s = 750.0
                 decode_tok_s = 400.0
+                vision_encoder_ms = 123.5
                 generated_token_ids = [10, 11]
 
             stats_callback(S())
@@ -120,7 +123,41 @@ def test_generate_stream_yields_and_fills_stats():
     assert stats.total_ms == 10.0
     assert stats.prefill_tok_s == 750.0
     assert stats.decode_tok_s == 400.0
+    assert stats.vision_encoder_ms == 123.5
     assert stats.generated_token_ids == [10, 11]
+
+
+def test_generate_stream_defaults_missing_vision_encoder_metric_to_none():
+    class _Echo:
+        def stop(self):
+            pass
+
+        def generate(self, prompt, config, token_callback=None, stats_callback=None):
+            class S:
+                num_prompt_tokens = 1
+                num_generated_tokens = 0
+
+            stats_callback(S())
+
+    async def scenario():
+        runtime = SessionRuntime(_Echo())
+        stats = GenStats()
+        async for _ in runtime.generate_stream("a", _text(), _OPTS, stats):
+            pass
+        return stats
+
+    assert asyncio.run(scenario()).vision_encoder_ms is None
+
+
+def test_generation_stats_log_includes_only_reported_vision_metric(caplog):
+    caplog.set_level(logging.INFO)
+    stats = GenStats(prompt_tokens=3, completion_tokens=2)
+    ServingChat._log_generation_stats(None, stats, "stop")
+    assert "vision_encoder_ms" not in caplog.messages[-1]
+
+    stats.vision_encoder_ms = 123.5
+    ServingChat._log_generation_stats(None, stats, "stop")
+    assert "vision_encoder_ms=123.5" in caplog.messages[-1]
 
 
 def test_generate_stream_forwards_session_and_segments_to_worker():
@@ -134,16 +171,23 @@ def test_generate_stream_forwards_session_and_segments_to_worker():
             captured["session_id"] = config.session_id
             captured["segments"] = config.prompt_segments
             captured["prompt"] = prompt
+            captured["top_p"] = config.top_p
+            captured["top_k"] = config.top_k
+            captured["seed"] = config.seed
 
     async def scenario():
         rt = SessionRuntime(_Cap())
         seg = PromptInput(segments=[{"text": "a"}, {"ids": [1, 2]}])
-        async for _ in rt.generate_stream("sess", seg, _OPTS, GenStats()):
+        options = GenerationOptions(max_new_tokens=8, top_p=0.75, top_k=24, seed=456)
+        async for _ in rt.generate_stream("sess", seg, options, GenStats()):
             pass
 
     asyncio.run(scenario())
     assert captured["session_id"] == "sess"
     assert captured["segments"] == [{"text": "a"}, {"ids": [1, 2]}]
+    assert captured["top_p"] == 0.75
+    assert captured["top_k"] == 24
+    assert captured["seed"] == 456
 
 
 def test_cancellation_calls_worker_stop():

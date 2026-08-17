@@ -43,6 +43,7 @@ functions_converters = {
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.convolution.out: ConvolutionConverter,  # noqa F405
     exir_ops.edge.aten.exp.default: ExpConverter,  # noqa F405
+    exir_ops.edge.aten.hardswish.default: HardswishConverter,  # noqa F405
     exir_ops.edge.aten.hardtanh.default: HardTanhConverter,  # noqa F405
     exir_ops.edge.aten.leaky_relu.default: LeakyReluConverter,  # noqa F405
     exir_ops.edge.aten.log.default: LogConverter,  # noqa F405
@@ -53,11 +54,13 @@ functions_converters = {
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.mul.Tensor: MulTensorConverter,  # noqa F405
     exir_ops.edge.aten.neg.default: NegConverter,  # noqa F405
+    exir_ops.edge.aten.pad.default: PadConverter,  # noqa F405
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.prelu.default: PReLUConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
+    exir_ops.edge.aten.rsqrt.default: RsqrtConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
-    exir_ops.edge.aten.slice_copy.Tensor: SliceTensorConverter,  # noqa F405
+    exir_ops.edge.aten.slice_copy.Tensor: SliceCopyTensorConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
     exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.sum.dim_IntList: SumDimIntListConverter,  # noqa F405

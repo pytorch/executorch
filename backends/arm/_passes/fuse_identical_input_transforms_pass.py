@@ -11,7 +11,12 @@ from typing import Any, Callable, cast, Set, Type
 import torch
 from executorch.backends.arm._passes.arm_pass import ArmOpTargetedPass
 from executorch.backends.arm._passes.arm_pass_utils import refresh_permute_view_meta
-from executorch.backends.arm._passes.dim_maps import PermuteMap, same_numel, ViewMap
+from executorch.backends.arm._passes.dim_maps import (
+    _dim_equals,
+    PermuteMap,
+    same_numel,
+    ViewMap,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.exported_program import ExportedProgram
@@ -142,8 +147,12 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
         exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.remainder.Tensor,
     }
+    _NARY_ELEMENTWISE_OPS = {
+        exir_ops.edge.aten.where.self,
+    }
+    _ELEMENTWISE_OPS = _BINARY_ELEMENTWISE_OPS | _NARY_ELEMENTWISE_OPS
 
-    target_ops = _BINARY_ELEMENTWISE_OPS | _CONCAT_OPS
+    target_ops = _ELEMENTWISE_OPS | _CONCAT_OPS
 
     def __init__(self, exported_program: ExportedProgram | None = None) -> None:
         super().__init__()
@@ -180,31 +189,43 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
         if node.target not in self.target_ops:
             return False
 
-        input_transforms = self._input_transforms(node)
-        if input_transforms is None:
+        input_nodes = list(node.all_input_nodes)
+        if len(input_nodes) < 2:
             return False
 
         node_val = node.meta.get("val", None)
         if node_val is None:
             return False
 
-        transform = input_transforms[0]
-        updated_args = self._updated_node_args(
-            node, transform, node_val, input_transforms
-        )
+        transforms = [n for n in input_nodes if n.target in self._TARGETS]
+        if not transforms:
+            return False
+        transform = transforms[0]
+        if not self._inputs_share_transform_or_are_layout_invariant(
+            node, transform, input_nodes
+        ):
+            return False
+
+        updated_args = self._updated_node_args(node, transform, node_val, input_nodes)
         if updated_args is None:
             return False
         node_args, node_kwargs, transform_args, node_output_shape = updated_args
 
         # Remove input transforms
-        producers = [n.all_input_nodes[0] for n in input_transforms]
+        producers = [
+            n.all_input_nodes[0] if n.target in self._TARGETS else n
+            for n in input_nodes
+        ]
 
         node.args = node_args
         node.kwargs = node_kwargs
-        for input_transform, producer in zip(input_transforms, producers):
+        for input_transform, producer in zip(input_nodes, producers):
             node.replace_input_with(input_transform, producer)
-        for input_transform in dict.fromkeys(input_transforms):
-            if len(input_transform.users) == 0:
+        for input_transform in dict.fromkeys(input_nodes):
+            if (
+                input_transform.target in self._TARGETS
+                and len(input_transform.users) == 0
+            ):
                 node.graph.erase_node(input_transform)
 
         node.meta = copy.copy(node.meta)
@@ -235,26 +256,51 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
         return meta
 
     def _updated_node_args(
-        self, node: Node, transform: Node, node_val: Any, input_transforms: list[Node]
+        self, node: Node, transform: Node, node_val: Any, input_nodes: list[Node]
     ) -> (
         tuple[tuple[Any, ...], dict[str, Any], tuple[Any, ...], tuple[Any, ...]] | None
     ):
-        if not self._transforms_are_identical(input_transforms):
-            return None
-        if not self._transforms_only_used_by_node(node, input_transforms):
-            return None
-
         if node.target in self._BINARY_ELEMENTWISE_OPS:
-            return self._update_node_args_binary(
-                node, transform, node_val, input_transforms
-            )
+            return self._update_node_args_binary(node, transform, node_val, input_nodes)
 
         if node.target in self._CONCAT_OPS:
-            return self._update_node_args_concat(
-                node, transform, node_val, input_transforms
-            )
+            return self._update_node_args_concat(node, transform, node_val, input_nodes)
+
+        if node.target in self._NARY_ELEMENTWISE_OPS:
+            return self._update_node_args_binary(node, transform, node_val, input_nodes)
 
         return None
+
+    def _inputs_share_transform_or_are_layout_invariant(
+        self, node: Node, transform: Node, input_nodes: list[Node]
+    ) -> bool:
+        transforms = [n for n in input_nodes if n.target in self._TARGETS]
+        if not self._transforms_are_identical(transforms):
+            return False
+        if not self._transforms_only_used_by_node(node, transforms):
+            return False
+        if len(transforms) == len(input_nodes):
+            return True
+        if node.target not in self._ELEMENTWISE_OPS:
+            return False
+
+        transform_val = transform.meta.get("val")
+        if not isinstance(transform_val, torch.Tensor):
+            return False
+        rank = len(transform_val.shape)
+        return all(
+            input_node in transforms or self.is_layout_invariant(input_node, rank)
+            for input_node in input_nodes
+        )
+
+    @staticmethod
+    def is_layout_invariant(node: Node, rank: int) -> bool:
+        value = node.meta.get("val")
+        return (
+            isinstance(value, torch.Tensor)
+            and len(value.shape) == rank
+            and all(_dim_equals(dim, 1) for dim in value.shape)
+        )
 
     def _transforms_are_identical(self, input_transforms: list[Node]) -> bool:
         target = input_transforms[0].target
@@ -281,7 +327,15 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
 
     def _update_node_args_binary(self, node, transform, node_val, input_transforms):
         producer_shapes = [
-            tuple(input_node.all_input_nodes[0].meta["val"].shape)
+            tuple(
+                (
+                    input_node.all_input_nodes[0]
+                    if input_node.target in self._TARGETS
+                    else input_node
+                )
+                .meta["val"]
+                .shape
+            )
             for input_node in input_transforms
         ]
 
@@ -293,6 +347,9 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
         transform_args = (node, *transform.args[1:])
         if transform.target == self._VIEW_TARGET:
             transform_args = (node, list(node_val.shape))
+            # Reshaping before an elementwise op can change which dimensions
+            # broadcast. Sinking is safe only when the broadcast in the source
+            # layout already has exactly one of the producer shapes.
             if node_output_shape not in producer_shapes:
                 return None
 
@@ -382,20 +439,3 @@ class FuseIdenticalInputTransformsPass(ArmOpTargetedPass):
         if mapped_dims is None or len(mapped_dims) != 1:
             return None
         return mapped_dims[0]
-
-    def _input_transforms(self, node: Node) -> list[Node] | None:
-        if node.target in self._BINARY_ELEMENTWISE_OPS:
-            input_transforms = list(node.args[:2])
-        elif node.target in self._CONCAT_OPS:
-            if len(node.args) == 0 or not isinstance(node.args[0], Sequence):
-                return None
-            input_transforms = list(node.args[0])
-        else:
-            return None
-
-        if len(input_transforms) < 2 or not all(
-            isinstance(n, Node) for n in input_transforms
-        ):
-            return None
-
-        return cast(list[Node], input_transforms)

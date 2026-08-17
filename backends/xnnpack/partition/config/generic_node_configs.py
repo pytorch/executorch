@@ -21,7 +21,11 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import get_input_node, normalize_mean_dims
+from executorch.backends.xnnpack.utils.utils import (
+    get_input_node,
+    normalize_mean_dims,
+    normalize_pool2d_args,
+)
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
@@ -180,7 +184,7 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
         if len(args) >= 6:
             count_include_pad = cast(bool, args[5])
 
-        kernel_size = cast(List[int], args[1])
+        kernel_size, _, _, _ = normalize_pool2d_args(node, has_dilation=False)
         pooling_region = kernel_size[0] * kernel_size[1]
         divisor_override = pooling_region  # Default divisor is pooling_region
         if len(args) >= 7:
@@ -348,8 +352,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
-        kernel_size = node.args[1]
-        stride = node.args[2]
+        kernel_size, stride, _, _ = normalize_pool2d_args(node, has_dilation=True)
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
 
         # Ceil mode is supported via op padding, which must be statically known.
@@ -357,7 +360,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
             why(node, reason="ceil mode is not supported for dynamic shapes")
             return False
 
-        if stride[0] > kernel_size[0] or stride[1] > kernel_size[1]:  # pyre-ignore[16]
+        if stride[0] > kernel_size[0] or stride[1] > kernel_size[1]:
             why(
                 node,
                 reason=f"stride ({stride}) must be less than or equal to kernel size ({kernel_size})",

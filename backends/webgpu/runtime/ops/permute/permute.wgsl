@@ -4,14 +4,14 @@
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(2) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(3) var<uniform> in_meta: TensorMeta;
 
 struct Params {
-  perm: vec4<u32>,
+  perm: array<vec4<u32>, 2>,
 }
 @group(0) @binding(4) var<uniform> params: Params;
 
@@ -31,9 +31,10 @@ fn main(
     var rem = out_bufi;
     var in_bufi: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let coord = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
-        in_bufi = in_bufi + coord * in_meta.strides[params.perm[d]];
+        let coord = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
+        let p = params.perm[d >> 2u][d & 3u];
+        in_bufi = in_bufi + coord * in_meta.strides[p >> 2u][p & 3u];
     }
     output[out_bufi] = input[in_bufi];
 }

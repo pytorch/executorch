@@ -68,6 +68,9 @@ from .decompose_index_tensor_to_gather_pass import (  # noqa
     DecomposeIndexTensorToGatherPass,
 )
 from .decompose_int_pow_pass import DecomposeIntPowPass  # noqa
+from .decompose_large_stride_maxpool2d_pass import (  # noqa
+    DecomposeLargeStrideMaxPool2dForU55Pass,
+)
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinalgVectorNormPass  # noqa
@@ -81,6 +84,7 @@ from .decompose_maxpool2d_with_dilation_pass import DecomposeMaxPool2dPass  # no
 from .decompose_meandim_pass import DecomposeMeanDimPass  # noqa
 from .decompose_ne_pass import DecomposeNotEqualPass  # noqa
 from .decompose_permute_for_u55_pass import DecomposePermuteForU55Pass  # noqa
+from .decompose_prelu_pass import DecomposePReLUPass  # noqa
 from .decompose_quant_nodes import DecomposeQuantNodesPass  # noqa
 from .decompose_remainder_pass import DecomposeRemainderPass  # noqa
 from .decompose_rnn_pass import DecomposeRnnPass  # noqa
@@ -147,6 +151,9 @@ from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
+from .move_data_movement_ops_to_smaller_dtype_pass import (  # noqa
+    MoveDataMovementOpsToSmallerDtypePass,
+)
 from .normalize_delegate_io_layout_pass import NormalizeDelegateIOLayoutPass  # noqa
 from .normalize_index_put_bool_index_tensor_pass import (  # noqa
     NormalizeIndexPutBoolIndexTensorPass,

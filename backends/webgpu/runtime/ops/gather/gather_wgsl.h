@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from gather.wgsl - DO NOT EDIT.
-// wgsl-sha256: cd19a9ed2753e2a97e96fb90f7a72e8f40d08feb6c84fbed7f2c52e71d77a03c
+// wgsl-sha256: c0811711f4603f840241a9cdd458f7b941dcf32336ff84f2b6f1333b8d6f4cfb
 inline constexpr const char* kGatherWGSL = R"(
 @group(0) @binding(0) var<storage, read> self_: array<f32>;
 @group(0) @binding(1) var<storage, read> indices: array<i32>;
@@ -22,8 +22,8 @@ inline constexpr const char* kGatherWGSL = R"(
 struct TensorMeta {
   ndim: u32,
   numel: u32,
-  sizes: vec4<u32>,
-  strides: vec4<u32>,
+  sizes: array<vec4<u32>, 2>,
+  strides: array<vec4<u32>, 2>,
 }
 @group(0) @binding(3) var<uniform> out_meta: TensorMeta;
 @group(0) @binding(4) var<uniform> self_meta: TensorMeta;
@@ -44,13 +44,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var rem = o;
     var self_idx: u32 = 0u;
     for (var d: u32 = 0u; d < out_meta.ndim; d = d + 1u) {
-        let c = rem / out_meta.strides[d];
-        rem = rem % out_meta.strides[d];
+        let c = rem / out_meta.strides[d >> 2u][d & 3u];
+        rem = rem % out_meta.strides[d >> 2u][d & 3u];
         var coord = c;
         if (d == params.dim) {
             coord = u32(indices[o]);
         }
-        self_idx = self_idx + coord * self_meta.strides[d];
+        self_idx = self_idx + coord * self_meta.strides[d >> 2u][d & 3u];
     }
     output[o] = self_[self_idx];
 }
