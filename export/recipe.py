@@ -8,7 +8,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 
 import torch
 from executorch.exir import EdgeProgramManager, ExportedProgram
@@ -118,7 +118,10 @@ class LoweringRecipe:
     to backend-specific representations.
 
     Attributes:
-        partitioners: Optional list of partitioners for model partitioning
+        partitioners: Optional partitioners for model partitioning. Either a list
+                      applied to every method, or a dict mapping method names to
+                      per-method partitioner lists. Use the dict form when
+                      backends need per-method compile specs.
         edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram)
                                and return either List[PassType] or PassManager to be applied during edge lowering.
         edge_manager_transform_passes: Optional list of callables that take EdgeProgramManager as argument
@@ -126,7 +129,9 @@ class LoweringRecipe:
         edge_compile_config: Optional edge compilation configuration
     """
 
-    partitioners: Optional[List[Partitioner]] = None
+    partitioners: Optional[
+        Union[List[Partitioner], Dict[str, List[Partitioner]]]
+    ] = None
     edge_transform_passes: (
         None | List[Callable[[str, ExportedProgram], List[PassType] | PassManager]]
     ) = None
@@ -251,6 +256,7 @@ class ExportRecipe:
         """
         # Extract components from individual recipes
         all_partitioners = []
+        all_partitioners_by_method = {}
         all_quantizers = []
         all_ao_quantization_configs = []
         all_pre_edge_passes = []
@@ -264,7 +270,14 @@ class ExportRecipe:
 
             # Collect partitioners from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
-                all_partitioners.extend(recipe.lowering_recipe.partitioners)
+                partitioners = recipe.lowering_recipe.partitioners
+                if isinstance(partitioners, dict):
+                    for method_name, method_partitioners in partitioners.items():
+                        all_partitioners_by_method.setdefault(method_name, []).extend(
+                            method_partitioners
+                        )
+                else:
+                    all_partitioners.extend(partitioners)
 
             # Collect transform passes from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.edge_transform_passes:
@@ -300,9 +313,16 @@ class ExportRecipe:
                 ),
             )
 
+        if all_partitioners and all_partitioners_by_method:
+            raise ValueError(
+                "Cannot combine recipes that mix list-valued and dict-valued "
+                "partitioners; convert the list-valued recipe to per-method form."
+            )
+        combined_partitioners = all_partitioners_by_method or all_partitioners
+
         # Create combined lowering recipe
         combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
+        if combined_partitioners or all_transform_passes:
             edge_compile_config = None
             for recipe in backend_recipes:
                 if (
@@ -313,7 +333,7 @@ class ExportRecipe:
                     break
 
             combined_lowering_recipe = LoweringRecipe(
-                partitioners=all_partitioners if all_partitioners else None,
+                partitioners=combined_partitioners if combined_partitioners else None,
                 edge_transform_passes=(
                     all_transform_passes if all_transform_passes else None
                 ),
