@@ -26,13 +26,14 @@ $if K_CACHE_STORAGE == "buffer":
 
 $if MODE == "llm":
   #define HAS_INPUT_POS
-  #define HAS_GQA
   #define Q_LAYOUT DHSB
   #define K_LAYOUT DHSB
 $else:
   #define SDPA_PAD_D
   #define Q_LAYOUT DSHB
   #define K_LAYOUT DSHB
+
+#define HAS_GQA
 
 $if HAS_BIAS:
   #define HAS_BIAS
@@ -135,10 +136,13 @@ void main() {
   const int context_texel_len = div_up_4(context_len);
 
 #ifdef HAS_GQA
-  int kv_h = q_h;
+  const int q_batch = q_h / Q_H;
+  const int q_head = q_h - q_batch * Q_H;
+  int kv_head = q_head;
   if (KV_H < Q_H) {
-    kv_h = q_h / (Q_H / KV_H);
+    kv_head = q_head / (Q_H / KV_H);
   }
+  const int kv_h = q_batch * KV_H + kv_head;
 #else
   const int kv_h = q_h;
 #endif

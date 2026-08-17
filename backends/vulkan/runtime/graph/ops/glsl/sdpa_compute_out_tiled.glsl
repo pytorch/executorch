@@ -20,12 +20,13 @@ $if V_CACHE_STORAGE == "buffer":
 
 $if MODE == "llm":
   #define HAS_INPUT_POS
-  #define HAS_GQA
   #define V_LAYOUT DHSB
   #define OUT_LAYOUT DHSB
 $else:
   #define V_LAYOUT DSHB
   #define OUT_LAYOUT DSHB
+
+#define HAS_GQA
 
 #define TILE_M4 ${TILE_M4}
 // Equvalent to K4 in matrix multiplication
@@ -120,10 +121,13 @@ void main() {
   const int context_texel_len = div_up_4(context_len);
 
 #ifdef HAS_GQA
-  int kv_h = q_h;
+  const int q_batch = q_h / Q_H;
+  const int q_head = q_h - q_batch * Q_H;
+  int kv_head = q_head;
   if (KV_H < Q_H) {
-    kv_h = q_h / (Q_H / KV_H);
+    kv_head = q_head / (Q_H / KV_H);
   }
+  const int kv_h = q_batch * KV_H + kv_head;
 #else
   const int kv_h = q_h;
 #endif
