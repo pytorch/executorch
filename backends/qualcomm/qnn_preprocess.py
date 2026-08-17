@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 from collections import defaultdict
 from typing import Dict, final, List
 
@@ -18,9 +19,15 @@ from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
     QnnExecuTorchOpPackageInfo,
+    QnnExecuTorchProfileLevel,
 )
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
     flatbuffer_to_option,
+)
+from executorch.backends.qualcomm.serialization.qnn_tail_protocol import (
+    pack_schematic_payload,
+    pack_tail,
+    SECTION_SCHEMATIC,
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
@@ -46,61 +53,33 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-import os
-import struct
-from executorch.backends.qualcomm.serialization.qc_schema import QnnExecuTorchProfileLevel
 
-# ==============================================================================
-# Schematic Binary Serialization (Gated under profile_level=3)
-# ==============================================================================
-#
-# MOTIVATION: Embed AOT host-side schematic binaries directly inside the .PTE's
-# processed_bytes payload so that the .PTE is completely self-contained for optrace.
-# Eliminates implicit, brittle out-of-band dependencies on host CWD leftovers.
-#
-# SAFE HARBOR (Why it won't affect target execution):
-# - Header: backends/qualcomm/runtime/backends/QnnCustomProtocol.h (.cpp / .h)
-# - Decoder: QnnContextCustomProtocol::DeserializeContextCustomBuffer()
-# The protocol writes a 256-byte header with `binary_size_` at offset 12 (after
-# magic & signature). The target-side QNN runtime reads exactly `binary_size_`
-# bytes, completely ignoring any extra data appended at the tail. 100% safe.
-#
-# Payload layout:
-# +------------------------------------------------------------------------+
-# | [Qnn Custom Protocol Buffer (incl. Context Binary)]                    |
-# | Size: 256 + Context Binary Size (Fully parsed and used by runtime)     |
-# +------------------------------------------------------------------------+
-# | [Schematic Block 1]                                                    |
-# | [Schematic Block 2] ...                                                |
-# +------------------------------------------------------------------------+
-# | Total Schematics Block Length (8 bytes, uint64)                        |
-# +------------------------------------------------------------------------+
-# | Magic Suffix (8 bytes: b"SCHEMATI")                                    |
-# +------------------------------------------------------------------------+
-#
-# Each [Schematic Block] is packed as:
-# +--------------------+--------------------+-----------------+--------------+
-# | Name Length (4B)   | Name (UTF-8 bytes) | Data Length (8B)| Data Bytes   |
-# +--------------------+--------------------+-----------------+--------------+
+def _package_tail(qnn_context_binary, graph_names, obj_options):
+    """Append host-side metadata sections after the QNN context binary.
 
-def _package_schematic(qnn_context_binary, graph_names, obj_options):
-    if obj_options.profile_level == QnnExecuTorchProfileLevel.kProfileOptrace:
-        schematic_bytes = b""
-        for graph_name in graph_names:
-            schematic_path = os.path.join(os.getcwd(), f"{graph_name}_schematic.bin")
-            if os.path.isfile(schematic_path):
-                with open(schematic_path, "rb") as f:
-                    data = f.read()
-                try:
-                    os.remove(schematic_path)  # Keep workspace clean
-                except OSError:
-                    pass
-                name_encoded = graph_name.encode('utf-8')
-                schematic_bytes += struct.pack("<I", len(name_encoded)) + name_encoded + struct.pack("<Q", len(data)) + data
-        
-        if schematic_bytes:
-            return bytes(qnn_context_binary) + schematic_bytes + struct.pack("<Q", len(schematic_bytes)) + b"SCHEMATI"
-    return bytes(qnn_context_binary)
+    Currently packages schematic binaries when profile_level is kProfileOptrace.
+    See qnn_tail_protocol.py for the wire format specification.
+    """
+    if obj_options.profile_level != QnnExecuTorchProfileLevel.kProfileOptrace:
+        return bytes(qnn_context_binary)
+
+    named_blobs = []
+    for graph_name in graph_names:
+        schematic_path = os.path.join(os.getcwd(), f"{graph_name}_schematic.bin")
+        if os.path.isfile(schematic_path):
+            with open(schematic_path, "rb") as f:
+                data = f.read()
+            try:
+                os.remove(schematic_path)
+            except OSError:
+                pass
+            named_blobs.append((graph_name, data))
+
+    if not named_blobs:
+        return bytes(qnn_context_binary)
+
+    sections = [(SECTION_SCHEMATIC, pack_schematic_payload(named_blobs))]
+    return bytes(qnn_context_binary) + pack_tail(sections)
 
 @final
 class QnnBackend(BackendDetails):
@@ -200,7 +179,7 @@ class QnnBackend(BackendDetails):
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.DestroyContext()
         # For now, debug_handle_map is not used by QNN ExecuTorch
-        processed_bytes = _package_schematic(qnn_context_binary, qnn_manager.GetGraphNames(), obj_options)
+        processed_bytes = _package_tail(qnn_context_binary, qnn_manager.GetGraphNames(), obj_options)
         return PreprocessResult(
             processed_bytes=processed_bytes,
             debug_handle_map={},
@@ -282,7 +261,7 @@ class QnnBackend(BackendDetails):
                     len(qnn_context_binary) != 0
                 ), "Failed to generate Qnn context binary."
                 qnn_manager.DestroyContext()
-                processed_bytes = _package_schematic(qnn_context_binary, graph_names, option)
+                processed_bytes = _package_tail(qnn_context_binary, graph_names, option)
                 # methods should share the same context binary for current partition
                 for key in edge_programs.keys():
                     all_processed_results[key].append(

@@ -238,27 +238,19 @@ def dump_context_from_pte(pte_path, output_dir=None) -> List[str]:
                 with open(dump_file, "wb") as f:
                     f.write(binary)
                 
-                # ==============================================================================
-                # Unpack embedded schematic binaries if present.
-                # Details of the serialization schema and why it is perfectly safe
-                # can be found in executorch/backends/qualcomm/qnn_preprocess.py.
-                # ==============================================================================
-                import struct
-                if len(processed_bytes) >= 16 and processed_bytes[-8:] == b"SCHEMATI":
-                    block_len, = struct.unpack("<Q", processed_bytes[-16:-8])
-                    if len(processed_bytes) >= 16 + block_len:
-                        schematic_block = processed_bytes[-16 - block_len : -16]
-                        offset = 0
-                        while offset < len(schematic_block):
-                            name_len, = struct.unpack("<I", schematic_block[offset : offset + 4])
-                            offset += 4
-                            graph_name = schematic_block[offset : offset + name_len].decode('utf-8')
-                            offset += name_len
-                            data_len, = struct.unpack("<Q", schematic_block[offset : offset + 8])
-                            offset += 8
-                            data = schematic_block[offset : offset + data_len]
-                            offset += data_len
-                            
+                # Unpack embedded metadata sections (e.g. schematic binaries)
+                # if the tail protocol appendix is present.
+                # See: backends/qualcomm/serialization/qnn_tail_protocol.py
+                from executorch.backends.qualcomm.serialization.qnn_tail_protocol import (
+                    has_tail,
+                    unpack_tail_sections,
+                    unpack_schematic_payload,
+                    SECTION_SCHEMATIC,
+                )
+                if has_tail(processed_bytes):
+                    sections = unpack_tail_sections(processed_bytes)
+                    for payload in sections.get(SECTION_SCHEMATIC, []):
+                        for graph_name, data in unpack_schematic_payload(payload):
                             schematic_file = f"{ctx_path}/{graph_name}_schematic.bin"
                             with open(schematic_file, "wb") as sf:
                                 sf.write(data)
