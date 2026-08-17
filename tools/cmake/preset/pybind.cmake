@@ -118,15 +118,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # consumers link, so a process has a single backend registry. Linux only:
   # macOS C++ consumers are served by the Swift package distribution, and the
   # runtime has no export annotations for a Windows DLL.
-  #
-  # Not with the CUDA backend, whose libraries this build does not ship yet. The
-  # CUDA libraries currently reach the wheel carrying the absolute path of the
-  # directory they were linked in, which resolves only on the machine that built
-  # them. The shared build removes those paths, so enabling it here before the
-  # CUDA libraries ship would leave the extension unable to load at all.
-  if(NOT EXECUTORCH_BUILD_CUDA)
-    set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
-  endif()
+  set_overridable_option(EXECUTORCH_BUILD_SHARED ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )
