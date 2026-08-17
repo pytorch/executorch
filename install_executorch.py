@@ -20,6 +20,7 @@ from install_requirements import (
     install_requirements,
     python_is_compatible,
 )
+from install_utils import SKIP_TORCH_DEPENDENCY_ENV
 
 # Set up logging
 logging.basicConfig(
@@ -244,7 +245,13 @@ def main(args):
             "-v",
         ]
     )
-    subprocess.run(cmd, check=True)
+    install_env = os.environ.copy()
+    if args.use_pt_pinned_commit:
+        # Keep the exact +git PyTorch build installed by CI even when release
+        # wheel metadata has a stable-version floor. setup.py suppresses only
+        # the torch requirement; pip still resolves every other dependency.
+        install_env[SKIP_TORCH_DEPENDENCY_ENV] = "1"
+    subprocess.run(cmd, check=True, env=install_env)
 
     # Step 3: Extra (optional) packages that is only useful for running examples.
     if not args.minimal:

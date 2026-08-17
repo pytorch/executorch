@@ -175,7 +175,7 @@ def _base_dependencies() -> List[str]:
     dynamic) so the minimal build can ship a slimmer set. Keep in sync with the
     project's runtime needs.
     """
-    return [
+    dependencies = [
         "expecttest",
         "flatbuffers",
         "hypothesis",
@@ -200,6 +200,24 @@ def _base_dependencies() -> List[str]:
         "omegaconf>=2.3.0",
     ]
 
+    if os.environ.get(install_utils.SKIP_TORCH_DEPENDENCY_ENV) == "1":
+        # CI has already installed the exact pinned PyTorch source build. Its
+        # alpha version may not satisfy a stable release floor, but replacing it
+        # would defeat pinned-commit testing. Published wheel builds never set
+        # this environment variable and retain their torch requirement.
+        dependencies = [
+            dependency
+            for dependency in dependencies
+            if _dependency_name(dependency) != "torch"
+        ]
+    return dependencies
+
+
+def _dependency_name(dependency: str) -> str:
+    """Return the PEP 503 normalized distribution name for a requirement."""
+    name = re.split(r"[ ;\[<>=!~(]", dependency, maxsplit=1)[0]
+    return re.sub(r"[-_.]+", "-", name).lower()
+
 
 def _minimal_dependencies() -> List[str]:
     """Runtime dependencies for the minimal (AOT export only) wheel.
@@ -222,17 +240,15 @@ def _minimal_dependencies() -> List[str]:
         "typing-extensions",
     }
 
-    def _name(dep: str) -> str:
-        # PEP 503 normalized distribution name, e.g. "ruamel.yaml" -> "ruamel-yaml".
-        return re.sub(
-            r"[-_.]+", "-", re.split(r"[ ;\[<>=!~(]", dep, maxsplit=1)[0]
-        ).lower()
-
-    minimal = [dep for dep in _base_dependencies() if _name(dep) in keep]
+    minimal = [
+        dependency
+        for dependency in _base_dependencies()
+        if _dependency_name(dependency) in keep
+    ]
     # Fail the build loudly if a name in `keep` no longer matches a full-wheel dep
     # (e.g. renamed or removed in _base_dependencies()), instead of silently
     # shipping a minimal wheel that is missing a required dependency.
-    unmatched = keep - {_name(dep) for dep in minimal}
+    unmatched = keep - {_dependency_name(dependency) for dependency in minimal}
     assert not unmatched, f"minimal keep-set names not found in base deps: {unmatched}"
     return minimal
 

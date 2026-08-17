@@ -21,6 +21,11 @@ SUPPORTED_CUDA_VERSIONS = (
     (13, 2),
 )
 
+# CI installs an exact PyTorch source build before installing ExecuTorch. Release
+# metadata may require the corresponding stable version, which a PEP 440 alpha
+# source version does not satisfy even when it is built from the pinned commit.
+SKIP_TORCH_DEPENDENCY_ENV = "EXECUTORCH_SKIP_TORCH_DEPENDENCY"
+
 
 def is_cmake_option_on(
     cmake_configuration_args: List[str], var_name: str, default: bool
