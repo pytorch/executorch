@@ -15,7 +15,7 @@ from executorch.backends.nxp.backend.edge_helper import (
     try_get_arg,
 )
 from executorch.backends.nxp.backend.edge_program_converter import functions_converters
-from executorch.backends.nxp.tests.ops_aliases import (
+from executorch.backends.nxp.ops_aliases import (
     AdaptiveAvgPool2D,
     Amax,
     Amin,
