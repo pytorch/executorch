@@ -238,7 +238,7 @@ target_link_libraries(app PRIVATE executorch::runtime
 - The model fails to load complaining about a backend: link the backend it was exported for.
 - `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
   CMake the package still works, but you name variables instead of targets, and you have to pass on
-  the definitions and the C++20 requirement yourself:
+  the definitions and the C++ standard requirement yourself:
 
   ```cmake
   cmake_minimum_required(VERSION 3.19)
