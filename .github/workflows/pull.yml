@@ -1606,6 +1606,8 @@ jobs:
           python -m examples.vulkan.export --model_name=$model --test -d
         done
 
+        python -m unittest examples.models.voxtral_realtime.tests.test_export_vulkan
+
   test-vulkan-operators-linux:
     name: test-vulkan-operators-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
