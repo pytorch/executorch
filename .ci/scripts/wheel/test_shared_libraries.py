@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 # Registry entry points. A second definer of any of these means a second
@@ -118,7 +119,18 @@ _XNNPACK_SYMBOLS = (
 # Checked separately from the wrapper symbols above because the wrappers can each
 # have exactly one owner while the bundled code underneath them does not. That is
 # the same failure the split exists to prevent, reached by a different route.
-_BUNDLED_THREADPOOL_SYMBOLS = ("pthreadpool_create", "cpuinfo_initialize")
+# pthreadpool is compiled with hidden visibility on Apple, deliberately, so that the
+# copy inside libtorch_cpu cannot take precedence over the bundled one. Its symbols are
+# present but not exported there, so only cpuinfo can serve as the sentinel on that
+# platform. Both are checked elsewhere.
+if sys.platform == "darwin":
+    _BUNDLED_THREADPOOL_SYMBOLS = ("cpuinfo_initialize",)
+else:
+    _BUNDLED_THREADPOOL_SYMBOLS = ("pthreadpool_create", "cpuinfo_initialize")
+# The delegate's own entry points. A second definer means the delegate is compiled
+# into the Python extension as well, which would register it twice in one process.
+_OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
+
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
 # A representative symbol from the profiler. A second definer means two event
@@ -195,11 +207,6 @@ def _declared_requirements() -> set:
     return names
 
 
-def _nm_defined_args():
-    """The nm flags that list what a library defines."""
-    return ["-DC"]
-
-
 def _installed_package_dir() -> Path:
     """The installed executorch package, never the source checkout.
 
@@ -247,6 +254,199 @@ def _tool(name: str):
     return str(beside) if beside.is_file() else None
 
 
+def _dynamic_section(library) -> str | None:
+    """What a library records about its dependencies and search paths.
+
+    Returns None when no tool can read it, so a caller can tell "nothing recorded"
+    apart from "could not look", which are different verdicts.
+
+    readelf prints the ELF dynamic section. otool -l prints the Mach-O load commands,
+    which carry the same facts under different names: LC_LOAD_DYLIB for a dependency
+    where ELF has NEEDED, and LC_RPATH where ELF has RUNPATH.
+    """
+    if sys.platform == "darwin":
+        tool, args = _tool("otool"), ["-l"]
+    else:
+        tool, args = _tool("readelf"), ["-d"]
+    if tool is None:
+        return None
+    return subprocess.run(
+        [tool, *args, str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout
+
+
+def _linked_libraries(library) -> str | None:
+    """The libraries this one resolves at load time, as text to search.
+
+    ldd resolves an ELF library's dependencies transitively. otool -L lists a Mach-O
+    library's direct dependencies without resolving them, which is weaker, so a macOS
+    result says which names are recorded rather than whether each one was found.
+    """
+    if sys.platform == "darwin":
+        tool, args = _tool("otool"), ["-L"]
+    else:
+        tool, args = _tool("ldd"), ["-r"]
+    if tool is None:
+        return None
+    result = subprocess.run(
+        [tool, *args, str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout + result.stderr
+
+
+def _runtime_search_paths(library) -> list | None:
+    """The runtime search path entries recorded in a shipped library.
+
+    Returns None when the file cannot be read, so a caller can tell "records nothing"
+    apart from "could not look", which are different verdicts.
+
+    patchelf prints an ELF RPATH as one colon separated string. Mach-O keeps each entry
+    in its own LC_RPATH load command, so otool is parsed for those instead. patchelf
+    cannot read Mach-O at all, which is why it is not simply reused here.
+    """
+    if sys.platform == "darwin":
+        tool = _tool("otool")
+        if tool is None:
+            return None
+        result = subprocess.run(
+            [tool, "-l", str(library)], capture_output=True, text=True, check=False
+        )
+        if result.returncode != 0:
+            return None
+        entries = []
+        lines = result.stdout.splitlines()
+        for index, line in enumerate(lines):
+            if "LC_RPATH" not in line:
+                continue
+            # The path sits a couple of lines below its command, followed by the
+            # offset otool appends, which is not part of the value.
+            for following in lines[index + 1 : index + 4]:
+                stripped = following.strip()
+                if stripped.startswith("path "):
+                    entries.append(stripped.split(" (offset", 1)[0][len("path ") :])
+                    break
+        return entries
+    tool = _tool("patchelf")
+    if tool is None:
+        return None
+    result = subprocess.run(
+        [tool, "--print-rpath", str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    # A library with no search path prints nothing, which is not the same as a search path holding
+    # an empty entry. The fields are kept rather than filtered, because the loader reads an empty
+    # entry as the process working directory and the caller rejects exactly that.
+    recorded = result.stdout.strip()
+    return recorded.split(":") if recorded else []
+
+
+def _assert_mach_o_architecture_matches(wheel: Path) -> None:
+    """Fail if a macOS wheel's declared architecture is not what its binaries contain.
+
+    auditwheel answers this on Linux by classifying against manylinux, which has no macOS
+    equivalent, so lipo is asked directly instead. It reports the architectures present in
+    a Mach-O file, and every shipped binary has to be one the tag promises.
+
+    A universal binary lists several architectures, so containing the declared one is the
+    test rather than equalling it.
+    """
+    lipo = _tool("lipo")
+    assert lipo is not None, (
+        "lipo is required to check that a macOS wheel's contents match the architecture "
+        "it claims, and it was not found"
+    )
+    claimed = wheel.name.split("-")[-1].removesuffix(".whl")
+    # macosx_14_0_arm64 and macosx_11_0_x86_64 both end in the architecture.
+    declared = claimed.split("_")[-1]
+    if declared == "64" and claimed.endswith("x86_64"):
+        declared = "x86_64"
+
+    with tempfile.TemporaryDirectory() as unpacked:
+        with zipfile.ZipFile(wheel) as archive:
+            archive.extractall(unpacked)
+        root = Path(unpacked)
+        binaries = [
+            path
+            for path in sorted(root.rglob("*"))
+            if path.is_file()
+            and not path.is_symlink()
+            and path.suffix in (".dylib", ".so")
+        ]
+        assert binaries, (
+            f"the wheel {wheel.name} contains no binaries, so the architecture it claims "
+            "cannot be checked against anything"
+        )
+        mismatched = []
+        for binary in binaries:
+            result = subprocess.run(
+                [lipo, "-archs", str(binary)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                continue
+            present = result.stdout.split()
+            if declared not in present:
+                mismatched.append(f"{binary.relative_to(root)} is {' '.join(present)}")
+    assert not mismatched, (
+        f"the wheel claims architecture {declared} but these binaries are built for "
+        f"something else, so it would install where it cannot run: {mismatched}"
+    )
+    print(f"\u2713 the wheel is tagged for the architecture it contains ({declared})")
+
+
+def _shipped_object_patterns() -> list[str]:
+    """Filename patterns for every shipped loadable object.
+
+    Both suffixes are listed because a Mach-O Python extension is a .so by convention, so a
+    dylib-only pattern silently drops the extension on macOS, which is the one artifact these
+    checks exist to verify.
+    """
+    return ["*.dylib*", "*.so*"]
+
+
+def _dynamic_lib_suffix() -> str:
+    """The loadable library suffix on this platform, including the dot."""
+    return ".dylib" if sys.platform == "darwin" else ".so"
+
+
+def _library_file_name(base_name: str) -> str:
+    """The file name a component's library has on this platform.
+
+    The component table names libraries without a suffix so one table serves both
+    platforms.
+    """
+    return f"{base_name}{_dynamic_lib_suffix()}"
+
+
+def _nm_defined_args():
+    """The nm flags that list what a library defines.
+
+    GNU nm reads the dynamic symbol table with -D. Mach-O has no separate dynamic
+    symbol table, so that flag fails outright there and -gU, global and defined, is
+    the equivalent question.
+    """
+    return ["-gU", "-C"] if sys.platform == "darwin" else ["-DC"]
+
+
+def _nm_undefined_args():
+    """The nm flags that list what a library needs from elsewhere."""
+    if sys.platform == "darwin":
+        return ["-gu", "-C"]
+    return ["-DC", "--undefined-only"]
+
+
 def _shipped_shared_objects(package_dir: Path):
     """Every shared object the wheel installed.
 
@@ -255,7 +455,11 @@ def _shipped_shared_objects(package_dir: Path):
     """
     found = [
         path
-        for path in sorted(package_dir.rglob("*.so*"))
+        for path in sorted(
+            item
+            for pattern in _shipped_object_patterns()
+            for item in package_dir.rglob(pattern)
+        )
         if path.is_file() and not path.is_symlink()
     ]
     assert (
@@ -279,7 +483,7 @@ def _shipped_runtime_libraries(package_dir: Path):
         return []
     return [
         path
-        for path in sorted(lib_dir.glob("lib*.so*"))
+        for path in sorted(lib_dir.glob(f"lib*{_dynamic_lib_suffix()}*"))
         if path.is_file() and not path.is_symlink()
     ]
 
@@ -299,7 +503,10 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     process, which counts what actually registered rather than what is visible.
     """
     result = subprocess.run(
-        [_tool("nm"), "-DC", str(library)], capture_output=True, text=True, check=False
+        [_tool("nm"), *_nm_defined_args(), str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         # A file that is not an object file at all is not this check's concern: something whose
@@ -314,13 +521,17 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
             f"checks cannot be trusted: {result.stderr.strip()[:200]}"
         )
         return False
+    # Mach-O prefixes a C symbol with an underscore, so nm prints _cpuinfo_initialize
+    # where ELF prints cpuinfo_initialize. A C++ name demangles to the same text on both,
+    # so accepting the prefix is enough and no per-symbol spelling is needed.
+    accepted = (symbol, f"_{symbol}") if sys.platform == "darwin" else (symbol,)
     for line in result.stdout.splitlines():
         if symbol not in line:
             continue
         match = _DEFINED.match(line)
         if (
             match
-            and match.group("name").startswith(symbol)
+            and match.group("name").startswith(accepted)
             and match.group("kind") in _OWNING_KINDS
         ):
             return True
@@ -347,17 +558,12 @@ def _is_export_only(library: Path) -> bool:
     """
     if ".cpython-" in library.name or library.name.endswith(".pyd"):
         return False
-    if library.name.endswith("_aot_lib.so"):
+    if library.name.endswith(f"_aot_lib{_dynamic_lib_suffix()}"):
         return True
-    if _tool("readelf") is None:
+    dynamic = _dynamic_section(library)
+    if dynamic is None:
         return False
-    dynamic = subprocess.run(
-        [_tool("readelf"), "-d", str(library)],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    return "libtorch.so" in dynamic
+    return _library_file_name("libtorch") in dynamic
 
 
 def _assert_single_definer(
@@ -474,26 +680,36 @@ _EXPECTED_CUDA_PACKAGES = {
 # one of them drift: it looked up its library with its own glob, which silently
 # stopped matching when the libraries were renamed while the others kept working.
 _OWNED_COMPONENTS = (
-    ("backend registry", _REGISTRY_SYMBOLS, "libexecutorch.so", True),
-    ("operator registry", _KERNEL_REGISTRY_SYMBOLS, "libexecutorch.so", True),
-    ("thread pool", _THREADPOOL_SYMBOLS, "libexecutorch_threadpool.so", True),
-    ("profiler", _ETDUMP_SYMBOLS, "libexecutorch_etdump.so", True),
+    ("backend registry", _REGISTRY_SYMBOLS, _library_file_name("libexecutorch"), True),
+    (
+        "operator registry",
+        _KERNEL_REGISTRY_SYMBOLS,
+        _library_file_name("libexecutorch"),
+        True,
+    ),
+    (
+        "thread pool",
+        _THREADPOOL_SYMBOLS,
+        _library_file_name("libexecutorch_threadpool"),
+        True,
+    ),
+    ("profiler", _ETDUMP_SYMBOLS, _library_file_name("libexecutorch_etdump"), True),
     (
         "XNNPACK delegate",
         _XNNPACK_SYMBOLS,
-        "libexecutorch_backend_xnnpack.so",
+        _library_file_name("libexecutorch_backend_xnnpack"),
         True,
     ),
     (
         "set of CPU kernels",
         _KERNEL_SYMBOLS,
-        "libexecutorch_kernels_optimized.so",
+        _library_file_name("libexecutorch_kernels_optimized"),
         False,
     ),
     (
         "set of quantized kernels",
         _QUANTIZED_KERNEL_SYMBOLS,
-        "libexecutorch_kernels_quantized.so",
+        _library_file_name("libexecutorch_kernels_quantized"),
         True,
     ),
     # The CUDA components. Required exactly when the wheel says it is a CUDA wheel,
@@ -504,19 +720,19 @@ _OWNED_COMPONENTS = (
     (
         "CUDA delegate",
         _CUDA_BACKEND_SYMBOLS,
-        "libexecutorch_backend_cuda.so",
+        _library_file_name("libexecutorch_backend_cuda"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     (
         "CUDA stream helper",
         _CUDA_STREAM_SYMBOLS,
-        "libexecutorch_extension_cuda.so",
+        _library_file_name("libexecutorch_extension_cuda"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     (
         "AOTI shim layer",
         _AOTI_SHIM_SYMBOLS,
-        "libaoti_cuda_shims.so",
+        _library_file_name("libaoti_cuda_shims"),
         _REQUIRED_ON_A_CUDA_WHEEL,
     ),
     # The third-party code these libraries bundle, checked separately from the
@@ -533,14 +749,20 @@ _OWNED_COMPONENTS = (
     (
         "bundled thread pool implementation",
         _BUNDLED_THREADPOOL_SYMBOLS,
-        "libexecutorch_threadpool.so",
+        _library_file_name("libexecutorch_threadpool"),
         True,
     ),
     (
         "bundled XNNPACK runtime",
         _BUNDLED_XNNPACK_SYMBOLS,
-        "libexecutorch_backend_xnnpack.so",
+        _library_file_name("libexecutorch_backend_xnnpack"),
         True,
+    ),
+    (
+        "OpenVINO delegate",
+        _OPENVINO_BACKEND_SYMBOLS,
+        _library_file_name("libexecutorch_backend_openvino"),
+        False,
     ),
 )
 
@@ -1008,7 +1230,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
         "a custom operator does not compile or link against the shipped extension: "
         f"{(compiled.stderr or compiled.stdout).strip()[-800:]}"
     )
-    produced = list(build_dir.rglob("libcustom_op_check.so")) or list(
+    produced = list(build_dir.rglob(_library_file_name("libcustom_op_check"))) or list(
         build_dir.rglob("custom_op_check.dll")
     )
     assert produced, "the custom operator library was not produced"
@@ -1169,6 +1391,9 @@ def test_wheel_platform_tag() -> None:
         print("- no wheel file to inspect, skipping the platform tag check")
         return
 
+    if sys.platform == "darwin":
+        _assert_mach_o_architecture_matches(wheels[-1])
+        return
     result = subprocess.run(
         [sys.executable, "-m", "auditwheel", "show", str(wheels[-1])],
         capture_output=True,
@@ -1225,7 +1450,9 @@ def test_no_absolute_runtime_paths() -> None:
     # guarantee patchelf on PATH, so this is the only place the guarantee can be
     # enforced. If both went quiet on the same missing tool, a wheel carrying the
     # build machine's directories would ship looking correct.
-    if _tool("patchelf") is None:
+    # Mach-O keeps its search path in load commands that otool reads, and otool comes
+    # with the developer tools, so only the ELF side needs an install step.
+    if sys.platform != "darwin" and _tool("patchelf") is None:
         print("- patchelf not present, installing it so this check can run")
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "--quiet", "patchelf"],
@@ -1233,10 +1460,10 @@ def test_no_absolute_runtime_paths() -> None:
             text=True,
             check=False,
         )
-    patchelf = _tool("patchelf")
-    assert patchelf is not None, (
-        "patchelf is required to check the shipped runtime paths and could not be "
-        "installed. Packaging uses it to strip build-tree directories, and without it "
+    reader = _tool("otool") if sys.platform == "darwin" else _tool("patchelf")
+    assert reader is not None, (
+        "a runtime path reader is required to check the shipped runtime paths and could "
+        "not be found. Packaging strips build-tree directories, and without a reader "
         "here neither side would notice that they were left in place."
     )
 
@@ -1278,28 +1505,21 @@ def test_no_absolute_runtime_paths() -> None:
     offenders = {}
     inspected = 0
     with_a_runtime_path = 0
-    for library in sorted(package_dir.rglob("*.so*")):
+    for library in sorted(package_dir.rglob(f"*{_dynamic_lib_suffix()}*")):
         if not library.is_file() or library.is_symlink():
             continue
-        result = subprocess.run(
-            [patchelf, "--print-rpath", str(library)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
+        entries = _runtime_search_paths(library)
+        if entries is None:
             continue
         inspected += 1
-        # An absent RPATH and one containing a single empty entry both print as an
-        # empty string, so treat empty output as "no runtime path" rather than as an
-        # empty entry. A library with nothing to search is fine; the defect is
-        # searching somewhere unusable.
-        raw = result.stdout.strip()
-        if not raw:
+        # A library with nothing to search is fine; the defect is searching somewhere
+        # unusable. An absent search path and one holding a single empty entry are the
+        # same thing here, and the reader reports both as an empty list.
+        if not entries:
             continue
         with_a_runtime_path += 1
         bad = []
-        for entry in raw.split(":"):
+        for entry in entries:
             if not entry:
                 bad.append("<empty>")
             elif (
@@ -1446,7 +1666,7 @@ def test_extension_contains_no_component() -> None:
     # UNDEFINED reference cannot be faked that way: it says the definition is not
     # here and has to come from a dependency.
     undefined = subprocess.run(
-        [_tool("nm"), "-DC", "--undefined-only", str(extension)],
+        [_tool("nm"), *_nm_undefined_args(), str(extension)],
         capture_output=True,
         text=True,
         check=False,
@@ -1502,7 +1722,9 @@ def test_shipped_library_names_are_expected() -> None:
     # stale-artifact case this check is about, and a leftover from an earlier build is
     # a real file, so it is still caught.
     shipped = sorted(
-        p for p in lib_dir.glob("*.so*") if p.is_file() and not p.is_symlink()
+        p
+        for p in lib_dir.glob(f"*{_dynamic_lib_suffix()}*")
+        if p.is_file() and not p.is_symlink()
     )
     assert shipped, f"the wheel ships a lib directory with no libraries: {lib_dir}"
 
@@ -1526,12 +1748,14 @@ def test_shipped_library_names_are_expected() -> None:
         # dependency, so both have to ship and both are expected here.
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
+        "libexecutorch_backend_openvino",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
     )
-    # A plain .so, because the wheel build does not version these. A trailing
-    # .so.<digits> would also be a name packaging did not produce here.
-    permitted = re.compile(rf"(?:{'|'.join(known)})\.so")
+    # Unversioned, because the wheel build does not version these. A trailing
+    # .<digits> would also be a name packaging did not produce here. These are
+    # libraries, so the suffix follows the platform and macOS spells them .dylib.
+    permitted = re.compile(rf"(?:{'|'.join(known)})\{_dynamic_lib_suffix()}")
     unknown = sorted(p.name for p in shipped if not permitted.fullmatch(p.name))
     assert not unknown, (
         f"the wheel ships {unknown} under lib/, which packaging does not produce. "
