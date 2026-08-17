@@ -109,6 +109,48 @@ function(set_ethosu_dedicated_sram_fast_scratch_size OUT_VAR MEMORY_MODE)
 endfunction()
 
 function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
+  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
+    # Both model and scratch in DRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA dram)
+  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
+    # Model in DRAM, scratch in SRAM.
+    set(MEMORY_MODEL dram)
+    set(MEMORY_ARENA sram)
+  else()
+    message(
+      FATAL_ERROR
+        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
+    )
+  endif()
+
+  # Set ETHOSU_MODEL/ARENA to 0 or 1 depending on MEMORY_MODEL/ARENA: sram -> 0,
+  # dram -> 1.
+  set(_ethosu_memory_regions sram dram)
+  list(FIND _ethosu_memory_regions "${MEMORY_MODEL}" ETHOSU_MODEL)
+  list(FIND _ethosu_memory_regions "${MEMORY_ARENA}" ETHOSU_ARENA)
+
+  # Make sure each value is visible to its consumer. core_platform declares
+  # MEMORY_* as cache variables. Parent-scope linker-script preprocessing reads
+  # ETHOSU_* after this function returns.
+
+  set(ETHOSU_MODEL
+      ${ETHOSU_MODEL}
+      PARENT_SCOPE
+  )
+  set(ETHOSU_ARENA
+      ${ETHOSU_ARENA}
+      PARENT_SCOPE
+  )
+  set(MEMORY_MODEL
+      "${MEMORY_MODEL}"
+      CACHE STRING "Memory config for model" FORCE
+  )
+  set(MEMORY_ARENA
+      "${MEMORY_ARENA}"
+      CACHE STRING "Memory config for arena" FORCE
+  )
+
   if(SYSTEM_CONFIG MATCHES "Ethos_U55" OR SYSTEM_CONFIG MATCHES "Ethos_U65")
     add_subdirectory(
       ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target
@@ -119,38 +161,6 @@ function(add_corstone_subdirectory SYSTEM_CONFIG ETHOS_SDK_PATH)
     )
   else()
     message(FATAL_ERROR "Unsupported SYSTEM_CONFIG ${SYSTEM_CONFIG}.")
-  endif()
-  if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
-    # Both model and scratch in DRAM.
-    set(ETHOSU_MODEL
-        1
-        PARENT_SCOPE
-    )
-    set(ETHOSU_ARENA
-        1
-        PARENT_SCOPE
-    )
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=1
-    )
-  elseif(MEMORY_MODE MATCHES "Shared_Sram" OR MEMORY_MODE MATCHES "Sram_Only")
-    # Model in DRAM, scratch in SRAM.
-    set(ETHOSU_MODEL
-        1
-        PARENT_SCOPE
-    )
-    set(ETHOSU_ARENA
-        0
-        PARENT_SCOPE
-    )
-    target_compile_definitions(
-      ethosu_target_common INTERFACE ETHOSU_MODEL=1 ETHOSU_ARENA=0
-    )
-  else()
-    message(
-      FATAL_ERROR
-        "Unsupported MEMORY_MODE ${MEMORY_MODE}. Memory_mode can be Shared_Sram, Sram_Only or Dedicated_Sram(applicable for the Ethos-U65 and Ethos-U85)"
-    )
   endif()
 endfunction()
 
