@@ -108,20 +108,32 @@ class IndexTensorSupported(SupportedTOSAOperatorCheck):
         """Return True if ``aten.index.Tensor`` usage fits supported patterns.
 
         Enforces the following constraints:
-        - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor.
+        - No ``None`` (unsqueeze), slice, or ellipsis before an indexing tensor,
+          except for the U55 constant-index lowering.
         - The value tensor element count fits in ``int32``.
 
         """
         indices = node.args[1]
-        for index in indices:  # type: ignore[union-attr]
-            # Usage 1 guard
-            if index is None:
+        if not tosa_spec.is_U55_subset and any(
+            index is None for index in indices  # type: ignore[union-attr]
+        ):
+            self.reporter.report_reject(
+                node,
+                (
+                    "None (from slice/unsqueeze/ellipsis) before an indexing tensor"
+                    " is not supported."
+                ),
+            )
+            return False
+
+        # The U55-specific check limits this to one constant tensor index.
+        for index in (
+            index for index in indices if index is not None  # type: ignore[union-attr]
+        ):
+            index_node = ensure_type(torch.fx.Node, index)
+            if get_first_fake_tensor(index_node).dtype in (torch.bool, torch.uint8):
                 self.reporter.report_reject(
-                    node,
-                    (
-                        "None (from slice/unsqueeze/ellipsis) before an indexing tensor"
-                        " is not supported."
-                    ),
+                    node, "Boolean and byte mask indices are not supported."
                 )
                 return False
 
