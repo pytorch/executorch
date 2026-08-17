@@ -69,7 +69,10 @@ int64_t cus_upper_bound(
   return start;
 }
 
-template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
+template <
+    typename CTYPE_COMPUTE,
+    typename CTYPE_OUT,
+    ET_OPERATOR_NAME_TYPE op_name>
 void bucketize_tensor_impl(
     KernelRuntimeContext& context,
     const Tensor& self,
@@ -108,7 +111,10 @@ void bucketize_tensor_impl(
   ET_KERNEL_CHECK_MSG(context, success, Internal, , "parallel_for failed");
 }
 
-template <typename CTYPE_COMPUTE, typename CTYPE_OUT, const char* op_name>
+template <
+    typename CTYPE_COMPUTE,
+    typename CTYPE_OUT,
+    ET_OPERATOR_NAME_TYPE op_name>
 void bucketize_scalar_impl(
     KernelRuntimeContext& context,
     const Scalar& self,
@@ -196,7 +202,7 @@ Tensor& bucketize_tensor_out(
       promoteTypes(self.scalar_type(), boundaries.scalar_type());
   ScalarType compute_type = utils::get_compute_type(common_type);
 
-  static constexpr const char op_name[] = "bucketize.Tensor_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "bucketize.Tensor_out");
 
   ET_SWITCH_REALHBF16_TYPES(
       compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
@@ -229,7 +235,7 @@ Tensor& bucketize_scalar_out(
       utils::promote_type_with_scalar(boundaries.scalar_type(), self);
   ScalarType compute_type = utils::get_compute_type(common_type);
 
-  static constexpr const char op_name[] = "bucketize.Scalar_out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "bucketize.Scalar_out");
 
   ET_SWITCH_REALHBF16_TYPES(
       compute_type, context, op_name, CTYPE_COMPUTE, [&]() {
