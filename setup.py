@@ -55,6 +55,7 @@ import importlib.util
 import logging
 import os
 import re
+import shlex
 import shutil
 import site
 import stat
@@ -62,7 +63,7 @@ import subprocess
 import sys
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import List, Optional
 
 # Clean dynamic import using importlib
@@ -203,6 +204,335 @@ def _minimal_packages() -> List[str]:
             ],
         )
     )
+
+
+# The published project names for the CUDA runtime components a CUDA wheel links but
+# does not bundle, keyed by CUDA major version. Not derivable from a suffix rule: the
+# CUDA 12 wheels carry a "-cu12" suffix while the CUDA 13 ones are published under
+# unsuffixed names. A train with no entry here declares nothing rather than guessing a
+# name that may not exist.
+#
+# Only what a shipped library actually loads. Measured on a built wheel, the CUDA libraries need
+# the CUDA runtime and cuRAND and nothing else, and the generated model library embeds its kernels
+# rather than compiling them at run time, so there is no runtime compiler to satisfy either.
+_CUDA_RUNTIME_PACKAGES = {
+    "12": ("nvidia-cuda-runtime-cu12",),
+    "13": ("nvidia-cuda-runtime",),
+}
+
+# Where each train installs its libraries under site-packages. CUDA 13 collects them in
+# one directory while CUDA 12 gives each component its own, so the search path differs by
+# train and cannot be a single literal.
+#
+# Every declared package needs its directory here, and nothing else belongs. The loader only
+# searches what is recorded here, so a missing directory leaves a shipped library unable to find
+# a package that is installed, and an extra one implies a dependency the wheel does not have.
+_CUDA_LIBRARY_DIRECTORIES = {
+    "12": ("nvidia/cuda_runtime/lib",),
+    "13": ("nvidia/cu13/lib",),
+}
+
+
+def _cmake_args() -> List[str]:
+    """CMAKE_ARGS split into arguments, tolerating an unbalanced quote.
+
+    shlex is the correct parser for a value that names a shell argument list, but it raises on an
+    unbalanced quote, and a path containing an apostrophe is enough to trigger it. Both callers run at
+    module scope, so the exception surfaced as a traceback during the build rather than a diagnosable
+    error. Falling back to whitespace splitting keeps the build working for the case that caused it.
+    """
+    raw = os.environ.get("CMAKE_ARGS", "")
+    try:
+        return shlex.split(raw)
+    except ValueError:
+        return raw.split()
+
+
+# Release rows that ship no CUDA. Named once because the build side and the metadata side both ask,
+# and a row recognised by only one of them builds CUDA libraries while declaring no runtime for them.
+_CPU_ROW_NAMES = ("cpu", "cpu-aarch64")
+
+
+def _row_is_cpu_only() -> bool:
+    """Whether the release row this build belongs to names itself a CPU row.
+
+    The metadata side already reads the row to decide which NVIDIA packages to declare, so the build
+    has to read the same input or the two disagree and the wheel ships a delegate it cannot load.
+    Absent means unknown rather than CPU, which keeps a plain local build behaving as before.
+    """
+    raw = (
+        (os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or "")
+        .strip()
+        .lower()
+    )
+    return raw in _CPU_ROW_NAMES
+
+
+def _cuda_train() -> str:
+    """The CUDA major version this wheel is being built for, or "" for a CPU wheel.
+
+    The release row's own field wins when it is set, because a row states the train it
+    targets and that is more authoritative than whichever toolkit happens to sit on the
+    builder. The wheel build exports CU_VERSION; DESIRED_CUDA is the matrix field name.
+
+    Falling back to the installed toolkit matters for every build that is not a release
+    job. The build turns CUDA on by detecting a toolkit, so keying only off the release
+    field produced a wheel that carried the CUDA libraries with no dependency declarations
+    and no way to find the CUDA runtime.
+
+    Returns "" when the build did not enable CUDA, so a CPU wheel declares nothing even on
+    a machine that has a toolkit installed.
+
+    Raises when a release row names a train the installed toolkit does not provide. The
+    declared packages and the loader paths both come from this value, so disagreeing with
+    the toolkit that compiled the libraries produces a wheel that installs cleanly and then
+    cannot load: a cu126 row built against a 13.0 toolkit declares the CUDA 12 runtime for
+    binaries that need libcudart.so.13.
+    """
+    # An explicit OFF first, ahead of the release field. A CPU row on a builder that has a
+    # toolkit installed sets both, so reading the row field first would declare a runtime
+    # the wheel never loads.
+    if not install_utils.is_cmake_option_on(
+        _cmake_args(),
+        "EXECUTORCH_BUILD_CUDA",
+        default=True,
+    ):
+        return ""
+
+    raw = os.environ.get("CU_VERSION") or os.environ.get("DESIRED_CUDA") or ""
+    # A row spelled "cpu" is a CPU row regardless of CMAKE_ARGS. Recognised here so that a
+    # local build named that way with no CMAKE_ARGS set does not fall through and raise on
+    # the unsupported-train branch below.
+    if raw.lower() in _CPU_ROW_NAMES:
+        return ""
+    # Reduce to digits and match against the same (major, minor) trains the shell classifier
+    # uses. Previously this took the first two digits and matched against major only, so a
+    # row spelled with an unsupported minor (say cu125) was classified CPU by the shell and
+    # CUDA 12 here, and the wheel then declared CUDA runtime packages for a CPU build.
+    digits = re.sub(r"[^0-9]", "", raw)
+    trains = {
+        f"{major}{minor}": str(major)
+        for major, minor in install_utils.SUPPORTED_CUDA_VERSIONS
+    }
+    requested = trains.get(digits, "")
+
+    # Read the toolkit major directly, without the (major, minor) validator, so the guard
+    # below fires on any mismatch rather than only on the three listed pairs.
+    detected_major = install_utils._detected_cuda_major()
+    detected = (
+        str(detected_major)
+        if detected_major is not None and str(detected_major) in _CUDA_RUNTIME_PACKAGES
+        else ""
+    )
+
+    if requested:
+        # A row that names a train has to be buildable for that train. Reported here
+        # rather than left to produce a mismatched wheel, because nothing downstream
+        # compares the two: the metadata comes from the row and the binaries come from
+        # the toolkit.
+        if detected and detected != requested:
+            raise RuntimeError(
+                f"this build targets CUDA {requested} (from "
+                f"{'CU_VERSION' if os.environ.get('CU_VERSION') else 'DESIRED_CUDA'}="
+                f"{raw!r}) but the installed toolkit is CUDA {detected}. The declared "
+                "runtime packages and the loader search paths come from the requested "
+                "train while the libraries are compiled by the installed one, so the "
+                "wheel would install and then fail to load. Install a matching toolkit "
+                "or build the row that matches this one."
+            )
+        return requested
+
+    if raw and not requested:
+        # A row named something this packaging does not recognise. Silently reporting the
+        # builder's toolkit instead contradicts "the row's field wins" and produced a
+        # wheel tagged for one train carrying another.
+        supported = ", ".join(
+            f"cu{major}{minor}"
+            for major, minor in install_utils.SUPPORTED_CUDA_VERSIONS
+        )
+        raise RuntimeError(
+            f"the release row requests CUDA {raw!r}, which is not a train this project "
+            f"supports ({supported}). Add it to SUPPORTED_CUDA_VERSIONS in install_utils "
+            "and to _CUDA_RUNTIME_PACKAGES and _CUDA_LIBRARY_DIRECTORIES here, or build "
+            "a supported row. Falling back to whatever toolkit this builder has would tag "
+            "the wheel for one train and fill it with another."
+        )
+
+    # Fall back to the installed toolkit, because keying this off a release variable alone produced a wheel
+    # that carried the CUDA libraries while declaring no CUDA runtime and recording no way to reach one.
+    #
+    # Two ways CUDA gets built, and both have to agree with what is declared here. The build gate turns it
+    # on when a SUPPORTED train is installed, so a toolkit whose minor is unlisted builds CPU-only and
+    # declaring runtime packages for it would make a CPU wheel demand four CUDA wheels. An explicit ON
+    # bypasses that gate and reaches CMake directly, where find_package(CUDAToolkit) accepts a toolkit
+    # this packaging does not list, so the libraries ship and the runtime has to be declared for them.
+    # Asking only whether the train is supported got the first case right and the second wrong.
+    explicit_on = install_utils.is_cmake_option_on(
+        _cmake_args(),
+        "EXECUTORCH_BUILD_CUDA",
+        default=False,
+    )
+    if not install_utils.is_cuda_available() and not explicit_on:
+        return ""
+    return detected
+
+
+def _cuda_libraries_built(cmake_cache_dir: Optional[str]) -> bool:
+    """Whether this build produced the CUDA libraries, read from the CMake cache.
+
+    The build turns CUDA on from the cache, so the cache is the fact that decides what ships. The
+    release row's CUDA version is a different question: a build on a toolkit whose train this packaging
+    does not recognise still produces the libraries while declaring no train, and gating anything else on
+    the train left that wheel carrying libraries with no matching header.
+
+    Falls back to the train when no cache is readable, which is the case for a source distribution where
+    nothing was built here anyway.
+    """
+    cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
+    if os.path.exists(cache_path):
+        return CMakeCache(cache_path=cache_path).is_enabled("EXECUTORCH_BUILD_CUDA")
+    return bool(_cuda_train())
+
+
+def _verify_cuda_runtime_matches_train(cmake_cache_dir: Optional[str]) -> None:
+    """Fail the build when the linked CUDA runtime is not the train being declared.
+
+    The declared packages come from the compiler version, while the library that actually gets
+    linked comes from find_package(CUDAToolkit). Those are normally the same toolkit, but
+    CUDAToolkit_ROOT steers the second and not the first, so they can split inside a single
+    find_package call: measured with the compiler at 13.0 and that variable at 12.8,
+    CUDAToolkit_VERSION reported 13.0.88 while the binary needed libcudart.so.12. Packaging
+    would then declare the CUDA 13 runtime for a wheel that cannot load without CUDA 12.
+
+    Read from the CMake cache rather than from the environment, because the cache records what
+    the build resolved rather than what was requested.
+    """
+    train = _cuda_train()
+    if not train:
+        return
+    cache_path = os.path.join(cmake_cache_dir or "", "CMakeCache.txt")
+    if not os.path.exists(cache_path):
+        return
+    cache = CMakeCache(cache_path=cache_path)
+    if not cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+        return
+    linked = cache.get("CUDA_cudart_LIBRARY")
+    if linked is None or not linked.value:
+        return
+    # Read the major from the resolved file name rather than from the recorded path, because the
+    # conventional way to name a toolkit is the versionless /usr/local/cuda symlink, which carries
+    # no version at all. Matching the directory accepted that spelling silently, which is the one
+    # the guard's own message tells the user to set. The resolved name ends in the soname the
+    # loader will ask for, which is the thing the declared package has to agree with.
+    found = re.search(r"libcudart\.so\.(\d+)", os.path.realpath(linked.value))
+    if found is None or found.group(1) == train:
+        return
+    raise RuntimeError(
+        f"this build declares the CUDA {train} runtime but linked the CUDA "
+        f"{found.group(1)} one from {linked.value!r}, so the wheel would install and then "
+        "fail to load. The declared train follows the CUDA compiler while the linked "
+        "libraries follow find_package(CUDAToolkit), so point CUDACXX and CUDAToolkit_ROOT "
+        "at the same toolkit."
+    )
+
+
+def _cuda_dependencies() -> List[str]:
+    """Runtime libraries a CUDA wheel needs but does not bundle.
+
+    Declared rather than vendored, the way the PyTorch CUDA wheels do it, so one copy is
+    shared with torch instead of shipping a second one.
+    """
+    train = _cuda_train()
+    # Marked for Linux, because a CUDA wheel is only built there and these nvidia wheels publish no
+    # distribution for the other platforms, so an unmarked requirement would make a source install
+    # elsewhere fail on a dependency it cannot satisfy and does not need.
+    return [
+        f"{name}; platform_system == 'Linux'"
+        for name in _CUDA_RUNTIME_PACKAGES.get(train, ())
+    ]
+
+
+# Directories inside the wheel that hold libraries a shipped library links, relative to the package
+# root rather than to the linking library, because the wheel ships libraries at more than one depth.
+#
+# The CUDA libraries are split across two directories and reference each other in both directions:
+# the delegate in lib/ links the shims library in backends/cuda/, and the shims library links the
+# stream helper back in lib/. So both hops are needed.
+#
+# Applied to every shipped library rather than mapping each library to the directories it happens to
+# need. An unused hop costs nothing at load time, while a missing one produces a wheel that installs
+# and then fails to load, and a per-library mapping would have to be revisited every time a library
+# moves.
+_SIBLING_LIBRARY_DIRECTORIES = ("backends/cuda", "lib", "src/executorch/lib")
+
+
+def _sibling_library_search_paths(depth: int = 1) -> List[str]:
+    """Loader paths that reach another directory inside this same package.
+
+    `depth` is how many directories separate the linking library from the package root, and it has to
+    be honoured for the same reason the CUDA hops honour it: the wheel ships libraries at depth one
+    (lib/) and depth two (backends/cuda/, extension/pybindings/ and others). Measured with a fixed
+    pair sized for one depth, six of twelve hops landed somewhere that does not exist, and the hop
+    from lib/ escaped the package entirely into a sibling of it, where an unrelated library with a
+    matching SONAME could satisfy the dependency first.
+    """
+    up = "/".join([".."] * depth)
+    return [f"$ORIGIN/{up}/{directory}" for directory in _SIBLING_LIBRARY_DIRECTORIES]
+
+
+def _cuda_runtime_search_paths(depth: int = 1) -> List[str]:
+    """Loader paths that reach the CUDA wheels installed beside this one.
+
+    Those wheels install as siblings of this package, so the hop has to climb out of the package first.
+    `depth` is how many directories separate the library from the package root, and the wheel ships
+    libraries at more than one depth: a hop sized for one of them lands inside this package from the
+    other, where nothing is found.
+    """
+    train = _cuda_train()
+    out = "/".join([".."] * (depth + 1))
+    return [
+        f"$ORIGIN/{out}/{directory}"
+        for directory in _CUDA_LIBRARY_DIRECTORIES.get(train, ())
+    ]
+
+
+def _is_cuda_toolkit_directory(entry: str) -> bool:
+    """Whether a runtime search path entry names a library directory inside a CUDA toolkit.
+
+    Matched on the two layouts a toolkit actually installs rather than on the word "cuda" appearing
+    somewhere above the directory. Scanning a window of components dropped a torch directory whose build
+    root happened to be named after a CUDA version, and torch's directory is the one absolute path a
+    shipped library has to keep.
+
+    Position alone cannot separate the two, because a real targets layout puts the cuda-named component at
+    the same depth a build root does, so each layout is spelled out instead.
+    """
+    parts = [part.lower() for part in PurePosixPath(entry).parts]
+    if not parts or parts[-1] not in ("lib", "lib64"):
+        return False
+
+    def cuda_named(part: str) -> bool:
+        return bool(re.fullmatch(r"cuda(?:-\d+(?:\.\d+)*|[-_]?toolkit)?", part))
+
+    # <toolkit>/lib64
+    if len(parts) >= 2 and cuda_named(parts[-2]):
+        return True
+    # <toolkit>/targets/<arch>/lib
+    return len(parts) >= 4 and parts[-3] == "targets" and cuda_named(parts[-4])
+
+
+def _package_relative_depth(library: Path) -> int:
+    """How many directories separate a shipped library from the installed package root.
+
+    Searched from the END of the path. At build time the path is absolute and a source checkout is
+    often named after the package too, so taking the first match found the checkout instead of the
+    package inside the build output and produced a hop that climbs out of the install directory.
+    """
+    parts = list(Path(library).parts)
+    if "executorch" not in parts:
+        return 1
+    index = len(parts) - 1 - parts[::-1].index("executorch")
+    return max(len(parts) - index - 2, 0)
 
 
 def _base_dependencies() -> List[str]:
@@ -365,6 +695,20 @@ def get_dynamic_lib_name(name: str) -> str:
         return f"lib{name}.dylib"
     else:
         return f"lib{name}.so"
+
+
+def _dynamic_lib_suffix() -> str:
+    """The loadable-library suffix on this platform, including the dot.
+
+    Separate from get_dynamic_lib_name because a file whose prefix is not known
+    ahead of time still needs the suffix named: globbing the suffix as well would
+    also match an import library, an exports file, or a soname's versioned links.
+    """
+    if _is_windows():
+        return ".dll"
+    if _is_macos():
+        return ".dylib"
+    return ".so"
 
 
 def get_executable_name(name: str) -> str:
@@ -713,8 +1057,15 @@ class InstallerBuildExt(build_ext):
                 # reach them are relative to where it was built. The wheel path repairs that
                 # from build_extension, and the editable copy needs the same repair or the
                 # import fails on a library the loader cannot find.
-                if isinstance(ext, BuiltExtension):
-                    _strip_absolute_runtime_paths(Path(inplace_file))
+                # Not restricted by class: both classes copy a file that records paths, and
+                # the shipped libraries are the sibling class, so testing for one of them
+                # left every library carrying a build directory and an empty entry that the
+                # loader reads as the working directory.
+                build_command = self.get_finalized_command("build")
+                cache_dir = getattr(build_command, "cmake_cache_dir", None)
+                _strip_absolute_runtime_paths(
+                    Path(inplace_file), _cuda_libraries_built(cache_dir)
+                )
 
             if ext._needs_stub:
                 inplace_stub = self._get_equivalent_stub(ext, inplace_file)
@@ -758,15 +1109,85 @@ class InstallerBuildExt(build_ext):
         if not os.access(dst_file, os.W_OK):
             os.chmod(dst_file, os.stat(dst_file).st_mode | stat.S_IWUSR)
 
-        _strip_absolute_runtime_paths(dst_file)
+        cmake_cache_dir = getattr(
+            self.get_finalized_command("build"), "cmake_cache_dir", None
+        )
+        _strip_absolute_runtime_paths(dst_file, _cuda_libraries_built(cmake_cache_dir))
 
 
-def _origin_token() -> str:
-    """The loader's own-directory token, spelled differently by the two formats."""
-    return "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
+def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
+    """Add the relative hops a shipped library needs, skipping any already present.
+
+    Two kinds, both relative so the wheel works wherever the environment lives:
+    the CUDA runtime, which arrives in its own wheel installed beside this one, and a sibling
+    ExecuTorch library that the wheel installs in a different directory from the library linking it.
+
+    `depth` sizes the hop out of this package, since the wheel ships libraries at more than one depth.
+    """
+    for search_path in (
+        *_cuda_runtime_search_paths(depth),
+        *_sibling_library_search_paths(depth),
+    ):
+        if search_path not in entries:
+            entries.append(search_path)
 
 
-def _strip_absolute_runtime_paths(library: Path) -> None:
+def _is_usable_runtime_path(
+    entry: str,
+    safe_to_drop_toolkit_paths: bool,
+    has_relative_torch_route: bool,
+) -> bool:
+    if not entry:
+        # The loader reads an empty entry as the process working directory.
+        return False
+    if not entry.startswith("/"):
+        return True
+    # Absolute, so decide by what it points at.
+    #
+    # A directory inside this build cannot exist for a user.
+    #
+    # A CUDA toolkit directory is dropped for a different reason: the wheel declares the CUDA runtime
+    # as a dependency and reaches it through a relative hop, so an absolute toolkit path is both
+    # unnecessary and harmful. It sits ahead of the hop, so a user who happens to have a toolkit at
+    # that prefix resolves the runtime from there instead of from the declared dependency.
+    #
+    # Whether that is safe is decided above, because the one case it is not is a CUDA build on an
+    # unrecognised train, which has no hop to fall back on.
+    #
+    # A torch lib directory is dropped when a relative route to torch is already recorded, since
+    # that route is what resolves torch on an installed wheel while the absolute one only names a
+    # directory from the machine that built it. It is kept when no relative route exists, because
+    # then it is the only way this library finds torch.
+    #
+    # Anything else absolute stays, because it is a dependency the environment provides and the wheel
+    # has no relative answer for.
+    #
+    # The build directories are matched as whole path components rather than as substrings. A bare
+    # "/cmake-out" also matches "/home/user/cmake-outputs/torchlibs", which is an unrelated directory
+    # a user could really have, and stripping it breaks a dependency the library resolves there.
+    # The setuptools staging directory is spelled build/lib.<platform>-<pyver>, for example
+    # lib.linux-x86_64-cpython-312, so match the whole shape rather than any part starting "lib.".
+    if any(
+        part in ("pip-out", "cmake-out")
+        or re.fullmatch(r"lib\.[^/]+-(cpython-\d+|\d+(?:\.\d+)*)", part)
+        for part in entry.split("/")
+    ):
+        return False
+    # Matched on the layout a CUDA toolkit actually installs, not on the word "cuda" anywhere in the
+    # path. A substring test dropped a torch directory that merely sat under a directory named after a
+    # CUDA version, which is the one absolute path that has to survive.
+    if safe_to_drop_toolkit_paths and _is_cuda_toolkit_directory(entry):
+        return False
+    if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
+        return False
+    return True
+
+
+# Whether the library can still reach torch without the absolute entry. Read inside keep,
+# which closes over this scope.
+
+
+def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     """Remove unusable runtime search paths from a library the wheel ships.
 
     These libraries are copied out of the build tree rather than installed, so they
@@ -815,55 +1236,33 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
         # entry, so there is nothing to distinguish here and nothing to do either way.
         return
 
-    def keep(entry: str) -> bool:
-        if not entry:
-            # The loader reads an empty entry as the process working directory.
-            return False
-        if not entry.startswith("/"):
-            return True
-        # Absolute, so decide by what it points at. A directory inside this build
-        # cannot exist for a user.
-        #
-        # A torch lib directory is dropped when a relative route to torch is already
-        # recorded, since that route is what resolves torch on an installed wheel
-        # while the absolute one only names a directory from the machine that built
-        # it. It is kept when no relative route exists, because then it is the only
-        # way this library finds torch.
-        #
-        # Anything else absolute is a dependency the environment provides and the
-        # wheel has no relative answer for.
-        #
-        # Matched as whole path components rather than as substrings. A bare
-        # "/cmake-out" also matches "/home/user/cmake-outputs/torchlibs", which is
-        # an unrelated directory a user could really have, and stripping it breaks
-        # a dependency the library legitimately resolves there.
-        if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
-            return False
-        parts = entry.split("/")
-        # The setuptools staging directory is spelled build/lib.<platform>-<pyver>,
-        # for example lib.linux-x86_64-cpython-312. A bare startswith("lib.") also
-        # stripped a real user path like /opt/acme/lib.v2, so match the whole shape.
-        return not any(
-            part == "pip-out"
-            or part == "cmake-out"
-            or re.fullmatch(r"lib\.[^/]+-(cpython-\d+|\d+(?:\.\d+)*)", part)
-            for part in parts
-        )
+    # Whether dropping an absolute CUDA toolkit path is safe. It is a cleanup when a relative hop replaces
+    # it, and also when this wheel carries no CUDA at all, because then nothing in it loads from that
+    # directory and the path only names the build machine. It is a regression only for a CUDA build whose
+    # train this packaging does not recognise, which declares no dependency and adds no hop, so dropping
+    # the path there would leave the delegate with no route to libcudart.
+    safe_to_drop_toolkit_paths = not ships_cuda or bool(
+        _cuda_runtime_search_paths(_package_relative_depth(library))
+    )
 
-    # Whether the library can still reach torch without the absolute entry. Read
-    # inside keep, which closes over this scope.
     has_relative_torch_route = any(
         not entry.startswith("/") and entry.rstrip("/").endswith("/torch/lib")
         for entry in original.split(":")
     )
-    # An editable install copies this extension into a package directory whose
-    # subdirectories are symlinks to the checkout, and the loader resolves the origin
-    # token against the real path, so the runtime sits inside src/executorch/lib rather
-    # than beside the copy. Nothing else adds a relative route at this point.
-    hop = _origin_token() + "/../../src/executorch/lib"
-    rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
-    if hop not in rewritten.split(":"):
-        rewritten = rewritten + ":" + hop if rewritten else hop
+    entries = [
+        entry
+        for entry in original.split(":")
+        if _is_usable_runtime_path(
+            entry, safe_to_drop_toolkit_paths, has_relative_torch_route
+        )
+    ]
+    # A CUDA wheel links the CUDA runtime from a separate wheel installed beside this
+    # one, so the loader needs a relative hop to reach it. Without this the library
+    # resolves the runtime only through the absolute toolkit path the linker recorded,
+    # which names the build machine and will not exist for a user who installed from an
+    # index. Appended, so a path already present keeps its position.
+    _append_relative_search_paths(entries, _package_relative_depth(library))
+    rewritten = ":".join(entries)
     if rewritten == original:
         return
     subprocess.run(
@@ -963,6 +1362,9 @@ class CustomBuildPy(build_py):
             ("schema/program.fbs", "exir/_serialize/program.fbs"),
         ]
         if not _is_minimal_build():
+            cmake_cache_dir = getattr(
+                self.get_finalized_command("build"), "cmake_cache_dir", None
+            )
             src_to_dst += [
                 (
                     "devtools/bundled_program/schema/bundled_program_schema.fbs",
@@ -1033,7 +1435,19 @@ class CustomBuildPy(build_py):
                 "devtools/etdump/emitter.h",
                 "devtools/etdump/utils.h",
                 "devtools/etdump/data_sinks/",
-            ]:
+            ] + (
+                # The CUDA stream helper's public header, and the export macros it includes. Its library is
+                # shared so the process has one copy of the caller-stream state, and that is a handshake the
+                # caller takes part in, so a consumer needs the declarations to take part at all.
+                #
+                # Only when this wheel carries the CUDA delegate, and decided from the same CMake cache the
+                # libraries ship on. Keying it off the release row's CUDA version instead meant a build on
+                # an unrecognised toolkit shipped both CUDA libraries and both CMake components with no
+                # header, so a consumer got a component it could link and not include.
+                ["extension/cuda/caller_stream.h", "extension/cuda/export.h"]
+                if _cuda_libraries_built(cmake_cache_dir)
+                else []
+            ):
                 # A directory entry publishes everything under it, and a file entry publishes
                 # just that file. Some directories hold headers a consumer cannot compile
                 # against, so those are named individually rather than swept in.
@@ -1307,11 +1721,36 @@ class CustomBuild(build):
         if minimal_build:
             cmake_configuration_args += _minimal_cmake_flags()
 
-        # Check if CUDA is available, and if so, enable building the CUDA
-        # backend by default.
+        # A row that names a CUDA train has already declared the NVIDIA runtime packages in
+        # install_requires, which is set before any build runs and therefore cannot consult the
+        # build. If no toolkit is reachable here, the wheel would ship no CUDA library while
+        # still making pip fetch the CUDA runtime, so stop rather than publish that mismatch.
+        #
+        # Tested against the same detection that produced the train, not against the stricter
+        # (major, minor) validator. The validator rejects a toolkit whose minor is unlisted, and
+        # an explicit EXECUTORCH_BUILD_CUDA=ON deliberately builds on such a toolkit, so asking
+        # the validator here reported "no toolkit" on a machine whose toolkit had just been used
+        # to derive the train, and refused the one case the fallback above exists to support.
+        if (
+            not minimal_build
+            and _cuda_train()
+            and install_utils._detected_cuda_major() is None
+        ):
+            raise RuntimeError(
+                "this row names a CUDA train but no CUDA compiler was found, so the wheel "
+                "would declare the CUDA runtime and ship no CUDA library. Put nvcc on PATH or "
+                "point CUDACXX at it, or build the CPU row instead."
+            )
+
+        # Enable the CUDA delegate when a toolkit is present, unless the release row says this is a
+        # CPU wheel. Without that second condition a CPU row built on a machine that happens to have
+        # a toolkit produced a wheel carrying the delegate while its metadata declared no NVIDIA
+        # package and no way to reach one, so the delegate could not load. An explicit option still
+        # wins, so a caller can override the row on purpose.
         if (
             not minimal_build
             and install_utils.is_cuda_available()
+            and not _row_is_cpu_only()
             and install_utils.is_cmake_option_on(
                 cmake_configuration_args, "EXECUTORCH_BUILD_CUDA", default=True
             )
@@ -1395,6 +1834,9 @@ class CustomBuild(build):
         cmake_cache = CMakeCache(
             cache_path=os.path.join(cmake_cache_dir, "CMakeCache.txt")
         )
+        # Checked here rather than after the build, because the cache already records which
+        # toolkit was resolved and reporting a mismatch is cheaper than compiling first.
+        _verify_cuda_runtime_matches_train(cmake_cache_dir)
         cmake_build_args = [
             # Default build parallelism based on number of cores, but allow
             # overriding through the environment.
@@ -1444,6 +1886,10 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                    # The stream helper ships as its own library so a process has one
+                    # of it. Named because nothing else in a wheel build links it.
+                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1495,7 +1941,9 @@ if _is_minimal_build():
     setup_kwargs["packages"] = _minimal_packages()
     setup_kwargs["install_requires"] = _minimal_dependencies()
 else:
-    setup_kwargs["install_requires"] = _base_dependencies()
+    # A CUDA wheel links the CUDA runtime but does not bundle it, so the wheels that
+    # carry it are declared here. A CPU wheel adds nothing.
+    setup_kwargs["install_requires"] = _base_dependencies() + _cuda_dependencies()
 
 
 setup(
@@ -1583,6 +2031,39 @@ setup(
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
                     ],
+                ),
+                # The CUDA delegate and the process-wide CUDA stream helper, for a
+                # wheel built from a CUDA index. Only present when the build asks for
+                # CUDA, so packaging requires that rather than looking for files a
+                # CPU-only build never produced.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
+                    src_name="libexecutorch_backend_cuda.so",
+                    dst="executorch/lib/libexecutorch_backend_cuda.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_CUDA",
+                    ],
+                ),
+                # The stream helper the delegate and the shim layer both record as a
+                # dependency. Globbed rather than named, because the file name depends on
+                # the build: a shared build renames it to libexecutorch_extension_cuda.so
+                # to match the other shipped components, and any other build leaves it as
+                # libextension_cuda.so. The shim ships whenever CUDA is on, so naming only
+                # the shared spelling left the non-shared build shipping a shim whose
+                # DT_NEEDED resolved to nothing. Two names means is_dynamic_lib cannot be
+                # used, since it builds one name and prepends a prefix the shared spelling
+                # does not have, so the prefix is globbed and the suffix is named. The
+                # build type is in the directory the way the sibling entries have it.
+                # Naming the suffix matters: this entry accepts exactly one file, and a
+                # bare wildcard also matches what a build leaves beside the library, an
+                # import library and an exports file on MSVC, or a soname's versioned
+                # links, and packaging then fails on a layout that is perfectly valid.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
+                    src_name="*extension_cuda" + _dynamic_lib_suffix(),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
                 # The quantized kernels, as their own library rather than code
                 # fused into the AOT-only extension beside the Python bindings.
@@ -1690,23 +2171,8 @@ setup(
                     is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
-                # The stream helper the library above records as a dependency. It was
-                # never shipped, and resolved only because the copied library still
-                # carried the absolute directory it was linked in, which exists on a
-                # build machine and nowhere else. Stripping that path is what made the
-                # omission visible as a failed import.
-                #
-                # Shipped beside its consumer rather than in lib/, because that
-                # directory only exists in the shared build and this has to work
-                # without it. The glob covers both names the target can have: the
-                # shared build renames it to advertise it as a wheel component.
-                BuiltFile(
-                    src_dir="%CMAKE_CACHE_DIR%/extension/cuda/%BUILD_TYPE%/",
-                    src_name="*extension_cuda",
-                    dst="executorch/backends/cuda/",
-                    is_dynamic_lib=True,
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
-                ),
+                # The stream helper this library needs ships in lib/ from here on,
+                # alongside the other components a C++ consumer links.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
                     src_name="qnn_executorch_backend",
