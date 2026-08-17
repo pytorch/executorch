@@ -201,10 +201,10 @@ endif()
 # ship with no runtime path at all, on a builder where the runtime resolves from
 # an implicit link directory, and the wheel then adds no relative hop either,
 # because the step that adds one has nothing to rewrite. Guarded like every
-# Guarded like every other call, because the helper is only meaningful for an
-# install whose dependencies sit beside the target, which is what a shared build
-# produces. It appends to any INSTALL_RPATH the caller set rather than replacing
-# it, so a source install keeps its own paths.
+# other call, because the helper is only meaningful for an install whose
+# dependencies sit beside the target, which is what a shared build produces. It
+# appends to any INSTALL_RPATH the caller set rather than replacing it, so a
+# source install keeps its own paths.
 if(EXECUTORCH_BUILD_SHARED)
   executorch_target_shipped_runtime_path(aoti_cuda_shims)
 endif()

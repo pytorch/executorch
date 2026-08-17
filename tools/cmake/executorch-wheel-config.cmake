@@ -724,18 +724,19 @@ if(_portable_lib_LIBRARY)
       # compile
       # as C++17 and fail against headers that need C++20.
       INTERFACE_COMPILE_FEATURES cxx_std_20
-      # The runtime's definitions. The thread pool one is appended below rather
-      # than listed here, A custom-op
-      # build that links only this target still compiles against the
-      # same headers and needs it too.
+      # The runtime's definitions. A custom-op build that links only this target
+      # compiles against the same headers and needs them too. The thread pool
+      # definition is appended after this call rather than listed here, because
+      # whether it applies depends on a variable set further up.
       INTERFACE_COMPILE_DEFINITIONS
       "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
   )
-  # because it depends on whether this wheel shipped that component. Without it
-  # a consumer compiles the serial inline copies of parallel_for while the
-  # shipped libraries carry the real ones, and the serial version wins wherever
-  # it was inlined, with no diagnostic. It does not arrive transitively because
-  # the runtime is attached here as a file path, not as the target.
+  # Appended here rather than listed above, because whether the thread pool
+  # definition applies depends on whether this wheel shipped it. Without it a
+  # consumer compiles the serial inline copies of parallel_for while the shipped
+  # libraries carry the real ones, and the serial version wins wherever it was
+  # inlined, with no diagnostic. It does not arrive transitively because the
+  # runtime is attached here as a file path, not as the target.
   set(_executorch_extension_needs_threadpool OFF)
   if("ET_USE_THREADPOOL" IN_LIST EXECUTORCH_COMPILE_DEFINITIONS)
     set(_executorch_extension_needs_threadpool ON)
