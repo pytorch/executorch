@@ -42,6 +42,92 @@ if(NOT CMAKE_CUDA_COMPILER)
   check_language(CUDA)
 endif()
 
+# Take the architectures from the release row when it names them, before the
+# language is enabled, since CMake fixes them at that point. Without this the
+# build uses CMake's default, which on some devices is older than the intrinsics
+# these sources use, and the compile fails with an undefined identifier that
+# looks like a source problem.
+#
+# TORCH_CUDA_ARCH_LIST is the variable the surrounding build environment already
+# sets, in PyTorch's dotted form. CMake wants bare integers, so "9.0" becomes
+# 90. A "+PTX" suffix asks for the portable form in addition to the compiled
+# one, which is what PyTorch means by it, so it adds the -virtual kind rather
+# than replacing the -real one. Torch sets this to OFF at root scope when it is
+# defined, warning that it ignores the value, so a defined value does not mean a
+# caller chose it. OFF is treated as absent here, otherwise asking for an
+# architecture through the preset silently compiles for whatever torch's own
+# gencode flags select instead. CMAKE_CUDA_ARCHITECTURES is deliberately not
+# read here. torch's CMake rejects and overrides it, which is why the release
+# rows publish TORCH_CUDA_ARCH_LIST instead, and CMake fills the cache entry
+# with a default of its own once the CUDA language is enabled. torch enables
+# that language before this directory is added, so the cache always holds a
+# value and cannot be read as a caller's intent: doing so replaced torch's
+# autodetected architecture with CMake's default and broke the build on a device
+# the default does not cover.
+if(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+  string(REPLACE "." "" _executorch_cuda_arch_list "$ENV{TORCH_CUDA_ARCH_LIST}")
+  string(REPLACE " " ";" _executorch_cuda_arch_list
+                 "${_executorch_cuda_arch_list}"
+  )
+  # torch spells a request for the portable form as a "+PTX" suffix, which nvcc
+  # rejects literally. Drop the suffix rather than expanding it into a separate
+  # -virtual entry: an unsuffixed CMake architecture already asks for both the
+  # compiled and the portable form, measured as code=[compute_120,sm_120] for a
+  # bare "120", so the extra entry only duplicates a gencode that is already
+  # there.
+  set(_executorch_cuda_arch_resolved "")
+  foreach(_arch IN LISTS _executorch_cuda_arch_list)
+    string(REGEX REPLACE "\\+PTX$" "" _arch "${_arch}")
+    list(APPEND _executorch_cuda_arch_resolved "${_arch}")
+  endforeach()
+  # A row that names both "12.0" and "12.0+PTX" collapses to the same entry
+  # twice, which would duplicate a gencode on the compile line.
+  list(REMOVE_DUPLICATES _executorch_cuda_arch_resolved)
+  # torch also accepts family names such as Ampere or Hopper, which its own
+  # select_compute_arch.cmake documents and has already turned into gencode
+  # flags by the time this directory is added. Dropped rather than rejected:
+  # failing here would break a configuration that builds today, and passing a
+  # name through to CMAKE_CUDA_ARCHITECTURES would reach nvcc, which only
+  # accepts numbers.
+  set(_executorch_cuda_arch_numeric)
+  foreach(_arch IN LISTS _executorch_cuda_arch_resolved)
+    if(_arch MATCHES "^[0-9]+[a-z]*(-real|-virtual)?$")
+      list(APPEND _executorch_cuda_arch_numeric "${_arch}")
+    else()
+      message(
+        STATUS
+          "executorch: leaving TORCH_CUDA_ARCH_LIST entry \"${_arch}\" to torch, since it names a "
+          "GPU family rather than a compute capability"
+      )
+    endif()
+  endforeach()
+  # Left unset when nothing numeric remains, so torch's resolution is what
+  # decides. Setting it to an empty string would instead ask CMake to compile
+  # for no architecture at all.
+  if(_executorch_cuda_arch_numeric)
+    set(CMAKE_CUDA_ARCHITECTURES "${_executorch_cuda_arch_numeric}")
+  endif()
+  message(
+    STATUS
+      "CUDA architectures from TORCH_CUDA_ARCH_LIST: ${CMAKE_CUDA_ARCHITECTURES}"
+  )
+else()
+  # torch sets this to OFF on purpose and drives nvcc with its own gencode
+  # flags, so there is nothing to choose here and overriding it would replace a
+  # working set of architectures with one value.
+  #
+  # An empty value is a different case: nothing selected the architectures, and
+  # an empty list makes nvcc fall back to its built-in compute_50, which current
+  # CUDA rejects outright. Ask CMake to detect the builder's GPU instead, which
+  # is what a source build wants.
+  if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
+    set(CMAKE_CUDA_ARCHITECTURES native)
+  endif()
+  message(
+    STATUS "CUDA architectures left to torch: ${CMAKE_CUDA_ARCHITECTURES}"
+  )
+endif()
+
 if(CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
