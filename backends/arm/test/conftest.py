@@ -25,6 +25,8 @@ def pytest_configure(config):
 
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+    if config.option.dump_artifacts:
+        pytest._test_options["dump_artifacts"] = config.option.dump_artifacts  # type: ignore[attr-defined]
 
     logging.basicConfig(stream=sys.stdout)
     seed, seed_label = _setup_random_seed()
@@ -104,6 +106,12 @@ def pytest_addoption(parser):
         "--llama_inputs",
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
+    )
+    try_addoption(
+        "--dump_artifacts",
+        dest="dump_artifacts",
+        metavar="DIR",
+        help="Dump Arm test artifacts into DIR/<test-name>.",
     )
 
 
