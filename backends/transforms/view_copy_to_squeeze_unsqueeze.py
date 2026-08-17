@@ -122,7 +122,7 @@ class ViewCopyToSqueezeUnsqueezePass(ExportPass):
                     modified = True
                     continue
                 unsqueeze_dim = self.find_unsqueeze_dim(input_shape, view_shape)
-                if unsqueeze_dim:
+                if unsqueeze_dim is not None:
                     self.replace_view_copy_node(
                         graph_module, node, self.unsqueeze_op, unsqueeze_dim
                     )
