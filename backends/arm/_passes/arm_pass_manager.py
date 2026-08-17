@@ -608,7 +608,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeStridedSliceCopyPass(),
                 DecomposeSliceScatterPass(),
                 AccumulateIndexPutPass(),
-                DecomposeIndexTensorToGatherPass(),
+                DecomposeIndexTensorToGatherPass(exported_program),
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
