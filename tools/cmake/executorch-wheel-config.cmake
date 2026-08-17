@@ -64,10 +64,21 @@
 # dependency and, for a registration-only library, the link options that keep it
 # from being dropped. The names, when present, are:
 #
-# executorch::kernels_optimized -- The CPU operator kernels. Needed to run a
-# model. executorch::backend_xnnpack   -- The XNNPACK delegate.
-# executorch::threadpool        -- The shared thread pool. executorch::etdump --
-# The profiler.
+# ~~~
+# executorch::kernels_optimized  The CPU operator kernels. Needed to run a model.
+# executorch::kernels_quantized  The quantized operator kernels, for a quantized
+#                                model. Not part of EXECUTORCH_LIBRARIES, see
+#                                below.
+# executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::threadpool         The shared thread pool.
+# executorch::etdump             The profiler.
+# ~~~
+#
+# EXECUTORCH_LIBRARIES carries every component except the quantized kernels,
+# which a consumer names explicitly instead. The export-time plugin that
+# executorch.kernels.quantized loads carries its own copy of those kernels, so a
+# process holding both stops on a repeated operator registration, and a consumer
+# linking the aggregate would inherit that without asking for it.
 #
 # Check with if(TARGET executorch::<name>) rather than assuming one exists. A
 # namespaced name that was never defined is a configure-time error that names
@@ -289,6 +300,13 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # then a load failure saying the backend is not registered, which reads as a
   # model problem. Anything the wheel did not ship is simply not found and
   # skipped.
+  #
+  # The quantized kernels are deliberately absent, for the reason given at their
+  # component definition below: they collide with the export-time plugin that
+  # executorch.kernels.quantized loads, and a process holding both dies. This
+  # route has no per-component target to opt into, so they are offered through
+  # EXECUTORCH_QUANTIZED_KERNELS_LIBRARY instead and a consumer that wants them
+  # links that as well.
   foreach(_executorch_component IN
           ITEMS libexecutorch_kernels_optimized libexecutorch_backend_xnnpack
                 libexecutorch_threadpool libexecutorch_etdump
@@ -323,6 +341,21 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
     endif()
   endforeach()
   unset(_executorch_component_library)
+  # Held out of the aggregate above, so name it separately. A consumer that
+  # wants quantized operators and does not load the Python plugin in the same
+  # process links this too. Empty when the wheel shipped no such library.
+  _executorch_find_library(
+    EXECUTORCH_QUANTIZED_KERNELS_LIBRARY libexecutorch_kernels_quantized
+  )
+  if(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY AND CMAKE_SYSTEM_NAME STREQUAL
+                                              "Linux"
+  )
+    # The same scoped retention the aggregate entries get, for the same reason:
+    # a registration-only library exports nothing the application references.
+    set(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY
+        "-Wl,--push-state,--no-as-needed,${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY},--pop-state"
+    )
+  endif()
   message(
     STATUS
       "executorch: the prebuilt runtime is present but its imported targets need CMake 3.28 or "
@@ -406,8 +439,13 @@ endif()
 # most: a registration-only library has no symbol the application references, so
 # a normal link drops it and its registration never runs.
 #
-# Call as: _executorch_define_component(<target suffix> <library base name>)
+# Call as: _executorch_define_component(<target suffix> <library base name>
+# [OPT_IN])
+#
+# OPT_IN defines the target but keeps it out of EXECUTORCH_LIBRARIES, for a
+# library a consumer has to choose deliberately rather than receive by default.
 function(_executorch_define_component _suffix _library_name)
+  cmake_parse_arguments(PARSE_ARGV 2 _component "OPT_IN" "" "")
   # Same reason the runtime target is skipped on older CMake: a component target
   # exports an $ORIGIN-relative search path, and a version that writes it wrong
   # produces a target that works in place and fails once deployed.
@@ -430,10 +468,12 @@ function(_executorch_define_component _suffix _library_name)
     # returning here would hand the second caller a list with the runtime but
     # none of the components. A consumer linking that variable would then be
     # missing its kernels and fail at load with an unregistered operator.
-    set(EXECUTORCH_LIBRARIES
-        ${EXECUTORCH_LIBRARIES} ${_target}
-        PARENT_SCOPE
-    )
+    if(NOT _component_OPT_IN)
+      set(EXECUTORCH_LIBRARIES
+          ${EXECUTORCH_LIBRARIES} ${_target}
+          PARENT_SCOPE
+      )
+    endif()
     return()
   endif()
   add_library(${_target} SHARED IMPORTED)
@@ -481,10 +521,12 @@ function(_executorch_define_component _suffix _library_name)
                "LINKER:--push-state,--no-as-needed,${_library},--pop-state"
     )
   endif()
-  set(EXECUTORCH_LIBRARIES
-      ${EXECUTORCH_LIBRARIES} ${_target}
-      PARENT_SCOPE
-  )
+  if(NOT _component_OPT_IN)
+    set(EXECUTORCH_LIBRARIES
+        ${EXECUTORCH_LIBRARIES} ${_target}
+        PARENT_SCOPE
+    )
+  endif()
 endfunction()
 
 _executorch_define_component(threadpool executorch_threadpool)
@@ -493,6 +535,25 @@ _executorch_define_component(threadpool executorch_threadpool)
 # checks, so it has to be defined here or a consumer following the documentation
 # gets a bare name that CMake hands to the linker as a literal flag.
 _executorch_define_component(kernels_optimized executorch_kernels_optimized)
+# The quantized kernels, optional in the same way: a wheel built without them
+# simply has no such library and the component is not defined.
+#
+# Opt in rather than part of the aggregate. The export-time plugin that
+# executorch.kernels.quantized loads registers the same operator names, and the
+# runtime stops on a repeat registration rather than choosing one, so a process
+# holding both dies. Measured: linking this library and importing that module in
+# either order aborts with "Re-registering quantized_decomposed::add.out". None
+# of the other shipped components collide this way, so only this one is held
+# back, and a consumer that wants it names it.
+_executorch_define_component(
+  kernels_quantized executorch_kernels_quantized OPT_IN
+)
+# The same library exposed through a variable, so a consumer that follows the
+# pre-3.28 recipe and later upgrades past 3.28 keeps working. Left empty when
+# the wheel shipped no such library, matching the pre-3.28 branch above.
+if(TARGET executorch::kernels_quantized)
+  set(EXECUTORCH_QUANTIZED_KERNELS_LIBRARY executorch::kernels_quantized)
+endif()
 # The profiler. A C++ application could not record timing data from an installed
 # package before, because the implementation shipped only inside the Python
 # extension.
@@ -723,13 +784,28 @@ foreach(_component ${executorch_FIND_COMPONENTS})
         # One string rather than several arguments. Several make a list, and
         # message() joins a list with semicolons, which lands separators mid
         # sentence.
-        string(
-          CONCAT
-            executorch_NOT_FOUND_MESSAGE
-            "the required component '${_component}' needs CMake 3.28 or newer, because older "
-            "versions write the \$ORIGIN token in a runtime search path incorrectly; this "
-            "package is otherwise usable through EXECUTORCH_LIBRARIES"
-        )
+        #
+        # The quantized kernels are held out of EXECUTORCH_LIBRARIES on purpose,
+        # so a consumer who wants them names
+        # EXECUTORCH_QUANTIZED_KERNELS_LIBRARY instead. See the OPT_IN comment
+        # at the component definition above.
+        if(_component STREQUAL "kernels_quantized")
+          string(
+            CONCAT
+              executorch_NOT_FOUND_MESSAGE
+              "the required component '${_component}' needs CMake 3.28 or newer, because "
+              "older versions write the \$ORIGIN token in a runtime search path incorrectly; "
+              "this package is otherwise usable through EXECUTORCH_QUANTIZED_KERNELS_LIBRARY"
+          )
+        else()
+          string(
+            CONCAT
+              executorch_NOT_FOUND_MESSAGE
+              "the required component '${_component}' needs CMake 3.28 or newer, because older "
+              "versions write the \$ORIGIN token in a runtime search path incorrectly; this "
+              "package is otherwise usable through EXECUTORCH_LIBRARIES"
+          )
+        endif()
       else()
         # One string rather than several arguments. Several make a list, and
         # message() joins a list with semicolons, which lands separators mid
