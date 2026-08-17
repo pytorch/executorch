@@ -15,6 +15,7 @@ import executorch.backends.vulkan.test.utils as test_utils
 import torch
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkStorageType
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -24,6 +25,7 @@ from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
     ExecutorchProgramManager,
+    to_edge,
     to_edge_transform_and_lower,
 )
 from executorch.extension.pybindings.portable_lib import (  # @manual
@@ -62,9 +64,12 @@ def disable_test(reason):
 
 
 def lower_module(
-    model: torch.nn.Module, sample_inputs: Tuple[torch.Tensor], dynamic_shapes=None
+    model: torch.nn.Module,
+    sample_inputs: Tuple[torch.Tensor],
+    dynamic_shapes=None,
+    compile_options=None,
 ) -> EdgeProgramManager:
-    compile_options = {}
+    compile_options = {} if compile_options is None else dict(compile_options)
     if dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
 
@@ -250,6 +255,8 @@ class TestVulkanBackend(unittest.TestCase):
         test_inputs=None,
         first_output_only=False,
         expect_no_delegates=False,
+        compile_options=None,
+        expected_delegate_count=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -261,7 +268,12 @@ class TestVulkanBackend(unittest.TestCase):
         model.eval()
         model(*sample_inputs)
 
-        edge_program = lower_module(model, sample_inputs, dynamic_shapes=dynamic_shapes)
+        edge_program = lower_module(
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            compile_options=compile_options,
+        )
 
         et_program = edge_program.to_executorch()
 
@@ -270,6 +282,11 @@ class TestVulkanBackend(unittest.TestCase):
             return
 
         self.check_vk_delegation(et_program)
+        if expected_delegate_count is not None:
+            self.assertEqual(
+                len(et_program.executorch_program.execution_plan[0].delegates),
+                expected_delegate_count,
+            )
 
         self.run_delegated_model_and_check_output(
             et_program,
@@ -345,6 +362,186 @@ class TestVulkanBackend(unittest.TestCase):
         internal_data_module = ZeroDimModule()
         sample_inputs = (torch.rand(size=(2, 3), dtype=torch.float32),)
         self.lower_module_and_test_output(internal_data_module, sample_inputs)
+
+    def test_vulkan_backend_symint_output(self):
+        class SelectAsSymIntModule(torch.nn.Module):
+            def forward(self, x):
+                return x.view(-1), x[0].item()
+
+        sample_inputs = (torch.tensor([7], dtype=torch.int32),)
+        edge_program = lower_module(SelectAsSymIntModule(), sample_inputs)
+        et_program = edge_program.to_executorch()
+        self.check_vk_delegation(et_program)
+
+        executorch_module = _load_for_executorch_from_buffer(et_program.buffer)
+        output = executorch_module.run_method("forward", sample_inputs)
+        self.assertTrue(torch.equal(output[0], sample_inputs[0]))
+        self.assertEqual(output[1], 7)
+
+    def test_vulkan_backend_dynamic_ring_position(self):
+        class RingPositionModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("offsets", torch.arange(8, dtype=torch.int32))
+
+            def forward(self, position):
+                position_scalar = torch.scalar_tensor(
+                    position[0].item(), dtype=torch.int32
+                )
+                return (self.offsets + position_scalar) % 128
+
+        for input_dtype in (torch.int32, torch.int64):
+            for storage_type in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(input_dtype=input_dtype, storage_type=storage_type):
+                    sample_inputs = (torch.tensor([60], dtype=input_dtype),)
+                    test_inputs = [
+                        (torch.tensor([125], dtype=input_dtype),),
+                        (torch.tensor([128], dtype=input_dtype),),
+                        (torch.tensor([-3], dtype=input_dtype),),
+                    ]
+                    self.lower_module_and_test_output(
+                        RingPositionModule(),
+                        sample_inputs,
+                        test_inputs=test_inputs,
+                        compile_options={"storage_type_override": storage_type},
+                        expected_delegate_count=1,
+                    )
+
+    def test_vulkan_backend_voxtral_rms_norm(self):
+        class RmsNormModule(torch.nn.Module):
+            def __init__(self, hidden_size, dtype):
+                super().__init__()
+                self.hidden_size = hidden_size
+                self.weight = torch.nn.Parameter(torch.rand(hidden_size, dtype=dtype))
+
+            def forward(self, x):
+                return torch.nn.functional.rms_norm(
+                    x,
+                    (self.hidden_size,),
+                    self.weight,
+                    1e-5,
+                )
+
+        cases = (
+            (1280, torch.float32),
+            (1280, torch.float16),
+            (5120, torch.float32),
+        )
+        for hidden_size, dtype in cases:
+            for storage_type in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(
+                    hidden_size=hidden_size,
+                    dtype=dtype,
+                    storage_type=storage_type,
+                ):
+                    model = RmsNormModule(hidden_size, dtype)
+                    sample_inputs = (torch.randn(1, 4, hidden_size, dtype=dtype),)
+                    test_inputs = [
+                        (torch.randn(1, 1, hidden_size, dtype=dtype),),
+                        (torch.randn(1, 7, hidden_size, dtype=dtype),),
+                    ]
+                    seq_len = Dim("seq_len", min=1, max=8)
+                    self.lower_module_and_test_output(
+                        model,
+                        sample_inputs,
+                        atol=1e-2 if dtype == torch.float16 else 1e-3,
+                        rtol=1e-2 if dtype == torch.float16 else 1e-3,
+                        dynamic_shapes={"x": {1: seq_len}},
+                        test_inputs=test_inputs,
+                        compile_options={"storage_type_override": storage_type},
+                        expected_delegate_count=1,
+                    )
+
+    def test_vulkan_backend_voxtral_rope(self):
+        class RoPEModule(torch.nn.Module):
+            def __init__(self, head_dim, offline):
+                super().__init__()
+                self.offline = offline
+                inv_freq = 1.0 / (
+                    1_000_000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim)
+                )
+                if offline:
+                    freqs = torch.outer(torch.arange(128).float(), inv_freq)
+                    self.register_buffer("freqs_cos", freqs.cos())
+                    self.register_buffer("freqs_sin", freqs.sin())
+                else:
+                    self.register_buffer("inv_freq", inv_freq)
+
+            def forward(self, q, k, positions):
+                if self.offline:
+                    freqs_cos = self.freqs_cos[positions]
+                    freqs_sin = self.freqs_sin[positions]
+                else:
+                    freqs = torch.outer(positions.float(), self.inv_freq)
+                    freqs_cos = freqs.cos()
+                    freqs_sin = freqs.sin()
+
+                q_r, q_i = q.float().reshape(q.shape[:-1] + (-1, 2)).unbind(-1)
+                k_r, k_i = k.float().reshape(k.shape[:-1] + (-1, 2)).unbind(-1)
+                cos = freqs_cos.unsqueeze(0).unsqueeze(2)
+                sin = freqs_sin.unsqueeze(0).unsqueeze(2)
+                q_out = torch.stack(
+                    [q_r * cos - q_i * sin, q_r * sin + q_i * cos], dim=-1
+                ).flatten(-2)
+                k_out = torch.stack(
+                    [k_r * cos - k_i * sin, k_r * sin + k_i * cos], dim=-1
+                ).flatten(-2)
+                return q_out.type_as(q), k_out.type_as(k)
+
+        cases = (
+            (True, 32, 8, 128, torch.float32, None),
+            (False, 32, 8, 128, torch.float32, VkStorageType.TEXTURE_3D),
+            (False, 32, 8, 128, torch.float32, VkStorageType.BUFFER),
+            (False, 32, 32, 64, torch.float32, VkStorageType.TEXTURE_3D),
+            (False, 32, 32, 64, torch.float32, VkStorageType.BUFFER),
+            (False, 32, 8, 128, torch.float16, VkStorageType.TEXTURE_3D),
+            (False, 32, 8, 128, torch.float16, VkStorageType.BUFFER),
+        )
+        for offline, query_heads, key_heads, head_dim, dtype, storage_type in cases:
+            with self.subTest(
+                offline=offline,
+                query_heads=query_heads,
+                key_heads=key_heads,
+                head_dim=head_dim,
+                dtype=dtype,
+                storage_type=storage_type,
+            ):
+                model = RoPEModule(head_dim, offline)
+
+                def make_inputs(seq_len, start_pos):
+                    return (
+                        torch.randn(1, seq_len, query_heads, head_dim, dtype=dtype),
+                        torch.randn(1, seq_len, key_heads, head_dim, dtype=dtype),
+                        torch.arange(start_pos, start_pos + seq_len),
+                    )
+
+                sample_inputs = make_inputs(4, 60)
+                test_inputs = [
+                    make_inputs(1, 0 if offline else 128),
+                    make_inputs(7, 121 if offline else 8_192),
+                ]
+                seq_len = Dim("seq_len", min=1, max=8)
+                tolerance = (
+                    1e-2 if dtype == torch.float16 else 1e-5 if offline else 5e-3
+                )
+                self.lower_module_and_test_output(
+                    model,
+                    sample_inputs,
+                    atol=tolerance,
+                    rtol=tolerance,
+                    dynamic_shapes={
+                        "q": {1: seq_len},
+                        "k": {1: seq_len},
+                        "positions": {0: seq_len},
+                    },
+                    test_inputs=test_inputs,
+                    compile_options=(
+                        None
+                        if storage_type is None
+                        else {"storage_type_override": storage_type}
+                    ),
+                    expected_delegate_count=1,
+                )
 
     def test_vulkan_backend_internal_data(self):
         class InternalDataModule(torch.nn.Module):
@@ -588,6 +785,32 @@ class TestVulkanBackend(unittest.TestCase):
                 return torch.sin(x)
 
         self.lower_unary_module_and_test_output(SinModule())
+
+    def test_vulkan_backend_int64_to_float(self):
+        class ToFloatModule(torch.nn.Module):
+            def forward(self, x):
+                return x.float()
+
+        sample_inputs = (torch.arange(4, dtype=torch.int64),)
+        self.lower_module_and_test_output(ToFloatModule(), sample_inputs)
+
+    def test_vulkan_backend_streaming_rope_frequencies(self):
+        class RoPEFrequenciesModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "inv_freq",
+                    1.0 / (1_000_000.0 ** (torch.arange(0, 128, 2).float() / 128)),
+                )
+
+            def forward(self, positions):
+                freqs = torch.outer(positions.float(), self.inv_freq)
+                return freqs.cos(), freqs.sin()
+
+        sample_inputs = (torch.arange(4, dtype=torch.int64),)
+        self.lower_module_and_test_output(
+            RoPEFrequenciesModule(), sample_inputs, atol=1e-5, rtol=1e-5
+        )
 
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
@@ -1449,6 +1672,51 @@ class TestVulkanBackend(unittest.TestCase):
             sample_inputs,
         )
 
+    def test_vulkan_backend_constant_output(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("constant", torch.tensor(float("-inf")))
+
+            def forward(self, x):
+                return x + 1, self.constant.clone()
+
+        sample_inputs = (torch.randn(size=(3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+        )
+
+    def test_vulkan_backend_nonfinite_scalar_mask(self):
+        class MaskModule(torch.nn.Module):
+            def forward(self, x):
+                negative_inf = torch.full(
+                    x.shape,
+                    float("-inf"),
+                    dtype=x.dtype,
+                    device=x.device,
+                )
+                mask = torch.where(
+                    x == float("-inf"), negative_inf, torch.zeros_like(x)
+                )
+                return x + mask
+
+        sample_inputs = (
+            torch.tensor(
+                [[0.25, float("-inf"), -1.5], [float("-inf"), 2.0, 0.0]],
+                dtype=torch.float32,
+            ),
+        )
+        for storage_type in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+            with self.subTest(storage_type=storage_type):
+                self.lower_module_and_test_output(
+                    MaskModule(),
+                    sample_inputs,
+                    compile_options={"storage_type_override": storage_type},
+                    expected_delegate_count=1,
+                )
+
     def test_vulkan_backend_constant_pad_nd(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
@@ -1944,6 +2212,26 @@ class TestVulkanBackend(unittest.TestCase):
             dynamic_shapes=dynamic_shapes,
             test_inputs=test_inputs,
         )
+
+    def test_vulkan_backend_skips_scalar_only_sym_size_partition(self):
+        class ArangeModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.arange(x.shape[0])
+
+        dynamic_length = Dim("dynamic_length", min=1, max=8)
+        exported_program = export(
+            ArangeModel(),
+            (torch.ones(4),),
+            dynamic_shapes={"x": {0: dynamic_length}},
+            strict=True,
+        )
+        edge_program = to_edge(exported_program).exported_program()
+
+        partition_result = VulkanPartitioner(
+            {"require_dynamic_shapes": True}
+        ).partition(edge_program)
+
+        self.assertEqual(partition_result.partition_tags, {})
 
     def test_select_last_height_dynamic_shapes(self):
         """
