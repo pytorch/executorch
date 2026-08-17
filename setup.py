@@ -494,7 +494,18 @@ def _sibling_library_search_paths(depth: int = 1) -> List[str]:
     matching SONAME could satisfy the dependency first.
     """
     up = "/".join([".."] * depth)
-    return [f"$ORIGIN/{up}/{directory}" for directory in _SIBLING_LIBRARY_DIRECTORIES]
+    token = _loader_relative_token()
+    return [f"{token}/{up}/{directory}" for directory in _SIBLING_LIBRARY_DIRECTORIES]
+
+
+def _loader_relative_token() -> str:
+    """The token a runtime search path uses to mean "the directory this file is in".
+
+    ELF spells it $ORIGIN and Mach-O spells it @loader_path. Both are literal text in the
+    recorded path, so the wrong one becomes a directory of that name and resolves to
+    nothing.
+    """
+    return "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
 
 
 def _cuda_runtime_search_paths(depth: int = 1) -> List[str]:
@@ -508,7 +519,7 @@ def _cuda_runtime_search_paths(depth: int = 1) -> List[str]:
     train = _cuda_train()
     out = "/".join([".."] * (depth + 1))
     return [
-        f"$ORIGIN/{out}/{directory}"
+        f"{_loader_relative_token()}/{out}/{directory}"
         for directory in _CUDA_LIBRARY_DIRECTORIES.get(train, ())
     ]
 
@@ -1149,6 +1160,77 @@ def _append_relative_search_paths(entries: List[str], depth: int = 1) -> None:
             entries.append(search_path)
 
 
+def _write_runtime_paths(
+    library: Path,
+    tool: str,
+    original: str,
+    found: List[str],
+    entries: List[str],
+    is_mach_o: bool,
+) -> None:
+    """Record the filtered runtime search path back onto the library.
+
+    ELF holds one value that is replaced outright. Mach-O holds one load command per entry
+    with nothing to overwrite, so the difference is applied as deletes and adds.
+
+    Told which format this is rather than reading the suffix, because a macOS Python extension
+    is Mach-O while named .so, and deciding here produced patchelf syntax passed to otool.
+    """
+    if not is_mach_o:
+        rewritten = ":".join(entries)
+        if rewritten == original:
+            return
+        subprocess.run(
+            [tool, "--set-rpath", rewritten, os.fspath(library)],
+            check=True,
+        )
+        return
+    install_name_tool = shutil.which("install_name_tool")
+    if install_name_tool is None:
+        # The caller checks for this tool before deciding to clean a Mach-O library, so reaching
+        # here means the environment changed underneath. Leaving the paths in place would ship a
+        # library naming the build machine, so say so rather than continue quietly.
+        raise RuntimeError(
+            "install_name_tool disappeared while cleaning " + os.fspath(library)
+        )
+    for entry in found:
+        if entry not in entries:
+            subprocess.run(
+                [install_name_tool, "-delete_rpath", entry, os.fspath(library)],
+                capture_output=True,
+                check=False,
+            )
+    for entry in entries:
+        if entry not in found:
+            subprocess.run(
+                [install_name_tool, "-add_rpath", entry, os.fspath(library)],
+                capture_output=True,
+                check=False,
+            )
+
+
+def _parse_runtime_paths(original: str, is_mach_o: bool) -> List[str]:
+    """The runtime search path entries a tool reported, as a list.
+
+    The two formats differ in shape, not just spelling: ELF keeps one colon separated
+    string, while Mach-O keeps a separate load command per entry, so one cannot be
+    split the way the other is.
+    """
+    if not is_mach_o:
+        return original.split(":")
+    found = []
+    lines = original.splitlines()
+    for index, line in enumerate(lines):
+        if "LC_RPATH" not in line:
+            continue
+        for following in lines[index + 1 : index + 4]:
+            stripped = following.strip()
+            if stripped.startswith("path "):
+                found.append(stripped.split(" (offset", 1)[0][len("path ") :])
+                break
+    return found
+
+
 def _is_usable_runtime_path(
     entry: str,
     safe_to_drop_toolkit_paths: bool,
@@ -1233,13 +1315,26 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     the release tests treats a missing patchelf as a failure rather than a skip: the
     wheel-build environment has it, and that is where the guarantee belongs.
     """
-    if library.suffix != ".so" and ".so." not in library.name:
+    # Decided by the platform rather than the suffix, because a Python extension on macOS is
+    # Mach-O while being named .so: measured on a shipped macOS wheel, every .dylib came out
+    # clean and the extension still carried five build directories, because the suffix test sent
+    # it to patchelf, which does not exist there.
+    is_mach_o = sys.platform == "darwin"
+    if library.suffix not in (".dylib", ".so") and ".so." not in library.name:
         return
-    patchelf = shutil.which("patchelf")
-    if patchelf is None:
+    # Same best effort contract on either platform: a build without the tools still
+    # produces a working wheel, and the release check is where the guarantee is enforced.
+    tool = shutil.which("otool") if is_mach_o else shutil.which("patchelf")
+    if tool is None:
+        return
+    if is_mach_o and shutil.which("install_name_tool") is None:
         return
     result = subprocess.run(
-        [patchelf, "--print-rpath", os.fspath(library)],
+        (
+            [tool, "-l", os.fspath(library)]
+            if is_mach_o
+            else [tool, "--print-rpath", os.fspath(library)]
+        ),
         capture_output=True,
         text=True,
         check=False,
@@ -1262,13 +1357,15 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
         _cuda_runtime_search_paths(_package_relative_depth(library))
     )
 
+    found = _parse_runtime_paths(original, is_mach_o)
+    # Whether the library can still reach torch without the absolute entry.
     has_relative_torch_route = any(
         not entry.startswith("/") and entry.rstrip("/").endswith("/torch/lib")
-        for entry in original.split(":")
+        for entry in found
     )
     entries = [
         entry
-        for entry in original.split(":")
+        for entry in found
         if _is_usable_runtime_path(
             entry, safe_to_drop_toolkit_paths, has_relative_torch_route
         )
@@ -1279,13 +1376,7 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     # which names the build machine and will not exist for a user who installed from an
     # index. Appended, so a path already present keeps its position.
     _append_relative_search_paths(entries, _package_relative_depth(library))
-    rewritten = ":".join(entries)
-    if rewritten == original:
-        return
-    subprocess.run(
-        [patchelf, "--set-rpath", rewritten, os.fspath(library)],
-        check=True,
-    )
+    _write_runtime_paths(library, tool, original, found, entries, is_mach_o)
 
 
 class CustomBuildPy(build_py):
@@ -2017,8 +2108,8 @@ setup(
                 # what links it, which never happens inside a wheel.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/",
-                    src_name="libexecutorch.so",
-                    dst="executorch/lib/libexecutorch.so",
+                    src_name=get_dynamic_lib_name("executorch"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch"),
                     dependent_cmake_flags=["EXECUTORCH_BUILD_SHARED"],
                 ),
                 # Install the profiler next to it, as its own library rather than
@@ -2026,8 +2117,8 @@ setup(
                 # it however many consumers load.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/devtools/etdump/",
-                    src_name="libexecutorch_etdump.so",
-                    dst="executorch/lib/libexecutorch_etdump.so",
+                    src_name=get_dynamic_lib_name("executorch_etdump"),
+                    dst="executorch/lib/" + get_dynamic_lib_name("executorch_etdump"),
                     # Not gated on EXECUTORCH_BUILD_DEVTOOLS. The shared build adds
                     # the devtools subdirectory itself, so the library exists
                     # whenever the shared build does. The Python extension carries a
@@ -2040,8 +2131,9 @@ setup(
                 # component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/extension/threadpool/",
-                    src_name="libexecutorch_threadpool.so",
-                    dst="executorch/lib/libexecutorch_threadpool.so",
+                    src_name=get_dynamic_lib_name("executorch_threadpool"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_threadpool"),
                     # The target only exists when both of its dependencies are
                     # enabled, so packaging has to require them too or a shared
                     # build with either turned off looks for a file that was
@@ -2056,8 +2148,9 @@ setup(
                 # registered once per process rather than once per component.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/configurations/",
-                    src_name="libexecutorch_kernels_optimized.so",
-                    dst="executorch/lib/libexecutorch_kernels_optimized.so",
+                    src_name=get_dynamic_lib_name("executorch_kernels_optimized"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_optimized"),
                     # The target is only created when the optimized kernels are
                     # enabled, so packaging has to require that too rather than
                     # looking for a file a shared build may never have produced.
@@ -2072,8 +2165,9 @@ setup(
                 # CPU-only build never produced.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/",
-                    src_name="libexecutorch_backend_cuda.so",
-                    dst="executorch/lib/libexecutorch_backend_cuda.so",
+                    src_name=get_dynamic_lib_name("executorch_backend_cuda"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_cuda"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_CUDA",
@@ -2105,8 +2199,9 @@ setup(
                 # them before.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
-                    src_name="libexecutorch_kernels_quantized.so",
-                    dst="executorch/lib/libexecutorch_kernels_quantized.so",
+                    src_name=get_dynamic_lib_name("executorch_kernels_quantized"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_kernels_quantized"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
@@ -2128,8 +2223,9 @@ setup(
                 # copy of it instead of one per component that uses it.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/xnnpack/",
-                    src_name="libexecutorch_backend_xnnpack.so",
-                    dst="executorch/lib/libexecutorch_backend_xnnpack.so",
+                    src_name=get_dynamic_lib_name("executorch_backend_xnnpack"),
+                    dst="executorch/lib/"
+                    + get_dynamic_lib_name("executorch_backend_xnnpack"),
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_XNNPACK",

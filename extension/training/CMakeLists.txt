@@ -108,12 +108,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
   executorch_target_link_shared_runtime(_training_lib)
 
-  if(EXECUTORCH_BUILD_SHARED AND NOT APPLE)
+  if(EXECUTORCH_BUILD_SHARED)
     # This module links Torch directly, and the only other entry reaching it is
     # the absolute build directory CMake adds, which does not exist anywhere
     # else, so the Torch path is recorded here rather than left implicit.
+    if(APPLE)
+      set(_training_torch_path "@loader_path/../../../../torch/lib")
+    else()
+      set(_training_torch_path "$ORIGIN/../../../../torch/lib")
+    endif()
     set_target_properties(
-      _training_lib PROPERTIES INSTALL_RPATH "$ORIGIN/../../../../torch/lib"
+      _training_lib PROPERTIES INSTALL_RPATH "${_training_torch_path}"
     )
     executorch_target_shared_runtime_path(
       _training_lib "extension/training/pybindings"
