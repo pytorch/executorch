@@ -665,3 +665,24 @@ TEST_F(OpSelectScatterOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpSelectScatterOutTest, NonDefaultDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // src is one rank below in, so at rank 4 the same dim order check above
+  // rejects first. Only rank 5 reaches the default dim order check, because
+  // is_channels_last_dim_order accepts both 4 and 5 dims.
+  Tensor in = tf.make_with_dimorder(
+      {2, 2, 2, 2, 2}, std::vector<float>(32, 1), {0, 2, 3, 4, 1});
+  Tensor src = tf.make_with_dimorder(
+      {2, 2, 2, 2}, std::vector<float>(16, 2), {0, 2, 3, 1});
+  Tensor out = tf.make_with_dimorder(
+      {2, 2, 2, 2, 2}, std::vector<float>(32), {0, 2, 3, 4, 1});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_select_scatter_out(in, src, /*dim=*/0, /*index=*/0, out));
+}
