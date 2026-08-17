@@ -262,16 +262,19 @@ def _normalize_cmake_bool(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
     normalized = value.strip().upper()
-    # Deliberately stricter than CMake. CMake decides false by exclusion, so anything that is not one
-    # of its false constants is true, including values like "2.0" and "enabled". Here an unrecognised
-    # spelling reads as off, because this decides whether a component's libraries are packaged and
-    # shipping a component whose libraries were never built is worse than shipping one fewer.
-    if normalized in {"ON", "TRUE", "YES", "Y"}:
-        return True
-    try:
-        return int(normalized) != 0
-    except ValueError:
+    # CMake decides false by exclusion, so anything not on this list is true, including spellings like
+    # "enabled" and "2.0". Reading them as false made packaging declare no CUDA runtime for a build CMake
+    # had already turned CUDA on for, which is the mismatch the ordering here exists to prevent.
+    if normalized in {"OFF", "FALSE", "N", "NO", "0", "", "IGNORE", "NOTFOUND"}:
         return False
+    if normalized.endswith("-NOTFOUND"):
+        return False
+    # A numeric zero in any spelling is false to CMake, and int() raises on a float string, which is how two
+    # readers in this tree came to disagree on "2.0".
+    try:
+        return float(normalized) != 0.0
+    except ValueError:
+        return True
 
 
 def _cuda_version_to_pytorch_suffix(major, minor):
