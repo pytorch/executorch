@@ -258,18 +258,25 @@ def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
     return value
 
 
+_CMAKE_FALSE_CONSTANTS = frozenset(
+    {"off", "false", "n", "no", "0", "", "ignore", "notfound"}
+)
+
+
 def cmake_boolean_is_true(value: str) -> bool:
     """Whether a CMake option value reads as true, by CMake's own rule.
 
-    CMake decides false by exclusion: it compares against its false constants as strings and does
-    not parse a number. So a bare 0 is false while 0.0 is true, and a word it does not recognise,
-    enabled for instance, is true. This is the single definition of that rule for this project.
-    Readers that used a whitelist of true words plus a numeric test disagreed with CMake and with
-    each other, which let packaging declare no CUDA runtime for a build CMake had turned CUDA on
-    for.
+    CMake decides false by exclusion, comparing against its false constants as strings without
+    parsing a number. So a bare 0 is false while 0.0 is true, and a word it does not recognise,
+    enabled for instance, is true.
+
+    Defined here, and imported by the cache reader rather than the reverse, because this module has
+    to import with nothing on the path. Readers that used a whitelist of true words plus a numeric
+    test disagreed with CMake and with each other, which let packaging declare no CUDA runtime for a
+    build CMake had turned CUDA on for.
     """
     normalized = value.strip().lower()
-    if normalized in {"off", "false", "n", "no", "0", "", "ignore", "notfound"}:
+    if normalized in _CMAKE_FALSE_CONSTANTS:
         return False
     return not normalized.endswith("-notfound")
 

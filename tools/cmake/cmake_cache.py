@@ -20,6 +20,23 @@ class CacheValue:
     value: str
 
 
+try:
+    from install_utils import cmake_boolean_is_true
+except ImportError:  # pragma: no cover
+    # This module is imported both as tools.cmake.cmake_cache and standalone, so the repository root
+    # is not always reachable and the import above cannot be relied on. The rule is restated once,
+    # here and nowhere else, because three review rounds went on two copies of it drifting apart.
+    _CMAKE_FALSE_CONSTANTS = frozenset(
+        {"off", "false", "n", "no", "0", "", "ignore", "notfound"}
+    )
+
+    def cmake_boolean_is_true(value: str) -> bool:
+        normalized = value.strip().lower()
+        if normalized in _CMAKE_FALSE_CONSTANTS:
+            return False
+        return not normalized.endswith("-notfound")
+
+
 @dataclass
 class CMakeCache:
     # The path to the CMakeCache.txt file.
@@ -39,21 +56,9 @@ class CMakeCache:
 
     @staticmethod
     def _is_truthy(value: Optional[str]) -> bool:
-        """Whether a cache value reads as true, by CMake's rule.
-
-        CMake decides false by exclusion, comparing against its false constants as strings without
-        parsing a number. So a bare 0 is false while 0.0 is true, and any word it does not recognise,
-        enabled for instance, is true. Two readers in this tree previously used a whitelist of true
-        words plus a numeric test, which made an unrecognised word false and disagreed both with CMake
-        and with each other. That mismatch let packaging declare no CUDA runtime for a build CMake had
-        already turned CUDA on for.
-        """
         if value is None:
             return False
-        normalized = value.strip().lower()
-        if normalized in {"off", "false", "n", "no", "0", "", "ignore", "notfound"}:
-            return False
-        return not normalized.endswith("-notfound")
+        return cmake_boolean_is_true(value)
 
     @staticmethod
     def read_cmake_cache(cache_path: str) -> Dict[str, CacheValue]:
