@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import test_base
+import test_cpp_sdk
 import test_shared_libraries
 from examples.models import Backend, Model
 
@@ -35,6 +36,11 @@ if __name__ == "__main__":
     # exactly one owner and that all of them are loadable.
     with tempfile.TemporaryDirectory() as work_dir:
         test_shared_libraries.run_tests(Path(work_dir))
+
+    # And that a C++ application outside the wheel can actually use those
+    # libraries, which nothing above covers.
+    with tempfile.TemporaryDirectory() as work_dir:
+        test_cpp_sdk.run_tests(Path(work_dir))
 
     test_base.run_tests(
         model_tests=[
