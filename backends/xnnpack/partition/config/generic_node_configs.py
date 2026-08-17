@@ -168,7 +168,8 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        XNNPACK does not support ceil_mode = True and count_include_pad = True
+        XNNPACK does not support ceil_mode = True, or count_include_pad = True
+        when the node has non-zero padding.
         Additionally, we only support divisor_override if divisor_override = pooling region
         """
         if not self.check_common_constraints(node, ep):
@@ -184,7 +185,7 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
         if len(args) >= 6:
             count_include_pad = cast(bool, args[5])
 
-        kernel_size, _, _, _ = normalize_pool2d_args(node, has_dilation=False)
+        kernel_size, _, padding, _ = normalize_pool2d_args(node, has_dilation=False)
         pooling_region = kernel_size[0] * kernel_size[1]
         divisor_override = pooling_region  # Default divisor is pooling_region
         if len(args) >= 7:
@@ -194,7 +195,7 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
             why(node, reason="ceil mode is not supported")
             return False
 
-        if count_include_pad:
+        if count_include_pad and any(p != 0 for p in padding):
             why(
                 node,
                 reason="zero-padding in the averaging calculation is not supported",
