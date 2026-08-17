@@ -1,6 +1,7 @@
 Operator,Compute DType,Quantization,Constraints
 aten.abs.default,int8,static int8,
-aten._adaptive_avg_pool2d.default,int8,static int8,"ceil_mode=False, count_include_pad=False, divisor_override=False"
+aten._adaptive_avg_pool2d.default,int8,static int8,"Must be representable by avg_pool2D"
+aten.adaptive_avg_pool1d.default,int8,static int8,"Must be representable by avg_pool2D"
 aten.addmm.default,int8,static int8,2D tensor only
 aten.add.Tensor,int8,static int8,"alpha = 1"
 aten.amax.default,int8,static int8,
