@@ -164,7 +164,7 @@ using printf_size_t = unsigned long;
 const size_t input_file_allocation_pool_size =
     ET_ARM_BAREMETAL_SEMIHOSTING_FILE_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("input_file_allocator_sec"),
+    section(".bss.input_file_allocator_sec"),
     aligned(16))) input_file_allocation_pool[input_file_allocation_pool_size];
 #endif
 
@@ -232,7 +232,7 @@ using torch::executor::etdump_result;
 const size_t method_allocation_pool_size =
     ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE;
 unsigned char __attribute__((
-    section("method_allocator_sec"),
+    section(".bss.method_allocator_sec"),
     aligned(16))) method_allocation_pool[method_allocation_pool_size];
 
 #if defined(ET_BUNDLE_IO)
