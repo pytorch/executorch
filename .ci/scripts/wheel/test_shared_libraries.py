@@ -921,10 +921,17 @@ project(custom_op_check CXX)
 
 find_package(executorch REQUIRED)
 
+# An unknown name here would be passed to the linker as a plain library rather
+# than reported, so the include directories would silently not arrive and the
+# build would fail later on a missing header.
+if(NOT TARGET executorch::_C)
+  message(FATAL_ERROR "cannot link a target that does not exist: executorch::_C")
+endif()
+
 add_library(custom_op_check SHARED custom_op.cpp)
 # The legacy contract: a custom-op library links the shipped Python extension,
 # which owns the operator registry it registers into.
-target_link_libraries(custom_op_check PRIVATE _portable_lib)
+target_link_libraries(custom_op_check PRIVATE executorch::_C)
 # The runtime headers include c10 headers, which belong to torch rather than to
 # this wheel, so an out-of-tree operator project supplies them the same way it
 # supplies torch itself. The package config does not and should not ship them.
@@ -1180,7 +1187,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
         return
 
     package_dir = _installed_package_dir()
-    if not list(package_dir.glob("extension/pybindings/_portable_lib*")):
+    if not list(package_dir.glob("extension/pybindings/_C*")):
         print("- the wheel ships no Python extension, skipping the custom op check")
         return
 
@@ -1569,10 +1576,8 @@ def test_extension_contains_no_component() -> None:
         return
 
     package_dir = _installed_package_dir()
-    extensions = sorted(
-        (package_dir / "extension" / "pybindings").glob("_portable_lib.*.so")
-    )
-    assert len(extensions) == 1, f"expected one _portable_lib, found {extensions}"
+    extensions = sorted((package_dir / "extension" / "pybindings").glob("_C.*.so"))
+    assert len(extensions) == 1, f"expected one _C, found {extensions}"
     extension = extensions[0]
 
     lib_dir = package_dir / "lib"
