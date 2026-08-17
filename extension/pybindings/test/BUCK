@@ -34,7 +34,7 @@ fbcode_target(
 
 fbcode_target(
     _kind = runtime.python_test,
-    name = "test_pybindings_portable_lib",
+    name = "test_pybindings_C",
     srcs = ["test_pybindings.py"],
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
