@@ -58,8 +58,8 @@ enum class YuvRange {
 }
 
 /**
- * Per-channel RGB normalization, applied as
- * `(pixel * scaleFactor - mean[c]) / standardDeviation[c]`.
+ * Per-channel RGB normalization, applied as `(pixel * scaleFactor - mean[c]) /
+ * standardDeviation[c]`.
  *
  * @property scaleFactor Scale applied to the raw 0-255 sample before mean subtraction.
  * @property mean Per-channel mean, exactly 3 entries (R, G, B).
