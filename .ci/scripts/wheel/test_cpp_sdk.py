@@ -378,7 +378,7 @@ def _export(work_dir: Path, mode: str) -> tuple:
         [sys.executable, str(script), str(model), mode],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert result.returncode == 0, (
         f"exporting the {mode} model failed, so the C++ side cannot be checked "
@@ -412,7 +412,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert configured.returncode == 0, (
         f"a consumer requesting {list(components)} could not configure against the "
@@ -422,7 +422,7 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert built.returncode == 0, (
         f"a consumer requesting {list(components)} compiled against the shipped "
@@ -468,7 +468,7 @@ def _run_consumer(
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         env=environment,
     )
     assert result.returncode == 0, (
@@ -514,7 +514,7 @@ def test_runtime_alone_links_but_cannot_compute(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         env=environment,
     )
     combined = result.stdout + result.stderr
@@ -594,7 +594,7 @@ def test_delegated_model_needs_the_delegate_component(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
         env=environment,
     )
     assert result.returncode != 0, (
@@ -856,7 +856,7 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
             ],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
         accepted = result.returncode == 0
         assert accepted == must_accept, (
@@ -913,7 +913,7 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert configured.returncode == 0, (
         "configuring an application that uses the profiler failed:\n"
@@ -923,7 +923,7 @@ def test_profiler_component_is_usable(work_dir: Path) -> None:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert built.returncode == 0, (
         "an application that constructs the profiler failed to build against the installed wheel, so the "
@@ -993,7 +993,7 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
             [_tool("c++"), "-std=c++20", *includes, "-fsyntax-only", str(source)],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
         if skipped:
             skipped_names.append(relative.as_posix())
@@ -1125,7 +1125,7 @@ def test_shipped_headers_have_implementations(work_dir: Path) -> None:
             ],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
         if result.returncode != 0:
             missing = re.findall(r"undefined reference to `([^']+)'", result.stderr)
@@ -1191,7 +1191,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert configured.returncode == 0, (
         "the documented example does not configure against the installed package:\n"
@@ -1201,7 +1201,7 @@ def test_documented_example_compiles(work_dir: Path) -> None:
         [_tool("cmake"), "--build", str(build_dir)],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
     assert built.returncode == 0, (
         "the documented example does not build against the installed package, so a "
@@ -1273,7 +1273,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         )
         return
     version = subprocess.run(
-        [old_cmake, "--version"], capture_output=True, text=True, check=True
+        [old_cmake, "--version"], capture_output=True, text=True, check=False
     ).stdout.splitlines()[0]
     match = re.search(r"(\d+)\.(\d+)", version)
     assert match, f"could not read a version from {old_cmake}: {version!r}"
@@ -1316,7 +1316,7 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         ],
         [old_cmake, "--build", str(build_dir)],
     ):
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         assert result.returncode == 0, (
             "a consumer on CMake older than 3.28 could not build against the wheel "
             f"through the documented variables:\n"
@@ -1443,7 +1443,7 @@ def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> No
         ],
         [_tool("cmake"), "--build", str(build_dir)],
     ):
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         assert result.returncode == 0, (
             "an application linking only ${EXECUTORCH_LIBRARIES} could not be built:\n"
             f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
