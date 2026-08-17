@@ -87,24 +87,24 @@ jobs:
       backend: hifi4
       ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
 
-  # Op-level gtest tests on the Xtensa ISS, mirroring cpu-build -> cpu-test. The
-  # op tests are a self-contained cross-compile (the gtests need exceptions and
-  # RTTI that the runner build disables), so this does not consume hifi-build's
-  # artifact; needs: hifi-build only to fail fast when the backend cannot build.
+  # Op-level gtest tests on the Xtensa ISS. Nightly only: runs on the schedule
+  # (plus post-merge push to main/release and manual dispatch), NOT on
+  # pull_request, so the licensed Xtensa toolchain + xt-run cost is not paid on
+  # every PR. Regressions are caught by the nightly run and the post-merge push.
+  # The op tests are a self-contained cross-compile (the gtests need exceptions
+  # and RTTI that the runner build disables), so this does not consume
+  # hifi-build's artifact; needs: hifi-build only to fail fast on a broken build.
   hifi-op-test:
     needs: hifi-build
     if: >-
-      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'CLA Signed') && contains(github.event.pull_request.labels.*.name, 'meta-exported'))
+      github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/_xtensa_test.yml
     with:
       backend: hifi4
-      ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && github.event.pull_request.head.sha || github.sha }}
+      ref: ${{ github.sha }}
 
   vision-build:
     if: >-
