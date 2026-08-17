@@ -20,6 +20,22 @@ jobs:
     name: Get changed files
     uses: ./.github/workflows/_get-changed-files.yml
 
+  pyproject-metadata:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check pyproject metadata
+        run: python scripts/lint_pyproject_dependencies.py pyproject.toml
+
   lintrunner-mypy:
     needs: [get-changed-files]
     runs-on: ubuntu-latest
