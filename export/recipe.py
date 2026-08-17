@@ -10,7 +10,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, List, Optional
 
 import torch
 from executorch.exir import EdgeProgramManager, ExportedProgram
@@ -96,22 +96,10 @@ class QuantizationRecipe:
         quantizers: Optional list of quantizers for model quantization
         ao_quantization_configs: Optional list of AOQuantizationConfig objects that pair
                                  AOBaseConfig with optional filter functions
-        calibration_inputs_fn: Optional zero-argument callable that returns an iterable of
-                               calibration input tuples. When None the example_inputs passed
-                               to the export session are used directly.
-                               Ignored when quantize_fn is set.
-        quantize_fn: Optional callable that replaces the default prepare/calibrate/convert flow
-                     in QuantizeStage. Use this when the built-in flow does not support the
-                     required quantization sequence. Recipes that set this field cannot be
-                     combined with other recipes via ExportRecipe.combine().
     """
 
     quantizers: Optional[List[Quantizer]] = None
     ao_quantization_configs: Optional[List[AOQuantizationConfig]] = None
-    calibration_inputs_fn: Optional[
-        Callable[[], "Iterable[tuple[torch.Tensor, ...]]"]
-    ] = None
-    quantize_fn: Optional[Callable[[torch.fx.GraphModule], torch.fx.GraphModule]] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
@@ -276,17 +264,6 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
-        for recipe in backend_recipes:
-            if (
-                recipe.quantization_recipe is not None
-                and recipe.quantization_recipe.quantize_fn is not None
-            ):
-                raise ValueError(
-                    f"Recipe '{recipe.name}' uses a custom quantize_fn and cannot be "
-                    "combined with other recipes. quantize_fn calls convert_pt2e internally "
-                    "and the resulting quantized graph cannot be merged with other recipes."
-                )
-
         # Extract components from individual recipes
         all_partitioners = []
         all_quantizers = []

@@ -10,6 +10,7 @@ import torch.nn
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.recipes.nxp_recipe_provider import (
     NEUTRON_RECIPE_CONFIG_KEY,
     NeutronRecipeConfig,
@@ -38,18 +39,6 @@ class SimpleCNN(torch.nn.Module):
         x = x.reshape(1, -1)
         x = x + x
         return x
-
-
-class ConvBnRelu(torch.nn.Module):
-    """Conv + BatchNorm + ReLU - exercises QAT BN-fusion paths."""
-
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(3, 3, kernel_size=3)
-        self.bn = torch.nn.BatchNorm2d(3)
-
-    def forward(self, x):
-        return torch.relu(self.bn(self.conv(x)))
 
 
 INPUT_SHAPE = (1, 3, 8, 8)
@@ -112,32 +101,6 @@ class TestInt8PTQNoDelegate:
         assert recipe.lowering_recipe.partitioners == []
 
 
-class TestInt8QAT:
-    def test__requires_train_fn(self):
-        """INT8_QAT_NEUTRON raises ValueError when train_fn is missing."""
-        rc = NeutronRecipeConfig(INPUT_SHAPE)  # no train_fn
-        with pytest.raises(ValueError, match="train_fn"):
-            NXPRecipeProvider().create_recipe(
-                NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc
-            )
-
-    def test__recipe_structure(self):
-        """INT8_QAT_NEUTRON recipe has quantize_fn populated (QAT uses non-standard sequence)."""
-
-        def dummy_train(m):
-            pass
-
-        rc = NeutronRecipeConfig(INPUT_SHAPE, train_fn=dummy_train)
-        recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_QAT_NEUTRON, neutron_recipe_config=rc
-        )
-        qr = recipe.quantization_recipe
-        assert qr.quantize_fn is not None
-        assert (
-            qr.calibration_inputs_fn is None
-        )  # QAT uses quantize_fn, not calibration_inputs_fn
-
-
 class TestNeutronRecipeConfigFlags:
     def test_operators_not_to_delegate(self):
         """Ops listed in operators_not_to_delegate are not lowered to Neutron."""
@@ -176,20 +139,107 @@ class TestNeutronRecipeConfigFlags:
         assert placeholder_nodes[0].name == "x"  # Main input
         assert placeholder_nodes[0].meta["val"].dtype == torch.int8
 
-    def test_use_quant_state_dict_false(self):
-        """use_quant_state_dict=False: NeutronPartitioner gets None state_dict, no crash."""
+    def test_use_quant_state_dict_false(self, mocker):
+        """use_quant_state_dict=False: the NeutronPartitioner used during lowering has
+        post_quantization_state_dict=None, confirmed by intercepting the constructor."""
         model = SimpleCNN()
         rc = NeutronRecipeConfig(INPUT_SHAPE, use_quant_state_dict=False)
-        sess = _run_export(model, rc)
-        assert sess.get_edge_program_manager() is not None
 
-    def test_custom_delegation_options_explicit(self):
-        """Explicitly provided CustomDelegationOptions is forwarded correctly."""
+        captured = []
+        original_init = NeutronPartitioner.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            original_init(self_, *args, **kwargs)
+            captured.append(self_)
+
+        mocker.patch.object(NeutronPartitioner, "__init__", capturing_init)
+
+        _run_export(model, rc)
+
+        assert (
+            len(captured) == 1
+        ), "Expected exactly one NeutronPartitioner to be created."
+        assert captured[0].post_quantization_state_dict is None
+
+    def test_custom_delegation_options_explicit(self, mocker):
+        """Explicitly provided CustomDelegationOptions are forwarded to NeutronPartitioner."""
         model = SimpleCNN()
         opts = CustomDelegationOptions()
         rc = NeutronRecipeConfig(INPUT_SHAPE, custom_delegation_options=opts)
-        sess = _run_export(model, rc)
-        assert sess.get_edge_program_manager() is not None
+
+        captured = []
+        original_init = NeutronPartitioner.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            original_init(self_, *args, **kwargs)
+            captured.append(self_)
+
+        mocker.patch.object(NeutronPartitioner, "__init__", capturing_init)
+        _run_export(model, rc)
+
+        assert len(captured) == 1
+        assert captured[0].custom_delegation_options == opts
+
+    def test_intermediates_dir(self, tmp_path):
+        """intermediates_dir: intermediate compilation files are written to the directory."""
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, intermediates_dir=str(tmp_path))
+        _run_export(model, rc)
+        assert any(
+            tmp_path.iterdir()
+        ), "No intermediate files written to intermediates_dir."
+
+    def test_fetch_constants_to_sram_flag(self, mocker):
+        """fetch_constants_to_sram=True reaches the NeutronPartitioner used during export."""
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, fetch_constants_to_sram=True)
+
+        captured = []
+        original_init = NeutronPartitioner.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            original_init(self_, *args, **kwargs)
+            captured.append(self_)
+
+        mocker.patch.object(NeutronPartitioner, "__init__", capturing_init)
+        _run_export(model, rc)
+
+        assert (
+            len(captured) == 1
+        ), "Expected exactly one NeutronPartitioner to be created."
+        spec_map = {s.key: s.value.decode() for s in captured[0].delegation_spec[1]}
+        assert spec_map["fetch_constants_to_sram"] == "True"
+
+    def test_use_profiling_flag(self, mocker):
+        """use_profiling=True reaches the NeutronPartitioner used during export."""
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, use_profiling=True)
+
+        captured = []
+        original_init = NeutronPartitioner.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            original_init(self_, *args, **kwargs)
+            captured.append(self_)
+
+        mocker.patch.object(NeutronPartitioner, "__init__", capturing_init)
+        _run_export(model, rc)
+
+        assert (
+            len(captured) == 1
+        ), "Expected exactly one NeutronPartitioner to be created."
+        spec_map = {s.key: s.value.decode() for s in captured[0].delegation_spec[1]}
+        assert spec_map["use_profiling"] == "True"
+
+    def test_dump_kernel_selection_code(self, tmp_path, monkeypatch):
+        """dump_kernel_selection_code=True causes a kernel selection C file to be written."""
+        monkeypatch.chdir(tmp_path)
+        model = SimpleCNN()
+        rc = NeutronRecipeConfig(INPUT_SHAPE, dump_kernel_selection_code=True)
+        _run_export(model, rc)
+        assert (
+            tmp_path / "_kernel_selection.c"
+        ).exists(), "_kernel_selection.c was not created in the working directory."
 
     def test_custom_quantizer_fn(self):
         """get_quantizer_fn overrides the default NeutronQuantizer."""
@@ -209,25 +259,6 @@ class TestNeutronRecipeConfigFlags:
         rc = NeutronRecipeConfig(INPUT_SHAPE, get_quantizer_fn=my_quantizer_fn)
         sess = _run_export(model, rc)
         assert custom_quantizer_called, "Custom quantizer factory was not called."
-        assert sess.get_edge_program_manager() is not None
-
-    def test_custom_calibration_inputs_fn(self):
-        """get_calibration_inputs_fn is called for calibration."""
-        calibration_called = []
-
-        def my_calibration_fn(input_spec):
-            calibration_called.append(True)
-            return [
-                tuple(torch.randn(s.shape, dtype=s.dtype) for s in input_spec)
-                for _ in range(2)
-            ]
-
-        model = SimpleCNN()
-        rc = NeutronRecipeConfig(
-            INPUT_SHAPE, get_calibration_inputs_fn=my_calibration_fn
-        )
-        sess = _run_export(model, rc)
-        assert calibration_called, "Custom calibration function was not called."
         assert sess.get_edge_program_manager() is not None
 
     def test_use_neutron_for_format_conversion_false(self):
@@ -264,6 +295,22 @@ class TestInputSpecForms:
         sess = _run_export(model, NeutronRecipeConfig([ModelInputSpec((1, 3, 8, 8))]))
         assert sess.get_edge_program_manager() is not None
 
+    def test__multi_input(self):
+        """input_spec with multiple inputs (two tensors) works."""
+
+        class AddModel(torch.nn.Module):
+            def forward(self, x, y):
+                return x + y
+
+        model = AddModel()
+        rc = NeutronRecipeConfig([(1, 3, 8, 8), (1, 3, 8, 8)])
+        recipe = NXPRecipeProvider().create_recipe(
+            NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
+        )
+        example_inputs = [(torch.randn(1, 3, 8, 8), torch.randn(1, 3, 8, 8))]
+        sess = export(model, example_inputs=example_inputs, export_recipe=recipe)
+        assert sess.get_edge_program_manager() is not None
+
 
 class TestErrorHandling:
     def test_create_recipe_missing_config_key(self):
@@ -292,16 +339,13 @@ class TestErrorHandling:
 class TestRecipeStructureValidation:
 
     def test_ptq_neutron_recipe_structure(self):
-        """INT8_PTQ_NEUTRON recipe: correct quantizer, partitioner, no quantize_fn."""
+        """INT8_PTQ_NEUTRON recipe: correct quantizer and partitioner are set."""
         rc = NeutronRecipeConfig(INPUT_SHAPE)
         recipe = NXPRecipeProvider().create_recipe(
             NXPRecipeType.INT8_PTQ_NEUTRON, neutron_recipe_config=rc
         )
         assert recipe.quantization_recipe is not None
         assert len(recipe.quantization_recipe.quantizers) == 1
-        # PTQ must NOT use quantize_fn so that multiple PTQ recipes can be combined.
-        assert recipe.quantization_recipe.quantize_fn is None
-        assert recipe.quantization_recipe.calibration_inputs_fn is not None
         assert recipe.lowering_recipe.partitioners is not None
         assert len(recipe.lowering_recipe.partitioners) == 1
 
@@ -329,25 +373,6 @@ class TestRecipeCombination:
         assert combined.lowering_recipe.pre_partitioning_callback is not None
         # Calling the combined callback should not raise.
         combined.lowering_recipe.pre_partitioning_callback(None, {})
-
-    def test__combine_raises_for_qat_recipe(self):
-        """ExportRecipe.combine() raises ValueError when any recipe has quantize_fn set."""
-
-        def dummy_train(m):
-            pass
-
-        qat_recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_QAT_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(
-                INPUT_SHAPE, train_fn=dummy_train
-            ),
-        )
-        ptq_recipe = NXPRecipeProvider().create_recipe(
-            NXPRecipeType.INT8_PTQ_NEUTRON,
-            neutron_recipe_config=NeutronRecipeConfig(INPUT_SHAPE),
-        )
-        with pytest.raises(ValueError, match="quantize_fn"):
-            ExportRecipe.combine([ptq_recipe, qat_recipe])
 
     def test__collects_post_partitioning_transforms(self):
         """Combining two NXP recipes collects post_partitioning_transforms from both."""

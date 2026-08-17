@@ -27,6 +27,7 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
+    default_preserve_ops,
     generate_neutron_compile_spec,
 )
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -338,6 +339,7 @@ if __name__ == "__main__":  # noqa C901
                 compile_spec,
                 neutron_target_spec,
                 post_quantization_state_dict=module.state_dict(),
+                preserve_ops=default_preserve_ops,
             )
         ]
         if args.delegate

@@ -4,11 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, cast, Iterable, Optional, Sequence
-
-import torch
 
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
@@ -27,14 +26,12 @@ from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import (
     core_aten_ops_exception_list,
+    default_preserve_ops,
     generate_neutron_compile_spec,
 )
-from executorch.backends.nxp.quantizer.utils import calibrate_and_quantize
 from executorch.backends.nxp.recipes.nxp_recipe_types import NXP_BACKEND, NXPRecipeType
 from executorch.backends.nxp.tests.executorch_pipeline import (
-    _get_default_quantizer,
-    get_random_calibration_inputs,
-    GetCalibrationInputsFn,
+    get_default_quantizer,
     handle_kernel_selection,
     ModelInputSpec,
     to_model_input_spec,
@@ -57,7 +54,9 @@ class NeutronEdgePassManagerWrapper:
     def __init__(self, passes: list[NeutronEdgePass] | None = None):
         self.neutron_edge_pass_manager = NeutronEdgePassManager(passes)
 
-    def __call__(self, s: str, epm: EdgeProgramManager) -> NeutronEdgePassManager:
+    def __call__(
+        self, method_name: str, exported_program: ExportedProgram
+    ) -> NeutronEdgePassManager:
         return self.neutron_edge_pass_manager
 
 
@@ -68,7 +67,7 @@ NEUTRON_RECIPE_CONFIG_KEY = "neutron_recipe_config"
 class NeutronRecipeConfig:
     """Configuration shared by all NXP recipe types.
 
-    Parameters that vary the *type* of export (PTQ vs QAT, delegate vs no-delegate)
+    Parameters that vary the *type* of export (delegate vs no-delegate)
     are expressed by choosing a different NXPRecipeType rather than by flags here.
 
     Attributes:
@@ -76,13 +75,10 @@ class NeutronRecipeConfig:
                     shape tuples (one per input), or a list of ModelInputSpec objects.
         target: Neutron hardware target string. Default: "imxrt700".
         operators_not_to_delegate: Optional list of op names excluded from NPU delegation.
+                                   For example ["aten::convolution"].
         intermediates_dir: Optional directory to dump intermediate compilation artefacts.
         get_quantizer_fn: Optional factory that returns a custom Quantizer. When None,
                           the default NeutronQuantizer is used.
-        get_calibration_inputs_fn: Optional function that, given the input_spec, returns
-                                   calibration input samples. When None, random inputs are
-                                   used.
-        train_fn: QAT training callback. Required when using INT8_QAT_NEUTRON.
         custom_delegation_options: Optional fine-grained control over which ops are
                                    delegated. Default: CustomDelegationOptions().
         remove_quant_io_ops: If True, remove quantize/dequantize ops at the IO boundary
@@ -97,11 +93,9 @@ class NeutronRecipeConfig:
 
     input_spec: Iterable[ModelInputSpec] | tuple[int, ...] | list[tuple[int, ...]]
     target: str = "imxrt700"
-    operators_not_to_delegate: list[str] = None
+    operators_not_to_delegate: list[str] | None = None
     intermediates_dir: str | None = None
     get_quantizer_fn: Callable[[], Quantizer] | None = None
-    get_calibration_inputs_fn: GetCalibrationInputsFn | None = None
-    train_fn: Callable[[torch.fx.GraphModule], None] | None = None
     custom_delegation_options: CustomDelegationOptions | None = None
     remove_quant_io_ops: bool = False
     use_quant_state_dict: bool = True
@@ -127,12 +121,13 @@ class NXPRecipeProvider(BackendRecipeProvider):
             logging.warning(f"NXP backend: Recipe `{recipe_type}` is not valid.")
             return None
 
-        rc = cast(NeutronRecipeConfig, kwargs.get(NEUTRON_RECIPE_CONFIG_KEY))
-        if rc is None:
+        original_rc = kwargs.get(NEUTRON_RECIPE_CONFIG_KEY)
+        if original_rc is None:
             raise KeyError(
                 f"NXP backend: create_recipe() requires `{NEUTRON_RECIPE_CONFIG_KEY}=<NeutronRecipeConfig>`."
             )
 
+        rc = cast(NeutronRecipeConfig, deepcopy(original_rc))
         if rc.custom_delegation_options is None:
             rc.custom_delegation_options = CustomDelegationOptions()
 
@@ -141,12 +136,6 @@ class NXPRecipeProvider(BackendRecipeProvider):
         match recipe_type:
             case NXPRecipeType.INT8_PTQ_NEUTRON:
                 return self._build_recipe(recipe_type, rc, is_qat=False, delegate=True)
-            case NXPRecipeType.INT8_QAT_NEUTRON:
-                if rc.train_fn is None:
-                    raise ValueError(
-                        "NXP backend: INT8_QAT_NEUTRON requires train_fn in NeutronRecipeConfig."
-                    )
-                return self._build_recipe(recipe_type, rc, is_qat=True, delegate=True)
             case NXPRecipeType.INT8_PTQ_NO_DELEGATE:
                 return self._build_recipe(recipe_type, rc, is_qat=False, delegate=False)
             case _:
@@ -162,14 +151,20 @@ class NXPRecipeProvider(BackendRecipeProvider):
         is_qat: bool,
         delegate: bool,
     ) -> ExportRecipe:
+        # is_qat=True is reserved for future QAT support; always False for now.
+        if is_qat:
+            raise NotImplementedError(
+                "NXP recipe with QAT (quantization aware training) is not yet supported."
+            )
+
         neutron_target_spec = NeutronTargetSpec(rc.target)
 
         if rc.get_quantizer_fn is None:
             rc.get_quantizer_fn = partial(
-                _get_default_quantizer, neutron_target_spec, is_qat
+                get_default_quantizer, neutron_target_spec, is_qat
             )
 
-        quantization_recipe = _build_quantization_recipe(rc, is_qat)
+        quantization_recipe = _build_quantization_recipe(rc)
         compile_spec = generate_neutron_compile_spec(
             rc.target,
             intermediates_dir=rc.intermediates_dir,
@@ -195,50 +190,18 @@ class NXPRecipeProvider(BackendRecipeProvider):
 # ---------------------------------------------------------------------------
 
 
-def _build_quantization_recipe(
-    rc: NeutronRecipeConfig, is_qat: bool
-) -> QuantizationRecipe:
-    """Build the QuantizationRecipe for PTQ or QAT.
+def _build_quantization_recipe(rc: NeutronRecipeConfig) -> QuantizationRecipe:
+    """Build the QuantizationRecipe for PTQ.
 
-    PTQ uses the standard QuantizeStage flow (prepare_pt2e -> calibrate -> convert_pt2e)
-    driven by calibration_inputs_fn.  quantize_fn is intentionally left None so that
-    multiple PTQ recipes can be combined with ExportRecipe.combine().
-
-    QAT requires a non-standard sequence (BN-fusion passes interleaved with training),
-    so it delegates to calibrate_and_quantize() via quantize_fn.  A recipe with
-    quantize_fn set cannot be combined with other recipes.
+    PTQ uses the standard QuantizeStage flow (prepare_pt2e -> calibrate -> convert_pt2e).
+    The example_inputs passed to the export session are used directly for calibration.
+    Multiple PTQ recipes can be combined with ExportRecipe.combine().
     """
-    _input_spec = rc.input_spec
-    _calibration_fn = rc.get_calibration_inputs_fn or get_random_calibration_inputs
     _quantizer = rc.get_quantizer_fn()
 
-    if is_qat:
-        _train_fn = rc.train_fn
-
-        def _quantize_fn(  # noqa: E306
-            graph_module: torch.fx.GraphModule,
-        ) -> torch.fx.GraphModule:
-            return calibrate_and_quantize(
-                model=graph_module,
-                calibration_inputs=_calibration_fn(_input_spec),
-                quantizer=_quantizer,
-                is_qat=True,
-                train_fn=_train_fn,
-            )
-
-        return QuantizationRecipe(
-            quantizers=[_quantizer],
-            quantize_fn=_quantize_fn,
-        )
-    else:
-
-        def _calibration_inputs_fn() -> Iterable:
-            return _calibration_fn(_input_spec)
-
-        return QuantizationRecipe(
-            quantizers=[_quantizer],
-            calibration_inputs_fn=_calibration_inputs_fn,
-        )
+    return QuantizationRecipe(
+        quantizers=[_quantizer],
+    )
 
 
 def _build_lowering_recipe(
@@ -281,7 +244,7 @@ def _build_partitioners(
             compile_spec,
             neutron_target_spec,
             rc.custom_delegation_options,
-            preserve_ops=[torch.ops.aten.prelu.default],
+            preserve_ops=default_preserve_ops,
         )
     ]
 
