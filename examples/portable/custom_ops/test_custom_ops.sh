@@ -77,6 +77,24 @@ test_cmake_custom_op_2() {
   ${build_dir}/custom_ops_executor_runner --model_path="./${model_name}.pte"
 }
 
+test_cmake_named_manual_registration() {
+  CMAKE_PREFIX_PATH="$PWD/cmake-out/lib/cmake/ExecuTorch"
+
+  local example_dir=examples/portable/custom_ops
+  local build_dir=cmake-out/${example_dir}
+  rm -rf ${build_dir}
+  retry cmake \
+        -DREGISTER_EXAMPLE_CUSTOM_OP=1 \
+        -DTEST_NAMED_MANUAL_REGISTRATION=ON \
+        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${build_dir} \
+        ${example_dir}
+
+  cmake --build ${build_dir} --target named_manual_registration_test -j9
+  ${build_dir}/named_manual_registration_test
+}
+
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
@@ -85,3 +103,4 @@ fi
 cmake_install_executorch_lib
 test_cmake_custom_op_1
 test_cmake_custom_op_2
+test_cmake_named_manual_registration
