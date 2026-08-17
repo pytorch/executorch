@@ -507,6 +507,9 @@ class GraphBuilder {
         compute_graph_->set_output_tensor(
             ref, get_staging_scalar_type_of(fb_id));
       } else {
+        if (compute_graph_->val_is_tref(ref)) {
+          compute_graph_->get_tref(ref)->is_graph_output = true;
+        }
         compute_graph_->set_output_value(ref);
       }
     }
@@ -754,7 +757,12 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
     for (size_t i = 0; i < num_inputs; i++) {
       const ValueRef iref = compute_graph->inputs()[i].value;
       if (compute_graph->val_is_tensor(iref)) {
-        VK_CHECK_COND(args[i]->isTensor());
+        VK_CHECK_COND(
+            args[i]->isTensor(),
+            "Expected tensor input at index ",
+            i,
+            ", got EValue tag ",
+            static_cast<uint32_t>(args[i]->tag));
         bool was_resized =
             maybe_resize_input(compute_graph, i, args[i]->toTensor());
         should_propagate_resize = should_propagate_resize || was_resized;
@@ -764,25 +772,21 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
             args[i]->toTensor().numel(),
             equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
-        // A SymInt input may arrive either as a scalar tensor (the convention
-        // when the value was lifted from one) or as a plain Int EValue, which
-        // is what the emitter produces when the Method's schema declares the
-        // argument as SymInt. Accept both.
         bool was_updated = false;
-        if (args[i]->isTensor()) {
+        if (args[i]->isInt()) {
+          const int32_t new_value =
+              utils::safe_downcast<int32_t>(args[i]->toInt());
+          was_updated = compute_graph->read_symint(iref) != new_value;
+          compute_graph->set_symint(iref, new_value);
+        } else if (args[i]->isTensor()) {
           was_updated = maybe_update_scalar_tensor(
               compute_graph, iref, args[i]->toTensor());
-        } else if (args[i]->isInt()) {
-          const int32_t cur_val = compute_graph->read_symint(iref);
-          const int32_t new_val = static_cast<int32_t>(args[i]->toInt());
-          if (new_val != cur_val) {
-            compute_graph->set_symint(iref, new_val);
-            was_updated = true;
-          }
         } else {
           VK_THROW(
-              "Could not handle symint arg: caller's EValue is neither "
-              "a scalar tensor nor an Int.");
+              "Expected integer or scalar tensor for SymInt input at index ",
+              i,
+              ", got EValue tag ",
+              static_cast<uint32_t>(args[i]->tag));
         }
         // Since symint inputs may impact tensor's sizes, trigger a resize if
         // any symbolic integer shapes are updated.
@@ -886,12 +890,20 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
               "Could not handle symint output: caller's EValue is neither "
               "a scalar tensor nor an Int.");
         }
-      }
-      // TensorRef values represent constant tensors which will not have been
-      // modified by the graph execution. Therefore, if a constant tensor is
-      // returned as an output, no action is required.
-      else if (compute_graph->val_is_tref(oref)) {
-        continue;
+      } else if (compute_graph->val_is_tref(oref)) {
+        VK_CHECK_COND(args[o]->isTensor());
+        maybe_resize_output(compute_graph, i, args[o]->toTensor());
+        const TensorRefPtr tref = compute_graph->get_tref(oref);
+        VK_CHECK_COND(
+            equivalent_scalar_type(args[o]->toTensor().scalar_type()) ==
+            tref->dtype);
+        VK_CHECK_COND(args[o]->toTensor().nbytes() == tref->nbytes());
+        if (tref->nbytes() > 0) {
+          std::memcpy(
+              args[o]->toTensor().mutable_data_ptr(),
+              tref->data,
+              tref->nbytes());
+        }
       } else {
         VK_THROW(
             "Could not handle output with type ",

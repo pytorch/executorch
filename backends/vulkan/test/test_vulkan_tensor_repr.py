@@ -6,9 +6,11 @@
 
 import operator
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import torch
+from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkMemoryLayout,
     VkStorageType,
@@ -23,6 +25,7 @@ from executorch.backends.vulkan.utils import (
     CONTIGUOUS_BUFFER,
     DEFAULT_TEXTURE_LIMITS,
     HEIGHT_PACKED_TEXTURE,
+    get_node_repr,
     make_tensor_repset,
     NO_STORAGE,
     OpRepSets,
@@ -35,8 +38,11 @@ from executorch.backends.vulkan.utils import (
     TensorReprList,
     TensorRepSet,
     TensorRepSetList,
+    set_node_repr,
     WIDTH_PACKED_TEXTURE,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.tensor import TensorSpec
 from torch._subclasses.fake_tensor import FakeTensorMode
 
 
@@ -985,6 +991,66 @@ class TestTensorReprList(unittest.TestCase):
         lst = TensorReprList(tr)
         s = str(lst)
         self.assertIn("TensorRepr", s)
+
+
+class TestTagMemoryMetaPass(unittest.TestCase):
+    def test_alias_buffer_mutation_inserts_source_transition(self):
+        graph = torch.fx.Graph()
+        state = graph.placeholder("state")
+        state.meta["val"] = _make_fake_tensor((1, 1280, 2))
+        state.meta["spec"] = TensorSpec.from_tensor(state.meta["val"])
+
+        prepack = graph.call_function(
+            exir_ops.edge.et_vk.prepack.default,
+            (state,),
+        )
+        prepack.meta["val"] = state.meta["val"]
+        prepack.meta["spec"] = TensorSpec.from_tensor(prepack.meta["val"])
+        buffer_repr = TensorRepr(
+            VkStorageType.BUFFER, VkMemoryLayout.TENSOR_WIDTH_PACKED
+        )
+        set_node_repr(prepack, buffer_repr)
+
+        source = graph.placeholder("source")
+        source.meta["val"] = _make_fake_tensor((1, 1280, 8))
+        source.meta["spec"] = TensorSpec.from_tensor(source.meta["val"])
+        set_node_repr(
+            source,
+            TensorRepr(
+                VkStorageType.TEXTURE_3D,
+                VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+            ),
+        )
+
+        mutation = graph.call_function(
+            exir_ops.edge.aten.slice_copy.Tensor,
+            (source, 2, 6, 8, 1),
+        )
+        mutation.meta["val"] = _make_fake_tensor((1, 1280, 2))
+        mutation.meta["spec"] = TensorSpec.from_tensor(mutation.meta["val"])
+        graph.output((mutation,))
+
+        graph_module = torch.fx.GraphModule({}, graph)
+        graph_signature = SimpleNamespace(
+            buffers_to_mutate={mutation.name: "state"},
+            inputs_to_buffers={state.name: "state"},
+        )
+        tag_pass = TagMemoryMetaPass(
+            DEFAULT_TEXTURE_LIMITS,
+            alias_buffer_mutations=True,
+        )
+        tag_pass._exported_program = SimpleNamespace(
+            graph_module=graph_module,
+            graph_signature=graph_signature,
+        )
+
+        tag_pass.call(graph_module)
+
+        transitioned_source = mutation.args[0]
+        self.assertIsInstance(transitioned_source, torch.fx.Node)
+        self.assertEqual(transitioned_source.target, exir_ops.edge.aten.clone.default)
+        self.assertEqual(get_node_repr(transitioned_source), buffer_repr)
+        self.assertEqual(get_node_repr(mutation), buffer_repr)
 
 
 if __name__ == "__main__":

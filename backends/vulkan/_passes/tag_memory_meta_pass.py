@@ -150,17 +150,57 @@ class TagMemoryMetaPass(ExportPass):
         default_storage_type: VkStorageType = VkStorageType.TEXTURE_3D,
         default_memory_layout: VkMemoryLayout = VkMemoryLayout.TENSOR_WIDTH_PACKED,
         force_fp16: bool = False,
+        alias_buffer_mutations: bool = False,
     ):
         super().__init__()
         self.default_storage: VkStorageType = default_storage_type
         self.default_layout: VkMemoryLayout = default_memory_layout
         self.texture_limits = texture_limits
         self.force_fp16 = force_fp16
+        self.alias_buffer_mutations = alias_buffer_mutations
+        self._exported_program = None
+        self.buffer_mutation_inputs: dict[str, torch.fx.Node] = {}
 
         # Limit the total number of nodes explored when tracing through users of
         # an operator to constrain the representation of its arguments/outputs.
         # Without a limit, transformer-style graphs cause exponential blowup.
         self.max_trace_search_depth = 64
+
+    def initialize_buffer_mutation_inputs(self) -> None:
+        if not self.alias_buffer_mutations:
+            return
+        if self._exported_program is None:
+            raise RuntimeError(
+                "alias_buffer_mutations requires an ExportedProgram in TagMemoryMetaPass"
+            )
+
+        nodes_by_name = {
+            node.name: node for node in self._exported_program.graph_module.graph.nodes
+        }
+        buffer_inputs_by_target: dict[str, torch.fx.Node] = {}
+        for (
+            name,
+            target,
+        ) in self._exported_program.graph_signature.inputs_to_buffers.items():
+            if name not in nodes_by_name:
+                continue
+            buffer_input = nodes_by_name[name]
+            prepack = next(
+                (
+                    user
+                    for user in buffer_input.users
+                    if user.op == "call_function"
+                    and user.target == exir_ops.edge.et_vk.prepack.default
+                ),
+                None,
+            )
+            buffer_inputs_by_target[target] = prepack or buffer_input
+
+        self.buffer_mutation_inputs = {
+            output_name: buffer_inputs_by_target[target]
+            for output_name, target in self._exported_program.graph_signature.buffers_to_mutate.items()
+            if target in buffer_inputs_by_target
+        }
 
     def is_valid_op_node(self, node: Any) -> bool:
         """
@@ -497,9 +537,35 @@ class TagMemoryMetaPass(ExportPass):
         features: OpFeatures = get_op_features(op_node.target)
         op_repsets = features.make_op_repsets(op_node, self.texture_limits)
 
+        forced_output_repr = None
+        if op_node.name in self.buffer_mutation_inputs:
+            mutation_input = self.buffer_mutation_inputs[op_node.name]
+            mutation_output_is_input = (
+                mutation_input is op_node or op_node in mutation_input.all_input_nodes
+            )
+            if not mutation_output_is_input:
+                if not utils.has_node_repr(mutation_input):
+                    raise RuntimeError(
+                        f"Aliased mutation input {mutation_input.name} has no tensor representation"
+                    )
+                forced_output_repr = utils.get_node_repr(mutation_input)
+                if not isinstance(forced_output_repr, utils.TensorRepr):
+                    raise RuntimeError(
+                        f"Aliased mutation input {mutation_input.name} must be a single tensor"
+                    )
+                op_repsets.try_constrain_with_out_repset(
+                    utils.make_tensor_repset(forced_output_repr)
+                )
+
         self.constrain_op_repsets(op_repsets)
 
         args_repr_list, outs_repr_list = op_repsets.pick_representations()
+
+        if forced_output_repr is not None and outs_repr_list[0] != forced_output_repr:
+            raise RuntimeError(
+                f"Cannot alias mutation {op_node.name} with representation "
+                f"{outs_repr_list[0]} to input representation {forced_output_repr}"
+            )
 
         if len(outs_repr_list) == 1:
             utils.set_node_repr(op_node, outs_repr_list[0])
@@ -542,6 +608,7 @@ class TagMemoryMetaPass(ExportPass):
                     )
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.initialize_buffer_mutation_inputs()
         transition_cache: dict = {}
         for node in graph_module.graph.nodes:
             self.set_op_node_tensor_reprs(graph_module, node, transition_cache)

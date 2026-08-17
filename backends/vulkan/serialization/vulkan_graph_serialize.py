@@ -27,8 +27,24 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_da
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 
+def _flatbuffer_nonfinite_constant(value: str) -> str:
+    return {
+        "-Infinity": "-inf",
+        "Infinity": "inf",
+        "NaN": "nan",
+    }[value]
+
+
 def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
-    vk_graph_json = json.dumps(vk_graph, cls=_DataclassEncoder)
+    # Python emits non-finite floats as bare tokens that flatc rejects. Flatc
+    # accepts the same values using its quoted spellings.
+    vk_graph_json = json.dumps(
+        json.loads(
+            json.dumps(vk_graph, cls=_DataclassEncoder),
+            parse_constant=_flatbuffer_nonfinite_constant,
+        ),
+        allow_nan=False,
+    )
 
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
