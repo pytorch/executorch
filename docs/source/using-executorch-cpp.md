@@ -206,25 +206,9 @@ find_package(executorch REQUIRED)
 target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 ```
 
-The quantized kernels are deliberately left out of that variable. Here is why that matters in
-practice. The Python package `executorch.kernels.quantized` loads a plugin that carries its own copy
-of the same operators, so a process that both imports it and links the C++ component registers each
-operator twice, and the runtime stops with an error naming the operator, for example:
-
-```
-Re-registering quantized_decomposed::add.out, from <library>
-```
-
-So link `executorch::kernels_quantized` when your model needs quantized operators and you are not
-loading that Python plugin in the same process:
-
-```cmake
-find_package(executorch REQUIRED COMPONENTS kernels_optimized kernels_quantized)
-
-target_link_libraries(app PRIVATE executorch::runtime
-                                  executorch::kernels_optimized
-                                  executorch::kernels_quantized)
-```
+The quantized kernels are deliberately left out of that variable, because loading
+`executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
+stops the runtime.
 
 #### When something does not work
 
