@@ -635,8 +635,12 @@ class InstallerBuildExt(build_ext):
         cache_dir = _tracer_cache_dir(self)
         if cache_dir is None:
             return
-        for destination in _TRACER_DEFINITION_PATHS:
+        for source, destination in _TRACER_DEFINITION_PATHS:
             if os.path.exists(destination):
+                # The first pass consumed the placeholder, so restore the template before
+                # substituting again. Without this there is nothing left to replace and the
+                # correction silently does nothing.
+                shutil.copyfile(source, destination)
                 _substitute_tracer_definition(destination, cache_dir)
 
     def copy_extensions_to_source(self) -> None:
@@ -890,7 +894,7 @@ class CustomBuildPy(build_py):
                     # configure the build: the setting is knowable without the cache, and absent
                     # means off, which is the project default.
                     _substitute_tracer_definition_from_args(dst)
-                    _TRACER_DEFINITION_PATHS.append(dst)
+                    _TRACER_DEFINITION_PATHS.append((src, dst))
                     continue
                 _substitute_tracer_definition(dst, tracer_cache_dir)
 
