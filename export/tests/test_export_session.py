@@ -7,8 +7,8 @@
 # pyre-strict
 
 import unittest
-from typing import List
-from unittest.mock import Mock
+from typing import Any, Dict, List
+from unittest.mock import call, Mock, patch
 
 import torch
 from executorch.export import ExportRecipe, ExportSession
@@ -106,6 +106,68 @@ class TestExportSessionCoreFlow(unittest.TestCase):
         # Verify artifacts were stored for each stage
         self.assertEqual(len(session._stage_to_artifacts), 5)
         self.assertEqual(set(session._stage_to_artifacts.keys()), set(stage_types))
+
+    def _run_five_stage_pipeline(self, recipe: ExportRecipe) -> ExportSession:
+        stage_types = [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.TO_EXECUTORCH,
+        ]
+        session = ExportSession(
+            model=self.model,
+            example_inputs=self.example_inputs,
+            export_recipe=recipe,
+        )
+        for stage_type in stage_types:
+            session.register_stage(stage_type, self._create_mock_stage(stage_type))
+        session.export()
+        return session
+
+    def test_intermediate_artifacts_retained_by_default(self) -> None:
+        session = self._run_five_stage_pipeline(ExportRecipe(name="test"))
+        self.assertEqual(len(session._stage_to_artifacts), 5)
+        self.assertEqual(session._released_stages, set())
+
+    def test_release_intermediate_artifacts_keeps_only_the_last(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        self.assertEqual(
+            set(session._stage_to_artifacts.keys()), {StageType.TO_EXECUTORCH}
+        )
+        # Every stage but the last had both of its references dropped.
+        for stage_type in [
+            StageType.SOURCE_TRANSFORM,
+            StageType.QUANTIZE,
+            StageType.TORCH_EXPORT,
+            StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+        ]:
+            self.assertIn(stage_type, session._released_stages)
+            session.get_registered_stage(
+                stage_type
+            ).release_artifact.assert_called_once()
+
+    def test_released_accessors_explain_why(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+
+        for accessor in (
+            session.get_exported_program,
+            session.get_edge_program_manager,
+        ):
+            with self.assertRaises(RuntimeError) as cm:
+                accessor()
+            self.assertIn("released to free memory", str(cm.exception))
+
+    def test_release_does_not_touch_the_final_artifact(self) -> None:
+        session = self._run_five_stage_pipeline(
+            ExportRecipe(name="test", release_intermediate_artifacts=True)
+        )
+        self.assertIsNotNone(session.get_executorch_program_manager())
 
     def test_overriden_pipeline_execution_order(self) -> None:
         # Test when pipeline stages that are passed through recipe
@@ -817,6 +879,77 @@ class TestExportSessionExtendedInputTypes(unittest.TestCase):
 
         # Should not raise during validation
         session._validate_pipeline_sequence(recipe.pipeline_stages)
+
+
+class TestDelegationInfoReporting(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = ExportSession(
+            model=SimpleTestModel(),
+            example_inputs=[(torch.randn(2, 10),)],
+            export_recipe=ExportRecipe(),
+        )
+
+    def _set_delegation_context(self, context: Dict[str, Any]) -> None:
+        self.session._stage_to_artifacts[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
+            PipelineArtifact(data=None, context=context)
+        )
+
+    @patch("executorch.export.export.tabulate")
+    @patch("builtins.print")
+    def test_print_delegation_info_for_every_method(
+        self, mock_print: Mock, mock_tabulate: Mock
+    ) -> None:
+        decode_info = Mock()
+        decode_info.get_summary.return_value = "decode-summary"
+        decode_info.get_operator_delegation_dataframe.return_value = "decode-data"
+        prefill_info = Mock()
+        prefill_info.get_summary.return_value = "prefill-summary"
+        prefill_info.get_operator_delegation_dataframe.return_value = "prefill-data"
+        mock_tabulate.side_effect = ["decode-table", "prefill-table"]
+        self._set_delegation_context(
+            {
+                "delegation_info_by_method": {
+                    "prefill": prefill_info,
+                    "decode": decode_info,
+                },
+                "delegation_info": decode_info,
+            }
+        )
+
+        self.session.print_delegation_info()
+
+        self.assertEqual(
+            mock_print.call_args_list,
+            [
+                call("Delegation info for method 'decode':"),
+                call("decode-summary"),
+                call("decode-table"),
+                call("Delegation info for method 'prefill':"),
+                call("prefill-summary"),
+                call("prefill-table"),
+            ],
+        )
+        self.assertEqual(mock_tabulate.call_count, 2)
+
+    @patch("executorch.export.export.tabulate", return_value="legacy-table")
+    @patch("builtins.print")
+    def test_print_delegation_info_legacy_fallback(
+        self, mock_print: Mock, mock_tabulate: Mock
+    ) -> None:
+        delegation_info = Mock()
+        delegation_info.get_summary.return_value = "legacy-summary"
+        delegation_info.get_operator_delegation_dataframe.return_value = "legacy-data"
+        self._set_delegation_context({"delegation_info": delegation_info})
+
+        self.session.print_delegation_info()
+
+        self.assertEqual(
+            mock_print.call_args_list,
+            [call("legacy-summary"), call("legacy-table")],
+        )
+        mock_tabulate.assert_called_once_with(
+            "legacy-data", headers="keys", tablefmt="fancy_grid"
+        )
 
 
 class TestIntermediateStateGetters(unittest.TestCase):

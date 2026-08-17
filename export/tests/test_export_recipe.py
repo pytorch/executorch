@@ -8,6 +8,7 @@
 
 import unittest
 from typing import Any, Dict, Optional, Sequence
+from unittest.mock import Mock
 
 from executorch.export.recipe import ExportRecipe, RecipeType
 from executorch.export.recipe_provider import BackendRecipeProvider
@@ -129,3 +130,61 @@ class TestExportRecipeGetRecipe(unittest.TestCase):
         # Verify that the kwargs were passed to the backend provider's create_recipe method
         self.assertIsNotNone(self.provider.last_kwargs)
         self.assertEqual(self.provider.last_kwargs, kwargs)
+
+
+class TestExportRecipeCombine(unittest.TestCase):
+    def test_new_hooks_do_not_change_existing_positional_arguments(self) -> None:
+        recipe = ExportRecipe(None, None, None, True)
+
+        self.assertTrue(recipe.source_transform_in_place)
+        self.assertIsNone(recipe.source_transform_passes)
+        self.assertIsNone(recipe.pre_trace_hooks)
+
+    def test_release_option_does_not_change_existing_positional_arguments(
+        self,
+    ) -> None:
+        lowering_recipe = Mock()
+        recipe = ExportRecipe(None, None, None, False, lowering_recipe)
+
+        self.assertIs(recipe.lowering_recipe, lowering_recipe)
+        self.assertFalse(recipe.release_intermediate_artifacts)
+
+    def test_combine_preserves_release_intermediate_artifacts(self) -> None:
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(release_intermediate_artifacts=True),
+                ExportRecipe(),
+            ]
+        )
+
+        self.assertTrue(combined.release_intermediate_artifacts)
+
+    def test_preserves_source_transform_passes_and_pre_trace_hooks(self) -> None:
+        first_source_transform = Mock()
+        second_source_transform = Mock()
+        first_pre_trace_hook = Mock()
+        second_pre_trace_hook = Mock()
+
+        combined = ExportRecipe.combine(
+            [
+                ExportRecipe(
+                    source_transform_passes=[first_source_transform],
+                    pre_trace_hooks=[first_pre_trace_hook],
+                    source_transform_in_place=True,
+                ),
+                ExportRecipe(
+                    source_transform_passes=[second_source_transform],
+                    pre_trace_hooks=[second_pre_trace_hook],
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            combined.source_transform_passes,
+            [first_source_transform, second_source_transform],
+        )
+        self.assertEqual(
+            combined.pre_trace_hooks,
+            [first_pre_trace_hook, second_pre_trace_hook],
+        )
+        self.assertTrue(combined.source_transform_in_place)
