@@ -258,20 +258,26 @@ def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
     return value
 
 
+def cmake_boolean_is_true(value: str) -> bool:
+    """Whether a CMake option value reads as true, by CMake's own rule.
+
+    CMake decides false by exclusion: it compares against its false constants as strings and does
+    not parse a number. So a bare 0 is false while 0.0 is true, and a word it does not recognise,
+    enabled for instance, is true. This is the single definition of that rule for this project.
+    Readers that used a whitelist of true words plus a numeric test disagreed with CMake and with
+    each other, which let packaging declare no CUDA runtime for a build CMake had turned CUDA on
+    for.
+    """
+    normalized = value.strip().lower()
+    if normalized in {"off", "false", "n", "no", "0", "", "ignore", "notfound"}:
+        return False
+    return not normalized.endswith("-notfound")
+
+
 def _normalize_cmake_bool(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
-    normalized = value.strip().upper()
-    # Deliberately stricter than CMake. CMake decides false by exclusion, so anything that is not one
-    # of its false constants is true, including values like "2.0" and "enabled". Here an unrecognised
-    # spelling reads as off, because this decides whether a component's libraries are packaged and
-    # shipping a component whose libraries were never built is worse than shipping one fewer.
-    if normalized in {"ON", "TRUE", "YES", "Y"}:
-        return True
-    try:
-        return int(normalized) != 0
-    except ValueError:
-        return False
+    return cmake_boolean_is_true(value)
 
 
 def _cuda_version_to_pytorch_suffix(major, minor):
