@@ -2201,8 +2201,8 @@ setup(
                 # portable kernels, and a selection of backends. This lets users
                 # load and execute .pte files from python.
                 BuiltExtension(
-                    src="_portable_lib.cp*" if _is_windows() else "_portable_lib.*",
-                    modpath="executorch.extension.pybindings._portable_lib",
+                    src="_C.cp*" if _is_windows() else "_C.*",
+                    modpath="executorch.extension.pybindings._C",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
                 # Install the data_loader pybindings extension which provides the
@@ -2212,7 +2212,7 @@ setup(
                     modpath="executorch.extension.pybindings.data_loader",
                     dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
                 ),
-                # MLX metallib (Metal GPU kernels) must be colocated with _portable_lib.so
+                # MLX metallib (Metal GPU kernels) must be colocated with _C.so
                 # because MLX uses dladdr() to find the directory containing the library,
                 # then looks for mlx.metallib in that directory at runtime.
                 # After submodule migration, the path is backends/mlx/mlx/...

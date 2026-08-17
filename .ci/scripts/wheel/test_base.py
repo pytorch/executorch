@@ -62,7 +62,7 @@ def run_tests(model_tests: List[ModelTest]) -> None:
     # Test that we can import the portable_lib module - verifies RPATH is correct
     print("Testing portable_lib import...")
     try:
-        from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+        from executorch.extension.pybindings._C import (  # noqa: F401
             _load_for_executorch,
         )
 
