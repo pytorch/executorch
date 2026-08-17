@@ -46,6 +46,23 @@ include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 if(TARGET executorch-shared)
   set(required_lib_list portable_kernels)
   set(EXECUTORCH_LIBRARIES executorch-shared)
+  if(APPLE)
+    # The kernels target pulls the static core in behind it, so this
+    # configuration links two copies of the registry. On Linux both resolve to
+    # the executable's and the program is correct. Mach-O binds each image to
+    # its own definition, so the copies never converge and code inside the
+    # shared runtime sees a different registry from the one the application
+    # registered into. Said out loud because the result is wrong rather than
+    # slow, and silent.
+    message(
+      WARNING
+        "executorch: this shared install links two kernel registries on macOS, so operators "
+        "registered by your application are not visible to code running inside the shared "
+        "runtime. Link the static runtime instead by configuring with "
+        "EXECUTORCH_BUILD_SHARED=OFF if your program depends on registration crossing that "
+        "boundary."
+    )
+  endif()
 else()
   set(required_lib_list executorch executorch_core portable_kernels)
   set(EXECUTORCH_LIBRARIES)
