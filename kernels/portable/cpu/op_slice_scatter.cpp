@@ -42,7 +42,7 @@ Tensor& slice_scatter_out(
       out);
 
   ET_KERNEL_CHECK(
-      ctx, tensors_have_same_dim_order(input, out), InvalidArgument, out);
+      ctx, tensors_have_same_dim_order(input, src, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, tensor_is_default_dim_order(input), InvalidArgument, out);

@@ -896,3 +896,21 @@ TEST_F(OpSliceScatterTensorOutTest, NonDefaultDimOrderDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_slice_scatter_out(self, src, 1, 0, 1, 1, out));
 }
+
+TEST_F(OpSliceScatterTensorOutTest, MixedDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Only src has a non-default dim order, so the same dim order check shall be
+  // what rejects it.
+  Tensor input =
+      tf.make({1, 3, 2, 4}, {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11,
+                             12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23});
+  Tensor src = tf.channels_last_like(
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+  Tensor out = tf.zeros({1, 3, 2, 4});
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_slice_scatter_out(
+          input, src, /*dim=*/3, /*start=*/0, /*end=*/2, /*step=*/1, out));
+}
