@@ -1416,11 +1416,12 @@ class CustomBuildPy(build_py):
                 if tracer_cache_dir is None:
                     # An editable install reaches here because setuptools runs build_py before
                     # build_ext, so no cache exists yet. Publishing nothing would leave a developer
-                    # with no find_package at all, so derive the definition from the arguments that
-                    # configure the build: the setting is knowable without the cache, and absent
-                    # means off, which is the project default.
+                    # with no find_package at all, so write a best effort value from the command
+                    # line. The preset this build uses turns the tracer on without passing
+                    # anything, so this guess is usually wrong: the pass after the build restores
+                    # the template and substitutes what the cache actually says.
                     _substitute_tracer_definition_from_args(dst)
-                    _TRACER_DEFINITION_PATHS.append((src, dst))
+                    _TRACER_DEFINITION_PATHS.append((os.path.abspath(src), dst))
                     continue
                 _substitute_tracer_definition(dst, tracer_cache_dir)
 
