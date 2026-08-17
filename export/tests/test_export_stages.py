@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import call, Mock, patch
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
@@ -159,6 +159,28 @@ class TestTorchExportStage(unittest.TestCase):
             str(cm.exception),
         )
 
+    def test_pre_trace_hooks_fire_per_method(self) -> None:
+        """Hooks fire once per method, immediately before that method's trace."""
+        calls = []
+        stage = TorchExportStage(
+            pre_trace_hooks=[lambda name, model: calls.append((name, model))]
+        )
+        artifact = PipelineArtifact(
+            data={"decode": self.model, "prefill": self.model},
+            context={
+                "example_inputs": {
+                    "decode": self.example_inputs,
+                    "prefill": self.example_inputs,
+                }
+            },
+        )
+        stage.run(artifact)
+
+        # Both methods share one model object, so a hook that ran in an earlier
+        # batch stage could only have left the last method's state in place.
+        self.assertEqual([name for name, _ in calls], ["decode", "prefill"])
+        self.assertTrue(all(model is self.model for _, model in calls))
+
 
 class TestEdgeTransformAndLowerStage(unittest.TestCase):
     def setUp(self) -> None:
@@ -190,6 +212,7 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         mock_graph_module = Mock()
         mock_exported_program.graph_module = mock_graph_module
         mock_edge_program_manager.exported_program.return_value = mock_exported_program
+        mock_edge_program_manager.methods = {"forward"}
         mock_to_edge_transform_and_lower.return_value = mock_edge_program_manager
 
         stage = EdgeTransformAndLowerStage(
@@ -230,6 +253,39 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         self.assertEqual(
             result_artifact.get_context("delegation_info"), mock_delegation_info
         )
+
+    @patch("executorch.export.stages.to_edge_transform_and_lower")
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_multi_method_without_forward(
+        self, mock_get_delegation_info: Mock, mock_to_edge_transform_and_lower: Mock
+    ) -> None:
+        """Delegation info is collected per method when there is no `forward`."""
+        programs = {name: Mock() for name in ("decode", "prefill")}
+        for program in programs.values():
+            program.graph_module = Mock()
+        delegation_by_graph_module = {
+            program.graph_module: f"{name}-info" for name, program in programs.items()
+        }
+
+        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
+        mock_edge_program_manager.methods = set(programs)
+        mock_edge_program_manager.exported_program.side_effect = programs.__getitem__
+        mock_to_edge_transform_and_lower.return_value = mock_edge_program_manager
+        mock_get_delegation_info.side_effect = delegation_by_graph_module.__getitem__
+
+        stage = EdgeTransformAndLowerStage()
+        artifact = PipelineArtifact(
+            data={name: Mock(spec=ExportedProgram) for name in programs},
+            context=self.context,
+        )
+        stage.run(artifact)
+
+        self.assertEqual(
+            stage.delegation_info_by_method,
+            {"decode": "decode-info", "prefill": "prefill-info"},
+        )
+        # No `forward` method, so the first method by name is reported.
+        self.assertEqual(stage.delegation_info, "decode-info")
 
 
 class TestExecutorchStage(unittest.TestCase):
@@ -321,24 +377,66 @@ class TestSourceTransformStage(unittest.TestCase):
         # verify the result model is NOT the same object as the original
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
-    @patch("executorch.export.stages.quantize_")
-    @patch("executorch.export.stages.unwrap_tensor_subclass")
-    def test_run_in_place_does_not_copy_the_model(
-        self, mock_unwrap: Mock, mock_quantize: Mock
-    ) -> None:
-        from torchao.core.config import AOBaseConfig
+    def _no_quant_recipe(self) -> Mock:
+        recipe = Mock(spec=QuantizationRecipe)
+        recipe.ao_quantization_configs = None
+        return recipe
 
-        mock_recipe = Mock(spec=QuantizationRecipe)
-        mock_recipe.ao_quantization_configs = [
-            AOQuantizationConfig(ao_base_config=Mock(spec=AOBaseConfig))
-        ]
+    def test_source_transform_passes_run_without_quantization(self) -> None:
+        seen = []
 
-        stage = SourceTransformStage(mock_recipe, in_place=True)
+        def record(model: torch.nn.Module) -> torch.nn.Module:
+            seen.append(model)
+            return model
+
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[record], in_place=True
+        )
         stage.run(PipelineArtifact(data=self.models_dict, context={}))
 
-        # The caller's own model is quantized rather than a copy of it.
-        self.assertIs(mock_quantize.call_args[0][0], self.model)
+        self.assertEqual(seen, [self.model])
+        # in_place mutates the caller's own module rather than a copy
         self.assertIs(stage.get_artifacts().data["forward"], self.model)
+
+    def test_source_transform_passes_copy_by_default(self) -> None:
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[lambda m: m]
+        )
+        stage.run(PipelineArtifact(data=self.models_dict, context={}))
+
+        self.assertIsNot(stage.get_artifacts().data["forward"], self.model)
+
+    def test_source_transform_pass_applied_once_for_shared_model(self) -> None:
+        """Methods sharing one model object must not be transformed twice."""
+        calls = []
+
+        def record(model: torch.nn.Module) -> torch.nn.Module:
+            calls.append(model)
+            return model
+
+        stage = SourceTransformStage(
+            self._no_quant_recipe(), source_transform_passes=[record], in_place=True
+        )
+        stage.run(
+            PipelineArtifact(
+                data={"decode": self.model, "prefill": self.model}, context={}
+            )
+        )
+
+        self.assertEqual(len(calls), 1)
+        data = stage.get_artifacts().data
+        self.assertIs(data["decode"], data["prefill"])
+
+    def test_source_transform_pass_return_value_is_rebound(self) -> None:
+        replacement = SimpleTestModel()
+        stage = SourceTransformStage(
+            self._no_quant_recipe(),
+            source_transform_passes=[lambda m: replacement],
+            in_place=True,
+        )
+        stage.run(PipelineArtifact(data=self.models_dict, context={}))
+
+        self.assertIs(stage.get_artifacts().data["forward"], replacement)
 
 
 class TestQuantizeStage(unittest.TestCase):
@@ -543,6 +641,69 @@ class TestToBackendStage(unittest.TestCase):
         self.assertEqual(
             result_artifact.get_context("delegation_info"), mock_delegation_info
         )
+
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_multi_method_without_forward(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        """Delegation info is collected per method when there is no `forward`."""
+        programs = {name: Mock() for name in ("decode", "prefill")}
+        for program in programs.values():
+            program.graph_module = Mock()
+        delegation_by_graph_module = {
+            program.graph_module: f"{name}-info" for name, program in programs.items()
+        }
+
+        self.mock_edge_manager.methods = set(programs)
+        self.mock_edge_manager.exported_program.side_effect = programs.__getitem__
+        mock_get_delegation_info.side_effect = delegation_by_graph_module.__getitem__
+
+        stage = ToBackendStage()
+        artifact = PipelineArtifact(data=self.mock_edge_manager, context=self.context)
+        stage.run(artifact)
+
+        self.assertEqual(
+            stage.delegation_info_by_method,
+            {"decode": "decode-info", "prefill": "prefill-info"},
+        )
+        # No `forward` method, so the first method by name is reported.
+        self.assertEqual(stage.delegation_info, "decode-info")
+
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_with_per_method_partitioners(
+        self, mock_get_delegation_info: Mock
+    ) -> None:
+        """A dict of partitioners lowers each method with its own partitioners."""
+        mock_get_delegation_info.return_value = {"delegation": "info"}
+        exported_program = Mock()
+        exported_program.graph_module = Mock()
+        self.mock_edge_manager.methods = {"decode", "prefill"}
+        self.mock_edge_manager.exported_program.return_value = exported_program
+        self.mock_edge_manager.to_backend.return_value = self.mock_edge_manager
+
+        decode_partitioner = Mock()
+        second_decode_partitioner = Mock()
+        prefill_partitioner = Mock()
+        stage = ToBackendStage(
+            partitioners={
+                "decode": [decode_partitioner, second_decode_partitioner],
+                "prefill": [prefill_partitioner],
+            }
+        )
+        stage.run(PipelineArtifact(data=self.mock_edge_manager, context=self.context))
+
+        self.mock_edge_manager.to_backend.assert_has_calls(
+            [
+                call(
+                    {
+                        "decode": decode_partitioner,
+                        "prefill": prefill_partitioner,
+                    }
+                ),
+                call({"decode": second_decode_partitioner}),
+            ]
+        )
+        self.assertEqual(self.mock_edge_manager.to_backend.call_count, 2)
 
     def test_run_edge_manager_none(self) -> None:
         stage = ToBackendStage()

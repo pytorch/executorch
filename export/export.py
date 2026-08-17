@@ -300,8 +300,14 @@ class ExportSession:
         stage = None
         for stage_type in stages or self._get_default_pipeline():
             if stage_type == StageType.SOURCE_TRANSFORM:
+                source_transform_passes = None
+                if self._export_recipe.source_transform_passes is not None:
+                    source_transform_passes = list(
+                        self._export_recipe.source_transform_passes
+                    )
                 stage = SourceTransformStage(
                     self._quant_recipe,
+                    source_transform_passes=source_transform_passes,
                     in_place=self._export_recipe.source_transform_in_place,
                 )
             elif stage_type == StageType.QUANTIZE:
@@ -312,8 +318,13 @@ class ExportSession:
                     aten_transform_passes = list(
                         self._export_recipe.aten_transform_passes
                     )
+                pre_trace_hooks = None
+                if self._export_recipe.pre_trace_hooks is not None:
+                    pre_trace_hooks = list(self._export_recipe.pre_trace_hooks)
                 stage = TorchExportStage(
-                    aten_transform_passes, strict=self._export_recipe.strict
+                    aten_transform_passes,
+                    strict=self._export_recipe.strict,
+                    pre_trace_hooks=pre_trace_hooks,
                 )
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
@@ -676,14 +687,26 @@ class ExportSession:
         if stage_artifact is None:
             RuntimeError("No delegation info available, run the lowering stage first")
 
-        # pyre-ignore
-        delegation_info = stage_artifact.get_context("delegation_info", None)
-        if delegation_info:
+        delegation_info_by_method = stage_artifact.get_context(
+            "delegation_info_by_method", None
+        )
+        if delegation_info_by_method:
+            delegation_infos = sorted(delegation_info_by_method.items())
+        else:
+            # pyre-ignore
+            delegation_info = stage_artifact.get_context("delegation_info", None)
+            delegation_infos = [(None, delegation_info)] if delegation_info else []
+
+        if not delegation_infos:
+            print("No delegation info available")
+            return
+
+        for method_name, delegation_info in delegation_infos:
+            if method_name is not None:
+                print(f"Delegation info for method '{method_name}':")
             print(delegation_info.get_summary())
             df = delegation_info.get_operator_delegation_dataframe()
             print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
-        else:
-            print("No delegation info available")
 
     # Use Any instead of ETRecord as return type to avoid static dependency on etrecord
     def get_etrecord(self) -> Any:
