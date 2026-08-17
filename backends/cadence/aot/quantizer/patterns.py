@@ -1198,21 +1198,6 @@ class SoftmaxPattern(QuantizationPattern):
         if quant_node is None:
             return None
         input_q = get_arg(dq_input, "input", fx.Node)
-        quant_input = get_arg(quant_node, "input", fx.Node)
-        mask_shape = get_shape(gm, quant_input)
-        if not mask_shape:
-            return None
-        mask_shape = list(mask_shape)
-        # Softmax mask is packed 16 elements per int32 word.
-        mask_shape[-1] = mask_shape[-1] // 16
-        mask_tensor = insert_node_with_meta(
-            gm,
-            torch.ops.aten.full.default,
-            (mask_shape, 0.0),
-            {"dtype": torch.int32},
-            anchor_node,
-            input_q,
-        )
         # Initial position for streaming softmax (unused, set to 0).
         pos_tensor = insert_node_with_meta(
             gm,
@@ -1224,7 +1209,6 @@ class SoftmaxPattern(QuantizationPattern):
         )
         args = (
             input_q,
-            mask_tensor,
             get_arg(anchor_node, "dim", int),
             0,
             pos_tensor,
