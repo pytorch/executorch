@@ -50,6 +50,7 @@ LINEAR_FP_WEIGHT_TILE_VEC4_T load_v_cache_d4(
     const int C,
     const int KV_H,
     const int cache_start) {
+  // Ring SDPA bounds context_len so cache_start + c is always below 2 * C.
   int cache_c = cache_start + c;
   if (cache_c >= C) {
     cache_c -= C;

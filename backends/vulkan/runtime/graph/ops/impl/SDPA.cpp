@@ -22,6 +22,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -31,7 +32,7 @@ namespace {
 
 //
 // Common dimension helper: folds the axis-swap for LLM vs fused Q layouts.
-// `input_pos_symint` is used only for LLM (context_len = S + input_pos);
+// `input_pos_symint` is used for LLM and RING;
 // pass kDummyValueRef for FUSED.
 //
 struct SDPADims {
@@ -48,10 +49,11 @@ SDPADims compute_sdpa_dims(
     const ValueRef q,
     const ValueRef k,
     const ValueRef input_pos_symint,
+    const ValueRef window_size,
     const SDPAMode mode) {
   SDPADims d;
   d.D = graph.size_at<int64_t>(-1, q);
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     // Q: [B=1, S, H, D] (DHSB), K: [B=1, C_max, H_kv, D]
     // `k` may be kDummyValueRef in dispatch pickers that don't need it;
     // max_context_len is only read when k is valid.
@@ -61,7 +63,14 @@ SDPADims compute_sdpa_dims(
     d.max_context_len = is_valid(k) ? graph.size_at<int64_t>(-3, k) : 0;
     const int32_t input_pos_val =
         is_valid(input_pos_symint) ? graph.read_symint(input_pos_symint) : 0;
-    d.context_len = d.S + input_pos_val;
+    if (mode == SDPAMode::RING) {
+      const int64_t window = graph.extract_scalar<int64_t>(window_size);
+      const int64_t oldest_pos =
+          std::max<int64_t>(input_pos_val - window + 1, 0);
+      d.context_len = input_pos_val + d.S - oldest_pos;
+    } else {
+      d.context_len = d.S + input_pos_val;
+    }
   } else {
     // Q: [B, H, S, D] (DSHB), K: [B, H_kv, L, D]
     d.B = graph.size_at<int64_t>(-4, q);
@@ -86,7 +95,9 @@ bool is_single_token(ComputeGraph* graph, const ValueRef& q_projected) {
 // Unified attn_weights resize. In LLM mode the shape is padded to multiples of
 // 4 in the S/context_len dims (to match the tiled shader's iteration space);
 // in fused mode it's the unpadded [B, H, S, L].
-// resize_args layout: [q, k, input_pos_symint_or_dummy, mode_as_int]
+// resize_args layout:
+// [q, k, input_pos_symint_or_dummy, mode, window_or_dummy,
+//  max_query_len_or_minus_one, max_context_len_or_minus_one]
 void resize_sdpa_attn_weights_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -96,13 +107,32 @@ void resize_sdpa_attn_weights_node(
   const ValueRef k = resize_args.at(1);
   const ValueRef input_pos_symint = resize_args.at(2);
   const SDPAMode mode = static_cast<SDPAMode>(resize_args.at(3));
+  const ValueRef window_size = resize_args.at(4);
 
   std::vector<int64_t> out_sizes;
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     const int64_t num_q_heads = graph->size_at<int64_t>(-2, q);
     const int64_t seq_len = graph->size_at<int64_t>(-3, q);
     const int32_t input_pos_val = graph->read_symint(input_pos_symint);
-    const int64_t context_len = seq_len + input_pos_val;
+    int64_t context_len = seq_len + input_pos_val;
+    if (mode == SDPAMode::RING) {
+      const int64_t window = graph->extract_scalar<int64_t>(window_size);
+      const int64_t oldest_pos =
+          std::max<int64_t>(input_pos_val - window + 1, 0);
+      context_len -= oldest_pos;
+    }
+    const int64_t max_query_len =
+        graph->extract_scalar<int64_t>(resize_args.at(5));
+    const int64_t max_context_len =
+        graph->extract_scalar<int64_t>(resize_args.at(6));
+    if (max_query_len >= 0) {
+      VK_CHECK_COND(
+          seq_len <= max_query_len,
+          "SDPA sequence length exceeds its allocated capacity");
+      VK_CHECK_COND(
+          context_len <= max_context_len,
+          "SDPA context length exceeds its allocated capacity");
+    }
     out_sizes = {
         1,
         num_q_heads,
@@ -123,6 +153,8 @@ void resize_sdpa_attn_weights_softmax_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
   const ValueRef attn_weights_softmax = args.at(0).refs.at(0);
   const ValueRef attn_weights = args.at(1).refs.at(0);
 
@@ -163,7 +195,7 @@ GlobalWorkGrid kv_cache_update_gwg(
 }
 
 // resize_args layout for SDPA dispatch pickers mirrors the node creation
-// helper: [q, k, input_pos_symint_or_dummy, mode_as_int].
+// helper: [q, k, input_pos_symint_or_dummy, mode, window_or_dummy].
 static inline SDPAMode mode_of(const std::vector<ValueRef>& resize_args) {
   return static_cast<SDPAMode>(resize_args.at(3));
 }
@@ -240,13 +272,16 @@ vkapi::ShaderInfo pick_sdpa_qk_shader(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const SDPAMode mode = mode_of(resize_args);
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     const ValueRef q_projected = args.at(1).refs.at(0);
     const ValueRef k_cache = args.at(1).refs.at(1);
     const bool is_gemv = is_single_token(graph, q_projected);
 
     std::string shader_name = "sdpa_compute_attn_weights";
     shader_name += is_gemv ? "_coop" : "_tiled";
+    if (mode == SDPAMode::RING) {
+      shader_name += "_ring";
+    }
     add_storage_type_suffix(shader_name, graph->storage_type_of(q_projected));
     add_storage_type_suffix(shader_name, graph->storage_type_of(k_cache));
     add_dtype_suffix(shader_name, graph->dtype_of(q_projected));
@@ -276,7 +311,9 @@ GlobalWorkGrid pick_sdpa_qk_gwg(
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
   const ValueRef input_pos_symint = resize_args.at(2);
-  const SDPADims d = compute_sdpa_dims(*graph, q, k, input_pos_symint, mode);
+  const ValueRef window_size = resize_args.at(4);
+  const SDPADims d =
+      compute_sdpa_dims(*graph, q, k, input_pos_symint, window_size, mode);
 
   // Dispatch grid: (context_len tiles, S tiles, H * B).
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.context_len));
@@ -298,7 +335,7 @@ LocalWorkGroup pick_sdpa_qk_lwg(
     return pick_required_lwg(graph, shader, gwg, args, resize_args);
   }
   const SDPAMode mode = mode_of(resize_args);
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
   }
   return default_pick_lwg(graph, shader, gwg, args, resize_args);
@@ -314,14 +351,14 @@ GlobalWorkGrid pick_sdpa_softmax_gwg(
   const ValueRef q = resize_args.at(0);
   // LLM reads H from axis -2, fused from axis -3 (handled by
   // compute_sdpa_dims).
-  const int64_t num_q_heads = (mode == SDPAMode::LLM)
+  const int64_t num_q_heads = (mode != SDPAMode::FUSED)
       ? graph->size_at<int64_t>(-2, q)
       : graph->size_at<int64_t>(-3, q);
-  const int64_t seq_len = (mode == SDPAMode::LLM)
+  const int64_t seq_len = (mode != SDPAMode::FUSED)
       ? graph->size_at<int64_t>(-3, q)
       : graph->size_at<int64_t>(-2, q);
   const int64_t B =
-      (mode == SDPAMode::LLM) ? 1 : graph->size_at<int64_t>(-4, q);
+      (mode != SDPAMode::FUSED) ? 1 : graph->size_at<int64_t>(-4, q);
   return GlobalWorkGrid(
       {1u,
        static_cast<uint32_t>(seq_len),
@@ -335,7 +372,7 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   const SDPAMode mode = mode_of(resize_args);
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     const ValueRef out = args.at(0).refs.at(0);
     const ValueRef v_cache = args.at(1).refs.at(1);
     const ValueRef q_projected = resize_args.at(0);
@@ -343,7 +380,7 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
 
     // Test-only knob (see SDPA.h): -1 auto, 0 forces per-query-head, 1 forces
     // the GQA-reuse shader.
-    const ValueRef shader_override = resize_args.at(4);
+    const ValueRef shader_override = resize_args.at(5);
 
     std::string shader_name = "sdpa_compute_out";
     if (is_gemv) {
@@ -371,6 +408,9 @@ vkapi::ShaderInfo pick_sdpa_av_shader(
     } else {
       shader_name += "_tiled";
     }
+    if (mode == SDPAMode::RING) {
+      shader_name += "_ring";
+    }
     add_storage_type_suffix(shader_name, graph->storage_type_of(out));
     add_storage_type_suffix(shader_name, graph->storage_type_of(v_cache));
     add_dtype_suffix(shader_name, graph->dtype_of(out));
@@ -395,7 +435,9 @@ GlobalWorkGrid pick_sdpa_av_gwg(
   const ValueRef q = resize_args.at(0);
   const ValueRef k = resize_args.at(1);
   const ValueRef input_pos_symint = resize_args.at(2);
-  const SDPADims d = compute_sdpa_dims(*graph, q, k, input_pos_symint, mode);
+  const ValueRef window_size = resize_args.at(4);
+  const SDPADims d =
+      compute_sdpa_dims(*graph, q, k, input_pos_symint, window_size, mode);
 
   const uint32_t N4 = utils::div_up_4(static_cast<uint32_t>(d.D));
   const uint32_t M4 = utils::div_up_4(static_cast<uint32_t>(d.S));
@@ -437,7 +479,7 @@ LocalWorkGroup pick_sdpa_av_lwg(
     return pick_required_lwg(graph, shader, gwg, args, resize_args);
   }
   const SDPAMode mode = mode_of(resize_args);
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     return pick_xy_square_lwg(graph, shader, gwg, args, resize_args);
   }
   return default_pick_lwg(graph, shader, gwg, args, resize_args);
@@ -518,14 +560,17 @@ void add_sdpa_compute_attn_weights_node(
     const ValueRef attn_mask,
     const float scale_val,
     const ValueRef attn_weights,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const ValueRef window_size,
+    const int64_t max_query_len,
+    const int64_t max_context_len) {
   vkapi::ParamsBindList param_ubos = {
       graph.sizes_ubo(q),
       graph.sizes_ubo(k),
   };
   std::vector<ValueRef> read_inputs = {q, k};
 
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     param_ubos.append(graph.get_or_create_int_param_buffer(input_pos_symint));
   } else if (is_valid(attn_mask)) {
     param_ubos.append(graph.sizes_ubo(attn_mask));
@@ -533,6 +578,12 @@ void add_sdpa_compute_attn_weights_node(
   }
 
   const ValueRef mode_ref = static_cast<ValueRef>(mode);
+  vkapi::SpecVarList spec_vars = {scale_val};
+  if (mode == SDPAMode::RING) {
+    spec_vars.append(
+        utils::safe_downcast<int32_t>(
+            graph.extract_scalar<int64_t>(window_size)));
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -546,9 +597,16 @@ void add_sdpa_compute_attn_weights_node(
       // Push Constants
       {},
       // Specialization Constants
-      {scale_val},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      spec_vars,
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, window,
+      //               max_query_len, max_context_len]
+      {q,
+       k,
+       input_pos_symint,
+       mode_ref,
+       window_size,
+       graph.add_scalar<int64_t>(max_query_len),
+       graph.add_scalar<int64_t>(max_context_len)},
       // Resizing Logic
       resize_sdpa_attn_weights_node));
 }
@@ -560,10 +618,14 @@ void add_sdpa_attn_weights_softmax_node(
     const ValueRef k,
     const ValueRef input_pos_symint,
     const ValueRef attn_weights_softmax,
-    const SDPAMode mode) {
+    const SDPAMode mode,
+    const ValueRef window_size) {
   std::string shader_name;
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     shader_name = "sdpa_attn_weights_softmax";
+    if (mode == SDPAMode::RING) {
+      shader_name += "_ring";
+    }
     add_storage_type_suffix(
         shader_name, graph.storage_type_of(attn_weights_softmax));
     add_dtype_suffix(shader_name, graph.dtype_of(attn_weights_softmax));
@@ -575,7 +637,7 @@ void add_sdpa_attn_weights_softmax_node(
   }
 
   vkapi::ParamsBindList param_ubos;
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     param_ubos = {
         graph.sizes_ubo(q),
         graph.sizes_ubo(k),
@@ -585,6 +647,12 @@ void add_sdpa_attn_weights_softmax_node(
   }
 
   const ValueRef mode_ref = static_cast<ValueRef>(mode);
+  vkapi::SpecVarList spec_vars = {};
+  if (mode == SDPAMode::RING) {
+    spec_vars.append(
+        utils::safe_downcast<int32_t>(
+            graph.extract_scalar<int64_t>(window_size)));
+  }
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -598,9 +666,9 @@ void add_sdpa_attn_weights_softmax_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode]
-      {q, k, input_pos_symint, mode_ref},
+      spec_vars,
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, window]
+      {q, k, input_pos_symint, mode_ref, window_size},
       // Resizing Logic
       resize_sdpa_attn_weights_softmax_node));
 }
@@ -614,9 +682,10 @@ void add_sdpa_compute_out_node(
     const ValueRef input_pos_symint,
     const ValueRef out,
     const SDPAMode mode,
-    const ValueRef shader_override) {
+    const ValueRef shader_override,
+    const ValueRef window_size) {
   vkapi::ParamsBindList param_ubos;
-  if (mode == SDPAMode::LLM) {
+  if (mode != SDPAMode::FUSED) {
     param_ubos = {
         graph.sizes_ubo(q),
         graph.sizes_ubo(v),
@@ -635,7 +704,17 @@ void add_sdpa_compute_out_node(
   // build time (Hq/Hkv/capability don't change across decode steps), matching
   // pick_sdpa_av_shader.
   vkapi::SpecVarList spec_vars = {};
-  if (mode == SDPAMode::LLM) {
+  if (mode == SDPAMode::RING) {
+    const int64_t num_q_heads = graph.size_at<int64_t>(-2, q);
+    const int64_t num_kv_heads = graph.size_at<int64_t>(-2, v);
+    int32_t group_size = 1;
+    if (resolve_use_gqa(&graph, shader_override, num_q_heads, num_kv_heads)) {
+      group_size = utils::safe_downcast<int32_t>(num_q_heads / num_kv_heads);
+    }
+    const int32_t window = utils::safe_downcast<int32_t>(
+        graph.extract_scalar<int64_t>(window_size));
+    spec_vars = {1.0f, group_size, window};
+  } else if (mode == SDPAMode::LLM) {
     const int64_t num_q_heads = graph.size_at<int64_t>(-2, q);
     const int64_t num_kv_heads = graph.size_at<int64_t>(-2, v);
     if (resolve_use_gqa(&graph, shader_override, num_q_heads, num_kv_heads)) {
@@ -658,8 +737,8 @@ void add_sdpa_compute_out_node(
       {},
       // Specialization Constants
       spec_vars,
-      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, shader_override]
-      {q, k, input_pos_symint, mode_ref, shader_override},
+      // Resize Args: [q, k, input_pos_symint_or_dummy, mode, window, override]
+      {q, k, input_pos_symint, mode_ref, window_size, shader_override},
       // Resizing Logic
       resize_sdpa_out_node));
 }
@@ -722,19 +801,35 @@ void update_cache_with_indices_impl(
   add_sdpa_kv_cache_update_indices_node(graph, value, cache, indices);
 }
 
-void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void cached_sdpa_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const SDPAMode mode) {
   int arg_idx = 0;
   const ValueRef q_projected = args[arg_idx++];
   const ValueRef k_cache = args[arg_idx++];
   const ValueRef v_cache = args[arg_idx++];
   const ValueRef input_pos_symint = args[arg_idx++];
-  const ValueRef attn_mask = args[arg_idx++];
-  const ValueRef dropout_p = args[arg_idx++];
-  const ValueRef is_causal = args[arg_idx++];
-  const ValueRef scale = args[arg_idx++];
+  ValueRef window_size = kDummyValueRef;
+  ValueRef out = kDummyValueRef;
+  if (mode == SDPAMode::RING) {
+    window_size = args[arg_idx++];
+    out = args[arg_idx++];
+  } else {
+    const ValueRef attn_mask = args[arg_idx++];
+    const ValueRef dropout_p = args[arg_idx++];
+    const ValueRef is_causal = args[arg_idx++];
+    const ValueRef scale = args[arg_idx++];
+    out = args[arg_idx++];
 
-  // Output tensors
-  const ValueRef out = args[arg_idx++];
+    VK_CHECK_COND(
+        graph.val_is_none(dropout_p) ||
+        graph.extract_scalar<double>(dropout_p) == 0);
+    VK_CHECK_COND(graph.val_is_none(scale));
+    VK_CHECK_COND(
+        graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
+    VK_CHECK_COND(graph.val_is_none(attn_mask));
+  }
 
   // Batches must be 1
   VK_CHECK_COND(graph.size_at<int32_t>(-4, q_projected) == 1);
@@ -750,19 +845,19 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   VK_CHECK_COND(graph.packed_dim_of(q_projected) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(k_cache) == WHCN::kWidthDim);
   VK_CHECK_COND(graph.packed_dim_of(v_cache) == WHCN::kWidthDim);
-  // Some variables are not supported yet
-  VK_CHECK_COND(
-      graph.val_is_none(dropout_p) ||
-      graph.extract_scalar<double>(dropout_p) == 0);
-  VK_CHECK_COND(graph.val_is_none(scale));
-  // is_causal is assumed to be true in the current implementation.
-  VK_CHECK_COND(
-      graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
-  VK_CHECK_COND(graph.val_is_none(attn_mask));
-
   const int64_t num_q_heads = graph.size_at<int64_t>(-2, q_projected);
-  int64_t max_seq_len = graph.size_at<int64_t>(-3, q_projected);
-  const int64_t max_context_len = graph.size_at<int32_t>(-3, k_cache);
+  // This is the largest query handled by one invocation, not the total stream
+  // length or cache capacity.
+  int64_t max_query_len = graph.size_at<int64_t>(-3, q_projected);
+  const int64_t cache_len = graph.size_at<int64_t>(-3, k_cache);
+  int64_t max_context_len = cache_len;
+  if (mode == SDPAMode::RING) {
+    const int64_t window = graph.extract_scalar<int64_t>(window_size);
+    VK_CHECK_COND(window > 0);
+    VK_CHECK_COND(max_query_len <= window);
+    VK_CHECK_COND(cache_len >= window + max_query_len - 1);
+    max_context_len = std::min(cache_len, window + max_query_len - 1);
+  }
 
   const utils::StorageType attn_weights_storage =
       graph.storage_type_of(q_projected);
@@ -781,23 +876,22 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // If using buffer storage for attn weights, ensure the buffer numel limit is
   // not exceeded by the PADDED allocation. Checking the raw (unpadded) sizes is
   // insufficient: padding can push the actual allocation past the limit even
-  // when the raw size fits — e.g. max_seq_len=2047 pads to 2048, so
+  // when the raw size fits — e.g. max_query_len=2047 pads to 2048, so
   // 32*2048*2048 lands exactly on maxStorageBufferRange/4 and the shaders index
   // out of bounds, corrupting attention output.
   if (attn_weights_storage == utils::kBuffer) {
-    const int64_t max_buffer_numel =
-        graph.max_buffer_nbytes() /
+    const int64_t max_buffer_numel = graph.max_buffer_nbytes() /
         static_cast<int64_t>(vkapi::element_size(graph.dtype_of(q_projected)));
-    if (num_q_heads * utils::align_up_4(max_seq_len) * padded_context_len >=
+    if (num_q_heads * utils::align_up_4(max_query_len) * padded_context_len >=
         max_buffer_numel) {
-      // Largest max_seq_len whose padded allocation stays under the limit.
-      max_seq_len = max_buffer_numel / (num_q_heads * padded_context_len);
+      // Largest query whose padded allocation stays under the limit.
+      max_query_len = max_buffer_numel / (num_q_heads * padded_context_len);
       // Round down to a multiple of 4 (so align_up_4 is a no-op below) and keep
       // the allocation strictly below the limit.
-      if (max_seq_len % 4 != 0) {
-        max_seq_len = (max_seq_len / 4) * 4;
+      if (max_query_len % 4 != 0) {
+        max_query_len = (max_query_len / 4) * 4;
       } else {
-        max_seq_len -= 4;
+        max_query_len -= 4;
       }
     }
   }
@@ -805,7 +899,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   std::vector<int64_t> attn_weight_full_sizes = {
       1, // batch
       num_q_heads,
-      utils::align_up_4(max_seq_len),
+      utils::align_up_4(max_query_len),
       padded_context_len};
 
   TmpTensor attn_weights(
@@ -833,7 +927,10 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*attn_mask=*/kDummyValueRef,
       scale_val,
       attn_weights,
-      SDPAMode::LLM);
+      mode,
+      window_size,
+      max_query_len,
+      max_context_len);
 
   add_sdpa_attn_weights_softmax_node(
       graph,
@@ -842,7 +939,8 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       k_cache,
       input_pos_symint,
       attn_weights_softmax,
-      SDPAMode::LLM);
+      mode,
+      window_size);
 
   add_sdpa_compute_out_node(
       graph,
@@ -852,7 +950,17 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       /*k=*/kDummyValueRef,
       input_pos_symint,
       out,
-      SDPAMode::LLM);
+      mode,
+      kDummyValueRef,
+      window_size);
+}
+
+void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  cached_sdpa_impl(graph, args, SDPAMode::LLM);
+}
+
+void ring_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  cached_sdpa_impl(graph, args, SDPAMode::RING);
 }
 
 void sdpa_with_kv_cache_impl(
@@ -1034,11 +1142,9 @@ void fused_sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (attn_storage == utils::kBuffer) {
     const int64_t elements_per_query = B * H * L;
     VK_CHECK_COND(elements_per_query > 0);
-    const int64_t max_buffer_numel =
-        graph.max_buffer_nbytes() /
+    const int64_t max_buffer_numel = graph.max_buffer_nbytes() /
         static_cast<int64_t>(vkapi::element_size(vkapi::ScalarType::Float));
-    const int64_t max_buffer_query_len =
-        max_buffer_numel / elements_per_query;
+    const int64_t max_buffer_query_len = max_buffer_numel / elements_per_query;
     VK_CHECK_COND(
         max_buffer_query_len > 0,
         "fused SDPA attention weights exceed maxStorageBufferRange");
@@ -1100,6 +1206,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(
       update_cache_with_indices.default, update_cache_with_indices_impl);
   VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
+  VK_REGISTER_OP(et_vk.ring_sdpa.default, ring_sdpa_impl);
   VK_REGISTER_OP(
       testing.compute_attn_weight_with_kv_cache.default,
       compute_attn_weight_with_kv_cache_impl);
