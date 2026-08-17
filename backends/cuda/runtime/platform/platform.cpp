@@ -75,7 +75,7 @@ executorch::runtime::Result<void*> load_library(
 
 #else
   // Before loading the delegate .so, we need to ensure symbols from the current
-  // process (e.g. the Python extension) are globally visible. Python loads
+  // process (e.g. this backend library) are globally visible. Python loads
   // modules with RTLD_LOCAL by default, so we re-open the current module with
   // RTLD_GLOBAL | RTLD_NOLOAD to promote its symbols to global visibility.
   // This allows the delegate .so to resolve symbols like aoti_torch_dtype_*.

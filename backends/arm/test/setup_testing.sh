@@ -84,6 +84,7 @@ ops_list_u85=(
     aten::bmm.out
     aten::scalar_tensor.out
     aten::index.Tensor_out
+    aten::copy_
     aten::where.self_out
     dim_order_ops::_to_dim_order_copy.out
     "${ops_list_quantized_decomposed[@]}"
