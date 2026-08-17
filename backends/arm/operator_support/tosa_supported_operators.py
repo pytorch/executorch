@@ -762,6 +762,15 @@ class CheckProperQuantization(OperatorSupportBase):
             input_node = node.all_input_nodes[0]
             input_quantized = FuseQuantizedActivationPass._is_fuseable_input(input_node)
 
+        if any(
+            isinstance(input_node.meta["val"], torch.SymInt)
+            for input_node in node.all_input_nodes
+        ):
+            self.reporter.report_reject(
+                node, "Symbolic scalar inputs cannot be delegated."
+            )
+            return False
+
         input_quantized = input_quantized or all(
             (input_node.target in DQ_OPS)
             or _is_integer_dtype(get_first_fake_tensor(input_node).dtype)
