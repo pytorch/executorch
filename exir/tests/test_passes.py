@@ -1621,6 +1621,42 @@ class TestPasses(unittest.TestCase):
         edge.exported_program()._validate()
         edge.to_executorch()
 
+    def test_constant_prop_preserves_memory_alloc(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        for custom_skip_targets in (None, set()):
+            with self.subTest(custom_skip_targets=custom_skip_targets):
+                edge = to_edge(
+                    export(Add(), (torch.ones(1),), strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=False),
+                )
+                exported_program = edge.exported_program()
+                [add] = exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+                with exported_program.graph.inserting_before(add):
+                    alloc = exported_program.graph.call_function(
+                        memory.alloc, args=(((1,), torch.float32),)
+                    )
+                alloc.meta["val"] = torch.empty(1, dtype=torch.float32, device="meta")
+                add.args = (add.args[0], alloc)
+                exported_program.graph_module.recompile()
+
+                new_ep = constant_prop_pass(
+                    exported_program, custom_skip_targets=custom_skip_targets
+                )
+
+                self.assertEqual(
+                    new_ep.graph.find_nodes(op="call_function", target=memory.alloc),
+                    [alloc],
+                )
+                self.assertNotIn(alloc.name, new_ep.constants)
+                FileCheck().check("executorch_exir_memory_alloc").check_not(
+                    "_prop_tensor_constant"
+                ).run(new_ep.graph_module.code)
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:

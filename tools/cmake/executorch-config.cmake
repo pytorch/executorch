@@ -28,6 +28,11 @@ cmake_minimum_required(VERSION 3.24)
 include(CMakeFindDependencyMacro)
 find_package(tokenizers CONFIG)
 
+# Load dependencies published by enabled backend targets.
+include("${CMAKE_CURRENT_LIST_DIR}/executorch-backend-dependencies.cmake"
+        OPTIONAL
+)
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 # Included before the library list is built, because the list depends on which
 # runtime this install actually contains.
@@ -39,30 +44,19 @@ include("${CMAKE_CURRENT_LIST_DIR}/ExecuTorchTargets.cmake")
 # library carries the core, so it replaces the static runtime, but measurement
 # shows it does not contain the kernels: dropping the kernels target here leaves
 # a consumer with no operators at all. That target still pulls the static core
-# in behind it, so a second copy remains present. On Linux both copies resolve
-# to the executable's and it runs; on macOS each image binds its own, so the two
-# diverge. Removing the last copy needs a shared kernels library, which is a
-# change to what gets built.
-if(TARGET executorch-shared)
+# in behind it, so a second copy remains present, and ELF resolves both to the
+# executable's definition, so the program is correct.
+#
+# Mach-O does not: each image binds its own definition, so the copies never
+# converge and code inside the shared runtime sees a different registry from the
+# one the application registered into. Apple therefore keeps the all-static list
+# this file handed out before the shared library existed, where there is one
+# copy and nothing to diverge. Handing out the shared runtime there too means
+# dropping every archive in the optional list below that is already bundled into
+# it, which is a wider change than the one that added the library.
+if(TARGET executorch-shared AND NOT APPLE)
   set(required_lib_list portable_kernels)
   set(EXECUTORCH_LIBRARIES executorch-shared)
-  if(APPLE)
-    # The kernels target pulls the static core in behind it, so this
-    # configuration links two copies of the registry. On Linux both resolve to
-    # the executable's and the program is correct. Mach-O binds each image to
-    # its own definition, so the copies never converge and code inside the
-    # shared runtime sees a different registry from the one the application
-    # registered into. Said out loud because the result is wrong rather than
-    # slow, and silent.
-    message(
-      WARNING
-        "executorch: this shared install links two kernel registries on macOS, so operators "
-        "registered by your application are not visible to code running inside the shared "
-        "runtime. If your program depends on registration crossing that boundary, rebuild "
-        "and reinstall ExecuTorch with EXECUTORCH_BUILD_SHARED=OFF, which installs the "
-        "static runtime this config then hands out instead."
-    )
-  endif()
 else()
   set(required_lib_list executorch executorch_core portable_kernels)
   set(EXECUTORCH_LIBRARIES)
