@@ -328,6 +328,12 @@ def test_fuse_consecutive_cast(request, kwargs):
 
 @enumerate_backends()
 @repack_pass_fixtures
+def test_fuse_consecutive_reshape(request, kwargs):
+    FuseConsecutiveReshape.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends()
+@repack_pass_fixtures
 def test_fuse_consecutive_transpose(request, kwargs):
     FuseConsecutiveTranspose.test(request, kwargs)  # noqa: F405
 
