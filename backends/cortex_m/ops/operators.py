@@ -137,6 +137,42 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_add_nhwc("
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max) -> Tensor"
+)
+
+lib.define(
+    "quantized_add_nhwc.out("
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+def _quantized_binary_meta(
+    self: torch.Tensor,
+    other: torch.Tensor,
+    op_name: str,
+    channel_dim: int,
+    require_channels_last: bool,
+) -> torch.Tensor:
+    assert self.shape == other.shape or is_channel_broadcast(
+        self,
+        other,
+        channel_dim=channel_dim,
+        require_channels_last=require_channels_last,
+    ), (
+        f"Cortex-M {op_name}: broadcasting is not yet supported except for channel dim — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    return torch.empty_like(self if self.numel() > other.numel() else other)
+
 
 @register_fake("cortex_m::quantized_add")  # type: ignore[misc]
 def quantized_add_meta(
@@ -154,15 +190,79 @@ def quantized_add_meta(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
-        "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
+    return _quantized_binary_meta(
+        self,
+        other,
+        "quantized_add",
+        channel_dim=1,
+        require_channels_last=True,
+    )
+
+
+@register_fake("cortex_m::quantized_add_nhwc")  # type: ignore[misc]
+def quantized_add_nhwc_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    return _quantized_binary_meta(
+        self,
+        other,
+        "quantized_add_nhwc",
+        channel_dim=3,
+        require_channels_last=False,
+    )
+
+
+def _quantized_add_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    activation_min: int,
+    activation_max: int,
+    channel_dim: int,
+    require_channels_last: bool,
+    op_name: str,
+) -> torch.Tensor:
+    assert self.shape == other.shape or is_channel_broadcast(
+        self,
+        other,
+        channel_dim=channel_dim,
+        require_channels_last=require_channels_last,
+    ), (
+        f"Cortex-M {op_name}: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
-    if self.numel() > other.numel():
-        output_tensor = self
-    else:
-        output_tensor = other
-    return torch.empty_like(output_tensor)
+    self_shifted = (self.to(torch.int32) - self_zero_point) << SHIFT_INT8
+    self_fp = requantize_cmsis(self_shifted, self_multiplier, self_shift)
+
+    other_shifted = (other.to(torch.int32) - other_zero_point) << SHIFT_INT8
+    other_fp = requantize_cmsis(other_shifted, other_multiplier, other_shift)
+
+    result_fp = self_fp + other_fp
+    result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
+    result = torch.clamp(
+        result_quantized + output_zero_point, activation_min, activation_max
+    ).to(torch.int8)
+    return result
 
 
 @impl(lib, "quantized_add", "CompositeExplicitAutograd")  # type: ignore[misc]
@@ -181,22 +281,60 @@ def quantized_add_impl(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
-        "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
-        f"got self.shape={self.shape}, other.shape={other.shape}"
+    return _quantized_add_impl(
+        self,
+        self_zero_point,
+        self_multiplier,
+        self_shift,
+        other,
+        other_zero_point,
+        other_multiplier,
+        other_shift,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        activation_min,
+        activation_max,
+        channel_dim=1,
+        require_channels_last=True,
+        op_name="quantized_add",
     )
-    self_shifted = (self.to(torch.int32) - self_zero_point) << SHIFT_INT8
-    self_fp = requantize_cmsis(self_shifted, self_multiplier, self_shift)
 
-    other_shifted = (other.to(torch.int32) - other_zero_point) << SHIFT_INT8
-    other_fp = requantize_cmsis(other_shifted, other_multiplier, other_shift)
 
-    result_fp = self_fp + other_fp
-    result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
-    result = torch.clamp(
-        result_quantized + output_zero_point, activation_min, activation_max
-    ).to(torch.int8)
-    return result
+@impl(lib, "quantized_add_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_add_nhwc_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    return _quantized_add_impl(
+        self,
+        self_zero_point,
+        self_multiplier,
+        self_shift,
+        other,
+        other_zero_point,
+        other_multiplier,
+        other_shift,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        activation_min,
+        activation_max,
+        channel_dim=3,
+        require_channels_last=False,
+        op_name="quantized_add_nhwc",
+    )
 
 
 # ===================================================================
@@ -216,6 +354,20 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_mul_nhwc("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_mul_nhwc.out("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 @register_fake("cortex_m::quantized_mul")  # type: ignore[misc]
 def quantized_mul_meta(
@@ -227,16 +379,64 @@ def quantized_mul_meta(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
-    # Broadcast to output shape
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
-        "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
+    return _quantized_binary_meta(
+        self,
+        other,
+        "quantized_mul",
+        channel_dim=1,
+        require_channels_last=True,
+    )
+
+
+@register_fake("cortex_m::quantized_mul_nhwc")  # type: ignore[misc]
+def quantized_mul_nhwc_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    return _quantized_binary_meta(
+        self,
+        other,
+        "quantized_mul_nhwc",
+        channel_dim=3,
+        require_channels_last=False,
+    )
+
+
+def _quantized_mul_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    channel_dim: int,
+    require_channels_last: bool,
+    op_name: str,
+) -> torch.Tensor:
+    # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
+    # only uses the output multiplier/shift for rescaling. Mirror that here to
+    # keep the composite implementation numerically aligned with the backend.
+    assert self.shape == other.shape or is_channel_broadcast(
+        self,
+        other,
+        channel_dim=channel_dim,
+        require_channels_last=require_channels_last,
+    ), (
+        f"Cortex-M {op_name}: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
-    if self.numel() > other.numel():
-        output_tensor = self
-    else:
-        output_tensor = other
-    return torch.empty_like(output_tensor)
+    self_int = self.to(torch.int32) - self_zero_point
+    other_int = other.to(torch.int32) - other_zero_point
+    result_fp = self_int * other_int
+    result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
+    result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
+    return result
 
 
 @impl(lib, "quantized_mul", "CompositeExplicitAutograd")  # type: ignore[misc]
@@ -249,19 +449,42 @@ def quantized_mul_impl(
     output_multiplier: int,
     output_shift: int,
 ) -> torch.Tensor:
-    # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
-    # only uses the output multiplier/shift for rescaling. Mirror that here to
-    # keep the composite implementation numerically aligned with the backend.
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
-        "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
-        f"got self.shape={self.shape}, other.shape={other.shape}"
+    return _quantized_mul_impl(
+        self,
+        self_zero_point,
+        other,
+        other_zero_point,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        channel_dim=1,
+        require_channels_last=True,
+        op_name="quantized_mul",
     )
-    self_int = self.to(torch.int32) - self_zero_point
-    other_int = other.to(torch.int32) - other_zero_point
-    result_fp = self_int * other_int
-    result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
-    result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
-    return result
+
+
+@impl(lib, "quantized_mul_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_mul_nhwc_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    return _quantized_mul_impl(
+        self,
+        self_zero_point,
+        other,
+        other_zero_point,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        channel_dim=3,
+        require_channels_last=False,
+        op_name="quantized_mul_nhwc",
+    )
 
 
 # ===================================================================
@@ -669,6 +892,13 @@ lib.define(
     "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
+lib.define(
+    "pad_nhwc(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor"
+)
+lib.define(
+    "pad_nhwc.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
 
 
 _NHWC_INV_ORDER = [0, 3, 1, 2]
@@ -717,6 +947,39 @@ def pad_impl(
     padding = []
     for i in reversed(range(rank)):
         padding.extend([logical_pre[offset + i], logical_post[offset + i]])
+    return F.pad(input, padding, mode="constant", value=pad_value)
+
+
+@register_fake("cortex_m::pad_nhwc")  # type: ignore[misc]
+def pad_nhwc_meta(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    del pad_value
+    if input.dim() != 4:
+        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
+    output_shape = [input.shape[dim] + pre_pad[dim] + post_pad[dim] for dim in range(4)]
+    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
+
+
+@impl(lib, "pad_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def pad_nhwc_impl(
+    input: torch.Tensor,
+    pre_pad: list[int],
+    post_pad: list[int],
+    pad_value: int,
+) -> torch.Tensor:
+    if input.dim() != 4:
+        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
+    padding = []
+    for dim in reversed(range(4)):
+        padding.extend([pre_pad[dim], post_pad[dim]])
     return F.pad(input, padding, mode="constant", value=pad_value)
 
 
@@ -915,6 +1178,91 @@ def quantized_conv2d_impl(
     return result.to(torch.int8, memory_format=torch.channels_last)
 
 
+lib.define(
+    "quantized_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_conv2d_nhwc")  # type: ignore[misc]
+def quantized_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
 # ===================================================================
 # QUANTIZED DEPTHWISE CONV2D OPERATION DEFINITION
 # ===================================================================
@@ -1060,6 +1408,95 @@ def quantized_depthwise_conv2d_impl(
     result = torch.clamp(result, activation_min, activation_max)
 
     return result.to(torch.int8, memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_depthwise_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int depth_multiplier, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_depthwise_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] dilation, int depth_multiplier, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_depthwise_conv2d_nhwc")  # type: ignore[misc]
+def quantized_depthwise_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    depth_multiplier: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_depthwise_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        depth_multiplier,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_depthwise_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_depthwise_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    depth_multiplier: int,
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_depthwise_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        depth_multiplier,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1270,6 +1707,100 @@ def quantized_transpose_conv2d_impl(
     return result.to(torch.int8).to(memory_format=torch.channels_last)
 
 
+lib.define(
+    "quantized_transpose_conv2d_nhwc("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] output_padding, int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "Tensor output_scratch) -> Tensor"
+)
+lib.define(
+    "quantized_transpose_conv2d_nhwc.out("
+    "Tensor input, Tensor weight, Tensor? bias, int[] stride, int[] padding, "
+    "int[] output_padding, int[] dilation, int input_offset, int output_offset, "
+    "Tensor requantize_multipliers, Tensor requantize_shifts, "
+    "int activation_min, int activation_max, Tensor scratch, "
+    "Tensor output_scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_transpose_conv2d_nhwc")  # type: ignore[misc]
+def quantized_transpose_conv2d_nhwc_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_transpose_conv2d_meta(
+        input.permute(0, 3, 1, 2),
+        weight,
+        bias,
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+        output_scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_transpose_conv2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_transpose_conv2d_nhwc_impl(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    stride: Sequence[int],
+    padding: Sequence[int],
+    output_padding: Sequence[int],
+    dilation: Sequence[int],
+    input_offset: int,
+    output_offset: int,
+    requantize_multipliers: torch.Tensor,
+    requantize_shifts: torch.Tensor,
+    activation_min: int,
+    activation_max: int,
+    scratch: torch.Tensor,
+    output_scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_transpose_conv2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        weight,
+        bias,
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        input_offset,
+        output_offset,
+        requantize_multipliers,
+        requantize_shifts,
+        activation_min,
+        activation_max,
+        scratch,
+        output_scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
 # ===================================================================
 # QUANTIZED AVG_POOL2D OPERATION DEFINITION
 # ===================================================================
@@ -1363,6 +1894,72 @@ def quantized_avg_pool2d_impl(
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
     output = torch.clamp(result, -128, 127)
     return output.to(torch.int8)
+
+
+lib.define(
+    "quantized_avg_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch) -> Tensor"
+)
+lib.define(
+    "quantized_avg_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "bool ceil_mode, int zero_point, int multiplier, int shift, "
+    "Tensor scratch, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_avg_pool2d_nhwc")  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_avg_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_avg_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    ceil_mode: bool,
+    zero_point: int,
+    multiplier: int,
+    shift: int,
+    scratch: torch.Tensor,
+) -> torch.Tensor:
+    nchw = quantized_avg_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        zero_point,
+        multiplier,
+        shift,
+        scratch,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================
@@ -1520,3 +2117,74 @@ def quantized_max_pool2d_impl(
     )
     result = torch.clamp(result, activation_min, activation_max)
     return result.to(torch.int8).contiguous(memory_format=torch.channels_last)
+
+
+lib.define(
+    "quantized_max_pool2d_nhwc("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max) -> Tensor"
+)
+lib.define(
+    "quantized_max_pool2d_nhwc.out("
+    "Tensor input, int[] kernel_size, int[] stride, int[] padding, "
+    "int[] dilation, bool ceil_mode, int input_zero_point, "
+    "int output_zero_point, int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_max_pool2d_nhwc")  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_meta(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_meta(
+        input.permute(0, 3, 1, 2),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_max_pool2d_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_max_pool2d_nhwc_impl(
+    input: torch.Tensor,
+    kernel_size: Sequence[int],
+    stride: Sequence[int],
+    padding: Sequence[int],
+    dilation: Sequence[int],
+    ceil_mode: bool,
+    input_zero_point: int,
+    output_zero_point: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    nchw = quantized_max_pool2d_impl(
+        input.permute(0, 3, 1, 2).contiguous(),
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        input_zero_point,
+        output_zero_point,
+        activation_min,
+        activation_max,
+    )
+    return nchw.permute(0, 2, 3, 1).contiguous()

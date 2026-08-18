@@ -56,8 +56,10 @@ ops_list=(
     cortex_m::quantize_per_tensor.out
     cortex_m::dequantize_per_tensor.out
     cortex_m::quantized_add.out
+    cortex_m::quantized_add_nhwc.out
     cortex_m::quantized_div.out
     cortex_m::quantized_mul.out
+    cortex_m::quantized_mul_nhwc.out
     cortex_m::quantized_activation.out
     cortex_m::minimum.out
     cortex_m::maximum.out
@@ -65,11 +67,17 @@ ops_list=(
     cortex_m::softmax.out
     cortex_m::transpose.out
     cortex_m::pad.out
+    cortex_m::pad_nhwc.out
     cortex_m::quantized_conv2d.out
+    cortex_m::quantized_conv2d_nhwc.out
     cortex_m::quantized_depthwise_conv2d.out
+    cortex_m::quantized_depthwise_conv2d_nhwc.out
     cortex_m::quantized_transpose_conv2d.out
+    cortex_m::quantized_transpose_conv2d_nhwc.out
     cortex_m::quantized_avg_pool2d.out
+    cortex_m::quantized_avg_pool2d_nhwc.out
     cortex_m::quantized_max_pool2d.out
+    cortex_m::quantized_max_pool2d_nhwc.out
     cortex_m::quantized_batch_matmul.out
 )
 
