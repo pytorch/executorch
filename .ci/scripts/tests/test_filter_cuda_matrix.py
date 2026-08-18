@@ -158,15 +158,15 @@ class TestKeep(unittest.TestCase):
 class TestGates(unittest.TestCase):
     def _exit_message(self, matrix, limit="false", extra=None):
         """The stderr text of the gate that fired, so a case can name which one it hit."""
-        import io
         import contextlib
+        import io
 
+        argv = ["--matrix", json.dumps(matrix), "--limit-pr-builds", limit] + (
+            extra or []
+        )
         captured = io.StringIO()
         with contextlib.redirect_stderr(captured):
             with self.assertRaises(SystemExit) as raised:
-                argv = ["--matrix", json.dumps(matrix), "--limit-pr-builds", limit] + (
-                    extra or []
-                )
                 FILTER.main(argv)
         self.assertNotEqual(raised.exception.code, 0)
         return captured.getvalue()

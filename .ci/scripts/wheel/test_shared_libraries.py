@@ -300,6 +300,74 @@ def _linked_libraries(library) -> str | None:
     return result.stdout + result.stderr
 
 
+def _recorded_dependencies(library) -> set:
+    """The library names this one records a dependency on, without resolving them.
+
+    ELF names them in NEEDED entries of the dynamic section, already as bare file
+    names. Mach-O names them in LC_LOAD_DYLIB commands, which otool -L prints as the
+    install name, a path, so only its last component is comparable with the ELF answer.
+
+    The tool is required rather than optional, because a caller cannot tell an empty
+    result apart from one this could not read, and the second is a passing check that
+    examined nothing.
+    """
+    if sys.platform == "darwin":
+        tool = _tool("otool")
+        assert tool is not None, "otool is required to inspect the wheel"
+        # The first line names the file itself, and each later line is one dependency
+        # followed by the version information otool appends in parentheses.
+        return {
+            Path(line.strip().split(" (", 1)[0]).name
+            for line in subprocess.run(
+                [tool, "-L", str(library)], capture_output=True, text=True, check=True
+            ).stdout.splitlines()[1:]
+            if line.strip()
+        }
+    tool = _tool("readelf")
+    assert tool is not None, "readelf is required to inspect the wheel"
+    return {
+        line.split("[", 1)[1].rstrip("]").strip()
+        for line in subprocess.run(
+            [tool, "-d", str(library)], capture_output=True, text=True, check=True
+        ).stdout.splitlines()
+        if "NEEDED" in line
+    }
+
+
+def _recorded_identity(library) -> str | None:
+    """The name this library tells a consumer to record when linking against it.
+
+    ELF calls it the soname. Mach-O calls it the install name and spells it as a path,
+    usually relative to the consumer's runtime search path, so the two compare only by
+    the last component.
+    """
+    if sys.platform == "darwin":
+        tool = _tool("otool")
+        assert tool is not None, "otool is required to inspect the wheel"
+        # otool -D prints the file name it was given, then the install name if the
+        # library has one. A library without one prints only the first line.
+        lines = [
+            line.strip()
+            for line in subprocess.run(
+                [tool, "-D", str(library)], capture_output=True, text=True, check=True
+            ).stdout.splitlines()[1:]
+            if line.strip()
+        ]
+        return Path(lines[0]).name if lines else None
+    tool = _tool("readelf")
+    assert tool is not None, "readelf is required to inspect the wheel"
+    return next(
+        (
+            line.split("[", 1)[1].rstrip("]").strip()
+            for line in subprocess.run(
+                [tool, "-d", str(library)], capture_output=True, text=True, check=False
+            ).stdout.splitlines()
+            if "SONAME" in line
+        ),
+        None,
+    )
+
+
 def _runtime_search_paths(library) -> list | None:
     """The runtime search path entries recorded in a shipped library.
 
@@ -1587,9 +1655,6 @@ def test_extension_contains_no_component() -> None:
     what the shipped libraries own, and records a dependency on each instead.
     """
     assert _tool("nm") is not None, "nm is required to inspect the wheel"
-    if _tool("readelf") is None:
-        print("- readelf unavailable, skipping the extension composition check")
-        return
 
     package_dir = _installed_package_dir()
     extensions = sorted((package_dir / "extension" / "pybindings").glob("_C.*.so"))
@@ -1636,16 +1701,7 @@ def test_extension_contains_no_component() -> None:
 
     # And it has to actually depend on each shipped library. Defining nothing while
     # depending on nothing would be an extension that cannot work at all.
-    needed = {
-        line.split("[", 1)[1].rstrip("]").strip()
-        for line in subprocess.run(
-            [_tool("readelf"), "-d", str(extension)],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.splitlines()
-        if "NEEDED" in line
-    }
+    needed = _recorded_dependencies(extension)
     # Only the libraries whose code the extension used to contain. Those are the ones
     # this split moved out of it, so the extension must now resolve them from outside or
     # a retention option silently failed.
@@ -1784,35 +1840,18 @@ def test_shipped_library_names_are_expected() -> None:
         "and it ships while looking correct to every other check."
     )
 
-    if _tool("readelf") is None:
-        print(f"✓ {len(shipped)} shipped libraries have expected names")
-        return
-
-    # The recorded soname has to match the file name, or a consumer records a
+    # The recorded identity has to match the file name, or a consumer records a
     # dependency on a name the wheel does not contain.
     mismatched = {}
     for library in shipped:
-        dynamic = subprocess.run(
-            [_tool("readelf"), "-d", str(library)],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        soname = next(
-            (
-                line.split("[", 1)[1].rstrip("]").strip()
-                for line in dynamic.splitlines()
-                if "SONAME" in line
-            ),
-            None,
-        )
-        if soname != library.name:
-            mismatched[library.name] = soname
+        identity = _recorded_identity(library)
+        if identity != library.name:
+            mismatched[library.name] = identity
     assert not mismatched, (
-        "shipped libraries record a soname that is not their file name, so a "
+        "shipped libraries record an identity that is not their file name, so a "
         f"consumer would look for a file the wheel does not ship: {mismatched}"
     )
-    print(f"✓ {len(shipped)} shipped libraries have expected names and sonames")
+    print(f"✓ {len(shipped)} shipped libraries have expected names and identities")
 
 
 _PARITY_MODEL = '''
