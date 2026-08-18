@@ -31,10 +31,28 @@ def define_operator_test_target(op):
         ]
     )
 
+def define_tester_target():
+    runtime.python_library(
+        name = "tester",
+        srcs = ["tester.py"],
+        visibility = ["PUBLIC"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/arm/test:common",
+            "//executorch/backends/arm/test:arm_tester" if runtime.is_oss else "//executorch/backends/arm/test/tester/fb:arm_tester_fb",
+            "//executorch/backends/cortex_m:edge_compile_config",
+            "//executorch/backends/cortex_m:target_config",
+            "//executorch/backends/cortex_m/passes:cortex_passes",
+            "//executorch/backends/cortex_m/quantizer:quantizer",
+            "//executorch/backends/test/harness:tester",
+        ],
+    )
+
 def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat."""
     for op in OPERATORS:
         define_operator_test_target(op)
+    define_tester_target()
 
     if is_fbcode:
         python_unittest(
@@ -65,6 +83,24 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m:target_config",
                 "//executorch/backends/cortex_m/ops:ops",
                 "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/exir:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )
+
+        python_pytest(
+            name = "test_explicit_layout_host",
+            srcs = ["test_explicit_layout.py"],
+            compile = "with-source",
+            pytest_cmd_args = ["-k", "not runs_on_fvp"],
+            typing = False,
+            deps = [
+                ":tester",
+                "//caffe2:torch",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/ops:ops",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/test/harness:tester",
                 "//executorch/exir:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
             ],

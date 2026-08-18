@@ -30,23 +30,33 @@ from executorch.backends.test.harness.stages import (
 
 
 class CortexMQuantize(Quantize):
-    def __init__(self, calibration_samples=None):
-        quantizer = CortexMQuantizer()
+    def __init__(self, calibration_samples=None, use_explicit_layout: bool = False):
+        quantizer = CortexMQuantizer(use_explicit_layout=use_explicit_layout)
         super().__init__(quantizer, calibration_samples=calibration_samples)
 
 
 class CortexMToEdge(ToEdge):
-    def __init__(self):
-        super().__init__(cortex_m_edge_compile_config())
+    def __init__(self, use_explicit_layout: bool = False):
+        super().__init__(
+            cortex_m_edge_compile_config(use_explicit_layout=use_explicit_layout)
+        )
 
 
 class CortexMRunPasses(RunPasses):
-    def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+    def __init__(
+        self,
+        target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
+    ):
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
         # Pre-bind the target_config so it flows through that 2-arg call.
         super().__init__(
-            partial(CortexMPassManager, target_config=target_config),  # type: ignore[arg-type]
+            partial(
+                CortexMPassManager,
+                target_config=target_config,
+                use_explicit_layout=use_explicit_layout,
+            ),  # type: ignore[arg-type]
             CortexMPassManager.pass_list,  # type: ignore[arg-type]
         )
 
@@ -80,17 +90,26 @@ class CortexMTester(TesterBase):
         module,
         example_inputs,
         target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
     ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
         else:
             resolved_example_inputs = example_inputs
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
+        self.use_explicit_layout = use_explicit_layout
         stage_classes: dict[StageType, Callable[..., Any]] = dict(
             cortex_m_stage_classes
         )
+        stage_classes[StageType.QUANTIZE] = lambda: CortexMQuantize(
+            use_explicit_layout=use_explicit_layout
+        )
+        stage_classes[StageType.TO_EDGE] = lambda: CortexMToEdge(
+            use_explicit_layout=use_explicit_layout
+        )
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
-            target_config=target_config
+            target_config=target_config,
+            use_explicit_layout=use_explicit_layout,
         )
         stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
             target_config=target_config
@@ -110,7 +129,8 @@ class CortexMTester(TesterBase):
         """
         if calibration_samples is not None:
             quantization_stage = CortexMQuantize(
-                calibration_samples=calibration_samples
+                calibration_samples=calibration_samples,
+                use_explicit_layout=self.use_explicit_layout,
             )
         else:
             quantization_stage = None
@@ -132,7 +152,8 @@ class CortexMTester(TesterBase):
 
         if calibration_samples is not None:
             quantization_stage = CortexMQuantize(
-                calibration_samples=calibration_samples
+                calibration_samples=calibration_samples,
+                use_explicit_layout=self.use_explicit_layout,
             )
         else:
             quantization_stage = None
