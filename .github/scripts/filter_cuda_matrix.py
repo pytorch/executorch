@@ -17,8 +17,9 @@ A row is kept only when both of these hold:
   a GPU exists that the row's device code covers
   a PyTorch build is published for that CUDA version and architecture
 
-Running a real model before release is a separate gate, on hardware that has the matching
-GPU, so this filter decides only which rows exist and not whether they were exercised.
+The x86_64 rows run a model as part of their smoke test, because their runner has a GPU.
+The aarch64 rows have no accelerator, so that check skips there and prints why. This filter
+decides only which rows exist, not what each one checks.
 
 The values below are the current answers to those questions. They are written out rather
 than derived because each one is an external fact that can change independently.
