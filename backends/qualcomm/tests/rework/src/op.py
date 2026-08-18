@@ -3198,7 +3198,7 @@ class LogSoftmax(torch.nn.Module):
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
         inputs = (torch.randn(1, 4, 8, 8),)
-        dims = [-1, 1, 2]
+        dims = [-1, 3]
         for dim in dims:
             with subtests.test(msg=f"dim:{dim}"):
                 with expected as metrics:

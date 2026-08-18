@@ -7787,6 +7787,32 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_compared_events=expected_compared_events,
         )
 
+    def test_qnn_backend_dump_intermediate_outputs_conv_relu(self):
+        match get_backend_type(self.backend):
+            case QnnExecuTorchBackendType.kHtpBackend:
+                backend_options = generate_htp_compiler_spec(use_fp16=False)
+            case QnnExecuTorchBackendType.kLpaiBackend:
+                backend_options = generate_lpai_compiler_spec(
+                    target_env=self.get_lpai_target_env()
+                )
+            case _:
+                raise ValueError("Backend is not implemented yet")
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.chipset_table[TestQNN.soc_model],
+            backend_options=backend_options,
+            dump_intermediate_outputs=True,
+        )
+        sample_input = (torch.randn(1, 3, 8, 8),)
+        module = ConvRelu()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_compared_events=2,
+        )
+
     def test_qnn_backend_dump_intermediate_outputs_topk(self):
         torch.manual_seed(8)
         backend_options = generate_htp_compiler_spec(use_fp16=False)
