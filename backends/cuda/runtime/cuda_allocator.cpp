@@ -8,9 +8,8 @@
 
 #include <executorch/backends/cuda/runtime/cuda_allocator.h>
 
-#include <cuda_runtime.h>
-
 #include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch::backends::cuda {
