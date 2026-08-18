@@ -744,7 +744,15 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
     source_dir.mkdir(parents=True, exist_ok=True)
     (source_dir / "consumer.cpp").write_text("int main() { return 0; }\n")
 
-    for requested, must_accept in ((release, True), ("0.1", True), (too_new, False)):
+    cases = [(release, True), (too_new, False)]
+    # A request one major below the installed package is rejected in the same way as one above it.
+    # ExecuTorch promises nothing across that boundary, so a consumer written against the older
+    # major must not be handed this one: it would configure against a package it has never seen and
+    # fail later, at compile or run time, instead of here. Only meaningful once there is a major
+    # below this one to ask for.
+    if int(major) >= 1:
+        cases.append((f"{int(major) - 1}.1", False))
+    for requested, must_accept in cases:
         # Deliberately the older floor: this probe never links an imported target, so it also checks
         # that version acceptance answers correctly below the version those targets need.
         (source_dir / "CMakeLists.txt").write_text(
@@ -775,7 +783,7 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
         )
     print(
         f"✓ find_package honours a version request (installed {installed}, "
-        f"accepts {release}, rejects {too_new})"
+        f"accepts {release}, rejects every other major)"
     )
 
 
@@ -1129,8 +1137,8 @@ def _provision_pre_328_cmake(work_dir: Path) -> str:
 
     The route this check exercises is only reachable with such a binary, and a
     release builder is not obliged to carry one, so fetch it rather than leaving
-    the check permanently skipped. Failure to fetch is not a test failure: the
-    caller reports the missing coverage instead.
+    the check permanently skipped. A failed fetch returns empty and the caller
+    decides what that means, which differs between a local run and a release job.
     """
     override = os.environ.get("EXECUTORCH_PRE_328_CMAKE", "")
     if override and Path(override).is_file():
@@ -1171,15 +1179,22 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
     with whatever cmake is on PATH. So a consumer stuck on an older cmake would find at
     run time that the wheel produced no usable link.
 
-    Runs only when EXECUTORCH_PRE_328_CMAKE points at a cmake binary older than 3.28,
-    since a released wheel is not obliged to carry one. Skipped otherwise, with a
-    message that says so, so a build that has no old cmake still reports the coverage
-    it lacks rather than reporting green.
+    Uses the binary EXECUTORCH_PRE_328_CMAKE names, or fetches one. A local run with no
+    old cmake and no package index says so and moves on. A release job does not: the
+    fetch is the only thing standing between this route and no coverage at all, and a
+    transient index failure that turns into a green run is how the route would be
+    published unexercised.
     """
     old_cmake = os.environ.get("EXECUTORCH_PRE_328_CMAKE", "")
     if not old_cmake or not Path(old_cmake).is_file():
         old_cmake = _provision_pre_328_cmake(work_dir)
     if not old_cmake:
+        assert os.environ.get("GITHUB_ACTIONS") != "true", (
+            "no cmake older than 3.28 could be provisioned, so the route the wheel "
+            "offers every consumer below that version went unchecked. Point "
+            "EXECUTORCH_PRE_328_CMAKE at one, or restore the job's access to the "
+            "package index."
+        )
         print(
             "- no cmake older than 3.28 is available, skipping the pre-3.28 route "
             "check"
@@ -1238,10 +1253,13 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
 
     consumer = build_dir / "consumer"
     assert consumer.is_file(), f"the build produced no {consumer}"
+    # Run it. Linking proves the variables name the right files; only executing proves
+    # they also leave the program able to find them at run time, which is the half of
+    # this route that no imported target is there to supply.
+    model, reference = _export(work_dir, "plain")
+    _run_consumer(consumer, model, reference, work_dir)
     # The runtime and CPU kernels have to be on the link line, since the variables are
-    # the only thing that carries them on this route. Reading the dynamic section rather
-    # than running because running needs a model, which the modern-CMake tests above
-    # cover once and this one only owns the variables path.
+    # the only thing that carries them on this route.
     dependencies = subprocess.run(
         ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=False
     ).stdout
@@ -1254,8 +1272,8 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
         "through it would fail at run time with operators reported missing"
     )
     print(
-        f"✓ a consumer on CMake {major}.{minor} builds through EXECUTORCH_LIBRARIES "
-        "and links the runtime plus the CPU kernels"
+        f"✓ a consumer on CMake {major}.{minor} builds through EXECUTORCH_LIBRARIES, "
+        "links the runtime plus the CPU kernels, and runs"
     )
 
 
