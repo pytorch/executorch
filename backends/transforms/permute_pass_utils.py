@@ -76,7 +76,6 @@ def get_transposed_dims(
 
 def get_permuted_dims(node: torch.fx.Node, dims: List[int]) -> List[int]:
     """Applies the permutation as given by node onto the dimensions given in input."""
-    assert node.target == exir_ops.edge.aten.permute_copy.default
     # pyre-fixme[6]: This combined typecheck isn't supported yet.
     permute_dims: List[int] = list(node.args[1])
     assert all(isinstance(x, int) for x in permute_dims)
