@@ -140,6 +140,8 @@ class ArmPass(ExportPass):
         self.submodule_depth += 1
         if self.submodule_depth == 1:
             result = super().call_submodule(graph_module, inputs)
+        elif self.should_run_pass(graph_module):
+            result = super().call_submodule(graph_module, inputs)
         else:
             # When we trace a submodule, we don't want to apply the calling pass.
             # Temporarily replace call_operator to avoid this.
