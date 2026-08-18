@@ -20,7 +20,9 @@ MI300X (`gfx942`); CI is configured to exercise `gfx950`.
 - Installed CMake consumers must be able to find the HIP package.
 - Voxtral Realtime has an explicit ROCm workflow. Other model runners do not
   claim ROCm support. The gfx950 CI job covers the backend build, native
-  runtime, AOTI export and execution, and Triton W4 tests.
+  runtime, AOTI export and execution, and Triton W4 tests. Sampled CI is
+  configured to run the streaming packed-W4/BF16 Voxtral path; offline and
+  performance validation remain manual.
 
 ## Build
 
