@@ -686,7 +686,14 @@ _OWNED_COMPONENTS = (
     # that already exists catches a regression rather than a later reader discovering it.
     (
         "platform layer",
-        ("et_pal_emit_log_message",),
+        (
+            # The strong accessors, not the emit hook next to them. That hook is a weak
+            # default so a program supplying none still links, and a weak definition cannot
+            # express ownership. A second copy of these two is a genuinely split platform
+            # layer.
+            "executorch::runtime::register_pal",
+            "executorch::runtime::get_pal_impl",
+        ),
         _library_file_name("libexecutorch"),
         True,
     ),
@@ -779,7 +786,7 @@ _OWNED_COMPONENTS = (
 # library and again into the library torch loads at export time, because each side registers into a
 # table the other never reads, so a second definer there is expected rather than a fault. A process
 # that loads both does abort on the second registration, which is why this is named per component and
-# the check stays armed for the other ten, where a second definer means two registries or two thread
+# the check stays armed for every other component, where a second definer means two registries or two thread
 # pools in one process.
 _COMPONENTS_WITH_AN_EXPORT_COPY = frozenset({"set of quantized kernels"})
 

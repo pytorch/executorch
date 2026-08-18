@@ -40,3 +40,20 @@ if [ -n "${_executorch_cuda_arch}" ]; then
   export TORCH_CUDA_ARCH_LIST="${_executorch_cuda_arch}"
   echo "building device code for: ${TORCH_CUDA_ARCH_LIST}"
 fi
+
+# Exporting a model through the CUDA delegate compiles a kernel library with this image's C++
+# compiler and then loads it in the same process. That compiler is newer than the base image, so
+# unless its own libstdc++ is on the loader path the load stops on a missing GLIBCXX version while
+# the older system copy is picked up instead. Asked of the compiler rather than hard-coded, because
+# the directory moves between images, and asked of the same compiler the exporter will use, which
+# is CXX when set and g++ otherwise.
+_executorch_libstdcxx="$("${CXX:-g++}" -print-file-name=libstdc++.so.6 2>/dev/null)"
+case "${_executorch_libstdcxx}" in
+  /*)
+    if [ -f "${_executorch_libstdcxx}" ]; then
+      _executorch_libstdcxx_dir="$(cd "$(dirname "${_executorch_libstdcxx}")" && pwd)"
+      export LD_LIBRARY_PATH="${_executorch_libstdcxx_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+      echo "C++ runtime for compiled kernels: ${_executorch_libstdcxx_dir}"
+    fi
+    ;;
+esac

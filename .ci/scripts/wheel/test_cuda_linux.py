@@ -16,12 +16,11 @@ still be unusable:
   the loader path can point at the build machine's toolkit, which no user has
   the device code can cover no GPU the row claims, which only appears when a model runs
 
-This does not execute a model. The aarch64 rows have no GPU to execute one on, because their
-validation runner has no accelerator, so for those rows inspection is all that is available
-here. The x86_64 rows do run on a GPU runner, so a model-execution check is possible there and
-its absence is a gap rather than a limit. What runs a model on real hardware before a
-publication is a separate release-time step that a person owns today, not an automated job
-wired into these workflows.
+A model-execution check runs where a device exists. The x86_64 rows land on a GPU runner, so
+a model is exported through the CUDA partitioner and run there, and its output is compared
+against eager. The aarch64 rows have no accelerator on their validation runner, so that check
+skips and prints why, which keeps a green result on those rows from standing for work that did
+not happen. Everything else here is inspection of the shipped artifacts, which needs no device.
 """
 
 import os

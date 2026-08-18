@@ -132,13 +132,7 @@ else()
   # CUDA rejects outright. Ask CMake to detect the builder's GPU instead, which
   # is what a source build wants.
   if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
-    # An empty list makes nvcc fall back to its own default, which current CUDA
-    # rejects outright. Detection is not the answer either: on a machine without
-    # a usable device it resolves to an architecture nvcc already warns it will
-    # stop supporting. Name the two datacentre architectures the release rows
-    # build for, so a source build produces device code that runs on the same
-    # GPUs the wheels target.
-    set(CMAKE_CUDA_ARCHITECTURES "80;86")
+    set(CMAKE_CUDA_ARCHITECTURES native)
   endif()
   message(
     STATUS "CUDA architectures left to torch: ${CMAKE_CUDA_ARCHITECTURES}"
@@ -198,7 +192,7 @@ target_compile_options(
 
 # Link against ExecuTorch core libraries
 target_link_libraries(cuda_platform PRIVATE ${CMAKE_DL_LIBS})
-if(TARGET executorch_shared)
+if(EXECUTORCH_BUILD_SHARED)
   # Resolve the runtime from the shared library rather than from the static
   # core, for the same reason the backend below does: the shims library that
   # ships in the wheel links this one, so taking the static core here gives a
