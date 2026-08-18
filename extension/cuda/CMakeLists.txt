@@ -16,6 +16,10 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+endif()
+
 # SHARED on purpose: the caller-stream thread-local must have a single
 # definition across every shared object in the process (see export.h). A static
 # copy linked into multiple shared libraries would create multiple thread-locals
@@ -33,7 +37,11 @@ endif()
 # No CUDA headers or libraries: caller_stream.cpp uses cudaStream_t as an opaque
 # handle and calls no CUDA function, so it compiles without cuda_runtime.h and
 # needs no libcudart. Anything else that links this library and does call CUDA
-# links the runtime itself.
+# links the runtime itself. ROCm is the exception: the handle is a hip type
+# there, so the header needs hip's own.
+if(EXECUTORCH_BUILD_ROCM)
+  target_link_libraries(extension_cuda PUBLIC hip::host)
+endif()
 target_include_directories(extension_cuda PUBLIC ${_common_include_directories})
 target_compile_options(
   extension_cuda PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_common_compile_options}>"
@@ -41,6 +49,9 @@ target_compile_options(
 target_compile_definitions(
   extension_cuda PRIVATE EXECUTORCH_EXTENSION_CUDA_BUILDING
 )
+if(EXECUTORCH_BUILD_ROCM)
+  target_compile_definitions(extension_cuda PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
 
 install(
   TARGETS extension_cuda

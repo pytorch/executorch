@@ -28,16 +28,24 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-# Use dynamic linking for CUDA runtime
+# Use dynamic linking for the GPU runtime.
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
-find_package(CUDAToolkit REQUIRED)
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  set(_cuda_runtime_libraries hip::host)
+  set(_cuda_include_directories "")
+else()
+  find_package(CUDAToolkit REQUIRED)
+  set(_cuda_runtime_libraries CUDA::cudart)
+  set(_cuda_include_directories ${CUDAToolkit_INCLUDE_DIRS})
+endif()
 
 # Try to enable CUDA language when a working CUDA compiler toolchain is
 # available. Some CI environments (notably Windows packaging jobs) provide
 # CUDAToolkit headers/libs but cannot complete CUDA compiler identification. In
 # those cases, keep configuration working and skip CUDA-only sources below.
-if(NOT CMAKE_CUDA_COMPILER)
+if(NOT EXECUTORCH_BUILD_ROCM AND NOT CMAKE_CUDA_COMPILER)
   include(CheckLanguage)
   check_language(CUDA)
 endif()
@@ -64,23 +72,22 @@ endif()
 # value and cannot be read as a caller's intent: doing so replaced torch's
 # autodetected architecture with CMake's default and broke the build on a device
 # the default does not cover.
-if(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
+if(EXECUTORCH_BUILD_ROCM)
+  # ROCm never enables the CUDA language below, so there is no architecture list
+  # to choose and nothing here would be read.
+elseif(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
   string(REPLACE "." "" _executorch_cuda_arch_list "$ENV{TORCH_CUDA_ARCH_LIST}")
   string(REPLACE " " ";" _executorch_cuda_arch_list
                  "${_executorch_cuda_arch_list}"
   )
-  # torch spells a request for the portable form as a "+PTX" suffix, which nvcc
-  # rejects literally. Drop the suffix rather than expanding it into a separate
-  # -virtual entry: an unsuffixed CMake architecture already asks for both the
-  # compiled and the portable form, measured as code=[compute_120,sm_120] for a
-  # bare "120", so the extra entry only duplicates a gencode that is already
-  # there.
   set(_executorch_cuda_arch_resolved "")
   # Mapped to CMake's explicit kinds rather than left bare. A bare number asks
   # nvcc for both the binary and the portable form, which measured at about 2.5x
   # the device code for a four architecture row. Only the newest needs the
   # portable form, since that is what lets a device newer than every entry here
-  # run this code by compiling it on load.
+  # run this code by compiling it on load. torch's own "+PTX" spelling of that
+  # request is dropped on the way, because nvcc rejects the suffix literally and
+  # the -virtual entry below already covers what it asks for.
   foreach(_arch IN LISTS _executorch_cuda_arch_list)
     string(REGEX REPLACE "\\+PTX$" "" _arch "${_arch}")
     list(APPEND _executorch_cuda_arch_resolved "${_arch}-real")
@@ -139,7 +146,7 @@ else()
   )
 endif()
 
-if(CMAKE_CUDA_COMPILER)
+if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
 
@@ -215,8 +222,8 @@ set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
-# Only build CUDA shims when CUDA language/toolchain is available.
-if(CMAKE_CUDA_COMPILER)
+# Only build CUDA-only operator shims when the CUDA toolchain is available.
+if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   list(
     APPEND
     _aoti_cuda_shim_sources
@@ -234,6 +241,9 @@ add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
 
 # Define CUDA_AVAILABLE to use SlimTensor on GPU in common_shims_slim.h
 target_compile_definitions(aoti_cuda_shims PRIVATE CUDA_AVAILABLE=1)
+if(EXECUTORCH_BUILD_ROCM)
+  target_compile_definitions(aoti_cuda_shims PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
 
 # Define export macros for shared library. Use WIN32 (not just MSVC) so MinGW
 # cross-compiles also emit dllexport symbols for AOTI shims.
@@ -249,7 +259,7 @@ endif()
 
 target_include_directories(
   aoti_cuda_shims
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${_cuda_include_directories} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
 
@@ -268,8 +278,8 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart extension_cuda
-                            ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform ${_cuda_runtime_libraries}
+                            extension_cuda ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -285,7 +295,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform -Wl,--whole-archive aoti_common_shims_slim
             -Wl,--no-whole-archive
-    PUBLIC CUDA::cudart extension_cuda ${CMAKE_DL_LIBS}
+    PUBLIC ${_cuda_runtime_libraries} extension_cuda ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -336,9 +346,12 @@ add_library(
 
 target_include_directories(
   aoti_cuda_backend
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${_cuda_include_directories} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
+if(EXECUTORCH_BUILD_ROCM)
+  target_compile_definitions(aoti_cuda_backend PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
 target_compile_options(
   aoti_cuda_backend
   PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_cuda_cxx_compile_options}>"
@@ -353,8 +366,9 @@ endif()
 # directory. On other platforms, use PUBLIC so the dependency propagates to
 # consumers.
 target_link_libraries(
-  aoti_cuda_backend PUBLIC cuda_platform extension_tensor CUDA::cudart
-                           extension_cuda ${CMAKE_DL_LIBS}
+  aoti_cuda_backend
+  PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
+         extension_cuda ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)

@@ -141,6 +141,19 @@ _ETDUMP_SYMBOLS = ("executorch::etdump::ETDumpGen::ETDumpGen",)
 # "                 U <name>" for an undefined reference.
 _DEFINED = re.compile(r"^[0-9a-fA-F]+\s+(?P<kind>[A-Za-z])\s+(?P<name>.+)$")
 
+# Thin and fat Mach-O headers, both byte orders, used to tell a file the Mach-O
+# tools should have been able to read from one that merely carries their suffix.
+_MACH_O_MAGIC = frozenset(
+    {
+        b"\xcf\xfa\xed\xfe",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xfe\xed\xfa\xce",
+        b"\xca\xfe\xba\xbe",
+        b"\xbe\xba\xfe\xca",
+    }
+)
+
 # Symbol kinds that mean the object owns the code or storage.
 _OWNING_KINDS = frozenset("TtBbDdGgSsRrWV")
 
@@ -455,6 +468,7 @@ def _assert_mach_o_architecture_matches(wheel: Path) -> None:
             "cannot be checked against anything"
         )
         mismatched = []
+        unreadable = []
         for binary in binaries:
             result = subprocess.run(
                 [lipo, "-archs", str(binary)],
@@ -463,10 +477,25 @@ def _assert_mach_o_architecture_matches(wheel: Path) -> None:
                 check=False,
             )
             if result.returncode != 0:
+                # Skipping every unreadable file would let a wheel whose binaries
+                # lipo cannot parse pass having inspected none of them. Something
+                # merely named .so that is not a Mach-O file is not this check's
+                # concern; the magic bytes tell the two apart without depending on
+                # how lipo words its refusal.
+                with binary.open("rb") as handle:
+                    header = handle.read(4)
+                if header in _MACH_O_MAGIC:
+                    unreadable.append(
+                        f"{binary.relative_to(root)}: {result.stderr.strip()[:120]}"
+                    )
                 continue
             present = result.stdout.split()
             if declared not in present:
                 mismatched.append(f"{binary.relative_to(root)} is {' '.join(present)}")
+    assert not unreadable, (
+        f"lipo could not read these Mach-O files in {wheel.name}, so the architecture "
+        f"check covered less than the wheel ships: {unreadable}"
+    )
     assert not mismatched, (
         f"the wheel claims architecture {declared} but these binaries are built for "
         f"something else, so it would install where it cannot run: {mismatched}"
@@ -593,14 +622,21 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     # where ELF prints cpuinfo_initialize. A C++ name demangles to the same text on both,
     # so accepting the prefix is enough and no per-symbol spelling is needed.
     accepted = (symbol, f"_{symbol}") if sys.platform == "darwin" else (symbol,)
+    # Matched whole rather than by prefix. A prefix match also accepts a longer
+    # symbol that merely begins with this one, and reports a second definer of
+    # something no library defines twice. The two suffixes that may follow a
+    # complete name are still allowed: nm prints a demangled C++ definition as
+    # name(args), and a symbol table carrying versions prints name@@version.
     for line in result.stdout.splitlines():
         if symbol not in line:
             continue
         match = _DEFINED.match(line)
-        if (
-            match
-            and match.group("name").startswith(accepted)
-            and match.group("kind") in _OWNING_KINDS
+        if not match or match.group("kind") not in _OWNING_KINDS:
+            continue
+        name = match.group("name")
+        if any(
+            name == spelling or name.startswith((f"{spelling}(", f"{spelling}@"))
+            for spelling in accepted
         ):
             return True
     return False
@@ -1051,6 +1087,210 @@ def _is_torch_library(name: str) -> bool:
     return name.startswith(_TORCH_LIBRARY_PREFIXES)
 
 
+def _dyld_load_failure(library: Path, *, with_torch: bool) -> str:
+    """Load `library` in a fresh interpreter and return dyld's message, or "".
+
+    macOS has no ldd, and otool reports what a library asks for rather than
+    whether the loader can find it, so the load itself has to be the check.
+    RTLD_NOW binds every symbol, which is what makes this the counterpart of
+    `ldd -r` rather than of plain `ldd`.
+
+    A separate process each time, because dyld satisfies a request by install
+    name from what the process has already loaded. Loading in this one would let
+    an earlier library stand in for a later library's dependency, and in the
+    relocated check it would hand back the original file instead of the copy
+    under test, which is the failure that check exists to find.
+    """
+    prologue = "import torch;" if with_torch else ""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"{prologue}import ctypes,os,sys;ctypes.CDLL(sys.argv[1],mode=os.RTLD_NOW)",
+            str(library),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        # Any DYLD_LIBRARY_PATH in the build environment would paper over a
+        # runtime search path the shipped library is actually missing.
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key != "DYLD_LIBRARY_PATH"
+        },
+    )
+    if result.returncode == 0:
+        return ""
+    return (result.stdout + result.stderr).strip()
+
+
+def _dyld_missing_names(message: str) -> list[str]:
+    """The dependency file names dyld reported it could not load."""
+    return [
+        Path(entry).name for entry in re.findall(r"Library not loaded: (\S+)", message)
+    ]
+
+
+def _assert_shipped_libraries_load_with_dyld() -> None:
+    """The macOS half of the load check, split out only because the tool differs.
+
+    The classification is the Linux one: a dependency the wheel ships must resolve
+    here, a dependency it does not ship is the environment's to provide, and an
+    unresolved symbol is a library that would fail at first use rather than at
+    load.
+    """
+    package_dir = _installed_package_dir()
+    libraries = _shipped_shared_objects(package_dir)
+    shipped = {library.name for library in libraries}
+
+    broken = {}
+    unreachable = {}
+    unresolved = {}
+    for library in libraries:
+        message = _dyld_load_failure(library, with_torch=True)
+        if not message:
+            continue
+        key = str(library.relative_to(package_dir))
+        missing = _dyld_missing_names(message)
+        present_but_unreachable = [name for name in missing if name in shipped]
+        absent = [
+            name
+            for name in missing
+            if name not in shipped and not _is_torch_library(name)
+        ]
+        # Interpreter symbols are excluded for the same reason as on Linux: a
+        # library Python loads resolves them from the running interpreter, and
+        # they say nothing about how the wheel is packaged.
+        symbols = [
+            symbol
+            for symbol in re.findall(r"Symbol not found: (\S+)", message)
+            if not re.match(r"_?_?Py", symbol)
+        ]
+        if present_but_unreachable:
+            unreachable[key] = present_but_unreachable
+        if absent:
+            broken[key] = absent
+        if symbols:
+            unresolved[key] = symbols[:5]
+        # A refusal that names neither a library nor a symbol is still a refusal,
+        # and dropping it would turn this check off for whatever caused it.
+        if not (present_but_unreachable or absent or symbols):
+            broken[key] = [message[:200]]
+
+    assert not broken, (
+        "shipped libraries need dependencies that nothing provides, so they will "
+        f"fail to load: {broken}"
+    )
+    assert not unreachable, (
+        "shipped libraries need dependencies the wheel ships but the loader "
+        "cannot reach from them, which usually means a missing rpath entry: "
+        f"{unreachable}"
+    )
+    assert not unresolved, (
+        "shipped libraries reference symbols nothing provides, so they will fail "
+        f"at first use rather than at load: {unresolved}"
+    )
+    print("✓ every shipped library loads in an environment with torch present")
+
+
+def _macho_rpaths(library: Path) -> list[str]:
+    """The LC_RPATH entries a Mach-O file carries, in load command order."""
+    listing = subprocess.run(
+        [_tool("otool"), "-l", str(library)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    paths = []
+    in_rpath = False
+    for line in listing.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("cmd "):
+            in_rpath = stripped == "cmd LC_RPATH"
+        elif in_rpath and stripped.startswith("path "):
+            paths.append(stripped[len("path ") :].rsplit(" (offset", 1)[0])
+            in_rpath = False
+    return paths
+
+
+def _assert_shipped_libraries_relocate_with_dyld() -> None:
+    """The macOS half of the relocated load check.
+
+    Same shape as the Linux one: mirror the layout somewhere else, take away
+    every absolute runtime search path, and see whether what is left still finds
+    the libraries the wheel ships.
+    """
+    if _tool("otool") is None or _tool("install_name_tool") is None:
+        print("- otool or install_name_tool unavailable, skipping the relocated check")
+        return
+
+    package_dir = _installed_package_dir()
+    libraries = _shipped_shared_objects(package_dir)
+    shipped = {library.name for library in libraries}
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        root = Path(work_dir) / package_dir.name
+        # Mirror the layout so a relative path such as @loader_path/../../lib
+        # still points where it would in a real install.
+        for library in libraries:
+            target = root / library.relative_to(package_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(library, target)
+
+        broken = {}
+        for library in libraries:
+            name = str(library.relative_to(package_dir))
+            target = root / library.relative_to(package_dir)
+            for entry in _macho_rpaths(target):
+                # @loader_path and @executable_path are the relative forms this
+                # check exists to prove sufficient. Anything else names a
+                # directory on the machine that built the wheel.
+                if entry.startswith("@"):
+                    continue
+                subprocess.run(
+                    [_tool("install_name_tool"), "-delete_rpath", entry, str(target)],
+                    capture_output=True,
+                    # A failure here would leave the original absolute build paths
+                    # in place, and the load below would then pass by resolving
+                    # through them, which is what this check exists to rule out.
+                    check=True,
+                )
+            remaining = [
+                entry for entry in _macho_rpaths(target) if not entry.startswith("@")
+            ]
+            assert not remaining, (
+                f"{name} still carries the absolute runtime search paths {remaining} "
+                "after they were deleted, so loading it here would prove nothing"
+            )
+
+            message = _dyld_load_failure(target, with_torch=True)
+            if not message:
+                continue
+            missing = _dyld_missing_names(message)
+            # Only wheel-provided dependencies are asserted on, because an external
+            # one is expected to come from the environment. They are still reported,
+            # since silently dropping them would hide a library that resolves only
+            # through an absolute build path.
+            external = [item for item in missing if item not in shipped]
+            if external:
+                print(f"- {name} also needs {external} from the environment")
+            inside = [item for item in missing if item in shipped]
+            if inside:
+                broken[name] = inside
+            elif not missing:
+                # A refusal naming no library at all is not about where files were
+                # found, so it belongs to the load check above rather than here.
+                print(f"- {name} did not load here either: {message[:160]}")
+
+        assert not broken, (
+            "shipped libraries only resolve their wheel-provided dependencies "
+            "through absolute build paths, so they would fail on any other "
+            f"machine: {broken}"
+        )
+    print("✓ every shipped library resolves without the build tree")
+
+
 def test_shipped_libraries_load() -> None:
     """Every shipped library must depend only on things that exist.
 
@@ -1063,14 +1303,17 @@ def test_shipped_libraries_load() -> None:
     dependencies into the process, so they intentionally carry no path to them.
     Only a name nothing in the wheel provides is a real problem.
     """
-    if _tool("ldd") is None:
-        print("- ldd not available, skipping the load check")
-        return
     # Torch has to be installed for this to mean anything: several shipped libraries
     # depend on it and resolve once it is imported. Without it every one of them looks
     # broken, which would report a packaging fault that does not exist.
     if importlib.util.find_spec("torch") is None:
         print("- torch is not installed, skipping the load check")
+        return
+    if sys.platform == "darwin":
+        _assert_shipped_libraries_load_with_dyld()
+        return
+    if _tool("ldd") is None:
+        print("- ldd not available, skipping the load check")
         return
 
     package_dir = _installed_package_dir()
@@ -1183,6 +1426,9 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
     mirrors the wheel layout, drop every absolute runtime path, and check what is
     left is enough.
     """
+    if sys.platform == "darwin":
+        _assert_shipped_libraries_relocate_with_dyld()
+        return
     if _tool("ldd") is None or _tool("patchelf") is None:
         print("- ldd or patchelf unavailable, skipping the relocated load check")
         return
