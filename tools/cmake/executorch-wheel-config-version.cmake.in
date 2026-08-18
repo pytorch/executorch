@@ -23,10 +23,18 @@ set(PACKAGE_VERSION "@EXECUTORCH_VERSION@")
 # compares when an exact build pairing is required.
 set(EXECUTORCH_BUILD_VERSION "@EXECUTORCH_BUILD_VERSION@")
 
-# Any version at least as new as the one requested is compatible. ExecuTorch has
-# no stable ABI promise across majors yet, so this is deliberately permissive;
-# when it does, this is where the rule changes.
+# Any version at least as new as the one requested, within the same major.
+# ExecuTorch promises nothing across a major boundary, so a 2.x package must not
+# answer a request written and tested against 1.x: the consumer would configure
+# against a package it has never seen and fail at compile or run time instead of
+# at find_package. This is CMake's SameMajorVersion rule, which the other package
+# generators in this tree already use.
+string(REGEX MATCH "^[0-9]+" _executorch_installed_major "${PACKAGE_VERSION}")
 if("${PACKAGE_VERSION}" VERSION_LESS "${PACKAGE_FIND_VERSION}")
+  set(PACKAGE_VERSION_COMPATIBLE FALSE)
+elseif(PACKAGE_FIND_VERSION AND NOT "${PACKAGE_FIND_VERSION_MAJOR}" EQUAL
+                               "${_executorch_installed_major}"
+)
   set(PACKAGE_VERSION_COMPATIBLE FALSE)
 else()
   set(PACKAGE_VERSION_COMPATIBLE TRUE)

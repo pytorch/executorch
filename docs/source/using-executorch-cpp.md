@@ -212,6 +212,19 @@ The quantized kernels are deliberately left out of that variable, because loadin
 `executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
 stops the runtime.
 
+The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
+itself, and the adapter opens `libopenvino_c.so` by name when a model first runs. Python callers get
+that path set for them on import; a standalone C++ program does not, so install the runtime and
+point the program at it:
+
+```bash
+pip install "executorch[openvino]"
+export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
+```
+
+Without it the delegate still registers and the program still links, and the failure arrives later,
+when the model is loaded.
+
 ##### What a Core ML trace shows
 
 On macOS a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in total.

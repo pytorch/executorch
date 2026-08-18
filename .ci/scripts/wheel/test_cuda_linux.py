@@ -311,12 +311,21 @@ def test_a_model_runs_through_the_delegate() -> None:
     libraries are all present and correctly linked can still fail to compute, and nothing above would
     notice. The x86_64 rows land on a GPU runner, so this is the row where that can be proven.
 
-    Skipped with the reason rather than silently on a row with no device, so a green result never stands
-    for work that did not happen.
+    Only the aarch64 rows may skip, and they say why, so a green result never stands for work that
+    did not happen. On x86_64 the absent device or the mismatched torch build is itself the failure:
+    that row is the one place execution is proven, and letting it report success for a check it did
+    not run is how a delegate that cannot compute reaches a release.
     """
     import torch
 
+    execution_required = platform.machine() in ("x86_64", "amd64")
+
     if not torch.cuda.is_available():
+        assert not execution_required, (
+            "no CUDA device is visible to this x86_64 row, which is the row that proves the "
+            "delegate computes. The runner lost its GPU or the installed torch cannot reach it; "
+            "either way nothing here executed."
+        )
         print(
             "SKIP: no CUDA device on this runner, so the delegate cannot execute here. "
             "This row still verifies the shipped libraries, their declared dependencies, "
@@ -327,6 +336,10 @@ def test_a_model_runs_through_the_delegate() -> None:
     capability = torch.cuda.get_device_capability(0)
     device = f"sm_{capability[0]}{capability[1]}"
     if device not in torch.cuda.get_arch_list():
+        assert not execution_required, (
+            f"the torch resolved for this x86_64 row carries no code for {device}, the runner's "
+            f"own GPU, so the execution check cannot run: {torch.cuda.get_arch_list()}"
+        )
         print(
             f"SKIP: the installed torch carries no code for {device}, so nothing can run on this "
             f"device regardless of what the wheel ships."
