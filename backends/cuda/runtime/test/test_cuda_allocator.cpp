@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 
 #include <cstdint>
 #include <vector>

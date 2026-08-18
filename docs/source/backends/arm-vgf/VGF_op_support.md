@@ -1,150 +1,165 @@
-# EdgeIR Operator support for the VGF backend
-This list contains operators with silicon acceleration support.
-The ExecuTorch portable kernels allow running more operations with a fallback.
-8x8 designates 8-bit activation and 8-bit weight. 16x8 means 16-bit activation and 8-bit weight.
-Per-tensor and per-channel quantization are supported.
+# PyTorch operator support for the VGF backend
 
-| EdgeIR operator | Compute DType                 | Quantization |
-| --------------- | ------------------------------| ------------ |
-| _log_softmax.default | Static integer quantization | 8x8 |
-| _native_batch_norm_legit_no_training.default | Static integer quantization | 8x8 |
-| _softmax.default | Static integer quantization | 8x8 |
-| _to_copy.default | Static integer quantization | 8x8 |
-| abs.default | Static integer quantization | 8x8 |
-| acos.default | Static integer quantization | 8x8 |
-| acosh.default | Static integer quantization | 8x8 |
-| adaptive_avg_pool2d.default | Static integer quantization | 8x8 |
-| add.Tensor | Static integer quantization | 8x8 |
-| addmm.default | Static integer quantization | 8x8 |
-| alias_copy.default | Static integer quantization | 8x8 |
-| amax.default | Static integer quantization | 8x8 |
-| amin.default | Static integer quantization | 8x8 |
-| any.default | Static integer quantization | 8x8 |
-| arange.start_step | Static integer quantization | 8x8 |
-| asin.default | Static integer quantization | 8x8 |
-| asinh.default | Static integer quantization | 8x8 |
-| atan.default | Static integer quantization | 8x8 |
-| atanh.default | Static integer quantization | 8x8 |
-| avg_pool2d.default | Static integer quantization | 8x8 |
-| bitwise_and.Scalar | Static integer quantization | 8x8 |
-| bitwise_and.Tensor | Static integer quantization | 8x8 |
-| bitwise_left_shift.Scalar | Static integer quantization | 8x8 |
-| bitwise_left_shift.Tensor | Static integer quantization | 8x8 |
-| bitwise_not.default | Static integer quantization | 8x8 |
-| bitwise_or.Scalar | Static integer quantization | 8x8 |
-| bitwise_or.Tensor | Static integer quantization | 8x8 |
-| bitwise_right_shift.Scalar | Static integer quantization | 8x8 |
-| bitwise_right_shift.Tensor | Static integer quantization | 8x8 |
-| bitwise_xor.Scalar | Static integer quantization | 8x8 |
-| bitwise_xor.Tensor | Static integer quantization | 8x8 |
-| bmm.default | Static integer quantization | 8x8 |
-| cat.default | Static integer quantization | 8x8 |
-| ceil.default | Static integer quantization | 8x8 |
-| clamp.default | Static integer quantization | 8x8 |
-| clone.default | Static integer quantization | 8x8 |
-| constant_pad_nd.default | Static integer quantization | 8x8 |
-| convolution.default | Static integer quantization | 8x8 |
-| copy.default | Static integer quantization | 8x8 |
-| cos.default | Static integer quantization | 8x8 |
-| cosh.default | Static integer quantization | 8x8 |
-| cumsum.default | Static integer quantization | 8x8 |
-| div.Tensor | Static integer quantization | 8x8 |
-| div.Tensor_mode | Static integer quantization | 8x8 |
-| elu.default | Static integer quantization | 8x8 |
-| embedding.default | Static integer quantization | 8x8 |
-| eq.Scalar | Static integer quantization | 8x8 |
-| erf.default | Static integer quantization | 8x8 |
-| exp.default | Static integer quantization | 8x8 |
-| expand_copy.default | Static integer quantization | 8x8 |
-| expm1.default | Static integer quantization | 8x8 |
-| eye.default | Static integer quantization | 8x8 |
-| fill.Scalar | Static integer quantization | 8x8 |
-| floor.default | Static integer quantization | 8x8 |
-| floor_divide.default | Static integer quantization | 8x8 |
-| full.default | Static integer quantization | 8x8 |
-| gather.default | Static integer quantization | 8x8 |
-| ge.Scalar | Static integer quantization | 8x8 |
-| ge.Tensor | Static integer quantization | 8x8 |
-| gelu.default | Static integer quantization | 8x8 |
-| glu.default | Static integer quantization | 8x8 |
-| gt.Scalar | Static integer quantization | 8x8 |
-| gt.Tensor | Static integer quantization | 8x8 |
-| hardsigmoid.default | Static integer quantization | 8x8 |
-| hardswish.default | Static integer quantization | 8x8 |
-| hardtanh.default | Static integer quantization | 8x8 |
-| index_select.default | Static integer quantization | 8x8 |
-| le.Scalar | Static integer quantization | 8x8 |
-| le.Tensor | Static integer quantization | 8x8 |
-| leaky_relu.default | Static integer quantization | 8x8 |
-| linear.default | Static integer quantization | 8x8 |
-| linspace.default | Static integer quantization | 8x8 |
-| log.default | Static integer quantization | 8x8 |
-| log1p.default | Static integer quantization | 8x8 |
-| logical_and.default | Static integer quantization | 8x8 |
-| logical_not.default | Static integer quantization | 8x8 |
-| logical_or.default | Static integer quantization | 8x8 |
-| logical_xor.default | Static integer quantization | 8x8 |
-| logit.default | Static integer quantization | 8x8 |
-| lt.Scalar | Static integer quantization | 8x8 |
-| lt.Tensor | Static integer quantization | 8x8 |
-| masked_fill.Scalar | Static integer quantization | 8x8 |
-| max.dim | Static integer quantization | 8x8 |
-| maximum.default | Static integer quantization | 8x8 |
-| mean.dim | Static integer quantization | 8x8 |
-| min.dim | Static integer quantization | 8x8 |
-| minimum.default | Static integer quantization | 8x8 |
-| mm.default | Static integer quantization | 8x8 |
-| mul.Tensor | Static integer quantization | 8x8 |
-| multihead_attention.default | Static integer quantization | 8x8 |
-| native_group_norm.default | Static integer quantization | 8x8 |
-| native_layer_norm.default | Static integer quantization | 8x8 |
-| ne.Scalar | Static integer quantization | 8x8 |
-| ne.Tensor | Static integer quantization | 8x8 |
-| neg.default | Static integer quantization | 8x8 |
-| ones.default | Static integer quantization | 8x8 |
-| permute_copy.default | Static integer quantization | 8x8 |
-| pixel_shuffle.default | Static integer quantization | 8x8 |
-| pixel_unshuffle.default | Static integer quantization | 8x8 |
-| pow.Tensor_Scalar | Static integer quantization | 8x8 |
-| reciprocal.default | Static integer quantization | 8x8 |
-| relu.default | Static integer quantization | 8x8 |
-| remainder.Scalar | Static integer quantization | 8x8 |
-| remainder.Tensor | Static integer quantization | 8x8 |
-| repeat.default | Static integer quantization | 8x8 |
-| round.default | Static integer quantization | 8x8 |
-| rsqrt.default | Static integer quantization | 8x8 |
-| rsub.Scalar | Static integer quantization | 8x8 |
-| scalar_tensor.default | Static integer quantization | 8x8 |
-| sdpa.default | Static integer quantization | 8x8 |
-| select_copy.int | Static integer quantization | 8x8 |
-| select_scatter.default | Static integer quantization | 8x8 |
-| sigmoid.default | Static integer quantization | 8x8 |
-| sign.default | Static integer quantization | 8x8 |
-| silu.default | Static integer quantization | 8x8 |
-| sin.default | Static integer quantization | 8x8 |
-| sinh.default | Static integer quantization | 8x8 |
-| slice_copy.Tensor | Static integer quantization | 8x8 |
-| slice_scatter.default | Static integer quantization | 8x8 |
-| split_copy.Tensor | Static integer quantization | 8x8 |
-| split_with_sizes_copy.default | Static integer quantization | 8x8 |
-| sqrt.default | Static integer quantization | 8x8 |
-| squeeze_copy.dim | Static integer quantization | 8x8 |
-| squeeze_copy.dims | Static integer quantization | 8x8 |
-| stack.default | Static integer quantization | 8x8 |
-| sub.Tensor | Static integer quantization | 8x8 |
-| sum.dim_IntList | Static integer quantization | 8x8 |
-| t_copy.default | Static integer quantization | 8x8 |
-| tan.default | Static integer quantization | 8x8 |
-| tanh.default | Static integer quantization | 8x8 |
-| transpose_copy.int | Static integer quantization | 8x8 |
-| tril.default | Static integer quantization | 8x8 |
-| unbind_copy.int | Static integer quantization | 8x8 |
-| unflatten.int | Static integer quantization | 8x8 |
-| unsqueeze_copy.default | Static integer quantization | 8x8 |
-| upsample_bilinear2d.vec | Static integer quantization | 8x8 |
-| upsample_nearest2d.vec | Static integer quantization | 8x8 |
-| var.dim | Static integer quantization | 8x8 |
-| vector_norm.default | Static integer quantization | 8x8 |
-| view_copy.default | Static integer quantization | 8x8 |
-| where.self | Static integer quantization | 8x8 |
-| zeros.default | Static integer quantization | 8x8 |
+<!-- DO NOT EDIT: generated by `python backends/arm/scripts/docgen/generate_vgf_op_support.py`. -->
+
+This page lists VGF-supported PyTorch APIs and the dtype and quantization modes covered by the VGF backend test pipeline.
+
+`8x8` means 8-bit activations and 8-bit weights. `16x8` means 16-bit activations and 8-bit weights. `8x4` means 8-bit activations and 4-bit weights.
+
+Total supported PyTorch APIs: **153**.
+
+| PyTorch API | Support profile | DType | Quantization mode |
+| --- | --- | --- | --- |
+| `torch._assert_scalar` | FP | `FP32` | - |
+| `torch.abs` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.acos` | FP, INT | `FP32`, `INT8`, `BOOL` | 8x8 |
+| `torch.acosh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.add` / `+` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.addmm` | FP | `FP32` | - |
+| `torch.alias_copy` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.amax` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.amin` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.any` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.arange` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.argmax` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.as_strided_copy` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.asin` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.asinh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.atan` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.atanh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.batch_norm` | FP | `FP32` | - |
+| `torch.bitwise_and` / `&` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bitwise_left_shift` / `<<` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bitwise_not` / `~` | FP, INT | `FP32`, `INT8`, `BOOL` | 8x8 |
+| `torch.bitwise_or` / `|` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bitwise_right_shift` / `>>` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bitwise_xor` / `^` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bmm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.cat` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.ceil` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.clamp` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.clone` / `torch.Tensor.clone` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.cond` | INT | `INT8` | 8x8 |
+| `torch.conv1d` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
+| `torch.conv2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.conv3d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.conv_transpose2d` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.cos` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.cosh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.cumsum` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.div` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.div` / `/` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.eq` / `==` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.erf` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.erfinv` | FP, INT | `FP32`, `FP16`, `INT8` | 8x8 |
+| `torch.exp` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.expm1` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.eye` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.fill_` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.flip` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.floor` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.floor_divide` / `//` | FP | `FP32` | - |
+| `torch.full` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.full_like` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.gather` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
+| `torch.ge` / `>=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.grid_sampler` | FP | `FP32` | - |
+| `torch.grid_sampler_2d` | FP | `FP32` | - |
+| `torch.group_norm` | FP | `FP32` | - |
+| `torch.gt` / `>` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.index_put_` | INT | `INT8` | 8x8 |
+| `torch.index_select` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
+| `torch.layer_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.le` / `<=` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.linspace` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.log` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.log10` | INT | `INT8` | 8x8 |
+| `torch.log1p` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.log_softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.logical_and` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.logical_not` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.logical_or` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.logical_xor` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.logit` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.lt` / `<` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.masked_fill` / `torch.Tensor.masked_fill` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.matmul` / `@` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.max` | FP | `FP32`, `FP16`, `BF16` | - |
+| `torch.max_pool1d` | FP | `FP32` | - |
+| `torch.max_pool2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.maximum` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.mean` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.min` | FP | `FP32`, `FP16`, `BF16` | - |
+| `torch.minimum` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.mm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.mul` / `*` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.ne` / `!=` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.neg` / `unary -` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.nn.AdaptiveAvgPool2d` / `torch.nn.functional.adaptive_avg_pool2d` | FP | `FP32` | - |
+| `torch.nn.AvgPool2d` / `torch.nn.functional.avg_pool2d` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.nn.BatchNorm2d` / `torch.nn.functional.batch_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.CELU` / `torch.nn.functional.celu` | FP | `FP32` | - |
+| `torch.nn.Conv2d` / `torch.nn.functional.conv2d` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16`, `INT4` | 8x8, 8x4, 16x8 |
+| `torch.nn.ELU` / `torch.nn.functional.elu` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Embedding` / `torch.nn.functional.embedding` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.functional.pad` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.nn.GELU` / `torch.nn.functional.gelu` | FP, INT | `FP32`, `BF16`, `INT8` | 8x8 |
+| `torch.nn.GroupNorm` / `torch.nn.functional.group_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Hardsigmoid` / `torch.nn.functional.hardsigmoid` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Hardswish` / `torch.nn.functional.hardswish` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Hardtanh` / `torch.nn.functional.hardtanh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.LeakyReLU` / `torch.nn.functional.leaky_relu` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Linear` / `torch.nn.functional.linear` | FP, INT | `FP32`, `INT8`, `INT4` | 8x8, 8x4 |
+| `torch.nn.LogSoftmax` / `torch.nn.functional.log_softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.MaxPool2d` / `torch.nn.functional.max_pool2d` | FP | `FP32` | - |
+| `torch.nn.SELU` / `torch.nn.functional.selu` | FP | `FP32` | - |
+| `torch.nn.SiLU` / `torch.nn.functional.silu` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.nn.Softmax` / `torch.nn.functional.softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.ones` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.permute` / `torch.Tensor.permute` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.pixel_shuffle` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.pixel_unshuffle` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.pow` / `**` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.reciprocal` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.relu` / `torch.nn.ReLU` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.remainder` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.repeat_interleave` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
+| `torch.round` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.rsqrt` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.rsub` | FP | `FP32` | - |
+| `torch.scalar_tensor` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.select` / `torch.Tensor.select` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.select_scatter` | FP | `FP32` | - |
+| `torch.sigmoid` / `torch.nn.Sigmoid` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.sign` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.sin` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.sinh` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.slice_scatter` | FP | `FP32` | - |
+| `torch.softmax` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.split` / `torch.Tensor.split` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.sqrt` | FP | `FP32` | - |
+| `torch.squeeze` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.squeeze` / `torch.Tensor.squeeze` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.stack` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.sub` / `-` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.sum` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.t` / `torch.Tensor.t` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.tan` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.tanh` / `torch.nn.Tanh` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.Tensor.__getitem__` / `tensor indexing` | FP, INT | `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.Tensor.__getitem__` / `tensor slicing` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8` | 8x8 |
+| `torch.Tensor.__setitem__` / `tensor indexing assignment` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.Tensor.copy_` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.Tensor.expand` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.Tensor.repeat` | FP, INT | `FP16`, `BF16`, `INT8`, `INT16`, `BOOL` | 8x8, 16x8 |
+| `torch.Tensor.unfold` | FP, INT | `FP32`, `FP16`, `BF16`, `INT8`, `BOOL` | 8x8 |
+| `torch.Tensor.view` | FP, INT | `FP16`, `INT8` | 8x8 |
+| `torch.transpose` / `torch.Tensor.transpose` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.tril` | FP | `FP32` | - |
+| `torch.unbind` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.unflatten` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.unsqueeze` / `torch.Tensor.unsqueeze` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.var` | FP | `FP32` | - |
+| `torch.where` | FP, INT | `FP32`, `INT8`, `INT16` | 8x8, 16x8 |
+| `torch.while_loop` | INT | `INT8` | 8x8 |
+| `torch.zeros` | FP, INT | `FP32`, `INT8` | 8x8 |

@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <memory>
 #include <vector>
 
