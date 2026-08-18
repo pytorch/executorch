@@ -172,12 +172,12 @@ These are the components the Linux package provides:
 
 | Component | What it gives you | Where |
 | --- | --- | --- |
-| `runtime` | The engine. Always needed. | Linux, macOS |
-| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
-| `threadpool` | Multi-threaded execution. | Linux, macOS |
-| `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
-| `kernels_quantized` | The quantized operator kernels | Linux, macOS |
+| `runtime` | The engine. Always needed. | Linux |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux |
+| `threadpool` | Multi-threaded execution. | Linux |
+| `etdump` | Profiling, to record what ran and how long it took. | Linux |
+| `kernels_quantized` | The quantized operator kernels | Linux |
 
 To see what your own install offers, ask CMake:
 
@@ -190,10 +190,9 @@ foreach(_component runtime kernels_optimized backend_xnnpack threadpool etdump)
 endforeach()
 ```
 
-On macOS the Core ML and MLX
-delegates are registered inside the Python extension rather than shipped as separate C++ libraries,
-so a C++ application there cannot link them as components; use them from Python, or build from
-source if you need them in C++.
+The macOS wheel keeps everything inside the Python extension rather than shipping separate C++
+libraries, so there is nothing for a C++ application to link there; use it from Python, or build
+from source if you need C++ on macOS.
 
 A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
 model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure

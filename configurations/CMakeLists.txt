@@ -76,11 +76,8 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   if(EXECUTORCH_BUILD_SHARED)
     # Named after what the library provides rather than after the code
     # generation target that produces it, so the shipped file reads as
-    # libexecutorch_kernels_optimized.so. The target name stays as it is because
-    # a source build already refers to it. Only for the wheel. A source install
-    # has been shipping the old file name with a versioned soname for several
-    # releases, and renaming it there would leave anything already linked asking
-    # for a soname that no longer exists.
+    # libexecutorch_kernels_optimized.so. Only for the wheel: a source install
+    # keeps the existing file name, which projects already link against.
     if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
       set_target_properties(
         optimized_native_cpu_ops_lib PROPERTIES OUTPUT_NAME

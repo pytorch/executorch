@@ -736,7 +736,7 @@ if(_portable_lib_LIBRARY)
   endif()
   if(_executorch_extension_needs_threadpool)
     set_property(
-      TARGET _C
+      TARGET _portable_lib
       APPEND
       PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
     )
