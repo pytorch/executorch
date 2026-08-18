@@ -48,6 +48,17 @@ _REGISTRY_SYMBOLS = (
 # oversubscribes the CPU because each pool sizes itself to all cores.
 _THREADPOOL_SYMBOLS = ("executorch::extension::threadpool::get_threadpool",)
 
+# What the Python extension calls itself, so these have to appear in its dynamic
+# symbol table as undefined. pybindings.cpp reaches each one with no build option
+# in front of it, which makes absence from both tables a hidden private copy
+# rather than a symbol the extension simply does not use. register_backend is not
+# among them: the extension registers nothing, the delegate libraries do.
+_EXTENSION_IMPORTS = (
+    "executorch::runtime::get_num_registered_backends",
+    "executorch::runtime::get_backend_class",
+    *_THREADPOOL_SYMBOLS,
+)
+
 # A representative operator from the merged CPU kernels. A second definer means
 # the operators are registered twice, which aborts at startup.
 _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
@@ -1484,6 +1495,16 @@ def test_extension_contains_no_component() -> None:
     assert not carried, (
         f"{extension.name} defines {carried} itself rather than importing it, so it carries a "
         "private copy of a component the wheel also ships as a library"
+    )
+    # A hidden definition appears in neither table, so the check above cannot see the
+    # worst version of this: an extension that whole-archived a private runtime with
+    # hidden visibility and kept the shipped one as a dependency it never uses. What it
+    # calls has to be imported, and these it calls.
+    unimported = [symbol for symbol in _EXTENSION_IMPORTS if symbol not in undefined]
+    assert not unimported, (
+        f"{extension.name} calls {unimported} but imports none of them, so the definition it "
+        "reaches is inside itself and the process holds a second registry the shipped runtime "
+        "cannot see"
     )
     print(
         f"✓ {extension.name} ({extension.stat().st_size // 1024} KiB) contains no "
