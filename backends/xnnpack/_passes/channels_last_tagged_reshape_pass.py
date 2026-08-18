@@ -7,14 +7,15 @@
 # pyre-unsafe
 
 from enum import Enum
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
     is_dequant,
     is_dynamic_qdq,
-    is_qparam,
     is_tagged_as_implicit_q_dq,
     tag_as_implicit_q_dq,
 )
@@ -367,16 +368,21 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             )
 
     @staticmethod
-    def redirect_dynamic_uses_to_nhwc(
-        input_node: torch.fx.Node, input_node_nhwc: torch.fx.Node
+    def redirect_dynamic_chain_to_nhwc(
+        input_node: torch.fx.Node,
+        input_node_nhwc: torch.fx.Node,
+        chain: List[torch.fx.Node],
     ) -> None:
-        """Point the stepped-over quantize wrapper and its choose_qparams at the
-        NHWC copy; every other consumer keeps the source.
+        """Point the traversed chain's quantize and the choose_qparams feeding it
+        at the NHWC copy; consumers outside the chain keep the source.
         """
-        for user in list(input_node.users):
-            if not (is_dynamic_qdq(user) or is_qparam(user)):
-                continue
-            user.replace_input_with(input_node, input_node_nhwc)
+        quantize = chain[-1]
+        quantize_args = quantize.args
+        if is_affine_qdq(quantize):
+            quantize_args = extract_qdq_affine_op_args_for_decomposed_ops(quantize)
+        qparam = quantize_args[1].args[0]
+        quantize.replace_input_with(input_node, input_node_nhwc)
+        qparam.replace_input_with(input_node, input_node_nhwc)
 
     def input_to_nhwc(
         self,
@@ -422,14 +428,15 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             # Check if input uses dynamic quantization
             is_dynamic_input = is_dynamic_qdq(input_node)
 
+            dynamic_chain = []
             if is_dynamic_input:
-                # Trace back over the dynamic q/dq wrapper to the source node, so the
-                # copy lands ahead of the quantize. Only the wrapper may be stepped
-                # over: walking further reaches ordinary compute, whose consumers the
-                # rewrite below has no business redirecting.
+                # Trace back over this consumer's own q/dq chain to the source
+                # node, so the copy lands ahead of the quantize, and remember the
+                # chain: only it is redirected below.
                 while is_dynamic_qdq(input_node) and isinstance(
                     input_node.args[0], torch.fx.Node
                 ):
+                    dynamic_chain.append(input_node)
                     input_node = input_node.args[0]
 
             with graph_module.graph.inserting_after(input_node):
@@ -442,8 +449,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # Use static method for consistency
                 ChannelsLastTaggedReshapePass.mark_as_nhwc_node(input_node_nhwc)
 
-            if is_dynamic_input:
-                self.redirect_dynamic_uses_to_nhwc(input_node, input_node_nhwc)
+            if dynamic_chain:
+                self.redirect_dynamic_chain_to_nhwc(
+                    input_node, input_node_nhwc, dynamic_chain
+                )
 
         self.insert_copy_and_assign_partner_nodes_quantization_sensitive(
             graph_module=graph_module,

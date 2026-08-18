@@ -22,6 +22,7 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 from executorch.backends.xnnpack.test.tester import Quantize, RunPasses, Tester
 from executorch.backends.xnnpack.utils.quant_utils import (
     is_dequant,
+    is_dynamic_qdq,
     is_quant,
     is_tagged_as_implicit_q_dq,
 )
@@ -521,6 +522,62 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
 
         # Only the quantize wrapper moved to the NHWC copy.
         self.assertEqual(tanhs[0].args[0].target, exir_ops.edge.aten.sigmoid.default)
+
+        tester.run_method_and_compare_outputs()
+
+    class SharedLinearConvDynamicQuant(torch.nn.Module):
+        """Two dynamically quantized siblings sharing one source; only the conv
+        wants NHWC.
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 8)
+            self.conv = torch.nn.Conv2d(3, 4, 1)
+
+        def forward(self, x):
+            act = torch.sigmoid(x)
+            # Keep linear before conv so it is processed first.
+            return self.linear(act), self.conv(act)
+
+    def test_dq_shared_linear_conv_channels_last_tagged_reshape_pass(self) -> None:
+        tester = (
+            Tester(
+                self.SharedLinearConvDynamicQuant().eval(),
+                (torch.randn(1, 3, 8, 8),),
+            )
+            .quantize(
+                Quantize(
+                    quantization_config=get_symmetric_quantization_config(
+                        is_dynamic=True
+                    )
+                )
+            )
+            .export()
+            .to_edge()
+            .run_passes(self.PassStage)
+        )
+
+        graph_module = (
+            tester.get_artifact(StageType.RUN_PASSES).exported_program().graph_module
+        )
+        quantizes = [
+            node
+            for node in graph_module.graph.nodes
+            if is_dynamic_qdq(node) and is_quant(node)
+        ]
+        self.assertEqual(len(quantizes), 2)
+        for quantize in quantizes:
+            consumer = next(iter(next(iter(quantize.users)).users))
+            source = quantize.args[0].target
+            qparam_source = quantize.args[1].args[0].args[0].target
+            self.assertEqual(source, qparam_source)
+            if consumer.target == exir_ops.edge.aten.convolution.default:
+                # The conv's chain reads the NHWC copy.
+                self.assertEqual(source, exir_ops.edge.aten._to_copy.default)
+            else:
+                # The linear's chain keeps the source.
+                self.assertEqual(source, exir_ops.edge.aten.sigmoid.default)
 
         tester.run_method_and_compare_outputs()
 
