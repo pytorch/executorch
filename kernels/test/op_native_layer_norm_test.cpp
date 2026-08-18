@@ -466,6 +466,10 @@ TEST_F(OpNativeLayerNormTest, NonDefaultDimOrderDies) {
   Tensor out2 = tf.zeros_channels_last({1, 3, 2, 1});
   const std::vector<int64_t> normalized_shape = {2};
 
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_native_layer_norm_out(
