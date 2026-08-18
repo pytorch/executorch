@@ -2077,7 +2077,6 @@ class _TopLevelEmitter(_Emitter):
                 if isinstance(arg, (int, float, bool, type(None))):
                     arg = self._emit_evalue(self._constant_to_evalue(arg, None))
                 elif isinstance(arg, str):
-                    # TODO(jackkhuu): T181599879 Add support for string outputs IFF compiler supports
                     raise InternalError(
                         self._emit_node_specific_error(
                             self.node,
