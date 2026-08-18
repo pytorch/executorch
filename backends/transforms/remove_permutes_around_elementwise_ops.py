@@ -7,6 +7,7 @@
 
 # pyre-unsafe
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -74,10 +75,12 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         *,
         exported_program: ExportedProgram | None = None,
         allow_layout_boundary_propagation: bool = False,
+        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         super().__init__()
         self.exported_program = exported_program
         self.allow_layout_boundary_propagation = allow_layout_boundary_propagation
+        self.can_propagate = can_propagate
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.mul.Tensor,
@@ -718,6 +721,8 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return False
 
     def is_node_permutable(self, node: torch.fx.Node) -> bool:
+        if self.can_propagate is not None and not self.can_propagate(node):
+            return False
         if node.target in self._PAD_OPS and not self._is_constant_pad(node):
             return False
         if node.target in self._permutable_ops:

@@ -537,6 +537,31 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "to_contiguous_channels_last_pass",
+        srcs = [
+            "to_contiguous_channels_last_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_layout",
+            ":fuse_cascaded_transpose_or_permute_ops",
+            ":fuse_cascaded_view_ops",
+            ":fuse_transpose_or_permute_op_pairs_pass",
+            ":postpone_permute_below_squeeze_view",
+            ":remove_permutes_around_elementwise_ops",
+            ":replace_nop_transpose_or_permute_with_view",
+            ":replace_ops_with_channels_last_variants",
+            ":replace_squeeze_unsqueeze_with_view",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
     python_pytest(
         name = "test_replace_ops_with_channels_last_variants",
         srcs = [
@@ -563,6 +588,22 @@ def define_common_targets():
             "//caffe2:torch",
             ":convert_conv1d_to_conv2d_pass",
             ":utils",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    python_pytest(
+        name = "test_to_contiguous_channels_last_pipeline",
+        srcs = [
+            "test/test_to_contiguous_channels_last_pipeline.py",
+        ],
+        compile = "with-source",
+        typing = False,
+        deps = [
+            "//caffe2:torch",
+            ":to_contiguous_channels_last_pass",
             "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
