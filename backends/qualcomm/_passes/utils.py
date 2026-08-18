@@ -7,12 +7,17 @@
 from typing import Callable, Dict, List
 
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import q_ops
+from executorch.backends.qualcomm.builders.node_visitor import (
+    PER_CHANNEL_GROUP_ENCODING,
+    q_ops,
+)
 from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_DTYPE,
     QCOM_ENCODING,
     QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
+    QCOM_SCALES,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._subclasses import FakeTensor
@@ -139,6 +144,13 @@ def get_quant_attrs(
     # remap key for compatibility - block quantization only
     if dtype := quant_attrs.get("input_dtype", None):
         quant_attrs[QCOM_DTYPE] = dtype
+
+    # per-channel-group ops name their block scale tensor "scales"; QNN's
+    # per-block config reads it as QCOM_SCALE. Gate on the encoding rather than
+    # on the presence of the key: quantize_per_channel.default also has a
+    # "scales" argument but is consumed as a per-channel (not per-block) config.
+    if quant_node.target in PER_CHANNEL_GROUP_ENCODING:
+        quant_attrs[QCOM_SCALE] = quant_attrs[QCOM_SCALES]
 
     quant_attrs[QCOM_ENCODING] = quant_node.target
     return quant_attrs

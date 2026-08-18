@@ -16,6 +16,7 @@ from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
@@ -28,6 +29,11 @@ from executorch.backends.qualcomm.tests.models import (
     HardSigmoid,
     Reciprocal,
     TopKandIndex,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+    QCOM_SCALE,
 )
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -206,6 +212,59 @@ class TestPasses(unittest.TestCase):
         # AddModule with one input and one output should insert exactly
         # one quantize (input) and one dequantize (output) = +2 nodes.
         self.assertEqual(node_count_after, node_count_before + 2)
+
+    def test_insert_io_qdq_per_channel_group_resolves_through_q_dq_map(self):
+        """InsertIOQDQ must resolve per_channel_group encodings via q_dq_map.
+
+        A pre-quantized group-wise (e.g. int4 LLM) weight parameter that feeds
+        the graph output takes the dequantize-before-output branch, which looks
+        the encoding up in ``q_dq_map``. The insert-quantize-after-input branch
+        is skipped for parameters, so this lookup is the only place the encoding
+        is resolved, and it raised ``KeyError`` before per_channel_group was
+        added to the map.
+        """
+        gm, ep = self._build_quantized_graph()
+
+        param_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and is_parameter(n, ep)
+        )
+        output_node = next(n for n in gm.graph.nodes if n.op == "output")
+
+        # Annotate the parameter as a group-wise quantized weight.
+        scales = torch.ones(4, 1)
+        param_node.meta[QCOM_QUANT_ATTRS] = {
+            QCOM_ENCODING: exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+            QCOM_SCALE: scales,
+            "scales": scales,
+            "zero_points": None,
+            "quant_min": -8,
+            "quant_max": 7,
+            "dtype": torch.int8,
+            "group_size": 1,
+            "output_dtype": torch.float32,
+        }
+
+        old_args = output_node.args[0]
+        output_node.args = (
+            ((old_args,) if not isinstance(old_args, tuple) else old_args)
+            + (param_node,),
+        )
+        gm.graph.lint()
+        gm.recompile()
+
+        InsertIOQDQ(ep)._insert(gm)
+
+        dq_target = (
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+        )
+        dq_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function"
+            and n.target == dq_target
+            and any(u.op == "output" for u in n.users.keys())
+        ]
+        self.assertEqual(len(dq_nodes), 1)
 
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
