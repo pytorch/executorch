@@ -14,6 +14,7 @@ from executorch.backends.vulkan.op_registry import (
     is_general_sdpa_node_supported,
     is_integer_remainder_scalar_node_supported,
     is_ring_sdpa_node_supported,
+    is_update_cache_with_indices_dtype_supported,
     is_update_cache_with_indices_node_supported,
     vulkan_supported_ops,
 )
@@ -23,6 +24,8 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
 from executorch.backends.vulkan import utils
 from executorch.exir import to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.llm.custom_ops import custom_ops as _custom_ops  # noqa: F401
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 
 class TestCustomSDPASupport(TestCase):
@@ -47,6 +50,25 @@ class TestUpdateCacheWithIndicesSupport(TestCase):
         node.meta["val"] = SimpleNamespace(shape=shape, dtype=dtype)
         return node
 
+    @staticmethod
+    def _fx_node(indices_dtype):
+        graph = torch.fx.Graph()
+        with FakeTensorMode() as mode:
+            value = graph.placeholder("value")
+            value.meta["val"] = mode.from_tensor(torch.empty((1, 4, 8, 128)))
+            cache = graph.placeholder("cache")
+            cache.meta["val"] = mode.from_tensor(torch.empty((1, 32, 8, 128)))
+            indices = graph.placeholder("indices")
+            indices.meta["val"] = mode.from_tensor(
+                torch.empty((1, 4), dtype=indices_dtype)
+            )
+            node = graph.call_function(
+                exir_ops.edge.llama.update_cache_with_indices.default,
+                args=(value, cache, 0, indices),
+            )
+            node.meta["val"] = cache.meta["val"]
+        return node
+
     def test_accepts_production_contract(self) -> None:
         node = SimpleNamespace(
             target=None,
@@ -58,6 +80,46 @@ class TestUpdateCacheWithIndicesSupport(TestCase):
             ),
         )
         self.assertTrue(is_update_cache_with_indices_node_supported(node))
+
+    def test_accepts_int32_indices_without_downcast(self) -> None:
+        node = SimpleNamespace(
+            target=None,
+            args=(
+                self._tensor_node((1, 4, 8, 128)),
+                self._tensor_node((1, 32, 8, 128)),
+                0,
+                self._tensor_node((1, 4), torch.int32),
+            ),
+        )
+        self.assertTrue(is_update_cache_with_indices_node_supported(node))
+        self.assertTrue(
+            is_update_cache_with_indices_dtype_supported(node, downcast_64_bit=False)
+        )
+
+    def test_int64_indices_require_downcast(self) -> None:
+        node = SimpleNamespace(
+            target=None,
+            args=(
+                self._tensor_node((1, 4, 8, 128)),
+                self._tensor_node((1, 32, 8, 128)),
+                0,
+                self._tensor_node((1, 4), torch.int64),
+            ),
+        )
+        self.assertTrue(is_update_cache_with_indices_dtype_supported(node))
+        self.assertFalse(
+            is_update_cache_with_indices_dtype_supported(node, downcast_64_bit=False)
+        )
+
+    def test_partitioner_enforces_downcast_contract(self) -> None:
+        supported_ops = VulkanSupportedOperators(
+            utils.DEFAULT_TEXTURE_LIMITS,
+            buffer_limit=utils.DEFAULT_BUFFER_LIMIT,
+            downcast_64_bit=False,
+        )
+
+        self.assertTrue(supported_ops._is_node_supported(self._fx_node(torch.int32)))
+        self.assertFalse(supported_ops._is_node_supported(self._fx_node(torch.int64)))
 
     def test_rejects_batch_greater_than_one(self) -> None:
         node = SimpleNamespace(
@@ -123,7 +185,7 @@ class TestUpdateCacheWithIndicesSupport(TestCase):
                 (1, 4, 8, 128),
                 (1, 32, 8, 128),
                 (1, 4),
-                torch.int32,
+                torch.float32,
             ),
         )
         for value_shape, cache_shape, indices_shape, indices_dtype in cases:
@@ -305,12 +367,12 @@ class TestEmbeddingBufferLimit(TestCase):
         self.assertEqual(features.buffer_limit_args, (0,))
         self.assertFalse(
             VulkanSupportedOperators(
-                utils.DEFAULT_TEXTURE_LIMITS, buffer_limit=19
+                utils.DEFAULT_TEXTURE_LIMITS, buffer_limit=79
             )._is_node_supported(embedding_node)
         )
         self.assertTrue(
             VulkanSupportedOperators(
-                utils.DEFAULT_TEXTURE_LIMITS, buffer_limit=20
+                utils.DEFAULT_TEXTURE_LIMITS, buffer_limit=80
             )._is_node_supported(embedding_node)
         )
 

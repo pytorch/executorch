@@ -15,6 +15,7 @@ import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkStorageType
 from executorch.examples.models.voxtral_realtime.export_voxtral_rt import (
     _requires_explicit_output_weight_clone,
+    _token_embedding_weight_nbytes,
     audit_vulkan_delegation,
     export_streaming,
     lower_to_executorch,
@@ -225,6 +226,27 @@ class TestVulkanExportOptions(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     validate_vulkan_options(self.make_args(**overrides), parser)
 
+    def test_token_embedding_weight_match_is_exact_and_unique(self):
+        weight = torch.empty((64, 32), device="meta")
+        embedding = SimpleNamespace(
+            target=torch.ops.aten.embedding.default,
+            args=(SimpleNamespace(meta={"val": weight}),),
+        )
+        unrelated = SimpleNamespace(
+            target="custom.embedding_projection.default",
+            args=(SimpleNamespace(meta={"val": torch.empty(7, device="meta")}),),
+        )
+        program = SimpleNamespace(graph=SimpleNamespace(nodes=[unrelated, embedding]))
+
+        self.assertEqual(_token_embedding_weight_nbytes(program), 64 * 32 * 4)
+
+        embedding.target = "quantized_decomposed.embedding_4bit.dtype"
+        self.assertEqual(_token_embedding_weight_nbytes(program), 64 * 32 * 4)
+
+        program.graph.nodes.append(embedding)
+        with self.assertRaisesRegex(RuntimeError, "found 2"):
+            _token_embedding_weight_nbytes(program)
+
     @patch(
         "executorch.backends.vulkan.partitioner.vulkan_partitioner.VulkanPartitioner"
     )
@@ -247,6 +269,13 @@ class TestVulkanExportOptions(unittest.TestCase):
             "text_decoder": MagicMock(),
             "token_embedding": MagicMock(),
         }
+        weight = torch.empty((131072, 3072), device="meta")
+        programs["token_embedding"].graph.nodes = [
+            SimpleNamespace(
+                target=torch.ops.aten.embedding.default,
+                args=(SimpleNamespace(meta={"val": weight}),),
+            )
+        ]
         metadata = {"vocab_size": 131072, "dim": 3072}
 
         lower_to_executorch(programs, metadata, backend="vulkan")
@@ -278,7 +307,7 @@ class TestVulkanExportOptions(unittest.TestCase):
                         "external_constants_max_data_bytes": (
                             VULKAN_EXTERNAL_CONSTANTS_MAX_DATA_BYTES
                         ),
-                        "buffer_limit": 402653184,
+                        "buffer_limit": 1610612736,
                         "storage_type_override": VkStorageType.BUFFER,
                     }
                 ),
@@ -309,6 +338,14 @@ class TestVulkanExportOptions(unittest.TestCase):
             "text_decoder": MagicMock(),
             "token_embedding": MagicMock(),
         }
+        programs["token_embedding"].graph.nodes = [
+            SimpleNamespace(
+                target=torch.ops.aten.embedding.default,
+                args=(
+                    SimpleNamespace(meta={"val": torch.empty((64, 32), device="meta")}),
+                ),
+            )
+        ]
         metadata = {"vocab_size": 131072, "dim": 3072}
 
         lower_to_executorch(
