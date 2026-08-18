@@ -25,7 +25,7 @@ def pytest_configure(config):
 
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
-    if config.option.dump_artifacts:
+    if getattr(config.option, "dump_artifacts", False) and config.option.dump_artifacts:
         pytest._test_options["dump_artifacts"] = config.option.dump_artifacts  # type: ignore[attr-defined]
 
     logging.basicConfig(stream=sys.stdout)

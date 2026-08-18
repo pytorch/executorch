@@ -28,11 +28,10 @@ fi
 # builder happens to have. A wheel built by detection alone installs on every machine the row covers
 # and then fails when a model runs on a different generation.
 source "${GITHUB_WORKSPACE}/${REPOSITORY}/.ci/scripts/wheel/cuda_arch_list.sh"
-# The status is checked rather than only the output. An unrecognised row makes the lookup fail, and
-# this file is sourced rather than run under a failing-command shell, so ignoring the status would
-# leave the variable unset and let the build fall back to detecting the builder's own GPU. That is
-# exactly the outcome this is meant to prevent, and it would ship quietly.
-if ! _executorch_cuda_arch="$(executorch_cuda_arch_list_with_ptx)"; then
+# The status is checked rather than only the output, so an unrecognised row reports why it stopped.
+# A bare assignment would end the build on the lookup's own exit status with no message, since this
+# file is sourced into a shell that exits on a failing command.
+if ! _executorch_cuda_arch="$(executorch_cuda_arch_list)"; then
   echo "could not resolve GPU architectures for CU_VERSION=${CU_VERSION:-unset}" >&2
   exit 1
 fi
@@ -40,20 +39,3 @@ if [ -n "${_executorch_cuda_arch}" ]; then
   export TORCH_CUDA_ARCH_LIST="${_executorch_cuda_arch}"
   echo "building device code for: ${TORCH_CUDA_ARCH_LIST}"
 fi
-
-# Exporting a model through the CUDA delegate compiles a kernel library with this image's C++
-# compiler and then loads it in the same process. That compiler is newer than the base image, so
-# unless its own libstdc++ is on the loader path the load stops on a missing GLIBCXX version while
-# the older system copy is picked up instead. Asked of the compiler rather than hard-coded, because
-# the directory moves between images, and asked of the same compiler the exporter will use, which
-# is CXX when set and g++ otherwise.
-_executorch_libstdcxx="$("${CXX:-g++}" -print-file-name=libstdc++.so.6 2>/dev/null)"
-case "${_executorch_libstdcxx}" in
-  /*)
-    if [ -f "${_executorch_libstdcxx}" ]; then
-      _executorch_libstdcxx_dir="$(cd "$(dirname "${_executorch_libstdcxx}")" && pwd)"
-      export LD_LIBRARY_PATH="${_executorch_libstdcxx_dir}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-      echo "C++ runtime for compiled kernels: ${_executorch_libstdcxx_dir}"
-    fi
-    ;;
-esac

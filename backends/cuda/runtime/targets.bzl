@@ -76,6 +76,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/backends/aoti/slim/factory:empty",
             "//executorch/backends/aoti/slim/factory:from_blob",
             "//executorch/backends/aoti/slim/cuda:guard",
+            "//executorch/extension/cuda:runtime_api",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
