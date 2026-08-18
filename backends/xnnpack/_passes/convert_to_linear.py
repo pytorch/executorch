@@ -46,7 +46,6 @@ class ConvertToLinearPass(ExportPass):
         index: int = 0,
     ):
         # This is a hack to support lifted graphs.
-        # TODO(T171263351) - fix source partitioning for lifted graphs
         if not node or node in args or node.op == "placeholder":
             return node
         if kind == "args":
