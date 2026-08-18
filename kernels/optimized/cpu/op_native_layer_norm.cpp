@@ -159,6 +159,22 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
+  if (weight.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, weight.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
+  if (bias.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, bias.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
   Tensor::SizesType mean_rstd_sizes[kTensorDimensionLimit];
   size_t mean_rstd_ndim = 0;
   get_layer_norm_out_target_size(
