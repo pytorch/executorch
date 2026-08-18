@@ -141,3 +141,19 @@ TEST_F(OpPixelUnshuffleOutTest, NonDefaultDimOrderDies) {
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_pixel_unshuffle_out(a, 2, out));
 }
+
+TEST_F(OpPixelUnshuffleOutTest, MixedDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Only out has a non-default dim order, so the same dim order check shall be
+  // what rejects it.
+  Tensor a = tf.make(
+      {1, 1, 4, 4}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+  Tensor out = tf.zeros_channels_last({1, 4, 2, 2});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  ET_EXPECT_KERNEL_FAILURE(context_, op_pixel_unshuffle_out(a, 2, out));
+}

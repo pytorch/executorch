@@ -197,3 +197,27 @@ TEST_F(OpTopkValuesTest, NonDefaultDimOrderDies) {
 
   EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
 }
+
+TEST_F(OpTopkValuesTest, MixedDimOrderDies) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  // Only values has a non-default dim order, so the same dim order check shall
+  // be what rejects it.
+  Tensor in = tf.make(
+      {1, 4, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16});
+  Tensor values = tf.zeros_channels_last({1, 2, 2, 2});
+  Tensor indices = tf_long.zeros({1, 2, 2, 2});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
+  TempMemoryAllocator allocator = TempMemoryAllocator();
+  executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context(
+      nullptr, &allocator);
+  torch::executor::aten::topk_outf(
+      context, in, 2, 1, true, true, values, indices);
+
+  EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
+}
