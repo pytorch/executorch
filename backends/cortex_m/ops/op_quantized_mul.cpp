@@ -13,14 +13,11 @@ namespace {
 
 constexpr int32_t kInt8ActivationMin = std::numeric_limits<int8_t>::min();
 constexpr int32_t kInt8ActivationMax = std::numeric_limits<int8_t>::max();
-
-} // namespace
-
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
-// cppcheck-suppress unusedFunction
-Tensor& quantized_mul_out(
+Tensor& quantized_mul_out_impl(
     KernelRuntimeContext& context,
+    const char* op_name,
     const Tensor& input1_int8,
     const int64_t input1_zero_point,
     const Tensor& input2_int8,
@@ -28,10 +25,12 @@ Tensor& quantized_mul_out(
     const int64_t output_zero_point,
     const int64_t output_multiplier,
     const int64_t output_shift,
-    Tensor& out) {
+    Tensor& out,
+    ActivationLayout layout) {
   // Validate tensor types and quantization parameters
 
-  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  bool channel_broadcast =
+      is_channel_broadcast(input1_int8, input2_int8, layout);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
@@ -39,6 +38,14 @@ Tensor& quantized_mul_out(
       ScalarType::Char,
       /*require_channels_last=*/channel_broadcast,
       /*require_same_sizes=*/!channel_broadcast);
+  if (channel_broadcast) {
+    ET_CHECK_MSG(
+        has_activation_layout(input1_int8, layout) &&
+            has_activation_layout(input2_int8, layout) &&
+            has_activation_layout(out, layout),
+        "%s: broadcast tensors do not have the required activation layout",
+        op_name);
+  }
 
   const int32_t kIdentityMultiplier(/*value=*/1);
   const int32_t kZeroShift(/*value=*/0);
@@ -70,7 +77,7 @@ Tensor& quantized_mul_out(
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
 
-    muls_per_loop = input1_int8.size(1);
+    muls_per_loop = out.size(channel_dim(layout));
   } else {
     muls_per_loop = out.numel();
   }
@@ -108,13 +115,66 @@ Tensor& quantized_mul_out(
     if (status != ARM_CMSIS_NN_SUCCESS) {
       ET_LOG(
           Error,
-          "quantized_mul_out: arm_elementwise_mul_s8 failed with status [%d]",
+          "%s: arm_elementwise_mul_s8 failed with status [%d]",
+          op_name,
           status);
       context.fail(Error::Internal);
       return out;
     }
   }
   return out;
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_mul_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    Tensor& out) {
+  return quantized_mul_out_impl(
+      context,
+      "quantized_mul_out",
+      input1_int8,
+      input1_zero_point,
+      input2_int8,
+      input2_zero_point,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      out,
+      ActivationLayout::NCHWLogical);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_mul_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    Tensor& out) {
+  return quantized_mul_out_impl(
+      context,
+      "quantized_mul_nhwc_out",
+      input1_int8,
+      input1_zero_point,
+      input2_int8,
+      input2_zero_point,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      out,
+      ActivationLayout::NHWCLogical);
 }
 
 } // namespace native

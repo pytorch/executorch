@@ -17,21 +17,21 @@ namespace {
 
 constexpr size_t kMaxSupportedDims = 4;
 
-} // namespace
-
-// cppcheck-suppress unusedFunction
-Tensor& pad_out(
+Tensor& pad_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Int64ArrayRef pre_pad,
     const Int64ArrayRef post_pad,
     int64_t pad_value,
+    ActivationLayout layout,
+    const char* op_name,
     Tensor& out) {
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {
     ET_LOG(
         Error,
-        "pad_out: only int8 tensors are supported (input=%d, out=%d)",
+        "%s: only int8 tensors are supported (input=%d, out=%d)",
+        op_name,
         static_cast<int>(input.scalar_type()),
         static_cast<int>(out.scalar_type()));
     context.fail(Error::InvalidArgument);
@@ -42,22 +42,45 @@ Tensor& pad_out(
   if (rank == 0 || rank > kMaxSupportedDims) {
     ET_LOG(
         Error,
-        "pad_out: expected tensor rank in [1, %zu], got %zu",
+        "%s: expected tensor rank in [1, %zu], got %zu",
+        op_name,
         kMaxSupportedDims,
         rank);
     context.fail(Error::InvalidArgument);
     return out;
+  }
+  if (pre_pad.size() != kMaxSupportedDims ||
+      post_pad.size() != kMaxSupportedDims) {
+    ET_LOG(Error, "%s: pre_pad and post_pad must have length 4", op_name);
+    context.fail(Error::InvalidArgument);
+    return out;
+  }
+
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (rank != kMaxSupportedDims ||
+        !executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            out.dim_order().data(), out.dim_order().size())) {
+      ET_LOG(
+          Error,
+          "%s: input and output must be contiguous 4-D tensors",
+          op_name);
+      context.fail(Error::InvalidArgument);
+      return out;
+    }
   }
 
   // Permute logical sizes to physical memory order.
   // Padding is already in physical order from the AOT pass.
   constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
-  const bool nhwc = is_channels_last_tensor(input);
+  const bool legacy_channels_last =
+      layout == ActivationLayout::NCHWLogical && is_channels_last_tensor(input);
 
   int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    const size_t src = nhwc ? kNhwcDimOrder[offset + i] : i;
+    const size_t src = legacy_channels_last ? kNhwcDimOrder[offset + i] : i;
     dims[offset + i] = static_cast<int32_t>(input.size(src));
   }
 
@@ -87,13 +110,54 @@ Tensor& pad_out(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "pad_out: arm_pad_s8 failed with status [%d]",
+        "%s: arm_pad_s8 failed with status [%d]",
+        op_name,
         static_cast<int>(status));
     context.fail(Error::Internal);
     return out;
   }
 
   return out;
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+Tensor& pad_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef pre_pad,
+    const Int64ArrayRef post_pad,
+    int64_t pad_value,
+    Tensor& out) {
+  return pad_out_impl(
+      context,
+      input,
+      pre_pad,
+      post_pad,
+      pad_value,
+      ActivationLayout::NCHWLogical,
+      "pad_out",
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& pad_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef pre_pad,
+    const Int64ArrayRef post_pad,
+    int64_t pad_value,
+    Tensor& out) {
+  return pad_out_impl(
+      context,
+      input,
+      pre_pad,
+      post_pad,
+      pad_value,
+      ActivationLayout::NHWCLogical,
+      "pad_nhwc_out",
+      out);
 }
 
 } // namespace native

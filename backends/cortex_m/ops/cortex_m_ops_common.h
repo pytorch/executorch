@@ -14,6 +14,7 @@
 
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <cinttypes>
@@ -35,6 +36,11 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
 // 16-byte alignment for MVE vector operations.
 constexpr size_t kCortexMMveAlignment = 16;
+
+enum class ActivationLayout {
+  NCHWLogical,
+  NHWCLogical,
+};
 
 // Basic tensor type / layout validation and dimension order checking
 inline void validate_cmsis_nn_tensor_requirements(
@@ -143,7 +149,24 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
-inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+inline int64_t channel_dim(ActivationLayout layout) {
+  return layout == ActivationLayout::NHWCLogical ? 3 : 1;
+}
+
+inline bool has_activation_layout(
+    const Tensor& tensor,
+    ActivationLayout layout) {
+  if (layout == ActivationLayout::NCHWLogical) {
+    return is_channels_last_tensor(tensor);
+  }
+  return executorch::runtime::is_contiguous_dim_order(
+      tensor.dim_order().data(), tensor.dim_order().size());
+}
+
+inline bool is_channel_broadcast(
+    const Tensor& tensor1,
+    const Tensor& tensor2,
+    ActivationLayout layout) {
   if (tensor1.dim() != tensor2.dim()) {
     return false;
   }
@@ -152,12 +175,13 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
     return false;
   }
 
-  if (tensor1.size(1) != tensor2.size(1)) {
+  const int64_t channel = channel_dim(layout);
+  if (tensor1.size(channel) != tensor2.size(channel)) {
     return false;
   }
 
-  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
-  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
+  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(channel);
+  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(channel);
 
   return tensor1_channels_only || tensor2_channels_only;
 }
@@ -203,7 +227,7 @@ inline bool prepare_cmsis_pool2d_config(
     int64_t activation_min,
     int64_t activation_max,
     CmsisPool2DConfig& config,
-    bool require_channels_last = true,
+    ActivationLayout layout,
     bool allow_ceil_mode = false) {
   if (input.dim() != 4 || output.dim() != 4) {
     ET_LOG(Error, "%s: tensors must be 4-D", op_name);
@@ -218,7 +242,9 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
-  if (input.size(0) != output.size(0) || input.size(1) != output.size(1)) {
+  const int64_t channel = channel_dim(layout);
+  if (input.size(0) != output.size(0) ||
+      input.size(channel) != output.size(channel)) {
     ET_LOG(
         Error,
         "%s: batch and channel dimensions must match between input and output",
@@ -227,13 +253,21 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
-  if (require_channels_last) {
-    if (!is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
-      ET_LOG(
-          Error, "%s: tensors must use channels_last dimension order", op_name);
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            output.dim_order().data(), output.dim_order().size())) {
+      ET_LOG(Error, "%s: tensors must use contiguous dimension order", op_name);
       context.fail(Error::InvalidArgument);
       return false;
     }
+  } else if (
+      !is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
+    ET_LOG(
+        Error, "%s: tensors must use channels_last dimension order", op_name);
+    context.fail(Error::InvalidArgument);
+    return false;
   }
 
   auto check_tuple_len = [&](const Int64ArrayRef& arr,
@@ -312,19 +346,29 @@ inline bool prepare_cmsis_pool2d_config(
     return false;
   }
 
+  const int64_t height_dim = layout == ActivationLayout::NHWCLogical ? 1 : 2;
+  const int64_t width_dim = layout == ActivationLayout::NHWCLogical ? 2 : 3;
   int32_t batch, channels, input_h, input_w, output_h, output_w;
   if (!check_int32_within_range(
           context, op_name, input.size(0), "input batch", batch) ||
       !check_int32_within_range(
-          context, op_name, input.size(1), "input channels", channels) ||
+          context,
+          op_name,
+          input.size(channel_dim),
+          "input channels",
+          channels) ||
       !check_int32_within_range(
-          context, op_name, input.size(2), "input height", input_h) ||
+          context, op_name, input.size(height_dim), "input height", input_h) ||
       !check_int32_within_range(
-          context, op_name, input.size(3), "input width", input_w) ||
+          context, op_name, input.size(width_dim), "input width", input_w) ||
       !check_int32_within_range(
-          context, op_name, output.size(2), "output height", output_h) ||
+          context,
+          op_name,
+          output.size(height_dim),
+          "output height",
+          output_h) ||
       !check_int32_within_range(
-          context, op_name, output.size(3), "output width", output_w)) {
+          context, op_name, output.size(width_dim), "output width", output_w)) {
     return false;
   }
 
