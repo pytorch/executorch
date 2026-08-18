@@ -71,7 +71,8 @@ void _q_at_k_gemm(
     const int64_t q_stride_m,
     const MaybeQuantizedMatrixData& k_data,
     const int64_t k_stride_n,
-    accum_t* qk_data) {
+    accum_t* qk_data,
+    accum_t* widen_scratch) {
   ET_CHECK_MSG(q_data.dtype == k_data.dtype, "q and k must have same dtype");
   ET_CHECK_MSG(
       q_data.dtype == ScalarType::Char || q_data.dtype == ScalarType::Float ||
@@ -109,6 +110,44 @@ void _q_at_k_gemm(
       q_data.dtype == ScalarType::BFloat16 ||
       q_data.dtype == ScalarType::Half) {
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (widen_scratch != nullptr &&
+          q_data.dtype == ScalarType::BFloat16) {
+        // Reduction is headSize here, short enough that a per-output dot pays
+        // a cross-lane reduction it cannot amortize, while a packed BLAS can.
+        // BLAS has no bf16 entry point, so widen and use the fp32 one; the
+        // conversion is O(mk + nk) against O(mnk) of multiply.
+        accum_t* k_f32 = widen_scratch;
+        accum_t* q_f32 = widen_scratch + k_n * qk_k;
+        const auto* k_src =
+            static_cast<const ::executorch::aten::BFloat16*>(k_data.data);
+        const auto* q_src =
+            static_cast<const ::executorch::aten::BFloat16*>(q_data.data);
+        for (int64_t i = 0; i < k_n; ++i) {
+          for (int64_t l = 0; l < qk_k; ++l) {
+            k_f32[i * qk_k + l] = static_cast<accum_t>(k_src[i * k_stride_n + l]);
+          }
+        }
+        for (int64_t j = 0; j < q_m; ++j) {
+          for (int64_t l = 0; l < qk_k; ++l) {
+            q_f32[j * qk_k + l] = static_cast<accum_t>(q_src[j * q_stride_m + l]);
+          }
+        }
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::Transpose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            k_n,
+            q_m,
+            qk_k,
+            static_cast<accum_t>(1),
+            k_f32,
+            qk_k,
+            q_f32,
+            qk_k,
+            static_cast<accum_t>(0),
+            qk_data,
+            k_n);
+        return;
+      }
       auto do_gemm = [&](auto rt_tag) {
         using rt = decltype(rt_tag);
         ::executorch::cpublas::gemm(
@@ -289,7 +328,8 @@ void _qk_at_v_gemm(
     accum_t* o_data,
     const int64_t o_stride_m,
     const accum_t beta,
-    accum_t* buf_qdq_ptr) {
+    accum_t* buf_qdq_ptr,
+    const bool widen_v) {
   if (v_data.dtype == ScalarType::Char) {
     if constexpr (std::is_same<accum_t, float>::value) {
       const float* qk = static_cast<const float*>(qk_data);
@@ -339,6 +379,34 @@ void _qk_at_v_gemm(
     // qk has been cast to the activation dtype (see qk_reduced_data); both
     // operands are reduced precision and accumulate into the float output.
     if constexpr (std::is_same<accum_t, float>::value) {
+      if (widen_v) {
+        // Weights are still accum_t, so widen V to match and let BLAS do the
+        // multiply. buf_qdq_ptr is free here: per-thread, ctx-allocated, the
+        // right size, and only the quantized branch above uses it.
+        const auto* v_src =
+            static_cast<const ::executorch::aten::BFloat16*>(v_data.data);
+        for (int64_t kk = 0; kk < k; ++kk) {
+          for (int64_t nn = 0; nn < n; ++nn) {
+            buf_qdq_ptr[kk * n + nn] =
+                static_cast<accum_t>(v_src[kk * v_stride_n + nn]);
+          }
+        }
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            n,
+            m,
+            k,
+            static_cast<accum_t>(1),
+            buf_qdq_ptr,
+            n,
+            static_cast<const accum_t*>(qk_data),
+            qk_stride_m,
+            beta,
+            o_data,
+            o_stride_m);
+        return;
+      }
       auto do_gemm = [&](auto rt_tag) {
         using rt = decltype(rt_tag);
         ::executorch::cpublas::gemm(
@@ -848,6 +916,29 @@ void cpu_flash_attention(
       buf_reduced = scratch_reduced.get();
     }
   }
+  // Scratch for widening q@K.T to fp32 (see _q_at_k_gemm): one K block plus one
+  // q block. BFloat16 only -- the widened path reinterprets the operands.
+  const bool widen_qk =
+      std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+      ::executorch::cpublas::gemm_uses_blas();
+  // Widening only pays for a short reduction feeding many output columns; both
+  // bounds are empirical.
+  constexpr int64_t kMaxHeadSizeForWidenedQK = 128;
+  constexpr int64_t kMinQBlockForWidenedQK = 32;
+  int64_t size_per_thread_widen = widen_qk ? (kvSplitSize + qSplitSize) * headSize : 0;
+  std::unique_ptr<char[]> allocated_buf_widen;
+  accum_t* widen_buf = nullptr;
+  if (widen_qk) {
+    int64_t size_widen_bytes = size_per_thread_widen * num_thread * sizeof(accum_t);
+    Result<void*> scratch_widen = ctx.allocate_temp(size_widen_bytes, 64);
+    if (!scratch_widen.ok()) {
+      allocated_buf_widen = std::make_unique<char[]>(size_widen_bytes);
+      widen_buf = reinterpret_cast<accum_t*>(allocated_buf_widen.get());
+    } else {
+      widen_buf = reinterpret_cast<accum_t*>(scratch_widen.get());
+    }
+  }
+
   int64_t size_per_thread_qdq_vec = kvSplitSize * headSize;
   // Lets align size_per_thread_qdq_vec to 64 bytes, for coalesced cache reads,
   // by padding with right number of per thread elements
@@ -891,6 +982,8 @@ void cpu_flash_attention(
         : nullptr;
     accum_t* buf_qdq_ptr =
         scratch_for_quant_dequant + ompIdx * size_per_thread_qdq_vec;
+    accum_t* widen_ptr =
+        widen_buf ? widen_buf + ompIdx * size_per_thread_widen : nullptr;
 
     for (int64_t z = begin; z < end; z++) {
       int64_t m = k * qSplitSize;
@@ -987,7 +1080,11 @@ void cpu_flash_attention(
             qStrideM,
             k_sub_matrix_data,
             kStrideN,
-            qk_data);
+            qk_data,
+            (widen_qk && headSize <= kMaxHeadSizeForWidenedQK &&
+             qBlockSize >= kMinQBlockForWidenedQK)
+                ? widen_ptr
+                : nullptr);
 
         // There are 4 cases that is_causal has to cover to fill
         // not-attendable-position with -inf
@@ -1139,9 +1236,17 @@ void cpu_flash_attention(
         // For reduced-precision activations the attention weights are cast to
         // the activation dtype so that Softmax(q @ k.T) @ v runs as a
         // reduced-in/float-out gemm matching the value matrix.
+        // Casting the weights down only pays when the bf16 attn@V kernel is
+        // the one that runs. Above kMinQBlockForWidenedAV it is faster to keep
+        // them in accum_t, widen V and let BLAS multiply -- also one rounding
+        // step fewer. Below it the widening stops amortizing.
+        constexpr int64_t kMinQBlockForWidenedAV = 64;
+        const bool widen_v = is_reduced_type && !is_quantized_sdpa &&
+            std::is_same<scalar_t, ::executorch::aten::BFloat16>::value &&
+            qBlockSize >= kMinQBlockForWidenedAV;
         const void* qk_gemm_data = qk_data;
         if constexpr (is_reduced_type) {
-          if (!is_quantized_sdpa) {
+          if (!is_quantized_sdpa && !widen_v) {
             vec::convert<accum_t, scalar_t>(
                 qk_data, qk_reduced_data, qBlockSize * kvBlockSize);
             qk_gemm_data = qk_reduced_data;
@@ -1159,7 +1264,8 @@ void cpu_flash_attention(
             dst_data,
             headSize,
             n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
-            buf_qdq_ptr);
+            buf_qdq_ptr,
+            widen_v);
       }
       // dst <- dst / sum[row]
       // reorder MHA output with strides
