@@ -465,6 +465,22 @@ _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 # stopped matching when the libraries were renamed while the others kept working.
 _OWNED_COMPONENTS = (
     ("backend registry", _REGISTRY_SYMBOLS, "libexecutorch.so", True),
+    # The platform layer, which two shipped libraries each carried their own copy of, so a
+    # register_pal call through one did not reach the other. Listed here so the ownership check
+    # that already exists catches a regression rather than a later reader discovering it.
+    (
+        "platform layer",
+        (
+            # The strong accessors, not the emit hook next to them. That hook is a weak
+            # default so a program supplying none still links, and a weak definition cannot
+            # express ownership. A second copy of these two is a genuinely split platform
+            # layer.
+            "executorch::runtime::register_pal",
+            "executorch::runtime::get_pal_impl",
+        ),
+        "libexecutorch.so",
+        True,
+    ),
     ("operator registry", _KERNEL_REGISTRY_SYMBOLS, "libexecutorch.so", True),
     ("thread pool", _THREADPOOL_SYMBOLS, "libexecutorch_threadpool.so", True),
     ("profiler", _ETDUMP_SYMBOLS, "libexecutorch_etdump.so", True),
@@ -538,7 +554,7 @@ _OWNED_COMPONENTS = (
 # library and again into the library torch loads at export time, because each side registers into a
 # table the other never reads, so a second definer there is expected rather than a fault. A process
 # that loads both does abort on the second registration, which is why this is named per component and
-# the check stays armed for the other ten, where a second definer means two registries or two thread
+# the check stays armed for every other component, where a second definer means two registries or two thread
 # pools in one process.
 _COMPONENTS_WITH_AN_EXPORT_COPY = frozenset({"set of quantized kernels"})
 

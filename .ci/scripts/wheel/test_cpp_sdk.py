@@ -782,9 +782,9 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
 def test_profiler_component_is_usable(work_dir: Path) -> None:
     """A C++ application must be able to construct the profiler the etdump component represents.
 
-    Linking a component proves the library resolves. It does not prove a consumer can call anything in it,
-    and the profiler shipped for a while with only an internal alignment helper as its public surface, so
-    the component could be requested and linked but not used.
+    Linking a component proves the library resolves. It does not prove a consumer can call anything in it.
+    A library whose only exported symbol is an internal helper still links, so the component could be
+    requested and linked but not used.
     """
     package_dir = _installed_package_dir()
     # Globbed, not an exact name: the library carries a version suffix outside a wheel build, and an exact
