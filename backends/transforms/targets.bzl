@@ -205,6 +205,23 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "convert_conv1d_to_conv2d_pass",
+        srcs = [
+            "convert_conv1d_to_conv2d_pass.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":utils",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "decompose_channels_last_pass",
         srcs = [
             "decompose_channels_last_pass.py",
@@ -508,6 +525,21 @@ def define_common_targets():
             ":remove_getitem_op",
             ":replace_ops_with_channels_last_variants",
             "//executorch/exir:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_convert_conv1d_to_conv2d_pass",
+        srcs = [
+            "test/test_convert_conv1d_to_conv2d_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":convert_conv1d_to_conv2d_pass",
+            ":utils",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

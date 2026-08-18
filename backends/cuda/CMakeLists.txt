@@ -238,9 +238,17 @@ endif()
 
 # Build the delegate as a shared library for the wheel so a process has one copy
 # of it, and keep it static everywhere else so no other build changes.
-if(EXECUTORCH_BUILD_SHARED)
+#
+# ROCm is not one of the wheels. Packaging selects this file on the CUDA flag
+# alone, so a shared library built here for a ROCm install is linked by the
+# Python extension and then never copied beside it, and the installed extension
+# fails to load on a missing dependency. Static is also what a ROCm build
+# produced before the wheel layout existed, so nothing there changes.
+if(EXECUTORCH_BUILD_SHARED AND NOT EXECUTORCH_BUILD_ROCM)
+  set(_executorch_cuda_ships_libraries ON)
   set(_aoti_cuda_backend_library_type SHARED)
 else()
+  set(_executorch_cuda_ships_libraries OFF)
   set(_aoti_cuda_backend_library_type STATIC)
 endif()
 add_library(
@@ -291,6 +299,13 @@ endif()
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
 
 if(EXECUTORCH_BUILD_SHARED)
+  # Resolve the runtime from the shared library rather than from the static
+  # core, so the delegate registers into the one registry the process has. True
+  # of a static delegate in a shared build too, which is what ROCm builds.
+  target_link_libraries(aoti_cuda_backend PUBLIC executorch_shared)
+endif()
+
+if(_executorch_cuda_ships_libraries)
   # Named after what the library provides rather than after the target that
   # produces it, matching the other shipped delegates, so the file reads as
   # libexecutorch_backend_cuda.so. The target name stays as it is because the
@@ -299,9 +314,6 @@ if(EXECUTORCH_BUILD_SHARED)
     aoti_cuda_backend PROPERTIES OUTPUT_NAME executorch_backend_cuda
   )
   executorch_target_soname_policy(aoti_cuda_backend)
-  # Resolve the runtime from the shared library rather than from the static
-  # core, so the delegate registers into the one registry the process has.
-  target_link_libraries(aoti_cuda_backend PUBLIC executorch_shared)
   # Ships beside the runtime in the wheel's lib/ directory.
   executorch_target_shipped_runtime_path(aoti_cuda_backend)
 endif()
