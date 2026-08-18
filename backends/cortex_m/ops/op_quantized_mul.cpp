@@ -152,5 +152,30 @@ Tensor& quantized_mul_out(
       ActivationLayout::NCHWLogical);
 }
 
+// cppcheck-suppress unusedFunction
+Tensor& quantized_mul_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    Tensor& out) {
+  return quantized_mul_out_impl(
+      context,
+      "quantized_mul_nhwc_out",
+      input1_int8,
+      input1_zero_point,
+      input2_int8,
+      input2_zero_point,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      out,
+      ActivationLayout::NHWCLogical);
+}
+
 } // namespace native
 } // namespace cortex_m

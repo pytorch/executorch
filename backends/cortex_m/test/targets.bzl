@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 
@@ -47,6 +48,25 @@ def define_common_targets(is_fbcode = False):
                 "//caffe2:torch",
                 "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
                 "//executorch/backends/cortex_m/ops:ops",
+            ],
+        )
+
+        python_pytest(
+            name = "test_quantized_conv2d_layout",
+            srcs = [
+                "test_quantized_conv2d_layout.py",
+            ],
+            compile = "with-source",
+            typing = False,
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/arm:ao_ext",
+                "//executorch/backends/arm:ethosu",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/ops:ops",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/exir:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
             ],
         )
 

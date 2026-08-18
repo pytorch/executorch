@@ -197,5 +197,42 @@ Tensor& quantized_add_out(
       ActivationLayout::NCHWLogical);
 }
 
+// cppcheck-suppress unusedFunction
+Tensor& quantized_add_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_add_out_impl(
+      context,
+      "quantized_add_nhwc_out",
+      input1_int8,
+      input1_zero_point,
+      input1_multiplier,
+      input1_shift,
+      input2_int8,
+      input2_zero_point,
+      input2_multiplier,
+      input2_shift,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      activation_min,
+      activation_max,
+      out,
+      ActivationLayout::NHWCLogical);
+}
+
 } // namespace native
 } // namespace cortex_m
