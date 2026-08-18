@@ -99,6 +99,47 @@ def get_compute_nodes(
 
 
 class FuseCascadedTransposeOrPermuteOpsTest(unittest.TestCase):
+    def test_structural_permute_composition_preserves_provenance(self) -> None:
+        for second_target, expected_target in (
+            (
+                exir_ops.edge.channels_last.permute_copy.default,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            (
+                exir_ops.edge.aten.permute_copy.default,
+                exir_ops.edge.aten.permute_copy.default,
+            ),
+        ):
+            with self.subTest(second_target=second_target):
+                builder = GraphBuilder()
+                x_data = torch.randn(1, 2, 3, 4)
+                x = builder.placeholder("x", x_data)
+                first = builder.call_operator(
+                    op=exir_ops.edge.channels_last.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                second = builder.call_operator(
+                    op=second_target,
+                    args=(first, [0, 1, 3, 2]),
+                )
+                builder.output([second])
+                graph_module = builder.get_graph_module()
+                before = copy.deepcopy(graph_module)
+
+                result = cast(
+                    PassResult,
+                    FuseCascadedTransposeOrPermuteOps()(graph_module),
+                )
+
+                self.assertTrue(result.modified)
+                self.assertEqual(count_node(result.graph_module, expected_target), 1)
+                validate_numerics(
+                    before,
+                    result.graph_module,
+                    [x_data],
+                    "FuseCascadedTransposeOrPermuteOps",
+                )
+
     def test_permute_transpose_fusion(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 3, 1, 4))
@@ -740,8 +781,322 @@ class FuseTransposeOrPermuteOpPairsTest(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Tests for ReplaceNopTransposeOrPermuteWithViewPass
+# Tests for structural layout boundary propagation
 # ──────────────────────────────────────────────────────────────────────
+
+
+class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
+    @staticmethod
+    def _layout_add_graph(
+        bias_name: str, bias_data: torch.Tensor
+    ) -> tuple[torch.fx.GraphModule, torch.Tensor]:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 8, 8, 4)
+        x = builder.placeholder("x", x_data)
+        bias = builder.placeholder(bias_name, bias_data)
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 3, 1, 2]),
+        )
+        add = builder.call_operator(
+            op=exir_ops.edge.aten.add.Tensor,
+            args=(to_nchw, bias),
+        )
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(add, [0, 2, 3, 1]),
+        )
+        builder.output([to_nhwc])
+        return builder.get_graph_module(), x_data
+
+    def test_pair_fusion_recognizes_structural_permutes(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        quantize = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(to_nhwc, 0.25, 0, -128, 127, torch.int8),
+        )
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(quantize, [0, 3, 1, 2]),
+        )
+        builder.output([to_nchw])
+        graph_module = builder.get_graph_module()
+        before = copy.deepcopy(graph_module)
+
+        result = cast(PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module))
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            0,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data],
+            "FuseTransposeOrPermuteOpPairsPass",
+        )
+
+    def test_pair_fusion_does_not_bypass_structural_per_channel_qdq(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.channels_last.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.channels_last.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module,
+                        exir_ops.edge.channels_last.permute_copy.default,
+                    ),
+                    2,
+                )
+
+    def test_layout_copy_moves_to_static_output_boundary(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        x = builder.placeholder("x", x_data)
+        permute = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.aten.hardtanh.default,
+            args=(permute,),
+        )
+        builder.output([output])
+        graph_module = builder.get_graph_module()
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
+                graph_module
+            ),
+        )
+
+        self.assertTrue(result.modified)
+        surviving_permute = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.channels_last.permute_copy.default,
+        )[0]
+        self.assertEqual(
+            surviving_permute.args[0].target,
+            exir_ops.edge.aten.hardtanh.default,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_layout_copy_does_not_fork_to_more_boundaries(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(1, 2, 3, 4))
+        permute = builder.call_operator(
+            op=exir_ops.edge.channels_last.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        first = builder.call_operator(
+            op=exir_ops.edge.aten.hardtanh.default,
+            args=(permute,),
+        )
+        second = builder.call_operator(
+            op=exir_ops.edge.aten.mul.Tensor,
+            args=(permute, permute),
+        )
+        builder.output([first, second])
+        graph_module = builder.get_graph_module()
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
+                graph_module
+            ),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            1,
+        )
+
+    def test_layout_copy_does_not_cross_unknown_cost_boundary(self) -> None:
+        class DynamicDequantize(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                permuted = torch.ops.channels_last.permute_copy(x, [0, 2, 3, 1])
+                return torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    permuted, 0.1, 0, -128, 127, torch.int8
+                )
+
+        inputs = (torch.randint(-128, 127, (1, 4, 8, 10), dtype=torch.int8),)
+        exported = torch.export.export(
+            DynamicDequantize(),
+            inputs,
+            dynamic_shapes={"x": {2: torch.export.Dim("height", min=2, max=16)}},
+        )
+        edge = to_edge(
+            exported,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,
+            ),
+        )
+        graph_module = edge.exported_program().graph_module
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(
+                exported_program=edge.exported_program(),
+                allow_layout_boundary_propagation=True,
+            )(graph_module),
+        )
+
+        self.assertFalse(result.modified)
+        permute = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.channels_last.permute_copy.default,
+        )[0]
+        dequantize = result.graph_module.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        )[0]
+        self.assertIs(dequantize.args[0], permute)
+        self.assertEqual(permute.meta["val"].dtype, torch.int8)
+
+    def test_layout_copy_rejects_rank_mismatched_runtime_input(self) -> None:
+        bias_data = torch.randn(4, 1, 1)
+        graph_module, x_data = self._layout_add_graph("bias", bias_data)
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
+                graph_module
+            ),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            2,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, bias_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_layout_copy_rejects_spatial_constant_reordering(self) -> None:
+        bias_data = torch.randn(4, 8, 8)
+        graph_module, x_data = self._layout_add_graph("b_bias", bias_data)
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
+                graph_module
+            ),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            2,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, bias_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+    def test_layout_copy_reshapes_channel_constant_without_copy(self) -> None:
+        bias_data = torch.randn(4, 1, 1)
+        graph_module, x_data = self._layout_add_graph("b_bias", bias_data)
+        before = copy.deepcopy(graph_module)
+
+        result = cast(
+            PassResult,
+            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
+                graph_module
+            ),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            count_node(
+                result.graph_module,
+                exir_ops.edge.channels_last.permute_copy.default,
+            ),
+            0,
+        )
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.view_copy.default),
+            1,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, bias_data],
+            "RemovePermutesAroundElementwiseOps",
+        )
+
+
+# ─────────────────────────────────────
+# Tests for ReplaceNopTransposeOrPermuteWithViewPass
+# ─────────────────────────────────────
 
 
 class ReplaceNopTransposeOrPermuteWithViewTest(unittest.TestCase):

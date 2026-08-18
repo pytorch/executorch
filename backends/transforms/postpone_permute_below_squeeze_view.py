@@ -11,6 +11,7 @@ from typing import cast, List
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import PERMUTE_COPY_TARGETS
 from executorch.backends.transforms.permute_pass_utils import (
     get_shape,
     RemoveOrReplacePassInterface,
@@ -36,7 +37,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
-        return [exir_ops.edge.aten.permute_copy.default]
+        return list(PERMUTE_COPY_TARGETS)
 
     # If list1 and list2 are same (same values and in same order) except
     # list1 has one more element with value of 1. Return index of the extra 1.
@@ -182,7 +183,7 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
                 permute_target,
                 args=(new_view_node, new_permute_dims),
             )
-            new_permute_node.meta = view_node.meta
+            new_permute_node.meta = dict(view_node.meta)
             view_node.replace_all_uses_with(new_permute_node)
 
         # view_node is user of permute_node, so must erase view_node first
