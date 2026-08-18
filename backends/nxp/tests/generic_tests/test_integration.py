@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
-from executorch.backends.nxp.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
+from executorch.backends.nxp.tests.ops_aliases import AddMM, Convolution
 from executorch.backends.nxp.tests.use_qat import *  # noqa F401
 
 from executorch.backends.nxp.tests.executorch_pipeline import (
