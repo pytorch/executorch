@@ -1020,7 +1020,7 @@ def _resolve_storage_base_specs(
             )
             internal_assert(
                 (base_alloc_offset + storage_base_offset) % spec.alignment == 0,
-                f"Storage-backed TensorSpec allocation must respect alignment, got offset {storage_base_offset} inside parent with offset {storage_base_offset} for alignment {spec.alignment}.",
+                f"Storage-backed TensorSpec allocation must respect alignment, got offset {storage_base_offset} inside parent with offset {base_alloc_offset} for alignment {spec.alignment}.",
             )
             internal_assert(
                 storage_base_offset + allocated_memory <= base_allocated_memory,
