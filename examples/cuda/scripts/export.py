@@ -26,7 +26,7 @@ from executorch.extension.export_util.utils import save_pte_program
 
 _EDGE_COMPILE_CONFIG = EdgeCompileConfig(
     _check_ir_validity=False,
-    _skip_dim_order=True,  # TODO(T182928844): enable dim_order in backend
+    _skip_dim_order=True,
 )
 
 
