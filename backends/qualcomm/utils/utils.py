@@ -1069,6 +1069,7 @@ def generate_htp_compiler_spec(
     use_multi_contexts: bool = False,
     use_weight_sharing: bool = False,
     use_slc_allocator: bool = False,
+    use_graph_splitting: bool = False,
     htp_performance_mode: QnnExecuTorchHtpPerformanceMode = QnnExecuTorchHtpPerformanceMode.kHtpBurst,
 ) -> QnnExecuTorchBackendOptions:
     """
@@ -1088,6 +1089,8 @@ def generate_htp_compiler_spec(
         use_slc_allocator: Allows user to enable the usage of the System Level Cache Allocator for a given graph.
             It will help the by reducing overall bandwith on the use case.
             The feature is only supported by specific SOCs.
+        use_graph_splitting: When enabled, the compiled graph is split based on
+            its structure and each part is compiled as an independent subgraph.
 
     Returns:
         QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
@@ -1106,6 +1109,7 @@ def generate_htp_compiler_spec(
     htp_options.use_weight_sharing = use_weight_sharing
     htp_options.use_dlbc = use_dlbc
     htp_options.use_slc_allocator = use_slc_allocator
+    htp_options.use_graph_splitting = use_graph_splitting
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,
         htp_options=htp_options,
