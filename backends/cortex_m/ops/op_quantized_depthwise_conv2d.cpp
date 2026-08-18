@@ -1,9 +1,13 @@
 /*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
  * Copyright 2025-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include "cortex_m_ops_common.h"
 
@@ -26,7 +30,8 @@ bool validate_depthwise_conv2d_arguments(
     const Int64ArrayRef& dilation,
     const int64_t depth_multiplier,
     const Tensor& requantize_multipliers,
-    const Tensor& requantize_shifts) {
+    const Tensor& requantize_shifts,
+    ActivationLayout layout) {
   if (input.dim() != kConvDim || weight.dim() != kConvDim ||
       output.dim() != kConvDim) {
     ET_LOG(Error, "quantized_depthwise_conv2d_out: tensors must be 4-D");
@@ -55,7 +60,8 @@ bool validate_depthwise_conv2d_arguments(
   }
 
   const int64_t weight_output_channels = weight.size(3);
-  const int64_t output_channels = output.size(1);
+  const int64_t output_channels =
+      output.size(layout == ActivationLayout::NHWCLogical ? 3 : 1);
   if (weight_output_channels != output_channels) {
     ET_LOG(
         Error,
@@ -66,16 +72,22 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  if (!is_channels_last_tensor(input)) {
+  if (layout == ActivationLayout::NHWCLogical) {
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            output.dim_order().data(), output.dim_order().size())) {
+      ET_LOG(
+          Error,
+          "quantized_depthwise_conv2d_nhwc_out: input and output must have contiguous dim_order");
+      context.fail(Error::InvalidArgument);
+      return false;
+    }
+  } else if (
+      !is_channels_last_tensor(input) || !is_channels_last_tensor(output)) {
     ET_LOG(
-        Error, "quantized_depthwise_conv2d_out: input must be channels_last");
-    context.fail(Error::InvalidArgument);
-    return false;
-  }
-
-  if (!is_channels_last_tensor(output)) {
-    ET_LOG(
-        Error, "quantized_depthwise_conv2d_out: output must be channels_last");
+        Error,
+        "quantized_depthwise_conv2d_out: input and output must be channels_last");
     context.fail(Error::InvalidArgument);
     return false;
   }
@@ -108,7 +120,8 @@ bool validate_depthwise_conv2d_arguments(
     return false;
   }
 
-  const int64_t input_channels = input.size(1);
+  const int64_t input_channels =
+      input.size(layout == ActivationLayout::NHWCLogical ? 3 : 1);
   // output_channels already extracted above for weight validation
   if (output_channels != input_channels * depth_multiplier) {
     ET_LOG(
@@ -136,7 +149,7 @@ bool validate_depthwise_conv2d_arguments(
 } // namespace
 
 // cppcheck-suppress unusedFunction
-Tensor& quantized_depthwise_conv2d_out(
+static Tensor& quantized_depthwise_conv2d_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& weight,
@@ -152,6 +165,7 @@ Tensor& quantized_depthwise_conv2d_out(
     const int64_t activation_min,
     const int64_t activation_max,
     const Tensor& scratch,
+    ActivationLayout layout,
     Tensor& out) {
   if (!validate_depthwise_conv2d_arguments(
           context,
@@ -164,23 +178,30 @@ Tensor& quantized_depthwise_conv2d_out(
           dilation,
           depth_multiplier,
           requantize_multipliers,
-          requantize_shifts)) {
+          requantize_shifts,
+          layout)) {
     return out;
   }
 
   const int32_t batch = static_cast<int32_t>(input.size(0));
-  const int32_t input_channels = static_cast<int32_t>(input.size(1));
-  const int32_t input_height = static_cast<int32_t>(input.size(2));
-  const int32_t input_width = static_cast<int32_t>(input.size(3));
+  const int32_t input_channels = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t input_height = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t input_width = static_cast<int32_t>(
+      input.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   // Weight is in IHWO layout after permutation in the pass: [1, H, W, C_OUT]
   // For depthwise conv, this matches CMSIS-NN's expected format
   const int32_t kernel_height = static_cast<int32_t>(weight.size(1));
   const int32_t kernel_width = static_cast<int32_t>(weight.size(2));
 
-  const int32_t output_channels = static_cast<int32_t>(out.size(1));
-  const int32_t output_height = static_cast<int32_t>(out.size(2));
-  const int32_t output_width = static_cast<int32_t>(out.size(3));
+  const int32_t output_channels = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 3 : 1));
+  const int32_t output_height = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 1 : 2));
+  const int32_t output_width = static_cast<int32_t>(
+      out.size(layout == ActivationLayout::NHWCLogical ? 2 : 3));
 
   const int32_t depth_multiplier_val = static_cast<int32_t>(depth_multiplier);
 
@@ -270,6 +291,44 @@ Tensor& quantized_depthwise_conv2d_out(
   }
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_depthwise_conv2d_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t depth_multiplier,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_depthwise_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      depth_multiplier,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NCHWLogical,
+      out);
 }
 
 } // namespace native
