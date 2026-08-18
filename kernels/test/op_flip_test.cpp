@@ -79,16 +79,16 @@ class OpFlipOutDimOrderTest : public OperatorTest {
 TEST_F(OpFlipOutDimOrderTest, ChannelsLastMatchesContiguous) {
   TensorFactory<ScalarType::Float> tf;
 
-  Tensor contiguous_in =
+  Tensor contiguous_input =
       tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
   Tensor expected =
       tf.make({1, 3, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4});
   int64_t dims_data[1] = {1};
   IntArrayRef dims = IntArrayRef(dims_data, 1);
 
-  Tensor in = tf.channels_last_like(contiguous_in);
+  Tensor input = tf.channels_last_like(contiguous_input);
   Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
-  op_flip_out(in, dims, out);
+  op_flip_out(input, dims, out);
 
   EXPECT_TENSOR_CLOSE(out, tf.channels_last_like(expected));
 }
