@@ -580,7 +580,7 @@ TEST_F(OpSplitCopyTensorOutTest, DISABLED_DynamicShapeUnbound) {
 TEST_F(OpSplitCopyTensorOutTest, NonDefaultDimOrderDies) {
   TensorFactory<ScalarType::Float> tf;
 
-  Tensor self = tf.channels_last_like(tf.make(
+  Tensor input = tf.channels_last_like(tf.make(
       {1, 4, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}));
   std::vector<Tensor> outs = {
       tf.zeros_channels_last({1, 2, 2, 2}),
@@ -589,5 +589,5 @@ TEST_F(OpSplitCopyTensorOutTest, NonDefaultDimOrderDies) {
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_split_copy_tensor_out(
-          self, 2, 1, TensorList(outs.data(), outs.size())));
+          input, 2, 1, TensorList(outs.data(), outs.size())));
 }

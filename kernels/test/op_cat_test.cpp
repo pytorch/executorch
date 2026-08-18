@@ -468,12 +468,12 @@ TEST_F(OpCatOutTest, DynamicShapeUnbound) {
 TEST_F(OpCatOutTest, NonDefaultDimOrderDies) {
   TensorFactory<ScalarType::Float> tf;
 
-  Tensor a = tf.channels_last_like(
+  Tensor x = tf.channels_last_like(
       tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
-  Tensor b = tf.channels_last_like(
+  Tensor y = tf.channels_last_like(
       tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
   Tensor out = tf.zeros_channels_last({1, 6, 2, 2});
-  std::vector<Tensor> inputs = {a, b};
+  std::vector<Tensor> inputs = {x, y};
 
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_cat_out(TensorList(inputs.data(), inputs.size()), 1, out));

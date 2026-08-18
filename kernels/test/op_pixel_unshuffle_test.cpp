@@ -130,9 +130,9 @@ TEST_F(OpPixelUnshuffleOutTest, NegativeUpscaleFactorDies) {
 TEST_F(OpPixelUnshuffleOutTest, NonDefaultDimOrderDies) {
   TensorFactory<ScalarType::Float> tf;
 
-  Tensor in = tf.channels_last_like(tf.make(
+  Tensor a = tf.channels_last_like(tf.make(
       {1, 1, 4, 4}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}));
   Tensor out = tf.zeros_channels_last({1, 4, 2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_pixel_unshuffle_out(in, 2, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_pixel_unshuffle_out(a, 2, out));
 }
