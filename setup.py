@@ -761,11 +761,6 @@ class InstallerBuildExt(build_ext):
         _strip_absolute_runtime_paths(dst_file)
 
 
-def _origin_token() -> str:
-    """The loader's own-directory token, spelled differently by the two formats."""
-    return "@loader_path" if sys.platform == "darwin" else "$ORIGIN"
-
-
 def _strip_absolute_runtime_paths(library: Path) -> None:
     """Remove unusable runtime search paths from a library the wheel ships.
 
@@ -856,14 +851,7 @@ def _strip_absolute_runtime_paths(library: Path) -> None:
         not entry.startswith("/") and entry.rstrip("/").endswith("/torch/lib")
         for entry in original.split(":")
     )
-    # An editable install copies this extension into a package directory whose
-    # subdirectories are symlinks to the checkout, and the loader resolves the origin
-    # token against the real path, so the runtime sits inside src/executorch/lib rather
-    # than beside the copy. Nothing else adds a relative route at this point.
-    hop = _origin_token() + "/../../src/executorch/lib"
     rewritten = ":".join(entry for entry in original.split(":") if keep(entry))
-    if hop not in rewritten.split(":"):
-        rewritten = rewritten + ":" + hop if rewritten else hop
     if rewritten == original:
         return
     subprocess.run(
