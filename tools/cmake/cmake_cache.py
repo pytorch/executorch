@@ -7,12 +7,6 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-# Deliberately stricter than CMake. CMake decides false by exclusion, so anything that is not one
-# of its false constants is true, including values like "2.0" and "enabled". Here an unrecognised
-# spelling reads as off, because this decides whether a component's libraries are packaged and
-# shipping a component whose libraries were never built is worse than shipping one fewer.
-_TRUE_VALUES = {"on", "true", "yes", "y"}
-
 
 @dataclass
 class CacheValue:
@@ -24,8 +18,8 @@ try:
     from install_utils import cmake_boolean_is_true
 except ImportError:  # pragma: no cover
     # This module is imported both as tools.cmake.cmake_cache and standalone, so the repository root
-    # is not always reachable and the import above cannot be relied on. The rule is restated once,
-    # here and nowhere else, because three review rounds went on two copies of it drifting apart.
+    # is not always reachable and the import above cannot be relied on. Keep this the only copy of
+    # the rule besides install_utils, so the two cannot drift apart.
     _CMAKE_FALSE_CONSTANTS = frozenset(
         {"off", "false", "n", "no", "0", "", "ignore", "notfound"}
     )

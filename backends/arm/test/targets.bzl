@@ -84,6 +84,7 @@ def define_arm_tests():
     # surface is covered by a dedicated backward-compatibility CI job.
     if runtime.is_oss:
         test_files += [
+            "misc/test_docgen_op_support.py",
             "misc/test_public_api_manifest.py",
             "misc/test_validate_public_api_manifest.py",
         ]
@@ -146,7 +147,9 @@ def define_arm_tests():
                 # __init__ (and its torch import) into pytest collection.
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
-            ] if runtime.is_oss else []),
+            ] if runtime.is_oss else []) + ([
+                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+            ] if test_file == "misc/test_docgen_op_support.py" else []),
         )
 
     if not runtime.is_oss and _ENABLE_VGF:
