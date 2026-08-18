@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,6 +20,16 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         if len(node.users) == 0:
             graph.erase_node(node)
 
+    @staticmethod
+    def _same_tensor_type_and_shape(lhs: torch.Tensor, rhs: torch.Tensor) -> bool:
+        return lhs.dtype == rhs.dtype and tuple(lhs.shape) == tuple(rhs.shape)
+
+    def _preserves_tensor_type_and_shape(self, node) -> bool:
+        input_node = node.args[0]
+        return self._same_tensor_type_and_shape(
+            input_node.meta["val"], node.meta["val"]
+        )
+
     def _try_remove_regular_redundant_to_copy(self, node, graph):
         """
         Try to remove redundant regular to_copy operations with pattern to_copy1 -> to_copy2 with opposite memory formats
@@ -35,6 +46,11 @@ class RemoveRedundantCopyPass(XNNPACKPass):
 
             # Get the original input (before the first to_copy)
             original_input = input_node.args[0]
+            if not (
+                self._preserves_tensor_type_and_shape(input_node)
+                and self._preserves_tensor_type_and_shape(node)
+            ):
+                return False
 
             # Replace all users of the second to_copy with the original input
             for user in node.users.copy():
@@ -52,6 +68,10 @@ class RemoveRedundantCopyPass(XNNPACKPass):
             ChannelsLastTaggedReshapePass.is_nchw_node(input_node)
             and ChannelsLastTaggedReshapePass.is_nchw_node(node)
         ):
+            if not self._same_tensor_type_and_shape(
+                input_node.meta["val"], node.meta["val"]
+            ):
+                return False
             # Replace all users of the second to_copy with the original input
             for user in node.users.copy():
                 user.replace_input_with(node, input_node)

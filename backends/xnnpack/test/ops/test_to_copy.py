@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,19 +9,45 @@ import unittest
 
 import torch
 
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.operators.op_to_copy import ToCopy, ToCopyOperation
+from executorch.backends.xnnpack.test.tester import Tester, ToEdgeTransformAndLower
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 
 
 class TestChannelsLastTaggedReshapePass(unittest.TestCase):
     def setUp(self):
         torch._dynamo.reset()
 
-    def run_tester(self, module, inputs):
+    def test_transpose_cast_order_uses_smaller_dtype_for_transpose(self):
+        ops = [ToCopyOperation.TRANSPOSE, ToCopyOperation.CAST]
+
+        ToCopy._sort_decomposed_operations(ops, torch.float16, torch.float32)
+
+        self.assertEqual(ops, [ToCopyOperation.TRANSPOSE, ToCopyOperation.CAST])
+
+        ToCopy._sort_decomposed_operations(ops, torch.float32, torch.float16)
+
+        self.assertEqual(ops, [ToCopyOperation.CAST, ToCopyOperation.TRANSPOSE])
+
+    def run_tester(self, module, inputs, skip_dim_order=False):
         tester = Tester(
             module.eval(),
             inputs,
         )
-        tester.export().to_edge_transform_and_lower().check_not(
+        tester = tester.export()
+        if skip_dim_order:
+            tester = tester.to_edge_transform_and_lower(
+                ToEdgeTransformAndLower(
+                    edge_compile_config=get_xnnpack_edge_compile_config(
+                        skip_dim_order=True
+                    )
+                )
+            )
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+        else:
+            tester = tester.to_edge_transform_and_lower()
+
+        tester.check_not(
             ["executorch_exir_dialects_edge__ops_aten__to_copy_default"]
         ).to_executorch().serialize().run_method_and_compare_outputs()
 
@@ -84,6 +111,33 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
         self.run_tester(
             self.DtypeAndMemoryFormatWithLinearModule,
             (torch.randint(0, 10, (1, 3, 3, 3), dtype=torch.int16),),
+        )
+
+    class DtypeOnlyConversion(torch.nn.Module):
+        def forward(self, x):
+            return x.to(torch.float)
+
+    DtypeOnlyConversionModule = DtypeOnlyConversion()
+
+    def test_dtype_only_conversion_with_skip_dim_order(self):
+        self.run_tester(
+            self.DtypeOnlyConversionModule,
+            (torch.randn(1, 3, 3, 3, dtype=torch.float16),),
+            skip_dim_order=True,
+        )
+
+    def test_memory_format_conversion_with_skip_dim_order(self):
+        self.run_tester(
+            self.ChannelLastBeforeLinearModule,
+            (torch.randn(1, 3, 3, 3),),
+            skip_dim_order=True,
+        )
+
+    def test_dtype_and_memory_format_conversion_with_skip_dim_order(self):
+        self.run_tester(
+            self.DtypeAndMemoryFormatConversionModule,
+            (torch.randn(1, 3, 6, 6, dtype=torch.float16),),
+            skip_dim_order=True,
         )
 
     class QuantizedToCopy(torch.nn.Module):

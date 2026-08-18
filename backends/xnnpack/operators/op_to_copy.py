@@ -1,13 +1,14 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from enum import auto, Enum
+from typing import Dict, List
 
 import torch
-from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
@@ -16,24 +17,196 @@ from executorch.backends.xnnpack.operators.node_visitor import (
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    XNNConvert,
+    XNNCopy,
+    XNNDatatype,
     XNNGraph,
     XNNStaticTranspose,
+    XNNTensorValue,
     XNode,
+    XValue,
 )
 from executorch.backends.xnnpack.utils.utils import (
-    check_or_raise,
     get_input_node,
     PERM_NCHW_TO_NHWC,
     PERM_NHWC_TO_NCHW,
 )
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
+
+
+class ToCopyOperation(Enum):
+    TRANSPOSE = auto()
+    CAST = auto()
+    COPY = auto()
 
 
 @register_node_visitor
-class ConvertMemoryFormat(NodeVisitor):
+class ToCopy(NodeVisitor):
+    # _to_copy lowers dtype changes to XNNConvert, 4D contiguous/channels_last
+    # memory-format changes to XNNStaticTranspose, and no-op copies to XNNCopy.
     target = "aten._to_copy.default"
 
-    def __init__(self, *args) -> None:
-        super().__init__(*args)
+    @staticmethod
+    def _is_channels_last(dim_order: List[int]) -> bool:
+        return dim_order == PERM_NCHW_TO_NHWC
+
+    def _define_intermediate_tensor(
+        self,
+        xnn_graph: XNNGraph,
+        dims: List[int],
+        dtype: XNNDatatype,
+    ) -> int:
+        value_id = len(xnn_graph.xvalues)
+        xnn_graph.xvalues.append(
+            XValue(
+                xvalue_union=XNNTensorValue(
+                    datatype=dtype,
+                    num_dims=len(dims),
+                    dims=dims,
+                    constant_buffer_idx=0,
+                    external_id=XNN_INVALID_VALUE_ID,
+                    flags=0,
+                    id_out=value_id,
+                )
+            )
+        )
+        return value_id
+
+    @staticmethod
+    def _append_copy_node(
+        xnn_graph: XNNGraph,
+        input_id: int,
+        output_id: int,
+        debug_handle: int,
+    ) -> None:
+        xnn_graph.xnodes.append(
+            XNode(
+                xnode_union=XNNCopy(
+                    input_id=input_id,
+                    output_id=output_id,
+                    flags=0,
+                ),
+                debug_handle=debug_handle,
+            )
+        )
+
+    @staticmethod
+    def _append_convert_node(
+        xnn_graph: XNNGraph,
+        input_id: int,
+        output_id: int,
+        debug_handle: int,
+    ) -> None:
+        xnn_graph.xnodes.append(
+            XNode(
+                xnode_union=XNNConvert(
+                    input_id=input_id,
+                    output_id=output_id,
+                    flags=0,
+                ),
+                debug_handle=debug_handle,
+            )
+        )
+
+    def _append_output_tensor(
+        self,
+        node: torch.fx.Node,
+        xnn_graph: XNNGraph,
+        vals_to_ids: Dict[torch.fx.Node, int],
+        operation: ToCopyOperation,
+        current_dims: List[int],
+        input_dtype: XNNDatatype,
+        output_dtype: XNNDatatype,
+        output_dim_order: List[int],
+        output_quant_params: QuantParams | None,
+        convert_to_nhwc: bool,
+        last_operation: bool,
+    ) -> tuple[int, List[int], XNNDatatype, List[int] | None]:
+        """Compute properties of output tensor and add it to the graph."""
+        output_dims = current_dims
+        output_dtype_for_operation = input_dtype
+        permute_order = None
+
+        if operation == ToCopyOperation.TRANSPOSE:
+            permute_order = (
+                PERM_NCHW_TO_NHWC
+                if self._is_channels_last(output_dim_order)
+                else PERM_NHWC_TO_NCHW
+            )
+            output_dims = [current_dims[i] for i in permute_order]
+        elif operation == ToCopyOperation.CAST:
+            output_dtype_for_operation = output_dtype
+
+        if last_operation:
+            self.define_tensor(
+                node,
+                xnn_graph,
+                vals_to_ids,
+                quant_params=output_quant_params,
+                convert_to_nhwc=convert_to_nhwc,
+            )
+            return (
+                vals_to_ids[node],
+                output_dims,
+                output_dtype_for_operation,
+                permute_order,
+            )
+
+        return (
+            self._define_intermediate_tensor(
+                xnn_graph, output_dims, output_dtype_for_operation
+            ),
+            output_dims,
+            output_dtype_for_operation,
+            permute_order,
+        )
+
+    @staticmethod
+    def _sort_decomposed_operations(
+        decomposed_operations: List[ToCopyOperation],
+        input_dtype: torch.dtype,
+        output_dtype: torch.dtype,
+    ) -> None:
+        """Sort transpose+cast so transpose runs on the smaller dtype."""
+        if (
+            ToCopyOperation.TRANSPOSE not in decomposed_operations
+            or ToCopyOperation.CAST not in decomposed_operations
+        ):
+            return
+
+        input_element_size = torch.empty((), dtype=input_dtype).element_size()
+        output_element_size = torch.empty((), dtype=output_dtype).element_size()
+        if input_element_size == output_element_size:
+            return
+
+        first_operation = (
+            ToCopyOperation.TRANSPOSE
+            if output_element_size > input_element_size
+            else ToCopyOperation.CAST
+        )
+        decomposed_operations.sort(key=lambda operation: operation != first_operation)
+
+    @staticmethod
+    def _append_transpose_node(
+        xnn_graph: XNNGraph,
+        permute_order: List[int],
+        input_id: int,
+        output_id: int,
+        debug_handle: int,
+    ) -> None:
+        output_shape = get_tensor_value(xnn_graph.xvalues[output_id]).dims
+        xnn_graph.xnodes.append(
+            XNode(
+                xnode_union=XNNStaticTranspose(
+                    num_dims=len(output_shape),
+                    perm=permute_order,
+                    input_id=input_id,
+                    output_id=output_id,
+                    flags=0,
+                ),
+                debug_handle=debug_handle,
+            )
+        )
 
     def define_node(
         self,
@@ -42,50 +215,78 @@ class ConvertMemoryFormat(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
-        memory_format_target = node.kwargs.get("memory_format", torch.contiguous_format)
-        to_channels_last = bool(memory_format_target == torch.channels_last)
-        to_contiguous = bool(memory_format_target == torch.contiguous_format)
-        check_or_raise(
-            to_channels_last or to_contiguous,
-            "Unsupported Memory Format for XNNPACK",
-        )
-
         input_node = get_input_node(node, 0)
+        input_val = input_node.meta["val"]
+        output_val = node.meta["val"]
+        input_dim_order = list(input_val.dim_order())
+        output_dim_order = list(output_val.dim_order())
+        changes_dtype = input_val.dtype != output_val.dtype
+        changes_dim_order = input_dim_order != output_dim_order
+
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
-
-        permute_order = PERM_NCHW_TO_NHWC if to_channels_last else PERM_NHWC_TO_NCHW
 
         self.define_tensor(
             input_node,
             xnn_graph,
             vals_to_ids,
             quant_params=input_quant_params,
-            convert_to_nhwc=(
-                (not to_channels_last) and len(get_shape(input_node)) == 4
-            ),  # input is contiguous if converting out of channels last
+            convert_to_nhwc=self._is_channels_last(input_dim_order),
         )
 
-        self.define_tensor(
-            node,
-            xnn_graph,
-            vals_to_ids,
-            quant_params=output_quant_params,
-            convert_to_nhwc=to_channels_last,  # output is channels last if converting into channels last
-        )
+        decomposed_operations = []
+        if changes_dim_order:
+            decomposed_operations.append(ToCopyOperation.TRANSPOSE)
+        if changes_dtype:
+            decomposed_operations.append(ToCopyOperation.CAST)
+        if len(decomposed_operations) == 0:
+            decomposed_operations.append(ToCopyOperation.COPY)
+        else:
+            self._sort_decomposed_operations(
+                decomposed_operations, input_val.dtype, output_val.dtype
+            )
 
-        input_id = vals_to_ids[get_input_node(node, 0)]
-        output_id = vals_to_ids[node]
-        new_shape = get_tensor_value(xnn_graph.xvalues[output_id]).dims
+        input_id = vals_to_ids[input_node]
+        input_dtype = self.get_serialized_dtype(input_quant_params, input_node)
+        output_dtype = self.get_serialized_dtype(output_quant_params, node)
+        current_dims = get_tensor_value(xnn_graph.xvalues[input_id]).dims
 
-        ser_node = XNode(
-            xnode_union=XNNStaticTranspose(
-                num_dims=len(new_shape),
-                perm=permute_order,
-                input_id=input_id,
-                output_id=output_id,
-                flags=0,
-            ),
-            debug_handle=debug_handle,
-        )
-        xnn_graph.xnodes.append(ser_node)
+        for operation in decomposed_operations:
+            last_operation = operation == decomposed_operations[-1]
+            (
+                output_id,
+                output_dims,
+                output_dtype_for_operation,
+                permute_order,
+            ) = self._append_output_tensor(
+                node,
+                xnn_graph,
+                vals_to_ids,
+                operation,
+                current_dims,
+                input_dtype,
+                output_dtype,
+                output_dim_order,
+                output_quant_params,
+                self._is_channels_last(output_dim_order),
+                last_operation,
+            )
+            match operation:
+                case ToCopyOperation.COPY:
+                    self._append_copy_node(xnn_graph, input_id, output_id, debug_handle)
+                case ToCopyOperation.CAST:
+                    self._append_convert_node(
+                        xnn_graph, input_id, output_id, debug_handle
+                    )
+                case ToCopyOperation.TRANSPOSE:
+                    assert permute_order is not None
+                    self._append_transpose_node(
+                        xnn_graph,
+                        permute_order,
+                        input_id,
+                        output_id,
+                        debug_handle,
+                    )
+            input_id = output_id
+            current_dims = output_dims
+            input_dtype = output_dtype_for_operation

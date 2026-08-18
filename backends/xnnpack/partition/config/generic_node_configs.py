@@ -530,6 +530,42 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
 
+class ToCopyConfig(GenericNodePartitionerConfig):
+    target_name = "_to_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+        input_node = get_input_node(node, 0)
+        input_meta = input_node.meta["val"]
+        output_meta = node.meta["val"]
+
+        # The visitor handles only 4D NCHW <-> NHWC dim-order conversions.
+        input_dim_order = list(input_meta.dim_order())
+        output_dim_order = list(output_meta.dim_order())
+        if input_dim_order != output_dim_order:
+            if input_meta.dim() != 4 or output_meta.dim() != 4:
+                why(node, reason="dim-order conversion only supports 4D tensors")
+                return False
+            if (input_dim_order, output_dim_order) not in (
+                ([0, 1, 2, 3], [0, 2, 3, 1]),
+                ([0, 2, 3, 1], [0, 1, 2, 3]),
+            ):
+                why(
+                    node,
+                    reason=(
+                        "unsupported dim-order conversion from "
+                        f"{input_dim_order} to {output_dim_order}"
+                    ),
+                )
+                return False
+
+        return True
+
+
 class MeanDimConfig(GenericNodePartitionerConfig):
     target_name = "mean.dim"
 

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -112,8 +113,17 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         node.meta[ChannelsLastTaggedReshapePass.XNN_NHWC_NODE] = False
 
     def tag_node(self, node: torch.fx.Node) -> None:
-        if node.kwargs["memory_format"] == torch.channels_last:
+        memory_format = node.kwargs.get("memory_format", torch.preserve_format)
+        if memory_format == torch.channels_last:
             self.mark_as_nhwc_node(node)
+        elif memory_format == torch.contiguous_format:
+            self.mark_as_nchw_node(node)
+        elif memory_format in (None, torch.preserve_format) and node.all_input_nodes:
+            # Dtype-only _to_copy preserves the existing 4D NCHW/NHWC format.
+            if ChannelsLastTaggedReshapePass.is_nhwc_node(node.all_input_nodes[0]):
+                self.mark_as_nhwc_node(node)
+            else:
+                self.mark_as_nchw_node(node)
         else:
             self.mark_as_nchw_node(node)
 
