@@ -47,9 +47,9 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux, `pip install executorch` ships the runtime as prebuilt shared libraries together with the
-headers and a CMake package. So a C++ program can use ExecuTorch without building it from source,
-and without knowing much CMake.
+On Linux and macOS, `pip install executorch` ships the runtime as prebuilt shared libraries together
+with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
+source, and without knowing much CMake.
 
 #### Run your first model in four steps
 
@@ -168,7 +168,7 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::backend_xnnpack)
 ```
 
-These are the components the Linux package provides:
+These are the components the package provides:
 
 | Component | What it gives you | Where |
 | --- | --- | --- |
@@ -193,10 +193,9 @@ foreach(_component runtime kernels_optimized backend_xnnpack threadpool etdump)
 endforeach()
 ```
 
-On macOS the Core ML and MLX
-delegates are registered inside the Python extension rather than shipped as separate C++ libraries,
-so a C++ application there cannot link them as components; use them from Python, or build from
-source if you need them in C++.
+On macOS the Core ML and MLX delegates are registered inside the Python extension rather than
+shipped as separate C++ libraries, so a C++ application there cannot link them as components; use
+them from Python, or build from source if you need them in C++.
 
 A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
 model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure

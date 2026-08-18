@@ -668,31 +668,30 @@ def test_consumer_is_relocatable(work_dir: Path) -> None:
                 shutil.copy2(library, deployed / library.name)
 
     moved = deployed / "consumer"
-    # Strip the absolute entry the build left behind, so only $ORIGIN can resolve the
-    # libraries. Without this the application would find the original wheel and the
-    # check would pass for the wrong reason.
-    # Fatal, not a skip. Stripping the absolute entry is the whole point: without it the
-    # relocated application finds the original package and this check passes for the
-    # wrong reason. A skip here is indistinguishable from a pass in the log, which is
-    # the shape of failure this suite exists to avoid.
-    patchelf = _tool("patchelf")
-    if shutil.which("patchelf") is None and not Path(patchelf).is_file():
-        print("- patchelf not present, installing it so this check can run")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "patchelf"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        patchelf = _tool("patchelf")
-    assert shutil.which("patchelf") or Path(patchelf).is_file(), (
-        "patchelf is required to prove the application is relocatable, and could not "
-        "be installed. Without it the relocated application resolves the original "
-        "package and the check would pass without testing anything."
-    )
+    # Strip the absolute entry the build left behind, so only the loader-relative token can
+    # resolve the libraries. Without this the application would find the original wheel and
+    # the check would pass for the wrong reason.
     if sys.platform == "darwin":
         entries = _mach_o_runtime_paths(moved)
     else:
+        # Fatal, not a skip, and only on the ELF side, which is the only one that reads or
+        # rewrites the search path with patchelf. A skip here is indistinguishable from a pass
+        # in the log, which is the shape of failure this suite exists to avoid.
+        patchelf = _tool("patchelf")
+        if shutil.which("patchelf") is None and not Path(patchelf).is_file():
+            print("- patchelf not present, installing it so this check can run")
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--quiet", "patchelf"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            patchelf = _tool("patchelf")
+        assert shutil.which("patchelf") or Path(patchelf).is_file(), (
+            "patchelf is required to prove the application is relocatable, and could not "
+            "be installed. Without it the relocated application resolves the original "
+            "package and the check would pass without testing anything."
+        )
         entries = [
             entry
             for entry in subprocess.run(
@@ -873,9 +872,9 @@ def test_find_package_honours_a_version_request(work_dir: Path) -> None:
 def test_profiler_component_is_usable(work_dir: Path) -> None:
     """A C++ application must be able to construct the profiler the etdump component represents.
 
-    Linking a component proves the library resolves. It does not prove a consumer can call anything in it,
-    and the profiler shipped for a while with only an internal alignment helper as its public surface, so
-    the component could be requested and linked but not used.
+    Linking a component proves the library resolves. It does not prove a consumer can call anything in it.
+    A library whose only exported symbol is an internal helper still links, so the component could be
+    requested and linked but not used.
     """
     package_dir = _installed_package_dir()
     # Globbed, not an exact name: the library carries a version suffix outside a wheel build, and an exact
