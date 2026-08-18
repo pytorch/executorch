@@ -212,10 +212,11 @@ def _minimal_packages() -> List[str]:
 # unsuffixed names. A train with no entry here declares nothing rather than guessing a
 # name that may not exist.
 #
-# Only what a shipped library actually loads. Measured on a built wheel, the CUDA libraries need
-# the CUDA runtime and nothing else, because cuRAND is used only through its
-# device-side header API, which compiles into the object rather than linking a library, and the generated model library embeds its kernels
-# rather than compiling them at run time, so there is no runtime compiler to satisfy either.
+# Only what a shipped library actually loads. Measured on a built wheel, the CUDA
+# libraries need the CUDA runtime and nothing else, because cuRAND is used only through
+# its device-side header API, which compiles into the object rather than linking a
+# library, and the generated model library embeds its kernels rather than compiling them
+# at run time, so there is no runtime compiler to satisfy either.
 _CUDA_RUNTIME_PACKAGES = {
     "12": ("nvidia-cuda-runtime-cu12",),
     "13": ("nvidia-cuda-runtime",),
