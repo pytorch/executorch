@@ -13,6 +13,9 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
+    ConvertConv1dToConv2dPass,
+)
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -27,6 +30,7 @@ from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .explicit_layout_pass import CortexMExplicitLayoutPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -40,10 +44,12 @@ class CortexMPassManager(PassManager):
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
         ReplaceScalarWithTensorArgPass,
-        ReplaceQuantNodesPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
         DecomposeHardswishPass,
+        ConvertConv1dToConv2dPass,
+        CortexMExplicitLayoutPass,
+        ReplaceQuantNodesPass,
         AtenToCortexMPass,
     ]
 
@@ -61,6 +67,7 @@ class CortexMPassManager(PassManager):
         exported_program: ExportedProgram | None,
         passes: Optional[list[PassClass]] = None,
         target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
     ) -> None:
         """Initialize the Cortex-M pass manager.
 
@@ -74,6 +81,8 @@ class CortexMPassManager(PassManager):
                 Defaults to ``CortexMTargetConfig(cpu=CortexM.M55)``, which
                 resolves through cmsis_nn to the MVE backend — matching the
                 pre-config historical behaviour.
+            use_explicit_layout: Run channels-last dialect region formation.
+                Legacy dim-order lowering remains the default.
         """
         super().__init__(passes=[])
         self.exported_program = exported_program
@@ -84,6 +93,7 @@ class CortexMPassManager(PassManager):
         self.target_config: CortexMTargetConfig = target_config or CortexMTargetConfig(
             cpu=CortexM.M55
         )
+        self.use_explicit_layout = use_explicit_layout
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation
@@ -105,6 +115,12 @@ class CortexMPassManager(PassManager):
                     f"{type(self).__name__} expects pass classes, not instances; "
                     f"got {pass_cls!r}"
                 )
+
+            if (
+                pass_cls in (ConvertConv1dToConv2dPass, CortexMExplicitLayoutPass)
+                and not self.use_explicit_layout
+            ):
+                continue
 
             signature = inspect.signature(pass_cls)
             kwargs: dict[str, Any] = {}
