@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import itertools
 import sys
 import unittest
 
@@ -23,14 +24,19 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
         k_head_dim: int = 5,
         v_head_dim: int = 6,
         num_state_heads: int | None = None,
+        scalar_decay: bool = False,
     ):
         if num_state_heads is None:
             num_state_heads = num_heads
         query = torch.randn(batch_size, num_heads, seq_len, k_head_dim)
         key = torch.randn(batch_size, num_state_heads, seq_len, k_head_dim)
         value = torch.randn(batch_size, num_state_heads, seq_len, v_head_dim)
-        # Per-key-channel decay, passed already exponentiated (in (0, 1)).
-        decay = torch.rand(batch_size, num_state_heads, seq_len, k_head_dim)
+        # Decay is passed already exponentiated (in (0, 1)), per key channel or
+        # — with scalar_decay — one gate per (batch, state head, token).
+        decay_shape = [batch_size, num_state_heads, seq_len]
+        if not scalar_decay:
+            decay_shape.append(k_head_dim)
+        decay = torch.rand(decay_shape)
         beta = torch.sigmoid(torch.randn(batch_size, num_state_heads, seq_len))
         initial_state = torch.randn(batch_size, num_state_heads, k_head_dim, v_head_dim)
         return query, key, value, decay, beta, initial_state
@@ -49,6 +55,10 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
             query.size(0), query.size(1), query.size(2), value.size(3)
         )
         heads_per_state = query.size(1) // key.size(1)
+        # A scalar gate applies to every state row, so broadcast it out and
+        # share the channelwise body below.
+        if decay.dim() == 3:
+            decay = decay.unsqueeze(-1).expand_as(key)
 
         for token in range(query.size(2)):
             # Per-key-channel decay: [B, H, K, 1], already exponentiated.
@@ -91,6 +101,49 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 self.assertTrue(
                     torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
                 )
+
+    def test_scalar_decay_matches_reference(self):
+        torch.manual_seed(0)
+
+        # T == 1 hits the decode recurrence; 35 and 130 hit the chunked prefill
+        # route with a ragged final chunk (CHUNK_SIZE is 32 in the C++ kernel).
+        for seq_len, num_heads, num_state_heads in (
+            (1, 4, 2),
+            (35, 4, 2),
+            (130, 3, 3),
+        ):
+            with self.subTest(seq_len=seq_len, num_state_heads=num_state_heads):
+                inputs = self._make_inputs(
+                    batch_size=2,
+                    num_heads=num_heads,
+                    num_state_heads=num_state_heads,
+                    seq_len=seq_len,
+                    scalar_decay=True,
+                )
+                self.assertEqual(inputs[3].dim(), 3)
+
+                expected_output, expected_state = (
+                    self._reference_channelwise_gated_delta_rule(*inputs)
+                )
+                actual_output, actual_state = (
+                    torch.ops.llama.channelwise_gated_delta_rule(*inputs)
+                )
+
+                self.assertTrue(
+                    torch.allclose(actual_output, expected_output, atol=1e-3, rtol=1e-3)
+                )
+                self.assertTrue(
+                    torch.allclose(actual_state, expected_state, atol=1e-3, rtol=1e-3)
+                )
+
+    def test_scalar_decay_rejects_mismatched_sequence_length(self):
+        query, key, value, _, beta, initial_state = self._make_inputs(seq_len=4)
+        short_decay = torch.rand(query.size(0), key.size(1), 3)
+
+        with self.assertRaises(RuntimeError):
+            torch.ops.llama.channelwise_gated_delta_rule(
+                query, key, value, short_decay, beta, initial_state
+            )
 
     def test_channelwise_gated_delta_rule_rejects_uneven_groups(self):
         inputs = self._make_inputs(num_heads=3, num_state_heads=2)
@@ -380,32 +433,39 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                     query, key, value, decay, beta, initial_state
                 )
 
-        inputs = self._make_inputs()
+        for scalar_decay in (False, True):
+            with self.subTest(scalar_decay=scalar_decay):
+                inputs = self._make_inputs(scalar_decay=scalar_decay)
 
-        # Static export: the op must survive as a single graph node (the Meta
-        # impl lets it trace without running the real kernel).
-        ep = torch.export.export(Module(), inputs)
-        targets = [str(n.target) for n in ep.graph.nodes if n.op == "call_function"]
-        self.assertIn("llama.channelwise_gated_delta_rule.default", targets)
+                # Static export: the op must survive as a single graph node (the
+                # Meta impl lets it trace without running the real kernel).
+                ep = torch.export.export(Module(), inputs)
+                targets = [
+                    str(n.target) for n in ep.graph.nodes if n.op == "call_function"
+                ]
+                self.assertIn("llama.channelwise_gated_delta_rule.default", targets)
 
-        # Dynamic sequence length: one graph shared across prefill/decode.
-        seq = torch.export.Dim("seq", min=1, max=128)
-        dynamic_shapes = (
-            {2: seq},  # query          [B, H, T, K]
-            {2: seq},  # key            [B, H, T, K]
-            {2: seq},  # value          [B, H, T, V]
-            {2: seq},  # decay          [B, H, T, K]
-            {2: seq},  # beta           [B, H, T]
-            {},  # initial_state  [B, H, K, V] (no T dim)
-        )
-        ep_dyn = torch.export.export(Module(), inputs, dynamic_shapes=dynamic_shapes)
-        self.assertTrue(
-            any(
-                "channelwise_gated_delta_rule" in str(n.target)
-                for n in ep_dyn.graph.nodes
-                if n.op == "call_function"
-            )
-        )
+                # Dynamic sequence length: one graph shared across
+                # prefill/decode. T is dim 2 for both decay layouts.
+                seq = torch.export.Dim("seq", min=1, max=128)
+                dynamic_shapes = (
+                    {2: seq},  # query          [B, H, T, K]
+                    {2: seq},  # key            [B, H, T, K]
+                    {2: seq},  # value          [B, H, T, V]
+                    {2: seq},  # decay          [B, H, T, K] or [B, H, T]
+                    {2: seq},  # beta           [B, H, T]
+                    {},  # initial_state  [B, H, K, V] (no T dim)
+                )
+                ep_dyn = torch.export.export(
+                    Module(), inputs, dynamic_shapes=dynamic_shapes
+                )
+                self.assertTrue(
+                    any(
+                        "channelwise_gated_delta_rule" in str(n.target)
+                        for n in ep_dyn.graph.nodes
+                        if n.op == "call_function"
+                    )
+                )
 
     @unittest.skipUnless(
         sys.platform == "linux",
@@ -437,10 +497,11 @@ class ChannelwiseGatedDeltaRuleTest(unittest.TestCase):
                 )
 
         runtime = Runtime.get()
-        for seq_len in (4, 1):  # T != 1 (chunked route) and T == 1 (decode route)
-            with self.subTest(seq_len=seq_len):
+        # T != 1 (chunked route) and T == 1 (decode route), each decay layout.
+        for seq_len, scalar_decay in itertools.product((4, 1), (False, True)):
+            with self.subTest(seq_len=seq_len, scalar_decay=scalar_decay):
                 torch.manual_seed(seq_len)
-                inputs = self._make_inputs(seq_len=seq_len)
+                inputs = self._make_inputs(seq_len=seq_len, scalar_decay=scalar_decay)
                 expected_output, expected_state = (
                     self._reference_channelwise_gated_delta_rule(*inputs)
                 )

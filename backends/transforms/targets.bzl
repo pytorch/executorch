@@ -473,6 +473,7 @@ def define_common_targets():
             "//executorch/exir/dialects:lib",
             ":fuse_cascaded_transpose_or_permute_ops",
             ":fuse_cascaded_view_ops",
+            ":fuse_transpose_or_permute_op_pairs_pass",
             ":postpone_permute_below_squeeze_view",
             ":remove_permutes_around_elementwise_ops",
             ":replace_nop_transpose_or_permute_with_view",
@@ -504,6 +505,7 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
             ":channels_last_ops",
+            ":remove_getitem_op",
             ":replace_ops_with_channels_last_variants",
             "//executorch/exir:lib",
             "fbsource//third-party/pypi/pytest:pytest",
