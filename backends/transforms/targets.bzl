@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -514,11 +515,13 @@ def define_common_targets():
         ],
     )
 
-    runtime.python_test(
+    python_pytest(
         name = "test_replace_ops_with_channels_last_variants",
         srcs = [
             "test/test_replace_ops_with_channels_last_variants.py",
         ],
+        compile = "with-source",
+        typing = False,
         deps = [
             "//caffe2:torch",
             ":channels_last_ops",
