@@ -154,7 +154,7 @@ def lower_to_xnnpack(
         partitioner=[XnnpackPartitioner()],
         compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
-            _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
+            _skip_dim_order=True,
         ),
     )
 
