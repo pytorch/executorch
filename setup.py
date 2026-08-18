@@ -1284,10 +1284,6 @@ def _is_usable_runtime_path(
     return True
 
 
-# Whether the library can still reach torch without the absolute entry. Read inside keep,
-# which closes over this scope.
-
-
 def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     """Remove unusable runtime search paths from a library the wheel ships.
 
@@ -1343,12 +1339,16 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     )
     if result.returncode != 0:
         return
+    # A library carrying no runtime search path is not returned on early, because it still needs
+    # the hops added below. The linker records nothing when every dependency resolved from a
+    # default directory, and whether the builder image keeps the CUDA runtime in one of those is
+    # not something this wheel controls. Returning here on that would drop the hops to the CUDA
+    # wheels the package declares as dependencies, leaving the delegate with no route to them,
+    # and the deciding fact would be a property of the build machine rather than of the wheel.
+    # patchelf prints the same empty string for an absent tag and for one holding a single empty
+    # entry. Neither is worth keeping, both fall out of the filter below, so the two need no
+    # telling apart.
     original = result.stdout.strip()
-    if not original:
-        # No runtime search path at all, which is nothing to clean. patchelf prints
-        # the same empty string for an absent tag and for one holding a single empty
-        # entry, so there is nothing to distinguish here and nothing to do either way.
-        return
 
     # Whether dropping an absolute CUDA toolkit path is safe. It is a cleanup when a relative hop replaces
     # it, and also when this wheel carries no CUDA at all, because then nothing in it loads from that

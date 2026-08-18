@@ -12,6 +12,11 @@ on:
       - docs/source/using-executorch-cpp.md
       - install_utils.py
       - tools/cmake/**/*
+      # The wheel ships these as its C++ SDK. Whole trees rather than the exact directories
+      # setup.py copies from, so adding one there cannot silently drop it from this list.
+      - devtools/etdump/**.h
+      - extension/**.h
+      - runtime/**.h
   push:
     branches:
       - nightly
