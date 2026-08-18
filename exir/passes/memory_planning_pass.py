@@ -143,15 +143,28 @@ def _move_memory_meta_to_spec(node: Node) -> None:
     Only applies if _share_alloc_with_arg_idx is set.
     """
     share_idx = node.meta.get("_share_alloc_with_arg_idx")
+    shared_alloc_offset = node.meta.get("_shared_alloc_offset")
+
     if share_idx is None:
+        if shared_alloc_offset is not None:
+            raise ValueError(
+                "_shared_alloc_offset meta was set but not _share_alloc_with_arg_idx."
+            )
         return
+    if shared_alloc_offset is None:
+        shared_alloc_offset = 0
+
+    if not isinstance(share_idx, int):
+        raise TypeError("_share_alloc_with_arg_idx must be an int")
+    if not isinstance(shared_alloc_offset, int):
+        raise TypeError("_shared_alloc_offset must be an int")
+
     output_spec = node.meta.get("spec")
     if not isinstance(output_spec, TensorSpec):
         raise TypeError(
             "_share_alloc_with_arg_idx requires node.meta['spec'] to be a TensorSpec"
         )
-    if not isinstance(share_idx, int):
-        raise TypeError("_share_alloc_with_arg_idx must be an int")
+
     if share_idx < 0 or share_idx >= len(node.args):
         raise IndexError("_share_alloc_with_arg_idx must index node.args")
 
@@ -164,10 +177,6 @@ def _move_memory_meta_to_spec(node: Node) -> None:
         raise TypeError(
             "_share_alloc_with_arg_idx must reference an argument with a TensorSpec"
         )
-
-    shared_alloc_offset = node.meta.get("_shared_alloc_offset", 0)
-    if not isinstance(shared_alloc_offset, int):
-        raise TypeError("_shared_alloc_offset must be an int")
 
     output_spec.storage_base = base_spec
     output_spec.storage_base_offset = shared_alloc_offset

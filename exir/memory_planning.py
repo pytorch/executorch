@@ -91,17 +91,20 @@ class Verifier:
         return lhs_spec.mem_obj_id == rhs_spec.mem_obj_id
 
     @classmethod
-    def storage_root(cls, spec: TensorSpec) -> TensorSpec:
+    def _storage_root_chain(cls, spec: TensorSpec) -> set[TensorSpec]:
+        """Return spec and all TensorSpecs backing its storage."""
         seen: Set[TensorSpec] = set()
         root = spec
-        while root.storage_base is not None:
+        while True:
             internal_assert(
                 root not in seen,
                 "Circular storage_base relationship is not supported.",
             )
             seen.add(root)
+            if root.storage_base is None:
+                break
             root = root.storage_base
-        return root
+        return seen
 
     @classmethod
     def has_overlap(cls, lhs_ivl: List[int], rhs_ivl: List[int]) -> bool:
@@ -208,9 +211,12 @@ class Verifier:
                     # Some ops, such as in-place ops, intentionally place one
                     # TensorSpec inside another TensorSpec's storage despite
                     # overlapping lifetimes.
-                    is_common_base_pair = Verifier.storage_root(
-                        lhs_spec
-                    ) is Verifier.storage_root(rhs_spec)
+                    # This is OK if one spec is storage-backed by the other.
+                    # Specs that merely share a root, such as siblings, should
+                    # still be checked as normal allocations.
+                    lhs_chain = Verifier._storage_root_chain(lhs_spec)
+                    rhs_chain = Verifier._storage_root_chain(rhs_spec)
+                    is_common_base_pair = lhs_spec in rhs_chain or rhs_spec in lhs_chain
                     if not is_common_base_pair:
                         raise InternalError(
                             f"Unexpected storage overlap: {Verifier._debug_message_from_specs(lhs_spec, rhs_spec)}"
