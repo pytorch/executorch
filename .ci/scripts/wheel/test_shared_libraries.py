@@ -1189,9 +1189,10 @@ def test_extension_contains_no_component() -> None:
     what the shipped libraries own, and records a dependency on each instead.
     """
     assert _tool("nm") is not None, "nm is required to inspect the wheel"
-    if _tool("readelf") is None:
-        print("- readelf unavailable, skipping the extension composition check")
-        return
+    # Required rather than skipped over. This is the one check the split exists to
+    # make, so a missing tool has to stop the run: returning early here reports
+    # success for a wheel nothing looked at.
+    assert _tool("readelf") is not None, "readelf is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
     extensions = sorted(
@@ -1346,9 +1347,10 @@ def test_shipped_library_names_are_expected() -> None:
         "and it ships while looking correct to every other check."
     )
 
-    if _tool("readelf") is None:
-        print(f"✓ {len(shipped)} shipped libraries have expected names")
-        return
+    # Required rather than skipped over. Skipping would leave the soname half of this
+    # test unrun while the check mark below still reports the test as done, and the
+    # wheel-build environment has the tool anyway.
+    assert _tool("readelf") is not None, "readelf is required to inspect the wheel"
 
     # The recorded soname has to match the file name, or a consumer records a
     # dependency on a name the wheel does not contain.
