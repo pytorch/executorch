@@ -19,8 +19,12 @@ export CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_CUDA=ON"
 # Fail the build if CUDA is not actually present. Without this the packaging step would look for
 # CUDA libraries that were never built and report a confusing missing-file error several minutes
 # after the real problem.
-if [ ! -x "${CUDA_HOME:-/usr/local/cuda}/bin/nvcc" ]; then
-  echo "EXECUTORCH_BUILD_CUDA is set but no nvcc was found. This row cannot build a CUDA wheel." >&2
+# A regular file, executable, and able to answer: a directory also passes an execute-bit test, and a
+# stub or a broken wrapper passes both, which would let the row report a toolkit it cannot compile with.
+_executorch_nvcc="${CUDA_HOME:-/usr/local/cuda}/bin/nvcc"
+if [ ! -f "${_executorch_nvcc}" ] || [ ! -x "${_executorch_nvcc}" ] ||
+  ! "${_executorch_nvcc}" --version >/dev/null 2>&1; then
+  echo "EXECUTORCH_BUILD_CUDA is set but ${_executorch_nvcc} is not a working nvcc. This row cannot build a CUDA wheel." >&2
   exit 1
 fi
 

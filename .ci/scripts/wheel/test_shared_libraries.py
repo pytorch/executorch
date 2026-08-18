@@ -49,6 +49,17 @@ _REGISTRY_SYMBOLS = (
 # oversubscribes the CPU because each pool sizes itself to all cores.
 _THREADPOOL_SYMBOLS = ("executorch::extension::threadpool::get_threadpool",)
 
+# What the Python extension calls itself, so these have to appear in its dynamic
+# symbol table as undefined. pybindings.cpp reaches each one with no build option
+# in front of it, which makes absence from both tables a hidden private copy
+# rather than a symbol the extension simply does not use. register_backend is not
+# among them: the extension registers nothing, the delegate libraries do.
+_EXTENSION_IMPORTS = (
+    "executorch::runtime::get_num_registered_backends",
+    "executorch::runtime::get_backend_class",
+    *_THREADPOOL_SYMBOLS,
+)
+
 # A representative operator from the merged CPU kernels. A second definer means
 # the operators are registered twice, which aborts at startup.
 _KERNEL_SYMBOLS = ("torch::executor::native::abs_out",)
@@ -265,6 +276,26 @@ def _tool(name: str):
         return found
     beside = Path(sys.executable).parent / name
     return str(beside) if beside.is_file() else None
+
+
+def _loader_clean_environment() -> dict:
+    """The environment with every loader override removed.
+
+    A search path or an injected library inherited from the build environment
+    supplies what a shipped library failed to record, so a child process started
+    without stripping these can load a package that would not load anywhere else.
+    Both spellings go on both platforms: the one that does not apply is absent
+    rather than harmful, and naming only the ELF variable is what left the macOS
+    checks honouring DYLD_LIBRARY_PATH.
+    """
+    overrides = (
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "DYLD_LIBRARY_PATH",
+        "DYLD_FALLBACK_LIBRARY_PATH",
+        "DYLD_INSERT_LIBRARIES",
+    )
+    return {key: value for key, value in os.environ.items() if key not in overrides}
 
 
 def _dynamic_section(library) -> str | None:
@@ -624,9 +655,11 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
     accepted = (symbol, f"_{symbol}") if sys.platform == "darwin" else (symbol,)
     # Matched whole rather than by prefix. A prefix match also accepts a longer
     # symbol that merely begins with this one, and reports a second definer of
-    # something no library defines twice. The two suffixes that may follow a
-    # complete name are still allowed: nm prints a demangled C++ definition as
-    # name(args), and a symbol table carrying versions prints name@@version.
+    # something no library defines twice. Three suffixes may follow a complete
+    # name: nm prints a demangled C++ definition as name(args), a symbol table
+    # carrying versions prints name@@version, and a sentinel that names a class
+    # appears only as one of its members, name::member, because a class has no
+    # symbol of its own.
     for line in result.stdout.splitlines():
         if symbol not in line:
             continue
@@ -635,7 +668,8 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
             continue
         name = match.group("name")
         if any(
-            name == spelling or name.startswith((f"{spelling}(", f"{spelling}@"))
+            name == spelling
+            or name.startswith((f"{spelling}(", f"{spelling}@", f"{spelling}::"))
             for spelling in accepted
         ):
             return True
@@ -933,8 +967,8 @@ def test_python_extensions_import() -> None:
     The symbol and dependency checks work on the files. This covers the other
     half: an extension can be packaged correctly and still fail to load because a
     runtime path does not reach one of its dependencies. Run in a subprocess with
-    `LD_LIBRARY_PATH` removed so a value from the build environment cannot supply
-    a path the shipped library is missing.
+    the loader overrides removed so a value from the build environment cannot
+    supply a path the shipped library is missing.
 
     The list is discovered from the installed package rather than written here, so
     an extension added later is covered without anyone remembering to add it. A
@@ -958,9 +992,7 @@ def test_python_extensions_import() -> None:
     if importlib.util.find_spec("torch") is None:
         print("- torch is not installed, skipping the extension import check")
         return
-    environment = {
-        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
-    }
+    environment = _loader_clean_environment()
     for module in modules:
         result = subprocess.run(
             [sys.executable, "-c", f"import {module}"],
@@ -1112,13 +1144,9 @@ def _dyld_load_failure(library: Path, *, with_torch: bool) -> str:
         capture_output=True,
         text=True,
         check=False,
-        # Any DYLD_LIBRARY_PATH in the build environment would paper over a
-        # runtime search path the shipped library is actually missing.
-        env={
-            key: value
-            for key, value in os.environ.items()
-            if key != "DYLD_LIBRARY_PATH"
-        },
+        # Any loader override in the build environment would paper over a runtime
+        # search path the shipped library is actually missing.
+        env=_loader_clean_environment(),
     )
     if result.returncode == 0:
         return ""
@@ -1221,9 +1249,13 @@ def _assert_shipped_libraries_relocate_with_dyld() -> None:
     every absolute runtime search path, and see whether what is left still finds
     the libraries the wheel ships.
     """
-    if _tool("otool") is None or _tool("install_name_tool") is None:
-        print("- otool or install_name_tool unavailable, skipping the relocated check")
-        return
+    # Fatal, not a skip: both come with the developer tools on the only platform that
+    # reaches here, so going quiet would report success having examined nothing, which
+    # is the failure this check was ported to macOS to end.
+    assert _tool("otool") is not None and _tool("install_name_tool") is not None, (
+        "otool and install_name_tool are required to relocate a Mach-O file and read "
+        "back its runtime search paths"
+    )
 
     package_dir = _installed_package_dir()
     libraries = _shipped_shared_objects(package_dir)
@@ -1339,13 +1371,9 @@ def test_shipped_libraries_load() -> None:
             capture_output=True,
             text=True,
             check=False,
-            # Any LD_LIBRARY_PATH in the build environment would paper over a
+            # Any loader override in the build environment would paper over a
             # RUNPATH the shipped library is actually missing.
-            env={
-                key: value
-                for key, value in os.environ.items()
-                if key != "LD_LIBRARY_PATH"
-            },
+            env=_loader_clean_environment(),
         )
         # ldd reports missing libraries on stdout but undefined symbols on stderr,
         # so both streams matter.
@@ -1435,9 +1463,7 @@ def test_shipped_libraries_resolve_without_build_tree() -> None:
 
     package_dir = _installed_package_dir()
     libraries = _shipped_shared_objects(package_dir)
-    environment = {
-        key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
-    }
+    environment = _loader_clean_environment()
 
     with tempfile.TemporaryDirectory() as work_dir:
         root = Path(work_dir) / package_dir.name
@@ -1591,9 +1617,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env={
-            key: value for key, value in os.environ.items() if key != "LD_LIBRARY_PATH"
-        },
+        env=_loader_clean_environment(),
     )
     assert loaded.returncode == 0, (
         "a custom operator built against the shipped extension cannot be loaded, so "
@@ -2010,6 +2034,16 @@ def test_extension_contains_no_component() -> None:
     assert not carried, (
         f"{extension.name} defines {carried} itself rather than importing it, so it carries a "
         "private copy of a component the wheel also ships as a library"
+    )
+    # A hidden definition appears in neither table, so the check above cannot see the
+    # worst version of this: an extension that whole-archived a private runtime with
+    # hidden visibility and kept the shipped one as a dependency it never uses. What it
+    # calls has to be imported, and these it calls.
+    unimported = [symbol for symbol in _EXTENSION_IMPORTS if symbol not in undefined]
+    assert not unimported, (
+        f"{extension.name} calls {unimported} but imports none of them, so the definition it "
+        "reaches is inside itself and the process holds a second registry the shipped runtime "
+        "cannot see"
     )
     print(
         f"✓ {extension.name} ({extension.stat().st_size // 1024} KiB) contains no "

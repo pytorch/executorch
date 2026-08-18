@@ -95,6 +95,39 @@ def get_param_tensor(
     raise RuntimeError(f"unsupported param type, {node.op}.")
 
 
+def set_param_tensor(
+    exp_prog: ExportedProgram, node: torch.fx.Node, data: torch.Tensor
+) -> None:
+    """Replace the tensor represented by a parameter-like graph node."""
+    if is_param(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_parameters[node.name]
+        parameter = exp_prog.state_dict[target]
+        exp_prog.state_dict[target] = torch.nn.Parameter(
+            data, requires_grad=parameter.requires_grad
+        )
+    elif is_buffer(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_buffers[node.name]
+        if target in exp_prog.graph_signature.non_persistent_buffers:
+            exp_prog.constants[target] = data
+        else:
+            exp_prog.state_dict[target] = data
+    elif is_lifted_tensor_constant(exp_prog, node):
+        target = exp_prog.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+        exp_prog.constants[target] = data
+    elif is_get_attr_node(node):
+        module = node.graph.owning_module
+        try:
+            current = getattr(module, node.target)
+        except (AttributeError, TypeError):
+            module = exp_prog.graph_module
+            current = getattr(module, node.target)
+        if isinstance(current, torch.nn.Parameter):
+            data = torch.nn.Parameter(data, requires_grad=current.requires_grad)
+        setattr(module, node.target, data)
+    else:
+        raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
 def _buffer_target(node_name: str) -> str:
     """Map a placeholder name to its state_dict target per the export
     convention: placeholder "b_foo" corresponds to buffer target "foo"."""
