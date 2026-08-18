@@ -11,6 +11,9 @@ Operators in this dialect interpret their activation input/output as channels-la
 opposed to the implicit dim-order handling used elsewhere. They let layout-handling
 passes (see RFC #19299) make channels-last regions explicit in the graph.
 
+The ``constant_pad_nd`` padding list follows the contiguous NHWC tensor axes,
+last axis first, after the layout transform has remapped it from NCHW.
+
 Efficiency is a non-goal: kernels are implemented as ``permute -> aten op -> permute``.
 Importing this module registers the dialect.
 """
@@ -112,6 +115,10 @@ def _max_pool2d(
     return out.permute(0, 2, 3, 1).contiguous()
 
 
+def _constant_pad_nd(input, pad, value=0):
+    return torch.ops.aten.constant_pad_nd(input, pad, value)
+
+
 def _grid_sampler_2d(input, grid, interpolation_mode, padding_mode, align_corners):
     nchw = input.permute(0, 3, 1, 2)
     out = torch.ops.aten.grid_sampler_2d(
@@ -174,6 +181,10 @@ lib.define(
 )
 lib.impl("max_pool2d", _max_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::max_pool2d", _max_pool2d, lib=lib)
+
+lib.define("constant_pad_nd(Tensor input, SymInt[] pad, Scalar value=0) -> Tensor")
+lib.impl("constant_pad_nd", _constant_pad_nd, "CompositeExplicitAutograd")
+register_fake("channels_last::constant_pad_nd", _constant_pad_nd, lib=lib)
 
 lib.define(
     "grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, "

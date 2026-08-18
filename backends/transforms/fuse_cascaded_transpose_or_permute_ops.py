@@ -6,6 +6,10 @@
 
 # pyre-unsafe
 
+from executorch.backends.transforms.channels_last_layout import (
+    composed_permute_target,
+    PERMUTE_COPY_TARGETS,
+)
 from executorch.backends.transforms.permute_pass_utils import (
     get_arg,
     get_permuted_dims,
@@ -26,7 +30,7 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
 
     transpose_or_permute_target = {
         exir_ops.edge.aten.transpose_copy.int,
-        exir_ops.edge.aten.permute_copy.default,
+        *PERMUTE_COPY_TARGETS,
     }
 
     _VIEW_OPS = {
@@ -71,10 +75,10 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
         else:
             with node.graph.inserting_before(node):
                 new_permute = node.graph.call_function(
-                    exir_ops.edge.aten.permute_copy.default,
+                    composed_permute_target(parent_node, node),
                     args=(input_of_parent, dims),
                 )
-                new_permute.meta = node.meta
+                new_permute.meta = dict(node.meta)
             node.replace_all_uses_with(new_permute)
 
         return True
@@ -141,7 +145,7 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
             node_dims = list(range(len(dims)))
             node_dims = get_transposed_dims(node, node_dims)
             dims = [dims[d] for d in node_dims]
-        elif node.target == exir_ops.edge.aten.permute_copy.default:
+        elif node.target in PERMUTE_COPY_TARGETS:
             perm = get_arg(node, "dims")
             dims = [dims[d] for d in perm]
         else:
