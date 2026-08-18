@@ -192,6 +192,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_ROCM "Build the CUDA/AOTI backend against ROCm" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
 )
 define_overridable_option(
@@ -480,6 +483,14 @@ check_required_options_on(
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_conflicting_options_on(
+  IF_ON EXECUTORCH_BUILD_ROCM CONFLICTS_WITH EXECUTORCH_BUILD_CUDA
 )
 
 check_required_options_on(

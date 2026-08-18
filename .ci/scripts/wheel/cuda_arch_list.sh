@@ -119,15 +119,7 @@ executorch_cuda_arch_list() {
   esac
 }
 
-# The architecture list for a row. Every entry already carries the portable form that lets a newer
-# GPU compile at load time: an unsuffixed architecture asks the compiler for both the compiled and
-# the portable form, measured as code=[compute_120,sm_120] for a bare "120". Nothing extra is needed
-# for forward compatibility.
-executorch_cuda_arch_list_with_ptx() {
-  local dotted
-  # Propagate a failed lookup rather than reporting an empty list, since a caller cannot tell an
-  # unknown row from a CPU row and the unknown one must not pass silently.
-  dotted="$(executorch_cuda_arch_list)" || return $?
-  [ -n "${dotted}" ] || return 0
-  printf '%s' "${dotted}"
-}
+# No entry carries a "+PTX" suffix. The portable form that lets a newer GPU compile this code at
+# load time is added once, for the newest architecture only, where the list is turned into
+# CMAKE_CUDA_ARCHITECTURES in backends/cuda/CMakeLists.txt. Suffixing it here as well would only
+# produce a duplicate for that entry to drop again.

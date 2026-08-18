@@ -1,5 +1,7 @@
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import cache
 from typing import Any, Dict, Optional, Tuple, Type, TypedDict
 
 import torch
@@ -66,6 +68,32 @@ def register_attention(name: str):
         return cls
 
     return decorator
+
+
+@cache
+def _get_gated_delta_rule_op() -> Optional[Any]:
+    """Return the fused gated delta rule op, or None if it is unavailable.
+
+    ``channelwise_gated_delta_rule`` accepts a per-head scalar decay as a 3D
+    ``[B, H, T]`` tensor, which is the layout GatedDeltaNet produces. Resolve it
+    lazily (importing the custom ops library on first use) and memoize so
+    environments without the custom op fall back to the Python recurrence.
+    """
+    try:
+        return torch.ops.llama.channelwise_gated_delta_rule.default
+    except (AttributeError, RuntimeError):
+        pass
+
+    try:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+    except (AssertionError, ImportError, OSError, RuntimeError):
+        logging.debug("Failed to import the ExecuTorch custom ops library")
+        return None
+
+    try:
+        return torch.ops.llama.channelwise_gated_delta_rule.default
+    except (AttributeError, RuntimeError):
+        return None
 
 
 class KVCache(nn.Module):
@@ -762,6 +790,47 @@ class AttentionGatedDeltaNet(Attention):
         out = F.silu(out[:, :, -seq_len:]).to(mixed_qkv.dtype)
         return out.transpose(1, 2).contiguous()
 
+    def _naive_gated_delta_rule(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        decay: torch.Tensor,
+        beta: torch.Tensor,
+        initial_state: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch_size, num_heads, sequence_length, _ = key.shape
+        v_head_dim = value.shape[-1]
+
+        core_attn_out = torch.zeros(
+            batch_size,
+            num_heads,
+            sequence_length,
+            v_head_dim,
+            device=value.device,
+            dtype=value.dtype,
+        )
+        last_recurrent_state = initial_state
+
+        for i in range(sequence_length):
+            q_t = query[:, :, i]
+            k_t = key[:, :, i]
+            v_t = value[:, :, i]
+            decay_t = decay[:, :, i].unsqueeze(-1).unsqueeze(-1)
+            beta_t = beta[:, :, i].unsqueeze(-1)
+
+            last_recurrent_state = last_recurrent_state * decay_t
+            kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
+            delta = (v_t - kv_mem) * beta_t
+            last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
+                -1
+            ) * delta.unsqueeze(-2)
+            core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
+                dim=-2
+            )
+
+        return core_attn_out, last_recurrent_state
+
     def _recurrent_gated_delta_rule(
         self,
         query: torch.Tensor,
@@ -780,36 +849,27 @@ class AttentionGatedDeltaNet(Attention):
             for x in (query, key, value, beta, g)
         ]
 
-        batch_size, num_heads, sequence_length, k_head_dim = key.shape
-        v_head_dim = value.shape[-1]
+        batch_size = key.shape[0]
         scale = 1.0 / (query.shape[-1] ** 0.5)
         query = query * scale
+        # The op consumes the decay itself, not its log.
+        decay = g.exp()
+        initial_state = self.recurrent_state[:batch_size].to(torch.float32)
 
-        core_attn_out = torch.zeros(
-            batch_size,
-            num_heads,
-            sequence_length,
-            v_head_dim,
-            device=value.device,
-            dtype=value.dtype,
-        )
-        last_recurrent_state = self.recurrent_state[:batch_size].to(value.dtype)
-
-        for i in range(sequence_length):
-            q_t = query[:, :, i]
-            k_t = key[:, :, i]
-            v_t = value[:, :, i]
-            g_t = g[:, :, i].exp().unsqueeze(-1).unsqueeze(-1)
-            beta_t = beta[:, :, i].unsqueeze(-1)
-
-            last_recurrent_state = last_recurrent_state * g_t
-            kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
-            delta = (v_t - kv_mem) * beta_t
-            last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
-                -1
-            ) * delta.unsqueeze(-2)
-            core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
-                dim=-2
+        op = _get_gated_delta_rule_op()
+        # The fused op is an ExecuTorch portable kernel; it cannot run in eager
+        # mode on CUDA (there is no kernel runtime context, so it aborts with
+        # "No temp allocator provided"). Restrict it to export/compile tracing
+        # and fall back to the Python recurrence for eager CUDA.
+        if op is not None and query.is_cuda and not torch.compiler.is_compiling():
+            op = None
+        if op is not None:
+            core_attn_out, last_recurrent_state = op(
+                query, key, value, decay, beta, initial_state
+            )
+        else:
+            core_attn_out, last_recurrent_state = self._naive_gated_delta_rule(
+                query, key, value, decay, beta, initial_state
             )
 
         with torch.no_grad():
