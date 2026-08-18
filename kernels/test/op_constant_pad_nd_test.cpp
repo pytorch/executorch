@@ -493,6 +493,10 @@ TEST_F(OpConstantPadNDOutTest, NonDefaultDimOrderDies) {
   Tensor out = tf.zeros_channels_last({1, 3, 2, 4});
   const std::vector<int64_t> padding = {1, 1};
 
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_constant_pad_nd_out(

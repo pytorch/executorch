@@ -586,6 +586,10 @@ TEST_F(OpSplitCopyTensorOutTest, NonDefaultDimOrderDies) {
       tf.zeros_channels_last({1, 2, 2, 2}),
       tf.zeros_channels_last({1, 2, 2, 2})};
 
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
   ET_EXPECT_KERNEL_FAILURE(
       context_,
       op_split_copy_tensor_out(

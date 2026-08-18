@@ -475,6 +475,10 @@ TEST_F(OpCatOutTest, NonDefaultDimOrderDies) {
   Tensor out = tf.zeros_channels_last({1, 6, 2, 2});
   std::vector<Tensor> inputs = {x, y};
 
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_cat_out(TensorList(inputs.data(), inputs.size()), 1, out));
 }

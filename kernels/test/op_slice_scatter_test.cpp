@@ -893,6 +893,10 @@ TEST_F(OpSliceScatterTensorOutTest, NonDefaultDimOrderDies) {
   Tensor src = tf.zeros_channels_last({1, 1, 2, 2});
   Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
 
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
+
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_slice_scatter_out(input, src, 1, 0, 1, 1, out));
 }
@@ -908,6 +912,10 @@ TEST_F(OpSliceScatterTensorOutTest, MixedDimOrderDies) {
   Tensor src = tf.channels_last_like(
       tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
   Tensor out = tf.zeros({1, 3, 2, 4});
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,

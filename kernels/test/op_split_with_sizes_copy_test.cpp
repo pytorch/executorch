@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -126,6 +127,10 @@ TEST_F(OpSplitWithSizesCopyOutTest, NonDefaultDimOrderDies) {
       tf.zeros_channels_last({1, 2, 2, 2}),
       tf.zeros_channels_last({1, 2, 2, 2})};
   const std::vector<int64_t> split_sizes = {2, 2};
+
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle non-default dim order");
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
