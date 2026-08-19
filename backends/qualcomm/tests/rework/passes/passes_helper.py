@@ -287,13 +287,6 @@ class PassPipeline:
             quantizer=quantizer,
         )
         gm = edge_ep.graph_module
-        # Mirror qnn_preprocess.py: strip QCOM_AXIS_ORDER from all nodes
-        from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
-
-        for node in gm.graph.nodes:
-            if hasattr(node, "meta"):
-                node.meta.pop(QCOM_AXIS_ORDER, "")
-
         pm_cls = get_qnn_pass_manager_cls(backend_type)
         pass_classes = PassPipeline._slice_to_target(
             pm_cls.get_preprocess_passes(use_mha2sha=use_mha2sha),
