@@ -42,12 +42,16 @@ from torch.nn.attention import SDPBackend
 # the 24 GB cap we want to honor for consumer GPUs (RTX 4090 and similar).
 #
 # The patch below side-steps that by:
-#   1. Wrapping `torch._inductor.compile_fx.clone_preserve_strides` so every
-#      clone the AOTI compile pipeline produces lands on CPU.
+#   1. Wrapping `torch._inductor.compile_fx.clone_preserve_strides` so the
+#      `_unlift_graph` snapshots land on CPU while executable clones stay on
+#      their original device.
 #   2. Wrapping `CppWrapperCpu.codegen_device` so the C++ wrapper still records
 #      the model's original target device (e.g. cuda) in `constants_info_`,
 #      not the now-CPU storage device. Without this the runtime would refuse
 #      to load the constants because of a mixed-device mismatch.
+#   3. Materializing intentionally emptied constants while lazy AOTI JIT code
+#      runs, sharing storage between identical cache layouts to keep the peak
+#      allocation to one cache per layout.
 #
 # The wrappers are scoped via a thread-local guard and are only active while
 # `_compile_time_cpu_clones(...)` is on the call stack — they are inert
@@ -94,6 +98,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
     orig_codegen_device = _Cpp.codegen_device
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
+    orig_run_jit = _GL._run_jit_variant_for_autotune
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -114,13 +119,12 @@ def _compile_time_cpu_clones(target_device: torch.device):
         import sys
 
         caller = sys._getframe(1).f_code.co_name
+        if _is_emptied(x):
+            # `_unlift_graph` stores the clone for serialization; other callers
+            # execute with it and therefore require the original device.
+            device = "cpu" if caller == "_unlift_graph" else x.device
+            return _full_zeros_preserving_strides(x, device)
         if caller == "_unlift_graph":
-            # KV-cache buffers are emptied (storage resize_(0)) by the low-memory
-            # device move so they never occupy GPU memory during compile. Their
-            # content is all zeros, so re-synthesize zeros (on CPU, strides
-            # preserved) instead of cloning the now-empty storage.
-            if _is_emptied(x):
-                return _full_zeros_preserving_strides(x, "cpu")
             return orig_clone(x).cpu()
         return orig_clone(x)
 
@@ -134,6 +138,53 @@ def _compile_time_cpu_clones(target_device: torch.device):
         if _is_emptied(value):
             return _full_zeros_preserving_strides(value, "cpu")
         return value
+
+    def _run_jit_with_materialized_constants(
+        self, wrapper_code, kernel_code, extract_real_inputs, kernel_names
+    ):
+        # Lazy AOTI JIT executes the generated wrapper with `self.constants`.
+        # The low-memory sentinel is only valid during compilation; executing
+        # with its zero-byte storage would pass a null data pointer to CUDA.
+        original_constants = self.constants
+        jit_constants = None
+        shared_zeros = {}
+        for name, value in original_constants.items():
+            if not _is_emptied(value):
+                continue
+            if jit_constants is None:
+                jit_constants = original_constants.copy()
+            key = (
+                value.device,
+                value.dtype,
+                tuple(value.size()),
+                tuple(value.stride()),
+            )
+            materialized = shared_zeros.get(key)
+            if materialized is None:
+                materialized = _full_zeros_preserving_strides(value, value.device)
+                shared_zeros[key] = materialized
+            jit_constants[name] = materialized
+
+        if jit_constants is None:
+            return orig_run_jit(
+                self,
+                wrapper_code,
+                kernel_code,
+                extract_real_inputs,
+                kernel_names,
+            )
+
+        self.constants = jit_constants
+        try:
+            return orig_run_jit(
+                self,
+                wrapper_code,
+                kernel_code,
+                extract_real_inputs,
+                kernel_names,
+            )
+        finally:
+            self.constants = original_constants
 
     def _codegen_device_target_aware(self, device):
         # Translate accidental CPU device strings back to the model target
@@ -151,6 +202,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
     _cfx.clone_preserve_strides = _cpu_clone_preserve_strides
     _Cpp.codegen_device = _codegen_device_target_aware
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
+    _GL._run_jit_variant_for_autotune = _run_jit_with_materialized_constants
     _graph.is_same_tensor = _is_same_skip_emptied
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
@@ -161,6 +213,7 @@ def _compile_time_cpu_clones(target_device: torch.device):
         _cfx.clone_preserve_strides = orig_clone
         _Cpp.codegen_device = orig_codegen_device
         _GL.get_original_value_of_constant = orig_get_const
+        _GL._run_jit_variant_for_autotune = orig_run_jit
         _graph.is_same_tensor = orig_is_same
 
 
@@ -224,12 +277,12 @@ def _move_to_device_resize_kv(ep, location):
     buffers (FQN contains ``kv_cache``) are placed on ``location`` but with their
     storage immediately freed via ``resize_(0)``. This keeps ``device ==
     location`` — so the fake-tensor device check on the ``index_copy`` cache
-    update passes (``self`` and ``values`` both on cuda) — while no real KV bytes
-    occupy the device during the AOTI compile. KV content is all zeros, so the
-    emptied tensors are re-synthesized as zeros at the ``_unlift_graph`` clone
-    (see ``_compile_time_cpu_clones``), which is reused as both the lifted initial
-    value and the serialized ``.ptd`` constant. The empty/free is interleaved per
-    tensor so the transient device peak is a single KV buffer, not the whole cache.
+    update passes (``self`` and ``values`` both on cuda) — without retaining the
+    full cache during graph lowering. KV content is all zeros, so the emptied
+    tensors are re-synthesized for the ``_unlift_graph`` snapshot, serialization,
+    and lazy JIT execution (see ``_compile_time_cpu_clones``). The empty/free is
+    interleaved per tensor, and lazy JIT shares storage for identical layouts, so
+    the transient device peak is a single KV buffer per layout, not the whole cache.
     Only ``kv_cache`` tensors are emptied (they are the lone large zero-buffers);
     every other tensor is moved normally so non-zero content is never lost.
     """
@@ -627,11 +680,11 @@ class CudaBackend(AotiBackend, BackendDetails):
 
         On a low-memory export (``low_memory_mode="ON"``) the KV-cache buffers —
         which can be 10+ GiB at long context — are placed on-device but with their
-        storage freed (``resize_(0)``), so they never occupy device memory during
-        the autotune / cpp_wrapper compile while still satisfying the device-match
-        check on the cache update. They are re-synthesized as zeros for the lifted
-        graph and the serialized blob. This activates automatically with low-memory
-        mode. Other (non-low-memory) exports use the stock pass.
+        storage freed (``resize_(0)``), avoiding persistent device memory during
+        compile while still satisfying the device-match check on the cache update.
+        They are re-synthesized as zeros for the lifted graph, lazy JIT execution,
+        and the serialized blob. This activates automatically with low-memory mode.
+        Other (non-low-memory) exports use the stock pass.
         """
         from torch.export.passes import move_to_device_pass
 

@@ -7,6 +7,23 @@ def define_common_targets(is_fbcode = False):
     if not is_fbcode:
         return
 
+    python_unittest(
+        name = "test_cuda_backend",
+        srcs = [
+            "test_cuda_backend.py",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/backends/cuda:cuda_backend",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_api",
+            "//executorch/exir/backend:compile_spec_schema",
+        ],
+    )
+
     python_unittest_remote_gpu(
         name = "test_cuda_export",
         srcs = [

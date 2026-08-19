@@ -133,6 +133,31 @@ class TestCudaExport(unittest.TestCase):
         edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
         self.assertIsNotNone(edge_program_manager, "Simple add operation export failed")
 
+    def test_low_memory_mode_mutated_kv_cache(self):
+        class KvCacheModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("kv_cache", torch.zeros(4, 8))
+
+            def forward(self, update: torch.Tensor) -> torch.Tensor:
+                self.kv_cache.add_(update)
+                return self.kv_cache * 2
+
+        compile_specs = [
+            CudaBackend.generate_method_name_compile_spec("forward"),
+            CompileSpec(key="low_memory_mode", value=b"ON"),
+            CompileSpec(key="max_autotune", value=b"OFF"),
+            CompileSpec(key="autotune_at_compile_time", value=b"OFF"),
+        ]
+
+        edge_program_manager = self._export_to_cuda_with_lower(
+            KvCacheModule(),
+            (torch.ones(4, 8),),
+            compile_specs,
+        )
+
+        self.assertIsNotNone(edge_program_manager)
+
     def test_conv2d(self):
         """Test CUDA export for 2D convolution."""
 
