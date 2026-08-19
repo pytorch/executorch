@@ -45,9 +45,17 @@ class FuseDuplicateUsersPass(ArmPass):
 
         node_order = {node: index for index, node in enumerate(graph.nodes)}
         producers: Deque[Node] = deque(node for node in graph.nodes)
+        queued_producers: Set[Node] = set(producers)
+
+        def enqueue_producer(node: Node) -> None:
+            if node.graph is None or node in queued_producers:
+                return
+            producers.append(node)
+            queued_producers.add(node)
 
         while producers:
             producer = producers.popleft()
+            queued_producers.discard(producer)
 
             if producer.graph is None:
                 # Node was deleted by a previous rewrite while still queued.
@@ -84,8 +92,8 @@ class FuseDuplicateUsersPass(ArmPass):
                     # Revisit the current producer and the surviving user so that
                     # newly formed duplicate chains can be fused in later
                     # iterations.
-                    producers.append(producer)
-                    producers.append(representative)
+                    enqueue_producer(producer)
+                    enqueue_producer(representative)
 
         if modified:
             graph_module.recompile()
