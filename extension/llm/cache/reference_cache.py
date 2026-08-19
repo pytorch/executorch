@@ -61,7 +61,7 @@ class LayerKind(Enum):
 
 @dataclass(frozen=True)
 class LayerPolicy:
-    """Per-layer cache kind and its parameters. Mirrors the C++ LayerPolicy."""
+    """Per-layer cache kind and its parameters."""
 
     kind: LayerKind = LayerKind.FLAT
     window: int = 0  # RING only: window size in positions
@@ -206,9 +206,8 @@ class ContiguousReferenceCache:
             return AttendSpec(kind=MaskKind.NONE)
         if q_len == total and not windowed:
             return AttendSpec(kind=MaskKind.CAUSAL)
-        # A backend whose causal is lower-right aligned fuses the upper bound
-        # (MLX does); torch's is_causal is upper-left, and neither expresses the
-        # window, so the reference hands back the band itself.
+        # torch's is_causal is upper-left and expresses no window, so the band
+        # is handed back explicitly.
         offsets = torch.arange(total, device=device) - torch.arange(
             q_len, device=device
         ).unsqueeze(-1)

@@ -481,6 +481,8 @@ class CellCacheTest(unittest.TestCase):
             LayerPolicy(kind=LayerKind.FLAT, window=4)
         with self.assertRaises(ValueError):
             LayerPolicy(kind=LayerKind.RING, window=0)
+        with self.assertRaises(ValueError):
+            LayerPolicy.ring(-1)
         with self.assertRaises(ValueError):  # one policy, or one per layer
             self._cache(
                 layers=[LayerPolicy.flat(), LayerPolicy.ring(2), LayerPolicy.ring(2)]
@@ -671,13 +673,14 @@ class WindowedSpecTest(unittest.TestCase):
         torch.manual_seed(0)
         self.scale = self.DIM**-0.5
 
-    def _cache(self, policy):
+    def _cache(self, policy, sizing=CacheSizing.DYNAMIC):
         return ContiguousReferenceCache(
             CacheConfig(
                 n_layers=1,
                 n_kv_heads=self.HEADS,
                 head_dim=self.DIM,
                 capacity=32,
+                sizing=sizing,
                 layers=[policy],
             )
         )
@@ -747,6 +750,47 @@ class WindowedSpecTest(unittest.TestCase):
         self.assertEqual(windowed.kind, MaskKind.EXPLICIT)
         offsets = torch.arange(4) - torch.arange(4).unsqueeze(-1)  # j - i
         torch.testing.assert_close(windowed.mask, (offsets <= 0) & (offsets > -2))
+
+    def test_windowed_continuation_bounds_the_band_at_both_ends(self):
+        # Continuation with a window: the upper bound (new cells at the tail)
+        # and the lower bound (the window) are both live in the same mask.
+        window = 2
+        cache = self._cache(LayerPolicy.ring(window))
+        self._update(cache, 4, 0)
+        _, _, spec = self._update(cache, 3, 4)
+
+        self.assertEqual(spec.kind, MaskKind.EXPLICIT)
+        q_len, total = 3, 7
+        offsets = torch.arange(total) - torch.arange(q_len).unsqueeze(-1)
+        torch.testing.assert_close(
+            spec.mask,
+            (offsets <= total - q_len) & (offsets > total - q_len - window),
+        )
+
+    def test_window_equal_to_history_stays_fused(self):
+        # windowed is 0 < window < total, so equality is the boundary: at
+        # exactly `window` cells nothing is bounded from below, and one cell
+        # later the band appears.
+        window = 4
+        cache = self._cache(LayerPolicy.ring(window))
+        self.assertEqual(self._update(cache, window, 0)[2].kind, MaskKind.CAUSAL)
+        self.assertEqual(self._update(cache, 1, window)[2].kind, MaskKind.EXPLICIT)
+
+    def test_static_sizing_windows_like_dynamic(self):
+        # STATIC writes into a preallocated buffer and slices it; the window is
+        # computed off the used length either way.
+        window = 2
+        torch.manual_seed(0)
+        static = self._cache(LayerPolicy.ring(window), sizing=CacheSizing.STATIC)
+        sk, sv, s_spec = self._update(static, 4, 0)
+        torch.manual_seed(0)
+        dynamic = self._cache(LayerPolicy.ring(window))
+        dk, dv, d_spec = self._update(dynamic, 4, 0)
+
+        torch.testing.assert_close(sk, dk)
+        torch.testing.assert_close(sv, dv)
+        self.assertEqual(s_spec.kind, d_spec.kind)
+        torch.testing.assert_close(s_spec.mask, d_spec.mask)
 
     def test_window_wider_than_history_stays_fused(self):
         # Nothing to bound from below, so the window must not force a mask.
