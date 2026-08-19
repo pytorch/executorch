@@ -1832,6 +1832,33 @@ def test_wheel_platform_tag() -> None:
     print(f"✓ the wheel is tagged for the architecture it contains ({claimed_arch})")
 
 
+def _names_a_build_directory(entry: str) -> bool:
+    """Whether a runtime path entry points inside the tree that built the wheel.
+
+    Compared as whole path components, the same way packaging decides what to strip, so the two do not
+    describe the build tree differently. A bare substring test also matched unrelated user directories.
+
+    A torch directory is exempt even when it names a CI worker tree. The macOS extension records no
+    relative route to torch, so packaging keeps the absolute one as the only route it has, and rejecting
+    it here failed the macOS wheel job on an entry the wheel depends on.
+
+    Module scope rather than nested, so its branches do not count against the enclosing test's
+    complexity, which lintrunner caps at 12.
+    """
+    parts = entry.split("/")
+    if any(
+        part in ("pip-out", "cmake-out") or part.startswith("lib.") for part in parts
+    ):
+        return True
+    if entry.rstrip("/").endswith("/torch/lib"):
+        return False
+    return any(
+        part in ("actions-runner", "_work", "_temp", "runner")
+        or part.startswith("conda_environment_")
+        for part in parts
+    )
+
+
 def test_no_absolute_runtime_paths() -> None:
     """No shipped library may search a directory a user does not have.
 
@@ -1874,29 +1901,7 @@ def test_no_absolute_runtime_paths() -> None:
 
     package_dir = _installed_package_dir()
 
-    # Directories that only exist inside a build of this project. Compared as whole
-    # path components, the same way packaging decides what to strip, so the two do
-    # not describe the build tree differently.
-    def names_a_build_directory(entry: str) -> bool:
-        parts = entry.split("/")
-        if any(
-            part in ("pip-out", "cmake-out") or part.startswith("lib.")
-            for part in parts
-        ):
-            return True
-        # A CI worker tree can end in /torch/lib, which is shaped exactly like a real install, so the
-        # suffix allowlist cannot tell them apart. Everything else under a worker path is still caught.
-        #
-        # A torch directory is deliberately exempt even when it names a worker tree. The macOS extension
-        # records no relative route to torch, so packaging keeps the absolute one as the only route it
-        # has, and rejecting it here failed the macOS wheel job on an entry the wheel depends on.
-        if entry.rstrip("/").endswith("/torch/lib"):
-            return False
-        return any(
-            part in ("actions-runner", "_work", "_temp", "runner")
-            or part.startswith("conda_environment_")
-            for part in parts
-        )
+    names_a_build_directory = _names_a_build_directory
 
     # This project's libraries must not name an absolute directory the wheel has a relative route to. The
     # one that shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
