@@ -539,12 +539,20 @@ Error Program::get_backend_delegate_data(
       static_cast<const executorch_flatbuffer::Program*>(internal_program_)
           ->backend_delegate_data();
   ET_CHECK_OR_RETURN_ERROR(
+      data_list != nullptr, InvalidProgram, "Missing backend_delegate_data");
+  ET_CHECK_OR_RETURN_ERROR(
       index < data_list->size(),
       NotFound,
       "index %zu >= list size %" PRIu32,
       index,
       data_list->size());
-  auto data = data_list->Get(index)->data();
+  const auto* entry = data_list->Get(index);
+  const auto* data = entry != nullptr ? entry->data() : nullptr;
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr,
+      InvalidProgram,
+      "backend_delegate_data[%zu] has null data",
+      index);
   *out_data = data->data();
   *out_size = data->size();
   return Error::Ok;
