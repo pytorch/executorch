@@ -424,6 +424,12 @@ class TestQuantizeStage(unittest.TestCase):
         mock_quantizer = self.create_dummy_quantizer()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
         stage = QuantizeStage(mock_recipe)
 
         # Mock the torch.export.export chain
@@ -471,11 +477,304 @@ class TestQuantizeStage(unittest.TestCase):
         self.assertEqual(artifact.data["forward"], self.model)
         self.assertIsNot(result_artifact.data["forward"], self.model)
 
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_qat_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_qat_calls_prepare_qat_pt2e(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_qat_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """QAT flow: prepare_qat_pt2e is called and train_fn is invoked with the prepared model."""
+        mock_quantizer = self.create_dummy_quantizer()
+        train_fn = Mock()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = True
+        mock_recipe.train_fn = train_fn
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_captured_graph = Mock()
+        mock_exported_program.module.return_value = mock_captured_graph
+        mock_torch_export.return_value = mock_exported_program
+
+        mock_composed_quantizer = Mock()
+        mock_composable_quantizer.return_value = mock_composed_quantizer
+        mock_prepared_model = Mock()
+        mock_prepare_qat_pt2e.return_value = mock_prepared_model
+        mock_quantized_model = Mock()
+        mock_convert_pt2e.return_value = mock_quantized_model
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        # prepare_qat_pt2e must be called, not prepare_pt2e
+        mock_prepare_qat_pt2e.assert_called_once_with(
+            mock_captured_graph, mock_composed_quantizer
+        )
+        # train_fn must be called with the prepared model
+        train_fn.assert_called_once_with(mock_prepared_model)
+        # convert_pt2e must still be called after training
+        mock_convert_pt2e.assert_called_once_with(mock_prepared_model)
+
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(result_artifact.data["forward"], mock_quantized_model)
+
+    @patch("torch.export.export")
+    def test_run_qat_missing_train_fn_raises(self, mock_torch_export: Mock) -> None:
+        """QAT flow with train_fn=None must raise ValueError."""
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = True
+        mock_recipe.train_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+        mock_torch_export.return_value = mock_exported_program
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+
+        with self.assertRaises(ValueError) as cm:
+            stage.run(artifact)
+        self.assertIn("train_fn must be provided when is_qat=True", str(cm.exception))
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.prepare_qat_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_ptq_does_not_call_prepare_qat_pt2e(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_qat_pt2e: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """PTQ flow must not call prepare_qat_pt2e (regression guard)."""
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+        mock_torch_export.return_value = mock_exported_program
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        mock_prepare_pt2e.assert_called_once()
+        mock_prepare_qat_pt2e.assert_not_called()
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_ptq_four_passes_called_in_order(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """All four pass hooks are called at the correct points in the PTQ flow."""
+        call_order = []
+
+        def make_pass(name):
+            def pass_fn(m):
+                call_order.append(name)
+                return m
+
+            return pass_fn
+
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
+        mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
+        mock_recipe.pre_convert_passes = [make_pass("pre_convert")]
+        mock_recipe.post_convert_passes = [make_pass("post_convert")]
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_graph = Mock()
+        mock_exported_program.module.return_value = mock_graph
+        mock_torch_export.return_value = mock_exported_program
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        self.assertEqual(
+            call_order,
+            ["pre_prepare", "post_prepare", "pre_convert", "post_convert"],
+        )
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_qat_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_qat_four_passes_called_in_order(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_qat_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """All four pass hooks are called at the correct points in the QAT flow."""
+        call_order = []
+
+        def make_pass(name):
+            def pass_fn(m):
+                call_order.append(name)
+                return m
+
+            return pass_fn
+
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = True
+        mock_recipe.train_fn = Mock()
+        mock_recipe.pre_prepare_passes = [make_pass("pre_prepare")]
+        mock_recipe.post_prepare_passes = [make_pass("post_prepare")]
+        mock_recipe.pre_convert_passes = [make_pass("pre_convert")]
+        mock_recipe.post_convert_passes = [make_pass("post_convert")]
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+        mock_torch_export.return_value = mock_exported_program
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepare_qat_pt2e.return_value = Mock()
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        self.assertEqual(
+            call_order,
+            ["pre_prepare", "post_prepare", "pre_convert", "post_convert"],
+        )
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_ptq_uses_calibration_inputs_fn_when_provided(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """When calibration_inputs_fn is set, it is called and its output is used for calibration."""
+        custom_input = (torch.randn(2, 10),)
+        calibration_inputs_fn = Mock(return_value=[custom_input])
+
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = calibration_inputs_fn
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+        mock_torch_export.return_value = mock_exported_program
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepared_model = Mock()
+        mock_prepare_pt2e.return_value = mock_prepared_model
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        # calibration_inputs_fn must be called with no arguments
+        calibration_inputs_fn.assert_called_once_with()
+        # prepared model must be called with the custom calibration input
+        mock_prepared_model.assert_called_once_with(*custom_input)
+
+    @patch("executorch.export.stages.convert_pt2e")
+    @patch("executorch.export.stages.prepare_pt2e")
+    @patch("executorch.export.stages.ComposableQuantizer")
+    @patch("torch.export.export")
+    def test_run_ptq_falls_back_to_example_inputs_when_no_calibration_fn(
+        self,
+        mock_torch_export: Mock,
+        mock_composable_quantizer: Mock,
+        mock_prepare_pt2e: Mock,
+        mock_convert_pt2e: Mock,
+    ) -> None:
+        """When calibration_inputs_fn is None, example inputs are used for calibration."""
+        mock_quantizer = self.create_dummy_quantizer()
+        mock_recipe = Mock(spec=QuantizationRecipe)
+        mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
+
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_exported_program.module.return_value = Mock()
+        mock_torch_export.return_value = mock_exported_program
+        mock_composable_quantizer.return_value = Mock()
+        mock_prepared_model = Mock()
+        mock_prepare_pt2e.return_value = mock_prepared_model
+        mock_convert_pt2e.return_value = Mock()
+
+        stage = QuantizeStage(mock_recipe)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+        stage.run(artifact)
+
+        # The prepared model must be called with the example inputs (one tuple)
+        mock_prepared_model.assert_called_once_with(*self.example_inputs[0])
+
     def test_run_empty_example_inputs(self) -> None:
         """Test error when example inputs list is empty."""
         mock_quantizer = Mock()
         mock_recipe = Mock(spec=QuantizationRecipe)
         mock_recipe.quantizers = [mock_quantizer]
+        mock_recipe.is_qat = False
+        mock_recipe.calibration_inputs_fn = None
+        mock_recipe.pre_prepare_passes = None
+        mock_recipe.post_prepare_passes = None
+        mock_recipe.pre_convert_passes = None
+        mock_recipe.post_convert_passes = None
         stage = QuantizeStage(mock_recipe)
         context = {"example_inputs": {"forward": []}}
         artifact = PipelineArtifact(data=self.models_dict, context=context)
