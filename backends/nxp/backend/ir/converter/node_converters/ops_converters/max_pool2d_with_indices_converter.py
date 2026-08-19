@@ -7,7 +7,7 @@ import operator
 
 import numpy as np
 import torch
-from executorch.backends.nxp.backend.edge_helper import input_rank, try_get_arg
+from executorch.backends.nxp.backend.edge_helper import try_get_arg
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
@@ -42,10 +42,6 @@ class MaxPool2DWithIndicesConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        # The input must be 4D.
-        if input_rank(node, 0) != 4:
-            return False
-
         kernel_size, stride, padding, dilation, ceil_mode = (
             MaxPool2DWithIndicesConverter._get_node_args(node)
         )
