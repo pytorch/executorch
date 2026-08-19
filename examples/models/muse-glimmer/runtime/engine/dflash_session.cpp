@@ -120,6 +120,9 @@ class ProbabilityWorkers {
       probabilities_ = &probabilities;
       row_stride_ = workers_.size() + (row_count > workers_.size() ? 1 : 0);
       completed_ = 0;
+#ifdef EXECUTORCH_BUILD_CUDA
+      argmax_outputs_ = nullptr;
+#endif
       ++generation_;
     }
     start_.notify_all();
@@ -138,6 +141,38 @@ class ProbabilityWorkers {
     std::unique_lock<std::mutex> lock(mutex_);
     done_.wait(lock, [this] { return completed_ == workers_.size(); });
   }
+
+#ifdef EXECUTORCH_BUILD_CUDA
+  void fill_argmax(
+      const executorch::aten::Tensor& logits,
+      int64_t row_count,
+      int64_t logits_row_offset,
+      int64_t output_row_offset,
+      std::vector<uint64_t>& outputs) {
+    const int64_t vocab_size = logits.size(logits.dim() - 1);
+    {
+      std::lock_guard<std::mutex> guard(mutex_);
+      logits_ = static_cast<const float*>(logits.const_data_ptr());
+      vocab_size_ = vocab_size;
+      row_count_ = row_count;
+      logits_row_offset_ = logits_row_offset;
+      probabilities_row_offset_ = output_row_offset;
+      argmax_outputs_ = &outputs;
+      row_stride_ = workers_.size() + (row_count > workers_.size() ? 1 : 0);
+      completed_ = 0;
+      ++generation_;
+    }
+    start_.notify_all();
+    if (row_count > static_cast<int64_t>(workers_.size())) {
+      for (int64_t row = workers_.size(); row < row_count; row += row_stride_) {
+        outputs[output_row_offset + row] = muse_glimmer::argmax_index(
+            logits_ + (logits_row_offset + row) * vocab_size, vocab_size);
+      }
+    }
+    std::unique_lock<std::mutex> lock(mutex_);
+    done_.wait(lock, [this] { return completed_ == workers_.size(); });
+  }
+#endif
 
  private:
   struct Worker {
@@ -160,6 +195,10 @@ class ProbabilityWorkers {
       int32_t top_k = 0;
       double top_p = 1.0;
       std::vector<std::vector<float>>* probabilities = nullptr;
+#ifdef EXECUTORCH_BUILD_CUDA
+      std::vector<uint64_t>* argmax_outputs = nullptr;
+      int64_t output_row_offset = 0;
+#endif
       {
         std::unique_lock<std::mutex> lock(mutex_);
         start_.wait(lock, [this, &observed_generation] {
@@ -179,7 +218,27 @@ class ProbabilityWorkers {
         top_k = top_k_;
         top_p = top_p_;
         probabilities = probabilities_;
+#ifdef EXECUTORCH_BUILD_CUDA
+        argmax_outputs = argmax_outputs_;
+        output_row_offset = probabilities_row_offset_;
+#endif
       }
+
+#ifdef EXECUTORCH_BUILD_CUDA
+      if (argmax_outputs != nullptr) {
+        for (int64_t row = worker_index; row < row_count; row += row_stride) {
+          (*argmax_outputs)[output_row_offset + row] =
+              muse_glimmer::argmax_index(
+                  logits + (logits_row_offset + row) * vocab_size, vocab_size);
+        }
+        std::lock_guard<std::mutex> guard(mutex_);
+        ++completed_;
+        if (completed_ == workers_.size()) {
+          done_.notify_one();
+        }
+        continue;
+      }
+#endif
 
       for (int64_t row = worker_index; row < row_count; row += row_stride) {
         muse_glimmer::fill_sampling_probabilities(
@@ -219,6 +278,9 @@ class ProbabilityWorkers {
   int32_t top_k_ = 0;
   double top_p_ = 1.0;
   std::vector<std::vector<float>>* probabilities_ = nullptr;
+#ifdef EXECUTORCH_BUILD_CUDA
+  std::vector<uint64_t>* argmax_outputs_ = nullptr;
+#endif
   muse_glimmer::SamplingWorkspace caller_workspace_;
 };
 
@@ -283,8 +345,12 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     sampling_ = sampling;
     sampling_initialized_ = true;
     seed_rng(sampling_);
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (n_draft_ > 1 && probability_workers_ == nullptr) {
+#else
     if (effective_temperature() > 0.0 && n_draft_ > 1 &&
         probability_workers_ == nullptr) {
+#endif
       probability_workers_ = std::make_unique<ProbabilityWorkers>(n_draft_);
     }
     stop_.store(false, std::memory_order_relaxed);
@@ -331,7 +397,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         }
         use_target_prefill = chunk >= config_.min_target_prefill_chunk;
       } else {
-        chunk = std::min<int64_t>(chunk, kCudaDFlashHiddenRows);
+        chunk = std::min<int64_t>(chunk, config_.block_size);
       }
 #endif
       const bool is_final_chunk = offset + chunk == token_count;
@@ -620,10 +686,10 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
   Error prime_draft_cache() {
 #ifdef EXECUTORCH_BUILD_CUDA
     if (config_.has_draft_prefill) {
-      while (hidden_rows() - kCudaDFlashHiddenRows >=
+      while (hidden_rows() - config_.block_size >=
              config_.min_draft_prefill_chunk) {
         const int64_t rows_to_feed = std::min(
-            hidden_rows() - kCudaDFlashHiddenRows,
+            hidden_rows() - config_.block_size,
             config_.max_draft_prefill_chunk);
         ET_CHECK_OK_OR_RETURN_ERROR(run_draft_prefill(rows_to_feed));
         hidden_.erase(
@@ -631,7 +697,7 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
         cached_ctx_len_ += rows_to_feed;
       }
     }
-    constexpr int64_t prime_chunk = kCudaDFlashHiddenRows;
+    const int64_t prime_chunk = config_.block_size;
 #else
     const int64_t prime_chunk = config_.max_prefill_chunk;
 #endif
@@ -720,7 +786,17 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const bool draft_argmax = stochastic && config_.draft_argmax;
     const auto draft_sampling_start =
         timing == nullptr ? Clock::time_point{} : Clock::now();
-    if (draft_argmax) {
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (!stochastic && probability_workers_ != nullptr) {
+      probability_workers_->fill_argmax(
+          *draft_logits.get(),
+          verify_len - 1,
+          /*logits_row_offset=*/1,
+          /*output_row_offset=*/1,
+          candidates);
+    } else
+#endif
+        if (draft_argmax) {
       const auto& logits = *draft_logits.get();
       const int64_t vocab_size = logits.size(logits.dim() - 1);
       const float* logits_data =
@@ -795,11 +871,35 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
             target_probs_);
       }
     }
+#ifdef EXECUTORCH_BUILD_CUDA
+    std::vector<uint64_t> target_argmax;
+    if (!stochastic && probability_workers_ != nullptr) {
+      target_argmax.resize(verify_len - 1);
+      probability_workers_->fill_argmax(
+          verify_logits,
+          verify_len - 1,
+          /*logits_row_offset=*/0,
+          /*output_row_offset=*/0,
+          target_argmax);
+    }
+#endif
     for (int64_t i = 0; i < verify_len - 1; ++i) {
       bool accepted = false;
       if (!stochastic) {
+#ifdef EXECUTORCH_BUILD_CUDA
+        const uint64_t target_pick = probability_workers_ != nullptr
+            ? target_argmax[i]
+            : muse_glimmer::sample_token(
+                  rng_,
+                  verify_logits,
+                  i,
+                  0.0,
+                  sampling_.top_k,
+                  sampling_.top_p);
+#else
         const uint64_t target_pick = muse_glimmer::sample_token(
             rng_, verify_logits, i, 0.0, sampling_.top_k, sampling_.top_p);
+#endif
         accepted = target_pick == candidates[i + 1];
         if (!accepted) {
           committed = i + 1;
@@ -1189,18 +1289,18 @@ class DFlashSession final : public LLMSession, public DFlashMultimodalSession {
     const uint16_t* hidden_data = hidden_.data();
     int64_t hidden_input_rows = rows_to_feed;
 #ifdef EXECUTORCH_BUILD_CUDA
-    std::vector<uint16_t> padded_hidden(kCudaDFlashHiddenRows * hidden_dim_, 0);
+    std::vector<uint16_t> padded_hidden(config_.block_size * hidden_dim_, 0);
     ET_CHECK_OR_RETURN_ERROR(
-        hidden_input_rows <= kCudaDFlashHiddenRows,
+        hidden_input_rows <= config_.block_size,
         InvalidState,
         "CUDA DFlash hidden backlog exceeds %" PRId64 " rows",
-        kCudaDFlashHiddenRows);
+        config_.block_size);
     std::memcpy(
         padded_hidden.data(),
         hidden_data,
         rows_to_feed * hidden_dim_ * sizeof(uint16_t));
     hidden_data = padded_hidden.data();
-    hidden_input_rows = kCudaDFlashHiddenRows;
+    hidden_input_rows = config_.block_size;
 #endif
     auto token_tensor = from_blob(
         draft_tokens.data(),

@@ -80,11 +80,7 @@ DEFINE_bool(
     "Ignore EOS and emit exactly max_new_tokens tokens for benchmarking.");
 DEFINE_int32(bos_id, 200000, "BOS token id to prepend.");
 DEFINE_int32(eos_id, 200001, "EOS token id.");
-DEFINE_int32(
-    n_draft,
-    3,
-    "Draft positions per call (0 = block_length - 1). On CUDA this must be at "
-    "most 3.");
+DEFINE_int32(n_draft, 3, "Draft positions per call (0 = block_length - 1).");
 DEFINE_int32(
     block_length,
     4,

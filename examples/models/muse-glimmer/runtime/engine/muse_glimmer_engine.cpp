@@ -1299,7 +1299,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_target_prefill_chunk = min_target_prefill_chunk.get();
       dflash_max_target_prefill_chunk = max_target_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_target_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_target_prefill_chunk > dflash_block_size &&
               dflash_max_target_prefill_chunk >=
                   dflash_min_target_prefill_chunk,
           InvalidProgram,
@@ -1319,7 +1319,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
       dflash_min_draft_prefill_chunk = min_draft_prefill_chunk.get();
       dflash_max_draft_prefill_chunk = max_draft_prefill_chunk.get();
       ET_CHECK_OR_RETURN_ERROR(
-          dflash_min_draft_prefill_chunk > kCudaDFlashHiddenRows &&
+          dflash_min_draft_prefill_chunk > dflash_block_size &&
               dflash_max_draft_prefill_chunk >= dflash_min_draft_prefill_chunk,
           InvalidProgram,
           "Invalid DFlash draft prefill chunk interval [%" PRId64 ", %" PRId64
@@ -1333,6 +1333,14 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
         InvalidProgram,
         "DFlash block size must be at least 2, got %" PRId64,
         dflash_block_size);
+#ifdef EXECUTORCH_BUILD_CUDA
+    ET_CHECK_OR_RETURN_ERROR(
+        dflash_block_size <= kCudaDFlashHiddenRows,
+        InvalidProgram,
+        "CUDA DFlash block size must be at most %" PRId64 ", got %" PRId64,
+        kCudaDFlashHiddenRows,
+        dflash_block_size);
+#endif
     ET_CHECK_OR_RETURN_ERROR(
         config.dflash_block_length == 0 ||
             (config.dflash_block_length >= 2 &&
@@ -1354,10 +1362,10 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
     const int64_t n_draft =
         config.dflash_n_draft > 0 ? config.dflash_n_draft : block_length - 1;
     ET_CHECK_OR_RETURN_ERROR(
-        n_draft + 1 <= kCudaDFlashHiddenRows,
+        n_draft + 1 <= dflash_block_size,
         InvalidArgument,
         "CUDA DFlash n_draft must be at most %" PRId64 ", got %" PRId64,
-        kCudaDFlashHiddenRows - 1,
+        dflash_block_size - 1,
         n_draft);
 #endif
     metadata[kDFlashBlockSize] = dflash_block_size;

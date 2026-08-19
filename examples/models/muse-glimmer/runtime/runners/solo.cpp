@@ -1212,7 +1212,7 @@ int main(int argc, char** argv) {
         const auto& logits = res.get()[0].toTensor();
         const int64_t vocab_size = logits.size(logits.dim() - 1);
         const int64_t logits_rows = logits.size(logits.dim() - 2);
-        // CUDA outputs use their bounded capacity (four rows) even when the
+        // CUDA outputs use their bounded capacity even when the
         // logical tail chunk has fewer rows. The valid logits are the leading
         // `clen` rows, matching DFlashSession::process_target_outputs().
         if (logits_rows < clen) {

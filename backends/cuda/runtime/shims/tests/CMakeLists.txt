@@ -103,6 +103,26 @@ add_test(NAME benchmark_int4_plain_mm_m4
          COMMAND benchmark_int4_plain_mm --M=4 --N=64 --K=256 --gs=32
                  --warmup=1 --iters=1 --seeds=3
 )
+add_test(NAME benchmark_int4_plain_mm_m16
+         COMMAND benchmark_int4_plain_mm --M=16 --N=64 --K=256 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int4_plain_mm_m16_odd_n
+         COMMAND benchmark_int4_plain_mm --M=16 --N=65 --K=256 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int4_plain_mm_m16_multi_super
+         COMMAND benchmark_int4_plain_mm --M=16 --N=17 --K=512 --gs=32
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int4_plain_mm_m16_gs64
+         COMMAND benchmark_int4_plain_mm --M=16 --N=9 --K=512 --gs=64
+                 --warmup=1 --iters=1 --seeds=3
+)
+add_test(NAME benchmark_int4_plain_mm_m16_gs128
+         COMMAND benchmark_int4_plain_mm --M=16 --N=9 --K=512 --gs=128
+                 --warmup=1 --iters=1 --seeds=3
+)
 
 add_executable(benchmark_int6_plain_mm benchmark_int6_plain_mm.cu)
 target_include_directories(

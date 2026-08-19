@@ -351,6 +351,33 @@ TEST_F(AOTITorchInt6PlainMMTest, Q6KSingleSuperBlock) {
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
   check_bf16_output(output, expected, M * N, 0.5f);
+
+  constexpr int64_t M16 = 16;
+  std::vector<uint16_t> A_host_16(M16 * K);
+  std::vector<uint16_t> expected_16(M16 * N);
+  for (int64_t row = 0; row < M16; ++row) {
+    const int64_t source_row = row % M;
+    std::memcpy(
+        A_host_16.data() + row * K,
+        A_host + source_row * K,
+        K * sizeof(uint16_t));
+    std::memcpy(
+        expected_16.data() + row * N,
+        expected + source_row * N,
+        N * sizeof(uint16_t));
+  }
+  Tensor* output_16 = setup_and_run(
+      M16,
+      N,
+      K,
+      gs,
+      ql_host,
+      qh_host,
+      scale_codes,
+      scale_step,
+      A_host_16.data());
+  ASSERT_NE(output_16, nullptr);
+  check_bf16_output(output_16, expected_16.data(), M16 * N, 0.5f);
 }
 
 // Q6KMultiSuperBlock: M=1, N=6, K=512, gs=16, ng=32, n_super=2

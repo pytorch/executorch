@@ -6,7 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// W4A8 dp4a matvec for INT4 decode (M <= 4).
+// Optimized by KernelAgent-Oink(https://github.com/meta-pytorch/KernelAgent)
+// W4A8 dp4a matvec for small-batch INT4 decode.
 //
 // Reads plain nibble-packed [N, K//2] weights (Int4Tensor format).
 // Metadata encoding (transposed AOT for coalesced loads):
@@ -31,7 +32,8 @@
 //
 // Dynamically quantizes bf16 activations to INT8 (per-32-element blocks),
 // then uses dp4a for fused int4×int8 dot products with 16-byte vectorized
-// loads and warp-cooperative quantization.
+// loads and warp-cooperative quantization. For M=16, each warp owns an 8-row
+// by 2-column tile; M=1/2/3/4 and all other M values keep their existing paths.
 
 #pragma once
 
@@ -58,6 +60,7 @@ namespace c10 = executorch::backends::aoti::slim::c10;
 constexpr int32_t MV_NWARPS = 8;
 constexpr int32_t MV_WARP_SIZE = 32;
 constexpr int32_t MV_THREADS = MV_NWARPS * MV_WARP_SIZE;
+constexpr int32_t M16_NWARPS = 4;
 constexpr int32_t Q8_BLOCK_SIZE = 32;
 // GGUF Q4_K super-block = 256 weights; the fp16 scale step is per-super-block.
 constexpr int32_t SUPER_BLOCK = 256;
@@ -343,6 +346,203 @@ DEFINE_INT4_MULTIROW_KERNEL(4)
 
 #undef DEFINE_INT4_MULTIROW_KERNEL
 
+// Each pair of warps owns two output columns. One warp computes rows 0-7 and
+// the other rows 8-15, so each activation load is reused by both columns.
+__device__ __forceinline__ void int4_w4a8_matvec_m16_coalesced_body(
+    const uint8_t* __restrict__ qdata,
+    const uint8_t* __restrict__ w_scale_t,
+    const __half* __restrict__ w_scale_step,
+    const uint8_t* __restrict__ w_zero_t,
+    const __half* __restrict__ w_zero_point_step,
+    const Q8Block* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t n0,
+    int32_t n1,
+    int32_t row_start,
+    int32_t N,
+    int32_t K,
+    int32_t gs_shift,
+    int32_t n_groups,
+    int32_t n_super) {
+  constexpr int32_t ROWS = 8;
+  const int32_t K_half = K / 2;
+  const int32_t lane_id = threadIdx.x;
+  const int32_t n_q8_blocks = K / Q8_BLOCK_SIZE;
+  const bool n1_active = n1 < N;
+  const int32_t n1_safe = n1_active ? n1 : n0;
+
+  const uint4* qrow0 = reinterpret_cast<const uint4*>(
+      qdata + static_cast<int64_t>(n0) * K_half);
+  const uint4* qrow1 = reinterpret_cast<const uint4*>(
+      qdata + static_cast<int64_t>(n1_safe) * K_half);
+  const uint8_t* scale_row0 =
+      w_scale_t + static_cast<int64_t>(n0) * n_groups;
+  const uint8_t* scale_row1 =
+      w_scale_t + static_cast<int64_t>(n1_safe) * n_groups;
+  const __half* scale_step_row0 =
+      w_scale_step + static_cast<int64_t>(n0) * n_super;
+  const __half* scale_step_row1 =
+      w_scale_step + static_cast<int64_t>(n1_safe) * n_super;
+  const uint8_t* zero_row0 =
+      w_zero_t + static_cast<int64_t>(n0) * n_groups;
+  const uint8_t* zero_row1 =
+      w_zero_t + static_cast<int64_t>(n1_safe) * n_groups;
+  const __half* zero_step_row0 =
+      w_zero_point_step + static_cast<int64_t>(n0) * n_super;
+  const __half* zero_step_row1 =
+      w_zero_point_step + static_cast<int64_t>(n1_safe) * n_super;
+
+  const int32_t K_half_16 = K_half / 16;
+  const int32_t sb_shift = SUPER_BLOCK_SHIFT - gs_shift;
+  const int32_t leader = lane_id & ~7;
+  const int32_t n_iters =
+      ((K_half_16 + MV_WARP_SIZE - 1) / MV_WARP_SIZE) * MV_WARP_SIZE;
+  float sums0[ROWS] = {};
+  float sums1[ROWS] = {};
+
+  for (int32_t it = 0; it < n_iters; it += MV_WARP_SIZE) {
+    const int32_t i = it + lane_id;
+    const bool active = i < K_half_16;
+    const int32_t i_safe = active ? i : 0;
+    const uint4 packed0 = __ldg(&qrow0[i_safe]);
+    const uint4 packed1 = __ldg(&qrow1[i_safe]);
+    const int32_t g = i_safe * 32 >> gs_shift;
+
+    uint32_t steps0 = 0;
+    uint32_t steps1 = 0;
+    if (lane_id == leader) {
+      const int32_t sb = g >> sb_shift;
+      const unsigned short s0 =
+          __half_as_ushort(__ldg(&scale_step_row0[sb]));
+      const unsigned short z0 =
+          __half_as_ushort(__ldg(&zero_step_row0[sb]));
+      const unsigned short s1 =
+          __half_as_ushort(__ldg(&scale_step_row1[sb]));
+      const unsigned short z1 =
+          __half_as_ushort(__ldg(&zero_step_row1[sb]));
+      steps0 = static_cast<uint32_t>(s0) | (static_cast<uint32_t>(z0) << 16);
+      steps1 = static_cast<uint32_t>(s1) | (static_cast<uint32_t>(z1) << 16);
+    }
+    steps0 = __shfl_sync(0xffffffff, steps0, leader);
+    steps1 = __shfl_sync(0xffffffff, steps1, leader);
+    if (!active) {
+      continue;
+    }
+
+    const float scale_step0 = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps0 & 0xFFFF)));
+    const float zero_step0 = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps0 >> 16)));
+    const float scale_step1 = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps1 & 0xFFFF)));
+    const float zero_step1 = __half2float(
+        __ushort_as_half(static_cast<unsigned short>(steps1 >> 16)));
+    const float ws0 = static_cast<float>(__ldg(&scale_row0[g])) * scale_step0;
+    const float wz0 = static_cast<float>(__ldg(&zero_row0[g])) * zero_step0;
+    const float ws1 = static_cast<float>(__ldg(&scale_row1[g])) * scale_step1;
+    const float wz1 = static_cast<float>(__ldg(&zero_row1[g])) * zero_step1;
+
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      const Q8Block* qb = q8 +
+          static_cast<int64_t>(row_start + row) * n_q8_blocks + i_safe;
+      const uint4 activations_even =
+          *reinterpret_cast<const uint4*>(qb->qs_even);
+      const uint4 activations_odd =
+          *reinterpret_cast<const uint4*>(qb->qs_odd);
+      const float activation_scale = qb->d;
+      float sum0 = sums0[row];
+      float sum1 = sums1[row];
+
+#pragma unroll
+      for (int32_t w = 0; w < 4; ++w) {
+        const uint32_t a_even = int4_uint4_at(activations_even, w);
+        const uint32_t a_odd = int4_uint4_at(activations_odd, w);
+        int32_t a_sum8 =
+            __dp4a(0x01010101, static_cast<int32_t>(a_even), 0);
+        a_sum8 =
+            __dp4a(0x01010101, static_cast<int32_t>(a_odd), a_sum8);
+
+        const uint32_t weight0 = int4_uint4_at(packed0, w);
+        const int32_t vi0_lo = weight0 & 0x0F0F0F0F;
+        const int32_t vi0_hi = (weight0 >> 4) & 0x0F0F0F0F;
+        int32_t dp0 = __dp4a(vi0_lo, static_cast<int32_t>(a_even), 0);
+        dp0 = __dp4a(vi0_hi, static_cast<int32_t>(a_odd), dp0);
+        sum0 += ws0 * activation_scale *
+            (static_cast<float>(dp0) - wz0 * static_cast<float>(a_sum8));
+
+        const uint32_t weight1 = int4_uint4_at(packed1, w);
+        const int32_t vi1_lo = weight1 & 0x0F0F0F0F;
+        const int32_t vi1_hi = (weight1 >> 4) & 0x0F0F0F0F;
+        int32_t dp1 = __dp4a(vi1_lo, static_cast<int32_t>(a_even), 0);
+        dp1 = __dp4a(vi1_hi, static_cast<int32_t>(a_odd), dp1);
+        sum1 += ws1 * activation_scale *
+            (static_cast<float>(dp1) - wz1 * static_cast<float>(a_sum8));
+      }
+      sums0[row] = sum0;
+      sums1[row] = sum1;
+    }
+  }
+
+  for (int32_t offset = MV_WARP_SIZE / 2; offset > 0; offset >>= 1) {
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      sums0[row] += __shfl_xor_sync(0xffffffff, sums0[row], offset);
+      sums1[row] += __shfl_xor_sync(0xffffffff, sums1[row], offset);
+    }
+  }
+
+  if (lane_id == 0) {
+#pragma unroll
+    for (int32_t row = 0; row < ROWS; ++row) {
+      out[static_cast<int64_t>(row_start + row) * N + n0] =
+          __float2bfloat16(sums0[row]);
+      if (n1_active) {
+        out[static_cast<int64_t>(row_start + row) * N + n1] =
+            __float2bfloat16(sums1[row]);
+      }
+    }
+  }
+}
+
+__global__ void __launch_bounds__(MV_THREADS)
+    int4_w4a8_matvec_m16_coalesced_kernel(
+        const uint8_t* __restrict__ qdata,
+        const uint8_t* __restrict__ w_scale_t,
+        const __half* __restrict__ w_scale_step,
+        const uint8_t* __restrict__ w_zero_t,
+        const __half* __restrict__ w_zero_point_step,
+        const Q8Block* __restrict__ q8,
+        __nv_bfloat16* __restrict__ out,
+        int32_t N,
+        int32_t K,
+        int32_t gs_shift,
+        int32_t n_groups,
+        int32_t n_super) {
+  const int32_t pair = blockIdx.x * (M16_NWARPS / 2) + threadIdx.y / 2;
+  const int32_t n0 = pair * 2;
+  if (n0 >= N) {
+    return;
+  }
+  const int32_t row_start = (threadIdx.y & 1) * 8;
+  int4_w4a8_matvec_m16_coalesced_body(
+      qdata,
+      w_scale_t,
+      w_scale_step,
+      w_zero_t,
+      w_zero_point_step,
+      q8,
+      out,
+      n0,
+      n0 + 1,
+      row_start,
+      N,
+      K,
+      gs_shift,
+      n_groups,
+      n_super);
+}
+
 // Persistent Q8 buffer (lazy init, not thread-safe — single-stream only).
 // Freed at process exit via a static guard so leak detectors stay quiet; the
 // CUDA runtime would otherwise reclaim it on teardown anyway.
@@ -460,6 +660,25 @@ inline void _int4_plain_mm_cuda(
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(scale_step.size(1));
+  if (M == 16) {
+    dim3 m16_grid((N + M16_NWARPS - 1) / M16_NWARPS);
+    dim3 m16_block(MV_WARP_SIZE, M16_NWARPS);
+    int4_w4a8_matvec_m16_coalesced_kernel<<<m16_grid, m16_block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(qdata.data_ptr()),
+        reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(scale_step.data_ptr()),
+        reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+        reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N,
+        K,
+        gs_shift,
+        n_groups,
+        n_super);
+    return;
+  }
+
   if (M == 4) {
     dim3 m4_grid((N + MV_NWARPS - 1) / MV_NWARPS);
     int4_w4a8_matvec_m4_coalesced_kernel<<<m4_grid, block, 0, stream>>>(

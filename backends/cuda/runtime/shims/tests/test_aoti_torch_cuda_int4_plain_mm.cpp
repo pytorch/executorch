@@ -322,6 +322,23 @@ TEST_F(AOTITorchInt4PlainMMTest, SingleSuperBlock) {
   EXPECT_EQ(output->size(0), M);
   EXPECT_EQ(output->size(1), N);
   check_bf16_output(output, expected, M * N, 0.5f);
+
+  constexpr int64_t M16 = 16;
+  std::vector<uint16_t> A_host_16(M16 * K);
+  std::vector<uint16_t> expected_16(M16 * N);
+  for (int64_t row = 0; row < M16; ++row) {
+    std::memcpy(A_host_16.data() + row * K, A_host, K * sizeof(uint16_t));
+    std::memcpy(expected_16.data() + row * N, expected, N * sizeof(uint16_t));
+  }
+  Tensor* A_16 = create_bf16({M16, K});
+  ASSERT_NE(A_16, nullptr);
+  upload(A_16, A_host_16.data(), A_host_16.size() * sizeof(uint16_t));
+  Tensor* output_16 =
+      run(A_16, qdata, scale, scale_step_t, zero, zero_point_step_t, gs);
+  ASSERT_NE(output_16, nullptr);
+  EXPECT_EQ(output_16->size(0), M16);
+  EXPECT_EQ(output_16->size(1), N);
+  check_bf16_output(output_16, expected_16.data(), M16 * N, 0.5f);
 }
 
 // MultiSuperBlock: M=1, N=4, K=512, gs=32, ng=16, n_super=2

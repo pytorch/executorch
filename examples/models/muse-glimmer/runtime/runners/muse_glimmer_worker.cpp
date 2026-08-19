@@ -60,8 +60,7 @@ DEFINE_int32(
 DEFINE_int32(
     dflash_n_draft,
     3,
-    "DFlash candidates per iteration. Zero uses block_length - 1. On CUDA this "
-    "must be at most 3.");
+    "DFlash candidates per iteration. Zero uses block_length - 1.");
 DEFINE_bool(
     dflash_draft_argmax,
     true,

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// W6A8 dp4a matvec for packed INT6 decode (M <= 4), used for GGUF Q6_K weights.
+// W6A8 dp4a matvec for packed INT6 decode, used for GGUF Q6_K weights.
 //
 // Reads a genuine 6-bit packed weight (CudaDp4aPlanarInt6Tensor format), split
 // into two planes:
@@ -523,6 +523,7 @@ DEFINE_INT6_GS16_KERNEL(4)
 
 DEFINE_INT6_SUM_GS16_KERNEL(3)
 DEFINE_INT6_SUM_GS16_KERNEL(4)
+DEFINE_INT6_SUM_GS16_KERNEL(16)
 
 #undef DEFINE_INT6_SUM_GS16_KERNEL
 
@@ -601,7 +602,8 @@ inline void _int6_plain_mm_cuda(
   int32_t N = ql.size(0);
 
   ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
-  ET_CHECK_MSG(M >= 1 && M <= 4, "int6 short-query M=%d must be in [1, 4]", M);
+  ET_CHECK_MSG(
+      M >= 1 && M <= 16, "int6 short-query M=%d must be in [1, 16]", M);
   ET_CHECK(
       ql.dtype() == c10::ScalarType::Byte ||
       ql.dtype() == c10::ScalarType::Char);
@@ -667,6 +669,58 @@ inline void _int6_plain_mm_cuda(
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(steps.size(1));
+  if (M == 16 && gs == 16) {
+    int6_w6a8_matvec_m16_sum_gs16_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+        reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+        reinterpret_cast<const int8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(steps.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N,
+        K,
+        n_groups,
+        n_super);
+    return;
+  }
+  if (M > 4) {
+    for (int32_t row = 0; row < M; row += 4) {
+      const int32_t rows = min(4, M - row);
+      const Q8Block_i6* q8 = q8_buf + static_cast<int64_t>(row) * n_q8_blocks;
+      __nv_bfloat16* out =
+          reinterpret_cast<__nv_bfloat16*>(output->data_ptr()) +
+          static_cast<int64_t>(row) * N;
+      if (rows == 4 && gs == 16) {
+        int6_w6a8_matvec_m4_sum_gs16_kernel<<<grid, block, 0, stream>>>(
+            reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+            reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+            reinterpret_cast<const int8_t*>(scale.data_ptr()),
+            reinterpret_cast<const __half*>(steps.data_ptr()),
+            q8,
+            out,
+            N,
+            K,
+            n_groups,
+            n_super);
+      } else {
+        int6_w6a8_matvec_kernel<<<grid, block, 0, stream>>>(
+            reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+            reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+            reinterpret_cast<const int8_t*>(scale.data_ptr()),
+            reinterpret_cast<const __half*>(steps.data_ptr()),
+            q8,
+            out,
+            N,
+            K,
+            rows,
+            gs_shift,
+            n_groups,
+            n_super);
+      }
+    }
+    return;
+  }
+
   if (M == 4 && gs == 16) {
     int6_w6a8_matvec_m4_sum_gs16_kernel<<<grid, block, 0, stream>>>(
         reinterpret_cast<const uint8_t*>(ql.data_ptr()),

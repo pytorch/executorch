@@ -20,8 +20,10 @@ At .pte runtime, the captured graph is executed by the AOTI-generated .so:
     dequant + cuBLAS matmul kernels.
 
 Dispatch strategy (determines what gets captured in the export graph):
-  Decode (M<=4): Custom op ``executorch_cuda::int6_plain_mm``
-  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
+  Bounded decode: Custom op ``executorch_cuda::int6_plain_mm``
+  Prefill: Inline dequant + F.linear (standard PyTorch ops)
+
+The bounded threshold defaults to M<=4. DFlash export raises it to M<=16.
 
 The packed-int6 weight is symmetric (no zero point): ``w = q * scale`` with
 ``q`` in ``[-32, 31]`` stored as the ql/qh planes. The op signature mirrors
@@ -40,11 +42,14 @@ from executorch.backends.cuda.dp4a_planar_int6_tensor import (
     CudaDp4aPlanarInt6Tensor,
     unpack_int6,
 )
+from executorch.backends.cuda.quantize_op_dispatch._dispatch_config import (
+    get_plain_mm_max_m,
+)
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
 from torch.library import impl
 
 # ---------------------------------------------------------------------------
-# Custom op for INT6 decode (M<=4): W6A8 dp4a matvec in C shim.
+# Custom op for bounded INT6 decode: W6A8 dp4a matvec in C shim.
 # ---------------------------------------------------------------------------
 
 _lib.define(
@@ -117,7 +122,7 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= get_plain_mm_max_m():
         out = torch.ops.executorch_cuda.int6_plain_mm(x_2d, ql, qh, scale, steps, gs)
     else:
         out = _unit_dq_mm_int6(x_2d, ql, qh, scale, steps, gs)

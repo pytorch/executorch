@@ -104,25 +104,31 @@ void fill_case(
 }
 
 template <typename Fn>
-float time_ms(Fn fn, int warmup, int iterations) {
+float time_ms(Fn fn, int warmup, int iterations, int samples) {
   for (int i = 0; i < warmup; ++i) {
     fn();
   }
   CUDA_CHECK(cudaDeviceSynchronize());
+
   cudaEvent_t start, stop;
   CUDA_CHECK(cudaEventCreate(&start));
   CUDA_CHECK(cudaEventCreate(&stop));
-  CUDA_CHECK(cudaEventRecord(start));
-  for (int i = 0; i < iterations; ++i) {
-    fn();
+  std::vector<float> times(samples);
+  for (int sample = 0; sample < samples; ++sample) {
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < iterations; ++i) {
+      fn();
+    }
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    float elapsed = 0.0f;
+    CUDA_CHECK(cudaEventElapsedTime(&elapsed, start, stop));
+    times[sample] = elapsed / iterations;
   }
-  CUDA_CHECK(cudaEventRecord(stop));
-  CUDA_CHECK(cudaEventSynchronize(stop));
-  float elapsed = 0.0f;
-  CUDA_CHECK(cudaEventElapsedTime(&elapsed, start, stop));
   CUDA_CHECK(cudaEventDestroy(start));
   CUDA_CHECK(cudaEventDestroy(stop));
-  return elapsed / iterations;
+  std::sort(times.begin(), times.end());
+  return times[samples / 2];
 }
 
 void* device_alloc_copy(const void* src, size_t bytes) {
@@ -153,9 +159,22 @@ int main(int argc, char** argv) {
   const int64_t warmup = arg_value(argc, argv, "warmup", 30);
   const int64_t iterations = arg_value(argc, argv, "iters", 200);
   const int64_t seeds = arg_value(argc, argv, "seeds", 3);
+  const int64_t samples = arg_value(argc, argv, "samples", 7);
 
-  if (M < 1 || M > 4 || K % 256 != 0 || K % 32 != 0 || gs < 32 || (gs & (gs - 1))) {
-    std::fprintf(stderr, "unsupported shape M=%lld N=%lld K=%lld gs=%lld\n", M, N, K, gs);
+  if (M < 1 || (M > 4 && M != 16) || warmup < 0 || iterations < 1 ||
+      samples < 1 || samples % 2 == 0 || seeds < 1 || K % 256 != 0 ||
+      K % 32 != 0 || gs < 32 || (gs & (gs - 1))) {
+    std::fprintf(
+        stderr,
+        "unsupported benchmark arguments M=%lld N=%lld K=%lld gs=%lld warmup=%lld iters=%lld samples=%lld seeds=%lld\n",
+        M,
+        N,
+        K,
+        gs,
+        warmup,
+        iterations,
+        samples,
+        seeds);
     return 2;
   }
 
@@ -168,9 +187,12 @@ int main(int argc, char** argv) {
   dim3 block(cuda_shims::MV_WARP_SIZE, cuda_shims::MV_NWARPS);
   dim3 ref_grid((N + cuda_shims::MV_NWARPS - 1) / cuda_shims::MV_NWARPS, M);
   dim3 cand_grid((N + cuda_shims::MV_NWARPS - 1) / cuda_shims::MV_NWARPS);
+  dim3 m16_grid(
+      (N + cuda_shims::M16_NWARPS - 1) / cuda_shims::M16_NWARPS);
+  dim3 m16_block(cuda_shims::MV_WARP_SIZE, cuda_shims::M16_NWARPS);
 
   std::printf(
-      "shape M=%lld N=%lld K=%lld gs=%lld q8_blocks=%d warmup=%lld iters=%lld seeds=%lld\n",
+      "shape M=%lld N=%lld K=%lld gs=%lld q8_blocks=%d warmup=%lld iters=%lld samples=%lld seeds=%lld\n",
       M,
       N,
       K,
@@ -178,6 +200,7 @@ int main(int argc, char** argv) {
       n_q8_blocks,
       warmup,
       iterations,
+      samples,
       seeds);
 
   double ref_total = 0.0;
@@ -232,7 +255,21 @@ int main(int argc, char** argv) {
         gs_shift,
         n_groups,
         n_super);
-    if (M == 3) {
+    if (M == 16) {
+      cuda_shims::int4_w4a8_matvec_m16_coalesced_kernel<<<m16_grid, m16_block>>>(
+          dqdata,
+          dscale,
+          dscale_step,
+          dzero,
+          dzero_step,
+          dq8,
+          dcand,
+          static_cast<int32_t>(N),
+          static_cast<int32_t>(K),
+          gs_shift,
+          n_groups,
+          n_super);
+    } else if (M == 3) {
       cuda_shims::int4_w4a8_matvec_m3_coalesced_kernel<<<cand_grid, block>>>(
           dqdata,
           dscale,
@@ -312,13 +349,16 @@ int main(int argc, char** argv) {
 
     float q8_ms = time_ms([&]() {
       cuda_shims::quantize_activations_q8_kernel<<<q8_grid, block>>>(dA, dq8, static_cast<int32_t>(K));
-    }, warmup, iterations);
+    }, warmup, iterations, samples);
     float ref_ms = time_ms([&]() {
       cuda_shims::int4_w4a8_matvec_coalesced_kernel<<<ref_grid, block>>>(
           dqdata, dscale, dscale_step, dzero, dzero_step, dq8, dref, static_cast<int32_t>(N), static_cast<int32_t>(K), gs_shift, n_groups, n_super);
-    }, warmup, iterations);
+    }, warmup, iterations, samples);
     float cand_ms = time_ms([&]() {
-      if (M == 3) {
+      if (M == 16) {
+        cuda_shims::int4_w4a8_matvec_m16_coalesced_kernel<<<m16_grid, m16_block>>>(
+            dqdata, dscale, dscale_step, dzero, dzero_step, dq8, dcand, static_cast<int32_t>(N), static_cast<int32_t>(K), gs_shift, n_groups, n_super);
+      } else if (M == 3) {
         cuda_shims::int4_w4a8_matvec_m3_coalesced_kernel<<<cand_grid, block>>>(
             dqdata, dscale, dscale_step, dzero, dzero_step, dq8, dcand, static_cast<int32_t>(N), static_cast<int32_t>(K), gs_shift, n_groups, n_super);
       } else if (M == 2) {
@@ -331,7 +371,7 @@ int main(int argc, char** argv) {
         cuda_shims::int4_w4a8_matvec_coalesced_kernel<<<ref_grid, block>>>(
             dqdata, dscale, dscale_step, dzero, dzero_step, dq8, dcand, static_cast<int32_t>(N), static_cast<int32_t>(K), gs_shift, n_groups, n_super);
       }
-    }, warmup, iterations);
+    }, warmup, iterations, samples);
     ref_total += ref_ms;
     cand_total += cand_ms;
     std::printf(

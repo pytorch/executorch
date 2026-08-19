@@ -15,7 +15,7 @@ test_cuda_pipeline.py::TestCudaExport (end-to-end export + lower).
 
 The API contract: after importing int4_dispatch, F.linear and nn.Linear
 with Int4Tensor weights produce numerically correct results. Tests verify
-this across decode (M<=4), prefill (M>4), batched (3D), bias, group sizes,
+this across decode, prefill, batched (3D), bias, group sizes,
 and symmetric/asymmetric quantization. Correctness is measured as mean
 relative error against the unquantized bf16 reference (not per-element
 atol/rtol, which is too strict for INT4 quantization noise).
@@ -33,6 +33,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+from executorch.backends.cuda.quantize_op_dispatch._dispatch_config import (
+    plain_mm_max_m,
+)
 from executorch.backends.cuda.quantize_op_dispatch.int4_dispatch import _dequant_matmul
 from executorch.examples.models.gemma4_31b.cuda_packers import pack_linear_for_cuda
 from executorch.extension.llm.export.int4 import ExportableInt4Tensor
@@ -290,20 +293,43 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(calls, [])
 
     def test_coalesced_tensor_routes_to_int4_plain_mm(self):
-        """CudaCoalescedInt4Tensor with M<=4 routes to the decode custom op."""
+        """DFlash's M<=16 bound routes to the decode custom op."""
         t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
-        x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
-        with _record_int4_plain_mm() as calls:
+        x = torch.randn(16, 256, dtype=torch.bfloat16)
+        with plain_mm_max_m(16), _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(out.shape, (1, 16))
+        self.assertEqual(out.shape, (16, 16))
 
-    def test_coalesced_tensor_prefill_uses_dequant(self):
-        """M>4 uses inline dequant (no custom op) and is numerically correct."""
+    def test_dflash_bound_covers_intermediate_m(self):
         t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
         c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
-        x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        x = torch.randn(15, 256, dtype=torch.bfloat16)
+        with plain_mm_max_m(16), _record_int4_plain_mm() as calls:
+            out = F.linear(x, c)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out.shape, (15, 16))
+
+    def test_dflash_bound_excludes_m17(self):
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
+        x = torch.randn(17, 256, dtype=torch.bfloat16)
+        with plain_mm_max_m(16), _record_int4_plain_mm() as calls:
+            out = F.linear(x, c)
+        self.assertEqual(calls, [])
+        self.assertEqual(out.shape, (17, 16))
+
+    def test_dflash_bound_rejects_values_above_kernel_limit(self):
+        with self.assertRaisesRegex(ValueError, r"\[1, 16\]"):
+            with plain_mm_max_m(17):
+                pass
+
+    def test_coalesced_tensor_prefill_uses_dequant(self):
+        """The default M>4 path uses inline dequant and is numerically correct."""
+        t, _ = _make_exportable_int4_tensor(16, 256, group_size=32)
+        c = CudaCoalescedInt4Tensor.from_exportable_int4_tensor(t)
+        x = torch.randn(8, 256, dtype=torch.bfloat16)
         with _record_int4_plain_mm() as calls:
             out = F.linear(x, c)
         self.assertEqual(calls, [])

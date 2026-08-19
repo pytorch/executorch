@@ -14,7 +14,7 @@ test_aoti_torch_cuda_int5_plain_mm.cpp (C++ unit tests).
 
 The API contract: after importing int5_dispatch, F.linear / nn.Linear with a
 CudaDp4aPlanarInt5Tensor weight produce numerically correct results, routed by
-batch size (decode M<=4 -> custom op, prefill M>4 -> inline dequant). Q5_K is
+batch size (decode M<=4 by default, DFlash M<=16, larger M -> inline dequant). Q5_K is
 asymmetric (has a zero point, like INT4): ``w = scale * (u - zero)`` with u in
 [0, 31]. Both scale and zero are stored as per-group uint8 codes with a per-256
 fp16 step packed into ONE warp-shuffle word by the kernel (z_pack). Routing tests
@@ -37,6 +37,9 @@ from executorch.backends.cuda.dp4a_planar_int5_tensor import (
     CudaDp4aPlanarInt5Tensor,
     pack_int5,
     unpack_int5,
+)
+from executorch.backends.cuda.quantize_op_dispatch._dispatch_config import (
+    plain_mm_max_m,
 )
 from executorch.backends.cuda.quantize_op_dispatch.int5_dispatch import (
     _dequant_matmul_int5,
@@ -147,7 +150,7 @@ class TestPacker(unittest.TestCase):
 
 
 class TestDispatchRouting(unittest.TestCase):
-    """Type-based routing: M<=4 -> int5_plain_mm op, M>4 -> inline dequant.
+    """Type-based routing with a configurable bounded-decode threshold.
 
     Runs without a GPU by recording calls to the decode custom op and computing
     the result with the eager CPU dequant.
@@ -171,7 +174,7 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_prefill_uses_dequant(self):
         t, w_ref = _make_int5_tensor(16, 256)
-        x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        x = torch.randn(8, 256, dtype=torch.bfloat16)
         with _record_int5_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])
@@ -213,10 +216,10 @@ class TestDispatchRouting(unittest.TestCase):
 
     def test_3d_batched_input(self):
         t, w_ref = _make_int5_tensor(16, 256)
-        x = torch.randn(2, 8, 256, dtype=torch.bfloat16)  # flattened M=16 > 4
-        with _record_int5_plain_mm() as calls:
+        x = torch.randn(2, 8, 256, dtype=torch.bfloat16)
+        with plain_mm_max_m(16), _record_int5_plain_mm() as calls:
             out = F.linear(x, t)
-        self.assertEqual(calls, [])  # prefill regime
+        self.assertEqual(len(calls), 1)
         self.assertEqual(out.shape, (2, 8, 16))
         ref = F.linear(x, w_ref)
         self.assertLess(self._rel_err(out, ref), 0.02)

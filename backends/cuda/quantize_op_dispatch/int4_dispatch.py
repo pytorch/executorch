@@ -20,8 +20,10 @@ At .pte runtime, the captured graph is executed by the AOTI-generated .so:
     dequant + cuBLAS matmul kernels.
 
 Dispatch strategy (determines what gets captured in the export graph):
-  Decode (M<=4): Custom op ``executorch_cuda::int4_plain_mm``
-  Prefill (M>4): Inline dequant + F.linear (standard PyTorch ops)
+  Bounded decode: Custom op ``executorch_cuda::int4_plain_mm``
+  Prefill: Inline dequant + F.linear (standard PyTorch ops)
+
+The bounded threshold defaults to M<=4. DFlash export raises it to M<=16.
 
 Importing the parent ``quantize_op_dispatch`` package registers this dispatch
 override (along with the INT8 one) before using nn.Linear with
@@ -33,11 +35,14 @@ CudaCoalescedInt4Tensor weights::
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
+from executorch.backends.cuda.quantize_op_dispatch._dispatch_config import (
+    get_plain_mm_max_m,
+)
 from executorch.backends.cuda.quantize_op_dispatch._library import lib as _lib
 from torch.library import impl
 
 # ---------------------------------------------------------------------------
-# Custom op for decode (M=1): dp4a matvec in C shim, dequant+F.linear in eager
+# Custom op for bounded decode: dp4a matvec in C shim, dequant+F.linear in eager
 # ---------------------------------------------------------------------------
 
 _lib.define(
@@ -71,7 +76,7 @@ def _cuda(self, qdata, scale, scale_step, zero, zero_point_step, group_size):
 # 262144-row weight even though the final w_deq is only ~2.6 GiB. Chunking along N
 # caps that at ~chunk rows. It is numerically identical (F.linear output rows are
 # independent), and because only the lm_head (custom-op) path crosses the N
-# threshold — never the M>4 prefill inline path — it never enters the runtime
+# threshold — never the prefill inline path — it never enters the runtime
 # graph: ZERO runtime / accuracy impact. Applied unconditionally to any weight
 # whose row count exceeds the threshold.
 _DEQUANT_N_THRESHOLD = 65536
@@ -162,7 +167,7 @@ def _(func, types, args, kwargs):
     gs = weight_tensor.block_size[-1]
 
     M = x_2d.shape[0]
-    if M <= 4:
+    if M <= get_plain_mm_max_m():
         # The metadata is already in the coalesced [N, n_groups] layout the
         # decode kernel reads directly (baked into the weight constant at pack
         # time): scale as uint8 codes + per-256 fp16 scale_step; zero as uint8

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// W5A8 dp4a matvec for packed INT5 decode (M <= 4), used for GGUF Q5_K weights.
+// W5A8 dp4a matvec for packed INT5 decode, used for GGUF Q5_K weights.
 //
 // Reads a genuine 5-bit packed weight (CudaDp4aPlanarInt5Tensor format), split
 // into two planes:
@@ -474,6 +474,39 @@ __device__ __forceinline__ void int5_w5a8_matvec_gs32_body(
   }
 }
 
+__global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_m16_gs32_kernel(
+    const uint8_t* __restrict__ ql,
+    const uint8_t* __restrict__ qh,
+    const uint8_t* __restrict__ w_scale,
+    const __half* __restrict__ w_scale_step,
+    const uint8_t* __restrict__ w_zero,
+    const __half* __restrict__ w_zero_point_step,
+    const Q8Block_i5* __restrict__ q8,
+    __nv_bfloat16* __restrict__ out,
+    int32_t N,
+    int32_t K,
+    int32_t n_groups,
+    int32_t n_super) {
+  const int32_t n = blockIdx.x * MV5_NWARPS + threadIdx.y;
+  if (n >= N) {
+    return;
+  }
+  int5_w5a8_matvec_gs32_body<16>(
+      ql,
+      qh,
+      w_scale,
+      w_scale_step,
+      w_zero,
+      w_zero_point_step,
+      q8,
+      out,
+      n,
+      N,
+      K,
+      n_groups,
+      n_super);
+}
+
 __global__ void __launch_bounds__(MV5_THREADS) int5_w5a8_matvec_m1_gs32_kernel(
     const uint8_t* __restrict__ ql, // [N, K/2]
     const uint8_t* __restrict__ qh, // [N, K/8]
@@ -712,7 +745,8 @@ inline void _int5_plain_mm_cuda(
   int32_t N = ql.size(0);
 
   ET_CHECK(A.dtype() == c10::ScalarType::BFloat16);
-  ET_CHECK_MSG(M >= 1 && M <= 4, "int5 short-query M=%d must be in [1, 4]", M);
+  ET_CHECK_MSG(
+      M >= 1 && M <= 16, "int5 short-query M=%d must be in [1, 16]", M);
   ET_CHECK(
       ql.dtype() == c10::ScalarType::Byte ||
       ql.dtype() == c10::ScalarType::Char);
@@ -786,6 +820,64 @@ inline void _int5_plain_mm_cuda(
 
   int32_t n_groups = static_cast<int32_t>(scale.size(1));
   int32_t n_super = static_cast<int32_t>(scale_step.size(1));
+  if (M == 16 && gs == 32) {
+    int5_w5a8_matvec_m16_gs32_kernel<<<grid, block, 0, stream>>>(
+        reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+        reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+        reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+        reinterpret_cast<const __half*>(scale_step.data_ptr()),
+        reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+        reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+        q8_buf,
+        reinterpret_cast<__nv_bfloat16*>(output->data_ptr()),
+        N,
+        K,
+        n_groups,
+        n_super);
+    return;
+  }
+  if (M > 4) {
+    for (int32_t row = 0; row < M; row += 4) {
+      const int32_t rows = min(4, M - row);
+      const Q8Block_i5* q8 = q8_buf + static_cast<int64_t>(row) * n_q8_blocks;
+      __nv_bfloat16* out =
+          reinterpret_cast<__nv_bfloat16*>(output->data_ptr()) +
+          static_cast<int64_t>(row) * N;
+      if (rows == 4 && gs == 32) {
+        int5_w5a8_matvec_m4_gs32_kernel<<<grid, block, 0, stream>>>(
+            reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+            reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+            reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+            reinterpret_cast<const __half*>(scale_step.data_ptr()),
+            reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+            reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+            q8,
+            out,
+            N,
+            K,
+            n_groups,
+            n_super);
+      } else {
+        int5_w5a8_matvec_kernel<<<grid, block, 0, stream>>>(
+            reinterpret_cast<const uint8_t*>(ql.data_ptr()),
+            reinterpret_cast<const uint8_t*>(qh.data_ptr()),
+            reinterpret_cast<const uint8_t*>(scale.data_ptr()),
+            reinterpret_cast<const __half*>(scale_step.data_ptr()),
+            reinterpret_cast<const uint8_t*>(zero.data_ptr()),
+            reinterpret_cast<const __half*>(zero_point_step.data_ptr()),
+            q8,
+            out,
+            N,
+            K,
+            rows,
+            gs_shift,
+            n_groups,
+            n_super);
+      }
+    }
+    return;
+  }
+
   if (M == 1 && gs == 32) {
     int5_w5a8_matvec_m1_gs32_kernel<<<grid, block, 0, stream>>>(
         reinterpret_cast<const uint8_t*>(ql.data_ptr()),

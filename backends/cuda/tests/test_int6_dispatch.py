@@ -14,7 +14,7 @@ test_aoti_torch_cuda_int6_plain_mm.cpp (C++ unit tests).
 
 The API contract: after importing int6_dispatch, F.linear / nn.Linear with a
 CudaDp4aPlanarInt6Tensor weight produce numerically correct results, routed by
-batch size (decode M<=4 -> custom op, prefill M>4 -> inline dequant). Routing
+batch size (decode M<=4 by default, DFlash M<=16, larger M -> inline dequant). Routing
 tests run without a GPU by recording calls to the decode custom op.
 
 Usage:
@@ -34,6 +34,9 @@ from executorch.backends.cuda.dp4a_planar_int6_tensor import (
     CudaDp4aPlanarInt6Tensor,
     pack_int6,
     unpack_int6,
+)
+from executorch.backends.cuda.quantize_op_dispatch._dispatch_config import (
+    plain_mm_max_m,
 )
 from executorch.backends.cuda.quantize_op_dispatch.int6_dispatch import _unit_dq_mm_int6
 
@@ -95,7 +98,7 @@ def _record_int6_plain_mm():
 
 
 class TestDispatchRouting(unittest.TestCase):
-    """Type-based routing: M<=4 -> int6_plain_mm op, M>4 -> inline dequant.
+    """Type-based routing with a configurable bounded-decode threshold.
 
     Runs without a GPU by recording calls to the decode custom op and computing
     the result with the eager CPU dequant.
@@ -110,7 +113,7 @@ class TestDispatchRouting(unittest.TestCase):
         ).item()
 
     def test_decode_routes_to_int6_plain_mm(self):
-        """M<=4 routes to the decode custom op."""
+        """M<=4 routes to the decode custom op by default."""
         t, _, _ = _make_int6_tensor(16, 256)
         x = torch.randn(1, 256, dtype=torch.bfloat16)  # M=1 (decode regime)
         with _record_int6_plain_mm() as calls:
@@ -119,9 +122,9 @@ class TestDispatchRouting(unittest.TestCase):
         self.assertEqual(out.shape, (1, 16))
 
     def test_prefill_uses_dequant(self):
-        """M>4 uses inline dequant (no custom op) and is numerically correct."""
+        """M>4 uses inline dequant by default and is numerically correct."""
         t, q, scale = _make_int6_tensor(16, 256)
-        x = torch.randn(8, 256, dtype=torch.bfloat16)  # M=8 > 4 (prefill regime)
+        x = torch.randn(8, 256, dtype=torch.bfloat16)
         with _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
         self.assertEqual(calls, [])
@@ -169,10 +172,10 @@ class TestDispatchRouting(unittest.TestCase):
     def test_3d_batched_input(self):
         """3D input is flattened and the output shape is restored."""
         t, q, scale = _make_int6_tensor(16, 256)
-        x = torch.randn(2, 8, 256, dtype=torch.bfloat16)  # flattened M=16 > 4
-        with _record_int6_plain_mm() as calls:
+        x = torch.randn(2, 8, 256, dtype=torch.bfloat16)
+        with plain_mm_max_m(16), _record_int6_plain_mm() as calls:
             out = F.linear(x, t)
-        self.assertEqual(calls, [])  # prefill regime
+        self.assertEqual(len(calls), 1)
         self.assertEqual(out.shape, (2, 8, 16))
         ref = F.linear(x, _ref_weight(q, scale, 16))
         self.assertLess(self._rel_err(out, ref), 0.02)
