@@ -62,16 +62,11 @@ def _is_cpu_clone_active() -> bool:
 
 @contextlib.contextmanager
 def _keep_triton_reduction_loads_loop_scoped():
-    """Avoid PyTorch 2.13 CSE of loads across separate reduction loops.
+    """Conservatively treating loads as reduction-masked keeps each definition in its
+    own loop to bypass the undefined variable bug in pytorch/pytorch.
+    (https://github.com/pytorch/pytorch/issues/193988)
 
-    PyTorch 2.13 can classify a reduction-loop load as loop-invariant and
-    retain its CSE value for a later reduction loop without emitting the
-    original definition in a shared scope. The generated Triton then refers
-    to an undefined temporary (for Qwen prefill, ``tmp4``). Conservatively
-    treating loads as reduction-masked keeps each definition in its own loop.
-
-    ``has_rmask`` is only consulted for this load-scoping decision, and this
-    context is enabled solely by the opt-in low-memory/Qwen compile path.
+    TODO(gasoonjia): remove this setting once bug fixed in upstream
     """
     from torch._inductor.codegen.triton import IndexingOptions
 
