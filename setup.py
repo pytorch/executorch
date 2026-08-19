@@ -1262,7 +1262,10 @@ def _parse_runtime_paths(original: str, is_mach_o: bool) -> List[str]:
             if stripped.startswith("path "):
                 found.append(stripped.split(" (offset", 1)[0][len("path ") :])
                 break
-    return found
+    # One entry per distinct path, order preserved. Mach-O can carry the same LC_RPATH in two load
+    # commands, and the caller issues one -delete_rpath per element: the second finds nothing left to
+    # delete and fails, which now aborts packaging rather than being silently absorbed.
+    return list(dict.fromkeys(found))
 
 
 def _is_usable_runtime_path(

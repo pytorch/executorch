@@ -1434,10 +1434,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # Where the extension finds PyTorch and the backend libraries, relative to
   # where it is installed.
   #
-  # Mach-O gets the Torch hop only. The rest of this list is backend directories
-  # spelled with the ELF origin token, and executorch_target_shared_runtime_path
-  # below emits the @loader_path forms of the same hops, so repeating them here
-  # would be discarded.
+  # Mach-O gets the Torch hop only, because nothing else records it, while every
+  # other entry in this list arrives another way:
+  # executorch_target_shared_runtime_path below emits lib and
+  # src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
+  # backends/cuda in the platform's own token at packaging time.
+  # backends/qualcomm is in neither, so it is dropped on Mach-O, which is
+  # correct because QNN is not a macOS backend.
   #
   # The Torch hop cannot be left out. Without it this extension records no
   # relative route to Torch at all, and the absolute one packaging leaves behind
