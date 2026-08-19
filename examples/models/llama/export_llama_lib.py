@@ -1724,7 +1724,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
             gen_tag_fn=gen_tag_fn,
-            enable_bf16=llm_config.model.dtype_override.value == "bf16",
         )
     elif llm_config.backend.openvino.enabled:
         builder = _to_edge_and_lower_llama_openvino(
