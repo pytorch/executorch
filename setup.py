@@ -1213,20 +1213,34 @@ def _write_runtime_paths(
         raise RuntimeError(
             "install_name_tool disappeared while cleaning " + os.fspath(library)
         )
+    # Checked rather than best effort. A silent failure here leaves the entry the caller asked to
+    # remove, or omits the one it asked to add, and packaging then reports success on a library whose
+    # search paths are wrong. The result is a wheel that either carries the build machine's directories
+    # or cannot find torch, and neither is visible until something loads it.
     for entry in found:
         if entry not in entries:
-            subprocess.run(
-                [install_name_tool, "-delete_rpath", entry, os.fspath(library)],
-                capture_output=True,
-                check=False,
+            _run_install_name_tool(
+                [install_name_tool, "-delete_rpath", entry, os.fspath(library)], library
             )
     for entry in entries:
         if entry not in found:
-            subprocess.run(
-                [install_name_tool, "-add_rpath", entry, os.fspath(library)],
-                capture_output=True,
-                check=False,
+            _run_install_name_tool(
+                [install_name_tool, "-add_rpath", entry, os.fspath(library)], library
             )
+
+
+def _run_install_name_tool(command: List[str], library: Path) -> None:
+    """Run an install_name_tool rewrite, raising with its output if it fails.
+
+    Separate from the call sites so both the delete and the add report the same way, and so a future
+    third rewrite cannot reintroduce the silent form.
+    """
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{' '.join(command[1:3])} failed on {library.name}, so its runtime search paths are not "
+            f"what this build intended: {(result.stderr or result.stdout).decode(errors='replace').strip()}"
+        )
 
 
 def _parse_runtime_paths(original: str, is_mach_o: bool) -> List[str]:
@@ -1351,8 +1365,9 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
             )
         log.warn(
             f"{needed} was not found on PATH, so {library.name} keeps the absolute search "
-            "paths the linker recorded. The wheel still works; the release check is what "
-            "enforces the guarantee."
+            "paths the linker recorded, including any that name this machine. "
+            "test_no_absolute_runtime_paths rejects those, so a wheel built without the tool "
+            "fails that check rather than shipping quietly."
         )
         return
     result = subprocess.run(
