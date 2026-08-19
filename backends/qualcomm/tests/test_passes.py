@@ -795,6 +795,43 @@ class TestPasses(unittest.TestCase):
                 _resolve_qnn_data_type(py_type, "arg", "my_ops.foo.default")
             )
 
+    def test_manager_registry_separates_specs_by_precision(self):
+        """Two specs for one backend must not share a QnnManager.
+
+        Precision comes from the options a manager was built with, so keying the
+        registry on backend_type alone silently compiled an fp16 partition and a
+        quantized one at whichever precision was seen first.
+        """
+        from executorch.backends.qualcomm.utils.qnn_manager_lifecycle import (
+            get_current_qnn_manager,
+            QnnManagerContext,
+        )
+
+        specs_fp16 = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        specs_quant = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=False),
+        )
+        try:
+            with QnnManagerContext({"fp16": specs_fp16, "quant": specs_quant}):
+                htp = QnnExecuTorchBackendType.kHtpBackend
+                self.assertIsNot(
+                    get_current_qnn_manager(htp, specs_fp16),
+                    get_current_qnn_manager(htp, specs_quant),
+                )
+                # Same spec must still be reused, not rebuilt.
+                self.assertIs(
+                    get_current_qnn_manager(htp, specs_fp16),
+                    get_current_qnn_manager(htp, specs_fp16),
+                )
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+            raise
+
 
 if __name__ == "__main__":
     unittest.main()
