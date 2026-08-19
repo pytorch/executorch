@@ -32,6 +32,7 @@ $if K_CACHE_STORAGE == "buffer":
 #define NUM_WORKERS_PER_OUT 64
 
 ${define_required_extensions(IO_STORAGE, DTYPE)}
+${define_required_extensions(K_CACHE_STORAGE, DTYPE)}
 
 layout(std430) buffer;
 

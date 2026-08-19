@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <executorch/backends/vulkan/runtime/graph/VulkanSequenceCache.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
@@ -27,7 +28,7 @@
 // SDPA Mode Enum
 //
 
-enum class SDPAMode { DECOMPOSED, FUSED, ATTN_WEIGHT_ONLY };
+enum class SDPAMode { DECOMPOSED, FUSED, ATTN_WEIGHT_ONLY, OFFGRAPH };
 
 std::ostream& operator<<(std::ostream& os, const SDPAMode& mode) {
   switch (mode) {
@@ -37,6 +38,8 @@ std::ostream& operator<<(std::ostream& os, const SDPAMode& mode) {
       return os << "FUSED";
     case SDPAMode::ATTN_WEIGHT_ONLY:
       return os << "ATTN_WEIGHT_ONLY";
+    case SDPAMode::OFFGRAPH:
+      return os << "OFFGRAPH";
   }
   return os;
 }
@@ -327,8 +330,26 @@ void test_vulkan_sdpa(
   // Build Vulkan SDPA graph
   using namespace vkcompute;
 
+  std::unique_ptr<VulkanSequenceCache> offgraph_cache;
+  if (mode == SDPAMode::OFFGRAPH) {
+    cache::CacheConfig cfg;
+    cfg.capacity = max_seq_len + 128;
+    cfg.n_layers = 1;
+    cfg.layers = {cache::LayerConfig{{}, num_kv_heads, head_dim}};
+    cfg.kv_dtype = static_cast<int>(
+        dtype == at::kFloat ? ::executorch::runtime::etensor::ScalarType::Float
+                            : ::executorch::runtime::etensor::ScalarType::Half);
+    auto created = VulkanSequenceCache::create(cfg);
+    ASSERT_EQ(created.error(), executorch::runtime::Error::Ok);
+    offgraph_cache = std::move(created.get());
+  }
+
   GraphConfig config;
   ComputeGraph graph(config);
+
+  if (offgraph_cache) {
+    graph.set_kv_cache(offgraph_cache.get());
+  }
 
   // "Data" variant for vulkan initialization
 
@@ -358,6 +379,20 @@ void test_vulkan_sdpa(
       out.sizes().vec(), from_at_scalartype(out.scalar_type()), storage_type);
 
   switch (mode) {
+    case SDPAMode::OFFGRAPH:
+      VK_GET_OP_FN("kvcache.update_and_attend.default")
+      (graph,
+       {
+           r_q.value,
+           r_k.value,
+           r_v.value,
+           r_input_pos_symint,
+           graph.add_scalar<int64_t>(0), // layer_id
+           graph.add_scalar<double>(1.0 / std::sqrt((double)head_dim)), // scale
+           kDummyValueRef, // out_dtype
+           r_out,
+       });
+      break;
     case SDPAMode::DECOMPOSED: {
       const ValueRef r_k_cache = graph.add_tensor(
           k_cache_data.sizes().vec(),
@@ -589,7 +624,10 @@ void test_vulkan_sdpa(
     const int batch_size,
     at::ScalarType dtype = at::kFloat) {
   for (SDPAMode mode :
-       {SDPAMode::ATTN_WEIGHT_ONLY, SDPAMode::DECOMPOSED, SDPAMode::FUSED}) {
+       {SDPAMode::ATTN_WEIGHT_ONLY,
+        SDPAMode::DECOMPOSED,
+        SDPAMode::FUSED,
+        SDPAMode::OFFGRAPH}) {
     // Test texture
     test_vulkan_sdpa(
         start_input_pos,
