@@ -1139,7 +1139,13 @@ def test_no_absolute_runtime_paths() -> None:
         ):
             return True
         # A CI worker tree can end in /torch/lib, which is shaped exactly like a real install, so the
-        # suffix allowlist cannot tell them apart. These components appear only on a build machine.
+        # suffix allowlist cannot tell them apart. Everything else under a worker path is still caught.
+        #
+        # A torch directory is deliberately exempt even when it names a worker tree. The macOS extension
+        # records no relative route to torch, so packaging keeps the absolute one as the only route it
+        # has, and rejecting it here failed the macOS wheel job on an entry the wheel depends on.
+        if entry.rstrip("/").endswith("/torch/lib"):
+            return False
         return any(
             part in ("actions-runner", "_work", "_temp", "runner")
             or part.startswith("conda_environment_")
