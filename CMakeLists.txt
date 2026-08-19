@@ -1431,22 +1431,37 @@ if(EXECUTORCH_BUILD_PYBIND)
     endif()
   endforeach()
 
-  # Set RPATH to find PyTorch and backend libraries relative to the installation
-  # location. This goes from executorch/extension/pybindings up to
-  # site-packages, then to torch/lib. If QNN is enabled, also add
-  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
-  # following error:
+  # Where the extension finds PyTorch and the backend libraries, relative to
+  # where it is installed.
   #
+  # Mach-O gets the Torch hop only. The rest of this list is backend directories
+  # spelled with the ELF origin token, and executorch_target_shared_runtime_path
+  # below emits the @loader_path forms of the same hops, so repeating them here
+  # would be discarded.
+  #
+  # The Torch hop cannot be left out. Without it this extension records no
+  # relative route to Torch at all, and the absolute one packaging leaves behind
+  # is the build machine's own directory, so the module loads only when
+  # something has already brought libtorch_python into the process. Importing it
+  # directly, or dlopening it from a C++ consumer, finds nothing. The sibling
+  # _training_lib records @loader_path/../../../../torch/lib and loads on its
+  # own, which is the same construct from one directory deeper
+  # (extension/training/pybindings rather than extension/pybindings), and three
+  # more targets do it too: extension/llm/custom_ops, extension/llm/runner and
+  # kernels/quantized.
+  #
+  # The earlier "ld: duplicate LC_RPATH '@loader_path'" is about the bare token.
+  # A token with a subpath is a distinct entry, and this target already ships
+  # several.
   if(APPLE)
-    # Skip setting @loader_path for APPLE, since it causes error like ld:
-    # duplicate LC_RPATH '@loader_path' in '<site-packages>/torch/lib/
-    # libtorch_cpu.dylib'
+    set(_portable_lib_torch_path "@loader_path/../../../torch/lib")
   else()
-    set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_rpath}"
-                              INSTALL_RPATH "${_portable_lib_rpath}"
-    )
+    set(_portable_lib_torch_path "${_portable_lib_rpath}")
   endif()
+  set_target_properties(
+    portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_torch_path}"
+                            INSTALL_RPATH "${_portable_lib_torch_path}"
+  )
   executorch_target_shared_runtime_path(
     portable_lib "extension/pybindings" "executorch/extension/pybindings"
   )
