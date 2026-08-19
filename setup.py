@@ -1297,33 +1297,9 @@ def _is_usable_runtime_path(
     # CUDA version, which is the one absolute path that has to survive.
     if safe_to_drop_toolkit_paths and _is_cuda_toolkit_directory(entry):
         return False
-    if entry.rstrip("/").endswith("/torch/lib"):
-        if has_relative_torch_route:
-            return False
-        # No relative route, so this absolute one is the only way this library names torch, and the
-        # comment above says to keep it. That reasoning holds for a directory that exists on the user's
-        # machine. It does not hold for the builder's own tree: those components exist on a CI worker and
-        # nowhere else, so the entry resolves to nothing wherever the wheel is installed and keeping it
-        # only makes the loader search a directory that cannot be there.
-        if _names_a_builder_tree(entry):
-            return False
+    if entry.rstrip("/").endswith("/torch/lib") and has_relative_torch_route:
+        return False
     return True
-
-
-def _names_a_builder_tree(entry: str) -> bool:
-    """Whether a path lies inside the tree of the machine that built the wheel.
-
-    Matched as whole path components, the same way the build-directory test above is, so a user
-    directory that merely contains one of these words as a substring is not caught. These names come
-    from the hosted runners this project builds on: GitHub Actions checks out under /home/runner or
-    /Users/runner/work, stages into _work and _temp, and creates a per-run conda prefix named
-    conda_environment_<run id>.
-    """
-    return any(
-        part in ("actions-runner", "_work", "_temp", "runner")
-        or part.startswith("conda_environment_")
-        for part in entry.split("/")
-    )
 
 
 def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
