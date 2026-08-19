@@ -403,7 +403,7 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
 
 
 def _write_aoti_weights_blob(weights, blob_path: str) -> bytes:
-    """Stream AOTI tensor storages and return their SHA-256 digest."""
+    """Stream AOTI tensor storages to disk and return their SHA-256 digest."""
     _trim_host_memory()
     tensors = [tensor for tensor, _ in weights.values()]
     all_cuda = all(tensor.is_cuda for tensor in tensors)
@@ -454,6 +454,9 @@ class CudaBackend(AotiBackend, BackendDetails):
     using the Executorch runtime.
     """
 
+    # AOTI calls materialize_weights_blob immediately before load_weights_blob
+    # for a given output path. A new materialization overwrites any digest left
+    # behind by an export that aborted before the consumer ran.
     _materialized_blob_hashes: Dict[str, bytes] = {}
 
     @classmethod
