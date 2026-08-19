@@ -23,6 +23,7 @@ from executorch.backends.xnnpack.utils.quant_utils import (
 )
 from executorch.backends.xnnpack.utils.utils import (
     get_input_node,
+    is_param_node,
     normalize_mean_dims,
     normalize_pool2d_args,
 )
@@ -504,9 +505,20 @@ class TanhConfig(GenericNodePartitionerConfig):
 class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
     target_name = "_to_dim_order_copy.default"
 
+    # XNNPACK xnn_define_convert supports only fp32 <-> fp16/bf16.
+    # fp16 <-> bf16 is intentionally not folded and remains as a portable
+    # _to_copy outside the delegate.
+    _SUPPORTED_DTYPE_CONVERSIONS = {
+        (torch.float32, torch.float16),
+        (torch.float16, torch.float32),
+        (torch.float32, torch.bfloat16),
+        (torch.bfloat16, torch.float32),
+    }
+
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        Only support dim order conversion partitioning, not DType conversions
+        Support dim-order conversion, plus the float dtype conversions XNNPACK
+        can fold into the delegate via xnn_define_convert.
         """
         if not self.check_common_constraints(node, ep):
             return False
@@ -516,8 +528,39 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
         input_dtype = input_node.meta["val"].dtype
         output_dtype = node.meta["val"].dtype
 
-        # Return False if doing dtype conversion
-        if input_dtype != output_dtype:
+        # Dim-order-only conversion (no dtype change) is always supported.
+        if input_dtype == output_dtype:
+            return True
+
+        # Only fold dtype conversions of dynamic activations. Conversions of
+        # params/constants (e.g. weight.float()) should be constant-folded, not
+        # run as a runtime xnn_define_convert. Keeping them outside the
+        # delegate avoids emitting an unnecessary xnn_define_convert for data
+        # that can be folded at export time.
+        if is_param_node(ep, input_node):
+            why(
+                node,
+                reason=(
+                    "dtype conversion of a constant/param is not folded: "
+                    "constant-fold via export rather than runtime xnn_define_convert"
+                ),
+            )
+            return False
+
+        # xnn_define_convert cannot handle a simultaneous dtype and layout
+        # change. Reject mixed nodes so the layout part is not silently
+        # dropped in serialization (see op_to_copy.ConvertMemoryFormat).
+        if list(input_node.meta["val"].dim_order()) != list(
+            node.meta["val"].dim_order()
+        ):
+            why(
+                node,
+                reason="combined dtype and layout _to_copy is not supported for XNNPACK convert",
+            )
+            return False
+
+        # Otherwise only partition dtype conversions XNNPACK can serialize.
+        if (input_dtype, output_dtype) not in self._SUPPORTED_DTYPE_CONVERSIONS:
             why(
                 node,
                 reason=f"dtype conversion from {input_dtype} to {output_dtype} is not supported",
@@ -528,6 +571,11 @@ class ToDimOrderCopyConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class ToCopyConfig(ToDimOrderCopyConfig):
+    # Non-dim-order form, used under EdgeCompileConfig(_skip_dim_order=True).
+    target_name = "_to_copy.default"
 
 
 class MeanDimConfig(GenericNodePartitionerConfig):

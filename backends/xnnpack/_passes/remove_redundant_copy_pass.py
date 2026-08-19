@@ -25,6 +25,18 @@ class RemoveRedundantCopyPass(XNNPACKPass):
         """
         input_node = node.args[0]
 
+        # These removals assume the copies are memory-format-only (dtype
+        # preserving).
+        def _changes_dtype(n):
+            return (
+                getattr(n, "op", None) == "call_function"
+                and n.target == exir_ops.edge.aten._to_copy.default
+                and n.args[0].meta["val"].dtype != n.meta["val"].dtype
+            )
+
+        if _changes_dtype(node) or _changes_dtype(input_node):
+            return False
+
         # Check if input is a to_copy with opposite memory format
         if (
             input_node.target == exir_ops.edge.aten._to_copy.default
