@@ -2097,9 +2097,9 @@ To install Ethos-U dependencies, run</p>
 <span class="c1"># Some args are used by the Arm Vela graph compiler later in the example. Refer to Arm Vela documentation for an</span>
 <span class="c1"># explanation of its flags: https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md</span>
 <span class="n">compile_spec</span> <span class="o">=</span> <span class="n">EthosUCompileSpec</span><span class="p">(</span>
-            <span class="n">target</span><span class="o">=</span><span class="s2">&quot;ethos-u55-128&quot;</span><span class="p">,</span>
-            <span class="n">system_config</span><span class="o">=</span><span class="s2">&quot;Ethos_U55_High_End_Embedded&quot;</span><span class="p">,</span>
-            <span class="n">memory_mode</span><span class="o">=</span><span class="s2">&quot;Shared_Sram&quot;</span><span class="p">,</span>
+            <span class="n">target</span><span class="o">=</span><span class="s2">"ethos-u55-128"</span><span class="p">,</span>
+            <span class="n">system_config</span><span class="o">=</span><span class="s2">"Ethos_U55_High_End_Embedded"</span><span class="p">,</span>
+            <span class="n">memory_mode</span><span class="o">=</span><span class="s2">"Shared_Sram"</span><span class="p">,</span>
         <span class="p">)</span>
 
 <span class="c1"># Create and configure quantizer to use a symmetric quantization config globally on all nodes</span>
@@ -2142,7 +2142,7 @@ To install Ethos-U dependencies, run</p>
 
 
 <span class="c1"># Save pte file</span>
-<span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="s2">&quot;ethos_u_minimal_example.pte&quot;</span><span class="p">)</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="s2">"ethos_u_minimal_example.pte"</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="admonition tip">

@@ -2091,7 +2091,7 @@ They must be provided through a compile spec.</p>
 <span class="c1">#</span>
 <span class="c1"># Note that we must export x and y with dynamic shapes in the ExportedProgram</span>
 <span class="c1"># because some of their dimensions are dynamic</span>
-<span class="n">enumerated_shapes</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">]],</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="p">[[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">11</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">11</span><span class="p">]]}</span>
+<span class="n">enumerated_shapes</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"x"</span><span class="p">:</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">]],</span> <span class="s2">"y"</span><span class="p">:</span> <span class="p">[[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">11</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">11</span><span class="p">]]}</span>
 <span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">[</span>
     <span class="p">{</span>
         <span class="mi">0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="o">.</span><span class="n">AUTO</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">4</span><span class="p">),</span>
@@ -2184,14 +2184,14 @@ They must be provided through a compile spec.</p>
 
 <span class="c1"># Lower with multiple methods - pass a dict of {method_name: ExportedProgram}</span>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-    <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span> <span class="s2">&quot;prefill&quot;</span><span class="p">:</span> <span class="n">prefill_ep</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">"forward"</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span> <span class="s2">"prefill"</span><span class="p">:</span> <span class="n">prefill_ep</span><span class="p">},</span>
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
 <span class="p">)</span>
 
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the multifunction model</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;multifunction_model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"multifunction_model.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2215,16 +2215,16 @@ They must be provided through a compile spec.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
 
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;multifunction_model.pte&quot;</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">"multifunction_model.pte"</span><span class="p">)</span>
 
 <span class="c1"># List available methods</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>  <span class="c1"># {&#39;forward&#39;, &#39;prefill&#39;}</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>  <span class="c1"># {'forward', 'prefill'}</span>
 
 <span class="c1"># Load and execute specific methods</span>
-<span class="n">forward_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">forward_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">decode_output</span> <span class="o">=</span> <span class="n">forward_method</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">decode_inputs</span><span class="p">)</span>
 
-<span class="n">prefill_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;prefill&quot;</span><span class="p">)</span>
+<span class="n">prefill_method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"prefill"</span><span class="p">)</span>
 <span class="n">prefill_output</span> <span class="o">=</span> <span class="n">prefill_method</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">prefill_inputs</span><span class="p">)</span>
 </pre></div>
 </div>

@@ -1950,16 +1950,16 @@ document.write(`
 <div class="viewcode-block" id="LoweredBackendModule">
 <a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LoweredBackendModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    A subclass of nn.Module that is generated for modules containing</span>
 <span class="sd">    delegated functions. This is can be created by calling `to_backend`.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
-    <span class="n">_backend_id</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># The backend&#39;s name</span>
+    <span class="n">_backend_id</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># The backend's name</span>
     <span class="n">_processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span>  <span class="c1"># The delegate blobs created from backend.preprocess</span>
     <span class="n">_compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
         <span class="n">CompileSpec</span>
-    <span class="p">]</span>  <span class="c1"># A list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
+    <span class="p">]</span>  <span class="c1"># A list of backend-specific objects with static metadata to configure the "compilation" process.</span>
     <span class="n">_original_exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>  <span class="c1"># The original EXIR module</span>
     <span class="n">_named_data_store_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">NamedDataStoreOutput</span>
@@ -1983,7 +1983,7 @@ document.write(`
         <span class="bp">self</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="c1"># pyre-ignore</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">&quot;LoweredBackendModule&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">"LoweredBackendModule"</span><span class="p">:</span>
         <span class="c1"># Copy exported program</span>
         <span class="n">copied_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
             <span class="n">root</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">),</span>
@@ -2009,42 +2009,42 @@ document.write(`
             <span class="n">compile_specs</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span><span class="p">,</span> <span class="n">memo</span><span class="p">),</span>
             <span class="n">named_data_store_output</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store_output</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">res</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;meta&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+        <span class="n">res</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"meta"</span><span class="p">,</span> <span class="p">{}))</span>
         <span class="k">return</span> <span class="n">res</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">backend_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the backends name.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_id</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">processed_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the delegate blob created from backend.preprocess</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">compile_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns a list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns a list of backend-specific objects with static metadata to configure the "compilation" process.</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">original_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the original EXIR module</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">named_data_store_output</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">NamedDataStoreOutput</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the Named Data Store Output</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store_output</span>
 
     <span class="c1"># TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api</span>
@@ -2058,9 +2058,9 @@ document.write(`
         <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">memory_planning</span><span class="p">:</span> <span class="n">MemoryPlanningPass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># pyre-fixme[9]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns a buffer containing the serialized ExecuTorch binary.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO(T181463742): avoid calling bytes(..) which incurs large copies.</span>
         <span class="n">out</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span>
             <span class="n">_serialize_pte_binary</span><span class="p">(</span>
@@ -2092,9 +2092,9 @@ document.write(`
             <span class="n">_transform</span><span class="p">,</span>
         <span class="p">)</span>
 
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the object that represents the ExecuTorch binary before serialization.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Creates a new module based on the original module. The original module will</span>
         <span class="c1"># look something like following:</span>
         <span class="c1">#</span>
@@ -2119,7 +2119,7 @@ document.write(`
         <span class="c1"># call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}</span>
         <span class="c1"># output         output_1                  output                       ([getitem, getitem_1],)             {}</span>
         <span class="c1">#</span>
-        <span class="c1"># We&#39;ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node</span>
+        <span class="c1"># We'll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node</span>
         <span class="c1"># and return the list of getitems as the output</span>
 
         <span class="n">lowered_exported_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="p">)</span>
@@ -2134,7 +2134,7 @@ document.write(`
             <span class="n">node</span>
             <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span>
                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">buffers_map</span>
                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">params_map</span>
             <span class="p">)</span>
@@ -2148,12 +2148,12 @@ document.write(`
 
         <span class="c1"># Remove all the everything else except the input</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">):</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">"placeholder"</span><span class="p">:</span>
                 <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
         <span class="c1"># Find placeholders that are parameters or buffers, remove them from the main graph</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span> <span class="ow">and</span> <span class="p">(</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span> <span class="ow">and</span> <span class="p">(</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">buffers_map</span> <span class="ow">or</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">params_map</span>
             <span class="p">):</span>
                 <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
@@ -2175,11 +2175,11 @@ document.write(`
             <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="p">)</span>
 
-        <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-            <span class="p">[</span><span class="n">make_spec</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_output_nodes</span><span class="p">]</span>
+        <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"spec"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">make_spec</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">])</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_output_nodes</span><span class="p">]</span>
         <span class="p">)</span>
-        <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
-            <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_output_nodes</span><span class="p">]</span>
+        <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_output_nodes</span><span class="p">]</span>
         <span class="p">)</span>
 
         <span class="c1"># The getitem nodes that are going to be inserted to the lowered graph module</span>
@@ -2189,7 +2189,7 @@ document.write(`
                 <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span><span class="p">,</span>
                 <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">delegate_node</span><span class="p">,</span> <span class="n">i</span><span class="p">),</span>
             <span class="p">)</span>
-            <span class="n">getitem_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">][</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">getitem_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">][</span><span class="n">i</span><span class="p">]</span>
             <span class="n">getitem_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">getitem_node</span><span class="p">)</span>
         <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output</span><span class="p">(</span><span class="n">getitem_nodes</span><span class="p">)</span>
 
@@ -2263,12 +2263,12 @@ document.write(`
 <span class="c1"># TODO(zhxchen17) Try ExportPass</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_fixup_output_node</span><span class="p">(</span><span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"output"</span><span class="p">:</span>
             <span class="k">with</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">node</span><span class="p">):</span>
                 <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
                 <span class="n">outputs</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                 <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
-                    <span class="n">val</span> <span class="o">=</span> <span class="n">outputs</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val&quot;</span><span class="p">)</span>
+                    <span class="n">val</span> <span class="o">=</span> <span class="n">outputs</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"val"</span><span class="p">)</span>
                     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
                         <span class="c1"># If a list is returned, in some cases it is represented as a</span>
                         <span class="c1"># singular node, like `split_copy_tensor` but EXIR will return a</span>
@@ -2284,7 +2284,7 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">arrange_graph_placeholders</span><span class="p">(</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">tag</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Modifies the graph of the given graphmodule with one that contains the same nodes as the original,</span>
 <span class="sd">    but with placeholders in order of (Params + Buffers) (User Inputs)</span>
 
@@ -2297,7 +2297,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The graph module in-placed arranged</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">new_graph</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Graph</span><span class="p">()</span>
 
     <span class="n">node_map</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># mapping of nodes from old graph to new graph</span>
@@ -2312,12 +2312,12 @@ document.write(`
     <span class="n">buffer_nodes</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">input_nodes</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">"placeholder"</span><span class="p">:</span>
             <span class="k">continue</span>
 
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">params_map</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">params_map</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
             <span class="n">param_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">buffers_map</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">buffers_map</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
             <span class="n">buffer_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">input_nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
@@ -2334,7 +2334,7 @@ document.write(`
 
     <span class="c1"># Now add all the other nodes in order</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
             <span class="k">continue</span>
 
         <span class="n">new_node</span> <span class="o">=</span> <span class="n">new_graph</span><span class="o">.</span><span class="n">node_copy</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">node_map</span><span class="p">[</span><span class="n">x</span><span class="p">])</span>
@@ -2354,9 +2354,9 @@ document.write(`
     <span class="n">output_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">OutputSpec</span><span class="p">],</span>
     <span class="n">call_module_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Reorders the output tuple of the graph so that buffer mutation outputs come</span>
-<span class="sd">    before user outputs, matching the ordering that ExportedProgram&#39;s verifier</span>
+<span class="sd">    before user outputs, matching the ordering that ExportedProgram's verifier</span>
 <span class="sd">    expects: [buffer_mutations..., user_outputs...].</span>
 
 <span class="sd">    The partitioner may produce a submodule whose output tuple has buffer</span>
@@ -2366,26 +2366,26 @@ document.write(`
 <span class="sd">    SpecViolationError.</span>
 
 <span class="sd">    This function builds a permutation from the output_specs (which</span>
-<span class="sd">    _get_new_signature already classified correctly) and rewrites the graph&#39;s</span>
+<span class="sd">    _get_new_signature already classified correctly) and rewrites the graph's</span>
 <span class="sd">    output node to match.  It also remaps getitem indices on the parent</span>
-<span class="sd">    graph&#39;s call_module_node so the parent continues to extract the correct</span>
+<span class="sd">    graph's call_module_node so the parent continues to extract the correct</span>
 <span class="sd">    outputs.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        gm: The graph module whose output ordering may need adjustment.</span>
 <span class="sd">        output_specs: The output specs built by _get_new_signature, with</span>
 <span class="sd">            correct kind annotations but potentially mismatched ordering</span>
-<span class="sd">            relative to the graph&#39;s output tuple.</span>
+<span class="sd">            relative to the graph's output tuple.</span>
 <span class="sd">        call_module_node: The call_module node in the parent graph whose</span>
 <span class="sd">            getitem users need index remapping.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The graph module with reordered outputs (modified in-place).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># Find the output node</span>
     <span class="n">output_node</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"output"</span><span class="p">:</span>
             <span class="n">output_node</span> <span class="o">=</span> <span class="n">node</span>
             <span class="k">break</span>
 
@@ -2396,9 +2396,9 @@ document.write(`
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">old_outputs</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">output_specs</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Mismatch between graph outputs (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">old_outputs</span><span class="p">)</span><span class="si">}</span><span class="s2">) and &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;output_specs (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">output_specs</span><span class="p">)</span><span class="si">}</span><span class="s2">). This indicates a bug in &quot;</span>
-            <span class="s2">&quot;_get_new_signature.&quot;</span>
+            <span class="sa">f</span><span class="s2">"Mismatch between graph outputs (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">old_outputs</span><span class="p">)</span><span class="si">}</span><span class="s2">) and "</span>
+            <span class="sa">f</span><span class="s2">"output_specs (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">output_specs</span><span class="p">)</span><span class="si">}</span><span class="s2">). This indicates a bug in "</span>
+            <span class="s2">"_get_new_signature."</span>
         <span class="p">)</span>
 
     <span class="c1"># Separate indices by kind: mutations first, then user outputs</span>
@@ -2430,7 +2430,7 @@ document.write(`
 
     <span class="c1"># Remap getitem indices in the parent graph</span>
     <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">call_module_node</span><span class="o">.</span><span class="n">users</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
-        <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span><span class="p">:</span>
             <span class="n">old_idx</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">old_idx</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="ow">and</span> <span class="n">old_idx</span> <span class="ow">in</span> <span class="n">old_to_new</span><span class="p">:</span>
                 <span class="n">user</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">old_to_new</span><span class="p">[</span><span class="n">old_idx</span><span class="p">])</span>
@@ -2440,7 +2440,7 @@ document.write(`
     <span class="k">return</span> <span class="n">gm</span>
 
 
-<span class="c1"># TODO Don&#39;t regenerate new signature manually.</span>
+<span class="c1"># TODO Don't regenerate new signature manually.</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_new_signature</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
@@ -2454,7 +2454,7 @@ document.write(`
     <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>
     <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">],</span>
 <span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Args:</span>
 <span class="sd">        original_program: The original program that we are paritioning</span>
 <span class="sd">        gm: The partitioned graph module.</span>
@@ -2464,7 +2464,7 @@ document.write(`
 <span class="sd">            tell if a particular parameter/buffer/constant node is being tagged,</span>
 <span class="sd">            aka consumed by the delegate.</span>
 <span class="sd">        is_submodule: True if we are currently partitioning inside of a</span>
-<span class="sd">            submodule (like cond&#39;s submodule). If we are inside of a submodule,</span>
+<span class="sd">            submodule (like cond's submodule). If we are inside of a submodule,</span>
 <span class="sd">            we do not care about consuming params/buffers.</span>
 
 <span class="sd">    Returns:</span>
@@ -2482,7 +2482,7 @@ document.write(`
 <span class="sd">        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have</span>
 <span class="sd">            been consumed by the delegate (buffer mutation nodes) and should be</span>
 <span class="sd">            removed from the toplevel ExportedProgram.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">old_signature</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span>
 
     <span class="n">input_specs</span> <span class="o">=</span> <span class="p">[]</span>
@@ -2506,7 +2506,7 @@ document.write(`
             <span class="n">toplevel_output_node_to_sig</span><span class="p">[</span><span class="n">output_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">output_spec</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
 
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">input_node_to_sig</span><span class="p">:</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -2523,7 +2523,7 @@ document.write(`
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">TensorArgument</span><span class="p">):</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="p">)</span>
 
-            <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="p">)</span>
 
                 <span class="k">if</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span><span class="p">:</span>
@@ -2555,7 +2555,7 @@ document.write(`
                         <span class="n">input_target</span>
                     <span class="p">]</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid input spec </span><span class="si">{</span><span class="n">orig_input_spec</span><span class="si">}</span><span class="s2"> received&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid input spec </span><span class="si">{</span><span class="n">orig_input_spec</span><span class="si">}</span><span class="s2"> received"</span><span class="p">)</span>
 
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -2566,17 +2566,17 @@ document.write(`
                     <span class="p">)</span>
                 <span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"output"</span><span class="p">:</span>
             <span class="n">buffer_mutation_idxs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">OutputSpec</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">call_module_node</span><span class="o">.</span><span class="n">users</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
                 <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">toplevel_output_node_to_sig</span><span class="p">:</span>
                     <span class="k">assert</span> <span class="p">(</span>
-                        <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
-                    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid user </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">, node.op is </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">op</span><span class="si">}</span><span class="s2"> and node.target is </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
+                    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Invalid user </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">, node.op is </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">op</span><span class="si">}</span><span class="s2"> and node.target is </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2">"</span>
                     <span class="n">getitem_idx</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
                     <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
                         <span class="n">getitem_idx</span><span class="p">,</span> <span class="nb">int</span>
-                    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid getitem type: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">getitem_idx</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Invalid getitem type: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">getitem_idx</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
                     <span class="n">buffer_mutation_idxs</span><span class="p">[</span><span class="n">getitem_idx</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
                         <span class="n">toplevel_output_node_to_sig</span><span class="p">[</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
                     <span class="p">)</span>
@@ -2611,13 +2611,13 @@ document.write(`
                         <span class="p">][</span><span class="mi">0</span><span class="p">]</span>
 
                         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">orig_output_specs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span>
-                            <span class="sa">f</span><span class="s2">&quot;Constant </span><span class="si">{</span><span class="n">orig_output_spec</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was tagged to be &quot;</span>
-                            <span class="s2">&quot;consumed by the buffer, and was found to also contain &quot;</span>
-                            <span class="s2">&quot;a buffer mutation. However this buffer mutation node &quot;</span>
-                            <span class="s2">&quot;was found to also be used as other types of outputs &quot;</span>
-                            <span class="s2">&quot;which is currently not supported. Please file an &quot;</span>
-                            <span class="s2">&quot;issue on Github. </span><span class="se">\n\n</span><span class="s2">&quot;</span>
-                            <span class="sa">f</span><span class="s2">&quot;The toplevel program: </span><span class="si">{</span><span class="n">original_program</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                            <span class="sa">f</span><span class="s2">"Constant </span><span class="si">{</span><span class="n">orig_output_spec</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was tagged to be "</span>
+                            <span class="s2">"consumed by the buffer, and was found to also contain "</span>
+                            <span class="s2">"a buffer mutation. However this buffer mutation node "</span>
+                            <span class="s2">"was found to also be used as other types of outputs "</span>
+                            <span class="s2">"which is currently not supported. Please file an "</span>
+                            <span class="s2">"issue on Github. </span><span class="se">\n\n</span><span class="s2">"</span>
+                            <span class="sa">f</span><span class="s2">"The toplevel program: </span><span class="si">{</span><span class="n">original_program</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
                         <span class="p">)</span>
                         <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                             <span class="n">OutputSpec</span><span class="p">(</span>
@@ -2642,7 +2642,7 @@ document.write(`
                     <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                         <span class="n">OutputSpec</span><span class="p">(</span>
                             <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
-                            <span class="n">arg</span><span class="o">=</span><span class="n">ConstantArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">output_node</span><span class="p">),</span>
+                            <span class="n">arg</span><span class="o">=</span><span class="n">ConstantArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">output_node</span><span class="p">),</span>
                             <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                         <span class="p">)</span>
                     <span class="p">)</span>
@@ -2676,7 +2676,7 @@ document.write(`
     <span class="n">call_module_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
     <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Creates an ExportedProgram from the given submodule using the parameters and buffers</span>
 <span class="sd">    from the top-level owning program</span>
 
@@ -2693,8 +2693,8 @@ document.write(`
 <span class="sd">        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have</span>
 <span class="sd">            been consumed by the delegate (buffer mutation nodes) and should be</span>
 <span class="sd">            removed from the toplevel ExportedProgram.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Arrange the submodule&#39;s placeholders in order</span>
+<span class="sd">    """</span>
+    <span class="c1"># Arrange the submodule's placeholders in order</span>
     <span class="n">submodule</span> <span class="o">=</span> <span class="n">arrange_graph_placeholders</span><span class="p">(</span><span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
 
     <span class="c1"># Get updated graph signature</span>
@@ -2725,7 +2725,7 @@ document.write(`
             <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
             <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[</span>
                 <span class="n">ModuleCallEntry</span><span class="p">(</span>
-                    <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                    <span class="s2">""</span><span class="p">,</span>
                     <span class="n">ModuleCallSignature</span><span class="p">(</span>
                         <span class="n">inputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">outputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">in_spec</span><span class="o">=</span><span class="n">in_spec</span><span class="p">,</span> <span class="n">out_spec</span><span class="o">=</span><span class="n">out_spec</span>
                     <span class="p">),</span>
@@ -2745,7 +2745,7 @@ document.write(`
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">skip_legalize_graph</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Modifies the given graph module in-place to separate out the given nodes</span>
 <span class="sd">    into a submodule. The given node_list should form a fully connected</span>
 <span class="sd">    subgraph.</span>
@@ -2757,10 +2757,10 @@ document.write(`
 <span class="sd">    Returns:</span>
 <span class="sd">        The submodule that has been partitioned, the call_module node in the</span>
 <span class="sd">        toplevel graph module calling the submodule</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">sorted_nodes</span> <span class="o">=</span> <span class="n">topo_sort</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span>
 
-    <span class="n">submodule_name</span> <span class="o">=</span> <span class="s2">&quot;fused_&quot;</span> <span class="o">+</span> <span class="n">tag</span>
+    <span class="n">submodule_name</span> <span class="o">=</span> <span class="s2">"fused_"</span> <span class="o">+</span> <span class="n">tag</span>
     <span class="n">sub_gm</span><span class="p">,</span> <span class="n">orig_inputs</span><span class="p">,</span> <span class="n">orig_outputs</span> <span class="o">=</span> <span class="n">fuse_as_graphmodule</span><span class="p">(</span>
         <span class="n">gm</span><span class="p">,</span> <span class="n">sorted_nodes</span><span class="p">,</span> <span class="n">submodule_name</span>
     <span class="p">)</span>
@@ -2770,17 +2770,17 @@ document.write(`
     <span class="n">gm</span> <span class="o">=</span> <span class="n">insert_subgm</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">sub_gm</span><span class="p">,</span> <span class="n">orig_inputs</span><span class="p">,</span> <span class="n">orig_outputs</span><span class="p">)</span>
     <span class="n">submodule_node</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_module"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
             <span class="n">submodule_node</span> <span class="o">=</span> <span class="n">node</span>
 
     <span class="k">if</span> <span class="n">submodule_node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
+            <span class="sa">f</span><span class="s2">"The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
 <span class="s2">            one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
-<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
+<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">."</span>
         <span class="p">)</span>
 
-    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">],</span> <span class="n">FakeTensor</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">orig_outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">],</span> <span class="n">FakeTensor</span><span class="p">):</span>
         <span class="c1"># If the original output is a single tensor, it has been</span>
         <span class="c1"># pytree.tree_flatten-ed to be a singleton list, so we want to replace</span>
         <span class="c1"># all uses with a getitem call to the 0th index of the result</span>
@@ -2789,17 +2789,17 @@ document.write(`
             <span class="n">submodule_node</span><span class="o">.</span><span class="n">replace_all_uses_with</span><span class="p">(</span><span class="n">proxy_out</span><span class="p">,</span> <span class="n">propagate_meta</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="c1"># Reset the args since it was overwritten in the previous line</span>
             <span class="n">proxy_out</span><span class="o">.</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="n">submodule_node</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-            <span class="n">proxy_out</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;nn_module_stack&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="n">proxy_out</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;source_fn_stack&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">proxy_out</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"nn_module_stack"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">proxy_out</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"source_fn_stack"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="c1"># fuse_as_graphmodule will automatically propagate the metadata of the</span>
-        <span class="c1"># partition&#39;s last node to the getitem nodes that appear after the</span>
+        <span class="c1"># partition's last node to the getitem nodes that appear after the</span>
         <span class="c1"># call_module node. However, in the case of delegation we do not want</span>
         <span class="c1"># these getitem nodes to contain irrelevant previous metadata</span>
         <span class="c1"># (ex. source_fn, # nn_module_stack)</span>
         <span class="k">for</span> <span class="n">user_node</span> <span class="ow">in</span> <span class="n">submodule_node</span><span class="o">.</span><span class="n">users</span><span class="p">:</span>
-            <span class="n">user_node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;nn_module_stack&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-            <span class="n">user_node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;source_fn_stack&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">user_node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"nn_module_stack"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">user_node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"source_fn_stack"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="n">erase_nodes</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">sorted_nodes</span><span class="p">)</span>
 
@@ -2812,19 +2812,19 @@ document.write(`
     <span class="c1"># Get the call_module node</span>
     <span class="n">submodule_node</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_module"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">submodule_name</span><span class="p">:</span>
             <span class="n">submodule_node</span> <span class="o">=</span> <span class="n">node</span>
 
     <span class="k">if</span> <span class="n">submodule_node</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
+            <span class="sa">f</span><span class="s2">"The submodule created with nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> did not form </span><span class="se">\</span>
 <span class="s2">            one fully contained subgraph. Check that these nodes form a </span><span class="se">\</span>
-<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">.&quot;</span>
+<span class="s2">            fully contained graph. Partitioned graph: </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">."</span>
         <span class="p">)</span>
 
     <span class="k">assert</span> <span class="p">(</span>
         <span class="n">submodule_node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;No submodule was created with the nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> in the graph </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">"No submodule was created with the nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2"> in the graph </span><span class="si">{</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="si">}</span><span class="s2">"</span>
 
     <span class="k">return</span> <span class="n">sub_gm</span><span class="p">,</span> <span class="n">submodule_node</span>
 
@@ -2832,15 +2832,15 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">get_lowered_submodules</span><span class="p">(</span>
     <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">LoweredBackendModule</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Returns a list of lowered modules that are in the given graph (does not look</span>
 <span class="sd">    into submodules). Specifically, the returned value is a list containing a</span>
-<span class="sd">    tuple of (name of the lowered module that&#39;s stored in the graph module, the</span>
+<span class="sd">    tuple of (name of the lowered module that's stored in the graph module, the</span>
 <span class="sd">    lowered module itself, and the fx node that called this lowered module).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">lowered_submodules</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">executorch_call_delegate</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">executorch_call_delegate</span><span class="p">:</span>
             <span class="n">name</span><span class="p">,</span> <span class="n">module</span><span class="p">,</span> <span class="n">node</span> <span class="o">=</span> <span class="n">_get_submodule</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
             <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">LoweredBackendModule</span><span class="p">)</span>
             <span class="n">lowered_submodules</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">name</span><span class="p">,</span> <span class="n">module</span><span class="p">,</span> <span class="n">node</span><span class="p">))</span>
@@ -2850,12 +2850,12 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">get_lowered_backend_modules</span><span class="p">(</span>
     <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">LoweredBackendModule</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Returns a list of exported programs which were lowered by backen delegates</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">lowered_programs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">executorch_call_delegate</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">executorch_call_delegate</span><span class="p">:</span>
             <span class="n">lowered_backend_module</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
             <span class="n">lowered_programs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lowered_backend_module</span><span class="p">)</span>
 
@@ -2868,17 +2868,17 @@ document.write(`
     <span class="n">input_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>
     <span class="n">output_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Directly modify the original exported program&#39;s signature and state dict</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Directly modify the original exported program's signature and state dict</span>
 <span class="sd">    based on the consumed params/buffers in the delegate.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># First pass: identify placeholder nodes that still have users in the graph.</span>
     <span class="c1"># These cannot be deleted because they are shared between the delegate and</span>
     <span class="c1"># the remaining program (e.g., due to identity ops like no-op dropout</span>
     <span class="c1"># causing parameter aliasing across partitions).</span>
     <span class="n">nodes_to_keep</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">nodes_to_keep</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -2908,7 +2908,7 @@ document.write(`
     <span class="c1"># Delete all parameters/buffers consumed by the created exported program</span>
     <span class="c1"># from the graph signature, state dict, constants table</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
                 <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
@@ -2932,7 +2932,7 @@ document.write(`
         <span class="k">elif</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">:</span>
             <span class="n">original_program</span><span class="o">.</span><span class="n">_constants</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid input spec </span><span class="si">{</span><span class="n">input_spec</span><span class="si">}</span><span class="s2"> received&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid input spec </span><span class="si">{</span><span class="n">input_spec</span><span class="si">}</span><span class="s2"> received"</span><span class="p">)</span>
 
     <span class="c1"># Delete buffer mutations from the output which were consumed by the delegate</span>
     <span class="n">toplevel_output_node</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
@@ -2940,7 +2940,7 @@ document.write(`
     <span class="k">assert</span> <span class="n">toplevel_output_node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="k">assert</span> <span class="p">(</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_output_node</span><span class="o">.</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid output node: </span><span class="si">{</span><span class="n">toplevel_output_node</span><span class="si">}</span><span class="s2"> with args </span><span class="si">{</span><span class="n">toplevel_output_node</span><span class="o">.</span><span class="n">args</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Invalid output node: </span><span class="si">{</span><span class="n">toplevel_output_node</span><span class="si">}</span><span class="s2"> with args </span><span class="si">{</span><span class="n">toplevel_output_node</span><span class="o">.</span><span class="n">args</span><span class="si">}</span><span class="s2">"</span>
 
     <span class="n">new_output_args</span> <span class="o">=</span> <span class="p">[</span>
         <span class="n">arg</span>
@@ -2955,10 +2955,10 @@ document.write(`
     <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">user_nodes</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">output_specs_to_delete</span><span class="p">:</span>
             <span class="k">assert</span> <span class="p">(</span>
-                <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
-            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid user </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">, node.op is </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="si">}</span><span class="s2"> and node.target is </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">"Invalid user </span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">, node.op is </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="si">}</span><span class="s2"> and node.target is </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2">"</span>
             <span class="n">user_idx</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_idx</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Invalid getitem type: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">user_idx</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_idx</span><span class="p">,</span> <span class="nb">int</span><span class="p">),</span> <span class="sa">f</span><span class="s2">"Invalid getitem type: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">user_idx</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
             <span class="n">getitem_idxs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">user_idx</span><span class="p">)</span>
             <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
 
@@ -2967,7 +2967,7 @@ document.write(`
     <span class="c1"># Adjust all the getitem indices after the deleted getitems</span>
     <span class="n">user_nodes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">call_delegate_node</span><span class="o">.</span><span class="n">users</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
     <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">user_nodes</span><span class="p">:</span>
-        <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
+        <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">user</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">operator</span><span class="o">.</span><span class="n">getitem</span>
         <span class="n">user_idx</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">user_idx</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">getitem_idxs</span><span class="p">):</span>

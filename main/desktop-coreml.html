@@ -1931,7 +1931,7 @@ document.write(`
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">CoreMLPartitioner</span><span class="p">()],</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_coreml.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"mv2_coreml.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1953,7 +1953,7 @@ document.write(`
 <p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the Core ML backend.</p>
 <p>Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span># CMakeLists.txt
-add_subdirectory(&quot;executorch&quot;)
+add_subdirectory("executorch")
 ...
 target_link_libraries(
     my_target

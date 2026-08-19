@@ -1957,7 +1957,7 @@ Before you begin it is recommended you go through the following:</div>
 <p>We print the graph after lowering above to show the new nodes that were inserted to call the XNNPACK Delegate. The subgraphs which are being delegated to XNNPACK are the first argument at each call site. It can be observed that the majority of <code class="docutils literal notranslate"><span class="pre">convolution-relu-add</span></code> blocks and <code class="docutils literal notranslate"><span class="pre">linear</span></code> blocks were able to be delegated to XNNPACK. We can also see the operators which were not able to be lowered to the XNNPACK delegate, such as <code class="docutils literal notranslate"><span class="pre">clone</span></code> and <code class="docutils literal notranslate"><span class="pre">view_copy</span></code>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"xnnpack_mobilenetv2.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1982,8 +1982,8 @@ Before you begin it is recommended you go through the following:</div>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This is the official recommended flow for quantization in pytorch 2.0 export&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original model: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">"""This is the official recommended flow for quantization in pytorch 2.0 export"""</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Original model: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
     <span class="c1"># if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel</span>
     <span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
@@ -1992,7 +1992,7 @@ Before you begin it is recommended you go through the following:</div>
     <span class="c1"># calibration</span>
     <span class="n">m</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Quantized model: </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Quantized model: </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="c1"># make sure we can export to flat buffer</span>
     <span class="k">return</span> <span class="n">m</span>
 
@@ -2009,7 +2009,7 @@ Before you begin it is recommended you go through the following:</div>
 
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"qs8_xnnpack_mobilenetv2.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2017,7 +2017,7 @@ Before you begin it is recommended you go through the following:</div>
 <section id="lowering-with-aot-compiler-py-script">
 <h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Link to this heading">#</a></h2>
 <p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">"mv2"</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
 </pre></div>
 </div>
 <p>Note in the example above,</p>

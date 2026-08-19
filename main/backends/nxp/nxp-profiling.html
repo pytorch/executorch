@@ -2026,12 +2026,12 @@ After export completes, retrieve the <code class="docutils literal notranslate">
 <span class="n">module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 
 <span class="c1"># 2. Transform and lower</span>
-<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_neutron_compile_spec</span><span class="p">(</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_neutron_compile_spec</span><span class="p">(</span><span class="s2">"imxrt700"</span><span class="p">)</span>
 <span class="n">partitioners</span> <span class="o">=</span> <span class="p">(</span>
     <span class="p">[</span>
         <span class="n">NeutronPartitioner</span><span class="p">(</span>
             <span class="n">compile_spec</span><span class="p">,</span>
-            <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">),</span>
+            <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"imxrt700"</span><span class="p">),</span>
             <span class="n">post_quantization_state_dict</span><span class="o">=</span><span class="n">module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
         <span class="p">)</span>
     <span class="p">]</span>
@@ -2051,7 +2051,7 @@ After export completes, retrieve the <code class="docutils literal notranslate">
     <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="p">)</span>
 <span class="c1"># Save ETRecord</span>
-<span class="n">exec_prog</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">exec_prog</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"etrecord.bin"</span><span class="p">)</span>
 
 </pre></div>
 </div>
@@ -2100,8 +2100,8 @@ output. This data is then used to generate post‑time events after the inferenc
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">executorch</span><span class="o">::</span><span class="n">etdump</span><span class="o">::</span><span class="n">ETDumpResult</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">PRINTF</span><span class="p">(</span><span class="s">&quot;Add a brakepoint here and run this command in Debugger Console: &quot;</span>
-<span class="w">    	       </span><span class="s">&quot;dump binary memory trace.etdump result.buf (result.buf + result.size)</span><span class="se">\r\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">PRINTF</span><span class="p">(</span><span class="s">"Add a brakepoint here and run this command in Debugger Console: "</span>
+<span class="w">    	       </span><span class="s">"dump binary memory trace.etdump result.buf (result.buf + result.size)</span><span class="se">\r\n</span><span class="s">"</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -2143,7 +2143,7 @@ To visualize this metadata in the Inspector results table, set the <code class="
 <h3>Example<a class="headerlink" href="#id2" title="Link to this heading">#</a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">"/path/to/etdump.etdp"</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">"/path/to/etrecord.bin"</span><span class="p">)</span>
 <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">include_delegate_debug_data</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>

@@ -1959,11 +1959,11 @@ upset most flatbuffer-parsing code (apart from the rarely-used
 <p>All numbers are little-endian, regardless of the host system.</p>
 <p>Header layout:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>[0..3] uint32_t byte offset to the beginning of the flatbuffer root table.
-[4..7] File magic bytes: &quot;ET&quot; followed by two ASCII decimal digits. The digits
+[4..7] File magic bytes: "ET" followed by two ASCII decimal digits. The digits
        will change if the binary format of this file is changed in a
        non-backwards-compatible way.
 Optional extended header:
-|  [8..11] Extended header magic bytes: &quot;eh&quot; followed by two ASCII decimal
+|  [8..11] Extended header magic bytes: "eh" followed by two ASCII decimal
 |          digits. The digits will change if the binary format of this header is
 |          changed in a non-backwards-compatible way.
 | [12..15] uint32_t size of this extended header in bytes, including the magic
@@ -1984,8 +1984,8 @@ End of optional extended header.
 </div>
 <p>Example:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>        <span class="n">Offset</span> <span class="n">to</span> <span class="n">flatbuffer</span> <span class="n">root</span> <span class="p">(</span><span class="mh">0x38</span><span class="p">)</span>
-        <span class="o">|</span>            <span class="n">File</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;ET??&quot;</span><span class="p">)</span>
-        <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;eh??&quot;</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="n">File</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">"ET??"</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">"eh??"</span><span class="p">)</span>
         <span class="o">|</span>            <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x20</span><span class="p">)</span>
         <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>
 <span class="mh">0x0000</span>  <span class="mi">38</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">45</span> <span class="mi">54</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">65</span> <span class="mi">68</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">20</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>

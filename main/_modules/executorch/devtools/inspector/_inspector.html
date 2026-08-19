@@ -1997,12 +1997,12 @@ document.write(`
     <span class="n">debug_events</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">DebugEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">gen_from_events</span><span class="p">(</span><span class="n">run_events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;InstructionEvent&quot;</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">gen_from_events</span><span class="p">(</span><span class="n">run_events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">"InstructionEvent"</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a list of events from a run in ETDump, collate the ProfileEvent</span>
 <span class="sd">        and DebugEvents by instruction id and return a list of InstructionEvents</span>
 <span class="sd">        constructed from collated events (ignoring run_output events)</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">instruction_events</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">InstructionEventSignature</span><span class="p">,</span> <span class="n">InstructionEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">OrderedDict</span><span class="p">()</span>
         <span class="p">)</span>
@@ -2048,55 +2048,55 @@ document.write(`
     <span class="n">delegate_id_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">ProfileEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ProfileEventSignature&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">ProfileEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ProfileEventSignature"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a ProfileEvent, extract the fields into a signature</span>
 
-<span class="sd">        ProfileEvents from ETDump default to &quot;&quot; and -1 when the field is not populated</span>
+<span class="sd">        ProfileEvents from ETDump default to "" and -1 when the field is not populated</span>
 <span class="sd">        The Signature will convert these back to the intended None value</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="n">ProfileEventSignature</span><span class="p">(</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
             <span class="n">event</span><span class="o">.</span><span class="n">instruction_id</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">instruction_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_int</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_int</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="o">!=</span> <span class="s2">""</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
 
 
 <span class="c1"># Signature of a DebugEvent</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">DebugEventSignature</span><span class="p">:</span>
-    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>
     <span class="n">instruction_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
     <span class="n">delegate_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_id_str</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">DebugEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;DebugEventSignature&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_gen_from_event</span><span class="p">(</span><span class="n">event</span><span class="p">:</span> <span class="n">DebugEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"DebugEventSignature"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a DebugEvent, extract the fields into a signature</span>
 
-<span class="sd">        DebugEvents from ETDump default to &quot;&quot; and -1 when the field is not populated</span>
+<span class="sd">        DebugEvents from ETDump default to "" and -1 when the field is not populated</span>
 <span class="sd">        The Signature will convert these back to the intended None value</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="n">DebugEventSignature</span><span class="p">(</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
             <span class="n">event</span><span class="o">.</span><span class="n">instruction_id</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">instruction_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
             <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_int</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_int</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_id_str</span> <span class="o">!=</span> <span class="s2">""</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
 
 
 <span class="c1"># Signature of an Event inside of a Run</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventSignature</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Note that (profile_event_signature, debug_event_signature) are sufficient</span>
 <span class="sd">    signature identifiers.</span>
 
 <span class="sd">    instruction_id is extracted from the signatures (equivalent in both) and</span>
 <span class="sd">    surfaced for convenience</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">instruction_id</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">profile_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2105,12 +2105,12 @@ document.write(`
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">gen_from_instruction_event</span><span class="p">(</span>
         <span class="n">instruction_event</span><span class="p">:</span> <span class="n">InstructionEvent</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="s2">&quot;EventSignature&quot;</span><span class="p">,</span> <span class="n">InstructionEvent</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="s2">"EventSignature"</span><span class="p">,</span> <span class="n">InstructionEvent</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Construct EventSignatures from the given InstructionEvent</span>
 <span class="sd">        and return tuples of (1) EventSignature and (2) related subset</span>
 <span class="sd">        InstructionEvent</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="c1"># Generate the DebugEventSignature</span>
         <span class="n">debug_events</span> <span class="o">=</span> <span class="n">instruction_event</span><span class="o">.</span><span class="n">debug_events</span>
@@ -2151,12 +2151,12 @@ document.write(`
 <span class="c1"># Signature of a Run</span>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">order</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">RunSignature</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Args:</span>
 <span class="sd">        name: Name of the run</span>
 <span class="sd">        events: List of EventSignatures that correspond to the run</span>
 <span class="sd">        bundled_input_index: Index of the bundled input used to generate the debug output</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">events</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">EventSignature</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2170,8 +2170,8 @@ document.write(`
 
 <span class="c1"># Typing for Dict containig delegate metadata</span>
 <span class="n">DelegateMetadata</span> <span class="o">=</span> <span class="n">TypedDict</span><span class="p">(</span>
-    <span class="s2">&quot;DelegateMetadata&quot;</span><span class="p">,</span>
-    <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;delegate_map&quot;</span><span class="p">:</span> <span class="n">DelegateIdentifierDebugHandleMap</span><span class="p">},</span>
+    <span class="s2">"DelegateMetadata"</span><span class="p">,</span>
+    <span class="p">{</span><span class="s2">"name"</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="s2">"delegate_map"</span><span class="p">:</span> <span class="n">DelegateIdentifierDebugHandleMap</span><span class="p">},</span>
 <span class="p">)</span>
 
 
@@ -2209,7 +2209,7 @@ document.write(`
 <a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.Event">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Event</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from `ETRecord`.</span>
 
 <span class="sd">    Args:</span>
@@ -2233,7 +2233,7 @@ document.write(`
 
 <span class="sd">        _instruction_id: Instruction Identifier for Symbolication</span>
 <span class="sd">        _delegate_metadata_parser: Optional Parser for _delegate_debug_metadatas</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">perf_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PerfData</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2258,30 +2258,30 @@ document.write(`
 
     <span class="nd">@cached_property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the parsed _delegate_debug_metadatas if a parser is available</span>
 <span class="sd">        Otherwise returns the raw _delegate_debug_metadatas</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_delegated_op</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_metadata_parser</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_metadata_parser</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span><span class="p">)</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">raw_delegate_debug_metadatas</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Return the raw unparsed _delegate_debug_metadatas</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_debug_metadatas</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">start_time</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the start time of the event.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start_time</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">""</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Convert the Event into a pandas DataFrame</span>
 
 <span class="sd">        Args:</span>
@@ -2289,13 +2289,13 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A pandas DataFrame with the Event data</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">event_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">asdict</span><span class="p">(</span><span class="n">_units</span><span class="o">=</span><span class="n">_units</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">event_dict</span><span class="p">)</span>
 
     <span class="c1"># Override the default implementation of dataclass.asdict to handle null perf data</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_units</span><span class="o">=</span><span class="s2">""</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Convert the Event into a dict</span>
 
 <span class="sd">        Args:</span>
@@ -2303,34 +2303,34 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A dict with the Event data</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="k">def</span><span class="w"> </span><span class="nf">truncated_list</span><span class="p">(</span><span class="n">long_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;[&#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;, &#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; ... &#39;</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;] (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">long_list</span><span class="p">)</span><span class="si">}</span><span class="s2"> total)&quot;</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">"['</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2">', '</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">' ... '</span><span class="si">{</span><span class="n">long_list</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">'] (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">long_list</span><span class="p">)</span><span class="si">}</span><span class="s2"> total)"</span>
 
         <span class="k">return</span> <span class="p">{</span>
-            <span class="s2">&quot;event_name&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-            <span class="s2">&quot;raw&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">],</span>
-            <span class="s2">&quot;p10&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p10</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;p50&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p50</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;p90&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p90</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;avg&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">avg</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;min&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">min</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;max&quot;</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">max</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-            <span class="s2">&quot;op_types&quot;</span><span class="p">:</span> <span class="p">[</span>
+            <span class="s2">"event_name"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">"raw"</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">],</span>
+            <span class="s2">"p10"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p10</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"p50"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p50</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"p90"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p90</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"avg"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">avg</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"min"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">min</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"max"</span> <span class="o">+</span> <span class="n">_units</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">max</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">perf_data</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"op_types"</span><span class="p">:</span> <span class="p">[</span>
                 <span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">op_types</span>
                     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">op_types</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">5</span>
                     <span class="k">else</span> <span class="n">truncated_list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">op_types</span><span class="p">)</span>
                 <span class="p">)</span>
             <span class="p">],</span>
-            <span class="s2">&quot;delegate_debug_identifier&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegate_debug_identifier</span><span class="p">,</span>
-            <span class="s2">&quot;stack_traces&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">],</span>
-            <span class="s2">&quot;module_hierarchy&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">],</span>
-            <span class="s2">&quot;is_delegated_op&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_delegated_op</span><span class="p">,</span>
-            <span class="s2">&quot;delegate_backend_name&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegate_backend_name</span><span class="p">,</span>
-            <span class="s2">&quot;debug_data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_data</span><span class="p">],</span>
-            <span class="s2">&quot;start_time&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_start_time</span><span class="p">],</span>
+            <span class="s2">"delegate_debug_identifier"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegate_debug_identifier</span><span class="p">,</span>
+            <span class="s2">"stack_traces"</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">],</span>
+            <span class="s2">"module_hierarchy"</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">],</span>
+            <span class="s2">"is_delegated_op"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_delegated_op</span><span class="p">,</span>
+            <span class="s2">"delegate_backend_name"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegate_backend_name</span><span class="p">,</span>
+            <span class="s2">"debug_data"</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">debug_data</span><span class="p">],</span>
+            <span class="s2">"start_time"</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_start_time</span><span class="p">],</span>
         <span class="p">}</span>
 
     <span class="nd">@staticmethod</span>
@@ -2345,8 +2345,8 @@ document.write(`
         <span class="n">delegate_time_scale_converter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
             <span class="n">Callable</span><span class="p">[[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span>
         <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Event&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"Event"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given an EventSignature and a list of Events with that signature,</span>
 <span class="sd">        return an Event object matching the EventSignature, with perf_data</span>
 <span class="sd">        populated from the list of ProfileEvents and debug_data populated from</span>
@@ -2355,14 +2355,14 @@ document.write(`
 <span class="sd">        An optional inverse scale factor can be provided to adjust the event timestamps</span>
 <span class="sd">        An optional buffer can be provided to inflate etdump references</span>
 <span class="sd">        An optional delegate_metadata_parser can be provided to parse the delegate metadata</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">profile_event_signature</span> <span class="o">=</span> <span class="n">signature</span><span class="o">.</span><span class="n">profile_event_signature</span>
         <span class="n">debug_event_signature</span> <span class="o">=</span> <span class="n">signature</span><span class="o">.</span><span class="n">debug_event_signature</span>
 
         <span class="c1"># Event is gradually populated in this function</span>
         <span class="n">ret_event</span><span class="p">:</span> <span class="n">Event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">(</span>
-            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
             <span class="n">_instruction_id</span><span class="o">=</span><span class="n">signature</span><span class="o">.</span><span class="n">instruction_id</span><span class="p">,</span>
             <span class="n">_delegate_metadata_parser</span><span class="o">=</span><span class="n">delegate_metadata_parser</span><span class="p">,</span>
             <span class="n">_delegate_time_scale_converter</span><span class="o">=</span><span class="n">delegate_time_scale_converter</span><span class="p">,</span>
@@ -2382,7 +2382,7 @@ document.write(`
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_calculate_elapsed_time</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">):</span>
-        <span class="c1"># We&#39;re assuming if there&#39;s a wraparound in the time values, then</span>
+        <span class="c1"># We're assuming if there's a wraparound in the time values, then</span>
         <span class="c1"># the time representation of that platform only contains 32 bits.</span>
         <span class="c1"># This should be fine for now, but ideally we should source the max</span>
         <span class="c1"># time value from the platform using etdump.</span>
@@ -2390,7 +2390,7 @@ document.write(`
         <span class="k">if</span> <span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">end_time</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span><span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">max_uint32</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">end_time</span> <span class="o">&gt;</span> <span class="n">max_uint32</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Expected start_time (</span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2">) and end_time (</span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2">) to be less than </span><span class="si">{</span><span class="n">max_uint32</span><span class="si">}</span><span class="s2"> for cases where there is wrap-around of time values.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Expected start_time (</span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2">) and end_time (</span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2">) to be less than </span><span class="si">{</span><span class="n">max_uint32</span><span class="si">}</span><span class="s2"> for cases where there is wrap-around of time values."</span>
                 <span class="p">)</span>
             <span class="c1"># Handle wraparound</span>
             <span class="n">elapsed_time</span> <span class="o">=</span> <span class="p">(</span><span class="n">max_uint32</span> <span class="o">-</span> <span class="n">start_time</span><span class="p">)</span> <span class="o">+</span> <span class="n">end_time</span>
@@ -2401,10 +2401,10 @@ document.write(`
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_populate_event_signature_fields</span><span class="p">(</span>
-        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
+        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">"Event"</span><span class="p">,</span>
         <span class="n">event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">,</span> <span class="n">DebugEventSignature</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a partially constructed Event, populate the fields related to</span>
 <span class="sd">        the profile event signature or debug event signature</span>
 
@@ -2412,7 +2412,7 @@ document.write(`
 <span class="sd">            name</span>
 <span class="sd">            delegate_debug_identifier</span>
 <span class="sd">            is_delegated_op</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO: T201347372 Push the None check to ealier in the stack.</span>
         <span class="k">if</span> <span class="n">event_signature</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">event_signature</span><span class="o">.</span><span class="n">delegate_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>  <span class="c1"># 0 is a valid value</span>
@@ -2429,7 +2429,7 @@ document.write(`
             <span class="p">)</span>
 
             <span class="c1"># Update fields</span>
-            <span class="c1"># This is for older version of etdump that doesn&#39;t have the name field for debug events, we don&#39;t update the name field</span>
+            <span class="c1"># This is for older version of etdump that doesn't have the name field for debug events, we don't update the name field</span>
             <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
                 <span class="n">ret_event</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
             <span class="n">ret_event</span><span class="o">.</span><span class="n">delegate_debug_identifier</span> <span class="o">=</span> <span class="n">delegate_debug_identifier</span>
@@ -2437,12 +2437,12 @@ document.write(`
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_populate_profiling_related_fields</span><span class="p">(</span>
-        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
+        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">"Event"</span><span class="p">,</span>
         <span class="n">profile_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">],</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">],</span>
         <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a partially constructed Event, populate the fields related to</span>
 <span class="sd">        the profile events</span>
 
@@ -2452,7 +2452,7 @@ document.write(`
 <span class="sd">            is_delegated_op</span>
 <span class="sd">            perf_data</span>
 <span class="sd">            delegate_debug_metadatas</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="c1"># Fill out fields from profile event signature</span>
         <span class="n">Event</span><span class="o">.</span><span class="n">_populate_event_signature_fields</span><span class="p">(</span><span class="n">ret_event</span><span class="p">,</span> <span class="n">profile_event_signature</span><span class="p">)</span>
@@ -2465,7 +2465,7 @@ document.write(`
             <span class="k">if</span> <span class="p">(</span><span class="n">profile_events</span> <span class="o">:=</span> <span class="n">event</span><span class="o">.</span><span class="n">profile_events</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">profile_events</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">profile_events</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                        <span class="sa">f</span><span class="s2">"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">profile_events</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
                     <span class="p">)</span>
 
                 <span class="n">profile_event</span> <span class="o">=</span> <span class="n">profile_events</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
@@ -2480,7 +2480,7 @@ document.write(`
                         <span class="n">convert_time_scale</span><span class="p">(</span><span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">),</span>
                         <span class="n">convert_time_scale</span><span class="p">(</span><span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span><span class="p">),</span>
                     <span class="p">)</span>
-                <span class="c1"># If it&#39;s not a delegated op then we can just use the raw time values</span>
+                <span class="c1"># If it's not a delegated op then we can just use the raw time values</span>
                 <span class="c1"># and then scale them according to the scale factor that was passed in.</span>
                 <span class="k">elif</span> <span class="ow">not</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">is_delegated_op</span><span class="p">:</span>
                     <span class="n">scaled_time</span> <span class="o">=</span> <span class="p">(</span>
@@ -2505,7 +2505,7 @@ document.write(`
                 <span class="n">delegate_debug_metadatas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">profile_event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span>
                     <span class="k">if</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span>
-                    <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+                    <span class="k">else</span> <span class="s2">""</span>
                 <span class="p">)</span>
 
         <span class="c1"># Update fields</span>
@@ -2520,12 +2520,12 @@ document.write(`
 
     <span class="nd">@staticmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">_populate_debugging_related_fields</span><span class="p">(</span>
-        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
+        <span class="n">ret_event</span><span class="p">:</span> <span class="s2">"Event"</span><span class="p">,</span>
         <span class="n">debug_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DebugEventSignature</span><span class="p">],</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">],</span>
         <span class="n">output_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a partially constructed Event, populate the fields related to</span>
 <span class="sd">        the debug events</span>
 
@@ -2534,7 +2534,7 @@ document.write(`
 <span class="sd">            delegate_debug_identifier</span>
 <span class="sd">            is_delegated_op</span>
 <span class="sd">            debug_data</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="c1"># Fill out fields from debug event signature</span>
         <span class="n">Event</span><span class="o">.</span><span class="n">_populate_event_signature_fields</span><span class="p">(</span><span class="n">ret_event</span><span class="p">,</span> <span class="n">debug_event_signature</span><span class="p">)</span>
@@ -2553,10 +2553,10 @@ document.write(`
                     <span class="n">v2</span> <span class="o">=</span> <span class="n">inflate_runtime_output</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">output_buffer</span><span class="p">)</span>
                     <span class="k">assert</span> <span class="n">is_inference_output_equal</span><span class="p">(</span>
                         <span class="n">v1</span><span class="p">,</span> <span class="n">v2</span>
-                    <span class="p">),</span> <span class="s2">&quot;&quot;&quot;Corresponding debug events in multiple iterations of the model</span>
+                    <span class="p">),</span> <span class="s2">"""Corresponding debug events in multiple iterations of the model</span>
 <span class="s2">                    must have the same debug entry values. This is not the case for the</span>
 <span class="s2">                    intermediate data present in this ETDump and indicates potential issues</span>
-<span class="s2">                    with the model/runtime.&quot;&quot;&quot;</span>
+<span class="s2">                    with the model/runtime."""</span>
 
         <span class="n">ret_event</span><span class="o">.</span><span class="n">debug_data</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">inflate_runtime_output</span><span class="p">(</span><span class="n">debug_value</span><span class="p">,</span> <span class="n">output_buffer</span><span class="p">)</span>
@@ -2567,12 +2567,12 @@ document.write(`
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">OperatorNode</span><span class="p">]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Helper function to populate the stack_traces, module_hierarchy and op_types attributes</span>
 <span class="sd">        based on the debug handles of this event</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
-        <span class="c1"># Framework events aren&#39;t logically associated with any nodes</span>
+        <span class="c1"># Framework events aren't logically associated with any nodes</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span><span class="p">:</span>
             <span class="k">return</span>
 
@@ -2591,9 +2591,9 @@ document.write(`
                 <span class="c1"># Attach node metadata including stack traces, module hierarchy and op_types to this event</span>
                 <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">metadata</span> <span class="o">:=</span> <span class="n">node</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">:</span>
-                        <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stack_trace&quot;</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stack_trace"</span><span class="p">)</span>
                         <span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-                            <span class="s2">&quot;nn_module_stack&quot;</span>
+                            <span class="s2">"nn_module_stack"</span>
                         <span class="p">)</span>
                     <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">:</span>
                         <span class="c1"># TODO: consider having this as a dict from node.name -&gt; node.op</span>
@@ -2605,10 +2605,10 @@ document.write(`
 <a class="viewcode-back" href="../../../../model-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventBlock</span><span class="p">:</span>
-<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">    An `EventBlock` contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.</span>
 <span class="sd">    Each `EventBlock` represents a pattern of execution. For example, model initiation and loading lives in a single `EventBlock`.</span>
-<span class="sd">    If there&#39;s a control flow, each branch will be represented by a separate `EventBlock`.</span>
+<span class="sd">    If there's a control flow, each branch will be represented by a separate `EventBlock`.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        name: Name of the profiling/debugging block.</span>
@@ -2616,7 +2616,7 @@ document.write(`
 
 <span class="sd">        bundled_input_idx: Index of the Bundled Input that this EventBlock corresponds to.</span>
 <span class="sd">        run_output: Run output extracted from the encapsulated Events</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
@@ -2629,7 +2629,7 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">to_dataframe</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Converts the EventBlock into a DataFrame with each row being an event instance</span>
 
 <span class="sd">        Note: Rows that have an event_name = OPERATOR_CALL correspond to the perf of the</span>
@@ -2641,14 +2641,14 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A pandas DataFrame containing the data of each Event instance in this EventBlock.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
-        <span class="n">units</span> <span class="o">=</span> <span class="s2">&quot; (&quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_time_scale</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span> <span class="k">if</span> <span class="n">include_units</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">units</span> <span class="o">=</span> <span class="s2">" ("</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_time_scale</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="s2">")"</span> <span class="k">if</span> <span class="n">include_units</span> <span class="k">else</span> <span class="s2">""</span>
 
         <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">e</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="n">units</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="n">df</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span>
             <span class="mi">0</span><span class="p">,</span>
-            <span class="s2">&quot;event_block_name&quot;</span><span class="p">,</span>
+            <span class="s2">"event_block_name"</span><span class="p">,</span>
             <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">))]),</span>
             <span class="n">allow_duplicates</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
@@ -2662,13 +2662,13 @@ document.write(`
                 <span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
                     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metadata</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
                         <span class="n">delegate_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                            <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="n">metadata</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;delegate_debug_metadata&quot;</span><span class="p">])</span>
+                            <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="n">metadata</span><span class="p">],</span> <span class="n">index</span><span class="o">=</span><span class="p">[</span><span class="s2">"delegate_debug_metadata"</span><span class="p">])</span>
                         <span class="p">)</span>
                     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metadata</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                         <span class="n">delegate_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">metadata</span><span class="p">))</span>
                     <span class="k">else</span><span class="p">:</span>
                         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                            <span class="sa">f</span><span class="s2">&quot;Unexpected type for delegate_debug_metadata: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                            <span class="sa">f</span><span class="s2">"Unexpected type for delegate_debug_metadata: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
                         <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">delegate_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">())</span>
@@ -2690,8 +2690,8 @@ document.write(`
         <span class="n">delegate_time_scale_converter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
             <span class="n">Callable</span><span class="p">[[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span>
         <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;EventBlock&quot;</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">"EventBlock"</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given an etdump, generate a list of EventBlocks corresponding to the</span>
 <span class="sd">        contents.</span>
 
@@ -2701,7 +2701,7 @@ document.write(`
 <span class="sd">        An optional buffer to inflate etdump references</span>
 
 <span class="sd">        An optional delegate metadata parser function to parse delegate profiling metadata</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="c1"># Map each RunSignatures to instances of its constituent events.</span>
         <span class="c1">#   The value of the map is a GroupedRunInstance which contains:</span>
@@ -2808,10 +2808,10 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">_collect_run_outputs</span><span class="p">(</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">flatcc</span><span class="o">.</span><span class="n">Event</span><span class="p">],</span> <span class="n">output_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProgramOutput</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given a list of events, search the events for ProgramOutputs (aka lists of InferenceOutputs) marked</span>
 <span class="sd">        as run outputs</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">output_events</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
@@ -2819,7 +2819,7 @@ document.write(`
                 <span class="k">continue</span>
             <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">debug_event</span><span class="o">.</span><span class="n">debug_entry</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;Debug entry inside debug event should not be empty!&quot;</span>
+                    <span class="s2">"Debug entry inside debug event should not be empty!"</span>
                 <span class="p">)</span>
             <span class="k">if</span> <span class="n">is_debug_output</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">debug_event</span><span class="o">.</span><span class="n">debug_entry</span><span class="p">):</span>
                 <span class="n">output_events</span> <span class="o">+=</span> <span class="p">[</span><span class="n">event</span><span class="p">]</span>
@@ -2837,13 +2837,13 @@ document.write(`
         <span class="n">delegate_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">DelegateMetadata</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">instruction_id_to_num_outs_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Given mappings from instruction id to debug handles, populate the</span>
 <span class="sd">        debug_handles field of all underlying events</span>
 
 <span class="sd">        If the event is delegated, index with the instruction_id and delegate_debug_identifier</span>
 <span class="sd">        to obtain the debug_handle via the delegate map</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
             <span class="c1"># Check if instruction_id is present in the event</span>
             <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2863,12 +2863,12 @@ document.write(`
 
                 <span class="c1"># DELEGATE_CALL is a special non-delegated event and benefits from having the name populated</span>
                 <span class="k">if</span> <span class="p">(</span>
-                    <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;DELEGATE_CALL&quot;</span>
+                    <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"DELEGATE_CALL"</span>
                     <span class="ow">and</span> <span class="n">delegate_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                     <span class="ow">and</span> <span class="p">(</span><span class="n">delegate_metadata</span> <span class="o">:=</span> <span class="n">delegate_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">instruction_id</span><span class="p">))</span>
                     <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="p">):</span>
-                    <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+                    <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 
                 <span class="k">continue</span>
 
@@ -2879,13 +2879,13 @@ document.write(`
             <span class="p">):</span>
                 <span class="n">event</span><span class="o">.</span><span class="n">debug_handles</span> <span class="o">=</span> <span class="n">handle_map</span><span class="p">[</span><span class="n">instruction_id</span><span class="p">]</span>
                 <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot; No delegate mapping found for delegate with instruction id </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">" No delegate mapping found for delegate with instruction id </span><span class="si">{</span><span class="n">event</span><span class="o">.</span><span class="n">_instruction_id</span><span class="si">}</span><span class="s2">"</span>
                 <span class="p">)</span>
                 <span class="k">continue</span>
 
             <span class="c1"># For delegated events, handles are found via delegateMetadata</span>
-            <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-            <span class="n">delegate_metadata_delegate_map</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegate_map&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="n">delegate_metadata_delegate_map</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegate_map"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
 
             <span class="c1"># delegate_debug_id can be either int based or string based, therefore we need to check both</span>
             <span class="n">debug_handles</span> <span class="o">=</span> <span class="n">delegate_metadata_delegate_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -2904,15 +2904,15 @@ document.write(`
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">Inspector</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    APIs for examining model architecture and performance stats.</span>
 
 <span class="sd">    Public Attributes:</span>
-<span class="sd">        event_blocks: List[&quot;EventBlocks&quot;]. Structured data from ETDump (correlated with ETRecord if provided).</span>
+<span class="sd">        event_blocks: List["EventBlocks"]. Structured data from ETDump (correlated with ETRecord if provided).</span>
 
 <span class="sd">    Private Attributes:</span>
 <span class="sd">        _etrecord: Optional[ETRecord]. File under etrecord_path deserialized into an object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -2931,7 +2931,7 @@ document.write(`
         <span class="n">enable_module_hierarchy</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">reference_graph_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sa">r</span><span class="sd">"""</span>
 <span class="sd">        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path or binary,</span>
 <span class="sd">        and optional ETRecord path.</span>
 
@@ -2949,13 +2949,13 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="k">if</span> <span class="p">(</span><span class="n">source_time_scale</span> <span class="o">==</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span><span class="p">)</span> <span class="o">^</span> <span class="p">(</span>
             <span class="n">target_time_scale</span> <span class="o">==</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;For TimeScale in cycles both the source and target time scale have to be in cycles.&quot;</span>
+                <span class="s2">"For TimeScale in cycles both the source and target time scale have to be in cycles."</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span> <span class="o">=</span> <span class="n">source_time_scale</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span> <span class="o">=</span> <span class="n">target_time_scale</span>
@@ -2975,22 +2975,22 @@ document.write(`
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">etrecord</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="n">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="o">=</span><span class="n">etrecord</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Unsupported ETRecord type&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">"Unsupported ETRecord type"</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="p">(</span><span class="n">etdump_path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="n">etdump_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;Expecting exactly one of etdump_path or etdump_data to be specified.&quot;</span>
+                <span class="s2">"Expecting exactly one of etdump_path or etdump_data to be specified."</span>
             <span class="p">)</span>
 
         <span class="c1"># Create EventBlocks from ETDump</span>
         <span class="n">etdump</span> <span class="o">=</span> <span class="n">gen_etdump_object</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span> <span class="n">etdump_data</span><span class="o">=</span><span class="n">etdump_data</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">debug_buffer_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">debug_buffer_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">debug_buffer_path</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
                 <span class="n">output_buffer</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">output_buffer</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
-                <span class="s2">&quot;Output Buffer not found. Tensor Debug Data will not be available.&quot;</span><span class="p">,</span>
+                <span class="s2">"Output Buffer not found. Tensor Debug Data will not be available."</span><span class="p">,</span>
                 <span class="n">stacklevel</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
             <span class="p">)</span>
 
@@ -3013,13 +3013,13 @@ document.write(`
         <span class="bp">self</span><span class="o">.</span><span class="n">_consume_etrecord</span><span class="p">(</span><span class="n">reference_graph_name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_consume_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reference_graph_name</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.</span>
 
 <span class="sd">        Steps:</span>
 <span class="sd">            1. Debug Handle Symbolification:</span>
 <span class="sd">                For each Event, find the debug_handle counterparts using</span>
-<span class="sd">                ETRecord&#39;s debug_handle_map and delegate_map</span>
+<span class="sd">                ETRecord's debug_handle_map and delegate_map</span>
 
 <span class="sd">            2. Event Metadata Association:</span>
 <span class="sd">                For each Event, populate its metadata from OperatorGraph Nodes,</span>
@@ -3027,10 +3027,10 @@ document.write(`
 <span class="sd">                identify the corresponding OperatorGraph Nodes.</span>
 
 <span class="sd">            3. Reference Outputs Extraction:</span>
-<span class="sd">                If there&#39;re reference outputs saved in ETRecord, assign each reference output to the corresponding</span>
-<span class="sd">                EventBlock based on the method name (currently assumes only &quot;forward&quot;) and the</span>
+<span class="sd">                If there're reference outputs saved in ETRecord, assign each reference output to the corresponding</span>
+<span class="sd">                EventBlock based on the method name (currently assumes only "forward") and the</span>
 <span class="sd">                bundled_input_index of the EventBlock.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
@@ -3077,7 +3077,7 @@ document.write(`
         <span class="n">reference_graph</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">disable_debug_handle_validation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Resolve the reference graph module to use for AOT operations.</span>
 
 <span class="sd">        This method centralizes the logic for determining which graph module to use,</span>
@@ -3086,8 +3086,8 @@ document.write(`
 <span class="sd">        Args:</span>
 <span class="sd">            reference_graph: The name of the reference graph. Options:</span>
 <span class="sd">                - None: Auto-select (try exported_program first, fall back to edge_dialect)</span>
-<span class="sd">                - &quot;exported_program&quot;: Use ATen dialect with debug handle backpropagation</span>
-<span class="sd">                - &quot;edge_dialect_exported_program&quot;: Use Edge dialect directly</span>
+<span class="sd">                - "exported_program": Use ATen dialect with debug handle backpropagation</span>
+<span class="sd">                - "edge_dialect_exported_program": Use Edge dialect directly</span>
 <span class="sd">                - Any other string: Look up in graph_map</span>
 <span class="sd">            disable_debug_handle_validation: If True, skip debug handle validation for</span>
 <span class="sd">                exported_program.</span>
@@ -3098,12 +3098,12 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            ValueError: If the specified reference_graph is not available or if</span>
-<span class="sd">                debug handle backpropagation fails for &quot;exported_program&quot;.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">                debug handle backpropagation fails for "exported_program".</span>
+<span class="sd">        """</span>
         <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="n">reference_graph</span>
 
         <span class="c1"># Determine the reference graph to use</span>
-        <span class="k">if</span> <span class="n">reference_graph</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">reference_graph</span> <span class="o">==</span> <span class="s2">&quot;exported_program&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">reference_graph</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">reference_graph</span> <span class="o">==</span> <span class="s2">"exported_program"</span><span class="p">:</span>
             <span class="c1"># Auto-select: try exported_program first, fall back to edge_dialect_exported_program</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">and</span> <span class="n">propagate_back_debug_handle</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
@@ -3111,35 +3111,35 @@ document.write(`
                 <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span><span class="p">,</span>
                 <span class="n">disable_debug_handle_validation</span><span class="p">,</span>
             <span class="p">):</span>
-                <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="s2">&quot;exported_program&quot;</span>
+                <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="s2">"exported_program"</span>
             <span class="k">elif</span> <span class="n">reference_graph</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                    <span class="s2">&quot;Either ATen dialect exported program is not in ETRecord, or debug handle &quot;</span>
-                    <span class="s2">&quot;backpropagation failed. Falling back to &#39;edge_dialect_exported_program&#39;.&quot;</span>
+                    <span class="s2">"Either ATen dialect exported program is not in ETRecord, or debug handle "</span>
+                    <span class="s2">"backpropagation failed. Falling back to 'edge_dialect_exported_program'."</span>
                 <span class="p">)</span>
-                <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="s2">&quot;edge_dialect_exported_program&quot;</span>
+                <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="s2">"edge_dialect_exported_program"</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;Cannot use &#39;exported_program&#39;: Debug handle backpropagation failed or exported program is unavailable. &quot;</span>
-                    <span class="s2">&quot;Please check if the exported program is available in ETRecord, or try to disable debug handle validation.&quot;</span>
+                    <span class="s2">"Cannot use 'exported_program': Debug handle backpropagation failed or exported program is unavailable. "</span>
+                    <span class="s2">"Please check if the exported program is available in ETRecord, or try to disable debug handle validation."</span>
                 <span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">resolved_graph_name</span> <span class="o">==</span> <span class="s2">&quot;edge_dialect_exported_program&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">resolved_graph_name</span> <span class="o">==</span> <span class="s2">"edge_dialect_exported_program"</span><span class="p">:</span>
             <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span>
             <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;Using &#39;edge_dialect_exported_program&#39; (Edge dialect) as reference graph&quot;</span>
+                <span class="s2">"Using 'edge_dialect_exported_program' (Edge dialect) as reference graph"</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">resolved_graph_name</span> <span class="o">==</span> <span class="s2">&quot;exported_program&quot;</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">resolved_graph_name</span> <span class="o">==</span> <span class="s2">"exported_program"</span><span class="p">:</span>
             <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span>
-            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Using &#39;exported_program&#39; (ATen dialect) as reference graph&quot;</span><span class="p">)</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Using 'exported_program' (ATen dialect) as reference graph"</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="c1"># Try to fetch from graph_map</span>
             <span class="n">lookup_name</span> <span class="o">=</span> <span class="n">resolved_graph_name</span>
-            <span class="k">if</span> <span class="s2">&quot;/&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resolved_graph_name</span><span class="p">:</span>
-                <span class="n">lookup_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">/forward&quot;</span>
+            <span class="k">if</span> <span class="s2">"/"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resolved_graph_name</span><span class="p">:</span>
+                <span class="n">lookup_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">/forward"</span>
                 <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;No method name specified in &#39;</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">&#39;, &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;using &#39;</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">&#39; as default&quot;</span>
+                    <span class="sa">f</span><span class="s2">"No method name specified in '</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">', "</span>
+                    <span class="sa">f</span><span class="s2">"using '</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">' as default"</span>
                 <span class="p">)</span>
 
             <span class="k">if</span> <span class="p">(</span>
@@ -3147,7 +3147,7 @@ document.write(`
                 <span class="ow">and</span> <span class="n">lookup_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span>
             <span class="p">):</span>
                 <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span><span class="p">[</span><span class="n">lookup_name</span><span class="p">]</span>
-                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using &#39;</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">&#39; from graph_map as reference graph&quot;</span><span class="p">)</span>
+                <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Using '</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">' from graph_map as reference graph"</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">available_graphs</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
@@ -3155,9 +3155,9 @@ document.write(`
                     <span class="k">else</span> <span class="p">[]</span>
                 <span class="p">)</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Reference graph &#39;</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">&#39; not found. &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;Available options: &#39;exported_program&#39;, &#39;edge_dialect_exported_program&#39;, &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;or one of the graphs in graph_map: </span><span class="si">{</span><span class="n">available_graphs</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Reference graph '</span><span class="si">{</span><span class="n">lookup_name</span><span class="si">}</span><span class="s2">' not found. "</span>
+                    <span class="sa">f</span><span class="s2">"Available options: 'exported_program', 'edge_dialect_exported_program', "</span>
+                    <span class="sa">f</span><span class="s2">"or one of the graphs in graph_map: </span><span class="si">{</span><span class="n">available_graphs</span><span class="si">}</span><span class="s2">"</span>
                 <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">export_program</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span> <span class="n">resolved_graph_name</span>
@@ -3166,7 +3166,7 @@ document.write(`
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">reference_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Capture intermediate outputs and operator name mappings from the given graph module.</span>
 
 <span class="sd">        Args:</span>
@@ -3174,7 +3174,7 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Tuple of (intermediate_outputs, debug_handle_to_op_names) dictionaries.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">aot_debug_handle_to_op_name</span> <span class="o">=</span> <span class="n">get_aot_debug_handle_to_op_name_mapping</span><span class="p">(</span>
             <span class="n">reference_graph_module</span>
         <span class="p">)</span>
@@ -3189,7 +3189,7 @@ document.write(`
         <span class="n">reference_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
         <span class="n">resolved_graph_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Get a mapping from debug handle to stack traces from the given graph module.</span>
 
 <span class="sd">        Args:</span>
@@ -3199,11 +3199,11 @@ document.write(`
 <span class="sd">        Returns:</span>
 <span class="sd">            Dict[DebugHandle, Dict[str, Optional[str]]]: A dictionary mapping debug handles</span>
 <span class="sd">                to dictionaries of {op_name: stack_trace}.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector._inspector_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">NodeFilter</span>
 
         <span class="n">node_filters</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">NodeFilter</span><span class="p">(</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">,</span> <span class="s2">&quot;call_function&quot;</span><span class="p">,</span> <span class="n">exclude_ops</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;getitem&quot;</span><span class="p">])</span>
+            <span class="n">NodeFilter</span><span class="p">(</span><span class="s2">"debug_handle"</span><span class="p">,</span> <span class="s2">"call_function"</span><span class="p">,</span> <span class="n">exclude_ops</span><span class="o">=</span><span class="p">[</span><span class="s2">"getitem"</span><span class="p">])</span>
         <span class="p">]</span>
 
         <span class="n">result</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -3211,13 +3211,13 @@ document.write(`
 
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">reference_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="nb">filter</span><span class="o">.</span><span class="n">matches</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">for</span> <span class="nb">filter</span> <span class="ow">in</span> <span class="n">node_filters</span><span class="p">):</span>
-                <span class="n">debug_handle</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">]</span>
+                <span class="n">debug_handle</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"debug_handle"</span><span class="p">]</span>
                 <span class="n">key</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="p">(</span><span class="n">debug_handle</span><span class="p">,)</span>
                     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">debug_handle</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span>
                     <span class="k">else</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">debug_handle</span><span class="p">)</span>
                 <span class="p">)</span>
-                <span class="n">stack_trace</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stack_trace&quot;</span><span class="p">)</span>
+                <span class="n">stack_trace</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stack_trace"</span><span class="p">)</span>
                 <span class="k">if</span> <span class="n">stack_trace</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="n">has_any_stack_trace</span> <span class="o">=</span> <span class="kc">True</span>
 
@@ -3228,9 +3228,9 @@ document.write(`
 
         <span class="k">if</span> <span class="ow">not</span> <span class="n">has_any_stack_trace</span> <span class="ow">and</span> <span class="n">result</span><span class="p">:</span>
             <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;No stack traces found in reference_graph &#39;</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">&#39;. &quot;</span>
-                <span class="s2">&quot;The &#39;stacktraces&#39; column will contain None values. &quot;</span>
-                <span class="s2">&quot;Ensure the model was exported with stack trace information preserved.&quot;</span>
+                <span class="sa">f</span><span class="s2">"No stack traces found in reference_graph '</span><span class="si">{</span><span class="n">resolved_graph_name</span><span class="si">}</span><span class="s2">'. "</span>
+                <span class="s2">"The 'stacktraces' column will contain None values. "</span>
+                <span class="s2">"Ensure the model was exported with stack trace information preserved."</span>
             <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">result</span>
@@ -3239,10 +3239,10 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_runtime_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Retrieve the runtime intermediate outputs(debug handles and intermediate values mappings)</span>
 <span class="sd">        from the event blocks, along with the corresponding debug handles and op names mapping.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Collect debug handles already covered by fine-grained inner delegated</span>
         <span class="c1"># events (i.e. delegated events with op_types and debug_data populated),</span>
         <span class="c1"># grouped per backend. When such per-op intermediate outputs exist for a</span>
@@ -3285,7 +3285,7 @@ document.write(`
                 <span class="c1"># Skip a DELEGATE_CALL whose handles are already covered by</span>
                 <span class="c1"># fine-grained inner delegated events from the same backend</span>
                 <span class="c1"># (see comment above).</span>
-                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;DELEGATE_CALL&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"DELEGATE_CALL"</span><span class="p">:</span>
                     <span class="n">backend_inner</span> <span class="o">=</span> <span class="n">inner_delegated_handles_by_backend</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
                         <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span>
                     <span class="p">)</span>
@@ -3318,14 +3318,14 @@ document.write(`
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Args:</span>
 <span class="sd">            include_units: Whether headers should include units (default true)</span>
 <span class="sd">            include_delegate_debug_data: Whether to include delegate debug metadata (default false)</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with each row representing an Event.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">df_list</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">event_block</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span>
@@ -3341,21 +3341,21 @@ document.write(`
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Args:</span>
 <span class="sd">            include_units: Whether headers should include units (default true)</span>
 <span class="sd">            include_delegate_debug_data: Whether to include delegate debug metadata (default false)</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with additional filtering.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">combined_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">(</span><span class="n">include_units</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">)</span>
 
         <span class="c1"># Filter out some columns and rows for better readability when printing</span>
         <span class="n">filtered_column_df</span> <span class="o">=</span> <span class="n">combined_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">filter_name</span> <span class="ow">in</span> <span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span><span class="p">:</span>
             <span class="n">filtered_column_df</span> <span class="o">=</span> <span class="n">filtered_column_df</span><span class="p">[</span>
-                <span class="o">~</span><span class="n">filtered_column_df</span><span class="p">[</span><span class="s2">&quot;event_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">filter_name</span><span class="p">)</span>
+                <span class="o">~</span><span class="n">filtered_column_df</span><span class="p">[</span><span class="s2">"event_name"</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">filter_name</span><span class="p">)</span>
             <span class="p">]</span>
         <span class="n">filtered_column_df</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
@@ -3367,7 +3367,7 @@ document.write(`
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.</span>
 
 <span class="sd">        Args:</span>
@@ -3377,7 +3377,7 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataframe</span><span class="p">(</span><span class="n">include_units</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">)</span>
         <span class="n">display_or_print_df</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>
 
@@ -3387,7 +3387,7 @@ document.write(`
         <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
         <span class="n">include_delegate_debug_data</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Stores the underlying EventBlocks in tsv format to facilitate copy-paste into spreadsheets.</span>
 
 <span class="sd">        Args:</span>
@@ -3397,27 +3397,27 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataframe</span><span class="p">(</span><span class="n">include_units</span><span class="p">,</span> <span class="n">include_delegate_debug_data</span><span class="p">)</span>
-        <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;</span><span class="se">\t</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">"</span><span class="se">\t</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="c1"># TODO: write unit test</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">find_total_for_module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the total average compute time of all operators within the specified module.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            module_name: Name of the module to be aggregated against.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            Sum of the average compute time (in seconds) of all operators within the module with &quot;module_name&quot;.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">            Sum of the average compute time (in seconds) of all operators within the module with "module_name".</span>
+<span class="sd">        """</span>
 
         <span class="n">total</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
                 <span class="c1"># Skip OPERATOR_CALL events to avoid double-counting and exclude framework tax</span>
-                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;OPERATOR_CALL&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"OPERATOR_CALL"</span><span class="p">:</span>
                     <span class="k">continue</span>
 
                 <span class="n">module_hierarchy</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
@@ -3434,34 +3434,34 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">get_op_list</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">event_block</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">show_delegated_ops</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Event</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Return a map of op_types to Events of that op_type</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO: implement</span>
         <span class="k">return</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_tensorboard_artifact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Write to the provided path, the artifacts required for visualization in TensorBoard</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO: implement</span>
         <span class="k">pass</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_exported_program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">graph</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Access helper for ETRecord, defaults to returning the Edge Dialect program.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            graph: Optional name of the graph to access. If None, returns the Edge Dialect program.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The ExportedProgram object of &quot;graph&quot;.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">            The ExportedProgram object of "graph".</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="s2">&quot;Exported program is only available when a valid etrecord_path was provided at the time of Inspector construction&quot;</span>
+                <span class="s2">"Exported program is only available when a valid etrecord_path was provided at the time of Inspector construction"</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="p">(</span>
@@ -3476,7 +3476,7 @@ document.write(`
         <span class="n">disable_debug_handle_valdiation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">reference_graph</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Compares logged intermediate outputs from the exported graph (in ETRecord)</span>
 <span class="sd">        with runtime outputs (in ETDump) using a user-specific numerical comparator.</span>
 
@@ -3486,33 +3486,33 @@ document.write(`
 
 <span class="sd">        Args:</span>
 <span class="sd">            distance: The metrics the inspector will use for gap calculation. Can be either:</span>
-<span class="sd">                - A string: one of &quot;MSE&quot;, &quot;L1&quot;, or &quot;SNR&quot; for built-in comparators.</span>
+<span class="sd">                - A string: one of "MSE", "L1", or "SNR" for built-in comparators.</span>
 <span class="sd">                - A custom NumericalComparatorBase instance: allows you to define custom comparison</span>
 <span class="sd">                  logic by subclassing NumericalComparatorBase and implementing the element_compare()</span>
 <span class="sd">                  method. Custom comparators can also override the preprocessing() method to apply</span>
 <span class="sd">                  transformations (e.g., layout conversion, dequantization) before comparison.</span>
 <span class="sd">            disable_debug_handle_valdiation: Often when aten graph has symbolic shape nodes and inbuilt ops like gt/lt etc.,</span>
-<span class="sd">                during re-export of such a graph &#39;from_node&#39; information is lost from node.meta. As a result we loose</span>
+<span class="sd">                during re-export of such a graph 'from_node' information is lost from node.meta. As a result we loose</span>
 <span class="sd">                connection between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR</span>
 <span class="sd">                node has corresponding node in aten IR, and when such validation fails numeric debugger falls back to edge</span>
 <span class="sd">                IR as reference graph. This flag allows one to override such behavior and make best effort comparison.</span>
 <span class="sd">            reference_graph: Name of the graph to use as the golden reference for intermediate output capture.</span>
 <span class="sd">                Must be one of:</span>
-<span class="sd">                - &quot;exported_program&quot;: Uses the ATen dialect exported program. Requires successful debug</span>
+<span class="sd">                - "exported_program": Uses the ATen dialect exported program. Requires successful debug</span>
 <span class="sd">                  handle backpropagation, otherwise raises an error.</span>
-<span class="sd">                - &quot;edge_dialect_exported_program&quot;: Uses the Edge dialect program directly.</span>
-<span class="sd">                - Any other string: Fetches from graph_map (e.g., &quot;edge_after_transform/forward&quot; for</span>
+<span class="sd">                - "edge_dialect_exported_program": Uses the Edge dialect program directly.</span>
+<span class="sd">                - Any other string: Fetches from graph_map (e.g., "edge_after_transform/forward" for</span>
 <span class="sd">                  post-custom-transform graph when transform_passes are applied in to_edge_transform_and_lower</span>
 <span class="sd">                  with generate_etrecord=True).</span>
 
 <span class="sd">                If None (default), automatically selects the best available graph:</span>
-<span class="sd">                - Uses &quot;exported_program&quot; if available and debug handle backpropagation succeeds.</span>
-<span class="sd">                - Falls back to &quot;edge_dialect_exported_program&quot; otherwise.</span>
+<span class="sd">                - Uses "exported_program" if available and debug handle backpropagation succeeds.</span>
+<span class="sd">                - Falls back to "edge_dialect_exported_program" otherwise.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</span>
-<span class="sd">                The DataFrame includes a &quot;stacktraces&quot; column where each entry is a dict mapping operator names to their stack traces.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">                The DataFrame includes a "stacktraces" column where each entry is a dict mapping operator names to their stack traces.</span>
+<span class="sd">        """</span>
         <span class="c1"># First, resolve the reference graph to use</span>
         <span class="n">reference_graph_module</span><span class="p">,</span> <span class="n">resolved_graph_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_reference_graph</span><span class="p">(</span>
             <span class="n">reference_graph</span><span class="p">,</span>
@@ -3525,7 +3525,7 @@ document.write(`
         <span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_debug_handle_to_op_names</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap&quot;</span>
+                <span class="s2">"Missing etrecord or missing representative inputs within etrecord, both of which are required for calculating numerical gap"</span>
             <span class="p">)</span>
 
         <span class="c1"># Get the stack trace mapping from the resolved graph</span>
@@ -3550,26 +3550,26 @@ document.write(`
                 <span class="n">comparator</span><span class="o">.</span><span class="n">inspector</span> <span class="o">=</span> <span class="bp">self</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">metric</span> <span class="o">=</span> <span class="n">distance</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;MSE&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">"MSE"</span><span class="p">:</span>
                 <span class="n">comparator</span> <span class="o">=</span> <span class="n">MSEComparator</span><span class="p">(</span><span class="n">inspector</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;L1&quot;</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">"L1"</span><span class="p">:</span>
                 <span class="n">comparator</span> <span class="o">=</span> <span class="n">L1Comparator</span><span class="p">(</span><span class="n">inspector</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">&quot;SNR&quot;</span><span class="p">:</span>
+            <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s2">"SNR"</span><span class="p">:</span>
                 <span class="n">comparator</span> <span class="o">=</span> <span class="n">SNRComparator</span><span class="p">(</span><span class="n">inspector</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported distance metric </span><span class="si">{</span><span class="n">distance</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported distance metric </span><span class="si">{</span><span class="n">distance</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
 
-        <span class="c1"># Delegate to comparator&#39;s compare method (includes preprocessing)</span>
+        <span class="c1"># Delegate to comparator's compare method (includes preprocessing)</span>
         <span class="n">df</span> <span class="o">=</span> <span class="n">comparator</span><span class="o">.</span><span class="n">compare</span><span class="p">(</span>
             <span class="n">mapping</span><span class="p">,</span>
             <span class="n">aot_debug_handle_to_op_names</span><span class="p">,</span>
             <span class="n">runtime_debug_handle_to_op_names</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># Add stacktraces column by looking up each row&#39;s debug handle</span>
+        <span class="c1"># Add stacktraces column by looking up each row's debug handle</span>
         <span class="c1"># We need to map from aot_ops back to debug handles to get stack traces</span>
         <span class="k">def</span><span class="w"> </span><span class="nf">get_stacktraces_for_row</span><span class="p">(</span><span class="n">aot_ops</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
-<span class="w">            </span><span class="sd">&quot;&quot;&quot;Find stack traces for the given aot_ops by looking up in all debug handles.&quot;&quot;&quot;</span>
+<span class="w">            </span><span class="sd">"""Find stack traces for the given aot_ops by looking up in all debug handles."""</span>
             <span class="n">result</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
             <span class="k">for</span> <span class="n">op_name</span> <span class="ow">in</span> <span class="n">aot_ops</span><span class="p">:</span>
                 <span class="c1"># Search through debug handle mappings to find the stack trace for this op</span>
@@ -3581,24 +3581,24 @@ document.write(`
                         <span class="n">result</span><span class="p">[</span><span class="n">op_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">stack_traces_dict</span><span class="p">[</span><span class="n">op_name</span><span class="p">]</span>
                         <span class="k">break</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="c1"># Op not found in any debug handle&#39;s stack traces</span>
+                    <span class="c1"># Op not found in any debug handle's stack traces</span>
                     <span class="n">result</span><span class="p">[</span><span class="n">op_name</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">return</span> <span class="n">result</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">df</span><span class="p">[</span><span class="s2">&quot;stacktraces&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;aot_ops&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">get_stacktraces_for_row</span><span class="p">)</span>
+            <span class="n">df</span><span class="p">[</span><span class="s2">"stacktraces"</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">"aot_ops"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">get_stacktraces_for_row</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">df</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_vgf_neural_statistics</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Return parsed VGF neural accelerator statistics records embedded as</span>
 <span class="sd">        delegate metadata in ETDump.</span>
 
 <span class="sd">        Each returned item is the JSON wrapper emitted by the VGF backend. Blob</span>
 <span class="sd">        fields under each segment contain both the original base64 string and a</span>
 <span class="sd">        decoded `raw_data: bytes` field.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.inspector.vgf_neural_statistics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
             <span class="n">parse_vgf_neural_statistics_delegate_metadata</span><span class="p">,</span>
         <span class="p">)</span>

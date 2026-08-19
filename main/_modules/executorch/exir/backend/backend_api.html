@@ -1940,12 +1940,12 @@ document.write(`
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.to_backend">[docs]</a>
 <span class="nd">@singledispatch</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</span>
 
 <span class="sd">    Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to</span>
 <span class="sd">    be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first</span>
-<span class="sd">    argument (type annotation is required). However, it can&#39;t take multiple types as arguments.</span>
+<span class="sd">    argument (type annotation is required). However, it can't take multiple types as arguments.</span>
 
 <span class="sd">    ::</span>
 
@@ -1959,7 +1959,7 @@ document.write(`
 <span class="sd">         edge_program: ExportedProgram,</span>
 <span class="sd">         partitioner: Partitioner,</span>
 <span class="sd">     ) -&gt; ExportedProgram:</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">pass</span></div>
 
 
@@ -1970,7 +1970,7 @@ document.write(`
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Add overloaded implementations for to_backend:</span>
 
 <span class="sd">    ::</span>
@@ -1991,7 +1991,7 @@ document.write(`
 <span class="sd">        exported_program: An exported program in Edge dialect to target for</span>
 <span class="sd">        lowering to the backend.</span>
 <span class="sd">        compile_specs: A list of backend-specific objects with static</span>
-<span class="sd">            metadata to configure the &quot;compilation&quot; process (e.g. it could be</span>
+<span class="sd">            metadata to configure the "compilation" process (e.g. it could be</span>
 <span class="sd">            another dictionary itself).</span>
 
 <span class="sd">    Returns:</span>
@@ -2004,10 +2004,10 @@ document.write(`
 <span class="sd">        NotImplementedError: The backend is not implemented (e.g. it was not found).</span>
 <span class="sd">        This exception is derived from RuntimeError and should be caught accordingly.</span>
 <span class="sd">        RuntimeError: The module cannot be processed by the backend.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">)</span>
 
-    <span class="c1"># All backend implementation are final, so we don&#39;t need to consider nested subclasses.</span>
+    <span class="c1"># All backend implementation are final, so we don't need to consider nested subclasses.</span>
     <span class="k">for</span> <span class="bp">cls</span> <span class="ow">in</span> <span class="n">BackendDetails</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">backend_id</span> <span class="o">==</span> <span class="bp">cls</span><span class="o">.</span><span class="vm">__name__</span><span class="p">:</span>
             <span class="n">copied_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
@@ -2023,33 +2023,33 @@ document.write(`
                 <span class="n">named_data_store_output</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">data_store_output</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;debug_handle_map&quot;</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span>
+                <span class="s2">"debug_handle_map"</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span>
             <span class="p">}</span>
             <span class="k">if</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;_delegate_info_meta&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"_delegate_info_meta"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span>
                 <span class="p">)</span>
             <span class="k">return</span> <span class="n">lowered_module</span>
-    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found.&quot;</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found."</span><span class="p">)</span>
 
 
 <span class="n">_ENABLE_VALIDATION</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">disable_validation</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Disables validation&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Disables validation"""</span>
     <span class="k">global</span> <span class="n">_ENABLE_VALIDATION</span>
     <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="kc">False</span>
 
 
 <span class="nd">@contextmanager</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">validation_disabled</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Disables checking functions (ex. if the partitioned graph is identical to</span>
 <span class="sd">    the original graph). This context manager should only be used in certain</span>
 <span class="sd">    scenarios (such as when it has been profiled that checks are taking too</span>
 <span class="sd">    long, and are not necessarily needed)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">global</span> <span class="n">_ENABLE_VALIDATION</span>
     <span class="n">existing_setting</span> <span class="o">=</span> <span class="n">_ENABLE_VALIDATION</span>
     <span class="n">disable_validation</span><span class="p">()</span>
@@ -2064,31 +2064,31 @@ document.write(`
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Return a list of nodes with the same tag.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">node_list</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged&quot;</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"output"</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
                 <span class="k">if</span> <span class="p">(</span>
                     <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
                     <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
                     <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_lifted_tensor_constant</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
                 <span class="p">):</span>
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> "</span>
                     <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="c1"># check that the users all belong to the same tag</span>
                     <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">:</span>
-                        <span class="n">users_tag</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="n">users_tag</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
                         <span class="k">if</span> <span class="n">users_tag</span> <span class="o">!=</span> <span class="n">tag</span><span class="p">:</span>
                             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                                <span class="sa">f</span><span class="s2">&quot;constant data node (</span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2">) is tagged with (</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">) but has user (</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">) which has tag (</span><span class="si">{</span><span class="n">users_tag</span><span class="si">}</span><span class="s2">)&quot;</span>
+                                <span class="sa">f</span><span class="s2">"constant data node (</span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2">) is tagged with (</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">) but has user (</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">) which has tag (</span><span class="si">{</span><span class="n">users_tag</span><span class="si">}</span><span class="s2">)"</span>
                             <span class="p">)</span>
             <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">node_list</span>
@@ -2119,16 +2119,16 @@ document.write(`
         <span class="n">call_delegate_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">call_sm_input</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">generate_debug_handle</span><span class="p">(</span><span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Generate a debug handle for the given ExportedProgram.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">debug_handle</span> <span class="o">=</span> <span class="mi">0</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="n">debug_handle</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">debug_handle</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+            <span class="n">debug_handle</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">debug_handle</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"debug_handle"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
         <span class="k">return</span> <span class="n">debug_handle</span> <span class="o">+</span> <span class="mi">1</span>
 
     <span class="c1"># Replace the partitioned submodule with a lowered submodule</span>
-    <span class="c1"># Add call_method node with function &quot;forward&quot;</span>
+    <span class="c1"># Add call_method node with function "forward"</span>
     <span class="k">with</span> <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">call_submodule_node</span><span class="p">):</span>
         <span class="n">lowered_name</span> <span class="o">=</span> <span class="n">get_lowered_module_name</span><span class="p">(</span><span class="n">owning_graph_module</span><span class="p">,</span> <span class="n">lowered_module</span><span class="p">)</span>
         <span class="n">lowered_node</span> <span class="o">=</span> <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_attr</span><span class="p">(</span><span class="n">lowered_name</span><span class="p">)</span>
@@ -2137,9 +2137,9 @@ document.write(`
             <span class="p">(</span><span class="n">lowered_node</span><span class="p">,)</span> <span class="o">+</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">call_delegate_args</span><span class="p">),</span>
             <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">kwargs</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">generate_debug_handle</span><span class="p">(</span><span class="n">owning_program</span><span class="p">)</span>
-        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">out_arg</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">out_arg</span> <span class="ow">in</span> <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"debug_handle"</span><span class="p">]</span> <span class="o">=</span> <span class="n">generate_debug_handle</span><span class="p">(</span><span class="n">owning_program</span><span class="p">)</span>
+        <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">out_arg</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="k">for</span> <span class="n">out_arg</span> <span class="ow">in</span> <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
         <span class="p">]</span>
         <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">replace_all_uses_with</span><span class="p">(</span><span class="n">call_delegate_node</span><span class="p">)</span>
         <span class="n">owning_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">call_submodule_node</span><span class="p">)</span>
@@ -2164,9 +2164,9 @@ document.write(`
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">delegation_spec</span> <span class="ow">in</span> <span class="n">partition_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="c1"># Create partition with nodes containing this tag. There should only be</span>
         <span class="c1"># one contained submodule per tag</span>
@@ -2175,10 +2175,10 @@ document.write(`
         <span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
             <span class="k">continue</span>
 
-        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="c1"># Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)</span>
 
         <span class="n">replace_ctx</span> <span class="o">=</span> <span class="p">(</span>
@@ -2196,9 +2196,9 @@ document.write(`
         <span class="n">tagged_graph_module_output_node</span> <span class="o">=</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
         <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
         <span class="c1"># Copy the output node meta from the original output node, because</span>
-        <span class="c1"># create_submodule_from_nodes doesn&#39;t cover the meta field</span>
+        <span class="c1"># create_submodule_from_nodes doesn't cover the meta field</span>
         <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">tagged_graph_module_output_node</span><span class="o">.</span><span class="n">meta</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
         <span class="p">(</span>
             <span class="n">submodule_program</span><span class="p">,</span>
@@ -2239,9 +2239,9 @@ document.write(`
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">partitioned_module</span> <span class="o">=</span> <span class="n">_partition_and_lower_one_graph_module</span><span class="p">(</span>
         <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span>
@@ -2262,7 +2262,7 @@ document.write(`
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">partitioner_instance</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Add overloaded implementations for to_backend:</span>
 
 <span class="sd">    ::</span>
@@ -2287,7 +2287,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">edge_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
 
     <span class="c1"># Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.</span>
@@ -2296,7 +2296,7 @@ document.write(`
         <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
     <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
         <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
         <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
     <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
@@ -2307,13 +2307,13 @@ document.write(`
         <span class="k">assert</span> <span class="n">is_identical_graph</span><span class="p">(</span>
             <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
             <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">"The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module"</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Disabled validating the partitioner.&quot;</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Disabled validating the partitioner."</span><span class="p">)</span>
 
     <span class="k">assert</span> <span class="p">(</span>
         <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec"</span>
 
     <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
 
@@ -2329,7 +2329,7 @@ document.write(`
     <span class="c1"># Partitioner added delegation tags to the graph module nodes,</span>
     <span class="c1"># we make sure to remove them after we finished partition_and_lower</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="p">,</span>
@@ -2359,10 +2359,10 @@ document.write(`
         <span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
             <span class="k">continue</span>
 
-        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="c1"># Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)</span>
 
         <span class="n">replace_ctx</span> <span class="o">=</span> <span class="p">(</span>
@@ -2379,8 +2379,8 @@ document.write(`
 
         <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">output_node</span><span class="p">()</span>
         <span class="c1"># Copy the output node meta from the original output node, because</span>
-        <span class="c1"># create_submodule_from_nodes doesn&#39;t cover the meta field</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># create_submodule_from_nodes doesn't cover the meta field</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="p">(</span>
             <span class="n">submodule_program</span><span class="p">,</span>
             <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
@@ -2392,24 +2392,24 @@ document.write(`
             <span class="n">call_module_node</span><span class="p">,</span>
             <span class="n">is_submodule</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;backend_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;compile_spec&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">compile_specs</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_program</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"backend_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"compile_spec"</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">compile_specs</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"submodule_program"</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_program</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"toplevel_input_specs_to_delete"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">toplevel_input_specs_to_delete</span>
         <span class="p">)</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"toplevel_output_specs_to_delete"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">toplevel_output_specs_to_delete</span>
         <span class="p">)</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">is_submodule</span>
-        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_output_node</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"is_submodule"</span><span class="p">]</span> <span class="o">=</span> <span class="n">is_submodule</span>
+        <span class="n">call_module_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"submodule_output_node"</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_output_node</span>
 
         <span class="k">if</span> <span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="p">:</span>
             <span class="n">backend_id_to_submodule_name</span><span class="p">[</span><span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="c1"># The call_module_node created here might not be the same node instance as</span>
         <span class="c1"># the one in the final graph module. This is because this node might be replaced</span>
-        <span class="c1"># in future edits to the graph. As a result, we just keep track of the node&#39;s name</span>
+        <span class="c1"># in future edits to the graph. As a result, we just keep track of the node's name</span>
         <span class="c1"># and at the end we search for this node in our final graph module</span>
         <span class="n">backend_id_to_submodule_name</span><span class="p">[</span><span class="n">delegation_spec</span><span class="o">.</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="n">call_module_node</span><span class="o">.</span><span class="n">target</span>
@@ -2418,7 +2418,7 @@ document.write(`
     <span class="n">created_submodule_nodes</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
     <span class="k">for</span> <span class="n">backend_id</span><span class="p">,</span> <span class="n">submodule_name</span> <span class="ow">in</span> <span class="n">backend_id_to_submodule_name</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_module&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">submodule_name</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_module"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">submodule_name</span><span class="p">:</span>
                 <span class="n">created_submodule_nodes</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
     <span class="c1"># check the number of submodule_names and submodule_nodes are equal</span>
@@ -2462,28 +2462,28 @@ document.write(`
     <span class="n">method_to_submodules_nodes</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]],</span>
     <span class="n">method_to_tagged_edge_program</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Lower all submodules nodes given in the method_to_submodule_nodes map to backend_id.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">backend_name_to_subclass</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">subclass</span><span class="o">.</span><span class="vm">__name__</span><span class="p">:</span> <span class="n">subclass</span> <span class="k">for</span> <span class="n">subclass</span> <span class="ow">in</span> <span class="n">BackendDetails</span><span class="o">.</span><span class="n">__subclasses__</span><span class="p">()</span>
     <span class="p">}</span>
     <span class="k">if</span> <span class="n">backend_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">backend_name_to_subclass</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found.&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Backend </span><span class="si">{</span><span class="n">backend_id</span><span class="si">}</span><span class="s2"> was not found."</span><span class="p">)</span>
     <span class="n">backend_cls</span> <span class="o">=</span> <span class="n">backend_name_to_subclass</span><span class="p">[</span><span class="n">backend_id</span><span class="p">]</span>
 
     <span class="n">method_to_compile_specs</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">method_name</span><span class="p">:</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;compile_spec&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">call_submodule_nodes</span><span class="p">]</span>
+        <span class="n">method_name</span><span class="p">:</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"compile_spec"</span><span class="p">]</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">call_submodule_nodes</span><span class="p">]</span>
         <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">call_submodule_nodes</span> <span class="ow">in</span> <span class="n">method_to_submodules_nodes</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
     <span class="p">}</span>
 
-    <span class="c1"># The created exported program for the submodules are in the call_module node&#39;s meta data</span>
+    <span class="c1"># The created exported program for the submodules are in the call_module node's meta data</span>
     <span class="c1"># We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs</span>
     <span class="n">method_to_partitioned_program</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">method_name</span><span class="p">:</span> <span class="p">[</span>
             <span class="c1"># perform deep copy here in case backends change graph inside preprocess method</span>
             <span class="n">backend_cls</span><span class="o">.</span><span class="n">copy_exported_program_for_preprocess</span><span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">],</span> <span class="n">compile_spec</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"submodule_program"</span><span class="p">],</span> <span class="n">compile_spec</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="n">node</span><span class="p">,</span> <span class="n">compile_spec</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
                 <span class="n">call_submodule_nodes</span><span class="p">,</span> <span class="n">method_to_compile_specs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
@@ -2508,7 +2508,7 @@ document.write(`
             <span class="n">list_of_call_submodule_nodes</span><span class="p">,</span>
             <span class="n">list_of_compile_specs</span><span class="p">,</span>
         <span class="p">):</span>
-            <span class="n">submodule_program</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">]</span>
+            <span class="n">submodule_program</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"submodule_program"</span><span class="p">]</span>
             <span class="n">lowered_module</span> <span class="o">=</span> <span class="n">LoweredBackendModule</span><span class="p">(</span>
                 <span class="n">edge_program</span><span class="o">=</span><span class="n">submodule_program</span><span class="p">,</span>
                 <span class="n">backend_id</span><span class="o">=</span><span class="n">backend_id</span><span class="p">,</span>
@@ -2517,21 +2517,21 @@ document.write(`
                 <span class="n">named_data_store_output</span><span class="o">=</span><span class="n">preprocess_result</span><span class="o">.</span><span class="n">data_store_output</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;debug_handle_map&quot;</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span><span class="p">,</span>
+                <span class="s2">"debug_handle_map"</span><span class="p">:</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">debug_handle_map</span><span class="p">,</span>
             <span class="p">}</span>
             <span class="k">if</span> <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;_delegate_info_meta&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">lowered_module</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"_delegate_info_meta"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">preprocess_result</span><span class="o">.</span><span class="n">_delegate_info_meta</span>
                 <span class="p">)</span>
-            <span class="n">is_submodule</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">]</span>
+            <span class="n">is_submodule</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"is_submodule"</span><span class="p">]</span>
             <span class="n">toplevel_input_specs_to_delete</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span>
-                <span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span>
+                <span class="s2">"toplevel_input_specs_to_delete"</span>
             <span class="p">]</span>
             <span class="n">toplevel_output_specs_to_delete</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span>
-                <span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span>
+                <span class="s2">"toplevel_output_specs_to_delete"</span>
             <span class="p">]</span>
-            <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">]</span>
+            <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="n">call_submodule_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"submodule_output_node"</span><span class="p">]</span>
 
             <span class="n">_insert_lowered_submodule</span><span class="p">(</span>
                 <span class="n">submodule_program</span><span class="p">,</span>
@@ -2546,26 +2546,26 @@ document.write(`
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">remove_used_metadata</span><span class="p">(</span><span class="n">graph</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Graph</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Remove the used metadata from the graph.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;backend_id&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;submodule_program&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;toplevel_input_specs_to_delete&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;toplevel_output_specs_to_delete&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;is_submodule&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;submodule_output_node&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"delegation_tag"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"backend_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"submodule_program"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"toplevel_input_specs_to_delete"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"toplevel_output_specs_to_delete"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"is_submodule"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"submodule_output_node"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">MethodProgramsPartitionerSpec</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Since single dispatch for to_backend requires the first argument to be a</span>
 <span class="sd">    valid class, we create the following dataclass spec to hold the dictionaries</span>
 <span class="sd">    mapping the method name to the corresponding program, partitioner</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">method_to_edge_program</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span>
     <span class="n">method_to_partitioner</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]</span>
@@ -2575,7 +2575,7 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">_</span><span class="p">(</span>
     <span class="n">method_edge_program_partitioners</span><span class="p">:</span> <span class="n">MethodProgramsPartitionerSpec</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Add overloaded implementations for to_backend:</span>
 
 <span class="sd">    ::</span>
@@ -2599,7 +2599,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">method_to_edge_program</span> <span class="o">=</span> <span class="n">method_edge_program_partitioners</span><span class="o">.</span><span class="n">method_to_edge_program</span>
     <span class="n">method_to_partitioner</span> <span class="o">=</span> <span class="n">method_edge_program_partitioners</span><span class="o">.</span><span class="n">method_to_partitioner</span>
 
@@ -2610,7 +2610,7 @@ document.write(`
     <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">partitioner_instance</span> <span class="ow">in</span> <span class="n">method_to_partitioner</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="n">method_name</span> <span class="ow">in</span> <span class="n">method_to_edge_program</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner for method </span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2"> is not provided&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">"Partitioner for method </span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2"> is not provided"</span>
         <span class="n">edge_program</span> <span class="o">=</span> <span class="n">method_to_edge_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
         <span class="n">edge_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
 
@@ -2620,7 +2620,7 @@ document.write(`
             <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">"Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span>
             <span class="p">)</span>
             <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
         <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
@@ -2632,13 +2632,13 @@ document.write(`
             <span class="k">assert</span> <span class="n">is_identical_graph</span><span class="p">(</span>
                 <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
                 <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
-            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
+            <span class="p">),</span> <span class="sa">f</span><span class="s2">"The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module"</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Disabled validating the partitioner.&quot;</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Disabled validating the partitioner."</span><span class="p">)</span>
 
         <span class="k">assert</span> <span class="p">(</span>
             <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">"Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec"</span>
 
         <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
 
@@ -2691,7 +2691,7 @@ document.write(`
                 <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># this edge program wasn&#39;t partitioned, so we can just return it as is</span>
+            <span class="c1"># this edge program wasn't partitioned, so we can just return it as is</span>
             <span class="n">partitioned_and_lowered_exported_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">method_to_edge_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span>
             <span class="p">)</span>

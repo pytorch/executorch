@@ -2044,7 +2044,7 @@ workloads.</p>
 <p>In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You’ll then pass this Program (the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime to run it using the MPS backend.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 <span class="c1"># Note: `mps_example` script uses by default the MPSPartitioner for ops that are not yet supported by the MPS delegate. To turn it off, pass `--no-use_partitioner`.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--bundled<span class="w"> </span>--use_fp16
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">"mv3"</span><span class="w"> </span>--bundled<span class="w"> </span>--use_fp16
 
 <span class="c1"># To see all options, run following command:</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--help
@@ -2053,7 +2053,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <section id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Link to this heading">#</a></h3>
 <p><strong>Building the MPS executor runner:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In this step, you&#39;ll be building the `mps_executor_runner` that is able to run MPS lowered modules:</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># In this step, you'll be building the `mps_executor_runner` that is able to run MPS lowered modules:</span>
 <span class="nb">cd</span><span class="w"> </span>executorch
 ./examples/apple/mps/scripts/build_mps_executor_runner.sh
 </pre></div>
@@ -2086,7 +2086,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <ol class="arabic simple">
 <li><p>Make sure <code class="docutils literal notranslate"><span class="pre">pybind</span></code> MPS support was installed:</p></li>
 </ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">"-DEXECUTORCH_BUILD_MPS=ON"</span><span class="w"> </span>./install_executorch.sh
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
@@ -2094,11 +2094,11 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 </ol>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 <span class="c1"># Check correctness between PyTorch eager forward pass and ExecuTorch MPS delegate forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--check_correctness
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">"mv3"</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--check_correctness
 <span class="c1"># You should see following output: `Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for mv3_mps are matching!`</span>
 
 <span class="c1"># Check performance between PyTorch MPS forward pass and ExecuTorch MPS forward pass</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--bench_pytorch
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">"mv3"</span><span class="w"> </span>--no-use_fp16<span class="w"> </span>--bench_pytorch
 </pre></div>
 </div>
 </section>
@@ -2108,7 +2108,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scri
 <li><p>[Optional] Generate an <a class="reference internal" href="#etrecord.rst"><span class="xref myst">ETRecord</span></a> while you’re exporting your model.</p></li>
 </ol>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span><span class="w"> </span>--generate_etrecord<span class="w"> </span>-b
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">"mv3"</span><span class="w"> </span>--generate_etrecord<span class="w"> </span>-b
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">

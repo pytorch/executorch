@@ -2006,8 +2006,8 @@ document.write(`
 <h5>Module-based partitioning<a class="headerlink" href="#module-based-partitioning" title="Link to this heading">#</a></h5>
 <p><code class="docutils literal notranslate"><span class="pre">source_fn_stack</span></code> is embedded in the node’s metadata and gives information on where these nodes come from. For example, modules like <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> when captured and exported <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> generate groups of nodes for their computation. The group of nodes associated with computing the linear module then has a <code class="docutils literal notranslate"><span class="pre">source_fn_stack</span></code> of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear.</span> <span class="pre">Partitioning</span> <span class="pre">based</span> <span class="pre">on</span> </code>source_fn_stack` allows us to identify groups of nodes which are lowerable via XNNPACK.</p>
 <p>For example after capturing <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> you would find the following key in the metadata for the addmm node associated with linear:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">linear_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;source_fn_stack&quot;</span><span class="p">])</span>
-<span class="go">&#39;source_fn_stack&#39;: (&#39;fn&#39;, &lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;)</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">linear_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"source_fn_stack"</span><span class="p">])</span>
+<span class="go">'source_fn_stack': ('fn', &lt;class 'torch.nn.modules.linear.Linear'&gt;)</span>
 </pre></div>
 </div>
 </section>
@@ -2103,7 +2103,7 @@ document.write(`
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
     <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># can configure by module type</span>
     <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">functional</span><span class="o">.</span><span class="n">linear</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># or torch functional op typea</span>
-    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">&quot;foo.bar&quot;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span>  <span class="c1"># or by module fully qualified name</span>
+    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">"foo.bar"</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span>  <span class="c1"># or by module fully qualified name</span>
 </pre></div>
 </div>
 </section>

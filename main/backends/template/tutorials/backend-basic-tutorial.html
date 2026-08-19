@@ -1923,7 +1923,7 @@ conda<span class="w"> </span>install<span class="w"> </span>executorch
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[{</span><span class="n">BackendName</span><span class="p">}</span><span class="n">Partitioner</span><span class="p">()],</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="n">executorch_program</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{model_filename}</span><span class="s2">_</span><span class="si">{backend_name}</span><span class="s2">.pte&quot;</span><span class="p">)</span>
+<span class="n">executorch_program</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"</span><span class="si">{model_filename}</span><span class="s2">_</span><span class="si">{backend_name}</span><span class="s2">.pte"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -1949,8 +1949,8 @@ conda<span class="w"> </span>install<span class="w"> </span>executorch
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 
 <span class="n">input_tensor</span> <span class="o">=</span> <span class="p">{</span><span class="n">TEST_INPUT_TENSOR</span><span class="p">}</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{model_filename}</span><span class="s2">_</span><span class="si">{backend_name}</span><span class="s2">.pte&quot;</span><span class="p">)</span>
-<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">"</span><span class="si">{model_filename}</span><span class="s2">_</span><span class="si">{backend_name}</span><span class="s2">.pte"</span><span class="p">)</span>
+<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">outputs</span><span class="p">)</span>

@@ -2015,8 +2015,8 @@ document.write(`
 
 <span class="c1"># This is the reserved namespace that is used to register ops to that will</span>
 <span class="c1"># be prevented from being decomposed during to_edge_transform_and_lower.</span>
-<span class="n">edge_no_decomp_namespace</span> <span class="o">=</span> <span class="s2">&quot;EDGE_DO_NOT_DECOMP&quot;</span>
-<span class="n">lib</span> <span class="o">=</span> <span class="n">Library</span><span class="p">(</span><span class="n">edge_no_decomp_namespace</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
+<span class="n">edge_no_decomp_namespace</span> <span class="o">=</span> <span class="s2">"EDGE_DO_NOT_DECOMP"</span>
+<span class="n">lib</span> <span class="o">=</span> <span class="n">Library</span><span class="p">(</span><span class="n">edge_no_decomp_namespace</span><span class="p">,</span> <span class="s2">"DEF"</span><span class="p">)</span>
 <span class="c1"># Map from aten ops to the transformed ops registered in the edge_no_decomp_namespace.</span>
 <span class="n">aten_op_to_transform_op</span> <span class="o">=</span> <span class="p">{}</span>
 <span class="c1"># Map from the transformed ops registered in the edge_no_decomp_namespace to aten ops.</span>
@@ -2033,8 +2033,8 @@ document.write(`
     <span class="bp">self</span><span class="p">,</span>
     <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">,</span>
     <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExportedProgram"</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Transforms the program according to the provided passes.</span>
 
 <span class="sd">    Args:</span>
@@ -2045,11 +2045,11 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># A user friendly check to avoid vararg surprises, PEP 3102</span>
     <span class="k">assert</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
         <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="n">Verifier</span><span class="p">))</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Expected all passes to be of PassType, not list or Verifier. Use override_verifiers kwarg instead. Got: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
 
     <span class="k">return</span> <span class="n">_transform_with_pass_manager</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">ExportedProgramPassManager</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">passes</span><span class="p">)),</span> <span class="n">override_verifiers</span>
@@ -2060,8 +2060,8 @@ document.write(`
     <span class="bp">self</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">pass_manager</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgramPassManager</span><span class="p">,</span> <span class="n">GraphModulePassManager</span><span class="p">],</span>
     <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExportedProgram"</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Transforms the program using the provided pass_manager.</span>
 
 <span class="sd">    Args:</span>
@@ -2074,7 +2074,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: A new ExportedProgram with the transformations applied, or self if no changes were made</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pass_manager</span><span class="p">,</span> <span class="n">ExportedProgramPassManager</span><span class="p">):</span>
         <span class="n">res</span> <span class="o">=</span> <span class="n">pass_manager</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">override_verifiers</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">res</span><span class="o">.</span><span class="n">modified</span><span class="p">:</span>
@@ -2093,7 +2093,7 @@ document.write(`
     <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">override_verifiers</span><span class="p">:</span> <span class="kc">None</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">Verifier</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExportedProgram&quot;</span><span class="p">:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExportedProgram"</span><span class="p">:</span>
     <span class="n">transformed_ep</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
         <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
@@ -2121,7 +2121,7 @@ document.write(`
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mod</span> <span class="ow">in</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
         <span class="nb">setattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">mod</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;get_attr&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"get_attr"</span><span class="p">:</span>
             <span class="n">t</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_gm</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="nb">setattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
@@ -2137,11 +2137,11 @@ document.write(`
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">ep</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Takes an ExportedProgram and returns the ExportedProgram modified in-place,</span>
 <span class="sd">    with the constant tensors as buffers.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="n">node</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">([</span><span class="n">node</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">ep</span>
 
     <span class="n">graph_signature</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph_signature</span>
@@ -2152,17 +2152,17 @@ document.write(`
     <span class="n">first_user_input</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">lifted_constants</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">:</span>
             <span class="n">first_user_input</span> <span class="o">=</span> <span class="n">node</span>
             <span class="k">break</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;get_attr&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"get_attr"</span><span class="p">:</span>
             <span class="n">constant_tensor</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ep</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="k">continue</span>
 
-            <span class="n">constant_tensor_fqn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;_lifted_tensor_constant</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">buffers</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">constant_tensor_fqn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"_lifted_tensor_constant</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">buffers</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
 
             <span class="k">with</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">first_user_input</span><span class="p">):</span>
                 <span class="c1"># Insert the constant node before the first user input</span>
@@ -2170,12 +2170,12 @@ document.write(`
                 <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                     <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
                 <span class="k">if</span> <span class="n">fake_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">fake_mode</span><span class="o">.</span><span class="n">from_tensor</span><span class="p">(</span>
+                    <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="o">=</span> <span class="n">fake_mode</span><span class="o">.</span><span class="n">from_tensor</span><span class="p">(</span>
                         <span class="n">constant_tensor</span><span class="p">,</span> <span class="n">static_shapes</span><span class="o">=</span><span class="kc">True</span>
                     <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor</span>
-                <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">constant</span> <span class="o">=</span> <span class="n">constant_tensor</span>
+                    <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor</span>
+                <span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"val"</span><span class="p">]</span><span class="o">.</span><span class="n">constant</span> <span class="o">=</span> <span class="n">constant_tensor</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">replace_all_uses_with</span><span class="p">(</span><span class="n">const_placeholder_node</span><span class="p">)</span>
                 <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
@@ -2206,7 +2206,7 @@ document.write(`
 
 <span class="c1"># Stub to ease migration from `transform` to private `_transform`</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">transform_exported_program</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">&quot;_transform&quot;</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">"_transform"</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">ep</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">ep</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
@@ -2246,10 +2246,10 @@ document.write(`
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="n">_</span><span class="p">,</span> <span class="n">received_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">user_args</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">error</span><span class="o">.</span><span class="n">InternalError</span><span class="p">(</span>
-                    <span class="s2">&quot;Trying to flatten user inputs with exported input tree spec: </span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">call_spec</span><span class="o">.</span><span class="n">in_spec</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="s2">&quot;but actually got inputs with tree spec of: </span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">received_spec</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="s2">"Trying to flatten user inputs with exported input tree spec: </span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">call_spec</span><span class="o">.</span><span class="n">in_spec</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="s2">"but actually got inputs with tree spec of: </span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">received_spec</span><span class="si">}</span><span class="s2">"</span>
                 <span class="p">)</span>
 
         <span class="n">ordered_params</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span>
@@ -2283,10 +2283,10 @@ document.write(`
             <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
                 <span class="n">_</span><span class="p">,</span> <span class="n">received_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">res</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">error</span><span class="o">.</span><span class="n">InternalError</span><span class="p">(</span>
-                    <span class="s2">&quot;Trying to flatten user outputs with exported output tree spec: </span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">call_spec</span><span class="o">.</span><span class="n">out_spec</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="s2">&quot;but actually got outputs with tree spec of: </span><span class="se">\n</span><span class="s2">&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">received_spec</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="s2">"Trying to flatten user outputs with exported output tree spec: </span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">call_spec</span><span class="o">.</span><span class="n">out_spec</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="s2">"but actually got outputs with tree spec of: </span><span class="se">\n</span><span class="s2">"</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">received_spec</span><span class="si">}</span><span class="s2">"</span>
                 <span class="p">)</span>
             <span class="k">finally</span><span class="p">:</span>
                 <span class="n">ix</span> <span class="o">=</span> <span class="mi">0</span>
@@ -2311,7 +2311,7 @@ document.write(`
         <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span> <span class="o">=</span> <span class="n">after_to_edge_passes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExirExportedProgram"</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span>
 
@@ -2321,11 +2321,11 @@ document.write(`
     <span class="c1"># TODO(ycao): Change this to a composable function.</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_edge</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExirExportedProgram"</span><span class="p">:</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;type is instead: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">"type is instead: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">"</span>
 
         <span class="k">return</span> <span class="n">_to_edge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
 
@@ -2335,9 +2335,9 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgram&quot;</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExecutorchProgram"</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Must run to_edge before to_executorch.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Must run to_edge before to_executorch."</span><span class="p">)</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
         <span class="n">new_gm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
         <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span>
@@ -2348,7 +2348,7 @@ document.write(`
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
         <span class="c1"># This is tech debt on tech debt. memory planning pass inherits from some pass infra for GMs.</span>
-        <span class="c1"># This isnt enough info now so i cant use call I have to use some new function &#39;run&#39;.</span>
+        <span class="c1"># This isnt enough info now so i cant use call I have to use some new function 'run'.</span>
         <span class="c1"># Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.</span>
         <span class="c1"># After exir.capture is gone I will clean up the memory planning infra to be consistent.</span>
         <span class="c1"># Frankly all of exir has big code quality issues because of the migrations that need to be addressed.</span>
@@ -2375,7 +2375,7 @@ document.write(`
 
     <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExirExportedProgram"</span><span class="p">:</span>
         <span class="n">new_eep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
             <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">memo</span><span class="p">),</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">,</span>
@@ -2397,7 +2397,7 @@ document.write(`
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">exir_exported_program</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Need to call prog.to_edge prior to constructing ExecutorchProgram.&quot;</span>
+                <span class="s2">"Need to call prog.to_edge prior to constructing ExecutorchProgram."</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">exir_exported_program</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Cord</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2442,12 +2442,12 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
+<span class="w">        </span><span class="sd">"""Returns the serialized ExecuTorch binary as a byte string.</span>
 
 <span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
 <span class="sd">        contiguous memory, depending on the model size. If writing to a file,</span>
-<span class="sd">        use `write_to_file` which won&#39;t incur additional copies.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        use `write_to_file` which won't incur additional copies.</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO(T181494963): update pybinding to remove buffer cache, which can consume large</span>
         <span class="c1"># amounts of memory longer than necessary.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2455,15 +2455,15 @@ document.write(`
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
 
     <span class="nd">@property</span>
-    <span class="nd">@experimental</span><span class="p">(</span><span class="s2">&quot;This API is experimental and subject to change without notice.&quot;</span><span class="p">)</span>
+    <span class="nd">@experimental</span><span class="p">(</span><span class="s2">"This API is experimental and subject to change without notice."</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">data_files</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the data files as a dictionary of filename to byte data.</span>
+<span class="w">        </span><span class="sd">"""Returns the data files as a dictionary of filename to byte data.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            Dict[str, bytes]: Dictionary mapping data filenames (e.g., .ptd files) to</span>
 <span class="sd">                their serialized byte content.</span>
 <span class="sd">            Returns empty dict if no data files are available.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span>  <span class="c1"># This populates _tensor_data</span>
 
@@ -2510,28 +2510,28 @@ document.write(`
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
 <span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
 <span class="sd">        reducing the peak memory usage.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_tensor_data_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outdir</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Writes the serialized ExecuTorch data files to the directory at `outdir`.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="c1"># pyre-ignore[16]: `Optional` has no attribute `items`.</span>
         <span class="k">for</span> <span class="n">filename</span><span class="p">,</span> <span class="n">cord</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd&quot;</span><span class="p">)</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd"</span><span class="p">),</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.ptd"</span><span class="p">)</span>
                 <span class="n">cord</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
     <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
-    <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
+    <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play</span>
     <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
     <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
 
@@ -2542,22 +2542,22 @@ document.write(`
     <span class="k">return</span> <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_to_edge</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_edge</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExirExportedProgram"</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ExportError</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-                <span class="s2">&quot;If a particular operator failed core ATen IR check, please consider adding it to the exception list. &quot;</span>
-                <span class="s2">&quot;Add the operator to _core_aten_ops_exception_list in EdgeCompileConfig. This is the recommended way &quot;</span>
-                <span class="s2">&quot;to resolve this type of failure, so that the rest of the IR validation check can still be performed.</span><span class="se">\n</span><span class="s2">&quot;</span>
-                <span class="s2">&quot;If you&#39;d like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, &quot;</span>
-                <span class="s2">&quot;like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False)).&quot;</span>
+                <span class="s2">"If a particular operator failed core ATen IR check, please consider adding it to the exception list. "</span>
+                <span class="s2">"Add the operator to _core_aten_ops_exception_list in EdgeCompileConfig. This is the recommended way "</span>
+                <span class="s2">"to resolve this type of failure, so that the rest of the IR validation check can still be performed.</span><span class="se">\n</span><span class="s2">"</span>
+                <span class="s2">"If you'd like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, "</span>
+                <span class="s2">"like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))."</span>
             <span class="p">)</span>
             <span class="k">raise</span>
 
     <span class="n">dialect</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">dialect</span>
-    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">"ATEN"</span><span class="p">:</span>
         <span class="n">ep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
             <span class="n">ExportedProgram</span><span class="p">(</span>
                 <span class="n">root</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
@@ -2580,7 +2580,7 @@ document.write(`
     <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
 
     <span class="n">new_ep</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">"ATEN"</span><span class="p">:</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
 
     <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
@@ -2622,10 +2622,10 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">pre_memory_planning_passes</span><span class="p">(</span>
     <span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Returns a list of passes to run before memory planning.</span>
 <span class="sd">    Get the sym shape eval pass based on the method name, if the pass is not in the dict, use the default pass.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># Handle symbolic shape eval pass</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
         <span class="n">default_pass</span> <span class="o">=</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span>
@@ -2637,7 +2637,7 @@ document.write(`
         <span class="n">sym_shape_eval_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;sym_shape_eval_pass must be a dict or a PassBase, got </span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"sym_shape_eval_pass must be a dict or a PassBase, got </span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">remove_view_copy</span><span class="p">:</span>
         <span class="k">return</span> <span class="p">[</span>
@@ -2659,10 +2659,10 @@ document.write(`
     <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">edge_compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Returns a list of passes to lower from edge to executorch.</span>
 <span class="sd">    Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># Handle propagate device config</span>
     <span class="n">propagate_device_config</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">propagate_device_config</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">propagate_device_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -2698,7 +2698,7 @@ document.write(`
     <span class="n">core_aten_ops_exception_list</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">preserve_ops</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Args:</span>
 <span class="sd">        config: The configuration for the edge program.</span>
 <span class="sd">        program: The exported program to be converted to an edge program.</span>
@@ -2706,7 +2706,7 @@ document.write(`
 <span class="sd">        preserve_ops: A list of aten ops that should not be decomposed.</span>
 <span class="sd">    Returns:</span>
 <span class="sd">        An ExportedProgram in edge dialect.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># Remove unused parameters</span>
     <span class="n">program</span> <span class="o">=</span> <span class="n">remove_unused_parameters_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
 
@@ -2787,7 +2787,7 @@ document.write(`
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span>
                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
                 <span class="ow">and</span> <span class="n">is_op_supported</span>
             <span class="p">):</span>
@@ -2798,7 +2798,7 @@ document.write(`
             <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
                 <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
                 <span class="k">if</span> <span class="p">(</span>
-                    <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span>
                     <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
                     <span class="ow">and</span> <span class="n">is_op_supported</span>
                 <span class="p">):</span>
@@ -2812,12 +2812,12 @@ document.write(`
     <span class="c1"># Iterate through the graph and replace back the transformed ops with their</span>
     <span class="c1"># corresponding aten ops.</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span> <span class="ow">in</span> <span class="n">transform_op_to_aten_op</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span> <span class="ow">in</span> <span class="n">transform_op_to_aten_op</span><span class="p">:</span>
             <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)]</span>
     <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span>
                 <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span> <span class="ow">in</span> <span class="n">transform_op_to_aten_op</span>
             <span class="p">):</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)]</span>
@@ -2826,11 +2826,11 @@ document.write(`
 <span class="c1"># Returns the op in edge_no_decomp_namespace namespace for the aten</span>
 <span class="c1"># op that is passed in.</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
-    <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"::"</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">overload_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">overload_name</span>
     <span class="k">assert</span> <span class="nb">hasattr</span><span class="p">(</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="n">edge_no_decomp_namespace</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Couldn&#39;t find </span><span class="si">{</span><span class="n">edge_no_decomp_namespace</span><span class="si">}</span><span class="s2"> in torch.ops. Please make sure the Library has been registered.&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">"Couldn't find </span><span class="si">{</span><span class="n">edge_no_decomp_namespace</span><span class="si">}</span><span class="s2"> in torch.ops. Please make sure the Library has been registered."</span>
     <span class="n">op_namespace</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="n">edge_no_decomp_namespace</span><span class="p">)</span>
     <span class="n">op</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">op_namespace</span><span class="p">,</span> <span class="n">op_name</span><span class="p">)</span>
     <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">overload_name</span><span class="p">)</span>
@@ -2845,17 +2845,17 @@ document.write(`
         <span class="n">op_aten</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span>
     <span class="p">):</span>
         <span class="c1"># Extract the schema from the aten op.</span>
-        <span class="n">op_schema</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
-        <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">op_schema</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"::"</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"::"</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
         <span class="c1"># Define an op in the edge_no_decomp_namespace namespace with the aten schema.</span>
         <span class="n">lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="n">op_schema</span><span class="p">)</span>
         <span class="c1"># Define the implementation of the op in the edge_no_decomp_namespace namespace.</span>
         <span class="c1"># Important to note that the implementation of the op is the same as the aten op.</span>
 
         <span class="n">overload_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">overload_name</span>
-        <span class="k">if</span> <span class="n">overload_name</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
-            <span class="n">op_name</span> <span class="o">+=</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">overload_name</span>
-        <span class="n">lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="n">op_name</span><span class="p">,</span> <span class="n">op_aten</span><span class="p">,</span> <span class="s2">&quot;CompositeExplicitAutograd&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">overload_name</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">:</span>
+            <span class="n">op_name</span> <span class="o">+=</span> <span class="s2">"."</span> <span class="o">+</span> <span class="n">overload_name</span>
+        <span class="n">lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="n">op_name</span><span class="p">,</span> <span class="n">op_aten</span><span class="p">,</span> <span class="s2">"CompositeExplicitAutograd"</span><span class="p">)</span>
 
         <span class="c1"># Cache the aten op and transformed op in their corresponding tables for future use.</span>
         <span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
@@ -2870,10 +2870,10 @@ document.write(`
     <span class="n">generate_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">partitioner_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">):</span>
-    <span class="n">warning_str_end</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">warning_str_end</span> <span class="o">=</span> <span class="s2">""</span>
     <span class="k">if</span> <span class="n">partitioner_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;This op was registered by the partitioner </span><span class="si">{</span><span class="n">partitioner_name</span><span class="si">}</span><span class="s2"> to not be decomposed.</span><span class="se">\n</span><span class="s2">&quot;</span>
-    <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;The following ops: </span><span class="si">{</span><span class="n">ops_set_to_not_decompose</span><span class="si">}</span><span class="s2"> were specified to not be decomposed in </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">"This op was registered by the partitioner </span><span class="si">{</span><span class="n">partitioner_name</span><span class="si">}</span><span class="s2"> to not be decomposed.</span><span class="se">\n</span><span class="s2">"</span>
+    <span class="n">warning_str_end</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">"The following ops: </span><span class="si">{</span><span class="n">ops_set_to_not_decompose</span><span class="si">}</span><span class="s2"> were specified to not be decomposed in </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">."</span>
 
     <span class="c1"># Check that the ops that were registered to not be decomposed are not present in the</span>
     <span class="c1"># graph anymore as the transform passes and backends should have consumed them by now.</span>
@@ -2885,12 +2885,12 @@ document.write(`
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
         <span class="k">if</span> <span class="p">(</span>
-            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span>
             <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
             <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
         <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
             <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">"Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">"</span>
                 <span class="o">+</span> <span class="n">warning_str_end</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
@@ -2901,12 +2901,12 @@ document.write(`
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
             <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
             <span class="k">if</span> <span class="p">(</span>
-                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span>
                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
                 <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quant_primitives</span>
             <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
                 <span class="n">warning_str</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> with op </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="si">}</span><span class="s2"> was not decomposed or delegated.</span><span class="se">\n</span><span class="s2">"</span>
                     <span class="o">+</span> <span class="n">warning_str_end</span>
                 <span class="p">)</span>
                 <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
@@ -2943,18 +2943,18 @@ document.write(`
         <span class="n">native_schema</span> <span class="o">=</span> <span class="n">_pybind_schema_to_native_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">native_schema</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">log_warning</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Torchgen is not able to parse the schema of </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">_schema</span><span class="si">}</span><span class="s2">.  This is not fatal.&quot;</span>
+                <span class="sa">f</span><span class="s2">"Torchgen is not able to parse the schema of </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">_schema</span><span class="si">}</span><span class="s2">.  This is not fatal."</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">is_mutable</span><span class="p">:</span>
                 <span class="n">log_warning</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is mutable.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is mutable."</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
 
             <span class="k">if</span> <span class="n">native_schema</span><span class="o">.</span><span class="n">aliased_return_names</span><span class="p">()</span> <span class="o">!=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
                 <span class="n">log_warning</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output."</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
 
@@ -2964,11 +2964,11 @@ document.write(`
         <span class="k">for</span> <span class="n">ret</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">returns</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">ret</span><span class="o">.</span><span class="n">alias_info</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">log_warning</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it aliases output."</span>
                 <span class="p">)</span>
                 <span class="k">return</span> <span class="kc">False</span>
 
-        <span class="c1"># Explicit block list of ops that don&#39;t work if asked for</span>
+        <span class="c1"># Explicit block list of ops that don't work if asked for</span>
         <span class="c1"># preservation</span>
         <span class="k">if</span> <span class="n">op</span> <span class="ow">in</span> <span class="p">[</span>
             <span class="c1"># Hits infinte recursion error when op is in</span>
@@ -2986,7 +2986,7 @@ document.write(`
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">split_with_sizes</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
         <span class="p">]:</span>
             <span class="n">log_warning</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is in a blocklist.&quot;</span>
+                <span class="sa">f</span><span class="s2">"Op </span><span class="si">{</span><span class="n">op</span><span class="si">}</span><span class="s2"> was requested for preservation by partitioner.  This request is ignored because it is in a blocklist."</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="kc">False</span>
         <span class="k">return</span> <span class="kc">True</span>
@@ -3013,8 +3013,8 @@ document.write(`
     <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
     <span class="n">generate_etrecord</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EdgeProgramManager"</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Generates EdgeProgramManager for subsequent lowering to the</span>
 <span class="sd">    partitioners specified by partitioner. The EdgeProgramManager is generated from</span>
 <span class="sd">    aten_programs.</span>
@@ -3026,7 +3026,7 @@ document.write(`
 <span class="sd">        - Second pass uses check_op fn provided by partitioners to perform additional checks</span>
 <span class="sd">          on nodes with preserved aten targets. They are then replaces with transformed ops to</span>
 <span class="sd">          keep them through the second pass of decompositions</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
     <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -3070,12 +3070,12 @@ document.write(`
                         <span class="n">curr_ops_no_decomp</span>
                     <span class="p">)</span>
 
-                    <span class="c1"># Apply decompositions with this partitioner&#39;s preserved ops</span>
+                    <span class="c1"># Apply decompositions with this partitioner's preserved ops</span>
                     <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
                     <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">curr_ops_no_decomp</span><span class="p">:</span>
                         <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
-                    <span class="c1"># First pass of decompositions with this partitioner&#39;s preserved ops</span>
+                    <span class="c1"># First pass of decompositions with this partitioner's preserved ops</span>
                     <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
 
                     <span class="c1"># Filter ops using EDGE_DO_NOT_DECOMP</span>
@@ -3088,7 +3088,7 @@ document.write(`
                     <span class="p">)</span>
                     <span class="n">final_ops_to_preserve</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">preserved_ops</span><span class="p">)</span>
 
-                    <span class="c1"># Second pass of decompositions with this partitioner&#39;s preserved ops after filtering</span>
+                    <span class="c1"># Second pass of decompositions with this partitioner's preserved ops after filtering</span>
                     <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
 
                     <span class="c1"># Restore ops from edge_no_decomp_namespace to aten ops</span>
@@ -3131,10 +3131,10 @@ document.write(`
     <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">named_data_store</span><span class="p">:</span> <span class="n">NamedDataStore</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Collects all the named data store outputs found within the exported program</span>
 <span class="sd">    and adds them to named_data_store.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="c1"># collected all the named data into the named data store for deduplication</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">collect_named_data_store_outputs</span><span class="p">(</span>
@@ -3156,7 +3156,7 @@ document.write(`
 
 <div class="viewcode-block" id="to_edge_transform_and_lower">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge_transform_and_lower">[docs]</a>
-<span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_edge_transform_and_lower&quot;</span><span class="p">)</span>
+<span class="nd">@et_logger</span><span class="p">(</span><span class="s2">"to_edge_transform_and_lower"</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">to_edge_transform_and_lower</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">transform_passes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
@@ -3173,8 +3173,8 @@ document.write(`
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">generate_etrecord</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EdgeProgramManager"</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    :func:`to_edge_transform_and_lower` constructs an EdgeProgramManager from a set of</span>
 <span class="sd">    exported programs in ATen dialect. It differs fundamentally from to_edge in that it</span>
 <span class="sd">    combines the conversion of the ATen dialect to the edge dialect program, then running</span>
@@ -3192,7 +3192,7 @@ document.write(`
 <span class="sd">    Args:</span>
 <span class="sd">        programs: Can be a single ExportedProgram or a dictionary mapping function names</span>
 <span class="sd">            to their corresponding ExportedPrograms. If only a single ExportedProgram is</span>
-<span class="sd">            provided it will be assigned the name &quot;forward&quot;.</span>
+<span class="sd">            provided it will be assigned the name "forward".</span>
 
 <span class="sd">        transform_passes: The transform_passes can be one of:</span>
 <span class="sd">            1) a list of passes -</span>
@@ -3221,11 +3221,11 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        EdgeProgramManager</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
     <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"forward"</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
 
@@ -3243,7 +3243,7 @@ document.write(`
 
         <span class="k">if</span> <span class="n">generate_etrecord</span><span class="p">:</span>
             <span class="n">edge_manager</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">add_extra_export_modules</span><span class="p">(</span>
-                <span class="p">{</span><span class="s2">&quot;edge_after_transform&quot;</span><span class="p">:</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)}</span>
+                <span class="p">{</span><span class="s2">"edge_after_transform"</span><span class="p">:</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)}</span>
             <span class="p">)</span>
 
     <span class="n">max_num_partitioners</span> <span class="o">=</span> <span class="mi">0</span>
@@ -3291,19 +3291,19 @@ document.write(`
 
 <div class="viewcode-block" id="to_edge">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a>
-<span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_edge&quot;</span><span class="p">)</span>
+<span class="nd">@et_logger</span><span class="p">(</span><span class="s2">"to_edge"</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">to_edge</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">generate_etrecord</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EdgeProgramManager"</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in</span>
 <span class="sd">    ATen dialect. Upon construction those programs are transformed into edge dialect.</span>
 
 <span class="sd">    Args:</span>
-<span class="sd">        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name &quot;forward&quot;.</span>
+<span class="sd">        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name "forward".</span>
 
 <span class="sd">        constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</span>
 
@@ -3313,11 +3313,11 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        EdgeProgramManager</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
     <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"forward"</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
 
@@ -3347,7 +3347,7 @@ document.write(`
                     <span class="n">class_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
                 <span class="p">)(</span><span class="n">gm</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect."</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
         <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
@@ -3361,7 +3361,7 @@ document.write(`
                     <span class="n">preserve_ops</span><span class="o">=</span><span class="n">preserve_ops</span><span class="p">,</span>
                 <span class="p">)()(</span><span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in Edge dialect.&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in Edge dialect."</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
     <span class="n">epm</span> <span class="o">=</span> <span class="n">EdgeProgramManager</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
@@ -3378,7 +3378,7 @@ document.write(`
 <div class="viewcode-block" id="EdgeProgramManager">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">EdgeProgramManager</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir</span>
 
@@ -3386,7 +3386,7 @@ document.write(`
 <span class="sd">    including the delegation of subgraphs.</span>
 
 <span class="sd">    Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -3396,14 +3396,14 @@ document.write(`
         <span class="n">core_aten_ops_exception_list</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">preserve_ops</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Should not be called directly by users. User should use :func:&#39;to_edge&#39; instead.</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Should not be called directly by users. User should use :func:'to_edge' instead.</span>
 
 <span class="sd">        Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
+            <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"forward"</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
 
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
@@ -3413,7 +3413,7 @@ document.write(`
                     <span class="n">preserve_ops</span><span class="o">=</span><span class="n">preserve_ops</span><span class="p">,</span>
                 <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect.&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect."</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_programs</span>
@@ -3429,29 +3429,29 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the set of methods in this EdgeProgramManager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the set of config methods in this EdgeProgramManager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
 <div class="viewcode-block" id="EdgeProgramManager.exported_program">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.exported_program">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"forward"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns the ExportedProgram specified by 'method_name'.</span>
+<span class="sd">        """</span>
 
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
 
-    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;transform&quot;</span><span class="p">)</span>
+    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">"transform"</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">passes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
@@ -3461,8 +3461,8 @@ document.write(`
             <span class="n">GraphModulePassManager</span><span class="p">,</span>
         <span class="p">],</span>
         <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EdgeProgramManager"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Transforms the program according to the provided passes.</span>
 
 <span class="sd">        Args:</span>
@@ -3484,7 +3484,7 @@ document.write(`
 <span class="sd">        Returns:</span>
 <span class="sd">            EdgeProgramManager: A copy of the calling EdgeProgramManager with the</span>
 <span class="sd">            transformations applied.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span>
         <span class="n">new_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -3533,12 +3533,12 @@ document.write(`
         <span class="n">epm</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span>
         <span class="k">return</span> <span class="n">epm</span>
 
-    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_backend&quot;</span><span class="p">)</span>
+    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">"to_backend"</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_backend</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]],</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"EdgeProgramManager"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns a semantically-equivalent program to the one given as input,</span>
 <span class="sd">        but with portions of each program in the EdgeProgramManager targeted</span>
 <span class="sd">        for delegation as determined by the partitioner.</span>
@@ -3560,7 +3560,7 @@ document.write(`
 <span class="sd">        Returns:</span>
 <span class="sd">            EdgeProgramManager: A copy of the calling EdgeProgramManager with the</span>
 <span class="sd">            specified subgraphs lowered.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">new_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">method_to_partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -3584,12 +3584,12 @@ document.write(`
         <span class="n">epm</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span>
         <span class="k">return</span> <span class="n">epm</span>
 
-    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_executorch&quot;</span><span class="p">)</span>
+    <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">"to_executorch"</span><span class="p">)</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>  <span class="c1"># noqa (FLAKE8) C901</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgramManager&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ExecutorchProgramManager"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Transforms the program to the ExecuTorch backend.</span>
 
 <span class="sd">        Args:</span>
@@ -3599,15 +3599,15 @@ document.write(`
 <span class="sd">        Returns:</span>
 <span class="sd">            ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager</span>
 <span class="sd">            after it has been transformed to the ExecuTorch backend.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="k">if</span> <span class="n">config</span> <span class="k">else</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">do_quant_fusion_and_const_prop</span><span class="p">:</span>
                 <span class="k">if</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">backward_signature</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                     <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span>
-                        <span class="s2">&quot;Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training.&quot;</span>
-                        <span class="s2">&quot; Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig.&quot;</span>
+                        <span class="s2">"Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training."</span>
+                        <span class="s2">" Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."</span>
                     <span class="p">)</span>
                 <span class="n">program</span> <span class="o">=</span> <span class="n">quant_fusion_and_const_prop_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">run_reinplace_pass</span> <span class="ow">or</span> <span class="n">config</span><span class="o">.</span><span class="n">reinplace_extra_ops</span><span class="p">:</span>
@@ -3663,12 +3663,12 @@ document.write(`
                 <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span>
             <span class="c1"># Propagate enable_non_cpu_memory_planning from the top-level config</span>
             <span class="c1"># to the pass instance so that device-aware partitioning is applied.</span>
-            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;enable_non_cpu_memory_planning&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">"enable_non_cpu_memory_planning"</span><span class="p">):</span>
                 <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">enable_non_cpu_memory_planning</span> <span class="o">=</span> <span class="p">(</span>
                     <span class="n">config</span><span class="o">.</span><span class="n">enable_non_cpu_memory_planning</span>
                 <span class="p">)</span>
             <span class="c1"># TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work</span>
-            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">"run"</span><span class="p">):</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">new_gm</span><span class="p">,</span> <span class="n">new_signature</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
@@ -3683,11 +3683,11 @@ document.write(`
         <span class="c1"># After running memory planning on all entry points we can run the cross entry point memory planning</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">memory_planning_pass</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run_multimethod&quot;</span><span class="p">):</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">"run_multimethod"</span><span class="p">):</span>
                     <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run_multimethod</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span>
-            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run_multimethod&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">"run_multimethod"</span><span class="p">):</span>
                 <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run_multimethod</span><span class="p">()</span>
 
         <span class="n">et_pm</span> <span class="o">=</span> <span class="n">ExecutorchProgramManager</span><span class="p">(</span>
@@ -3711,7 +3711,7 @@ document.write(`
 <div class="viewcode-block" id="ExecutorchProgramManager">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/main/ir-exir</span>
 
@@ -3720,7 +3720,7 @@ document.write(`
 <span class="sd">    to a buffer.</span>
 
 <span class="sd">    Manages the final link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -3729,9 +3729,9 @@ document.write(`
         <span class="n">backend_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">named_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">NamedDataStoreOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        End users should not call this constructor directly. Instead, they should use</span>
-<span class="sd">        :func:&#39;to_executorch&#39; to construct an ExecutorchProgramManager.</span>
+<span class="sd">        :func:'to_executorch' to construct an ExecutorchProgramManager.</span>
 
 <span class="sd">        Constructs an ExecutorchProgramManager from a set of exported programs in</span>
 <span class="sd">        execution dialect.</span>
@@ -3745,7 +3745,7 @@ document.write(`
 
 <span class="sd">            backend_config: An optional argument used to provide greater control over</span>
 <span class="sd">            the emission and serialization.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Set up methods</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">execution_programs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">config_methods</span>
@@ -3783,24 +3783,24 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the set of methods in this ExecutorchProgramManager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">config_methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the set of config methods in this ExecutorchProgramManager.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
 <div class="viewcode-block" id="ExecutorchProgramManager.exported_program">
 <a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.exported_program">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"forward"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns the ExportedProgram specified by 'method_name'.</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
 
@@ -3809,7 +3809,7 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">dump_executorch_program</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">TextIO</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Prints the ExecuTorch binary in a human readable format.</span>
 
 <span class="sd">        Args:</span>
@@ -3820,7 +3820,7 @@ document.write(`
 <span class="sd">                If None, prints to stdout.</span>
 <span class="sd">                If non-None, writes the string to that stream object. It can be</span>
 <span class="sd">                    a file object, a StringIO object, or any other TextIO subclass.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
             <span class="n">pretty_print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -3845,19 +3845,19 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Returns the object that represents the ExecuTorch binary before serialization.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
+<span class="w">        </span><span class="sd">"""Returns the serialized ExecuTorch binary as a byte string.</span>
 
 <span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
 <span class="sd">        contiguous memory, depending on the model size. If writing to a file,</span>
-<span class="sd">        use `write_to_file` which won&#39;t incur additional copies.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        use `write_to_file` which won't incur additional copies.</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO(T181494963): update pybinding to remove buffer cache, which can consume large</span>
         <span class="c1"># amounts of memory longer than necessary.</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -3865,7 +3865,7 @@ document.write(`
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_etrecord</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Get the generated ETRecord if etrecord generation was enabled.</span>
 
 <span class="sd">        Returns:</span>
@@ -3873,45 +3873,45 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            RuntimeError: if ETRecord object was not generated.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;ETRecord was not generated&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"ETRecord was not generated"</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
 <span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
 <span class="sd">        reducing the peak memory usage.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_tensor_data_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">outdir</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Writes the serialized ExecuTorch data files to the directory at `outdir`.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="k">for</span> <span class="n">filename</span><span class="p">,</span> <span class="n">cord</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">filename</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.ptd&quot;</span><span class="p">):</span>
-                <span class="n">filename</span> <span class="o">+=</span> <span class="s2">&quot;.ptd&quot;</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">),</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">filename</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">".ptd"</span><span class="p">):</span>
+                <span class="n">filename</span> <span class="o">+=</span> <span class="s2">".ptd"</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">outdir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">"</span><span class="p">),</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Writing data file to </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
                 <span class="n">cord</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Saves the serialized ExecuTorch binary to the file at `path`.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">4</span><span class="p">:]</span> <span class="o">!=</span> <span class="s2">&quot;.pte&quot;</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Path </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> does not end with .pte&quot;</span><span class="p">)</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Path </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> does not end with .pte&quot;</span><span class="p">)</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">4</span><span class="p">:]</span> <span class="o">!=</span> <span class="s2">".pte"</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Path </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> does not end with .pte"</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Path </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2"> does not end with .pte"</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Saved exported program to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Saved exported program to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error while saving to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Error while saving to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
 
 </pre></div>
 

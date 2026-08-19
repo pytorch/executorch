@@ -1920,18 +1920,18 @@ document.write(`
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
 
 <span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
-<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Program methods:&quot;</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
-<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/tmp/program.pte"</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Program methods:"</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 
 <span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Ran forward(</span><span class="si">{</span><span class="n">inputs</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  outputs: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Ran forward(</span><span class="si">{</span><span class="n">inputs</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  outputs: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Example output:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Program methods: {&#39;forward&#39;}
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Program methods: {'forward'}
 Ran forward((tensor([[1., 1.],
         [1., 1.]]), tensor([[1., 1.],
         [1., 1.]])))
@@ -1951,31 +1951,31 @@ Ran forward((tensor([[1., 1.],
 <span class="c1"># Create program with etdump generation enabled</span>
 <span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 <span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
-    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
+    <span class="n">Path</span><span class="p">(</span><span class="s2">"/tmp/program.pte"</span><span class="p">),</span>
     <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">debug_buffer_size</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="mf">1e7</span><span class="p">),</span>  <span class="c1"># 10MB buffer to capture all debug info</span>
 <span class="p">)</span>
 
 <span class="c1"># Load method and execute</span>
-<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
 
 <span class="c1"># Write etdump result to file</span>
-<span class="n">etdump_file</span> <span class="o">=</span> <span class="s2">&quot;/tmp/etdump_output.etdp&quot;</span>
-<span class="n">debug_file</span> <span class="o">=</span> <span class="s2">&quot;/tmp/debug_output.bin&quot;</span>
+<span class="n">etdump_file</span> <span class="o">=</span> <span class="s2">"/tmp/etdump_output.etdp"</span>
+<span class="n">debug_file</span> <span class="o">=</span> <span class="s2">"/tmp/debug_output.bin"</span>
 <span class="n">program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_file</span><span class="p">,</span> <span class="n">debug_file</span><span class="p">)</span>
 
 <span class="c1"># Check that files were created</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ETDump file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">etdump_file</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Debug file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">debug_file</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Directory contents:&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="s2">&quot;/tmp&quot;</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"ETDump file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">etdump_file</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Debug file created: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">debug_file</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Directory contents:"</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="s2">"/tmp"</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>Example output:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>ETDump file created: True
 Debug file created: True
-Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;debug_output.bin&#39;]
+Directory contents: ['program.pte', 'etdump_output.etdp', 'debug_output.bin']
 </pre></div>
 </div>
 <p>Example usage with backend and operator introspection:</p>
@@ -1985,19 +1985,19 @@ Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;d
 
 <span class="c1"># Check available backends</span>
 <span class="n">backends</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">backend_registry</span><span class="o">.</span><span class="n">registered_backend_names</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Available backends: </span><span class="si">{</span><span class="n">backends</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Available backends: </span><span class="si">{</span><span class="n">backends</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># Check if a specific backend is available</span>
-<span class="k">if</span> <span class="n">runtime</span><span class="o">.</span><span class="n">backend_registry</span><span class="o">.</span><span class="n">is_available</span><span class="p">(</span><span class="s2">&quot;XnnpackBackend&quot;</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;XNNPACK backend is available&quot;</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">runtime</span><span class="o">.</span><span class="n">backend_registry</span><span class="o">.</span><span class="n">is_available</span><span class="p">(</span><span class="s2">"XnnpackBackend"</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"XNNPACK backend is available"</span><span class="p">)</span>
 
 <span class="c1"># List all registered operators</span>
 <span class="n">operators</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">operator_registry</span><span class="o">.</span><span class="n">operator_names</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Number of registered operators: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">operators</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Number of registered operators: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">operators</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Example output:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Available backends: [&#39;XnnpackBackend&#39;, ...]  # Depends on your build configuration
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Available backends: ['XnnpackBackend', ...]  # Depends on your build configuration
 XNNPACK backend is available
 Number of registered operators: 247  # Depends on linked kernels
 </pre></div>

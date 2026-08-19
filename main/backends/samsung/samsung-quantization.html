@@ -2013,8 +2013,8 @@ techniques.</p>
 <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="c1"># Currently, &quot;A8W8&quot; is the only supported precision mode</span>
-<span class="n">precision</span> <span class="o">=</span> <span class="s2">&quot;A8W8&quot;</span>
+<span class="c1"># Currently, "A8W8" is the only supported precision mode</span>
+<span class="n">precision</span> <span class="o">=</span> <span class="s2">"A8W8"</span>
 <span class="n">is_per_channel</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="n">is_qat</span> <span class="o">=</span> <span class="kc">False</span>
 

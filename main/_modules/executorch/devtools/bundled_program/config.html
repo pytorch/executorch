@@ -1911,10 +1911,10 @@ document.write(`
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">TypeAlias</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">The data types currently supported for element to be bundled. It should be</span>
 <span class="sd">consistent with the types in bundled_program.schema.Value.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="n">ConfigValue</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="nb">int</span><span class="p">,</span>
@@ -1922,37 +1922,37 @@ document.write(`
     <span class="nb">float</span><span class="p">,</span>
 <span class="p">]</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">The data type of the input for method single execution.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="n">MethodInputType</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">The data type of the output for method single execution.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="n">MethodOutputType</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">All supported types for input/expected output of MethodTestCase.</span>
 
 <span class="sd">Namedtuple is also supported and listed implicitly since it is a subclass of tuple.</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="c1"># pyre-ignore</span>
 <span class="n">DataContainer</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">MethodTestCase</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test case with inputs and expected outputs</span>
+<span class="w">    </span><span class="sd">"""Test case with inputs and expected outputs</span>
 <span class="sd">    The expected_outputs are optional and only required if the user wants to verify model outputs after execution.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">inputs</span><span class="p">:</span> <span class="n">MethodInputType</span><span class="p">,</span>
         <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MethodOutputType</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Single test case for verifying specific method</span>
+<span class="w">        </span><span class="sd">"""Single test case for verifying specific method</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            inputs: All inputs required by eager_model with specific inference method for one-time execution.</span>
@@ -1965,7 +1965,7 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            self</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># TODO(gasoonjia): Update type check logic.</span>
         <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
@@ -1977,14 +1977,14 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">_flatten_and_sanity_check</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">unflatten_data</span><span class="p">:</span> <span class="n">DataContainer</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flat the given data and check its legality</span>
+<span class="w">        </span><span class="sd">"""Flat the given data and check its legality</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            unflatten_data: Data needs to be flatten.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            flatten_data: Flatten data with legal type.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">flatten_data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tree_flatten</span><span class="p">(</span><span class="n">unflatten_data</span><span class="p">)</span>
 
@@ -1992,13 +1992,13 @@ document.write(`
             <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
                 <span class="n">data</span><span class="p">,</span>
                 <span class="n">get_args</span><span class="p">(</span><span class="n">ConfigValue</span><span class="p">),</span>
-            <span class="p">),</span> <span class="s2">&quot;The type of input </span><span class="si">{}</span><span class="s2"> with type </span><span class="si">{}</span><span class="s2"> is not supported.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+            <span class="p">),</span> <span class="s2">"The type of input </span><span class="si">{}</span><span class="s2"> with type </span><span class="si">{}</span><span class="s2"> is not supported.</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
                 <span class="n">data</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
             <span class="p">)</span>
             <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
                 <span class="n">data</span><span class="p">,</span>
                 <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
-            <span class="p">),</span> <span class="s2">&quot;The input </span><span class="si">{}</span><span class="s2"> should not be in null type.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="p">),</span> <span class="s2">"The input </span><span class="si">{}</span><span class="s2"> should not be in null type.</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">flatten_data</span>
 
@@ -2007,12 +2007,12 @@ document.write(`
 <a class="viewcode-back" href="../../../../bundled-io.html#executorch.devtools.bundled_program.config.MethodTestSuite">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">MethodTestSuite</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;All test info related to verify method</span>
+<span class="w">    </span><span class="sd">"""All test info related to verify method</span>
 
 <span class="sd">    Attributes:</span>
 <span class="sd">        method_name: Name of the method to be verified.</span>
 <span class="sd">        test_cases: All test cases for verifying the method.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">test_cases</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MethodTestCase</span><span class="p">]</span></div>

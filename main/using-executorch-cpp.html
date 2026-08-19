@@ -1921,7 +1921,7 @@ document.write(`
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
 
 <span class="c1">// Load the model.</span>
-<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"/path/to/model.pte"</span><span class="p">);</span>
 
 <span class="c1">// Create an input tensor.</span>
 <span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
@@ -1947,7 +1947,7 @@ document.write(`
 <h2>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Link to this heading">#</a></h2>
 <p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">executorch_backends</span></code>, <code class="docutils literal notranslate"><span class="pre">executorch_extensions</span></code>, and <code class="docutils literal notranslate"><span class="pre">extension_kernels</span></code>, to link all configured backends, extensions, and kernels.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
-<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
 <span class="o">...</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>

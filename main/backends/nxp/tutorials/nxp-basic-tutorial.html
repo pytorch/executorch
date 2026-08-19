@@ -2050,7 +2050,7 @@ conda<span class="w"> </span>activate<span class="w"> </span>executorch
 <p>See the example <code class="docutils literal notranslate"><span class="pre">aot_neutron_compile.py</span></code> and its <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/nxp/README.md">README</a> file.</p>
 <p>For the purpose of this tutorial we will use a simple image classification model CifarNet10.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.nxp.aot_neutron_compile<span class="w"> </span>--quantize<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--delegate<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;cifar10&quot;</span>
+<span class="w">    </span>--delegate<span class="w"> </span>-m<span class="w"> </span><span class="s2">"cifar10"</span>
 </pre></div>
 </div>
 <p>Also, we will dump few of the images from the Cifar 10 dataset to a folder:</p>
@@ -2133,7 +2133,7 @@ make<span class="w"> </span>nxp_executorch_runner
 <section id="run-the-nxp-executor-runner">
 <h3>Run the nxp_executor_runner<a class="headerlink" href="#run-the-nxp-executor-runner" title="Link to this heading">#</a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./examples/nxp/executor_runner/build/nxp_executor_runner<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--firmware<span class="w"> </span><span class="sb">`</span>make<span class="w"> </span>-C<span class="w"> </span>./examples/nxp/executor_runner/build<span class="w"> </span>locate_neutron_firmware<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;NeutronFirmware.elf&quot;</span><span class="w"> </span><span class="sb">`</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--firmware<span class="w"> </span><span class="sb">`</span>make<span class="w"> </span>-C<span class="w"> </span>./examples/nxp/executor_runner/build<span class="w"> </span>locate_neutron_firmware<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">"NeutronFirmware.elf"</span><span class="w"> </span><span class="sb">`</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--nsys<span class="w"> </span><span class="sb">`</span>which<span class="w"> </span>nsys<span class="sb">`</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--nsys_config<span class="w"> </span>./examples/nxp/executor_runner/neutron-imxrt700.ini<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--model<span class="w"> </span>./cifar10_nxp_delegate.pte<span class="w"> </span><span class="se">\</span>

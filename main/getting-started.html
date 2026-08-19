@@ -1970,7 +1970,7 @@ you can find a list of supported models in the <a class="reference external" hre
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1990,10 +1990,10 @@ you can find a list of supported models in the <a class="reference external" hre
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 
 <span class="n">input_tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
-<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">)</span>
+<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">output</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Run successfully via executorch&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Run successfully via executorch"</span><span class="p">)</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
@@ -2001,7 +2001,7 @@ you can find a list of supported models in the <a class="reference external" hre
 <span class="n">eager_reference_model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">eager_reference_output</span> <span class="o">=</span> <span class="n">eager_reference_model</span><span class="p">(</span><span class="n">input_tensor</span><span class="p">)</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Comparing against original PyTorch module&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Comparing against original PyTorch module"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">output</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">eager_reference_output</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>
 </pre></div>
 </div>
@@ -2027,7 +2027,7 @@ you can find a list of supported models in the <a class="reference external" hre
 To add the library to your app, add the following dependency to gradle build rule.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># app/build.gradle.kts</span>
 <span class="n">dependencies</span> <span class="p">{</span>
-  <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;org.pytorch:executorch-android:$</span><span class="si">{executorch_version}</span><span class="s2">&quot;</span><span class="p">)</span>
+  <span class="n">implementation</span><span class="p">(</span><span class="s2">"org.pytorch:executorch-android:$</span><span class="si">{executorch_version}</span><span class="s2">"</span><span class="p">)</span>
 <span class="p">}</span>
 
 <span class="c1"># See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android</span>
@@ -2043,7 +2043,7 @@ To add the library to your app, add the following dependency to gradle build rul
 
 <span class="c1">// …</span>
 
-<span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+<span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">"/path/to/model.pte"</span><span class="p">);</span>
 
 <span class="n">Tensor</span><span class="w"> </span><span class="n">input_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="n">float_data</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">height</span><span class="p">,</span><span class="w"> </span><span class="n">width</span><span class="w"> </span><span class="p">});</span>
 <span class="n">EValue</span><span class="w"> </span><span class="n">input_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">EValue</span><span class="p">.</span><span class="na">from</span><span class="p">(</span><span class="n">input_tensor</span><span class="p">);</span>
@@ -2084,7 +2084,7 @@ To add the library to your app, add the following dependency to gradle build rul
 <span class="nb">set</span><span class="p">(</span><span class="s">EXECUTORCH_BUILD_PRESET_FILE</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_SOURCE_DIR</span><span class="o">}</span><span class="s">/executorch/tools/cmake/preset/llm.cmake</span><span class="p">)</span>
 <span class="c"># Set other ExecuTorch options here.</span>
 
-<span class="nb">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="nb">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
 <span class="err">...</span>
 <span class="nb">target_link_libraries</span><span class="p">(</span>
 <span class="w">  </span><span class="s">my_target</span>
@@ -2106,7 +2106,7 @@ To add the library to your app, add the following dependency to gradle build rul
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
 
 <span class="c1">// Load the model.</span>
-<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"/path/to/model.pte"</span><span class="p">);</span>
 
 <span class="c1">// Create an input tensor.</span>
 <span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">224</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">224</span><span class="p">];</span>

@@ -1942,7 +1942,7 @@ document.write(`
 <p>First, clone and install Optimum ExecuTorch from source:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/huggingface/optimum-executorch.git
 <span class="nb">cd</span><span class="w"> </span>optimum-executorch
-pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;.[dev]&#39;</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">'.[dev]'</span>
 </pre></div>
 </div>
 <p>For access to the latest features and optimizations, install dependencies in dev mode:</p>
@@ -1963,10 +1963,10 @@ pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;
 <section id="basic-export">
 <h3>Basic Export<a class="headerlink" href="#basic-export" title="Link to this heading">#</a></h3>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./smollm2_exported&quot;</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">"HuggingFaceTB/SmolLM2-135M-Instruct"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">"text-generation"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">"xnnpack"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">"./smollm2_exported"</span>
 </pre></div>
 </div>
 </section>
@@ -1974,14 +1974,14 @@ pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;
 <h3>With Optimizations<a class="headerlink" href="#with-optimizations" title="Link to this heading">#</a></h3>
 <p>Add custom SDPA, KV cache optimization, and quantization:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">"HuggingFaceTB/SmolLM2-135M-Instruct"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">"text-generation"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">"xnnpack"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--use_custom_sdpa<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--use_custom_kv_cache<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--qlinear<span class="w"> </span>8da4w<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--qembedding<span class="w"> </span>8w<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./smollm2_exported&quot;</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">"./smollm2_exported"</span>
 </pre></div>
 </div>
 </section>
@@ -2009,14 +2009,14 @@ pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;
 </ul>
 <p>Example:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>optimum-cli<span class="w"> </span><span class="nb">export</span><span class="w"> </span>executorch<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--model<span class="w"> </span><span class="s2">&quot;meta-llama/Llama-3.2-1B&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--task<span class="w"> </span><span class="s2">&quot;text-generation&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">&quot;xnnpack&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model<span class="w"> </span><span class="s2">"meta-llama/Llama-3.2-1B"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--task<span class="w"> </span><span class="s2">"text-generation"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--recipe<span class="w"> </span><span class="s2">"xnnpack"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--use_custom_sdpa<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--use_custom_kv_cache<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--qlinear<span class="w"> </span>8da4w<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--qembedding<span class="w"> </span>4w<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">&quot;./llama32_1b&quot;</span>
+<span class="w">    </span>--output_dir<span class="o">=</span><span class="s2">"./llama32_1b"</span>
 </pre></div>
 </div>
 </section>
@@ -2045,13 +2045,13 @@ pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;
 <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoTokenizer</span>
 
 <span class="c1"># Load the exported model</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">ExecuTorchModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;./smollm2_exported&quot;</span><span class="p">)</span>
-<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;HuggingFaceTB/SmolLM2-135M-Instruct&quot;</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">ExecuTorchModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">"./smollm2_exported"</span><span class="p">)</span>
+<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">"HuggingFaceTB/SmolLM2-135M-Instruct"</span><span class="p">)</span>
 
 <span class="c1"># Generate text</span>
 <span class="n">generated_text</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">text_generation</span><span class="p">(</span>
     <span class="n">tokenizer</span><span class="o">=</span><span class="n">tokenizer</span><span class="p">,</span>
-    <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;Once upon a time&quot;</span><span class="p">,</span>
+    <span class="n">prompt</span><span class="o">=</span><span class="s2">"Once upon a time"</span><span class="p">,</span>
     <span class="n">max_seq_len</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">generated_text</span><span class="p">)</span>

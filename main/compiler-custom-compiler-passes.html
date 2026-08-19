@@ -2001,10 +2001,10 @@ we can run the given
 <code class="docutils literal notranslate"><span class="pre">fx.GraphModule</span></code>, and every time we see op A, return op B.</p>
 <p>Consider the following example:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReplaceInPlaceReluWithOutOfPlaceReluPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    relu_ is the in-place version. Replace it with relu, which is the</span>
 <span class="sd">    out-of-place version</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">op</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu_</span><span class="o">.</span><span class="n">default</span><span class="p">:</span>
@@ -2028,7 +2028,7 @@ C, we would then make 2 calls to <code class="docutils literal notranslate"><spa
 one with op B and another with op C, and return the result of running op C.</p>
 <p>For example:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReplaceAddWithMulSub</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Original:</span>
 <span class="sd">        def f(x, y):</span>
 <span class="sd">            return x + y</span>
@@ -2037,7 +2037,7 @@ one with op B and another with op C, and return the result of running op C.</p>
 <span class="sd">        def f(x, y):</span>
 <span class="sd">            z = x * y</span>
 <span class="sd">            return z - y</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">op</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">default</span><span class="p">:</span>
             <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
@@ -2185,15 +2185,15 @@ module, we can pass the graph module directly to an instance of the class.</p>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">):</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace_op</span>
 
     <span class="c1"># Optional to implement, will be called before call()</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">requires</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
                 <span class="k">return</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No torch.add ops!&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"No torch.add ops!"</span><span class="p">)</span>
 
     <span class="c1"># Optional to implement, will be called after call()</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">ensures</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -2234,8 +2234,8 @@ called after each pass is run on the graph module.</p>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">check_div_target</span><span class="p">(</span><span class="n">graph_module</span><span class="p">):</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Target should be div!&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Target should be div!"</span><span class="p">)</span>
 
 <span class="n">pm</span><span class="o">.</span><span class="n">add_checks</span><span class="p">(</span><span class="n">check_div_target</span><span class="p">)</span>
 
@@ -2346,7 +2346,7 @@ returns False if any of the OperatorSupportBase return False) and
 
 <span class="k">class</span><span class="w"> </span><span class="nc">AddMulOperatorSupport</span><span class="p">(</span><span class="n">OperatorSupportBase</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">is_node_supported</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">submodules</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="p">[</span>
+        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"call_function"</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="p">[</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="p">]</span>
 
@@ -2446,7 +2446,7 @@ a module of that type.</p></li>
 <span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),)</span>
 <span class="n">edge_graph</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">M</span><span class="p">(),</span> <span class="n">inputs</span><span class="p">))</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">edge_graph</span><span class="p">)</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">graph():</span>
 <span class="sd">    %arg0 : [#users=1] = placeholder[target=arg0]</span>
 <span class="sd">    %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]</span>
@@ -2463,19 +2463,19 @@ a module of that type.</p></li>
 <span class="sd">    %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]</span>
 <span class="sd">    %addmm_default_2 : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant3, %relu_default, %t_default_2), kwargs = {})</span>
 <span class="sd">    return [addmm_default_2]</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="n">module_partitions</span> <span class="o">=</span> <span class="n">get_source_partitions</span><span class="p">(</span><span class="n">edge_graph</span><span class="p">,</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">])</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">module_partitions</span><span class="p">)</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">{&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;: [</span>
-<span class="sd">    ModulePartition(nodes=[_param_constant0, t_default, _param_constant1, addmm_default], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[arg0], output_nodes=[addmm_default], params=[&quot;_param_constant0&quot;, &quot;_param_constant1&quot;]),</span>
-<span class="sd">    ModulePartition(nodes=[_param_constant0_1, t_default_1, _param_constant1_1, addmm_default_1], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[addmm_default], output_nodes=[addmm_default_1], params=[&quot;_param_constant0_1&quot;, &quot;_param_constant1_1&quot;]),</span>
-<span class="sd">    ModulePartition(nodes=[_param_constant2, t_default_2, _param_constant3, addmm_default_2], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[relu_default], output_nodes=[addmm_default_2], params=[&quot;_param_constant2&quot;, &quot;_param_constant3&quot;])],</span>
+<span class="sd">"""</span>
+<span class="sd">{&lt;class 'torch.nn.modules.linear.Linear'&gt;: [</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant0, t_default, _param_constant1, addmm_default], module_type=&lt;class 'torch.nn.modules.linear.Linear'&gt;, input_nodes=[arg0], output_nodes=[addmm_default], params=["_param_constant0", "_param_constant1"]),</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant0_1, t_default_1, _param_constant1_1, addmm_default_1], module_type=&lt;class 'torch.nn.modules.linear.Linear'&gt;, input_nodes=[addmm_default], output_nodes=[addmm_default_1], params=["_param_constant0_1", "_param_constant1_1"]),</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant2, t_default_2, _param_constant3, addmm_default_2], module_type=&lt;class 'torch.nn.modules.linear.Linear'&gt;, input_nodes=[relu_default], output_nodes=[addmm_default_2], params=["_param_constant2", "_param_constant3"])],</span>
 
-<span class="sd"> &lt;class &#39;torch.nn.modules.activation.ReLU&#39;&gt;: [</span>
-<span class="sd">    ModulePartition(nodes=[relu_default], module_type=&lt;class &#39;torch.nn.modules.activation.ReLU&#39;&gt;, input_nodes=[addmm_default_1], output_nodes=[relu_default], params=[])]}</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd"> &lt;class 'torch.nn.modules.activation.ReLU'&gt;: [</span>
+<span class="sd">    ModulePartition(nodes=[relu_default], module_type=&lt;class 'torch.nn.modules.activation.ReLU'&gt;, input_nodes=[addmm_default_1], output_nodes=[relu_default], params=[])]}</span>
+<span class="sd">"""</span>
 </pre></div>
 </div>
 </section>

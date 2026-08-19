@@ -2019,7 +2019,7 @@ function which will be called when the program is out of its lifespan.</p>
 <p>Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:</p>
 <div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="k">namespace</span><span class="w"> </span><span class="p">{</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">cls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BackendWithCompiler</span><span class="p">();</span>
-<span class="n">Backend</span><span class="w"> </span><span class="n">backend</span><span class="p">{</span><span class="s">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cls</span><span class="p">};</span>
+<span class="n">Backend</span><span class="w"> </span><span class="n">backend</span><span class="p">{</span><span class="s">"BackendWithCompilerDemo"</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cls</span><span class="p">};</span>
 <span class="k">static</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">success_with_compiler</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="n">backend</span><span class="p">);</span>
 <span class="p">}</span><span class="w"> </span><span class="c1">// namespace</span>
 </pre></div>
@@ -2070,13 +2070,13 @@ like:</p>
 <p>Another option is to create a customized partitioner, say partitioner
 <code class="docutils literal notranslate"><span class="pre">backend_1_2_partitioner</span></code>, and inside the partitioner logic,</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Partitions all add/mul nodes regardless of order for Backend2</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend1&quot;</span><span class="p">,</span> <span class="p">[])</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend2&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">"Backend1"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">"Backend2"</span><span class="p">,</span> <span class="p">[])</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span> <span class="o">=</span> <span class="p">{}</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">partition</span><span class="p">(</span>
@@ -2085,14 +2085,14 @@ like:</p>
 
         <span class="c1"># Tag all nodes in the first partiton to backend 1</span>
         <span class="n">node_to_backend_1</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
-        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_1</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
+        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"backend2_tag</span><span class="si">{</span><span class="n">partitioner_1</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"delegation_tag"</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span>
 
         <span class="c1"># Tag all nodes in the first partiton to backend 2</span>
         <span class="n">node_to_backend_2</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
-        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_2</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
+        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"backend2_tag</span><span class="si">{</span><span class="n">partitioner_2</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"delegation_tag"</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span>
         <span class="k">return</span> <span class="n">exported_program</span>
 </pre></div>
@@ -2127,11 +2127,11 @@ We provide an helper function</p>
 <span class="n">This</span> <span class="n">node</span> <span class="n">_param_constant1</span> <span class="n">has</span> <span class="n">metadata</span> <span class="n">of</span><span class="p">:</span>
 <span class="n">The</span> <span class="n">node</span> <span class="n">stacktrace</span><span class="p">:</span>
 <span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">):</span>
-    <span class="n">File</span> <span class="s2">&quot;/tmp/ipykernel_1204253/3382880687.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">7</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
+    <span class="n">File</span> <span class="s2">"/tmp/ipykernel_1204253/3382880687.py"</span><span class="p">,</span> <span class="n">line</span> <span class="mi">7</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
 <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">test_model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-    <span class="n">File</span> <span class="s2">&quot;/mnt/xarfuse/uid-25337/7b86ad0c-seed-nspid4026532987_cgpid2707357-ns-4026532984/torch/nn/modules/module.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">1528</span><span class="p">,</span> <span class="ow">in</span> <span class="n">_call_impl</span>
+    <span class="n">File</span> <span class="s2">"/mnt/xarfuse/uid-25337/7b86ad0c-seed-nspid4026532987_cgpid2707357-ns-4026532984/torch/nn/modules/module.py"</span><span class="p">,</span> <span class="n">line</span> <span class="mi">1528</span><span class="p">,</span> <span class="ow">in</span> <span class="n">_call_impl</span>
 <span class="k">return</span> <span class="n">forward_call</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-    <span class="n">File</span> <span class="s2">&quot;/tmp/ipykernel_1204253/712280972.py&quot;</span><span class="p">,</span> <span class="n">line</span> <span class="mi">10</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
+    <span class="n">File</span> <span class="s2">"/tmp/ipykernel_1204253/712280972.py"</span><span class="p">,</span> <span class="n">line</span> <span class="mi">10</span><span class="p">,</span> <span class="ow">in</span> <span class="n">forward</span>
 <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 </pre></div>
 </div>

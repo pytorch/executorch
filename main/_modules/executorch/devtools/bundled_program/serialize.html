@@ -1938,34 +1938,34 @@ document.write(`
 <span class="p">)</span>
 
 <span class="c1"># The prefix of schema files used for bundled program</span>
-<span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;bundled_program_schema&quot;</span>
-<span class="n">SCALAR_TYPE_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;scalar_type&quot;</span>
+<span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">"bundled_program_schema"</span>
+<span class="n">SCALAR_TYPE_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">"scalar_type"</span>
 
 
 <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_bundled_program_file_identifier</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
     <span class="n">schema</span> <span class="o">=</span> <span class="n">_resources</span><span class="o">.</span><span class="n">read_binary</span><span class="p">(</span>
-        <span class="n">serialization_package</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs&quot;</span>
+        <span class="n">serialization_package</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs"</span>
     <span class="p">)</span>
-    <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">rb</span><span class="s1">&#39;file_identifier\s+&quot;([^&quot;]+)&quot;&#39;</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+    <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">rb</span><span class="s1">'file_identifier\s+"([^"]+)"'</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Missing file_identifier in </span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs&quot;</span>
+            <span class="sa">f</span><span class="s2">"Missing file_identifier in </span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs"</span>
         <span class="p">)</span>
     <span class="n">file_identifier</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">file_identifier</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Invalid file_identifier length </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">file_identifier</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;in </span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs&quot;</span>
+            <span class="sa">f</span><span class="s2">"Invalid file_identifier length </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">file_identifier</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+            <span class="sa">f</span><span class="s2">"in </span><span class="si">{</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="si">}</span><span class="s2">.fbs"</span>
         <span class="p">)</span>
     <span class="k">return</span> <span class="n">file_identifier</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">schema_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">schema_file</span><span class="p">:</span>
+    <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"</span><span class="si">{}</span><span class="s2">.fbs"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">schema_path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">schema_file</span><span class="p">:</span>
         <span class="n">schema_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
-            <span class="n">_resources</span><span class="o">.</span><span class="n">read_binary</span><span class="p">(</span><span class="n">serialization_package</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">schema_name</span><span class="si">}</span><span class="s2">.fbs&quot;</span><span class="p">)</span>
+            <span class="n">_resources</span><span class="o">.</span><span class="n">read_binary</span><span class="p">(</span><span class="n">serialization_package</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">schema_name</span><span class="si">}</span><span class="s2">.fbs"</span><span class="p">)</span>
         <span class="p">)</span>
 
 
@@ -1988,13 +1988,13 @@ document.write(`
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">SCALAR_TYPE_SCHEMA_NAME</span><span class="p">)</span>
 
-        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
-        <span class="n">json_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.json&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">json_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">json_file</span><span class="p">:</span>
-            <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program_json</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;ascii&quot;</span><span class="p">))</span>
+        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"</span><span class="si">{}</span><span class="s2">.fbs"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="n">json_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"</span><span class="si">{}</span><span class="s2">.json"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">json_path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">json_file</span><span class="p">:</span>
+            <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program_json</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">"ascii"</span><span class="p">))</span>
         <span class="n">_flatc_compile</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">schema_path</span><span class="p">,</span> <span class="n">json_path</span><span class="p">)</span>
-        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.bpte&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
+        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"</span><span class="si">{}</span><span class="s2">.bpte"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">output_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
 
 
@@ -2003,13 +2003,13 @@ document.write(`
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
         <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">SCALAR_TYPE_SCHEMA_NAME</span><span class="p">)</span>
 
-        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
-        <span class="n">bin_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;schema.bin&quot;</span><span class="p">)</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bin_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">bin_file</span><span class="p">:</span>
+        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"</span><span class="si">{}</span><span class="s2">.fbs"</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="n">bin_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"schema.bin"</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bin_path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">bin_file</span><span class="p">:</span>
             <span class="n">bin_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program_flatbuffer</span><span class="p">)</span>
         <span class="n">_flatc_decompile</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">schema_path</span><span class="p">,</span> <span class="n">bin_path</span><span class="p">)</span>
-        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;schema.json&quot;</span><span class="p">)</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
+        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"schema.json"</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
             <span class="k">return</span> <span class="n">output_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
 
 
@@ -2158,7 +2158,7 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Serialize a BundledProgram into FlatBuffer binary format.</span>
 
 <span class="sd">    Args:</span>
@@ -2166,7 +2166,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The serialized FlatBuffer binary data in bytes.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="n">bundled_program_in_schema</span> <span class="o">=</span> <span class="n">bundled_program</span><span class="o">.</span><span class="n">serialize_to_schema</span><span class="p">()</span>
 
@@ -2177,7 +2177,7 @@ document.write(`
 <span class="c1"># From flatbuffer to bundled program in schema.</span>
 <span class="c1"># Please notice here the bundled program is the one in our schema (bp_schema.BundledProgram),</span>
 <span class="c1"># not the bundled program user interact with (core.bundled_program).</span>
-<span class="c1"># However there&#39;re two concerns for current design:</span>
+<span class="c1"># However there're two concerns for current design:</span>
 <span class="c1"># 1. the misalignment of serialization input and deserialization out, which may confuse our user.</span>
 <span class="c1"># 2. the mis-exposion of schema.bundled_program. all classes in schema should not directly</span>
 <span class="c1">#    interact with user, but the deserialization api returns one.</span>
@@ -2187,7 +2187,7 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
     <span class="n">flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Deserialize a FlatBuffer binary format into a BundledProgram.</span>
 
 <span class="sd">    Args:</span>
@@ -2195,7 +2195,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        A `BundledProgram` instance.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">return</span> <span class="n">deserialize_from_json_to_bundled_program</span><span class="p">(</span><span class="n">convert_from_flatbuffer</span><span class="p">(</span><span class="n">flatbuffer</span><span class="p">))</span></div>
 
 </pre></div>

@@ -2023,7 +2023,7 @@ demonstrates this process using the MobileNet V2 model from torchvision.</p>
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">chipset</span> <span class="o">=</span> <span class="s2">&quot;E9955&quot;</span>  <span class="c1"># or &quot;E9965&quot; for Exynos 2600</span>
+<span class="n">chipset</span> <span class="o">=</span> <span class="s2">"E9955"</span>  <span class="c1"># or "E9965" for Exynos 2600</span>
 <span class="n">compile_specs</span> <span class="o">=</span> <span class="p">[</span><span class="n">gen_samsung_backend_compile_spec</span><span class="p">(</span><span class="n">chipset</span><span class="p">)]</span>
 
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
@@ -2031,7 +2031,7 @@ demonstrates this process using the MobileNet V2 model from torchvision.</p>
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">EnnPartitioner</span><span class="p">(</span><span class="n">compile_specs</span><span class="p">)],</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_xnnpack.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"mv2_xnnpack.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">et_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2056,7 +2056,7 @@ for more information.</p>
 <p>Then, to link against the backend, add the <code class="docutils literal notranslate"><span class="pre">executorch_backends</span></code> CMake target as a build
 dependency.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
-<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
 <span class="o">...</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>

@@ -1950,7 +1950,7 @@ ExecuTorch is available on Maven Central.
 Simply add the target org.pytorch:executorch-android:${executorch_version} to your Android app dependency (build.gradle), and build your app. For example:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">app</span><span class="o">/</span><span class="n">build</span><span class="p">.</span><span class="na">gradle</span><span class="p">.</span><span class="na">kts</span>
 <span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;org.pytorch:executorch-android:</span><span class="si">${</span><span class="n">executorch_version</span><span class="si">}</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">"org.pytorch:executorch-android:</span><span class="si">${</span><span class="n">executorch_version</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -2040,8 +2040,8 @@ curl<span class="w"> </span>-O<span class="w"> </span>https://ossci-android.s3.a
 Download the AAR.
 Add it to your gradle build rule as a file path.
 An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires fbjni and soloader, and currently requires users to explicitly declare the dependency. Therefore, two more dependencies in gradle rule is required:</p>
-<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
+<div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s">"com.facebook.soloader:soloader:0.10.5"</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">"com.facebook.fbjni:fbjni:0.7.0"</span><span class="p">)</span>
 </pre></div>
 </div>
 <section id="example-usage">
@@ -2054,9 +2054,9 @@ curl<span class="w"> </span>https://ossci-android.s3.amazonaws.com/executorch/re
 <p>And include it in gradle:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">app</span><span class="o">/</span><span class="n">build</span><span class="p">.</span><span class="na">gradle</span><span class="p">.</span><span class="na">kts</span>
 <span class="n">dependencies</span><span class="w"> </span><span class="p">{</span>
-<span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s">"libs/executorch.aar"</span><span class="p">))</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">"com.facebook.soloader:soloader:0.10.5"</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s">"com.facebook.fbjni:fbjni:0.7.0"</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -2159,7 +2159,7 @@ sh<span class="w"> </span>scripts/build_android_library.sh
 <span class="kd">protected</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onCreate</span><span class="p">(</span><span class="n">Bundle</span><span class="w"> </span><span class="n">savedInstanceState</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">super</span><span class="p">.</span><span class="na">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">);</span>
 <span class="w">    </span><span class="c1">// Load the ExecuTorch module</span>
-<span class="w">    </span><span class="n">Module</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/add.pte&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">Module</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">Module</span><span class="p">.</span><span class="na">load</span><span class="p">(</span><span class="s">"/data/local/tmp/add.pte"</span><span class="p">);</span>
 
 <span class="w">    </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>
 <span class="w">    </span><span class="n">Tensor</span><span class="w"> </span><span class="n">tensor2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Tensor</span><span class="p">.</span><span class="na">fromBlob</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="kt">float</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mf">20.0f</span><span class="p">},</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">long</span><span class="o">[]</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">});</span>

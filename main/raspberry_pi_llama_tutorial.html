@@ -2045,7 +2045,7 @@ uname<span class="w"> </span>-m<span class="w">  </span><span class="c1"># Shoul
 python3<span class="w"> </span>--version<span class="w">  </span><span class="c1"># Should be 3.10-3.14</span>
 
 <span class="c1"># Check required tools</span>
-<span class="nb">hash</span><span class="w"> </span>cmake<span class="w"> </span>git<span class="w"> </span>md5sum<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Missing required tools&quot;</span>
+<span class="nb">hash</span><span class="w"> </span>cmake<span class="w"> </span>git<span class="w"> </span>md5sum<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"Missing required tools"</span>
 
 cmake<span class="w"> </span>--version<span class="w">  </span><span class="c1"># Should be 3.29.6+ at minimum</span>
 
@@ -2124,9 +2124,9 @@ examples/raspberry_pi/setup.sh<span class="w"> </span>pi5
 
 python<span class="w"> </span>-m<span class="w"> </span>extension.llm.export.export_llm<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--config<span class="w"> </span>examples/models/llama/config/llama_xnnpack_spinquant.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>+base.model_class<span class="o">=</span><span class="s2">&quot;llama3_2&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>+base.checkpoint<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">LLAMA_QUANTIZED_CHECKPOINT</span><span class="p">:?</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>+base.params<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">LLAMA_PARAMS</span><span class="p">:?</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="w">  </span>+base.model_class<span class="o">=</span><span class="s2">"llama3_2"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>+base.checkpoint<span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">LLAMA_QUANTIZED_CHECKPOINT</span><span class="p">:?</span><span class="si">}</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>+base.params<span class="o">=</span><span class="s2">"</span><span class="si">${</span><span class="nv">LLAMA_PARAMS</span><span class="p">:?</span><span class="si">}</span><span class="s2">"</span>
 </pre></div>
 </div>
 <p>The file llama3_2.pte will be generated at the place where you run the command</p>
@@ -2142,11 +2142,11 @@ python<span class="w"> </span>-m<span class="w"> </span>extension.llm.export.exp
 <h3>Transfer Binaries to Raspberry Pi<a class="headerlink" href="#transfer-binaries-to-raspberry-pi" title="Link to this heading">#</a></h3>
 <p>After successful cross-compilation, transfer the required files:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1">##### Set Raspberry Pi details</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_UN</span><span class="o">=</span><span class="s2">&quot;pi&quot;</span><span class="w">  </span><span class="c1"># Your Raspberry Pi username</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_IP</span><span class="o">=</span><span class="s2">&quot;your-rpi-ip-address&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_UN</span><span class="o">=</span><span class="s2">"pi"</span><span class="w">  </span><span class="c1"># Your Raspberry Pi username</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">RPI_IP</span><span class="o">=</span><span class="s2">"your-rpi-ip-address"</span>
 
 <span class="c1">##### Create deployment directory on Raspberry Pi</span>
-ssh<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span><span class="w"> </span><span class="s1">&#39;mkdir -p ~/executorch-deployment&#39;</span>
+ssh<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span><span class="w"> </span><span class="s1">'mkdir -p ~/executorch-deployment'</span>
 <span class="c1">##### Copy main executable</span>
 scp<span class="w"> </span>cmake-out/examples/models/llama/llama_main<span class="w"> </span><span class="nv">$RPI_UN</span>@<span class="nv">$RPI_IP</span>:~/executorch-deployment/
 <span class="c1">##### Copy runtime library</span>
@@ -2163,7 +2163,7 @@ scp<span class="w"> </span>./tokenizer.model<span class="w"> </span><span class=
 <section id="set-up-library-environment">
 <h4>Set up library environment<a class="headerlink" href="#set-up-library-environment" title="Link to this heading">#</a></h4>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
-<span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>setup_env.sh
+<span class="nb">echo</span><span class="w"> </span><span class="s1">'export LD_LIBRARY_PATH=$(pwd):$LD_LIBRARY_PATH'</span><span class="w"> </span>&gt;<span class="w"> </span>setup_env.sh
 chmod<span class="w"> </span>+x<span class="w"> </span>setup_env.sh
 
 <span class="c1">#### Make executable</span>
@@ -2188,10 +2188,10 @@ chmod<span class="w"> </span>+x<span class="w"> </span>llama_main
 <h3>Issue 1: GLIBC Version Mismatch<a class="headerlink" href="#issue-1-glibc-version-mismatch" title="Link to this heading">#</a></h3>
 <p><strong>Problem:</strong> The binary was compiled with a newer GLIBC version (2.38) than what’s available on your Raspberry Pi (2.36).</p>
 <p><strong>Error Symptoms:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libm.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>GLIBC_2.38<span class="s1">&#39; not found (required by ./llama_main)</span>
-<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38&#39;</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>./llama_main<span class="o">)</span>
-./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libstdc++.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>CXXABI_1.3.15<span class="s1">&#39; not found (required by ./llama_main)</span>
-<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38&#39;</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>/lib/libllama_runner.so<span class="o">)</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libm.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>GLIBC_2.38<span class="s1">' not found (required by ./llama_main)</span>
+<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38'</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>./llama_main<span class="o">)</span>
+./llama_main:<span class="w"> </span>/lib/aarch64-linux-gnu/libstdc++.so.6:<span class="w"> </span>version<span class="w"> </span><span class="sb">`</span>CXXABI_1.3.15<span class="s1">' not found (required by ./llama_main)</span>
+<span class="s1">./llama_main: /lib/aarch64-linux-gnu/libc.so.6: version `GLIBC_2.38'</span><span class="w"> </span>not<span class="w"> </span>found<span class="w"> </span><span class="o">(</span>required<span class="w"> </span>by<span class="w"> </span>/lib/libllama_runner.so<span class="o">)</span>
 </pre></div>
 </div>
 <p><strong>There are two potential solutions:</strong></p>
@@ -2211,21 +2211,21 @@ chmod<span class="w"> </span>+x<span class="w"> </span>llama_main
 <ol class="arabic simple" start="2">
 <li><p><strong>⚠️ Compatibility Warning and Safety Check:</strong></p></li>
 </ol>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Just check and warn - don&#39;t do the upgrade</span>
-<span class="nv">current_glibc</span><span class="o">=</span><span class="k">$(</span>ldd<span class="w"> </span>--version<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-n1<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-o<span class="w"> </span><span class="s1">&#39;[0-9]\+\.[0-9]\+&#39;</span><span class="k">)</span>
-<span class="nv">required_glibc</span><span class="o">=</span><span class="s2">&quot;2.38&quot;</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Just check and warn - don't do the upgrade</span>
+<span class="nv">current_glibc</span><span class="o">=</span><span class="k">$(</span>ldd<span class="w"> </span>--version<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-n1<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-o<span class="w"> </span><span class="s1">'[0-9]\+\.[0-9]\+'</span><span class="k">)</span>
+<span class="nv">required_glibc</span><span class="o">=</span><span class="s2">"2.38"</span>
 
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Current GLIBC: </span><span class="nv">$current_glibc</span><span class="s2">&quot;</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Required GLIBC: </span><span class="nv">$required_glibc</span><span class="s2">&quot;</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"Current GLIBC: </span><span class="nv">$current_glibc</span><span class="s2">"</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"Required GLIBC: </span><span class="nv">$required_glibc</span><span class="s2">"</span>
 
-<span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$current_glibc</span><span class="s2"> &lt; </span><span class="nv">$required_glibc</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;⚠️  WARNING: Your GLIBC version is too old&quot;</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;   You need to upgrade to continue with the next steps&quot;</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;   Consider using Solution B (rebuild binary) for better safety&quot;</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$current_glibc</span><span class="s2"> &lt; </span><span class="nv">$required_glibc</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">""</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"⚠️  WARNING: Your GLIBC version is too old"</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"   You need to upgrade to continue with the next steps"</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"   Consider using Solution B (rebuild binary) for better safety"</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">""</span>
 <span class="k">else</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;✅ Your GLIBC version is already compatible&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"✅ Your GLIBC version is already compatible"</span>
 <span class="k">fi</span>
 </pre></div>
 </div>
@@ -2234,7 +2234,7 @@ chmod<span class="w"> </span>+x<span class="w"> </span>llama_main
 <li><p><strong>Upgrade to newer GLIBC:</strong></p></li>
 </ol>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Add Debian unstable repository</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;deb http://deb.debian.org/debian sid main contrib non-free&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>/etc/apt/sources.list
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"deb http://deb.debian.org/debian sid main contrib non-free"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>tee<span class="w"> </span>-a<span class="w"> </span>/etc/apt/sources.list
 
 <span class="c1"># Update package lists</span>
 sudo<span class="w"> </span>apt<span class="w"> </span>update
@@ -2254,10 +2254,10 @@ sudo<span class="w"> </span>reboot
 
 <span class="c1"># Test that the binary works</span>
 <span class="k">if</span><span class="w"> </span>./llama_main<span class="w"> </span>--help<span class="w"> </span><span class="p">&amp;</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="k">then</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;✅ GLIBC upgrade successful - binary is compatible&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"✅ GLIBC upgrade successful - binary is compatible"</span>
 <span class="k">else</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;❌ GLIBC upgrade failed - binary still incompatible&quot;</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Consider rolling back or refer to documentation for troubleshooting&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"❌ GLIBC upgrade failed - binary still incompatible"</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"Consider rolling back or refer to documentation for troubleshooting"</span>
 <span class="k">fi</span>
 </pre></div>
 </div>
@@ -2266,7 +2266,7 @@ sudo<span class="w"> </span>reboot
 </ol>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
 <span class="nb">source</span><span class="w"> </span>setup_env.sh
-./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;Hello&quot;</span>
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"Hello"</span>
 </pre></div>
 </div>
 <p><strong>Important Notes:</strong></p>
@@ -2287,9 +2287,9 @@ ssh<span class="w"> </span>pi@&lt;your-rpi-ip&gt;
 sudo<span class="w"> </span>apt<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>rsync
 <span class="nb">exit</span>
 
-<span class="c1"># On host machine - copy Pi&#39;s filesystem</span>
+<span class="c1"># On host machine - copy Pi's filesystem</span>
 mkdir<span class="w"> </span>-p<span class="w"> </span>~/rpi5-sysroot
-rsync<span class="w"> </span>-aAXv<span class="w"> </span>--exclude<span class="o">={</span><span class="s2">&quot;/proc&quot;</span>,<span class="s2">&quot;/sys&quot;</span>,<span class="s2">&quot;/dev&quot;</span>,<span class="s2">&quot;/run&quot;</span>,<span class="s2">&quot;/tmp&quot;</span>,<span class="s2">&quot;/mnt&quot;</span>,<span class="s2">&quot;/media&quot;</span>,<span class="s2">&quot;/lost+found&quot;</span><span class="o">}</span><span class="w"> </span><span class="se">\</span>
+rsync<span class="w"> </span>-aAXv<span class="w"> </span>--exclude<span class="o">={</span><span class="s2">"/proc"</span>,<span class="s2">"/sys"</span>,<span class="s2">"/dev"</span>,<span class="s2">"/run"</span>,<span class="s2">"/tmp"</span>,<span class="s2">"/mnt"</span>,<span class="s2">"/media"</span>,<span class="s2">"/lost+found"</span><span class="o">}</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>pi@&lt;your-rpi-ip&gt;:/<span class="w"> </span>~/rpi5-sysroot
 </pre></div>
 </div>
@@ -2298,11 +2298,11 @@ rsync<span class="w"> </span>-aAXv<span class="w"> </span>--exclude<span class="
 </ol>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Edit arm-toolchain-pi5.cmake</span>
 <span class="c1"># Replace this line:</span>
-<span class="c1"># set(CMAKE_SYSROOT &quot;${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc&quot;)</span>
+<span class="c1"># set(CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-none-linux-gnu/libc")</span>
 
 <span class="c1"># With this:</span>
-set<span class="o">(</span>CMAKE_SYSROOT<span class="w"> </span><span class="s2">&quot;/home/yourusername/rpi5-sysroot&quot;</span><span class="o">)</span>
-set<span class="o">(</span>CMAKE_FIND_ROOT_PATH<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">CMAKE_SYSROOT</span><span class="si">}</span><span class="s2">&quot;</span><span class="o">)</span>
+set<span class="o">(</span>CMAKE_SYSROOT<span class="w"> </span><span class="s2">"/home/yourusername/rpi5-sysroot"</span><span class="o">)</span>
+set<span class="o">(</span>CMAKE_FIND_ROOT_PATH<span class="w"> </span><span class="s2">"</span><span class="si">${</span><span class="nv">CMAKE_SYSROOT</span><span class="si">}</span><span class="s2">"</span><span class="o">)</span>
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
@@ -2328,7 +2328,7 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
 </pre></div>
 </div>
 <p><strong>Solution:</strong></p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Ensure you&#39;re in the correct directory and environment is set</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Ensure you're in the correct directory and environment is set</span>
 <span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
 <span class="nb">source</span><span class="w"> </span>setup_env.sh
 ./llama_main<span class="w"> </span>--help
@@ -2353,7 +2353,7 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
 <p>After resolving issues, test with:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
 <span class="nb">source</span><span class="w"> </span>setup_env.sh
-./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What is the meaning of life?&quot;</span>
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"What is the meaning of life?"</span>
 </pre></div>
 </div>
 </section>
@@ -2370,7 +2370,7 @@ strings<span class="w"> </span>./cmake-out/examples/models/llama/llama_main<span
 <h2>Final Run command<a class="headerlink" href="#final-run-command" title="Link to this heading">#</a></h2>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>~/executorch-deployment
 <span class="nb">source</span><span class="w"> </span>setup_env.sh
-./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">&quot;What is the meaning of life?&quot;</span>
+./llama_main<span class="w"> </span>--model_path<span class="w"> </span>./llama3_2.pte<span class="w"> </span>--tokenizer_path<span class="w"> </span>./tokenizer.model<span class="w"> </span>--seq_len<span class="w"> </span><span class="m">128</span><span class="w"> </span>--prompt<span class="w"> </span><span class="s2">"What is the meaning of life?"</span>
 </pre></div>
 </div>
 <p>Happy Inferencing!</p>

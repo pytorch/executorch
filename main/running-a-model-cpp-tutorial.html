@@ -1940,7 +1940,7 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 <span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Span</span><span class="p">;</span>
 
 <span class="n">Result</span><span class="o">&lt;</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp/model.pte&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="s">"/tmp/model.pte"</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 
 <span class="n">Result</span><span class="o">&lt;</span><span class="n">Program</span><span class="o">&gt;</span><span class="w"> </span><span class="n">program</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="o">&amp;</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
@@ -1958,12 +1958,12 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 </ul>
 <p>For this example we will retrieve the size of the planned memory arenas dynamically from the <code class="docutils literal notranslate"><span class="pre">Program</span></code>, but for heapless environments users could retrieve this information from the <code class="docutils literal notranslate"><span class="pre">Program</span></code> ahead of time and allocate the arena statically. We will also be using a malloc based allocator for the method allocator.</p>
 <div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="c1">// Method names map back to Python nn.Module method names. Most users will only</span>
-<span class="c1">// have the singular method &quot;forward&quot;.</span>
-<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;forward&quot;</span><span class="p">;</span>
+<span class="c1">// have the singular method "forward".</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"forward"</span><span class="p">;</span>
 
 <span class="c1">// MethodMeta is a lightweight structure that lets us gather metadata</span>
 <span class="c1">// information about a specific method. In this case we are looking to get the</span>
-<span class="c1">// required size of the memory planned buffers for the method &quot;forward&quot;.</span>
+<span class="c1">// required size of the memory planned buffers for the method "forward".</span>
 <span class="n">Result</span><span class="o">&lt;</span><span class="n">MethodMeta</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 

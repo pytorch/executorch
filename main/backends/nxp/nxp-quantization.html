@@ -2085,7 +2085,7 @@ The <code class="docutils literal notranslate"><span class="pre">NeutronQuantize
 <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">neutron_target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">neutron_target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"imxrt700"</span><span class="p">)</span>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">NeutronQuantizer</span><span class="p">(</span><span class="n">neutron_target_spec</span><span class="p">)</span> <span class="c1"># (1)</span>
 
 <span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># (2)</span>
@@ -2097,7 +2097,7 @@ The <code class="docutils literal notranslate"><span class="pre">NeutronQuantize
 <span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span> <span class="c1"># (5)</span>
 
 <span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_neutron_compile_spec</span><span class="p">(</span>
-    <span class="s2">&quot;imxrt700&quot;</span><span class="p">,</span>
+    <span class="s2">"imxrt700"</span><span class="p">,</span>
     <span class="n">operators_not_to_delegate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -2117,7 +2117,7 @@ The <code class="docutils literal notranslate"><span class="pre">NeutronQuantize
 
 <span class="o">...</span>
 
-<span class="n">target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"imxrt700"</span><span class="p">)</span>
 <span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">calibrate_and_quantize</span><span class="p">(</span>
     <span class="n">aten_model</span><span class="p">,</span>
     <span class="n">calibration_inputs</span><span class="p">,</span>
@@ -2141,7 +2141,7 @@ In QAT, instead of calibration we run training to optimize both quantization par
     <span class="n">NeutronTargetSpec</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"imxrt700"</span><span class="p">)</span>
 <span class="n">neutron_quantizer</span> <span class="o">=</span> <span class="n">NeutronQuantizer</span><span class="p">(</span><span class="n">neutron_target_spec</span><span class="o">=</span><span class="n">target_spec</span><span class="p">,</span> <span class="n">is_qat</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2167,7 +2167,7 @@ Note: QAT uses <code>prepare_qat_pt2e</code> prepare function instead of <code>p
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 
-<span class="n">neutron_target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">&quot;imxrt700&quot;</span><span class="p">)</span>
+<span class="n">neutron_target_spec</span> <span class="o">=</span> <span class="n">NeutronTargetSpec</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="s2">"imxrt700"</span><span class="p">)</span>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">NeutronQuantizer</span><span class="p">(</span><span class="n">neutron_target_spec</span><span class="p">,</span> <span class="n">is_qat</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="c1"># (1)</span>
 
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
@@ -2192,7 +2192,7 @@ Note: QAT uses <code>prepare_qat_pt2e</code> prepare function instead of <code>p
     <span class="p">]</span>
 <span class="p">)</span>
 
-<span class="n">train_data</span> <span class="o">=</span> <span class="n">datasets</span><span class="o">.</span><span class="n">ImageNet</span><span class="p">(</span><span class="s2">&quot;./&quot;</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">&quot;train&quot;</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span><span class="p">)</span>
+<span class="n">train_data</span> <span class="o">=</span> <span class="n">datasets</span><span class="o">.</span><span class="n">ImageNet</span><span class="p">(</span><span class="s2">"./"</span><span class="p">,</span> <span class="n">split</span><span class="o">=</span><span class="s2">"train"</span><span class="p">,</span> <span class="n">transform</span><span class="o">=</span><span class="n">transform</span><span class="p">)</span>
 <span class="n">train_loader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">train_data</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 
 <span class="c1"># Training replaces calibration in QAT</span>

@@ -1996,7 +1996,7 @@ using the <code class="docutils literal notranslate"><span class="pre">gen_samsu
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
 
-<span class="n">chipset</span> <span class="o">=</span> <span class="s2">&quot;E9955&quot;</span>  <span class="c1"># or &quot;E9965&quot; for Exynos 2600</span>
+<span class="n">chipset</span> <span class="o">=</span> <span class="s2">"E9955"</span>  <span class="c1"># or "E9965" for Exynos 2600</span>
 <span class="n">compile_specs</span> <span class="o">=</span> <span class="p">[</span><span class="n">gen_samsung_backend_compile_spec</span><span class="p">(</span><span class="n">chipset</span><span class="p">)]</span>
 
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>

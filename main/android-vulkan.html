@@ -2085,7 +2085,7 @@ torchvision.</p>
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">VulkanPartitioner</span><span class="p">()],</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mv2_vulkan.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"mv2_vulkan.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">etvk_program</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2131,9 +2131,9 @@ it is required to ensure that the library is linked with <code class="docutils l
 <span class="c"># executorch/tools/cmake/Utils.cmake can be used to set the required linker</span>
 <span class="c"># options.</span>
 <span class="nb">target_link_options</span><span class="p">(</span>
-<span class="w">    </span><span class="s">executorch_backends</span><span class="w"> </span><span class="s">INTERFACE</span><span class="w"> </span><span class="s2">&quot;SHELL:LINKER:--whole-archive \</span>
+<span class="w">    </span><span class="s">executorch_backends</span><span class="w"> </span><span class="s">INTERFACE</span><span class="w"> </span><span class="s2">"SHELL:LINKER:--whole-archive \</span>
 <span class="s2">    $&lt;TARGET_FILE:${target_name}&gt; \</span>
-<span class="s2">    LINKER:--no-whole-archive&quot;</span>
+<span class="s2">    LINKER:--no-whole-archive"</span>
 <span class="p">)</span>
 </pre></div>
 </div>

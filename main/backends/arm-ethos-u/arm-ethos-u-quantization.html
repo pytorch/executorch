@@ -1997,7 +1997,7 @@ document.write(`
 </section>
 <section id="quantization-api">
 <h2>Quantization API<a class="headerlink" href="#quantization-api" title="Link to this heading">#</a></h2>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="s1">&#39;EthosUCompileSpec&#39;</span><span class="p">,</span> <span class="n">use_composable_quantizer</span><span class="p">:</span> <span class="s1">&#39;bool&#39;</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;None&#39;</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="s1">'EthosUCompileSpec'</span><span class="p">,</span> <span class="n">use_composable_quantizer</span><span class="p">:</span> <span class="s1">'bool'</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'None'</span>
 </pre></div>
 </div>
 <p>Quantizer supported by the Arm Ethos-U backend.</p>
@@ -2015,11 +2015,11 @@ and will be removed in two minor releases. See
 <a class="reference external" href="https://github.com/pytorch/executorch/issues/17701">issue #17701</a>
 for details.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">add_quantizer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">:</span> <span class="s1">&#39;Quantizer&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">add_quantizer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">:</span> <span class="s1">'Quantizer'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Insert a quantizer with highest precedence.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization_config for submodules not matched by other filters.</p>
@@ -2029,7 +2029,7 @@ for details.</p></li>
 apply to modules that are not captured by name or type filters.
 <code class="docutils literal notranslate"><span class="pre">None</span></code> indicates no quantization.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_io</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_io</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization_config for input and output nodes.</p>
@@ -2039,7 +2039,7 @@ apply to modules that are not captured by name or type filters.
 describing activation quantization for model inputs and outputs.
 <code class="docutils literal notranslate"><span class="pre">None</span></code> indicates no quantization.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="s1">&#39;str&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="s1">'str'</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization_config for submodules with a given module name.</p>
@@ -2052,7 +2052,7 @@ patterns for that submodule with the provided quantization_config.</p>
 applied to the named submodule. <code class="docutils literal notranslate"><span class="pre">None</span></code> indicates no
 quantization.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_type</span><span class="p">:</span> <span class="s1">&#39;Callable&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_type</span><span class="p">:</span> <span class="s1">'Callable'</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization_config for submodules with a given module type.</p>
@@ -2066,7 +2066,7 @@ provided quantization configuration.</p></li>
 apply to submodules of the given type. <code class="docutils literal notranslate"><span class="pre">None</span></code> indicates no
 quantization.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_finder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">,</span> <span class="n">node_finder</span><span class="p">:</span> <span class="s1">&#39;NodeFinder&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_finder</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">,</span> <span class="n">node_finder</span><span class="p">:</span> <span class="s1">'NodeFinder'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization_config for nodes matched by a custom NodeFinder.</p>
@@ -2077,15 +2077,15 @@ describing quantization settings for nodes matched by the provided
 NodeFinder. <code class="docutils literal notranslate"><span class="pre">None</span></code> indicates no quantization.</p></li>
 <li><p><strong>node_finder (NodeFinder)</strong>: Predicate used to select nodes.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node_name</span><span class="p">:</span> <span class="s1">&#39;str&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node_name</span><span class="p">:</span> <span class="s1">'str'</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization config for a specific node name.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node_target</span><span class="p">:</span> <span class="s1">&#39;OpOverload&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_node_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">node_target</span><span class="p">:</span> <span class="s1">'OpOverload'</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">'Optional[QuantizationConfig]'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'TOSAQuantizer'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Set quantization config for a specific operator target.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">transform_for_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">transform_for_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="s1">'GraphModule'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">'GraphModule'</span><span class="p">:</span>
 </pre></div>
 </div>
 <p>Transform the graph to prepare it for quantization annotation.</p>

@@ -1929,8 +1929,8 @@ which organizes a group of <a class="reference external" href="#event-class">Eve
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span>
-    <span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">,</span>
-    <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;etrecord.bin&quot;</span><span class="p">,</span>
+    <span class="n">etdump_path</span><span class="o">=</span><span class="s2">"etdump.etdp"</span><span class="p">,</span>
+    <span class="n">etrecord</span><span class="o">=</span><span class="s2">"etrecord.bin"</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">()</span>
 </pre></div>
@@ -1940,9 +1940,9 @@ columns from a simple model:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">event_block_name</span>  <span class="n">event_name</span>                                  <span class="n">avg</span> <span class="p">(</span><span class="n">ms</span><span class="p">)</span>  <span class="n">op_types</span>                                      <span class="n">is_delegated_op</span>
 <span class="n">Default</span>           <span class="n">Method</span><span class="p">::</span><span class="n">init</span>                                <span class="mf">0.032137</span>  <span class="p">[]</span>                                            <span class="kc">False</span>
 <span class="n">Default</span>           <span class="n">Program</span><span class="p">::</span><span class="n">load_method</span>                        <span class="mf">0.038477</span>  <span class="p">[]</span>                                            <span class="kc">False</span>
-<span class="n">Execute</span>           <span class="n">native_call_convolution</span><span class="o">.</span><span class="n">out</span>                 <span class="mf">0.958706</span>  <span class="p">[</span><span class="s1">&#39;aten.convolution.default&#39;</span><span class="p">]</span>                 <span class="kc">False</span>
-<span class="n">Execute</span>           <span class="n">native_call_relu</span><span class="o">.</span><span class="n">out</span>                        <span class="mf">0.010483</span>  <span class="p">[</span><span class="s1">&#39;aten.relu.default&#39;</span><span class="p">]</span>                        <span class="kc">False</span>
-<span class="n">Execute</span>           <span class="n">native_call_max_pool2d_with_indices</span><span class="o">.</span><span class="n">out</span>     <span class="mf">0.068552</span>  <span class="p">[</span><span class="s1">&#39;aten.max_pool2d_with_indices.default&#39;</span><span class="p">]</span>     <span class="kc">False</span>
+<span class="n">Execute</span>           <span class="n">native_call_convolution</span><span class="o">.</span><span class="n">out</span>                 <span class="mf">0.958706</span>  <span class="p">[</span><span class="s1">'aten.convolution.default'</span><span class="p">]</span>                 <span class="kc">False</span>
+<span class="n">Execute</span>           <span class="n">native_call_relu</span><span class="o">.</span><span class="n">out</span>                        <span class="mf">0.010483</span>  <span class="p">[</span><span class="s1">'aten.relu.default'</span><span class="p">]</span>                        <span class="kc">False</span>
+<span class="n">Execute</span>           <span class="n">native_call_max_pool2d_with_indices</span><span class="o">.</span><span class="n">out</span>     <span class="mf">0.068552</span>  <span class="p">[</span><span class="s1">'aten.max_pool2d_with_indices.default'</span><span class="p">]</span>     <span class="kc">False</span>
 </pre></div>
 </div>
 <p>Passing an ETRecord is optional. If omitted, the Inspector still displays
@@ -1990,7 +1990,7 @@ and optional ETRecord path.</p>
 <p><strong>Example Usage:</strong></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">"/path/to/etdump.etdp"</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">"/path/to/etrecord.bin"</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -2050,7 +2050,7 @@ methods that exist in the spec will be created.</p>
 </dd></dl>
 
 <p id="example-usage-2"><strong>Example Usage:</strong></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">&quot;L__self___conv_layer&quot;</span><span class="p">))</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">"L__self___conv_layer"</span><span class="p">))</span>
 </pre></div>
 </div>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mf">0.002</span>
@@ -2086,7 +2086,7 @@ methods that exist in the spec will be created.</p>
 
             <span class="c1">### ... Omit part of the program for documentation readability ... ###</span>
 
-<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_tan_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">'arg0_1'</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">'aten_tan_default'</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 <span class="n">Range</span> <span class="n">constraints</span><span class="p">:</span> <span class="p">{}</span>
 <span class="n">Equality</span> <span class="n">constraints</span><span class="p">:</span> <span class="p">[]</span>
 </pre></div>
@@ -2151,7 +2151,7 @@ with generate_etrecord=True).</p></li>
 </dd></dl>
 
 <p id="example-usage-4"><strong>Example Usage:</strong></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;L1&quot;</span><span class="p">))</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">"L1"</span><span class="p">))</span>
 </pre></div>
 </div>
 <img alt="_images/calculate_numeric_gap.png" src="_images/calculate_numeric_gap.png" />
@@ -2221,7 +2221,7 @@ Available as Event.raw_delegate_debug_metadatas</p></li>
 <p><strong>Example Usage:</strong></p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Method::execute&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"Method::execute"</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 </pre></div>
 </div>

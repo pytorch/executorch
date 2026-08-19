@@ -1941,16 +1941,16 @@ document.write(`
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">ETRecordReservedFileNames</span><span class="p">(</span><span class="n">StrEnum</span><span class="p">):</span>
-    <span class="n">ETRECORD_IDENTIFIER</span> <span class="o">=</span> <span class="s2">&quot;ETRECORD_V0&quot;</span>
-    <span class="n">EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">&quot;exported_program&quot;</span>
-    <span class="n">EXPORT_GRAPH_ID</span> <span class="o">=</span> <span class="s2">&quot;export_graph_id&quot;</span>
-    <span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">&quot;edge_dialect_exported_program&quot;</span>
-    <span class="n">ET_DIALECT_GRAPH_MODULE</span> <span class="o">=</span> <span class="s2">&quot;et_dialect_graph_module&quot;</span>
-    <span class="n">DEBUG_HANDLE_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;debug_handle_map&quot;</span>
-    <span class="n">DELEGATE_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;delegate_map&quot;</span>
-    <span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;instruction_id_to_num_outs_map&quot;</span>
-    <span class="n">REFERENCE_OUTPUTS</span> <span class="o">=</span> <span class="s2">&quot;reference_outputs&quot;</span>
-    <span class="n">REPRESENTATIVE_INPUTS</span> <span class="o">=</span> <span class="s2">&quot;representative_inputs&quot;</span>
+    <span class="n">ETRECORD_IDENTIFIER</span> <span class="o">=</span> <span class="s2">"ETRECORD_V0"</span>
+    <span class="n">EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">"exported_program"</span>
+    <span class="n">EXPORT_GRAPH_ID</span> <span class="o">=</span> <span class="s2">"export_graph_id"</span>
+    <span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">"edge_dialect_exported_program"</span>
+    <span class="n">ET_DIALECT_GRAPH_MODULE</span> <span class="o">=</span> <span class="s2">"et_dialect_graph_module"</span>
+    <span class="n">DEBUG_HANDLE_MAP_NAME</span> <span class="o">=</span> <span class="s2">"debug_handle_map"</span>
+    <span class="n">DELEGATE_MAP_NAME</span> <span class="o">=</span> <span class="s2">"delegate_map"</span>
+    <span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span> <span class="o">=</span> <span class="s2">"instruction_id_to_num_outs_map"</span>
+    <span class="n">REFERENCE_OUTPUTS</span> <span class="o">=</span> <span class="s2">"reference_outputs"</span>
+    <span class="n">REPRESENTATIVE_INPUTS</span> <span class="o">=</span> <span class="s2">"representative_inputs"</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">ETRecord</span><span class="p">:</span>
@@ -1972,7 +1972,7 @@ document.write(`
         <span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">_representative_inputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Please do not construct an ETRecord object directly.</span>
 
 <span class="sd">        If you want to create an ETRecord for logging AOT information to further analysis, please mark `generate_etrecord`</span>
@@ -1991,14 +1991,14 @@ document.write(`
 <span class="sd">        ```python</span>
 <span class="sd">        lowered_and_edge = to_edge_transform_and_lower(</span>
 <span class="sd">            {</span>
-<span class="sd">                &quot;vision_encoder&quot;: vision_encoder_ep,</span>
-<span class="sd">                &quot;token_embedding&quot;: token_embedding_ep,</span>
-<span class="sd">                &quot;text_decoder&quot;: causal_llm_ep,</span>
+<span class="sd">                "vision_encoder": vision_encoder_ep,</span>
+<span class="sd">                "token_embedding": token_embedding_ep,</span>
+<span class="sd">                "text_decoder": causal_llm_ep,</span>
 <span class="sd">            },</span>
 <span class="sd">            partitioner={</span>
-<span class="sd">                &quot;vision_encoder&quot;: [XnnpackPartitioner()],</span>
-<span class="sd">                &quot;token_embedding&quot;: [XnnpackPartitioner()],</span>
-<span class="sd">                &quot;text_decoder&quot;: [</span>
+<span class="sd">                "vision_encoder": [XnnpackPartitioner()],</span>
+<span class="sd">                "token_embedding": [XnnpackPartitioner()],</span>
+<span class="sd">                "text_decoder": [</span>
 <span class="sd">                    XnnpackPartitioner(</span>
 <span class="sd">                        config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,</span>
 <span class="sd">                        per_op_mode=True,</span>
@@ -2011,7 +2011,7 @@ document.write(`
 <span class="sd">            generate_etrecord=True,  # Enable ETRecord generation for all 3 methods</span>
 <span class="sd">        )</span>
 <span class="sd">        ```</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">exported_program</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">export_graph_id</span>
@@ -2032,7 +2032,7 @@ document.write(`
         <span class="bp">self</span><span class="o">.</span><span class="n">__debug_handle_map</span> <span class="o">=</span> <span class="n">value</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">IO</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Serialize and save the ETRecord to the specified path for use in Inspector. The ETRecord</span>
 <span class="sd">        should contains at least edge dialect program and executorch program information for further</span>
 <span class="sd">        analysis, otherwise it will raise an exception.</span>
@@ -2042,25 +2042,25 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            RuntimeError: If the ETRecord does not contain essential information for Inpector.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">)):</span>
             <span class="c1"># pyre-ignore[6]: In call `os.fspath`, for 1st positional argument, expected `str` but got `Union[PathLike[typing.Any], str]`</span>
             <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">fspath</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;ETRecord must contain edge dialect program and executorch program to be saved&quot;</span>
+                <span class="s2">"ETRecord must contain edge dialect program and executorch program to be saved"</span>
             <span class="p">)</span>
 
         <span class="c1"># Normalize edge_dialect_program to dict format for consistent handling</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_edge_dialect_programs_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-                <span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span>
+                <span class="s2">"forward"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span>
             <span class="p">}</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_edge_dialect_programs_dict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span>
 
-        <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">)</span>
 
         <span class="k">try</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_write_identifier</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">)</span>
@@ -2071,16 +2071,16 @@ document.write(`
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_write_identifier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write the magic file identifier.&quot;&quot;&quot;</span>
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="sd">"""Write the magic file identifier."""</span>
+        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save_programs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save exported program and edge dialect program(s).&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Save exported program and edge dialect program(s)."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_save_exported_program</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="p">,</span>
                 <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EXPORTED_PROGRAM</span><span class="p">,</span>
-                <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                <span class="s2">""</span><span class="p">,</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
             <span class="p">)</span>
 
@@ -2089,22 +2089,22 @@ document.write(`
             <span class="bp">self</span><span class="o">.</span><span class="n">_save_edge_dialect_program</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save_graph_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save graph map if present.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Save graph map if present."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="c1"># pyre-ignore[16]: Undefined attribute [16]: `Optional` has no attribute `items`.</span>
             <span class="k">for</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="k">if</span> <span class="s2">&quot;/&quot;</span> <span class="ow">in</span> <span class="n">module_name</span><span class="p">:</span>
-                    <span class="n">base_name</span><span class="p">,</span> <span class="n">method_name</span> <span class="o">=</span> <span class="n">module_name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s2">"/"</span> <span class="ow">in</span> <span class="n">module_name</span><span class="p">:</span>
+                    <span class="n">base_name</span><span class="p">,</span> <span class="n">method_name</span> <span class="o">=</span> <span class="n">module_name</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_save_exported_program</span><span class="p">(</span>
                         <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">base_name</span><span class="p">,</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">export_module</span>
                     <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_save_exported_program</span><span class="p">(</span>
-                        <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">&quot;forward&quot;</span><span class="p">,</span> <span class="n">export_module</span>
+                        <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">"forward"</span><span class="p">,</span> <span class="n">export_module</span>
                     <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save_metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save debug maps, reference outputs, and other metadata.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Save debug maps, reference outputs, and other metadata."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
                 <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DEBUG_HANDLE_MAP_NAME</span><span class="p">,</span>
@@ -2145,8 +2145,8 @@ document.write(`
                 <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span><span class="p">),</span>
             <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ETRecord&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">copy</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"ETRecord"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Create a shallow copy of this ETRecord suitable for transformation stages.</span>
 
 <span class="sd">        This creates a new ETRecord instance with the same edge-stage data but without</span>
@@ -2155,7 +2155,7 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            ETRecord: A new ETRecord with edge-stage data copied over.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="n">ETRecord</span><span class="p">(</span>
             <span class="n">exported_program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
             <span class="n">export_graph_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span><span class="p">,</span>
@@ -2176,18 +2176,18 @@ document.write(`
         <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save an exported program to the ETRecord zip file.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Save an exported program to the ETRecord zip file."""</span>
         <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
 
-        <span class="n">method_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">method_name</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-        <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">method_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">method_name</span> <span class="o">!=</span> <span class="s2">""</span> <span class="k">else</span> <span class="s2">""</span>
+        <span class="n">base_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">module_name</span><span class="si">}{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">"</span>
 
         <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span><span class="p">)</span>
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_constants&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">constants</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_state_dict"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_constants"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">constants</span><span class="p">)</span>
         <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">example_inputs</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_example_inputs"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">example_inputs</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_save_edge_dialect_program</span><span class="p">(</span>
@@ -2196,19 +2196,19 @@ document.write(`
         <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
         <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the edge dialect program to the ETRecord zip file.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Save the edge dialect program to the ETRecord zip file."""</span>
         <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span>
         <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
 
         <span class="c1"># Use format: edge_dialect_exported_program/method_name for multi-method support</span>
         <span class="n">base_name</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">"</span>
         <span class="p">)</span>
         <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">base_name</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span><span class="p">)</span>
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_constants&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">constants</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_state_dict"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_constants"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">constants</span><span class="p">)</span>
         <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">example_inputs</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base_name</span><span class="si">}</span><span class="s2">_example_inputs"</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">example_inputs</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">add_extra_export_modules</span><span class="p">(</span>
@@ -2222,7 +2222,7 @@ document.write(`
             <span class="p">],</span>
         <span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Add extra export modules to the ETRecord after it has been created.</span>
 
 <span class="sd">        This method allows users to add more export modules they want to record</span>
@@ -2233,7 +2233,7 @@ document.write(`
 <span class="sd">            extra_recorded_export_modules: A dictionary of graph modules with the key being</span>
 <span class="sd">                the user provided name and the value being the corresponding exported module.</span>
 <span class="sd">                The exported graph modules can be either the output of `torch.export()` or `exir.to_edge()`.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="o">=</span> <span class="p">{}</span>
 
@@ -2250,7 +2250,7 @@ document.write(`
             <span class="n">BundledProgram</span><span class="p">,</span>
         <span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Add executorch program data to the ETRecord after it has been created.</span>
 
 <span class="sd">        This method allows users to add executorch program data they want to record</span>
@@ -2264,7 +2264,7 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            RuntimeError: If executorch program data already exists in the ETRecord.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Check if executorch program data already exists</span>
         <span class="k">if</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -2274,8 +2274,8 @@ document.write(`
             <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="p">):</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Executorch program data already exists in the ETRecord. &quot;</span>
-                <span class="s2">&quot;Cannot add executorch program data when it already exists.&quot;</span>
+                <span class="s2">"Executorch program data already exists in the ETRecord. "</span>
+                <span class="s2">"Cannot add executorch program data when it already exists."</span>
             <span class="p">)</span>
 
         <span class="c1"># Process executorch program and extract data</span>
@@ -2298,7 +2298,7 @@ document.write(`
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">exported_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Add exported program to the ETRecord after it has been created.</span>
 
 <span class="sd">        This method allows users to add an exported program they want to record</span>
@@ -2312,12 +2312,12 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            RuntimeError: If exported program already exists in the ETRecord.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Check if exported program already exists</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">export_graph_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Exported program already exists in the ETRecord. &quot;</span>
-                <span class="s2">&quot;Cannot add exported program when it already exists.&quot;</span>
+                <span class="s2">"Exported program already exists in the ETRecord. "</span>
+                <span class="s2">"Cannot add exported program when it already exists."</span>
             <span class="p">)</span>
 
         <span class="c1"># Process exported program and extract data</span>
@@ -2333,7 +2333,7 @@ document.write(`
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Add edge dialect program to the ETRecord after it has been created.</span>
 
 <span class="sd">        This method allows users to add an edge dialect program they want to record</span>
@@ -2346,12 +2346,12 @@ document.write(`
 
 <span class="sd">        Raises:</span>
 <span class="sd">            RuntimeError: If edge dialect program already exists in the ETRecord.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="c1"># Check if edge dialect program already exists</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">edge_dialect_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">&quot;Edge dialect program already exists in the ETRecord. &quot;</span>
-                <span class="s2">&quot;Cannot add edge dialect program when it already exists.&quot;</span>
+                <span class="s2">"Edge dialect program already exists in the ETRecord. "</span>
+                <span class="s2">"Cannot add edge dialect program when it already exists."</span>
             <span class="p">)</span>
 
         <span class="c1"># Process edge dialect program and extract data</span>
@@ -2367,7 +2367,7 @@ document.write(`
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">representative_inputs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">],</span> <span class="n">BundledProgram</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Update the representative inputs in the ETRecord.</span>
 
 <span class="sd">        This method allows users to customize the representative inputs that will be</span>
@@ -2377,7 +2377,7 @@ document.write(`
 <span class="sd">        Args:</span>
 <span class="sd">            representative_inputs: Either a list of ProgramInput objects or a BundledProgram</span>
 <span class="sd">                from which representative inputs will be extracted.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">representative_inputs</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">_get_representative_inputs</span><span class="p">(</span>
                 <span class="n">representative_inputs</span>
@@ -2391,25 +2391,25 @@ document.write(`
             <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">],</span> <span class="n">BundledProgram</span>
         <span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""</span>
 <span class="sd">        Update the reference outputs in the ETRecord.</span>
 
 <span class="sd">        This method allows users to customize the reference outputs that will be</span>
 <span class="sd">        included when the ETRecord is saved. The reference outputs can be provided</span>
 <span class="sd">        directly as a dictionary mapping method names to lists of outputs, as a</span>
-<span class="sd">        single list of outputs (which will be treated as {&quot;forward&quot;: List[ProgramOutput]}),</span>
+<span class="sd">        single list of outputs (which will be treated as {"forward": List[ProgramOutput]}),</span>
 <span class="sd">        or extracted from a BundledProgram.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            reference_outputs: Either a dictionary mapping method names to lists of</span>
 <span class="sd">                ProgramOutput objects, a single list of ProgramOutput objects (treated</span>
-<span class="sd">                as outputs for the &quot;forward&quot; method), or a BundledProgram from which</span>
+<span class="sd">                as outputs for the "forward" method), or a BundledProgram from which</span>
 <span class="sd">                reference outputs will be extracted.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">_get_reference_outputs</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">)</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">reference_outputs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">reference_outputs</span><span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"forward"</span><span class="p">:</span> <span class="n">reference_outputs</span><span class="p">}</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">reference_outputs</span>
 
@@ -2417,16 +2417,16 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_reference_outputs</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Extracts out the expected outputs from the bundled program, keyed by the method names.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">reference_outputs</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">method_test_suite</span> <span class="ow">in</span> <span class="n">bundled_program</span><span class="o">.</span><span class="n">method_test_suites</span><span class="p">:</span>
         <span class="n">reference_outputs</span><span class="p">[</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">for</span> <span class="n">test_case</span> <span class="ow">in</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">test_case</span><span class="o">.</span><span class="n">expected_outputs</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Missing at least one set of expected outputs for method </span><span class="si">{</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="si">}</span><span class="s2">.&quot;</span>
+                    <span class="sa">f</span><span class="s2">"Missing at least one set of expected outputs for method </span><span class="si">{</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="si">}</span><span class="s2">."</span>
                 <span class="p">)</span>
             <span class="n">reference_outputs</span><span class="p">[</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="n">test_case</span><span class="o">.</span><span class="n">expected_outputs</span>
@@ -2437,14 +2437,14 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">_get_representative_inputs</span><span class="p">(</span>
     <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Extracts out the inputs from the bundled program, keyed by the method names.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">for</span> <span class="n">method_test_suite</span> <span class="ow">in</span> <span class="n">bundled_program</span><span class="o">.</span><span class="n">method_test_suites</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span> <span class="o">==</span> <span class="s2">&quot;forward&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span> <span class="o">==</span> <span class="s2">"forward"</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;The &#39;forward&#39; method is defined, but no corresponding input test cases are provided.&quot;</span>
+                    <span class="s2">"The 'forward' method is defined, but no corresponding input test cases are provided."</span>
                 <span class="p">)</span>
             <span class="c1"># Get first example input from the forward method</span>
             <span class="n">test_case</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
@@ -2478,7 +2478,7 @@ document.write(`
         <span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Generates an `ETRecord` from the given objects, serializes it and saves it to the given path.</span>
 <span class="sd">    The objects that will be serialized to an `ETRecord` are all the graph modules present</span>
 <span class="sd">    in the `extra_recorded_export_modules` dict, the graph module present in the edge dialect program object,</span>
@@ -2499,7 +2499,7 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        None</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">etrecord</span> <span class="o">=</span> <span class="n">ETRecord</span><span class="p">()</span>
     <span class="n">etrecord</span><span class="o">.</span><span class="n">add_exported_program</span><span class="p">(</span><span class="n">exported_program</span><span class="p">)</span>
     <span class="n">etrecord</span><span class="o">.</span><span class="n">add_edge_dialect_program</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span>
@@ -2516,13 +2516,13 @@ document.write(`
 <span class="k">def</span><span class="w"> </span><span class="nf">_process_exported_program</span><span class="p">(</span>
     <span class="n">exported_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process exported program and return the processed program and export graph id.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Process exported program and return the processed program and export graph id."""</span>
     <span class="n">processed_exported_program</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">export_graph_id</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="k">if</span> <span class="n">exported_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">&quot;forward&quot;</span> <span class="ow">in</span> <span class="n">exported_program</span><span class="p">:</span>
-            <span class="n">processed_exported_program</span> <span class="o">=</span> <span class="n">exported_program</span><span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">"forward"</span> <span class="ow">in</span> <span class="n">exported_program</span><span class="p">:</span>
+            <span class="n">processed_exported_program</span> <span class="o">=</span> <span class="n">exported_program</span><span class="p">[</span><span class="s2">"forward"</span><span class="p">]</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">):</span>
             <span class="n">processed_exported_program</span> <span class="o">=</span> <span class="n">exported_program</span>
 
@@ -2533,13 +2533,13 @@ document.write(`
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_validate_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate that module name is not a reserved name.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Validate that module name is not a reserved name."""</span>
     <span class="n">contains_reserved_name</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
         <span class="n">reserved_name</span> <span class="ow">in</span> <span class="n">module_name</span> <span class="k">for</span> <span class="n">reserved_name</span> <span class="ow">in</span> <span class="n">ETRecordReservedFileNames</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">contains_reserved_name</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;The name </span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2"> provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace.&quot;</span>
+            <span class="sa">f</span><span class="s2">"The name </span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2"> provided in the extra_recorded_export_modules dict is a reserved name in the ETRecord namespace."</span>
         <span class="p">)</span>
 
 
@@ -2548,34 +2548,34 @@ document.write(`
     <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">,</span> <span class="n">EdgeProgramManager</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Add export module to graph map based on its type.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Add export module to graph map based on its type."""</span>
     <span class="n">_validate_module_name</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">):</span>
-        <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/forward&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
+        <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/forward"</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">):</span>
-        <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/forward&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span>
+        <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/forward"</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">export_module</span><span class="p">,</span>
         <span class="p">(</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">exir</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">EdgeProgramManager</span><span class="p">),</span>
     <span class="p">):</span>
         <span class="k">for</span> <span class="n">method</span> <span class="ow">in</span> <span class="n">export_module</span><span class="o">.</span><span class="n">methods</span><span class="p">:</span>
-            <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(</span>
+            <span class="n">graph_map</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">"</span><span class="p">]</span> <span class="o">=</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(</span>
                 <span class="n">method</span>
             <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported graph module type. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">export_module</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unsupported graph module type. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">export_module</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_process_edge_dialect_program</span><span class="p">(</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process edge dialect program and return the exported program(s).</span>
+<span class="w">    </span><span class="sd">"""Process edge dialect program and return the exported program(s).</span>
 
 <span class="sd">    For EdgeProgramManager with multiple methods, returns a Dict[str, ExportedProgram]</span>
 <span class="sd">    mapping method names to their exported programs. For single-method cases or</span>
 <span class="sd">    ExirExportedProgram, returns a single ExportedProgram.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">edge_dialect_program</span><span class="p">,</span>
         <span class="p">(</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">exir</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">EdgeProgramManager</span><span class="p">),</span>
@@ -2595,7 +2595,7 @@ document.write(`
         <span class="k">return</span> <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">exported_program</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;Unsupported type of edge_dialect_program passed in </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="sa">f</span><span class="s2">"Unsupported type of edge_dialect_program passed in </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
         <span class="p">)</span>
 
 
@@ -2606,7 +2606,7 @@ document.write(`
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
     <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]</span>
 <span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process executorch program and return debug maps and bundled program data.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""Process executorch program and return debug maps and bundled program data."""</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
         <span class="n">reference_outputs</span> <span class="o">=</span> <span class="n">_get_reference_outputs</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
         <span class="n">representative_inputs</span> <span class="o">=</span> <span class="n">_get_representative_inputs</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
@@ -2641,12 +2641,12 @@ document.write(`
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ETRecord</span><span class="p">:</span>  <span class="c1"># noqa: C901</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">    Parses an `ETRecord` file and returns an `ETRecord` object that contains the deserialized graph</span>
 <span class="sd">    modules, program buffer, and a debug handle map.</span>
 <span class="sd">    In the graph map in the returned `ETRecord` object if a model with multiple entry points was provided</span>
 <span class="sd">    originally by the user during `ETRecord` generation then each entry point will be stored as a separate</span>
-<span class="sd">    graph module in the `ETRecord` object with the name being `the original module name + &quot;/&quot; + the</span>
+<span class="sd">    graph module in the `ETRecord` object with the name being `the original module name + "/" + the</span>
 <span class="sd">    name of the entry point`.</span>
 
 <span class="sd">    Args:</span>
@@ -2654,18 +2654,18 @@ document.write(`
 
 <span class="sd">    Returns:</span>
 <span class="sd">        `ETRecord` object.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">try</span><span class="p">:</span>
-        <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span>
+        <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">)</span>
     <span class="k">except</span> <span class="n">BadZipFile</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Invalid etrecord file passed in.&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Invalid etrecord file passed in."</span><span class="p">)</span>
 
     <span class="n">file_list</span> <span class="o">=</span> <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">namelist</span><span class="p">()</span>
 
     <span class="k">if</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">file_list</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="s2">&quot;ETRecord identifier missing from etrecord file passed in. Either an invalid file was passed in or the file is corrupt.&quot;</span>
+            <span class="s2">"ETRecord identifier missing from etrecord file passed in. Either an invalid file was passed in or the file is corrupt."</span>
         <span class="p">)</span>
 
     <span class="n">graph_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
@@ -2687,7 +2687,7 @@ document.write(`
     <span class="n">serialized_constants_files</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
     <span class="n">serialized_example_inputs_files</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
 
-    <span class="n">edge_dialect_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="si">}</span><span class="s2">/&quot;</span>
+    <span class="n">edge_dialect_prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="si">}</span><span class="s2">/"</span>
 
     <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">file_list</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DEBUG_HANDLE_MAP_NAME</span><span class="p">:</span>
@@ -2712,22 +2712,22 @@ document.write(`
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
                     <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span>
                 <span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_constants&quot;</span><span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_state_dict"</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_constants"</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_example_inputs"</span><span class="p">),</span>
             <span class="p">)</span>
             <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">edge_dialect_prefix</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span>
-            <span class="p">(</span><span class="s2">&quot;_state_dict&quot;</span><span class="p">,</span> <span class="s2">&quot;_constants&quot;</span><span class="p">,</span> <span class="s2">&quot;_example_inputs&quot;</span><span class="p">)</span>
+            <span class="p">(</span><span class="s2">"_state_dict"</span><span class="p">,</span> <span class="s2">"_constants"</span><span class="p">,</span> <span class="s2">"_example_inputs"</span><span class="p">)</span>
         <span class="p">):</span>
             <span class="c1"># New format: edge_dialect_exported_program/method_name</span>
             <span class="n">serialized_edge_dialect_program_files</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EXPORTED_PROGRAM</span><span class="p">:</span>
             <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">SerializedArtifact</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EXPORTED_PROGRAM</span><span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_constants&quot;</span><span class="p">),</span>
-                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_state_dict"</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_constants"</span><span class="p">),</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_example_inputs"</span><span class="p">),</span>
             <span class="p">)</span>
             <span class="n">exported_program</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">REFERENCE_OUTPUTS</span><span class="p">:</span>
@@ -2740,10 +2740,10 @@ document.write(`
                 <span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;Failed to load reference_outputs from ETRecord. &quot;</span>
-                    <span class="s2">&quot;This ETRecord file may have been created with an older &quot;</span>
-                    <span class="s2">&quot;version that used pickle serialization. Please regenerate &quot;</span>
-                    <span class="s2">&quot;the ETRecord file with the current version of ExecuTorch.&quot;</span>
+                    <span class="s2">"Failed to load reference_outputs from ETRecord. "</span>
+                    <span class="s2">"This ETRecord file may have been created with an older "</span>
+                    <span class="s2">"version that used pickle serialization. Please regenerate "</span>
+                    <span class="s2">"the ETRecord file with the current version of ExecuTorch."</span>
                 <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">REPRESENTATIVE_INPUTS</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
@@ -2757,30 +2757,30 @@ document.write(`
                 <span class="p">)</span>
             <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                    <span class="s2">&quot;Failed to load representative_inputs from ETRecord. &quot;</span>
-                    <span class="s2">&quot;This ETRecord file may have been created with an older &quot;</span>
-                    <span class="s2">&quot;version that used pickle serialization. Please regenerate &quot;</span>
-                    <span class="s2">&quot;the ETRecord file with the current version of ExecuTorch.&quot;</span>
+                    <span class="s2">"Failed to load representative_inputs from ETRecord. "</span>
+                    <span class="s2">"This ETRecord file may have been created with an older "</span>
+                    <span class="s2">"version that used pickle serialization. Please regenerate "</span>
+                    <span class="s2">"the ETRecord file with the current version of ExecuTorch."</span>
                 <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EXPORT_GRAPH_ID</span><span class="p">:</span>
             <span class="n">export_graph_id</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EXPORT_GRAPH_ID</span><span class="p">)</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;state_dict&quot;</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"state_dict"</span><span class="p">):</span>
                 <span class="n">serialized_state_dict_files</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;constants&quot;</span><span class="p">):</span>
+            <span class="k">elif</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"constants"</span><span class="p">):</span>
                 <span class="n">serialized_constants_files</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;example_inputs&quot;</span><span class="p">):</span>
+            <span class="k">elif</span> <span class="n">entry</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"example_inputs"</span><span class="p">):</span>
                 <span class="n">serialized_example_inputs_files</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">serialized_exported_program_files</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
 
     <span class="c1"># Parse new format edge dialect programs (multi-method support)</span>
     <span class="k">for</span> <span class="n">serialized_file</span> <span class="ow">in</span> <span class="n">serialized_edge_dialect_program_files</span><span class="p">:</span>
-        <span class="n">serialized_state_dict_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_state_dict&quot;</span>
-        <span class="n">serialized_constants_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_constants&quot;</span>
-        <span class="n">serialized_example_inputs_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span>
+        <span class="n">serialized_state_dict_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_state_dict"</span>
+        <span class="n">serialized_constants_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_constants"</span>
+        <span class="n">serialized_example_inputs_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_example_inputs"</span>
         <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">SerializedArtifact</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_file</span><span class="p">),</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_state_dict_file</span><span class="p">),</span>
@@ -2801,12 +2801,12 @@ document.write(`
             <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">edge_dialect_programs</span>
 
     <span class="k">for</span> <span class="n">serialized_file</span> <span class="ow">in</span> <span class="n">serialized_exported_program_files</span><span class="p">:</span>
-        <span class="n">serialized_state_dict_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_state_dict&quot;</span>
-        <span class="n">serialized_constants_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_constants&quot;</span>
-        <span class="n">serialized_example_inputs_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_example_inputs&quot;</span>
+        <span class="n">serialized_state_dict_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_state_dict"</span>
+        <span class="n">serialized_constants_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_constants"</span>
+        <span class="n">serialized_example_inputs_file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">_example_inputs"</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="n">serialized_state_dict_file</span> <span class="ow">in</span> <span class="n">serialized_state_dict_files</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Could not find corresponding state dict file for </span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">"Could not find corresponding state dict file for </span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">."</span>
         <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">SerializedArtifact</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_file</span><span class="p">),</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_state_dict_file</span><span class="p">),</span>

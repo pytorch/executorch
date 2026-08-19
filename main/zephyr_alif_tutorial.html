@@ -2049,7 +2049,7 @@ but cannot run the FVP or flash)</p></li>
 <p>Create a workspace, install <code class="docutils literal notranslate"><span class="pre">west</span></code>, and initialize the Zephyr tree:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>~/zephyr_workspace<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>~/zephyr_workspace
 python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-pip<span class="w"> </span>install<span class="w"> </span>west<span class="w"> </span><span class="s2">&quot;cmake&lt;4.0.0&quot;</span><span class="w"> </span>pyelftools<span class="w"> </span>ninja<span class="w"> </span>jsonschema
+pip<span class="w"> </span>install<span class="w"> </span>west<span class="w"> </span><span class="s2">"cmake&lt;4.0.0"</span><span class="w"> </span>pyelftools<span class="w"> </span>ninja<span class="w"> </span>jsonschema
 west<span class="w"> </span>init<span class="w"> </span>--manifest-rev<span class="w"> </span>v4.4.0
 </pre></div>
 </div>
@@ -2059,7 +2059,7 @@ west<span class="w"> </span>init<span class="w"> </span>--manifest-rev<span clas
 <p>Copy the submanifest, configure <code class="docutils literal notranslate"><span class="pre">west</span></code> to pull only the modules we need, and
 update:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>zephyr/submanifests
-cat<span class="w"> </span>&gt;<span class="w"> </span>zephyr/submanifests/executorch.yaml<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+cat<span class="w"> </span>&gt;<span class="w"> </span>zephyr/submanifests/executorch.yaml<span class="w"> </span><span class="s">&lt;&lt; 'EOF'</span>
 <span class="s">manifest:</span>
 <span class="s">  projects:</span>
 <span class="s">    - name: executorch</span>
@@ -2145,7 +2145,7 @@ you do not want to depend on torchvision pretrained weights.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FVP_ROOT</span><span class="o">=</span><span class="nv">$PWD</span>/modules/lib/executorch/examples/arm/arm-scratch/FVP-corstone320
 <span class="nb">export</span><span class="w"> </span><span class="nv">ARMFVP_BIN_PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">FVP_ROOT</span><span class="si">}</span>/models/Linux64_GCC-9.3
 <span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="si">${</span><span class="nv">FVP_ROOT</span><span class="si">}</span>/python/lib:<span class="si">${</span><span class="nv">ARMFVP_BIN_PATH</span><span class="si">}</span>:<span class="si">${</span><span class="nv">LD_LIBRARY_PATH</span><span class="si">}</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ARMFVP_EXTRA_FLAGS</span><span class="o">=</span><span class="s2">&quot;-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ARMFVP_EXTRA_FLAGS</span><span class="o">=</span><span class="s2">"-C mps4_board.uart0.shutdown_on_eot=1 -C mps4_board.subsystem.ethosu.num_macs=256"</span>
 
 west<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>run
 </pre></div>
@@ -2193,47 +2193,47 @@ the SE Tools directory:</p>
 
 <span class="nb">cd</span><span class="w"> </span>&lt;PATH_TO_ALIF_SETOOLS&gt;/app-release-exec-linux_FW_1.109.00_DEV
 
-ln<span class="w"> </span>-sf<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$ZEPHYR_BUILD</span><span class="s2">/zephyr.bin&quot;</span><span class="w"> </span>build/images/zephyr.bin
+ln<span class="w"> </span>-sf<span class="w"> </span><span class="s2">"</span><span class="nv">$ZEPHYR_BUILD</span><span class="s2">/zephyr.bin"</span><span class="w"> </span>build/images/zephyr.bin
 
-cat<span class="w"> </span>&gt;<span class="w"> </span>build/images/zephyr.json<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+cat<span class="w"> </span>&gt;<span class="w"> </span>build/images/zephyr.json<span class="w"> </span><span class="s">&lt;&lt; 'EOF'</span>
 <span class="s">{</span>
-<span class="s">    &quot;DEVICE&quot;: {</span>
-<span class="s">        &quot;binary&quot;: &quot;app-device-config.json&quot;,</span>
-<span class="s">        &quot;version&quot;: &quot;0.5.0&quot;,</span>
-<span class="s">        &quot;signed&quot;: true</span>
+<span class="s">    "DEVICE": {</span>
+<span class="s">        "binary": "app-device-config.json",</span>
+<span class="s">        "version": "0.5.0",</span>
+<span class="s">        "signed": true</span>
 <span class="s">    },</span>
-<span class="s">    &quot;MV2&quot;: {</span>
-<span class="s">        &quot;binary&quot;: &quot;zephyr.bin&quot;,</span>
-<span class="s">        &quot;version&quot;: &quot;1.0.0&quot;,</span>
-<span class="s">        &quot;mramAddress&quot;: &quot;0x80008000&quot;,</span>
-<span class="s">        &quot;cpu_id&quot;: &quot;M55_HP&quot;,</span>
-<span class="s">        &quot;flags&quot;: [&quot;boot&quot;],</span>
-<span class="s">        &quot;signed&quot;: false</span>
+<span class="s">    "MV2": {</span>
+<span class="s">        "binary": "zephyr.bin",</span>
+<span class="s">        "version": "1.0.0",</span>
+<span class="s">        "mramAddress": "0x80008000",</span>
+<span class="s">        "cpu_id": "M55_HP",</span>
+<span class="s">        "flags": ["boot"],</span>
+<span class="s">        "signed": false</span>
 <span class="s">    }</span>
 <span class="s">}</span>
 <span class="s">EOF</span>
 
-cat<span class="w"> </span>&gt;<span class="w"> </span>build/images/app-device-config.json<span class="w"> </span><span class="s">&lt;&lt; &#39;EOF&#39;</span>
+cat<span class="w"> </span>&gt;<span class="w"> </span>build/images/app-device-config.json<span class="w"> </span><span class="s">&lt;&lt; 'EOF'</span>
 <span class="s">{</span>
-<span class="s">  &quot;metadata&quot;: {</span>
-<span class="s">    &quot;device&quot;: &quot;AE822FA0E5597LS0&quot;,</span>
-<span class="s">    &quot;project&quot;: &quot;&quot;,</span>
-<span class="s">    &quot;external_clock_sources&quot;: [</span>
+<span class="s">  "metadata": {</span>
+<span class="s">    "device": "AE822FA0E5597LS0",</span>
+<span class="s">    "project": "",</span>
+<span class="s">    "external_clock_sources": [</span>
 <span class="s">      {</span>
-<span class="s">        &quot;id&quot;: &quot;OSC_HFXO&quot;,</span>
-<span class="s">        &quot;enabled&quot;: true,</span>
-<span class="s">        &quot;frequency&quot;: 38400000</span>
+<span class="s">        "id": "OSC_HFXO",</span>
+<span class="s">        "enabled": true,</span>
+<span class="s">        "frequency": 38400000</span>
 <span class="s">      },</span>
 <span class="s">      {</span>
-<span class="s">        &quot;id&quot;: &quot;OSC_LFXO&quot;,</span>
-<span class="s">        &quot;enabled&quot;: false,</span>
-<span class="s">        &quot;frequency&quot;: 32768</span>
+<span class="s">        "id": "OSC_LFXO",</span>
+<span class="s">        "enabled": false,</span>
+<span class="s">        "frequency": 32768</span>
 <span class="s">      }</span>
 <span class="s">    ]</span>
 <span class="s">  },</span>
-<span class="s">  &quot;firewall&quot;: {&quot;firewall_components&quot;: []},</span>
-<span class="s">  &quot;pinmux&quot;: {&quot;configurations&quot;: []},</span>
-<span class="s">  &quot;miscellaneous&quot;: []</span>
+<span class="s">  "firewall": {"firewall_components": []},</span>
+<span class="s">  "pinmux": {"configurations": []},</span>
+<span class="s">  "miscellaneous": []</span>
 <span class="s">}</span>
 <span class="s">EOF</span>
 </pre></div>
@@ -2251,7 +2251,7 @@ ATOC but the M55 image will not start correctly.</p>
 <p>Generate the ATOC package from the SE Tools directory. The executable releases
 expect image files under their own <code class="docutils literal notranslate"><span class="pre">build/images</span></code> directory, so stage the Zephyr
 outputs there with symlinks:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./app-gen-toc<span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;build/images/zephyr.json&quot;</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./app-gen-toc<span class="w"> </span>-f<span class="w"> </span><span class="s2">"build/images/zephyr.json"</span>
 </pre></div>
 </div>
 <p>Note that some versions use <code class="docutils literal notranslate"><span class="pre">app-gen-toc.py</span></code>.</p>
@@ -2328,7 +2328,7 @@ I [executorch:main.cpp] Running method: forward
 I [executorch:main.cpp] Method allocator pool size: 1572864 bytes.
 I [executorch:main.cpp] Setting up planned buffer 0, size 752640.
 I [executorch:main.cpp] Loading method...
-I [executorch:main.cpp] Method &#39;forward&#39; loaded successfully
+I [executorch:main.cpp] Method 'forward' loaded successfully
 I [executorch:main.cpp] Preparing input: static RGB image (150528 bytes)
 I [executorch:main.cpp] Input tensor: scalar_type=Float, numel=150528, nbytes=602112
 I [executorch:main.cpp] Converting uint8 input (150528 elements) to float32

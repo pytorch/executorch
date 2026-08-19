@@ -1997,13 +1997,13 @@ This will install the ExecuTorch python package and its dependencies into the ac
 <p>For Intel-based macOS systems, use <code class="docutils literal notranslate"><span class="pre">--use-pt-pinned-commit</span> <span class="pre">--minimal</span></code>. As PyTorch does not provide pre-built binaries for Intel Mac, installation requires building PyTorch from source. Instructions can be found in <a class="reference external" href="https://github.com/pytorch/pytorch#installation">PyTorch Installation</a>.</p>
 <p>Note that only the XNNPACK and CoreML backends are built by default. Additional backends can be enabled or disabled by setting the corresponding CMake flags:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Enable the MPS backend</span>
-<span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">&quot;-DEXECUTORCH_BUILD_MPS=ON&quot;</span><span class="w"> </span>./install_executorch.sh
+<span class="nv">CMAKE_ARGS</span><span class="o">=</span><span class="s2">"-DEXECUTORCH_BUILD_MPS=ON"</span><span class="w"> </span>./install_executorch.sh
 </pre></div>
 </div>
 <section id="verify-the-build">
 <h3>Verify the Build<a class="headerlink" href="#verify-the-build" title="Link to this heading">#</a></h3>
 <p>To verify that the Python components are installed correctly, run the following command. This will create a file named mv2_xnnpack_fp32.pte in the current directory for the MobileNet V2 model with the XNNPACK backend. If it completes without error, the ExecuTorch Python components are installed successfully.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>executorch.examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">"mv2"</span><span class="w"> </span>--delegate
 </pre></div>
 </div>
 </section>
@@ -2183,8 +2183,8 @@ cmake<span class="w"> </span>-B<span class="w"> </span>cmake-out<span class="w">
 <span class="c1"># `cmake-out` directory.</span>
 <span class="c1">#</span>
 <span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
-<span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
-<span class="c1"># &quot;core count + 1&quot; as the `-j` value; the command below derives that</span>
+<span class="c1"># building, and tends to speed up the build significantly. It's typical to use</span>
+<span class="c1"># "core count + 1" as the `-j` value; the command below derives that</span>
 <span class="c1"># dynamically (`nproc` on Linux, `sysctl -n hw.ncpu` on macOS).</span>
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j<span class="k">$((</span><span class="w"> </span><span class="k">$(</span>nproc<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span>sysctl<span class="w"> </span>-n<span class="w"> </span>hw.ncpu<span class="k">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="k">))</span>
 </pre></div>

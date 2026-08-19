@@ -1970,7 +1970,7 @@ document.write(`
 <span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">inputs</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model output: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Model output: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Note that the model is set to evaluation mode using <code class="docutils literal notranslate"><span class="pre">.eval()</span></code>. Models should always be exported in evaluation mode unless performing on-device training. This mode configures certain operations with training-specific behavior, such as batch norm or dropout, to use the inference-mode configuration.</p>
@@ -2004,9 +2004,9 @@ document.write(`
 <span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
 <span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
 <span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+    <span class="s2">"x"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">"h"</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">"w"</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
     <span class="p">}</span>
 <span class="p">}</span>
 
@@ -2016,7 +2016,7 @@ document.write(`
     <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
     <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2029,7 +2029,7 @@ document.write(`
 <span class="n">tagged_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 <span class="n">delegate_external_constants_pass_unlifted</span><span class="p">(</span>
     <span class="n">module</span><span class="o">=</span><span class="n">tagged_module</span><span class="p">,</span>
-    <span class="n">gen_tag_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="c1"># This is the filename the weights will be saved to. In this case, weights will be saved as &quot;model.ptd&quot;</span>
+    <span class="n">gen_tag_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s2">"model"</span><span class="p">,</span> <span class="c1"># This is the filename the weights will be saved to. In this case, weights will be saved as "model.ptd"</span>
 <span class="p">)</span>
 <span class="c1"># Re-export to get the EP.</span>
 <span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">tagged_module</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
@@ -2051,9 +2051,9 @@ document.write(`
 <p>In the example model, inputs are provided as 4-dimensions tensors following the standard convention of batch, channels, height, and width (NCHW). An input with the shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">3,</span> <span class="pre">16,</span> <span class="pre">16]</span></code> indicates 1 batch, 3 channels, and a height and width of 16.</p>
 <p>Suppose your model supports images with sizes between 16x16 and 1024x1024. The shape bounds can be specified as follows:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+    <span class="s2">"x"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">"h"</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
+        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">"w"</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
     <span class="p">}</span>
 <span class="p">}</span>
 
@@ -2074,8 +2074,8 @@ document.write(`
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 
 <span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
-<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">)</span>
+<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
@@ -2084,7 +2084,7 @@ document.write(`
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings</span><span class="w"> </span><span class="kn">import</span> <span class="n">portable_lib</span>
 
 <span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
-<span class="n">module</span> <span class="o">=</span> <span class="n">portable_lib</span><span class="o">.</span><span class="n">_load_for_executorch</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;model.ptd&quot;</span><span class="p">)</span>
+<span class="n">module</span> <span class="o">=</span> <span class="n">portable_lib</span><span class="o">.</span><span class="n">_load_for_executorch</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">,</span> <span class="s2">"model.ptd"</span><span class="p">)</span>
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
@@ -2129,8 +2129,8 @@ decoding.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">encode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 <span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
 <span class="n">lowered</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">({</span>
-    <span class="s2">&quot;encode&quot;</span><span class="p">:</span> <span class="n">encode_ep</span><span class="p">,</span>
-    <span class="s2">&quot;decode&quot;</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span>
+    <span class="s2">"encode"</span><span class="p">:</span> <span class="n">encode_ep</span><span class="p">,</span>
+    <span class="s2">"decode"</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span>
 <span class="p">})</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
 </div>

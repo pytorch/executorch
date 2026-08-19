@@ -2023,7 +2023,7 @@ pip3<span class="w"> </span>install<span class="w"> </span>mtk_converter-8.13.0+
 <h3>Quantizer API<a class="headerlink" href="#quantizer-api" title="Link to this heading">#</a></h3>
 <p>Quantizer can be configured with different precision. We currently support A16W16, A16W8, A16W4, A8W8 and A8W4</p>
 <p>The example code will be</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">precision</span> <span class="o">=</span> <span class="s2">&quot;A16W16&quot;</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">precision</span> <span class="o">=</span> <span class="s2">"A16W16"</span>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">NeuropilotQuantizer</span><span class="p">()</span>
 <span class="n">quantizer</span><span class="o">.</span><span class="n">setup_precision</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">Precision</span><span class="p">,</span> <span class="n">precision</span><span class="p">))</span>
 </pre></div>

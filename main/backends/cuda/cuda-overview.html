@@ -2047,7 +2047,7 @@ document.write(`
 
 <span class="c1"># Convert to executable program and save</span>
 <span class="n">exec_program</span> <span class="o">=</span> <span class="n">et_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_program</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="s2">&quot;./output_dir&quot;</span><span class="p">)</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_program</span><span class="p">,</span> <span class="n">model_name</span><span class="p">,</span> <span class="s2">"./output_dir"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>This generates <code class="docutils literal notranslate"><span class="pre">.pte</span></code> and <code class="docutils literal notranslate"><span class="pre">.ptd</span></code> files that can be executed on CUDA devices.</p>
@@ -2060,7 +2060,7 @@ document.write(`
 <p>To run the model on device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="#getting-started.md#running-on-device"><span class="xref myst">Running on Device</span></a> for more information.</p>
 <p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_CUDA=ON</span></code> when configuring the CMake build to compile the CUDA backend.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
-<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">&quot;executorch&quot;</span><span class="p">)</span>
+<span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
 <span class="o">...</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">my_target</span>

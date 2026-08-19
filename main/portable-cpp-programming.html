@@ -2059,7 +2059,7 @@ just print them to <code class="docutils literal notranslate"><span class="pre">
 <h4>Fixed-Width Integers<a class="headerlink" href="#fixed-width-integers" title="Link to this heading">#</a></h4>
 <p>When you have a log statement like</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">int64_t</span> <span class="n">value</span><span class="p">;</span>
-<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">&quot;Value %??? is bad&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
+<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">"Value %??? is bad"</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>what should you put for the <code class="docutils literal notranslate"><span class="pre">%???</span></code> part, to match the <code class="docutils literal notranslate"><span class="pre">int64_t</span></code>? On different
@@ -2079,7 +2079,7 @@ helper macros from <code class="docutils literal notranslate"><span class="pre">
 <p>These macros are literal strings that can concatenate with other parts of the
 format string, like</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">int64_t</span> <span class="n">value</span><span class="p">;</span>
-<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">&quot;Value %&quot;</span> <span class="n">PRId64</span> <span class="s2">&quot; is bad&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
+<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">"Value %"</span> <span class="n">PRId64</span> <span class="s2">" is bad"</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Note that this requires chopping up the literal format string (the extra double
@@ -2103,7 +2103,7 @@ value itself might be different across build modes. In those cases, cast the
 value to the lean mode type, like:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ET_CHECK_MSG</span><span class="p">(</span>
     <span class="nb">input</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="n">output</span><span class="o">.</span><span class="n">dim</span><span class="p">(),</span>
-    <span class="s2">&quot;input.dim() %zd not equal to output.dim() %zd&quot;</span><span class="p">,</span>
+    <span class="s2">"input.dim() %zd not equal to output.dim() %zd"</span><span class="p">,</span>
     <span class="p">(</span><span class="n">ssize_t</span><span class="p">)</span><span class="nb">input</span><span class="o">.</span><span class="n">dim</span><span class="p">(),</span>
     <span class="p">(</span><span class="n">ssize_t</span><span class="p">)</span><span class="n">output</span><span class="o">.</span><span class="n">dim</span><span class="p">());</span>
 </pre></div>

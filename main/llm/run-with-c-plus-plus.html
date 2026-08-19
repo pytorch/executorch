@@ -1953,7 +1953,7 @@ document.write(`
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># export_llm</span>
 <span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">extension</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_llm</span> \
   <span class="o">--</span><span class="n">config</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">config</span><span class="o">.</span><span class="n">yaml</span> \
-  <span class="o">+</span><span class="n">base</span><span class="o">.</span><span class="n">metadata</span><span class="o">=</span><span class="s1">&#39;{&quot;get_bos_id&quot;:128000, &quot;get_eos_ids&quot;:[128009, 128001], &quot;get_max_context_len&quot;:4096}&#39;</span>
+  <span class="o">+</span><span class="n">base</span><span class="o">.</span><span class="n">metadata</span><span class="o">=</span><span class="s1">'{"get_bos_id":128000, "get_eos_ids":[128009, 128001], "get_max_context_len":4096}'</span>
 </pre></div>
 </div>
 </section>
@@ -1994,8 +1994,8 @@ document.write(`
 
 <span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="c1">// Load tokenizer and create runner</span>
-<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">tokenizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">load_tokenizer</span><span class="p">(</span><span class="s">&quot;path/to/tokenizer.json&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">nullopt</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
-<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">create_text_llm_runner</span><span class="p">(</span><span class="s">&quot;path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">));</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">tokenizer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">load_tokenizer</span><span class="p">(</span><span class="s">"path/to/tokenizer.json"</span><span class="p">,</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">nullopt</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="w">  </span><span class="k">auto</span><span class="w"> </span><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">create_text_llm_runner</span><span class="p">(</span><span class="s">"path/to/model.pte"</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">tokenizer</span><span class="p">));</span>
 
 <span class="w">  </span><span class="c1">// Load the model</span>
 <span class="w">  </span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">load</span><span class="p">();</span>
@@ -2006,7 +2006,7 @@ document.write(`
 <span class="w">  </span><span class="n">config</span><span class="p">.</span><span class="n">temperature</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.8f</span><span class="p">;</span>
 
 <span class="w">  </span><span class="c1">// Generate text with streaming output</span>
-<span class="w">  </span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">generate</span><span class="p">(</span><span class="s">&quot;Hello, world!&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">,</span>
+<span class="w">  </span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">generate</span><span class="p">(</span><span class="s">"Hello, world!"</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">,</span>
 <span class="w">    </span><span class="p">[](</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">flush</span><span class="p">;</span><span class="w"> </span><span class="p">},</span>
 <span class="w">    </span><span class="nb">nullptr</span><span class="p">);</span>
 
@@ -2169,7 +2169,7 @@ document.write(`
 <section id="model-warmup">
 <h3>Model Warmup<a class="headerlink" href="#model-warmup" title="Link to this heading">#</a></h3>
 <p>For more accurate timing and optimal performance, you should perform a warmup run before actual inference:</p>
-<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">warmup</span><span class="p">(</span><span class="s">&quot;Hello world&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span><span class="w">  </span><span class="c1">// Generate 10 tokens as warmup</span>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">runner</span><span class="o">-&gt;</span><span class="n">warmup</span><span class="p">(</span><span class="s">"Hello world"</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">);</span><span class="w">  </span><span class="c1">// Generate 10 tokens as warmup</span>
 </pre></div>
 </div>
 <p>During warmup:</p>
@@ -2207,7 +2207,7 @@ document.write(`
 <section id="memory-usage-monitoring">
 <h3>Memory Usage Monitoring<a class="headerlink" href="#memory-usage-monitoring" title="Link to this heading">#</a></h3>
 <p>You can monitor memory usage with the <code class="docutils literal notranslate"><span class="pre">Stats</span></code> object:</p>
-<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;RSS after loading: &quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">get_rss_bytes</span><span class="p">()</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1024.0</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1024.0</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot; MiB&quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">"RSS after loading: "</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">get_rss_bytes</span><span class="p">()</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1024.0</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1024.0</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">" MiB"</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
 </pre></div>
 </div>
 </section>

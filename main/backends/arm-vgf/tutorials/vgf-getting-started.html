@@ -2113,7 +2113,7 @@ You may encounter some rough edges and features which may be documented or plann
 
 <span class="c1"># Skip quantizing all sigmoid ops (only one for this model); let it run in FP.</span>
 <span class="c1"># This step is optional; selecting which layers to include/exclude for</span>
-<span class="c1"># quantization is part of optimizing the model&#39;s performance.</span>
+<span class="c1"># quantization is part of optimizing the model's performance.</span>
 <span class="n">quantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sigmoid</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
 <span class="c1"># Post training quantization</span>
@@ -2153,11 +2153,11 @@ You may encounter some rough edges and features which may be documented or plann
 
 <span class="c1"># Save pte file</span>
 <span class="n">cwd_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
-<span class="n">pte_base_name</span> <span class="o">=</span> <span class="s2">&quot;simple_example&quot;</span>
-<span class="n">pte_name</span> <span class="o">=</span> <span class="n">pte_base_name</span> <span class="o">+</span> <span class="s2">&quot;.pte&quot;</span>
+<span class="n">pte_base_name</span> <span class="o">=</span> <span class="s2">"simple_example"</span>
+<span class="n">pte_name</span> <span class="o">=</span> <span class="n">pte_base_name</span> <span class="o">+</span> <span class="s2">".pte"</span>
 <span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cwd_dir</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
 <span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">pte_path</span><span class="p">),</span> <span class="s2">&quot;Build failed; no .pte-file found&quot;</span>
+<span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">pte_path</span><span class="p">),</span> <span class="s2">"Build failed; no .pte-file found"</span>
 </pre></div>
 </div>
 <div class="admonition tip">

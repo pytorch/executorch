@@ -1965,18 +1965,18 @@ document.write(`
 <span class="c1"># Create an Inspector instance with etdump and the debug buffer.</span>
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
             <span class="n">buffer_path</span> <span class="o">=</span> <span class="n">buffer_path</span><span class="p">,</span>
-            <span class="c1"># etrecord is optional, if provided it&#39;ll link back</span>
+            <span class="c1"># etrecord is optional, if provided it'll link back</span>
             <span class="c1"># the runtime events to the eager model python source code.</span>
             <span class="n">etrecord</span> <span class="o">=</span> <span class="n">etrecord_path</span><span class="p">)</span>
 
 <span class="c1"># Accessing program outputs is as simple as this:</span>
 <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"Execute"</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">)</span>
 
 <span class="c1"># Accessing intermediate outputs from each event (an event here is essentially an instruction that executed in the runtime).</span>
 <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"Execute"</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">debug_data</span><span class="p">)</span>
             <span class="c1"># If an ETRecord was provided by the user during Inspector initialization, users</span>
@@ -1996,7 +1996,7 @@ document.write(`
 <span class="c1"># filesystem. A dictionary will always be returned which will contain the</span>
 <span class="c1"># results.</span>
 <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">"Execute"</span><span class="p">:</span>
         <span class="n">compare_results</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">,</span> <span class="n">ref_outputs</span><span class="p">,</span> <span class="n">plot</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>

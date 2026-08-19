@@ -2000,17 +2000,17 @@ When there isn’t an allocated memory whose lifetime doesn’t overlap with the
                 <span class="c1"># mem_id = 1 placeholder and outputs of mul</span>
                 <span class="c1"># mem_id = 2 for outputs of add</span>
                 <span class="c1"># parent class will copy spec will to alloc nodes</span>
-                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
-                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">"placeholder"</span><span class="p">:</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"spec"</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
                     <span class="k">continue</span>
 
-                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;call_function&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">"call_function"</span><span class="p">:</span>
                     <span class="k">continue</span>
 
                 <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">out</span><span class="p">:</span>
-                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">2</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"spec"</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">2</span>
                 <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">out</span><span class="p">:</span>
-                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">"spec"</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
 
         <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">graph_signature</span><span class="p">)</span>
 </pre></div>

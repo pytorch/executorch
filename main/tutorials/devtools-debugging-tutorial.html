@@ -1943,7 +1943,7 @@ automatically capture the ETRecord during the lowering process.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>  <span class="c1"># type: ignore[import-untyped]</span>
 
 <span class="c1"># Create Vision Transformer model</span>
-<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">&quot;IMAGENET1K_V1&quot;</span><span class="p">)</span>
+<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">"IMAGENET1K_V1"</span><span class="p">)</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">vit</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
 
@@ -1961,13 +1961,13 @@ automatically capture the ETRecord during the lowering process.</p>
 <span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the .pte file</span>
-<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
+<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"model.pte"</span><span class="p">)</span>
 <span class="n">et_program_manager</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">pte_path</span><span class="p">)</span>
 
 <span class="c1"># Get and save ETRecord with representative inputs</span>
 <span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_program_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
 <span class="n">etrecord</span><span class="o">.</span><span class="n">update_representative_inputs</span><span class="p">(</span><span class="n">model_inputs</span><span class="p">)</span>
-<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"etrecord.bin"</span><span class="p">)</span>
 <span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1994,12 +1994,12 @@ runtime execution.</p>
     <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">,</span>  <span class="c1"># 1GB buffer</span>
 <span class="p">)</span>
 
-<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
+<span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">"forward"</span><span class="p">)</span>
 <span class="n">runtime_outputs</span> <span class="o">=</span> <span class="n">forward</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">)</span>
 
 <span class="c1"># Save ETDump and debug buffer</span>
-<span class="n">etdump_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
-<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;debug_buffer.bin&quot;</span><span class="p">)</span>
+<span class="n">etdump_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"etdump.etdp"</span><span class="p">)</span>
+<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"debug_buffer.bin"</span><span class="p">)</span>
 <span class="n">program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_path</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2027,13 +2027,13 @@ you quickly determine if there are any numerical issues worth investigating.</p>
 
 <span class="c1"># Calculate MSE between eager and runtime outputs</span>
 <span class="n">mse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">mean</span><span class="p">((</span><span class="n">eager_output</span> <span class="o">-</span> <span class="n">runtime_output</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final output MSE: </span><span class="si">{</span><span class="n">mse</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Final output MSE: </span><span class="si">{</span><span class="n">mse</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># Check if outputs are close enough</span>
 <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">eager_output</span><span class="p">,</span> <span class="n">runtime_output</span><span class="p">,</span> <span class="n">rtol</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Outputs match within tolerance!&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Outputs match within tolerance!"</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Outputs differ - proceeding with operator-level analysis...&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Outputs differ - proceeding with operator-level analysis..."</span><span class="p">)</span>
 </pre></div>
 </div>
 </section>
@@ -2050,11 +2050,11 @@ method to identify which operators are contributing to the numerical differences
     <span class="n">debug_buffer_path</span><span class="o">=</span><span class="n">debug_buffer_path</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.width&quot;</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
-<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_columns&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">"display.width"</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">"display.max_columns"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 
 <span class="c1"># Calculate numerical gap using Mean Squared Error</span>
-<span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;MSE&quot;</span><span class="p">)</span>
+<span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">"MSE"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2075,12 +2075,12 @@ appears as a single entry for each delegated subgraph chunk.</p></li>
 <p>Example output:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>|    | aot_debug_handle               | aot_ops                                       | aot_intermediate_output                  | runtime_ops                                       | runtime_debug_handle           | runtime_intermediate_output              | gap                      | stacktraces                                  |
 |----|--------------------------------|-----------------------------------------------|------------------------------------------|---------------------------------------------------|--------------------------------|------------------------------------------|--------------------------|----------------------------------------------|
-| 0  | (1, 2, 3, 5, 6, 7)             | [conv2d, reshape, permute, cat, add, dropout] | [[[tensor(-0.0024), tensor(0.0054),...   | [DELEGATE_CALL]                                   | (1, 2, 3, 5, 6, 7)             | [[[tensor(-0.0024), tensor(0.0054),...   | [0.0]                    | {&#39;conv2d&#39;: &#39;File &quot;vit.py&quot;, line 10...&#39;}      |
-| 1  | (4,)                           | [expand]                                      | [[[tensor(-0.0012), tensor(0.0027),...   | [native_call_expand_copy.out]                     | (4,)                           | [[[tensor(-0.0012), tensor(0.0027),...   | [0.0]                    | {&#39;expand&#39;: &#39;File &quot;vit.py&quot;, line 50...&#39;}      |
-| 2  | (8,)                           | [layer_norm]                                  | [[[tensor(-0.0001), tensor(0.0009),...   | [native_call_native_layer_norm.out]               | (8,)                           | [[[tensor(-0.0001), tensor(0.0009),...   | [1.5257813119012582e-16] | {&#39;layer_norm&#39;: &#39;File &quot;vit.py&quot;, line 80...&#39;}  |
-| 3  | (9, 10, 11, 12, 13)            | [transpose, linear, unflatten, unsqueeze,...] | [[[tensor(0.0132), tensor(-0.0005),...   | [DELEGATE_CALL, native_call_expand_copy.out, ...] | (9, 10, 11, 12, 13)            | [[[tensor(0.0132), tensor(-0.0005),...   | [6.72759426534678e-16]   | {&#39;transpose&#39;: &#39;File &quot;vit.py&quot;, line 90...&#39;}   |
+| 0  | (1, 2, 3, 5, 6, 7)             | [conv2d, reshape, permute, cat, add, dropout] | [[[tensor(-0.0024), tensor(0.0054),...   | [DELEGATE_CALL]                                   | (1, 2, 3, 5, 6, 7)             | [[[tensor(-0.0024), tensor(0.0054),...   | [0.0]                    | {'conv2d': 'File "vit.py", line 10...'}      |
+| 1  | (4,)                           | [expand]                                      | [[[tensor(-0.0012), tensor(0.0027),...   | [native_call_expand_copy.out]                     | (4,)                           | [[[tensor(-0.0012), tensor(0.0027),...   | [0.0]                    | {'expand': 'File "vit.py", line 50...'}      |
+| 2  | (8,)                           | [layer_norm]                                  | [[[tensor(-0.0001), tensor(0.0009),...   | [native_call_native_layer_norm.out]               | (8,)                           | [[[tensor(-0.0001), tensor(0.0009),...   | [1.5257813119012582e-16] | {'layer_norm': 'File "vit.py", line 80...'}  |
+| 3  | (9, 10, 11, 12, 13)            | [transpose, linear, unflatten, unsqueeze,...] | [[[tensor(0.0132), tensor(-0.0005),...   | [DELEGATE_CALL, native_call_expand_copy.out, ...] | (9, 10, 11, 12, 13)            | [[[tensor(0.0132), tensor(-0.0005),...   | [6.72759426534678e-16]   | {'transpose': 'File "vit.py", line 90...'}   |
 | ...|                                |                                               |                                          |                                                   |                                |                                          |                          |                                              |
-| 52 | (166,)                         | [linear_48]                                   | [[tensor(-0.8981), tensor(0.6046),...    | [DELEGATE_CALL]                                   | (166,)                         | [[tensor(-0.8981), tensor(0.6046),...    | [8.760367306096254e-12]  | {&#39;linear_48&#39;: &#39;File &quot;vit.py&quot;, line 120...&#39;}  |
+| 52 | (166,)                         | [linear_48]                                   | [[tensor(-0.8981), tensor(0.6046),...    | [DELEGATE_CALL]                                   | (166,)                         | [[tensor(-0.8981), tensor(0.6046),...    | [8.760367306096254e-12]  | {'linear_48': 'File "vit.py", line 120...'}  |
 </pre></div>
 </div>
 <p>Each row is one runtime intermediate-output cluster: either a single
@@ -2098,39 +2098,39 @@ operator was defined.</p>
 discrepancies for further investigation. The <code class="docutils literal notranslate"><span class="pre">stacktraces</span></code> column helps
 you trace problematic operators back to the original source code.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Find operators with the largest discrepancies</span>
-<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;gap&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span><span class="p">:</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">y</span><span class="p">))</span>
+<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">"gap"</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span><span class="p">:</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">y</span><span class="p">))</span>
 
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top 5 operators with largest numerical discrepancies:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Top 5 operators with largest numerical discrepancies:"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">df_sorted</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
 
 <span class="c1"># Filter for operators with gap above a threshold</span>
 <span class="n">threshold</span> <span class="o">=</span> <span class="mf">1e-4</span>
-<span class="n">problematic_ops</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;gap&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">threshold</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">)]</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Operators with MSE &gt; </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">)</span>
+<span class="n">problematic_ops</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">"gap"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">threshold</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">)]</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Operators with MSE &gt; </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">:"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">problematic_ops</span><span class="p">)</span>
 
 <span class="c1"># Use stacktraces to find the source location of problematic operators</span>
 <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">problematic_ops</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Operator </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2"> ---&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Operators: </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;aot_ops&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Gap: </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;gap&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Stack traces:&quot;</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">op_name</span><span class="p">,</span> <span class="n">trace</span> <span class="ow">in</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;stacktraces&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">--- Operator </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2"> ---"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Operators: </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">'aot_ops'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Gap: </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">'gap'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"Stack traces:"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">op_name</span><span class="p">,</span> <span class="n">trace</span> <span class="ow">in</span> <span class="n">row</span><span class="p">[</span><span class="s1">'stacktraces'</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">trace</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">op_name</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">op_name</span><span class="si">}</span><span class="s2">:"</span><span class="p">)</span>
             <span class="c1"># Print first few lines of stack trace</span>
-            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">trace</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">]:</span>
-                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">trace</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">)[:</span><span class="mi">3</span><span class="p">]:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"    </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Example output showing problematic operators in a ViT model:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Top 5 operators with largest numerical discrepancies:
                    aot_debug_handle                                            aot_ops                            aot_intermediate_output                                        runtime_ops            runtime_debug_handle                        runtime_intermediate_output                       gap                                        stacktraces
-49  (158, 159, 160, 161, 162, 163)  [linear_46, gelu_11, dropout_35, linear_47, dr...  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...                                    [DELEGATE_CALL]  (158, 159, 160, 161, 162, 163)  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...  [3.7287804660557997e-11]  {&#39;linear_46&#39;: &#39;File &quot;vit.py&quot;, line 100...&#39;}
-45  (145, 146, 147, 148, 149, 150)  [linear_42, gelu_10, dropout_32, linear_43, dr...  [[[tensor(-0.2785), tensor(-0.2209), tensor(-0...                                    [DELEGATE_CALL]  (145, 146, 147, 148, 149, 150)  [[[tensor(-0.2785), tensor(-0.2208), tensor(-0...  [3.267051816109279e-11]  {&#39;linear_42&#39;: &#39;File &quot;vit.py&quot;, line 100...&#39;}
-47       (152, 153, 154, 155, 156)  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [DELEGATE_CALL, native_call_expand_copy.out, D...       (152, 153, 154, 155, 156)  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [3.043042878567803e-11]  {&#39;transpose_66&#39;: &#39;File &quot;vit.py&quot;, line 90...&#39;}
-50                          (164,)                                    [layer_norm_24]  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...                [native_call_native_layer_norm.out]                          (164,)  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...  [2.3309619445739474e-11]  {&#39;layer_norm_24&#39;: &#39;File &quot;vit.py&quot;, line 78...&#39;}
-41  (132, 133, 134, 135, 136, 137)  [linear_38, gelu_9, dropout_29, linear_39, dro...  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...                                    [DELEGATE_CALL]  (132, 133, 134, 135, 136, 137)  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...  [1.8573805941767968e-11]  {&#39;linear_38&#39;: &#39;File &quot;vit.py&quot;, line 100...&#39;}
+49  (158, 159, 160, 161, 162, 163)  [linear_46, gelu_11, dropout_35, linear_47, dr...  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...                                    [DELEGATE_CALL]  (158, 159, 160, 161, 162, 163)  [[[tensor(-0.6154), tensor(-0.0025), tensor(-0...  [3.7287804660557997e-11]  {'linear_46': 'File "vit.py", line 100...'}
+45  (145, 146, 147, 148, 149, 150)  [linear_42, gelu_10, dropout_32, linear_43, dr...  [[[tensor(-0.2785), tensor(-0.2209), tensor(-0...                                    [DELEGATE_CALL]  (145, 146, 147, 148, 149, 150)  [[[tensor(-0.2785), tensor(-0.2208), tensor(-0...  [3.267051816109279e-11]  {'linear_42': 'File "vit.py", line 100...'}
+47       (152, 153, 154, 155, 156)  [transpose_66, linear_44, unflatten_11, unsque...  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [DELEGATE_CALL, native_call_expand_copy.out, D...       (152, 153, 154, 155, 156)  [[[tensor(-0.5681), tensor(-0.0251), tensor(-0...  [3.043042878567803e-11]  {'transpose_66': 'File "vit.py", line 90...'}
+50                          (164,)                                    [layer_norm_24]  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...                [native_call_native_layer_norm.out]                          (164,)  [[[tensor(-0.8486), tensor(-0.0315), tensor(-0...  [2.3309619445739474e-11]  {'layer_norm_24': 'File "vit.py", line 78...'}
+41  (132, 133, 134, 135, 136, 137)  [linear_38, gelu_9, dropout_29, linear_39, dro...  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...                                    [DELEGATE_CALL]  (132, 133, 134, 135, 136, 137)  [[[tensor(-0.3233), tensor(-0.1968), tensor(-0...  [1.8573805941767968e-11]  {'linear_38': 'File "vit.py", line 100...'}
 
 Operators with MSE &gt; 0.0001:
 Empty DataFrame
@@ -2164,7 +2164,7 @@ C++ runtime or on platforms where Python bindings are not available.</p>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision</span><span class="w"> </span><span class="kn">import</span> <span class="n">models</span>  <span class="c1"># type: ignore[import-untyped]</span>
 
 <span class="c1"># Create Vision Transformer model</span>
-<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">&quot;IMAGENET1K_V1&quot;</span><span class="p">)</span>
+<span class="n">vit</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">vit_b_16</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="s2">"IMAGENET1K_V1"</span><span class="p">)</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">vit</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>
 
@@ -2182,13 +2182,13 @@ C++ runtime or on platforms where Python bindings are not available.</p>
 <span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the .pte file</span>
-<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
+<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"model.pte"</span><span class="p">)</span>
 <span class="n">et_program_manager</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">pte_path</span><span class="p">)</span>
 
 <span class="c1"># Get and save ETRecord with representative inputs</span>
 <span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_program_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
 <span class="n">etrecord</span><span class="o">.</span><span class="n">update_representative_inputs</span><span class="p">(</span><span class="n">model_inputs</span><span class="p">)</span>
-<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"etrecord.bin"</span><span class="p">)</span>
 <span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2206,7 +2206,7 @@ with sample inputs and expected outputs for testing. We reuse the
 
 <span class="c1"># Define the method name and test inputs</span>
 <span class="c1"># IMPORTANT: Use the same inputs as etrecord.update_representative_inputs()</span>
-<span class="n">m_name</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
+<span class="n">m_name</span> <span class="o">=</span> <span class="s2">"forward"</span>
 <span class="n">test_inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">model_inputs</span><span class="p">]</span>
 
 <span class="c1"># Create test cases by running the eager model to get expected outputs</span>
@@ -2226,8 +2226,8 @@ with sample inputs and expected outputs for testing. We reuse the
 <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
     <span class="n">bundled_program</span>
 <span class="p">)</span>
-<span class="n">bundled_program_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;bundled_program.bpte&quot;</span><span class="p">)</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bundled_program_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="n">bundled_program_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">"bundled_program.bpte"</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bundled_program_path</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -2281,9 +2281,9 @@ I 00:00:00.234567 executorch:example_runner.cpp:287] Model verified successfully
 back into Python for analysis using the Inspector.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">Inspector</span>
 
-<span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/etrecord.bin&quot;</span>
-<span class="n">etdump_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/etdump.etdp&quot;</span>
-<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="s2">&quot;/path/to/debug_output.bin&quot;</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">"/path/to/etrecord.bin"</span>
+<span class="n">etdump_path</span> <span class="o">=</span> <span class="s2">"/path/to/etdump.etdp"</span>
+<span class="n">debug_buffer_path</span> <span class="o">=</span> <span class="s2">"/path/to/debug_output.bin"</span>
 
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span>
     <span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
@@ -2296,12 +2296,12 @@ back into Python for analysis using the Inspector.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 <span class="c1"># Calculate numerical gaps</span>
-<span class="n">df</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">&quot;MSE&quot;</span><span class="p">)</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">inspector</span><span class="o">.</span><span class="n">calculate_numeric_gap</span><span class="p">(</span><span class="s2">"MSE"</span><span class="p">)</span>
 
 <span class="c1"># Find problematic operators</span>
-<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">&quot;gap&quot;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="s2">"gap"</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">y</span><span class="p">:</span> <span class="n">y</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">y</span><span class="p">))</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Top operators with largest gaps:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">"Top operators with largest gaps:"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">df_sorted</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">))</span>
 </pre></div>
 </div>

@@ -2054,11 +2054,11 @@ To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="c1"># Step 1: Define a LinearQuantizerConfig and create an instance of a CoreMLQuantizer</span>
-<span class="c1"># Note that &quot;linear&quot; here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
+<span class="c1"># Note that "linear" here does not mean only linear layers are quantized, but that linear (aka affine) quantization</span>
 <span class="c1"># is being performed</span>
 <span class="n">static_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
     <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
-        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">"symmetric"</span><span class="p">,</span>
         <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">quint8</span><span class="p">,</span>
         <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
         <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
@@ -2098,7 +2098,7 @@ To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <p>You can see a full description of available quantization configs in the <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig">coremltools documentation</a>.  For example, the config below will perform weight-only quantization:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">weight_only_8bit_config</span> <span class="o">=</span> <span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">LinearQuantizerConfig</span><span class="p">(</span>
     <span class="n">global_config</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">optimize</span><span class="o">.</span><span class="n">torch</span><span class="o">.</span><span class="n">quantization</span><span class="o">.</span><span class="n">ModuleLinearQuantizerConfig</span><span class="p">(</span>
-        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">&quot;symmetric&quot;</span><span class="p">,</span>
+        <span class="n">quantization_scheme</span><span class="o">=</span><span class="s2">"symmetric"</span><span class="p">,</span>
         <span class="n">activation_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
         <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">qint8</span><span class="p">,</span>
         <span class="n">weight_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>

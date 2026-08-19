@@ -1955,15 +1955,15 @@ document.write(`
 <p>Create an <code class="docutils literal notranslate"><span class="pre">LlmModule</span></code> by specifying paths to your serialized model (<code class="docutils literal notranslate"><span class="pre">.pte</span></code>) and tokenizer files. For text-only models, the simple constructor is enough:</p>
 <p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModule</span><span class="w"> </span><span class="kd">module</span> <span class="err">=</span> <span class="nc">new</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"/data/local/tmp/llama-3.2-instruct.pte"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"/data/local/tmp/tokenizer.model"</span><span class="p">,</span>
 <span class="w">    </span><span class="mf">0.8f</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Kotlin:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModule</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"/data/local/tmp/llama-3.2-instruct.pte"</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"/data/local/tmp/tokenizer.model"</span><span class="p">,</span>
 <span class="w">    </span><span class="m">0.8f</span>
 <span class="p">)</span>
 </pre></div>
@@ -1971,8 +1971,8 @@ document.write(`
 <p>For finer control (multimodal model type, BOS/EOS handling, supplementary data files, load mode), use <code class="docutils literal notranslate"><span class="pre">LlmModuleConfig</span></code> with the fluent builder:</p>
 <p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">LlmModuleConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">"/data/local/tmp/llama-3.2-instruct.pte"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">"/data/local/tmp/tokenizer.model"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.8f</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelType</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">MODEL_TYPE_TEXT</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">loadMode</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">LOAD_MODE_MMAP</span><span class="p">)</span>
@@ -1983,8 +1983,8 @@ document.write(`
 </div>
 <p>Kotlin:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="kd">val</span><span class="w"> </span><span class="nv">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">create</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/llama-3.2-instruct.pte&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">&quot;/data/local/tmp/tokenizer.model&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modulePath</span><span class="p">(</span><span class="s">"/data/local/tmp/llama-3.2-instruct.pte"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tokenizerPath</span><span class="p">(</span><span class="s">"/data/local/tmp/tokenizer.model"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="m">0.8f</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelType</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">MODEL_TYPE_TEXT</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">loadMode</span><span class="p">(</span><span class="n">LlmModuleConfig</span><span class="p">.</span><span class="na">LOAD_MODE_MMAP</span><span class="p">)</span>
@@ -2030,7 +2030,7 @@ document.write(`
 <span class="w">  </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">onStats</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">statsJson</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="c1">// Called once when generation finishes. See extension/llm/runner/stats.h</span>
 <span class="w">    </span><span class="c1">// for the field definitions.</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">statsJson</span><span class="p">);</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">"\n"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">statsJson</span><span class="p">);</span>
 <span class="w">  </span><span class="p">}</span>
 
 <span class="w">  </span><span class="nd">@Override</span>
@@ -2039,7 +2039,7 @@ document.write(`
 <span class="w">  </span><span class="p">}</span>
 <span class="p">};</span>
 
-<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">"Once upon a time"</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Kotlin:</p>
@@ -2052,7 +2052,7 @@ document.write(`
 <span class="w">    </span><span class="kd">override</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">onStats</span><span class="p">(</span><span class="n">statsJson</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="c1">// Called once when generation finishes. See extension/llm/runner/stats.h</span>
 <span class="w">        </span><span class="c1">// for the field definitions.</span>
-<span class="w">        </span><span class="n">println</span><span class="p">(</span><span class="s">&quot;\n</span><span class="si">$</span><span class="n">statsJson</span><span class="s">&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="n">println</span><span class="p">(</span><span class="s">"\n</span><span class="si">$</span><span class="n">statsJson</span><span class="s">"</span><span class="p">)</span>
 <span class="w">    </span><span class="p">}</span>
 
 <span class="w">    </span><span class="kd">override</span><span class="w"> </span><span class="kd">fun</span><span class="w"> </span><span class="nf">onError</span><span class="p">(</span><span class="n">errorCode</span><span class="p">:</span><span class="w"> </span><span class="kt">Int</span><span class="p">,</span><span class="w"> </span><span class="n">message</span><span class="p">:</span><span class="w"> </span><span class="kt">String</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
@@ -2060,7 +2060,7 @@ document.write(`
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 
-<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">"Once upon a time"</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>For full control over generation parameters, use <code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code>:</p>
@@ -2071,7 +2071,7 @@ document.write(`
 <span class="w">    </span><span class="p">.</span><span class="na">echo</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">"Once upon a time"</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Kotlin:</p>
@@ -2081,7 +2081,7 @@ document.write(`
 <span class="w">    </span><span class="p">.</span><span class="na">echo</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
 
-<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;Once upon a time&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">"Once upon a time"</span><span class="p">,</span><span class="w"> </span><span class="n">genConfig</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">LlmGenerationConfig</span></code> exposes <code class="docutils literal notranslate"><span class="pre">echo</span></code>, <code class="docutils literal notranslate"><span class="pre">maxNewTokens</span></code>, <code class="docutils literal notranslate"><span class="pre">seqLen</span></code>, <code class="docutils literal notranslate"><span class="pre">temperature</span></code>, <code class="docutils literal notranslate"><span class="pre">numBos</span></code>, <code class="docutils literal notranslate"><span class="pre">numEos</span></code>, and <code class="docutils literal notranslate"><span class="pre">warming</span></code>. Defaults match the C++ <code class="docutils literal notranslate"><span class="pre">GenerationConfig</span></code> documented in <a class="reference internal" href="run-with-c-plus-plus.html"><span class="std std-doc">Running LLMs with C++</span></a>.</p>
@@ -2199,19 +2199,19 @@ document.write(`
 <p>After prefilling each modality, run <code class="docutils literal notranslate"><span class="pre">generate()</span></code> with the text prompt as usual:</p>
 <p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">);</span>
-<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
+<span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span><span class="s">"What's in this image?"</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Kotlin:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">prefillImages</span><span class="p">(</span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
-<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
+<span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span><span class="s">"What's in this image?"</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>For text-vision models, a convenience overload accepts the image and prompt together:</p>
 <p>Java:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">module</span><span class="err">.</span><span class="nc">generate</span><span class="p">(</span>
 <span class="w">    </span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/*width=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*height=*/</span><span class="mi">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/*channels=*/</span><span class="mi">3</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"What's in this image?"</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/*seqLen=*/</span><span class="mi">768</span><span class="p">,</span>
 <span class="w">    </span><span class="n">callback</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/*echo=*/</span><span class="kc">false</span><span class="p">);</span>
@@ -2220,7 +2220,7 @@ document.write(`
 <p>Kotlin:</p>
 <div class="highlight-kotlin notranslate"><div class="highlight"><pre><span></span><span class="n">module</span><span class="p">.</span><span class="na">generate</span><span class="p">(</span>
 <span class="w">    </span><span class="n">pixels</span><span class="p">,</span><span class="w"> </span><span class="cm">/* width = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* height = */</span><span class="w"> </span><span class="m">336</span><span class="p">,</span><span class="w"> </span><span class="cm">/* channels = */</span><span class="w"> </span><span class="m">3</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">"What's in this image?"</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/* seqLen = */</span><span class="w"> </span><span class="m">768</span><span class="p">,</span>
 <span class="w">    </span><span class="n">callback</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/* echo = */</span><span class="w"> </span><span class="kc">false</span>

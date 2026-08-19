@@ -1900,7 +1900,7 @@ document.write(`
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Example usage:</span>
 
 <span class="sd">.. code-block:: python</span>
@@ -1911,20 +1911,20 @@ document.write(`
 <span class="sd">    from executorch.runtime import Runtime, Program, Method</span>
 
 <span class="sd">    et_runtime: Runtime = Runtime.get()</span>
-<span class="sd">    program: Program = et_runtime.load_program(Path(&quot;/tmp/program.pte&quot;))</span>
-<span class="sd">    print(&quot;Program methods:&quot;, program.method_names)</span>
-<span class="sd">    forward: Method = program.load_method(&quot;forward&quot;)</span>
+<span class="sd">    program: Program = et_runtime.load_program(Path("/tmp/program.pte"))</span>
+<span class="sd">    print("Program methods:", program.method_names)</span>
+<span class="sd">    forward: Method = program.load_method("forward")</span>
 
 <span class="sd">    inputs = (torch.ones(2, 2), torch.ones(2, 2))</span>
 <span class="sd">    outputs = forward.execute(inputs)</span>
-<span class="sd">    print(f&quot;Ran forward({inputs})&quot;)</span>
-<span class="sd">    print(f&quot;  outputs: {outputs}&quot;)</span>
+<span class="sd">    print(f"Ran forward({inputs})")</span>
+<span class="sd">    print(f"  outputs: {outputs}")</span>
 
 <span class="sd">Example output:</span>
 
 <span class="sd">.. code-block:: text</span>
 
-<span class="sd">    Program methods: {&#39;forward&#39;}</span>
+<span class="sd">    Program methods: {'forward'}</span>
 <span class="sd">    Ran forward((tensor([[1., 1.],</span>
 <span class="sd">            [1., 1.]]), tensor([[1., 1.],</span>
 <span class="sd">            [1., 1.]])))</span>
@@ -1947,25 +1947,25 @@ document.write(`
 <span class="sd">    # Create program with etdump generation enabled</span>
 <span class="sd">    et_runtime: Runtime = Runtime.get()</span>
 <span class="sd">    program: Program = et_runtime.load_program(</span>
-<span class="sd">        Path(&quot;/tmp/program.pte&quot;),</span>
+<span class="sd">        Path("/tmp/program.pte"),</span>
 <span class="sd">        enable_etdump=True,</span>
 <span class="sd">        debug_buffer_size=int(1e7),  # 10MB buffer to capture all debug info</span>
 <span class="sd">    )</span>
 
 <span class="sd">    # Load method and execute</span>
-<span class="sd">    forward: Method = program.load_method(&quot;forward&quot;)</span>
+<span class="sd">    forward: Method = program.load_method("forward")</span>
 <span class="sd">    inputs = (torch.ones(2, 2), torch.ones(2, 2))</span>
 <span class="sd">    outputs = forward.execute(inputs)</span>
 
 <span class="sd">    # Write etdump result to file</span>
-<span class="sd">    etdump_file = &quot;/tmp/etdump_output.etdp&quot;</span>
-<span class="sd">    debug_file = &quot;/tmp/debug_output.bin&quot;</span>
+<span class="sd">    etdump_file = "/tmp/etdump_output.etdp"</span>
+<span class="sd">    debug_file = "/tmp/debug_output.bin"</span>
 <span class="sd">    program.write_etdump_result_to_file(etdump_file, debug_file)</span>
 
 <span class="sd">    # Check that files were created</span>
-<span class="sd">    print(f&quot;ETDump file created: {os.path.exists(etdump_file)}&quot;)</span>
-<span class="sd">    print(f&quot;Debug file created: {os.path.exists(debug_file)}&quot;)</span>
-<span class="sd">    print(&quot;Directory contents:&quot;, os.listdir(&quot;/tmp&quot;))</span>
+<span class="sd">    print(f"ETDump file created: {os.path.exists(etdump_file)}")</span>
+<span class="sd">    print(f"Debug file created: {os.path.exists(debug_file)}")</span>
+<span class="sd">    print("Directory contents:", os.listdir("/tmp"))</span>
 
 <span class="sd">Example output:</span>
 
@@ -1973,7 +1973,7 @@ document.write(`
 
 <span class="sd">    ETDump file created: True</span>
 <span class="sd">    Debug file created: True</span>
-<span class="sd">    Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;debug_output.bin&#39;]</span>
+<span class="sd">    Directory contents: ['program.pte', 'etdump_output.etdp', 'debug_output.bin']</span>
 
 <span class="sd">Example usage with backend and operator introspection:</span>
 
@@ -1985,24 +1985,24 @@ document.write(`
 
 <span class="sd">    # Check available backends</span>
 <span class="sd">    backends = runtime.backend_registry.registered_backend_names</span>
-<span class="sd">    print(f&quot;Available backends: {backends}&quot;)</span>
+<span class="sd">    print(f"Available backends: {backends}")</span>
 
 <span class="sd">    # Check if a specific backend is available</span>
-<span class="sd">    if runtime.backend_registry.is_available(&quot;XnnpackBackend&quot;):</span>
-<span class="sd">        print(&quot;XNNPACK backend is available&quot;)</span>
+<span class="sd">    if runtime.backend_registry.is_available("XnnpackBackend"):</span>
+<span class="sd">        print("XNNPACK backend is available")</span>
 
 <span class="sd">    # List all registered operators</span>
 <span class="sd">    operators = runtime.operator_registry.operator_names</span>
-<span class="sd">    print(f&quot;Number of registered operators: {len(operators)}&quot;)</span>
+<span class="sd">    print(f"Number of registered operators: {len(operators)}")</span>
 
 <span class="sd">Example output:</span>
 
 <span class="sd">.. code-block:: text</span>
 
-<span class="sd">    Available backends: [&#39;XnnpackBackend&#39;, ...]  # Depends on your build configuration</span>
+<span class="sd">    Available backends: ['XnnpackBackend', ...]  # Depends on your build configuration</span>
 <span class="sd">    XNNPACK backend is available</span>
 <span class="sd">    Number of registered operators: 247  # Depends on linked kernels</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
@@ -2018,17 +2018,17 @@ document.write(`
     <span class="p">)</span>
 <span class="k">except</span> <span class="ne">ModuleNotFoundError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">ModuleNotFoundError</span><span class="p">(</span>
-        <span class="s2">&quot;Prebuilt &lt;site-packages&gt;/extension/pybindings/_portable_lib.so &quot;</span>
-        <span class="s2">&quot;is not found. Please reinstall ExecuTorch from pip.&quot;</span>
+        <span class="s2">"Prebuilt &lt;site-packages&gt;/extension/pybindings/_portable_lib.so "</span>
+        <span class="s2">"is not found. Please reinstall ExecuTorch from pip."</span>
     <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
 
 <div class="viewcode-block" id="Method">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Method</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;An ExecuTorch method, loaded from a Program.</span>
+<span class="w">    </span><span class="sd">"""An ExecuTorch method, loaded from a Program.</span>
 <span class="sd">    This can be used to execute the method with inputs.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">:</span> <span class="n">ExecuTorchMethod</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">=</span> <span class="n">method</span>
@@ -2036,27 +2036,27 @@ document.write(`
 <div class="viewcode-block" id="Method.execute">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Method.execute">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Executes the method with the given inputs.</span>
+<span class="w">        </span><span class="sd">"""Executes the method with the given inputs.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            inputs: A sequence of input values, typically torch.Tensor objects.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            A list of output values, typically torch.Tensor objects.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span></div>
 
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the method.</span>
+<span class="w">        </span><span class="sd">"""Gets the metadata for the method.</span>
 
 <span class="sd">        The metadata includes information about input and output specifications,</span>
 <span class="sd">        such as tensor shapes, data types, and memory requirements.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The MethodMeta object containing method specifications.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="o">.</span><span class="n">method_meta</span><span class="p">()</span></div>
 
 
@@ -2064,10 +2064,10 @@ document.write(`
 <div class="viewcode-block" id="Program">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Program</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;An ExecuTorch program, loaded from binary PTE data.</span>
+<span class="w">    </span><span class="sd">"""An ExecuTorch program, loaded from binary PTE data.</span>
 
 <span class="sd">    This can be used to load the methods/models defined by the program.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">program</span><span class="p">:</span> <span class="n">ExecuTorchProgram</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># Hold the data so the program is not freed.</span>
@@ -2081,20 +2081,20 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">method_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns method names of the Program as a set of strings.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns method names of the Program as a set of strings."""</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
 <div class="viewcode-block" id="Program.load_method">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Program.load_method">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">load_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Method</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads a method from the program.</span>
+<span class="w">        </span><span class="sd">"""Loads a method from the program.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            name: The name of the method to load.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The loaded method.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
 
         <span class="n">method</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
         <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -2104,31 +2104,31 @@ document.write(`
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the specified method without loading it.</span>
+<span class="w">        </span><span class="sd">"""Gets the metadata for the specified method without loading it.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            method_name: The name of the method.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The metadata for the method, including input/output specifications.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">write_etdump_result_to_file</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">etdump_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">:</span> <span class="nb">str</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Writes the etdump and debug result to a file.</span>
+<span class="w">        </span><span class="sd">"""Writes the etdump and debug result to a file.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            etdump_path: The path to the etdump file.</span>
 <span class="sd">            debug_buffer_path: The path to the debug buffer file.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_path</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">)</span></div>
 
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">BackendRegistry</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of backends that are available to the runtime.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""The registry of backends that are available to the runtime."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># TODO: Expose the kernel callables to Python.</span>
@@ -2136,25 +2136,25 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">registered_backend_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the names of all registered backends as a list of strings.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns the names of all registered backends as a list of strings."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_registered_backend_names</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">is_available</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Checks if a specific backend is available in the runtime.</span>
+<span class="w">        </span><span class="sd">"""Checks if a specific backend is available in the runtime.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            backend_name: The name of the backend to check (e.g., &quot;XnnpackBackend&quot;).</span>
+<span class="sd">            backend_name: The name of the backend to check (e.g., "XnnpackBackend").</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            True if the backend is available, False otherwise.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_is_available</span><span class="p">(</span><span class="n">backend_name</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="OperatorRegistry">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.OperatorRegistry">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">OperatorRegistry</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;The registry of operators that are available to the runtime.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""The registry of operators that are available to the runtime."""</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">legacy_module</span><span class="p">:</span> <span class="n">ModuleType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># TODO: Expose the kernel callables to Python.</span>
@@ -2162,7 +2162,7 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">operator_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the names of all registered operators as a set of strings.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">"""Returns the names of all registered operators as a set of strings."""</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_operator_names</span><span class="p">())</span></div>
 
 
@@ -2170,7 +2170,7 @@ document.write(`
 <div class="viewcode-block" id="Runtime">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Runtime</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;An instance of the ExecuTorch runtime environment.</span>
+<span class="w">    </span><span class="sd">"""An instance of the ExecuTorch runtime environment.</span>
 
 <span class="sd">    This can be used to concurrently load and execute any number of ExecuTorch</span>
 <span class="sd">    programs and methods.</span>
@@ -2178,14 +2178,14 @@ document.write(`
 <span class="sd">    Attributes:</span>
 <span class="sd">        backend_registry: Registry for querying available hardware backends.</span>
 <span class="sd">        operator_registry: Registry for querying available operators/kernels.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
 
 <div class="viewcode-block" id="Runtime.get">
 <a class="viewcode-back" href="../../runtime-python-api-reference.html#executorch.runtime.Runtime.get">[docs]</a>
     <span class="nd">@staticmethod</span>
     <span class="nd">@functools</span><span class="o">.</span><span class="n">lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="s2">&quot;Runtime&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the Runtime singleton.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="s2">"Runtime"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Gets the Runtime singleton."""</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">executorch.extension.pybindings.portable_lib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">legacy_module</span>  <span class="c1"># type: ignore[import-not-found]</span>
 
         <span class="k">return</span> <span class="n">Runtime</span><span class="p">(</span><span class="n">legacy_module</span><span class="o">=</span><span class="n">legacy_module</span><span class="p">)</span></div>
@@ -2208,7 +2208,7 @@ document.write(`
         <span class="n">enable_etdump</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">debug_buffer_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads an ExecuTorch program from a PTE binary.</span>
+<span class="w">        </span><span class="sd">"""Loads an ExecuTorch program from a PTE binary.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            data: The binary program data to load. Can be a file path (str or Path),</span>
@@ -2222,7 +2222,7 @@ document.write(`
 
 <span class="sd">        Returns:</span>
 <span class="sd">            The loaded Program instance.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program</span><span class="p">(</span>
                 <span class="nb">str</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
@@ -2235,12 +2235,12 @@ document.write(`
             <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">):</span>
             <span class="n">data_bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;read&quot;</span><span class="p">):</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">"read"</span><span class="p">):</span>
             <span class="c1"># File-like object with read() method</span>
             <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="sa">f</span><span class="s2">"Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">."</span>
             <span class="p">)</span>
         <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program_from_buffer</span><span class="p">(</span>
             <span class="n">data_bytes</span><span class="p">,</span>
