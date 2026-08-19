@@ -96,7 +96,6 @@ class FuseDuplicateUsersPass(ArmPass):
                     enqueue_producer(representative)
 
         if modified:
-            graph_module.recompile()
             graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 

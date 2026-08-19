@@ -83,7 +83,7 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
+            graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
