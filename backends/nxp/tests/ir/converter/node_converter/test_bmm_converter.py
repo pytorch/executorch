@@ -10,7 +10,6 @@ import torch
 from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_qdq_cluster_pass import (
     ViewCopy,
 )
-from executorch.backends.nxp.ops_aliases import BMM, GetItem, MaxPool2DWithIndices
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import ModelInputSpec
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
@@ -22,6 +21,7 @@ from executorch.backends.nxp.tests.models import (
     BatchMatMulModel,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import BMM, GetItem, MaxPool2DWithIndices
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
