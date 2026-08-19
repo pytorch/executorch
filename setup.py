@@ -1251,9 +1251,9 @@ def _substitute_tracer_definition_from_args(destination) -> None:
 
 
 def _tracer_cache_dir(command) -> Optional[str]:
-    """The build directory holding CMakeCache.txt.
+    """The build directory holding CMakeCache.txt, or None when nothing has been built yet.
 
-    Raises rather than falling back, because the value decides a compile definition that changes
+    None rather than a fallback guess, because the value decides a compile definition that changes
     object layout. A wrong answer is silent: the consumer compiles a different version of the
     profiling scope classes and its traces come back empty with no error.
     """
@@ -1309,6 +1309,14 @@ class CustomBuild(build):
         # tests and demos to expand the set of targets included in the pip
         # package.
         cmake_configuration_args += [item for item in _cmake_argument_list() if item]
+
+        # This is the wheel build, and that option is what gives the shipped kernel
+        # libraries the names packaging looks for and what suppresses the
+        # versioned soname links a wheel does not carry. Appended after the environment's
+        # arguments, and so winning over them, because turning it off here produces a
+        # build whose output packaging cannot find rather than a different valid wheel.
+        cmake_configuration_args += ["-DEXECUTORCH_BUILD_WHEEL_DO_NOT_USE=ON"]
+
         if minimal_build:
             cmake_configuration_args += _minimal_cmake_flags()
 
@@ -1462,15 +1470,24 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
                 cmake_build_args += ["--target", "mlxdelegate"]
 
-            # Named explicitly because nothing else links it. The other shipped
-            # libraries are built as dependencies of the Python extension, but a C++
-            # application is the only consumer of this one, so without naming it the
-            # target is generated and never built, and packaging then looks for a file
-            # that does not exist.
-            if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED") and (
-                cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED")
-            ):
-                cmake_build_args += ["--target", "executorch_quantized_ops"]
+            # The libraries a C++ consumer links out of the wheel. Most of them used to
+            # be reached as dependencies of the Python extension, which meant a shared
+            # build with the bindings off asked for none of them and packaging then
+            # looked for files no target had been told to produce. Each condition here
+            # is the one its packaging entry carries, so the two lists cannot drift.
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                cmake_build_args += ["--target", "executorch_shared"]
+                cmake_build_args += ["--target", "etdump"]
+                if cmake_cache.is_enabled(
+                    "EXECUTORCH_BUILD_PTHREADPOOL"
+                ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
+                    cmake_build_args += ["--target", "extension_threadpool"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_OPTIMIZED"):
+                    cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
+                    cmake_build_args += ["--target", "executorch_quantized_ops"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
+                    cmake_build_args += ["--target", "xnnpack_backend"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]

@@ -183,7 +183,7 @@ To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
-foreach(_component runtime kernels_optimized backend_xnnpack threadpool etdump)
+foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
