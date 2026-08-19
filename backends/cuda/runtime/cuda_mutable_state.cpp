@@ -13,9 +13,8 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
-
-#include <cuda_runtime.h>
 
 #include <iterator>
 #include <memory>
