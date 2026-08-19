@@ -9,9 +9,12 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/ScalarOverflowTestMacros.h>
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <gtest/gtest.h>
 
@@ -55,6 +58,16 @@ class OpHardTanhTest : public OperatorTest {
 
   template <ScalarType DTYPE>
   void expect_bad_scalar_value_dies(const Scalar& bad_value) {
+    if constexpr (executorch::runtime::isIntegralType(
+                      DTYPE, /*includeBool=*/false)) {
+      // ATen treats an out-of-range integer hardtanh bound as a no-op or an
+      // error depending on direction, so the death test no longer holds.
+      ET_SKIP_IF(
+          torch::executor::testing::SupportedFeatures::get()->is_aten,
+          "ATen kernel treats out-of-range integer hardtanh bounds by "
+          "direction (no-op or error)");
+    }
+
     TensorFactory<DTYPE> tf;
     Tensor in = tf.ones({2, 2});
     Tensor out = tf.zeros({2, 2});
