@@ -21,6 +21,13 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reduce_
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
     Transpose,
 )
+from executorch.backends.nxp.ops_aliases import (
+    AddTensor,
+    Amin,
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -29,13 +36,6 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
-from executorch.backends.nxp.tests.ops_aliases import (
-    AddTensor,
-    Amin,
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
