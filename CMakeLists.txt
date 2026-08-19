@@ -193,17 +193,20 @@ if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
 endif()
 
 if(EXECUTORCH_BUILD_SHARED)
-  # Refused rather than silently reconciled, for the same reason the platform check below exists: a
-  # configuration this mode cannot honour should stop here, not produce something that looks built.
+  # Refused rather than silently reconciled, for the same reason the platform
+  # check below exists: a configuration this mode cannot honour should stop
+  # here, not produce something that looks built.
   #
-  # This mode consolidates the component static archives into one shared runtime, extracting each
-  # archive's contents so a single library owns the operator and backend registries. BUILD_SHARED_LIBS
-  # makes those same components shared objects instead, and --whole-archive against a shared object
-  # absorbs nothing and reports nothing: measured, the consolidated library then links successfully
-  # while containing none of the core, which is the split-registry failure this library exists to
-  # prevent. The untyped core target also claims the same libexecutorch file name under that option, so
-  # Ninja stops with "multiple rules generate libexecutorch.so" while Unix Makefiles does not notice and
-  # writes one of the two at random.
+  # This mode consolidates the component static archives into one shared
+  # runtime, extracting each archive's contents so a single library owns the
+  # operator and backend registries. BUILD_SHARED_LIBS makes those same
+  # components shared objects instead, and --whole-archive against a shared
+  # object absorbs nothing and reports nothing: measured, the consolidated
+  # library then links successfully while containing none of the core, which is
+  # the split-registry failure this library exists to prevent. The untyped core
+  # target also claims the same libexecutorch file name under that option, so
+  # Ninja stops with "multiple rules generate libexecutorch.so" while Unix
+  # Makefiles does not notice and writes one of the two at random.
   if(BUILD_SHARED_LIBS)
     message(
       FATAL_ERROR

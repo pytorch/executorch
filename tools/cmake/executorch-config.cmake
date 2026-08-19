@@ -74,9 +74,10 @@ foreach(lib ${required_lib_list})
   )
   if(NOT ${lib_var})
     set(EXECUTORCH_FOUND OFF)
-    # find_package tests <package name>_FOUND, which is case sensitive and does not match the
-    # EXECUTORCH_FOUND spelling this file documents. Without it a REQUIRED find_package succeeds
-    # after this file has decided it failed, and the consumer links an empty EXECUTORCH_LIBRARIES.
+    # find_package tests <package name>_FOUND, which is case sensitive and does
+    # not match the EXECUTORCH_FOUND spelling this file documents. Without it a
+    # REQUIRED find_package succeeds after this file has decided it failed, and
+    # the consumer links an empty EXECUTORCH_LIBRARIES.
     set(executorch_FOUND FALSE)
     return()
   endif()
