@@ -210,7 +210,10 @@ class vTensor final {
       const utils::StorageType storage_type = utils::kTexture3D,
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true,
-      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap);
+      const utils::AxisMapLayout axis_map_layout = utils::kDefaultAxisMap,
+      // When non-null, wrap this image instead of allocating. Stored as a
+      // VulkanImage copy, which aliases the handle without owning it.
+      const vkapi::VulkanImage* external_image = nullptr);
 
   vTensor(const vTensor& other) = delete;
 
