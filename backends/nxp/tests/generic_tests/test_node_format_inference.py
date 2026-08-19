@@ -13,10 +13,6 @@ from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormatInference,
     NXP_NODE_FORMAT,
 )
-from executorch.backends.nxp.ops_aliases import (
-    ExecutorchDelegateCall,
-    MaxPool2DWithIndices,
-)
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 
@@ -24,6 +20,10 @@ from executorch.backends.nxp.tests.models import (
     Conv2dModule,
     MaxPool2dModule,
     SoftmaxModule,
+)
+from executorch.backends.nxp.tests.ops_aliases import (
+    ExecutorchDelegateCall,
+    MaxPool2DWithIndices,
 )
 
 
