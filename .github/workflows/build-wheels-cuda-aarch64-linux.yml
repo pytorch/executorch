@@ -33,6 +33,10 @@ on:
       - ciflow/binaries/*
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
 jobs:
   generate-matrix:
     uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
@@ -47,9 +51,10 @@ jobs:
       python-versions: '["3.10", "3.11", "3.12", "3.13"]'
 
   # The generator emits every CUDA version it knows about. Publishing all of them would ship
-  # wheels for combinations nothing can verify, so this keeps only the rows with a GPU to run
-  # them on. The script fails rather than emitting an empty matrix, because a workflow with no
-  # build job reads as a pass.
+  # wheels for combinations nothing can verify, so this keeps only the rows a device exists for
+  # and a matching PyTorch is published for. These runners carry no accelerator, unlike the
+  # x86_64 ones, so the smoke test here checks packaging rather than execution. The script fails
+  # rather than emitting an empty matrix, because a workflow with no build job reads as a pass.
   filter-matrix:
     needs: generate-matrix
     runs-on: ubuntu-latest

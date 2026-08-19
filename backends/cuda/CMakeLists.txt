@@ -81,6 +81,8 @@ elseif(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
                  "${_executorch_cuda_arch_list}"
   )
   set(_executorch_cuda_arch_resolved "")
+  set(_executorch_cuda_arch_newest "")
+  set(_executorch_cuda_arch_newest_rank 0)
   # Mapped to CMake's explicit kinds rather than left bare. A bare number asks
   # nvcc for both the binary and the portable form, which measured at about 2.5x
   # the device code for a four architecture row. Only the newest needs the
@@ -91,7 +93,19 @@ elseif(DEFINED ENV{TORCH_CUDA_ARCH_LIST})
   foreach(_arch IN LISTS _executorch_cuda_arch_list)
     string(REGEX REPLACE "\\+PTX$" "" _arch "${_arch}")
     list(APPEND _executorch_cuda_arch_resolved "${_arch}-real")
-    set(_executorch_cuda_arch_newest "${_arch}")
+    # Compared numerically rather than taken as the last entry written. Nothing
+    # orders TORCH_CUDA_ARCH_LIST, so a row spelled "9.0 8.0" put the portable
+    # form on 8.0 and left a device newer than 9.0 with nothing to compile on
+    # load. The trailing letters some architectures carry are dropped for the
+    # comparison only, and a family name reduces to nothing and is skipped,
+    # which is the same answer the numeric filter below reaches.
+    string(REGEX MATCH "^[0-9]+" _executorch_cuda_arch_rank "${_arch}")
+    if(_executorch_cuda_arch_rank AND _executorch_cuda_arch_rank GREATER
+                                      _executorch_cuda_arch_newest_rank
+    )
+      set(_executorch_cuda_arch_newest_rank "${_executorch_cuda_arch_rank}")
+      set(_executorch_cuda_arch_newest "${_arch}")
+    endif()
   endforeach()
   if(_executorch_cuda_arch_newest)
     list(APPEND _executorch_cuda_arch_resolved

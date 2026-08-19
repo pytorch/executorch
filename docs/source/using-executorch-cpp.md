@@ -185,7 +185,9 @@ To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
-foreach(_component runtime kernels_optimized backend_xnnpack threadpool etdump)
+foreach(_component
+        runtime kernels_optimized kernels_quantized backend_xnnpack
+        backend_cuda extension_cuda threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
@@ -211,11 +213,51 @@ The quantized kernels are deliberately left out of that variable, because loadin
 `executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
 stops the runtime.
 
-##### What a Core ML trace shows
+#### When something does not work
 
-On macOS a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in total.
-It does not record the individual operators inside the delegate, because that detail comes from the
-Core ML developer tools sources, and the wheel does not build them. An XNNPACK model records both.
+- `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
+  points somewhere else. Run the `python -c` line on its own and check the folder exists.
+- The program builds but fails to load the model: the path is relative, so run it from the folder
+  containing the `.pte` file.
+- A missing operator at run time: add a kernel component, usually
+  `executorch::kernels_optimized`.
+- The model fails to load complaining about a backend: link the backend it was exported for.
+- `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
+  CMake the package still works, but you name variables instead of targets, and you have to pass on
+  the definitions and the C++ standard requirement yourself:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.19)
+  project(app CXX)
+
+  find_package(executorch REQUIRED)
+
+  add_executable(app main.cpp)
+  target_include_directories(app PRIVATE ${EXECUTORCH_INCLUDE_DIRS})
+  target_compile_definitions(app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})
+  target_compile_features(app PRIVATE cxx_std_${EXECUTORCH_CXX_STANDARD})
+  target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
+  set_target_properties(
+    app PROPERTIES INSTALL_RPATH "${EXECUTORCH_RUNTIME_LIBRARY_DIR}"
+  )
+  ```
+
+  Leaving out `EXECUTORCH_COMPILE_DEFINITIONS` fails with a missing
+  `torch/headeronly/macros/cmake_macros.h`, because the vendored headers look for a file that only
+  exists inside a PyTorch build.
+
+  `INSTALL_RPATH` matters once you run `cmake --install`. CMake gives your program a search path while
+  it sits in the build directory and removes that path when installing, so an installed program cannot
+  find the libraries unless you record where they live.
+
+  Quantized kernels are not part of `EXECUTORCH_LIBRARIES`, so add them when your model needs them:
+
+  ```cmake
+  target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
+  ```
+
+You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
+they find each other once the program links against the installed package.
 
 ### Running on a GPU with the CUDA package
 
@@ -293,8 +335,8 @@ By default the runtime copies inputs to the GPU and results back, so your progra
 ordinary CPU tensors and nothing else changes.
 
 One thing to check first, and the numbers matter. If a model fails with a message about no kernel
-image being available for the device, your GPU is too old for these packages. They are built for
-**compute capability 8.0 and above**, which means an NVIDIA Ampere generation card or newer.
+image being available for the device, your GPU is not one these packages were built for. The floor
+is **compute capability 8.0**, which means an NVIDIA Ampere generation card or newer.
 
 Check your own GPU:
 
@@ -302,55 +344,12 @@ Check your own GPU:
 python -c 'import torch; print(torch.cuda.get_device_capability())'
 ```
 
-A result below `(8, 0)` is not covered. Note that `torch.cuda.get_arch_list()` is not the right
-check here: PyTorch builds for a wider set than these packages do, so a GPU can appear in that list
-and still not be supported.
-
-#### When something does not work
-
-- `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
-  points somewhere else. Run the `python -c` line on its own and check the folder exists.
-- The program builds but fails to load the model: the path is relative, so run it from the folder
-  containing the `.pte` file.
-- A missing operator at run time: add a kernel component, usually
-  `executorch::kernels_optimized`.
-- The model fails to load complaining about a backend: link the backend it was exported for.
-- `executorch::runtime` is not a target: imported targets need CMake 3.28 or newer. On an older
-  CMake the package still works, but you name variables instead of targets, and you have to pass on
-  the definitions and the C++ standard requirement yourself:
-
-  ```cmake
-  cmake_minimum_required(VERSION 3.19)
-  project(app CXX)
-
-  find_package(executorch REQUIRED)
-
-  add_executable(app main.cpp)
-  target_include_directories(app PRIVATE ${EXECUTORCH_INCLUDE_DIRS})
-  target_compile_definitions(app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS})
-  target_compile_features(app PRIVATE cxx_std_${EXECUTORCH_CXX_STANDARD})
-  target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
-  set_target_properties(
-    app PROPERTIES INSTALL_RPATH "${EXECUTORCH_RUNTIME_LIBRARY_DIR}"
-  )
-  ```
-
-  Leaving out `EXECUTORCH_COMPILE_DEFINITIONS` fails with a missing
-  `torch/headeronly/macros/cmake_macros.h`, because the vendored headers look for a file that only
-  exists inside a PyTorch build.
-
-  `INSTALL_RPATH` matters once you run `cmake --install`. CMake gives your program a search path while
-  it sits in the build directory and removes that path when installing, so an installed program cannot
-  find the libraries unless you record where they live.
-
-  Quantized kernels are not part of `EXECUTORCH_LIBRARIES`, so add them when your model needs them:
-
-  ```cmake
-  target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
-  ```
-
-You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
-they find each other once the program links against the installed package.
+A result below `(8, 0)` is not covered. Above the floor the answer depends on the package: each one
+covers what the PyTorch build for the same platform and CUDA version covers, and the ARM packages
+reach fewer cards in that range than the x86_64 ones, so a card at or above `(8, 0)` can still be
+outside an ARM package. Note that `torch.cuda.get_arch_list()` is not the right check either:
+PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
+list and still not be supported.
 
 ### Building from source
 
