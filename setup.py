@@ -393,6 +393,24 @@ def _cuda_train() -> str:
     )
     if not install_utils.is_cuda_available() and not explicit_on:
         return ""
+    if explicit_on and not detected:
+        # The explicit request reaches CMake either way, so returning "" here shipped the
+        # CUDA libraries with no runtime declared and no path to one, which is the wheel
+        # this whole function exists to prevent. An unlisted minor still resolves to a
+        # major and is fine; an unlisted major has nothing to declare.
+        installed = (
+            f"CUDA {detected_major}"
+            if detected_major is not None
+            else "no CUDA toolkit"
+        )
+        raise RuntimeError(
+            f"the build asks for CUDA (EXECUTORCH_BUILD_CUDA=ON in CMAKE_ARGS) but found "
+            f"{installed}, and this packaging declares a runtime only for CUDA "
+            f"{', '.join(sorted(_CUDA_RUNTIME_PACKAGES))}. The libraries would still be "
+            "built and shipped with nothing to load them against. Install a toolkit on one "
+            "of those majors, or add this one to _CUDA_RUNTIME_PACKAGES and "
+            "_CUDA_LIBRARY_DIRECTORIES."
+        )
     return detected
 
 
@@ -1217,14 +1235,15 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
     through the directory the linker recorded, so dropping that would stop them
     importing in an environment where torch is not beside them.
 
-    Best effort, because the tool cannot be guaranteed on PATH: the pip package does not
-    reliably provide a binary inside a build venv, so failing the build here would break
-    building from source on a machine that simply lacks it. It is declared as a build
-    requirement so a release build gets it.
+    Best effort for a CPU wheel, because the tool cannot be guaranteed on PATH: the pip
+    package does not reliably provide a binary inside a build venv, so failing there would
+    break building from source on a machine that simply lacks it. The absolute paths stay
+    in place and the wheel still works. It is declared as a build requirement so a release
+    build gets it.
 
-    A CPU wheel built without it still works, with the absolute paths left in place. A CUDA
-    wheel does not: the delegate under backends/cuda/ reaches its dependency in lib/ only
-    through the paths written here, so without the rewrite that edge is missing.
+    Not best effort for a CUDA wheel. The delegate under backends/cuda/ reaches its
+    dependency in lib/ only through the paths written here, so a missing tool produces a
+    wheel that installs and then cannot load, and that case stops the build instead.
 
     What must not happen is both this and its check going quiet together, which is how
     a wheel carrying build-machine directories could ship unnoticed. So the check in
@@ -1235,6 +1254,18 @@ def _strip_absolute_runtime_paths(library: Path, ships_cuda: bool) -> None:
         return
     patchelf = shutil.which("patchelf")
     if patchelf is None:
+        if ships_cuda:
+            raise RuntimeError(
+                "patchelf was not found on PATH, and this is a CUDA wheel. The relative "
+                "search path that lets the delegate reach the CUDA runtime beside it is "
+                "written here and nowhere else, so the wheel would install and then fail "
+                "to load. Install it and build again."
+            )
+        log.warn(
+            f"patchelf was not found on PATH, so {library.name} keeps the absolute search "
+            "paths the linker recorded. The wheel still works; the release check is what "
+            "enforces the guarantee."
+        )
         return
     result = subprocess.run(
         [patchelf, "--print-rpath", os.fspath(library)],
@@ -1678,9 +1709,9 @@ def _substitute_tracer_definition_from_args(destination) -> None:
 
 
 def _tracer_cache_dir(command) -> Optional[str]:
-    """The build directory holding CMakeCache.txt.
+    """The build directory holding CMakeCache.txt, or None when nothing has been built yet.
 
-    Raises rather than falling back, because the value decides a compile definition that changes
+    None rather than a fallback guess, because the value decides a compile definition that changes
     object layout. A wrong answer is silent: the consumer compiles a different version of the
     profiling scope classes and its traces come back empty with no error.
     """
@@ -1736,6 +1767,14 @@ class CustomBuild(build):
         # tests and demos to expand the set of targets included in the pip
         # package.
         cmake_configuration_args += [item for item in _cmake_args() if item]
+
+        # This is the wheel build, and that option is what gives the shipped kernel
+        # libraries the names packaging looks for and what suppresses the
+        # versioned soname links a wheel does not carry. Appended after the environment's
+        # arguments, and so winning over them, because turning it off here produces a
+        # build whose output packaging cannot find rather than a different valid wheel.
+        cmake_configuration_args += ["-DEXECUTORCH_BUILD_WHEEL_DO_NOT_USE=ON"]
+
         if minimal_build:
             cmake_configuration_args += _minimal_cmake_flags()
 
@@ -1902,12 +1941,13 @@ class CustomBuild(build):
                 cmake_build_args += ["--target", "cmsis_nn"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_CUDA"):
+                # The stream helper is not named here: the delegate links it PUBLIC, so
+                # asking for the delegate builds it. It used to be named under an
+                # EXECUTORCH_BUILD_SHARED condition that its packaging entry does not
+                # carry, which read as if a non-shared CUDA build shipped a file nothing
+                # had asked to build.
                 cmake_build_args += ["--target", "aoti_cuda_backend"]
                 cmake_build_args += ["--target", "aoti_common_shims_slim"]
-                if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
-                    # The stream helper ships as its own library so a process has one
-                    # of it. Named because nothing else in a wheel build links it.
-                    cmake_build_args += ["--target", "extension_cuda"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
                 cmake_build_args += ["--target", "extension_module"]
@@ -1921,15 +1961,24 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
                 cmake_build_args += ["--target", "mlxdelegate"]
 
-            # Named explicitly because nothing else links it. The other shipped
-            # libraries are built as dependencies of the Python extension, but a C++
-            # application is the only consumer of this one, so without naming it the
-            # target is generated and never built, and packaging then looks for a file
-            # that does not exist.
-            if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED") and (
-                cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED")
-            ):
-                cmake_build_args += ["--target", "executorch_quantized_ops"]
+            # The libraries a C++ consumer links out of the wheel. Most of them used to
+            # be reached as dependencies of the Python extension, which meant a shared
+            # build with the bindings off asked for none of them and packaging then
+            # looked for files no target had been told to produce. Each condition here
+            # is the one its packaging entry carries, so the two lists cannot drift.
+            if cmake_cache.is_enabled("EXECUTORCH_BUILD_SHARED"):
+                cmake_build_args += ["--target", "executorch_shared"]
+                cmake_build_args += ["--target", "etdump"]
+                if cmake_cache.is_enabled(
+                    "EXECUTORCH_BUILD_PTHREADPOOL"
+                ) and cmake_cache.is_enabled("EXECUTORCH_BUILD_CPUINFO"):
+                    cmake_build_args += ["--target", "extension_threadpool"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_OPTIMIZED"):
+                    cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
+                    cmake_build_args += ["--target", "executorch_quantized_ops"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
+                    cmake_build_args += ["--target", "xnnpack_backend"]
 
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_LLM_AOT"):
                 cmake_build_args += ["--target", "custom_ops_aot_lib"]

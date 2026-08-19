@@ -70,6 +70,11 @@
 #                                model. Not part of EXECUTORCH_LIBRARIES, see
 #                                below.
 # executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::backend_cuda       The CUDA delegate. Linux only.
+# executorch::extension_cuda     The CUDA stream extension. Linux only.
+# executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
+#                                OpenVINO runtime by name, which a C++ program
+#                                installs and points OPENVINO_LIB_PATH at.
 # executorch::threadpool         The shared thread pool.
 # executorch::etdump             The profiler.
 # ~~~
@@ -413,12 +418,6 @@ elseif(_executorch_runtime_library)
     # explicitly because CMake records it as a link-path rpath, which
     # install(TARGETS) strips.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      # $ORIGIN-relative entries so a relocated application keeps working. The
-      # package's own directory does not need to be added here: CMake already
-      # puts it in the consumer's runtime search path because the imported
-      # library is named by absolute path, which is also what makes an
-      # application built against the installed package start at all.
-      #
       # --enable-new-dtags asks for DT_RUNPATH. Without it this linker writes
       # the older DT_RPATH, which the loader searches BEFORE LD_LIBRARY_PATH and
       # applies to a dependency's dependencies too, so a consumer could not
@@ -516,6 +515,15 @@ function(_executorch_define_component _suffix _library_name)
                "LINKER:--enable-new-dtags"
                "LINKER:-rpath,$ORIGIN"
                "LINKER:-rpath,$ORIGIN/../lib"
+               # Where an in-place build finds the library, since neither token
+               # above resolves to the package from a consumer's own build tree.
+               # It usually arrives anyway, through the runtime this target
+               # links, but that link is conditional on the runtime being
+               # present while this target is not, so a package carrying a
+               # component and no runtime left the component unreachable.
+               # Matches the Apple branch below, which has always spelled it
+               # out.
+               "LINKER:-rpath,${_executorch_package_root}/lib"
                # One option per component rather than a shared push-state pair:
                # CMake removes duplicate link options, so repeating the same
                # push-state text for a second component silently drops its
