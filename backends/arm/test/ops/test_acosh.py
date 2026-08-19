@@ -125,16 +125,10 @@ def test_acosh_vgf_no_quant(test_data: Tuple):
     pipeline.run()
 
 
-@pytest.mark.parametrize(
+@common.parametrize(
     "test_data",
-    [
-        "small",
-        "medium",
-        pytest.param(
-            "large",
-            marks=pytest.mark.skip(reason="Known quantization mismatch"),
-        ),
-    ],
+    test_data_suite,
+    skips={"large": "Known quantization mismatch"},
 )
 @common.SkipIfNoModelConverter
 def test_acosh_vgf_quant(test_data: Tuple):
