@@ -112,7 +112,9 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         node.meta[ChannelsLastTaggedReshapePass.XNN_NHWC_NODE] = False
 
     def tag_node(self, node: torch.fx.Node) -> None:
-        if node.kwargs["memory_format"] == torch.channels_last:
+        # A dtype-only _to_copy (e.g. x.float()) has no memory_format kwarg and
+        # does not change layout; treat it as contiguous (nchw).
+        if node.kwargs.get("memory_format") == torch.channels_last:
             self.mark_as_nhwc_node(node)
         else:
             self.mark_as_nchw_node(node)
