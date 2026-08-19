@@ -424,20 +424,14 @@ class ET_EXPERIMENTAL CudaBackend final
 
     // Versioned FQN artifacts carry complete storage/view and mutability
     // metadata, so immutable storages are safely shared without a load-order
-    // contract. Legacy artifacts keep their historical dense-blob behavior
-    // and runtime option semantics.
+    // contract. Legacy artifacts keep their historical dense-blob behavior:
+    // the runtime option selects the per-FQN cache, otherwise each method
+    // loads its own blob (required for independent methods with FQN
+    // collisions).
     if (has_fqn_weights) {
       ET_CHECK_OK_OR_RETURN_ERROR(load_constants_from_fqn_manifest(
           handle, named_data_map, fqn_weight_manifest));
-    }
-    // Load constants. When weight_sharing_across_methods is enabled (opt-in
-    // via the kWeightSharingAcrossMethods runtime backend option set by the
-    // runner), use the per-weight FQN cache so methods that share weights
-    // (e.g. prefill/decode) avoid duplicate GPU allocations. Otherwise fall
-    // back to the legacy per-method blob load — required for models whose
-    // methods are independent sub-graphs that may have FQN collisions
-    // (e.g. parakeet).
-    else if (is_weight_sharing_across_methods_enabled()) {
+    } else if (is_weight_sharing_across_methods_enabled()) {
       ET_CHECK_OK_OR_RETURN_ERROR(load_constants_with_cache(
           handle, named_data_map, method_name, weights_blob_key));
     } else {
@@ -1119,6 +1113,7 @@ class ET_EXPERIMENTAL CudaBackend final
       const NamedDataMap* named_data_map,
       const CudaFqnWeightEntry& entry,
       const std::vector<const CudaFqnWeightEntry*>* mutable_group,
+      const std::unordered_map<std::string, uintptr_t>& storage_scope_by_key,
       int device_index,
       std::shared_ptr<CudaWeightStorage>& storage,
       bool& reused) const {
@@ -1130,33 +1125,13 @@ class ET_EXPERIMENTAL CudaBackend final
 
     uintptr_t mutable_scope = 0;
     if (!entry.shareable) {
-      // Method::init wraps the same external PTD map in a distinct
-      // MergedDataMap for every method, so the wrapper address is not a model
-      // instance identity. get_key(), however, forwards the pointer owned by
-      // the underlying PTD map. That pointer is stable across methods, unique
-      // to a live PTD instance, and valid for the map's lifetime.
-      auto num_keys = named_data_map->get_num_keys();
+      const auto scope = storage_scope_by_key.find(entry.storage_key);
       ET_CHECK_OR_RETURN_ERROR(
-          num_keys.ok(),
-          InvalidProgram,
-          "Failed to enumerate CUDA named data while loading mutable FQN storage");
-      for (uint32_t index = 0; index < num_keys.get(); ++index) {
-        auto key = named_data_map->get_key(index);
-        ET_CHECK_OR_RETURN_ERROR(
-            key.ok(),
-            InvalidProgram,
-            "Failed to read CUDA named data key %u",
-            index);
-        if (entry.storage_key == key.get()) {
-          mutable_scope = reinterpret_cast<uintptr_t>(key.get());
-          break;
-        }
-      }
-      ET_CHECK_OR_RETURN_ERROR(
-          mutable_scope != 0,
+          scope != storage_scope_by_key.end(),
           NotFound,
           "CUDA mutable FQN storage '%s' is missing from named data",
           entry.storage_key.c_str());
+      mutable_scope = scope->second;
     }
 
     const auto cache_key = [&](const CudaFqnWeightEntry& item) {
@@ -1289,6 +1264,10 @@ class ET_EXPERIMENTAL CudaBackend final
       const NamedDataMap* named_data_map,
       const CudaFqnWeightManifest& manifest) const {
     ET_CHECK_OR_RETURN_ERROR(
+        named_data_map != nullptr,
+        InvalidArgument,
+        "CUDA FQN weights require a named data map");
+    ET_CHECK_OR_RETURN_ERROR(
         handle->get_num_constants && handle->get_constant_name &&
             handle->get_constant_original_fqn && handle->get_constant_dtype &&
             handle->get_constant_data_size &&
@@ -1357,6 +1336,28 @@ class ET_EXPERIMENTAL CudaBackend final
         mutable_storage_groups[entry.storage_group].push_back(&entry);
       }
     }
+    std::unordered_map<std::string, uintptr_t> storage_scope_by_key;
+    if (!mutable_storage_groups.empty()) {
+      // Method::init creates a distinct MergedDataMap wrapper per method, but
+      // get_key() forwards the stable pointer owned by the underlying PTD map.
+      // Use that pointer to scope mutable state to one live model instance.
+      auto num_keys = named_data_map->get_num_keys();
+      ET_CHECK_OR_RETURN_ERROR(
+          num_keys.ok(),
+          InvalidProgram,
+          "Failed to enumerate CUDA named data while loading mutable FQN storage");
+      storage_scope_by_key.reserve(num_keys.get());
+      for (uint32_t index = 0; index < num_keys.get(); ++index) {
+        auto key = named_data_map->get_key(index);
+        ET_CHECK_OR_RETURN_ERROR(
+            key.ok() && key.get() != nullptr,
+            InvalidProgram,
+            "Failed to read CUDA named data key %u",
+            index);
+        storage_scope_by_key.emplace(
+            key.get(), reinterpret_cast<uintptr_t>(key.get()));
+      }
+    }
     std::vector<AOTInductorConstantMapEntry> pairs;
     pairs.reserve(manifest.entries.size());
     std::unordered_set<std::string> bound_fqns;
@@ -1407,6 +1408,7 @@ class ET_EXPERIMENTAL CudaBackend final
                 named_data_map,
                 entry,
                 mutable_group,
+                storage_scope_by_key,
                 device_index,
                 storage,
                 reused),
