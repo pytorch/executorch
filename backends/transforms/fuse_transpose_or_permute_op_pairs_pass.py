@@ -29,13 +29,12 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
     so transpose(1, 2) then transpose(0, 2) is a pseudo identity and should be fused.
     """
 
-    # A list of ops that can be bypassed when looking for a
-    # transpose-permute chain. Subclasses can extend this with backend-specific ops.
+    # Only layout-invariant ops can be bypassed. Per-channel QDQ requires
+    # remapping its axis and must not be added here without that rewrite.
+    # Subclasses can extend this with backend-specific ops.
     bypass_ops: set[EdgeOpOverload] = {
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
     def can_fuse_for_chain(

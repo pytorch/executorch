@@ -45,7 +45,7 @@ def _get_quantized_moe_deps():
             ],
         })
     return [
-        "fbcode//pytorch/ao/torchao/csrc/cpu/shared_kernels:op_library_common",
+        "fbcode//pytorch/ao/torchao/csrc/cpu/shared_kernels:packed_weights_header",
         "fbcode//pytorch/ao/torchao/csrc/cpu/torch_free_kernels:weight_packing",
     ]
 

@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <algorithm>
 #include <limits>
 
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace executorch::backends::cuda {

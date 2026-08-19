@@ -258,13 +258,21 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
        input individually.  A later pass can clean up any redundant
        dequant-quant pairs on the inputs.
 
+    3. Caller-supplied ops: advance the quantize above a value-preserving op by
+       quantizing selected direct floating-point tensor inputs. The caller is
+       responsible for supplying only inputs that support the quantized dtype.
+
     For the cat case, SplitDequantizedCatPass should run first to ensure
     each cat has at most one quantize consumer.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        extra_quantizable_ops: dict[EdgeOpOverload, tuple[int, ...]] | None = None,
+    ) -> None:
         super().__init__()
         self.graph_module = None
+        self._extra_quantizable_ops = extra_quantizable_ops or {}
 
     # Return true if advancing the quantize node is feasible
     def advancing_feasible(self, quant_node: torch.fx.Node):
@@ -349,6 +357,56 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
         quant_node.replace_all_uses_with(new_cat)
         graph.erase_node(quant_node)
 
+    def _advance_above_extra_quantizable_op(
+        self,
+        quant_node: torch.fx.Node,
+        op_node: torch.fx.Node,
+        quantizable_input_indices: tuple[int, ...],
+    ) -> bool:
+        graph = quant_node.graph
+        new_op_args = list(op_node.args)
+        quantized_input = False
+
+        for index in quantizable_input_indices:
+            assert 0 <= index < len(op_node.args)
+            arg = op_node.args[index]
+            assert isinstance(arg, torch.fx.Node)
+            value = arg.meta["val"]
+            assert isinstance(value, torch.Tensor)
+            if not value.dtype.is_floating_point:
+                continue
+
+            quant_args = list(quant_node.args)
+            quant_args[0] = arg
+            with graph.inserting_before(op_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=tuple(quant_args),
+                    kwargs=quant_node.kwargs,
+                )
+                # We will correct the dtype when we run
+                # ExportPass call at the end.
+                new_quant.meta = arg.meta.copy()
+            new_op_args[index] = new_quant
+            quantized_input = True
+
+        if not quantized_input:
+            return False
+
+        with graph.inserting_before(quant_node):
+            new_op = graph.call_function(
+                # pyre-ignore[6]
+                op_node.target,
+                args=tuple(new_op_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_op)
+        graph.erase_node(quant_node)
+        return True
+
     def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
         graph = graph_module.graph
         modified = False
@@ -369,6 +427,19 @@ class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
                 and len(inp.users) == 1
             ):
                 self._advance_above_cat(node, inp)
+                modified = True
+                continue
+
+            if (
+                isinstance(inp, torch.fx.Node)
+                and inp.target in self._extra_quantizable_ops
+                and len(inp.users) == 1
+                and self._advance_above_extra_quantizable_op(
+                    node,
+                    inp,
+                    self._extra_quantizable_ops[inp.target],
+                )
+            ):
                 modified = True
                 continue
 

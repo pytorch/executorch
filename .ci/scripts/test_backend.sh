@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -86,7 +86,6 @@ if [[ "$FLOW" == *arm* ]]; then
 
     if [[ "$FLOW" == *ethos_u* ]]; then
         # Prepare a test runner binary that can run on the Corstone-3x0 FVPs
-        backends/arm/scripts/build_executorch.sh
         backends/arm/test/setup_testing.sh
     fi
 
@@ -94,6 +93,15 @@ if [[ "$FLOW" == *arm* ]]; then
         # Prepare a test runner binary for VKML runtime
         backends/arm/test/setup_testing_vkml.sh
     fi
+fi
+
+if [[ "$FLOW" == *cortex_m* ]]; then
+    # Cortex-M runs on the Corstone-300 FVP, using the same Arm toolchain as the
+    # Ethos-U flows but its own semihosting runner.
+    .ci/scripts/setup-arm-baremetal-tools.sh
+    source examples/arm/arm-scratch/setup_path.sh
+
+    backends/cortex_m/test/build_test_runner.sh
 fi
 
 if [[ "$FLOW" == *openvino* ]]; then

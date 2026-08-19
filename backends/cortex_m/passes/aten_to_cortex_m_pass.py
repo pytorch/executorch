@@ -538,6 +538,19 @@ def _get_convolution_replacement(
         weight_permuted = param_weight_tensor.permute(0, 2, 3, 1).contiguous()
 
     with node.graph.inserting_after(weight):
+        if bias is None and groups > 1:
+            # CMSIS-NN's grouped kernels offset the bias per group, and the MVE
+            # depthwise one per channel block, so they need a real pointer rather
+            # than null. Supplied for both paths on every target: which depthwise
+            # kernel a convolution reaches is not predictable from the graph.
+            bias = create_constant_placeholder(
+                exported_program,
+                node.graph,
+                node.name + "_zero_bias",
+                InputKind.PARAMETER,
+                torch.zeros(out_channels, dtype=torch.int32),
+            )
+
         weight_nhwc = create_constant_placeholder(
             exported_program,
             node.graph,

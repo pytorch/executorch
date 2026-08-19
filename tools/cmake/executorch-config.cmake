@@ -28,6 +28,11 @@ cmake_minimum_required(VERSION 3.24)
 include(CMakeFindDependencyMacro)
 find_package(tokenizers CONFIG)
 
+# Load dependencies published by enabled backend targets.
+include("${CMAKE_CURRENT_LIST_DIR}/executorch-backend-dependencies.cmake"
+        OPTIONAL
+)
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)

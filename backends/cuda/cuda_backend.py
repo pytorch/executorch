@@ -477,6 +477,9 @@ class CudaBackend(AotiBackend, BackendDetails):
 
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
+        # ROCm does not build the CUDA-only .cu fallback shims.
+        if torch.version.hip is not None:
+            return {}
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
             "at::_ops::sort_stable::call": None,
@@ -490,6 +493,42 @@ class CudaBackend(AotiBackend, BackendDetails):
             "executorch_cuda::int8_plain_mm": None,
             "aoti_torch_cuda_int8_plain_mm": None,
         }
+
+    @staticmethod
+    def _get_custom_ops_to_c_shim_options() -> Dict[str, Any]:
+        if torch.version.hip is not None:
+            return {}
+        try:
+            return {
+                "aot_inductor.custom_ops_to_c_shims": {
+                    torch.ops.executorch_cuda.int4_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int4_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "int64_t, AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int5_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int5_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int6_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int6_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, int64_t, "
+                        "AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int8_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int8_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    ],
+                }
+            }
+        except AttributeError:
+            # Custom ops may not be registered in this process.
+            return {}
 
     @classmethod
     def get_decomposition_table(cls) -> Dict[Any, Any]:
@@ -560,36 +599,7 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
-        try:
-            import torch
-
-            options["aot_inductor.custom_ops_to_c_shims"] = {
-                torch.ops.executorch_cuda.int4_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int4_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "int64_t, AtenTensorHandle*)"
-                ],
-                torch.ops.executorch_cuda.int5_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int5_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-                torch.ops.executorch_cuda.int6_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int6_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-                torch.ops.executorch_cuda.int8_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int8_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-            }
-        except AttributeError:
-            # quantize_op_dispatch not imported — op not registered, skip C shim mapping
-            pass
+        options.update(cls._get_custom_ops_to_c_shim_options())
 
         # Parse compile_specs to check for platform
 

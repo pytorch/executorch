@@ -20,7 +20,7 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 
-class SliceTensorConverter(NodeConverter):
+class SliceCopyTensorConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
@@ -46,7 +46,7 @@ class SliceTensorConverter(NodeConverter):
         if len(args) != 4:
             return False
 
-        dim, start, end = SliceTensorConverter._get_clipped_slice_args(node)
+        dim, start, end = SliceCopyTensorConverter._get_clipped_slice_args(node)
         input_rank = len(input_tensor(node, 0).shape)
 
         # Check "dim" out of bounds

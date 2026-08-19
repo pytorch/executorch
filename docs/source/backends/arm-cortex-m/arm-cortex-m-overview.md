@@ -100,23 +100,20 @@ quantized_exported_program = torch.export.export(quantized, (example_input,))
 
 ### 2. Lower to edge and apply Cortex-M passes
 
-Lower to the edge dialect with a custom `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
+Lower to the edge dialect with the backend's `EdgeCompileConfig`, then run the `CortexMPassManager` to replace quantized subgraphs with CMSIS-NN operator implementations:
 
 ```python
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 
-config = EdgeCompileConfig(
-    preserve_ops=[
-        torch.ops.aten.linear.default,
-        torch.ops.aten.hardsigmoid.default,
-        torch.ops.aten.hardsigmoid_.default,
-        torch.ops.aten.hardswish.default,
-        torch.ops.aten.hardswish_.default,
-    ],
-    _check_ir_validity=False,
-    _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-)
+# Use the backend's own configuration rather than hand-writing one. Ops such as
+# silu and hardswish must survive to_edge for the Cortex-M passes to lower them,
+# and omitting one does not degrade gracefully: an activation fails the
+# AtenToCortexMPass, and linear silently falls back to portable float kernels.
+config = cortex_m_edge_compile_config()
 
 edge_program_manager = to_edge(quantized_exported_program, compile_config=config)
 

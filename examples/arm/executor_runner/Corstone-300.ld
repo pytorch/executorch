@@ -278,8 +278,8 @@ SECTIONS
   .ddr.bss (NOLOAD) :
   {
     . = ALIGN(16);
-    *(input_file_allocator_sec)
-    *(method_allocator_sec)
+    *(.bss.input_file_allocator_sec)
+    *(.bss.method_allocator_sec)
 #if (ETHOSU_ARENA == 1)
     . = ALIGN(32);
     *(.bss.tensor_arena)
