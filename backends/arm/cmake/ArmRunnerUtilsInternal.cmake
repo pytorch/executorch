@@ -328,8 +328,10 @@ function(arm_runner_configure_ethos_u_platform)
   arm_ensure_ethos_u_content(
     "${ARG_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
   )
-  add_corstone_subdirectory(${ARG_SYSTEM_CONFIG} ${ARG_SDK_PATH})
-  configure_timing_adapters(${ARG_SYSTEM_CONFIG} ${ARG_MEMORY_MODE})
+  add_corstone_subdirectory(
+    "${ARG_SYSTEM_CONFIG}" "${ARG_SDK_PATH}" "${ARG_MEMORY_MODE}"
+  )
+  configure_timing_adapters("${ARG_SYSTEM_CONFIG}" "${ARG_MEMORY_MODE}")
   foreach(_platform_variable TARGET_BOARD ETHOSU_MODEL ETHOSU_ARENA)
     if(DEFINED ${_platform_variable})
       set(${_platform_variable}
