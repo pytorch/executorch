@@ -16,6 +16,8 @@ from executorch.extension.llm.cache.reference_cache import (
     CellReferenceCache,
     ContiguousReferenceCache,
     flatten_step,
+    LayerKind,
+    LayerPolicy,
     MaskKind,
     MAX_SEQS,
 )
@@ -286,7 +288,7 @@ class CellCacheTest(unittest.TestCase):
         REGISTRY.uninstall(self.cache_key)
 
     def _cache(
-        self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC, window=0, n_layers=None
+        self, capacity=CAPACITY, sizing=CacheSizing.DYNAMIC, layers=None, n_layers=None
     ):
         cache = CellReferenceCache(
             CacheConfig(
@@ -295,7 +297,7 @@ class CellCacheTest(unittest.TestCase):
                 head_dim=self.head_dim,
                 capacity=capacity,
                 sizing=sizing,
-                window=window,
+                layers=[LayerPolicy.flat()] if layers is None else layers,
             )
         )
         REGISTRY.install(self.cache_key, cache)
@@ -472,8 +474,20 @@ class CellCacheTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 call()
 
+    def test_layer_policy_rejects_a_mismatched_window(self):
+        # The kind carries the meaning, so a window on a flat layer -- or a ring
+        # layer without one -- is a config error rather than a silent no-op.
+        with self.assertRaises(ValueError):
+            LayerPolicy(kind=LayerKind.FLAT, window=4)
+        with self.assertRaises(ValueError):
+            LayerPolicy(kind=LayerKind.RING, window=0)
+        with self.assertRaises(ValueError):  # one policy, or one per layer
+            self._cache(
+                layers=[LayerPolicy.flat(), LayerPolicy.ring(2), LayerPolicy.ring(2)]
+            )
+
     def test_window_narrows_each_query_without_crossing_sequences(self):
-        cache = self._cache(window=2)
+        cache = self._cache(layers=[LayerPolicy.ring(2)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
         cache.begin_step([0] * 4)
         spec = cache.update_and_fetch(0, kv, kv, _positions(0, 4))[2]
@@ -495,7 +509,7 @@ class CellCacheTest(unittest.TestCase):
     def test_layers_can_window_independently(self):
         # One cell table, but layers may disagree about the window: the mask is
         # per policy, not per layer, so a mixed model costs one extra mask.
-        cache = self._cache(window=[0, 2])
+        cache = self._cache(layers=[LayerPolicy.flat(), LayerPolicy.ring(2)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
         cache.begin_step([0] * 4)
         pos = _positions(0, 4)
@@ -509,7 +523,10 @@ class CellCacheTest(unittest.TestCase):
     def test_layers_sharing_a_window_share_one_mask(self):
         # The mask is per policy: two windowed layers get the same object, and
         # the flat one a different mask, so a mixed model costs one extra.
-        cache = self._cache(window=[0, 2, 2], n_layers=3)
+        cache = self._cache(
+            layers=[LayerPolicy.flat(), LayerPolicy.ring(2), LayerPolicy.ring(2)],
+            n_layers=3,
+        )
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
         cache.begin_step([0] * 4)
         pos = _positions(0, 4)
@@ -522,7 +539,7 @@ class CellCacheTest(unittest.TestCase):
 
     def test_windowed_decode_attends_only_the_retained_cells(self):
         window = 2
-        cache = self._cache(window=window)
+        cache = self._cache(layers=[LayerPolicy.ring(window)])
         kv = torch.randn(1, self.n_kv_heads, 4, self.head_dim)
         cache.begin_step([0] * 4)
         cache.update_and_fetch(0, kv, kv, _positions(0, 4))
@@ -654,14 +671,14 @@ class WindowedSpecTest(unittest.TestCase):
         torch.manual_seed(0)
         self.scale = self.DIM**-0.5
 
-    def _cache(self, window):
+    def _cache(self, policy):
         return ContiguousReferenceCache(
             CacheConfig(
                 n_layers=1,
                 n_kv_heads=self.HEADS,
                 head_dim=self.DIM,
                 capacity=32,
-                window=window,
+                layers=[policy],
             )
         )
 
@@ -674,7 +691,7 @@ class WindowedSpecTest(unittest.TestCase):
 
     def test_decode_attends_only_the_window(self):
         window = 3
-        cache = self._cache(window)
+        cache = self._cache(LayerPolicy.ring(window))
         self._update(cache, 5, 0)
         k, v, spec = self._update(cache, 1, 5)
 
@@ -691,7 +708,7 @@ class WindowedSpecTest(unittest.TestCase):
 
     def test_each_prefill_query_attends_its_own_window(self):
         window = 2
-        cache = self._cache(window)
+        cache = self._cache(LayerPolicy.ring(window))
         k, v, spec = self._update(cache, 4, 0)
         self.assertEqual(spec.kind, MaskKind.EXPLICIT)
 
@@ -718,7 +735,7 @@ class WindowedSpecTest(unittest.TestCase):
                 n_kv_heads=self.HEADS,
                 head_dim=self.DIM,
                 capacity=32,
-                window=[0, 2],
+                layers=[LayerPolicy.flat(), LayerPolicy.ring(2)],
             )
         )
         kv = torch.randn(1, self.HEADS, 4, self.DIM)
@@ -733,8 +750,8 @@ class WindowedSpecTest(unittest.TestCase):
 
     def test_window_wider_than_history_stays_fused(self):
         # Nothing to bound from below, so the window must not force a mask.
-        for window in (0, 64):
-            cache = self._cache(window)
+        for policy in (LayerPolicy.flat(), LayerPolicy.ring(64)):
+            cache = self._cache(policy)
             self.assertEqual(self._update(cache, 4, 0)[2].kind, MaskKind.CAUSAL)
             self.assertEqual(self._update(cache, 1, 4)[2].kind, MaskKind.NONE)
 

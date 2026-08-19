@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -54,6 +54,33 @@ class AttendSpec:
     mask: Optional[torch.Tensor] = None  # EXPLICIT only: bool, true = attend
 
 
+class LayerKind(Enum):
+    FLAT = "flat"  # retains all history
+    RING = "ring"  # sliding window over the newest `window` positions
+
+
+@dataclass(frozen=True)
+class LayerPolicy:
+    """Per-layer cache kind and its parameters. Mirrors the C++ LayerPolicy."""
+
+    kind: LayerKind = LayerKind.FLAT
+    window: int = 0  # RING only: window size in positions
+
+    def __post_init__(self):
+        if self.kind is LayerKind.RING and self.window <= 0:
+            raise ValueError("a ring layer needs a positive window")
+        if self.kind is LayerKind.FLAT and self.window != 0:
+            raise ValueError("a flat layer retains all history; window must be 0")
+
+    @classmethod
+    def flat(cls) -> "LayerPolicy":
+        return cls(kind=LayerKind.FLAT)
+
+    @classmethod
+    def ring(cls, window: int) -> "LayerPolicy":
+        return cls(kind=LayerKind.RING, window=window)
+
+
 @experimental(
     "update_and_attend KV cache is experimental and may change without notice."
 )
@@ -66,23 +93,17 @@ class CacheConfig:
     sizing: CacheSizing = CacheSizing.DYNAMIC
     dtype: torch.dtype = torch.float32
     batch_size: int = 1
-    # Sliding window in positions; 0 = keep all history. An int applies to
-    # every layer, a list is per layer.
-    window: Union[int, Sequence[int]] = 0
+    # Per-layer policy: one entry applies to every layer, else one per layer.
+    layers: Sequence[LayerPolicy] = (LayerPolicy.flat(),)
 
     def __post_init__(self):
         if self.capacity <= 0:
             raise ValueError("capacity must be positive")
-        windows = [self.window] if isinstance(self.window, int) else self.window
-        if len(windows) not in (1, self.n_layers):
-            raise ValueError("window must be an int, or one entry per layer")
-        if any(w < 0 for w in windows):
-            raise ValueError("window must not be negative")
+        if len(self.layers) not in (1, self.n_layers):
+            raise ValueError("layers must be one policy, or one per layer")
 
-    def window_for(self, layer_id: int) -> int:
-        if isinstance(self.window, int):
-            return self.window
-        return self.window[0] if len(self.window) == 1 else self.window[layer_id]
+    def policy_for(self, layer_id: int) -> LayerPolicy:
+        return self.layers[0] if len(self.layers) == 1 else self.layers[layer_id]
 
 
 @experimental(
@@ -179,7 +200,7 @@ class ContiguousReferenceCache:
         ``i + total - q_len - window``. Whichever bound the fused kinds cannot
         express is what makes the step EXPLICIT.
         """
-        window = self.config.window_for(layer_id)
+        window = self.config.policy_for(layer_id).window
         windowed = 0 < window < total
         if q_len == 1 and not windowed:
             return AttendSpec(kind=MaskKind.NONE)
@@ -436,7 +457,7 @@ class CellReferenceCache:
             self._v[layer_id][:, :, :read_len, :],
             AttendSpec(
                 kind=MaskKind.EXPLICIT,
-                mask=self._plan.mask_for(self.config.window_for(layer_id)),
+                mask=self._plan.mask_for(self.config.policy_for(layer_id).window),
             ),
         )
 
