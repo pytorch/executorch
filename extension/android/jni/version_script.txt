@@ -1,7 +1,51 @@
-{
+# Export map for the Android JNI shared library (libexecutorch_jni.so,
+# repackaged as libexecutorch.so in the AAR).
+#
+# In addition to the JNI entry points, the EXECUTORCH_1_0 node exports the
+# curated C++ runtime API surface that an external backend or kernel .so needs
+# in order to self-register into this process's registries when it is loaded.
+# This is milestone 1 of the hot-pluggable backends plan:
+# https://github.com/pytorch/executorch/issues/10457
+#
+# The export boundary is namespace-scoped rather than symbol-by-symbol so that
+# it stays maintainable as the public headers evolve:
+#   - executorch::runtime::*  registration entry points (register_backend,
+#     get_backend_class, register_kernels), BackendInterface, EValue,
+#     MemoryManager / MemoryAllocator, FreeableBuffer, logging, and the rest of
+#     the public runtime API declared under runtime/.
+#   - executorch::aten::*     the exec_aten data model (Tensor, EValue,
+#     Scalar, ...) that backend implementations are written against in
+#     portable (non-ATen) builds.
+#   - et_pal_*                the platform abstraction layer C API, so backend
+#     .so files share the process-wide logging / allocation / time hooks.
+#
+# Everything else — runtime internals outside the public namespaces, backend
+# implementation details, and kernel implementations — stays hidden, which
+# preserves the linker's ability to strip and optimize them.
+#
+# Additive changes must go into a new version node (e.g. EXECUTORCH_1_1) so
+# that external .so files can depend on a stable ABI tag. Never remove or
+# narrow symbols from an existing node.
+EXECUTORCH_1_0 {
   global:
+    # JNI entry points.
     JNI_OnLoad;
     Java_*;
+
+    # Platform abstraction layer (extern "C" API).
+    et_pal_*;
+
+    extern "C++" {
+      "executorch::runtime::*";
+      "executorch::aten::*";
+      # RTTI and vtables for polymorphic public types (e.g. BackendInterface)
+      # whose key functions are emitted in this library; external .so files
+      # subclass these and need the symbols at link/load time.
+      "typeinfo for executorch::runtime::*";
+      "typeinfo for executorch::aten::*";
+      "vtable for executorch::runtime::*";
+      "vtable for executorch::aten::*";
+    };
   local:
     *;
 };
