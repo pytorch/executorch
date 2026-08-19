@@ -444,16 +444,21 @@ function(executorch_target_soname_policy target_name)
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     return()
   endif()
-  # project() leaves PROJECT_VERSION empty when called without VERSION, and it
-  # does so in the calling scope, so a backend that declares its own project so
-  # it can build standalone is versionless here even when the top level set a
-  # version. Passing that through produces a file named libfoo.so. with a
-  # trailing dot, and bakes the dot into the soname. Guarded so a versionless
-  # library gets an unversioned name instead.
-  if(PROJECT_VERSION)
+  # The top level version, not this directory's. project() leaves
+  # PROJECT_VERSION empty when called without VERSION and does so in the calling
+  # scope, so a backend that declares its own project so it can build standalone
+  # read as versionless even when the top level had set a version, and shipped
+  # an unversioned delegate beside a runtime carrying a major. An old
+  # application could then pair the new delegate with the old runtime, which is
+  # the split registry this whole policy exists to prevent.
+  #
+  # Still guarded: building that backend on its own leaves no top level version
+  # either, and an empty one produces a file named libfoo.so. with a trailing
+  # dot baked into the soname.
+  if(CMAKE_PROJECT_VERSION)
     set_target_properties(
-      ${target_name} PROPERTIES VERSION "${PROJECT_VERSION}"
-                                SOVERSION "${PROJECT_VERSION_MAJOR}"
+      ${target_name} PROPERTIES VERSION "${CMAKE_PROJECT_VERSION}"
+                                SOVERSION "${CMAKE_PROJECT_VERSION_MAJOR}"
     )
   endif()
 endfunction()
