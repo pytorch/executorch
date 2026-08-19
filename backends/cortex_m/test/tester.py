@@ -25,6 +25,7 @@ from executorch.backends.test.harness.stages import (
     RunPasses,
     StageType,
     ToEdge,
+    ToEdgeTransformAndLower,
     ToExecutorch,
 )
 
@@ -51,8 +52,29 @@ class CortexMRunPasses(RunPasses):
         )
 
 
-class CortexMSerialize(Serialize):
+class CortexMToEdgeTransformAndLower(ToEdgeTransformAndLower):
+    """to_edge with no partitioner, then CortexMPassManager.
+
+    Cortex-M rewrites edge operators in place rather than delegating a subgraph,
+    so this is its equivalent of to_edge_transform_and_lower, which is the only
+    lowering entry point the shared backend test suite drives.
+    """
+
     def __init__(self, target_config: Optional[CortexMTargetConfig] = None):
+        super().__init__(edge_compile_config=cortex_m_edge_compile_config())
+        self._run_passes = CortexMRunPasses(target_config)
+
+    def run(self, artifact, inputs=None, generate_etrecord: bool = False) -> None:
+        super().run(artifact, inputs, generate_etrecord=generate_etrecord)
+        self._run_passes.run(self.edge_dialect_program, inputs)  # type: ignore[arg-type]
+
+
+class CortexMSerialize(Serialize):
+    def __init__(
+        self,
+        target_config: Optional[CortexMTargetConfig] = None,
+        timeout: int = 120,
+    ):
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         compile_spec = get_u55_compile_spec()
         # Select the runner built for this target (build_test_runner.sh writes
@@ -60,6 +82,7 @@ class CortexMSerialize(Serialize):
         super().__init__(
             compile_spec,
             None,
+            timeout=timeout,
             build_dir_suffix=f"_{target_config.target_string}",
         )
 
@@ -69,6 +92,7 @@ cortex_m_stage_classes = {
     StageType.QUANTIZE: CortexMQuantize,
     StageType.RUN_PASSES: CortexMRunPasses,
     StageType.TO_EDGE: CortexMToEdge,
+    StageType.TO_EDGE_TRANSFORM_AND_LOWER: CortexMToEdgeTransformAndLower,
     StageType.TO_EXECUTORCH: ToExecutorch,
     StageType.SERIALIZE: CortexMSerialize,
 }
@@ -80,6 +104,7 @@ class CortexMTester(TesterBase):
         module,
         example_inputs,
         target_config: Optional[CortexMTargetConfig] = None,
+        timeout: int = 120,
     ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
@@ -92,8 +117,11 @@ class CortexMTester(TesterBase):
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
             target_config=target_config
         )
+        stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
+            lambda: CortexMToEdgeTransformAndLower(target_config=target_config)
+        )
         stage_classes[StageType.SERIALIZE] = lambda: CortexMSerialize(
-            target_config=target_config
+            target_config=target_config, timeout=timeout
         )
         super().__init__(module, resolved_example_inputs, stage_classes)
 
