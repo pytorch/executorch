@@ -79,6 +79,17 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             )
             self.assertEqual(expected, data)
 
+    def test_low_memory_weights_require_wrapper_so(self) -> None:
+        tensor = torch.tensor([1], dtype=torch.int16)
+        weights = Weights({"weight": (tensor, TensorProperties(tensor))})
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"Expected a CUDA AOTI \.wrapper\.so output"
+        ):
+            CudaBackend.materialize_weights_blob(
+                [weights], [CompileSpec("low_memory_mode", b"ON")]
+            )
+
     def test_low_memory_blob_stays_file_backed(self) -> None:
         data = b"cuda weights"
         with tempfile.TemporaryDirectory() as directory:

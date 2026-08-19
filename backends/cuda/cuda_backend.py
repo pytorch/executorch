@@ -96,7 +96,7 @@ def _is_emptied(x) -> bool:
 
 
 def _tensor_properties_for_low_memory(tensor, original):
-    if _is_emptied(tensor):
+    if _is_cpu_clone_active() and _is_emptied(tensor):
         return None
     return original(tensor)
 
@@ -336,6 +336,8 @@ def _write_aoti_weights_blob(weights, blob_path: str) -> None:
                 for offset in range(0, nbytes, chunk_size):
                     output.write(raw_view[offset : offset + chunk_size])
                 del raw_view, raw_array
+            # Match AOTInductor's binary_blob layout: CUDA-only constants are
+            # packed, while CPU/mixed constants are aligned to 64 bytes.
             if not all_cuda and (padding := (-nbytes) % 64):
                 output.write(bytes(padding))
             del storage
@@ -489,10 +491,15 @@ class CudaBackend(AotiBackend, BackendDetails):
             )
 
         so_path = next(
-            path
-            for path in paths
-            if isinstance(path, str) and path.endswith(".wrapper.so")
+            (
+                path
+                for path in paths
+                if isinstance(path, str) and path.endswith(".wrapper.so")
+            ),
+            None,
         )
+        if so_path is None:
+            raise RuntimeError(f"Expected a CUDA AOTI .wrapper.so output, got {paths}")
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
         _write_aoti_weights_blob(weights[0], blob_path)
 
