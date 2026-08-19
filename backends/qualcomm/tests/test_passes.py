@@ -795,6 +795,58 @@ class TestPasses(unittest.TestCase):
                 _resolve_qnn_data_type(py_type, "arg", "my_ops.foo.default")
             )
 
+    def test_backend_bundle_cache_survives_an_expired_entry(self):
+        """A backend bundle that expires must not poison the cache.
+
+        QnnBackendUnifiedRegistry holds bundles by weak_ptr keyed on backend type.
+        The stale key left behind by an expired bundle was never replaced, so once
+        one bundle had come and gone every later request built a fresh backend --
+        even while another bundle for that type was alive.
+        """
+        import os
+        import tempfile
+
+        import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+        from executorch.backends.qualcomm.partition.utils import (
+            generate_qnn_executorch_option,
+        )
+
+        option = generate_qnn_executorch_option(
+            generate_qnn_executorch_compiler_spec(
+                soc_model=QcomChipset.SM8650,
+                backend_options=generate_htp_compiler_spec(use_fp16=True),
+            )
+        )
+
+        # QNN logs from C++, so capture at the fd level.
+        with tempfile.TemporaryFile() as cap:
+            saved = os.dup(2)
+            os.dup2(cap.fileno(), 2)
+            try:
+                first = PyQnnManager.QnnManager(option)
+                if first.InitBackend().value != 0:
+                    self.skipTest("QNN backend unavailable")
+                first.Destroy()
+                del first
+
+                kept = PyQnnManager.QnnManager(option)
+                self.addCleanup(kept.Destroy)
+                self.assertEqual(0, kept.InitBackend().value)
+
+                later = PyQnnManager.QnnManager(option)
+                self.addCleanup(later.Destroy)
+                self.assertEqual(0, later.InitBackend().value)
+            finally:
+                os.dup2(saved, 2)
+                os.close(saved)
+            cap.seek(0)
+            log = cap.read().decode("utf-8", "replace")
+
+        created = log.count("Creating new backend bundle")
+        reused = log.count("Use cached backend bundle")
+        self.assertEqual(2, created, f"expected 2 backend creations, got {created}")
+        self.assertGreaterEqual(reused, 1, "third manager must reuse the live bundle")
+
 
 if __name__ == "__main__":
     unittest.main()
