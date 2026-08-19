@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import List
+from typing import List, Set
 
 import torch
 
@@ -120,10 +120,23 @@ class ConvertToLinearPass(ExportPass):
 
         # Ignore dynamic shape nodes
         outputs = [
-            node
-            for node in src_partition.output_nodes
-            if node.target != torch.ops.aten.sym_size.int and node.op != "placeholder"
+            n
+            for n in src_partition.output_nodes
+            if n.target != torch.ops.aten.sym_size.int and n.op != "placeholder"
         ]
+        if len(outputs) > 1:
+            # CSE may merge nodes across source partitions, creating extra
+            # output nodes. Keep only the output reachable from the mm/addmm.
+            partition_nodes: Set[torch.fx.Node] = set(src_partition.nodes)
+            reachable: Set[torch.fx.Node] = set()
+            queue = list(node.users.keys())
+            while queue:
+                cur = queue.pop()
+                if cur in reachable or cur not in partition_nodes:
+                    continue
+                reachable.add(cur)
+                queue.extend(cur.users.keys())
+            outputs = [n for n in outputs if n in reachable]
         assert (
             len(outputs) == 1
         ), f"Unexpected number of outputs for a torch.nn.Linear module, expecting 1 but got {outputs}"
