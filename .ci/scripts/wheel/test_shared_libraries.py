@@ -1173,10 +1173,6 @@ def _names_a_build_directory(entry: str) -> bool:
     packaging deliberately preserved it. No shipped wheel records one today. Reconciling the two is a
     separate change; do not read this helper as evidence that they already agree.
 
-    A torch directory is exempt even when it names a CI worker tree. The macOS extension records no
-    relative route to torch, so packaging keeps the absolute one as the only route it has, and rejecting
-    it here failed the macOS wheel job on an entry the wheel depends on.
-
     Module scope rather than nested, so its branches do not count against the enclosing test's
     complexity, which lintrunner caps at 12.
     """
@@ -1187,8 +1183,6 @@ def _names_a_build_directory(entry: str) -> bool:
         for part in parts
     ):
         return True
-    if entry.rstrip("/").endswith("/torch/lib"):
-        return False
     return any(
         part in ("actions-runner", "_work", "_temp", "runner")
         or part.startswith("conda_environment_")
@@ -1256,10 +1250,11 @@ def test_no_absolute_runtime_paths() -> None:
     # /home/user/torch/lib.backup/stage passed without ever reaching the build-directory classifier.
     # Both "_win" spellings are listed explicitly now that the match is anchored.
     #
-    # Anchoring does NOT change the verdict for a torch directory inside a CI worker tree, such as
-    # /home/ec2-user/actions-runner/_work/.../pytorch/torch/lib: that is still accepted, because the
-    # /torch/lib exemption in _names_a_build_directory returns before the worker-tree test. Packaging
-    # strips such an entry whenever a relative route exists, so the two do diverge there.
+    # A torch directory inside a CI worker tree, such as
+    # /home/ec2-user/actions-runner/_work/.../pytorch/torch/lib, is rejected rather than allowed: the
+    # build-directory classifier sees the worker components and the allowlist never gets to accept the
+    # /torch/lib suffix. Packaging strips the same entry, because every extension that names Torch now
+    # records a relative route to it.
     allowed_absolute = (
         "/torch/lib",
         "/lib/intel64",
