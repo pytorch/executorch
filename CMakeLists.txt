@@ -1261,9 +1261,11 @@ if(EXECUTORCH_BUILD_PYBIND)
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
   # and the wheel's own lib/ directory is two.
   #
-  # ELF spelling only. The Mach-O consumer below is skipped for a linker reason,
-  # and executorch_target_shared_runtime_path covers the same hops there, so a
-  # @loader_path spelling here would be computed and then discarded.
+  # ELF spelling. The Mach-O branch below takes only the Torch hop from this
+  # list, because nothing else records it there. The other entries reach a
+  # Mach-O build another way: executorch_target_shared_runtime_path emits lib
+  # and src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
+  # backends/cuda in the platform's own token at packaging time.
   set(_python_extension_rpath "$ORIGIN/../../../torch/lib")
   # An editable install copies this extension into a package directory whose
   # subdirectories are symlinks to the checkout, and the loader resolves the
