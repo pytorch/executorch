@@ -1633,12 +1633,14 @@ def test_custom_op_compiles(work_dir: Path) -> None:
             "after = set(_get_operator_names())\n"
             "arrived = sorted(after - before)\n"
             "print('ARRIVED', arrived)\n"
-            "target = [n for n in after if 'custom_double' in n]\n"
+            # The DELTA, not the post-load set: an operator already registered before the load would
+            # satisfy a membership test on `after`, so a library that registered nothing would pass.
+            "target = [n for n in arrived if 'custom_double' in n]\n"
             "print('TARGET', target)\n"
             "assert target, (\n"
-            "    'the custom operator loaded but did not reach the registry the shipped '\n"
-            "    'extension queries, so a consumer could not call it: '\n"
-            "    + repr(arrived)\n"
+            "    'loading the custom operator library added no operator named custom_double to '\n"
+            "    'the registry the shipped extension queries, so a consumer could not call it. '\n"
+            "    'Operators that did arrive: ' + repr(arrived)\n"
             ")\n"
             "print('loaded')",
         ],
@@ -1655,9 +1657,7 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     )
     # Belt and braces: the child asserts, and the parent confirms the child actually reported the
     # operator rather than exiting 0 down some path that skipped the assertion.
-    assert "TARGET ['wheel_check::custom_double.out']" in loaded.stdout or (
-        "TARGET [" in loaded.stdout and "custom_double" in loaded.stdout
-    ), (
+    assert re.search(r"TARGET \[[^\]]*custom_double", loaded.stdout), (
         "the loader child did not report the registered custom operator, so this check "
         "cannot show the registration reached the shipped registry: "
         f"{loaded.stdout.strip()[-400:]}"
@@ -1901,8 +1901,6 @@ def test_no_absolute_runtime_paths() -> None:
 
     package_dir = _installed_package_dir()
 
-    names_a_build_directory = _names_a_build_directory
-
     # This project's libraries must not name an absolute directory the wheel has a relative route to. The
     # one that shipped was a CUDA toolkit prefix recorded on the build machine: it sat ahead of the relative
     # hop, so a user with a toolkit at the same prefix resolved the CUDA runtime from there instead of from
@@ -1919,18 +1917,27 @@ def test_no_absolute_runtime_paths() -> None:
     # resolved empty leaving the concatenation at the filesystem root.
     #
     # Matched as a suffix, the same way packaging decides what to strip at setup.py:1300. A substring
-    # test exempted any path merely CONTAINING one of these, so a real build directory such as
-    # /home/ec2-user/actions-runner/_work/executorch/executorch/pytorch/torch/lib passed, and because
-    # this test runs first in the and chain the build-directory classifier never saw it. Both "_win"
-    # spellings are listed explicitly now that the match is anchored.
+    # test exempted any path merely CONTAINING one of these, so a directory such as
+    # /home/user/torch/lib.backup/stage passed without ever reaching the build-directory classifier.
+    # Both "_win" spellings are listed explicitly now that the match is anchored.
+    #
+    # Anchoring does NOT change the verdict for a torch directory inside a CI worker tree, such as
+    # /home/ec2-user/actions-runner/_work/.../pytorch/torch/lib: that is still accepted, because the
+    # /torch/lib exemption in _names_a_build_directory returns before the worker-tree test. Packaging
+    # strips such an entry whenever a relative route exists, so the two do diverge there.
     allowed_absolute = (
         "/torch/lib",
         "/lib/intel64",
         "/lib/intel64_win",
         "/lib/win-x64",
     )
-    # PyTorch's own libraries are vendored into the wheel and also record a CUDA toolkit directory. That is
-    # the one path this check exists to reject on our libraries, so it is allowed only on theirs.
+    # Held for a wheel that bundles PyTorch's libraries rather than declaring them: such a copy records
+    # the CUDA toolkit directory of the machine that built IT, which is not this project's to fix.
+    #
+    # No wheel ships one today. Six wheels across manylinux and macOS contain zero files with these
+    # prefixes, because the wheel declares torch as a dependency and there is no auditwheel step, so
+    # this clause is currently never false. It stays as a guard for a future bundling change; if that
+    # never comes, delete it rather than leaving an unexercised exemption in the check.
     vendored_prefixes = (
         "libtorch",
         "libc10",
@@ -1962,7 +1969,7 @@ def test_no_absolute_runtime_paths() -> None:
                 entry.startswith("/")
                 and not library.name.startswith(vendored_prefixes)
                 and (
-                    names_a_build_directory(entry)
+                    _names_a_build_directory(entry)
                     or not any(
                         entry.rstrip("/").endswith(allowed)
                         for allowed in allowed_absolute
@@ -1973,7 +1980,7 @@ def test_no_absolute_runtime_paths() -> None:
                 # toolkit prefix are the same defect with different causes.
                 kind = (
                     "inside a build of this project"
-                    if names_a_build_directory(entry)
+                    if _names_a_build_directory(entry)
                     else "an absolute directory the wheel has a relative route to"
                 )
                 bad.append(f"{entry} ({kind})")

@@ -1423,17 +1423,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   # errors out with "ld: duplicate LC_RPATH '@loader_path'" against the one
   # <site-packages>/torch/lib/libtorch_cpu.dylib already carries.
   if(NOT APPLE)
-    # Both this list and executorch_target_shared_runtime_path below name the
-    # editable-install hop src/executorch/lib, so the entry arrived twice and
-    # the loader searched the same directory twice on every load. Neither source
-    # is wrong, so collapse the repeats instead of dropping one.
-    string(REPLACE ":" ";" _python_extension_rpath_list
-                   "${_python_extension_rpath}"
-    )
-    list(REMOVE_DUPLICATES _python_extension_rpath_list)
-    string(REPLACE ";" ":" _python_extension_rpath
-                   "${_python_extension_rpath_list}"
-    )
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "${_python_extension_rpath}"
                               INSTALL_RPATH "${_python_extension_rpath}"
