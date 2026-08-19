@@ -886,7 +886,21 @@ def test_custom_op_compiles(work_dir: Path) -> None:
             "-c",
             "import torch\n"
             "from executorch.extension.pybindings import portable_lib\n"
+            "from executorch.extension.pybindings.portable_lib import (\n"
+            "    _get_operator_names,\n"
+            ")\n"
+            "before = set(_get_operator_names())\n"
             f"torch.ops.load_library({str(produced[0])!r})\n"
+            "after = set(_get_operator_names())\n"
+            "arrived = sorted(after - before)\n"
+            "print('ARRIVED', arrived)\n"
+            "target = [n for n in after if 'custom_double' in n]\n"
+            "print('TARGET', target)\n"
+            "assert target, (\n"
+            "    'the custom operator loaded but did not reach the registry the shipped '\n"
+            "    'extension queries, so a consumer could not call it: '\n"
+            "    + repr(arrived)\n"
+            ")\n"
             "print('loaded')",
         ],
         capture_output=True,
@@ -897,11 +911,23 @@ def test_custom_op_compiles(work_dir: Path) -> None:
         },
     )
     assert loaded.returncode == 0, (
-        "a custom operator built against the shipped extension cannot be loaded, so "
-        "it would fail at first use rather than at link time: "
+        "a custom operator built against the shipped extension cannot be loaded, or it "
+        "loaded without registering into the extension's operator registry, so it would "
+        "fail at first use rather than at link time: "
         f"{(loaded.stderr or loaded.stdout).strip()[-800:]}"
     )
-    print("✓ a custom operator compiles against the shipped Python extension")
+    # Belt and braces: the child asserts, and the parent confirms the child actually reported the
+    # operator rather than exiting 0 down some path that skipped the assertion.
+    assert "TARGET ['wheel_check::custom_double.out']" in loaded.stdout or (
+        "TARGET [" in loaded.stdout and "custom_double" in loaded.stdout
+    ), (
+        "the loader child did not report the registered custom operator, so this check "
+        "cannot show the registration reached the shipped registry: "
+        f"{loaded.stdout.strip()[-400:]}"
+    )
+    print(
+        "✓ a custom operator compiles against and registers into the shipped extension"
+    )
 
 
 def _find_wheel_files() -> list:
@@ -1106,9 +1132,18 @@ def test_no_absolute_runtime_paths() -> None:
     # path components, the same way packaging decides what to strip, so the two do
     # not describe the build tree differently.
     def names_a_build_directory(entry: str) -> bool:
-        return any(
+        parts = entry.split("/")
+        if any(
             part in ("pip-out", "cmake-out") or part.startswith("lib.")
-            for part in entry.split("/")
+            for part in parts
+        ):
+            return True
+        # A CI worker tree can end in /torch/lib, which is shaped exactly like a real install, so the
+        # suffix allowlist cannot tell them apart. These components appear only on a build machine.
+        return any(
+            part in ("actions-runner", "_work", "_temp", "runner")
+            or part.startswith("conda_environment_")
+            for part in parts
         )
 
     # This project's libraries must not name an absolute directory the wheel has a relative route to. The
@@ -1124,9 +1159,19 @@ def test_no_absolute_runtime_paths() -> None:
     # -L flags in PyTorch's exported link interface, which CMake mirrors into the runtime path, so every
     # library here that links PyTorch carries them. They point nowhere on any machine: measured on the
     # link line as -L/lib/intel64 -L/lib/intel64_win -L/lib/win-x64, which is a prefix variable that
-    # resolved empty leaving the concatenation at the filesystem root. Matched as substrings, which is
-    # what also covers the "_win" spelling.
-    allowed_absolute = ("/torch/lib", "/lib/intel64", "/lib/win-x64")
+    # resolved empty leaving the concatenation at the filesystem root.
+    #
+    # Matched as a suffix, the same way packaging decides what to strip at setup.py:1300. A substring
+    # test exempted any path merely CONTAINING one of these, so a real build directory such as
+    # /home/ec2-user/actions-runner/_work/executorch/executorch/pytorch/torch/lib passed, and because
+    # this test runs first in the and chain the build-directory classifier never saw it. Both "_win"
+    # spellings are listed explicitly now that the match is anchored.
+    allowed_absolute = (
+        "/torch/lib",
+        "/lib/intel64",
+        "/lib/intel64_win",
+        "/lib/win-x64",
+    )
     # PyTorch's own libraries are vendored into the wheel and also record a CUDA toolkit directory. That is
     # the one path this check exists to reject on our libraries, so it is allowed only on theirs.
     vendored_prefixes = (
@@ -1165,8 +1210,14 @@ def test_no_absolute_runtime_paths() -> None:
                 bad.append("<empty>")
             elif (
                 entry.startswith("/")
-                and not any(allowed in entry for allowed in allowed_absolute)
                 and not library.name.startswith(vendored_prefixes)
+                and (
+                    names_a_build_directory(entry)
+                    or not any(
+                        entry.rstrip("/").endswith(allowed)
+                        for allowed in allowed_absolute
+                    )
+                )
             ):
                 # Named separately so the message says which kind it is: a build directory and a
                 # toolkit prefix are the same defect with different causes.
