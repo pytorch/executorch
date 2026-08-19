@@ -26,9 +26,12 @@ not happen. Everything else here is inspection of the shipped artifacts, which n
 import os
 import pathlib
 import platform
+import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+from typing import Optional, Set
 
 import test_base
 import test_cpp_sdk
@@ -304,6 +307,85 @@ def test_the_delegate_registers() -> None:
     print(f"✓ the delegate registers: CudaBackend among {len(registered)} backend(s)")
 
 
+# Run in a child interpreter by test_a_model_runs_through_the_delegate, so the corrected library
+# search path is in place before glibc caches it. Kept as source rather than a separate file
+# because the smoke test is invoked directly and ships as one module.
+_EXECUTION_CHILD = """
+import torch
+
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
+from executorch.exir import to_edge_transform_and_lower
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
+)
+
+
+class Add(torch.nn.Module):
+    def forward(self, x, y):
+        return x + y
+
+
+example = (torch.randn(4, 8), torch.randn(4, 8))
+eager = Add()(*example)
+
+exported = torch.export.export(Add().eval(), example)
+lowered = to_edge_transform_and_lower(
+    exported, partitioner=[CudaPartitioner([])]
+).to_executorch()
+
+# The program has to actually carry the delegate, or this passes while proving nothing about it.
+assert b"CudaBackend" in lowered.buffer, (
+    "the exported program contains no CUDA delegate, so running it would not exercise the "
+    "shipped delegate at all"
+)
+
+# Loaded from the buffer rather than a file, and the output is brought back to host, because the
+# delegate returns device memory and comparing it against an eager result on the host otherwise
+# fails with an invalid argument rather than a mismatch.
+module = _load_for_executorch_from_buffer(lowered.buffer)
+actual = module.forward(list(example))[0]
+
+torch.testing.assert_close(actual.cpu(), eager, rtol=1e-3, atol=1e-3)
+capability = torch.cuda.get_device_capability(0)
+print(f"PASS: a CUDA-delegated model ran on sm_{capability[0]}{capability[1]} and matched eager")
+"""
+
+
+def _cxx_runtime_dir() -> Optional[Path]:
+    """The directory holding the C++ runtime this environment's compiler links against.
+
+    The kernel library the delegate loads is compiled here, so it records this runtime's symbol
+    versions. Returning the directory lets the caller put it where the loader will look.
+    """
+    prefix = os.environ.get("CONDA_PREFIX") or os.environ.get("CONDA_ENV")
+    if not prefix:
+        return None
+    lib = Path(prefix) / "lib"
+    return lib if (lib / "libstdc++.so.6").exists() else None
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(part) for part in version.split("_")[1].split("."))
+
+
+def _glibcxx_versions(library: Path) -> Set[str]:
+    """The GLIBCXX version nodes a shared object defines or requires.
+
+    Read with readelf rather than by parsing a filename, so a runtime that satisfies the kernel
+    starts being used the moment it is present instead of when a list is updated by hand.
+    """
+    readelf = test_shared_libraries._tool("readelf")
+    if readelf is None:
+        return set()
+    completed = subprocess.run(
+        [readelf, "--version-info", "--wide", str(library)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return set(re.findall(r"GLIBCXX_[0-9.]+", completed.stdout))
+
+
 def test_a_model_runs_through_the_delegate() -> None:
     """Export a model to the CUDA delegate and run it, comparing against eager.
 
@@ -315,6 +397,14 @@ def test_a_model_runs_through_the_delegate() -> None:
     did not happen. On x86_64 the absent device or the mismatched torch build is itself the failure:
     that row is the one place execution is proven, and letting it report success for a check it did
     not run is how a delegate that cannot compute reaches a release.
+
+    The body runs in a child interpreter. Export compiles the kernel library with this environment's
+    compiler, so the library records that compiler's C++ runtime versions, while dlopen resolves
+    libstdc++.so.6 from the loader's search path. Where the system copy is older than the compiler's
+    the load fails on a missing version node. glibc caches the search list at startup, so the
+    corrected path has to be in place before an interpreter begins, which is what the child gives.
+    Only this check runs with it, because the checks above prove the shipped libraries resolve
+    without a widened search path and would stop measuring that if it were widened for them too.
     """
     import torch
 
@@ -346,38 +436,37 @@ def test_a_model_runs_through_the_delegate() -> None:
         )
         return
 
-    from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-    from executorch.exir import to_edge_transform_and_lower
-    from executorch.extension.pybindings.portable_lib import (
-        _load_for_executorch_from_buffer,
+    environment = dict(os.environ)
+    runtime_dir = _cxx_runtime_dir()
+    if runtime_dir is not None:
+        search_path = environment.get("LD_LIBRARY_PATH")
+        environment["LD_LIBRARY_PATH"] = (
+            f"{runtime_dir}:{search_path}" if search_path else str(runtime_dir)
+        )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", _EXECUTION_CHILD],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
     )
-
-    class Add(torch.nn.Module):
-        def forward(self, x, y):
-            return x + y
-
-    example = (torch.randn(4, 8), torch.randn(4, 8))
-    eager = Add()(*example)
-
-    exported = torch.export.export(Add().eval(), example)
-    lowered = to_edge_transform_and_lower(
-        exported, partitioner=[CudaPartitioner([])]
-    ).to_executorch()
-
-    # The program has to actually carry the delegate, or this test passes while proving nothing about it.
-    assert b"CudaBackend" in lowered.buffer, (
-        "the exported program contains no CUDA delegate, so running it would not exercise the "
-        "shipped delegate at all"
-    )
-
-    # Loaded from the buffer rather than a file, and the output is brought back to host, because the
-    # delegate returns device memory and comparing it against an eager result on the host otherwise
-    # fails with an invalid argument rather than a mismatch.
-    module = _load_for_executorch_from_buffer(lowered.buffer)
-    actual = module.forward(list(example))[0]
-
-    torch.testing.assert_close(actual.cpu(), eager, rtol=1e-3, atol=1e-3)
-    print(f"PASS: a CUDA-delegated model ran on {device} and matched eager")
+    print(completed.stdout, end="")
+    if completed.returncode != 0:
+        # The compiled kernel's own requirement against what the loader offered, so a version
+        # mismatch reports the two numbers rather than only the load error the child saw.
+        detail = ""
+        if runtime_dir is not None:
+            offered = _glibcxx_versions(runtime_dir / "libstdc++.so.6")
+            if offered:
+                detail = (
+                    f" The runtime at {runtime_dir} offers up to "
+                    f"{max(offered, key=_version_key)}."
+                )
+        raise AssertionError(
+            f"a CUDA-delegated model did not run on {device}.{detail}\n"
+            f"{completed.stdout}\n{completed.stderr}"
+        )
 
 
 if __name__ == "__main__":

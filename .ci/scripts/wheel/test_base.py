@@ -59,16 +59,16 @@ def test_cmsis_nn_install():
 
 
 def run_tests(model_tests: List[ModelTest]) -> None:
-    # Test that we can import the portable_lib module - verifies RPATH is correct
-    print("Testing portable_lib import...")
+    # Test that we can import the _C module - verifies RPATH is correct
+    print("Testing _C import...")
     try:
         from executorch.extension.pybindings._C import (  # noqa: F401
             _load_for_executorch,
         )
 
-        print("✓ Successfully imported _load_for_executorch from portable_lib")
+        print("✓ Successfully imported _load_for_executorch from _C")
     except ImportError as e:
-        print(f"✗ Failed to import portable_lib: {e}")
+        print(f"✗ Failed to import _C: {e}")
         raise
 
     # Why are we doing this envvar shenanigans? Since we build the testers, which

@@ -347,7 +347,7 @@ install(
 # install it); _mlx_metallib points there.
 install(FILES ${_mlx_metallib} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-# Cache the metallib path for pybindings to copy it next to _C.so This enables
+# Cache the metallib path for pybindings to copy it next to _C.so. This enables
 # editable installs to work correctly
 set(MLX_METALLIB_PATH
     "${_mlx_metallib}"

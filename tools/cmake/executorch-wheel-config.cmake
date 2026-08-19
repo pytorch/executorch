@@ -70,6 +70,11 @@
 #                                model. Not part of EXECUTORCH_LIBRARIES, see
 #                                below.
 # executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::backend_cuda       The CUDA delegate. Linux only.
+# executorch::extension_cuda     The CUDA stream extension. Linux only.
+# executorch::backend_openvino   The OpenVINO delegate. Linux only. Opens the
+#                                OpenVINO runtime by name, which a C++ program
+#                                installs and points OPENVINO_LIB_PATH at.
 # executorch::threadpool         The shared thread pool.
 # executorch::etdump             The profiler.
 # ~~~
@@ -422,12 +427,6 @@ elseif(_executorch_runtime_library)
     # explicitly because CMake records it as a link-path rpath, which
     # install(TARGETS) strips.
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      # $ORIGIN-relative entries so a relocated application keeps working. The
-      # package's own directory does not need to be added here: CMake already
-      # puts it in the consumer's runtime search path because the imported
-      # library is named by absolute path, which is also what makes an
-      # application built against the installed package start at all.
-      #
       # --enable-new-dtags asks for DT_RUNPATH. Without it this linker writes
       # the older DT_RPATH, which the loader searches BEFORE LD_LIBRARY_PATH and
       # applies to a dependency's dependencies too, so a consumer could not
@@ -538,6 +537,15 @@ function(_executorch_define_component _suffix _library_name)
                "LINKER:--enable-new-dtags"
                "LINKER:-rpath,$ORIGIN"
                "LINKER:-rpath,$ORIGIN/../lib"
+               # Where an in-place build finds the library, since neither token
+               # above resolves to the package from a consumer's own build tree.
+               # It usually arrives anyway, through the runtime this target
+               # links, but that link is conditional on the runtime being
+               # present while this target is not, so a package carrying a
+               # component and no runtime left the component unreachable.
+               # Matches the Apple branch below, which has always spelled it
+               # out.
+               "LINKER:-rpath,${_executorch_package_root}/lib"
                # One option per component rather than a shared push-state pair:
                # CMake removes duplicate link options, so repeating the same
                # push-state text for a second component silently drops its
@@ -720,23 +728,19 @@ if(NOT _C_LIBRARY)
 endif()
 
 if(_C_LIBRARY)
-  set(EXECUTORCH_FOUND ON)
-  message(STATUS "ExecuTorch portable library is found at ${_C_LIBRARY}")
-  # Only when nothing else is linkable, which is the fused layout: a macOS wheel
-  # ships this extension and no separate runtime library, so the appends above
-  # never ran and this is the only thing there is to offer. On a split wheel the
-  # runtime is already there and this is skipped, because the extension carries
-  # unresolved interpreter symbols and a plain C++ application that links it
-  # fails with a page of PyUnicode_InternFromString style errors.
+  message(STATUS "ExecuTorch Python extension is found at ${_C_LIBRARY}")
+  # Defined so that a caller who specifically wants the extension, such as a
+  # custom operator project, can name the target, and deliberately kept out of
+  # EXECUTORCH_LIBRARIES and out of the found decision. The extension carries
+  # unresolved interpreter symbols, so a plain C++ application that links it
+  # fails with a page of PyUnicode_InternFromString style errors. Offering it as
+  # find_package's answer meant a wheel with no linkable library configured
+  # cleanly and failed at link instead of saying so, and it no longer stands in
+  # for a fused layout: every platform that ships a runtime now ships it as its
+  # own file.
   #
-  # Measured both layouts: split gives the runtime and its components, fused
-  # gives _C. Callers who specifically want the extension, such as a custom
-  # operator project, ask for the target by name rather than relying on this,
-  # and that target carries the C++20 requirement PyTorch's headers need while
-  # the runtime components require C++17.
-  if(NOT EXECUTORCH_LIBRARIES)
-    list(APPEND EXECUTORCH_LIBRARIES executorch::_C)
-  endif()
+  # The target carries the C++20 requirement PyTorch's headers need, while the
+  # runtime components require C++17.
   if(TARGET executorch::_C)
     # This file ran already in the same configure, because another subproject
     # called find_package too. No in-tree target uses this name, so it can only
@@ -864,11 +868,21 @@ endif()
 # match the EXECUTORCH_FOUND spelling this file documents. Without this, a
 # REQUIRED find_package would succeed even when nothing usable was located.
 set(executorch_FOUND ${EXECUTORCH_FOUND})
-if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
-  message(
-    FATAL_ERROR
-      "Found the ExecuTorch package but neither the shared runtime nor the Python "
-      "extension could be located inside it."
+if(NOT executorch_FOUND)
+  # The reason, not an error: the single REQUIRED gate at the bottom of this
+  # file raises. A component request that fails replaces this with a message
+  # naming the component, which is the more specific answer to what was asked
+  # for.
+  #
+  # One string rather than several arguments. Several make a list, and message()
+  # joins a list with semicolons, which lands separators mid sentence.
+  string(
+    CONCAT
+      executorch_NOT_FOUND_MESSAGE
+      "this ExecuTorch package ships the headers but no linkable library. The wheel "
+      "for this platform carries the Python extension only, which cannot stand in for "
+      "the runtime because it references the interpreter, so a C++ consumer has "
+      "nothing to link against"
   )
 endif()
 

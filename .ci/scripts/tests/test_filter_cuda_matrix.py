@@ -16,11 +16,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
+ROOT = Path(__file__).resolve().parents[3]
+
 
 def _load_filter():
     """Load the script by path, since .github/scripts is not an importable package."""
-    root = Path(__file__).resolve().parents[3]
-    path = root / ".github" / "scripts" / "filter_cuda_matrix.py"
+    path = ROOT / ".github" / "scripts" / "filter_cuda_matrix.py"
     spec = importlib.util.spec_from_file_location("filter_cuda_matrix", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -36,6 +39,10 @@ def _full_matrix():
     The filter refuses anything less: one gate rejects a matrix that would leave a CUDA train
     unpublished, another rejects a missing python and CUDA combination. Built from the module's own
     lists so it cannot go stale when either grows.
+
+    That also means it shrinks when either list shrinks, and every gate keeps passing. Measured:
+    deleting cu132 and 3.13 from the filter left all sixteen cases here green. TestPublishedSets
+    below is what notices that, so this fixture does not have to.
     """
     return {
         "include": [
@@ -229,6 +236,65 @@ class TestGates(unittest.TestCase):
     def test_pull_request_limit_reduces_to_one_row(self):
         emitted = _emitted(_run(_full_matrix(), limit="true"))
         self.assertEqual(len(emitted["include"]), 1)
+
+
+class TestPublishedSets(unittest.TestCase):
+    """What a release publishes, pinned against something other than the filter's own lists.
+
+    Every case above builds its fixture from those lists, so shrinking one shrinks the fixture with
+    it and every gate still passes. The published set is a promise to users rather than an
+    implementation detail, so dropping a row has to be a deliberate edit here too.
+    """
+
+    def test_published_cuda_versions(self):
+        self.assertEqual(FILTER.SUPPORTED_CUDA_VERSIONS, ["cu126", "cu130", "cu132"])
+
+    def test_published_python_versions(self):
+        self.assertEqual(
+            FILTER.SUPPORTED_PYTHON_VERSIONS, ["3.10", "3.11", "3.12", "3.13"]
+        )
+
+    def test_the_workflows_offer_exactly_the_published_pythons(self):
+        # The filter can only keep a row the generator produced, and these two workflows are what
+        # tell the generator which pythons to produce. A python published here but not offered
+        # there does trip the release gate, but only on a release run, well after the change
+        # landed. A python offered there and not published here is dropped without a word.
+        for name in (
+            "build-wheels-cuda-linux.yml",
+            "build-wheels-cuda-aarch64-linux.yml",
+        ):
+            with self.subTest(workflow=name):
+                workflow = yaml.safe_load(
+                    (ROOT / ".github" / "workflows" / name).read_text()
+                )
+                offered = json.loads(
+                    workflow["jobs"]["generate-matrix"]["with"]["python-versions"]
+                )
+                self.assertEqual(offered, FILTER.SUPPORTED_PYTHON_VERSIONS)
+
+    def test_the_pull_request_row_names_a_python_a_pull_request_is_offered(self):
+        # A limited pull request is offered one python only, because the shared generator replaces
+        # the list the workflow passes with its first entry. Naming any other one here matched no
+        # offered row, so the row a pull request built was not the row this file names.
+        offered = {
+            "include": [
+                {
+                    "python_version": FILTER.SUPPORTED_PYTHON_VERSIONS[0],
+                    "desired_cuda": cuda,
+                }
+                for cuda in FILTER.SUPPORTED_CUDA_VERSIONS
+            ]
+        }
+        emitted = _emitted(_run(offered, limit="true"))
+        self.assertEqual(
+            emitted["include"],
+            [
+                {
+                    "python_version": FILTER.PR_PYTHON_VERSION,
+                    "desired_cuda": FILTER.PR_CUDA_VERSION,
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

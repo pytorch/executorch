@@ -130,16 +130,15 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
       # without paths; as long as we `import torch` first, those dependencies
       # will work. But Apple dylibs do not support non-absolute dependencies, so
       # we need to tell the loader where to look for its libraries. The
-      # LC_LOAD_DYLIB entries for the portable_lib libraries will look like
+      # LC_LOAD_DYLIB entries for the extension will look like
       # "@rpath/_C.cpython-310-darwin.so", so we can add an LC_RPATH entry to
-      # look in a directory relative to the installed location of our _C.so
-      # file. To see these LC_* values, run `otool -l
-      # libquantized_ops_lib.dylib`. "extension", not "extensions": the plural
-      # directory does not exist, so the parent's path reached nothing and this
-      # library could not find the extension it needs. torch is three
-      # directories up from here, and this library links it directly, so the hop
-      # has to be recorded or the only route is the absolute path from the build
-      # machine.
+      # look in a directory relative to where that extension is installed. To
+      # see these LC_* values, run `otool -l libquantized_ops_lib.dylib`.
+      # "extension", not "extensions": the plural directory does not exist, so
+      # the parent's path reached nothing and this library could not find the
+      # extension it needs. torch is three directories up from here, and this
+      # library links it directly, so the hop has to be recorded or the only
+      # route is the absolute path from the build machine.
       if(APPLE)
         set(RPATH
             "@loader_path/../../extension/pybindings;@loader_path/../../../torch/lib"

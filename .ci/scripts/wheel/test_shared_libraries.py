@@ -797,6 +797,18 @@ def _wheel_cuda_train() -> str:
 # wheel is inspected, and a row cannot call that at import time.
 _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
+# Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
+_REQUIRED_ON_LINUX = "linux-only"
+
+
+def _resolve_required(required):
+    """Turn a row's requirement marker into the answer for the installed wheel."""
+    if required == _REQUIRED_ON_A_CUDA_WHEEL:
+        return bool(_wheel_cuda_train())
+    if required == _REQUIRED_ON_LINUX:
+        return sys.platform == "linux"
+    return required
+
 
 # The exact dependency names packaging declares per CUDA train, mirroring
 # _CUDA_RUNTIME_PACKAGES in setup.py. Listed here rather than imported because setup.py
@@ -912,11 +924,15 @@ _OWNED_COMPONENTS = (
         _library_file_name("libexecutorch_backend_xnnpack"),
         True,
     ),
+    # Required on Linux, where packaging turns the backend on for every non-minimal
+    # build. A fixed False passed a wheel that had compiled the delegate back into the
+    # extension: no library ships, so the row skips, and one definer inside the
+    # extension is exactly the monolithic layout a definer count cannot distinguish.
     (
         "OpenVINO delegate",
         _OPENVINO_BACKEND_SYMBOLS,
         _library_file_name("libexecutorch_backend_openvino"),
-        False,
+        _REQUIRED_ON_LINUX,
     ),
 )
 
@@ -941,13 +957,11 @@ def test_each_component_has_one_owner() -> None:
     # ships under backends/cuda/, and scanning lib/ alone reported it as absent, which each row
     # treats as an acceptable state and so would have skipped the check entirely.
     shipped = {path.name for path in _shipped_shared_objects(_installed_package_dir())}
-    on_a_cuda_wheel = bool(_wheel_cuda_train())
     for what, symbols, owner, required in _OWNED_COMPONENTS:
-        if required == _REQUIRED_ON_A_CUDA_WHEEL:
-            # Resolved here rather than in the table, because it depends on the installed
-            # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
-            # all and still pass, which is the whole point of these three rows.
-            required = on_a_cuda_wheel
+        # Resolved here rather than in the table, because it depends on the installed
+        # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
+        # all and still pass, which is the whole point of the conditional rows.
+        required = _resolve_required(required)
         present = any(name.startswith(owner) for name in shipped)
         assert present or not required, (
             f"the wheel ships no {owner}, which owns the {what}. Either packaging "
@@ -1717,12 +1731,32 @@ def test_wheel_platform_tag() -> None:
     one installs on machines it cannot run on at all, and that is a mistake this can
     actually catch.
     """
+    wheels = _find_wheel_files()
+    if not wheels:
+        # Failing rather than returning, because this is the only check that reads the declared
+        # platform tag at all, and a silent return reads as a pass in the job summary. A caller
+        # that genuinely has no wheel says so.
+        assert os.environ.get("EXECUTORCH_TEST_WITHOUT_WHEEL"), (
+            "no built wheel was found to inspect, so the platform tag was never checked. Run this "
+            "from a tree where the wheel was built, or set EXECUTORCH_TEST_WITHOUT_WHEEL to state "
+            "that no wheel is expected"
+        )
+        print("- no wheel file to inspect, skipping the platform tag check")
+        return
+
+    # Before auditwheel is provisioned, because the Mach-O route reads the architecture with lipo
+    # and never imports it. Installing a tool this platform does not use is one more way for a
+    # correct wheel to fail the job.
+    if sys.platform == "darwin":
+        _assert_mach_o_architecture_matches(wheels[-1])
+        return
+
     if importlib.util.find_spec("auditwheel") is None:
         # Installed here rather than skipped, because auditwheel is not in any CI
         # image and a skip is indistinguishable from a pass in the summary. This
-        # check is the only thing that compares the wheel's declared tag against
-        # what its libraries actually need, and this change adds five libraries
-        # under that tag.
+        # check is the only thing that reads the architecture out of the wheel's
+        # contents rather than out of its file name, and this change adds five
+        # libraries under that tag.
         print("- auditwheel not present, installing it so this check can run")
         installed = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--quiet", "auditwheel"],
@@ -1734,27 +1768,11 @@ def test_wheel_platform_tag() -> None:
             raise AssertionError(
                 "auditwheel is required to check the wheel's platform tag and could not "
                 "be installed. Skipping instead would report a pass, and this is the only "
-                "check that compares the declared tag against what the shipped libraries "
-                f"actually need: {installed.stderr.strip()[-200:]}"
+                "check that reads the architecture out of the wheel's contents rather than "
+                f"out of its file name: {installed.stderr.strip()[-200:]}"
             )
         importlib.invalidate_caches()
 
-    wheels = _find_wheel_files()
-    if not wheels:
-        # Failing rather than returning, because this is the only check that compares the declared
-        # platform tag against what the libraries need, and a silent return reads as a pass in the
-        # job summary. A caller that genuinely has no wheel says so.
-        assert os.environ.get("EXECUTORCH_TEST_WITHOUT_WHEEL"), (
-            "no built wheel was found to inspect, so the platform tag was never checked. Run this "
-            "from a tree where the wheel was built, or set EXECUTORCH_TEST_WITHOUT_WHEEL to state "
-            "that no wheel is expected"
-        )
-        print("- no wheel file to inspect, skipping the platform tag check")
-        return
-
-    if sys.platform == "darwin":
-        _assert_mach_o_architecture_matches(wheels[-1])
-        return
     result = subprocess.run(
         [sys.executable, "-m", "auditwheel", "show", str(wheels[-1])],
         capture_output=True,
@@ -1848,9 +1866,12 @@ def test_no_absolute_runtime_paths() -> None:
     # someone already thought of and that prefix was not on one.
     #
     # PyTorch's own directory is allowed: the wheel neither declares nor bundles PyTorch, so an absolute
-    # path is the only way to reach it. The maths library directories are allowed too, because they come
-    # from PyTorch's build flags and reach everything that links PyTorch, including this project's own
-    # extensions, naming a location on whichever machine built PyTorch that nothing here can change.
+    # path is the only way to reach it. The maths library directories are allowed too. They arrive as
+    # -L flags in PyTorch's exported link interface, which CMake mirrors into the runtime path, so every
+    # library here that links PyTorch carries them. They point nowhere on any machine: measured on the
+    # link line as -L/lib/intel64 -L/lib/intel64_win -L/lib/win-x64, which is a prefix variable that
+    # resolved empty leaving the concatenation at the filesystem root. Matched as substrings, which is
+    # what also covers the "_win" spelling.
     allowed_absolute = ("/torch/lib", "/lib/intel64", "/lib/win-x64")
     # PyTorch's own libraries are vendored into the wheel and also record a CUDA toolkit directory. That is
     # the one path this check exists to reject on our libraries, so it is allowed only on theirs.
@@ -1866,9 +1887,7 @@ def test_no_absolute_runtime_paths() -> None:
     offenders = {}
     inspected = 0
     with_a_runtime_path = 0
-    for library in sorted(package_dir.rglob(f"*{_dynamic_lib_suffix()}*")):
-        if not library.is_file() or library.is_symlink():
-            continue
+    for library in _shipped_shared_objects(package_dir):
         entries = _runtime_search_paths(library)
         if entries is None:
             continue
@@ -1947,7 +1966,8 @@ def test_extension_contains_no_component() -> None:
     # Only components whose owning library is actually in this wheel. A build with an optional component
     # turned off ships no owner, and asserting the extension does not define its symbols would reject a
     # configuration the table itself marks as supported. Required rows are kept regardless, because their
-    # owner missing is a packaging fault the owner check reports.
+    # owner missing is a packaging fault the owner check reports, and a conditional marker counts as
+    # required here so a CPU wheel is still checked for CUDA symbols it should not contain.
     shipped = {path.name for path in _shipped_runtime_libraries(package_dir)}
     # Guarded here rather than further down, so it protects the filter that uses it: a wheel that
     # installed no runtime libraries would otherwise compare the extension against an empty set and pass.

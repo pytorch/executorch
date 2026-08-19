@@ -1236,26 +1236,17 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # RPATH for the Python extension. It sits in
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-  # and the wheel's own lib/ directory is two. Mach-O spells the loader relative
-  # token differently and takes a list rather than a colon joined string, so
-  # both differ here while the layout reasoning does not.
-  if(APPLE)
-    set(_python_extension_origin "@loader_path")
-    set(_python_extension_rpath_separator ";")
-  else()
-    set(_python_extension_origin "$ORIGIN")
-    set(_python_extension_rpath_separator ":")
-  endif()
-  set(_python_extension_rpath "${_python_extension_origin}/../../../torch/lib")
+  # and the wheel's own lib/ directory is two.
+  #
+  # ELF spelling only. The Mach-O consumer below is skipped for a linker reason,
+  # and executorch_target_shared_runtime_path covers the same hops there, so a
+  # @loader_path spelling here would be computed and then discarded.
+  set(_python_extension_rpath "$ORIGIN/../../../torch/lib")
   # An editable install copies this extension into a package directory whose
   # subdirectories are symlinks to the checkout, and the loader resolves the
   # origin token against the real path, so the runtime sits two levels up and
   # then inside src/executorch/lib rather than beside the copy.
-  string(
-    APPEND
-    _python_extension_rpath
-    "${_python_extension_rpath_separator}${_python_extension_origin}/../../src/executorch/lib"
-  )
+  string(APPEND _python_extension_rpath ":$ORIGIN/../../src/executorch/lib")
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
@@ -1305,20 +1296,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    string(
-      APPEND
-      _python_extension_rpath
-      "${_python_extension_rpath_separator}${_python_extension_origin}/../../backends/cuda"
-    )
+    string(APPEND _python_extension_rpath ":$ORIGIN/../../backends/cuda")
   endif()
 
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
-    string(
-      APPEND
-      _python_extension_rpath
-      "${_python_extension_rpath_separator}${_python_extension_origin}/../../backends/qualcomm"
-    )
+    string(APPEND _python_extension_rpath ":$ORIGIN/../../backends/qualcomm")
   endif()
 
   if(EXECUTORCH_BUILD_ENN)
@@ -1412,17 +1395,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     endif()
   endforeach()
 
-  # Set RPATH to find PyTorch and backend libraries relative to the installation
-  # location. This goes from executorch/extension/pybindings up to
-  # site-packages, then to torch/lib. If QNN is enabled, also add
-  # backends/qualcomm/. Don't do this to APPLE, as it will error out on the
-  # following error:
-  #
-  if(APPLE)
-    # Skip setting @loader_path for APPLE, since it causes error like ld:
-    # duplicate LC_RPATH '@loader_path' in '<site-packages>/torch/lib/
-    # libtorch_cpu.dylib'
-  else()
+  # Where the extension finds PyTorch and the backend libraries, relative to
+  # where it is installed. Not applied on Mach-O: a @loader_path entry here
+  # errors out with "ld: duplicate LC_RPATH '@loader_path'" against the one
+  # <site-packages>/torch/lib/libtorch_cpu.dylib already carries.
+  if(NOT APPLE)
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "${_python_extension_rpath}"
                               INSTALL_RPATH "${_python_extension_rpath}"
