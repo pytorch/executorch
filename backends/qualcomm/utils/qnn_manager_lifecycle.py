@@ -20,13 +20,17 @@ _current_qnn_managers = threading.local()
 
 class QnnManagerRegistry:
     def __init__(self):
-        # Registry stores {backend_type: QnnManager instance}
+        # Registry stores {(backend_type, option): QnnManager instance}. Keying on
+        # the option bytes as well keeps two specs for one backend -- an fp16
+        # partition and a quantized one, say -- from sharing a manager, since
+        # precision comes from the options the manager was built with.
         self._registry = {}
 
     def get_or_create_qnn_manager(
         self, backend_type: QnnExecuTorchBackendType, option: bytes
     ) -> PyQnnManager.QnnManager:
-        if backend_type not in self._registry:
+        key = (backend_type, option)
+        if key not in self._registry:
             qnn_manager = PyQnnManager.QnnManager(option)
             err = qnn_manager.InitBackend()
             if err.value != 0:
@@ -35,13 +39,15 @@ class QnnManagerRegistry:
                     "Ensure QNN SDK libraries are available "
                     "(e.g. LD_LIBRARY_PATH includes $QNN_SDK_ROOT/lib/x86_64-linux-clang/)."
                 )
-            self._registry[backend_type] = qnn_manager
-        return self._registry[backend_type]
+            self._registry[key] = qnn_manager
+        return self._registry[key]
 
     def destroy_qnn_manager(self, backend_type: QnnExecuTorchBackendType):
-        if backend_type in self._registry:
-            self._registry[backend_type].Destroy()
-            del self._registry[backend_type]
+        keys = [k for k in self._registry if k[0] == backend_type]
+        if keys:
+            for k in keys:
+                self._registry[k].Destroy()
+                del self._registry[k]
         else:
             logging.warning(
                 f"Attempted to destroy non-existent QnnManager for backend type {backend_type.name}"
@@ -83,12 +89,14 @@ def get_current_qnn_manager(
     Return a new QnnManger if no QnnManager is active for the given backend_type in the current context.
     """
     active_registry = getattr(_current_qnn_managers, "active_registry", None)
-    if active_registry is None or backend_type not in active_registry._registry:
+    option = generate_qnn_executorch_option(compile_specs)
+    if (
+        active_registry is None
+        or (backend_type, option) not in active_registry._registry
+    ):
         logging.warning(
             f"No QnnManager active for backend type {backend_type.name} in the current QnnManagerContext. "
             "It would be better to use to_edge_transform_and_lower_to_qnn to lowering to QNN Backend."
         )
-        return QnnManagerRegistry().get_or_create_qnn_manager(
-            backend_type, generate_qnn_executorch_option(compile_specs)
-        )
-    return active_registry._registry[backend_type]
+        return QnnManagerRegistry().get_or_create_qnn_manager(backend_type, option)
+    return active_registry._registry[(backend_type, option)]
