@@ -204,10 +204,6 @@ find_package(executorch REQUIRED)
 target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 ```
 
-The quantized kernels are deliberately left out of that variable, because loading
-`executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
-stops the runtime.
-
 #### When something does not work
 
 - `find_package` could not find executorch: the `-DCMAKE_PREFIX_PATH=...` argument is missing or
@@ -244,12 +240,6 @@ stops the runtime.
   `INSTALL_RPATH` matters once you run `cmake --install`. CMake gives your program a search path while
   it sits in the build directory and removes that path when installing, so an installed program cannot
   find the libraries unless you record where they live.
-
-  Quantized kernels are not part of `EXECUTORCH_LIBRARIES`, so add them when your model needs them:
-
-  ```cmake
-  target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
-  ```
 
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.

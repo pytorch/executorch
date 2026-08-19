@@ -1120,9 +1120,12 @@ def test_no_absolute_runtime_paths() -> None:
     # someone already thought of and that prefix was not on one.
     #
     # PyTorch's own directory is allowed: the wheel neither declares nor bundles PyTorch, so an absolute
-    # path is the only way to reach it. The maths library directories are allowed too, because they come
-    # from PyTorch's build flags and reach everything that links PyTorch, including this project's own
-    # extensions, naming a location on whichever machine built PyTorch that nothing here can change.
+    # path is the only way to reach it. The maths library directories are allowed too. They arrive as
+    # -L flags in PyTorch's exported link interface, which CMake mirrors into the runtime path, so every
+    # library here that links PyTorch carries them. They point nowhere on any machine: measured on the
+    # link line as -L/lib/intel64 -L/lib/intel64_win -L/lib/win-x64, which is a prefix variable that
+    # resolved empty leaving the concatenation at the filesystem root. Matched as substrings, which is
+    # what also covers the "_win" spelling.
     allowed_absolute = ("/torch/lib", "/lib/intel64", "/lib/win-x64")
     # PyTorch's own libraries are vendored into the wheel and also record a CUDA toolkit directory. That is
     # the one path this check exists to reject on our libraries, so it is allowed only on theirs.
