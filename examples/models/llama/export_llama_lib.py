@@ -35,7 +35,6 @@ from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
-    get_ethosu_partitioner,
     get_mps_partitioner,
     get_openvino_partitioner,
     get_qnn_partitioner,
@@ -1263,12 +1262,41 @@ def _to_edge_and_lower_llama_arm(
 
     partitioners = []
     if llm_config.backend.ethosu.enabled:
+        from executorch.backends.arm.ethosu.compile_spec import EthosUCompileSpec
+        from executorch.backends.arm.ethosu.partitioner import EthosUPartitioner
+
+        compile_spec = EthosUCompileSpec(
+            llm_config.backend.ethosu.target,
+            system_config=(
+                None
+                if llm_config.backend.ethosu.system_config == "default"
+                else llm_config.backend.ethosu.system_config
+            ),
+            memory_mode=(
+                None
+                if llm_config.backend.ethosu.memory_mode == "default"
+                else llm_config.backend.ethosu.memory_mode
+            ),
+            extra_flags=llm_config.backend.ethosu.extra_flags,
+        )
+
+        additional_checks = []
+        if (
+            llm_config.model.use_kv_cache
+            and not llm_config.model.static_quantize_kv_cache
+        ):
+            from torch.fx.passes.operator_support import OperatorSupportBase
+
+            class EthosUKVCacheOperatorSupport(OperatorSupportBase):
+                def is_node_supported(self, submodules, node):
+                    return "aten.index.Tensor" not in str(node.target)
+
+            additional_checks.append(EthosUKVCacheOperatorSupport())
+
         partitioners.append(
-            get_ethosu_partitioner(
-                llm_config.backend.ethosu.target,
-                llm_config.backend.ethosu.system_config,
-                llm_config.backend.ethosu.memory_mode,
-                llm_config.backend.ethosu.extra_flags,
+            EthosUPartitioner(
+                compile_spec,
+                additional_checks=additional_checks or None,
             )
         )
         modelname = f"ethosu_{modelname}"
@@ -1696,6 +1724,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
             gen_tag_fn=gen_tag_fn,
+            enable_bf16=llm_config.model.dtype_override.value == "bf16",
         )
     elif llm_config.backend.openvino.enabled:
         builder = _to_edge_and_lower_llama_openvino(

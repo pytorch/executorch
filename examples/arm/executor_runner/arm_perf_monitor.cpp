@@ -144,13 +144,13 @@ void StopMeasurements(int num_inferences) {
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
 #endif
-  uint32_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
+  uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
   ET_LOG(Info, "NPU Inferences : %d", num_inferences);
   ET_LOG(
       Info,
-      "NPU delegations: %d (%.2f per inference)",
+      "NPU delegations: %" PRIu32 " (%.2f per inference)",
       ethosu_delegation_count,
       (double)ethosu_delegation_count / num_inferences);
   ET_LOG(Info, "Profiler report, CPU cycles per operator:");
@@ -159,7 +159,7 @@ void StopMeasurements(int num_inferences) {
   // together
   ET_LOG(
       Info,
-      "ethos-u : cycle_cnt : %d cycles (%.2f per inference)",
+      "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
   // We could print a list of the cycles used by the other delegates here in the
@@ -167,14 +167,14 @@ void StopMeasurements(int num_inferences) {
   // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
   ET_LOG(
       Info,
-      "Operator(s) total: %d CPU cycles (%.2f per inference)",
+      "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
   // Total CPU cycles used in the executorch method->execute()
   // Other delegates and no delegates are counted in this
   ET_LOG(
       Info,
-      "Inference runtime: %d CPU cycles total (%.2f per inference)",
+      "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
       cycle_count,
       (double)cycle_count / num_inferences);
 
@@ -235,8 +235,10 @@ void StopMeasurements(int num_inferences) {
 }
 
 #else
+// cppcheck-suppress unusedFunction
 void StartMeasurements() {}
 
+// cppcheck-suppress unusedFunction
 void StopMeasurements(int num_inferences) {
   (void)num_inferences;
 }

@@ -8,11 +8,11 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
 #include <optional>
 #include <type_traits>
 
 #include <executorch/extension/cuda/export.h>
+#include <executorch/extension/cuda/runtime_api.h>
 
 namespace executorch::extension::cuda {
 
