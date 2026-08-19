@@ -65,8 +65,14 @@ SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
 SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
-# little signal, and this pair is the one with a machine that can run a model on it.
-PR_PYTHON_VERSION: str = "3.12"
+# little signal, and cu130 is the version with a machine on hand that can run a model on it.
+#
+# The python is not a free choice. When a pull request is limited, the shared generator replaces
+# the offered python list with its first entry, so that entry is the only python any row can
+# carry. Naming a different one here matched no offered row: the tiebreaker below never fired and
+# the pull request silently built whichever python the generator had left, so the constant
+# described a row that was never built.
+PR_PYTHON_VERSION: str = SUPPORTED_PYTHON_VERSIONS[0]
 PR_CUDA_VERSION: str = "cu130"
 
 # Jetson devices are their own row: a JetPack image, one Python version, and one CUDA
