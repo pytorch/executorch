@@ -779,6 +779,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         )
         previous_capture = getattr(_FQN_WEIGHTS_CAPTURE, "current", None)
         capture = _FqnWeightCapture(mutated_fqns=mutated_fqns)
+        # AotiBackend packages weights synchronously on this thread. TLS keeps
+        # nested or concurrent preprocess calls isolated while that callback
+        # passes the structured artifact back to this invocation.
         _FQN_WEIGHTS_CAPTURE.current = capture
         try:
             result = super().preprocess(edge_program, compile_specs)
