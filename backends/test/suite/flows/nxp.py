@@ -20,18 +20,21 @@ Generating a JSON report:
         --json-report --json-report-file=neutron_test_report.json
 """
 
+# Register portable and quantized op kernels so that
+# quantized_decomposed::dequantize_per_tensor / quantize_per_tensor are available.
+import executorch.extension.pybindings.portable_lib  # noqa: F401
+import executorch.kernels.quantized  # noqa: F401
 from executorch.backends.nxp.tests.tester import NeutronTester
 from executorch.backends.test.suite.flow import TestFlow
 
-# Register portable and quantized op kernels so that
-# quantized_decomposed::dequantize_per_tensor / quantize_per_tensor are
-# available when the suite is run without the NXP integration-repo
-# conftest.py being loaded.
-try:
-    import executorch.extension.pybindings.portable_lib  # noqa: F401
-    import executorch.kernels.quantized  # noqa: F401
-except ImportError:
-    pass
+
+# Tests known to fail on Neutron due to known bugs. Marked as xfail
+# (strict=True) so that an unexpected pass is also reported.
+_NEUTRON_XFAILS = [
+    "test_lstm",
+    "test_cat_different_shapes",
+    "test_cat_dimensions",
+]
 
 
 def _create_neutron_int8_ptq_flow(target: str = "imxrt700") -> TestFlow:
@@ -63,6 +66,7 @@ def _create_neutron_int8_ptq_flow(target: str = "imxrt700") -> TestFlow:
         # simulator tools are missing, the suite marks the test as
         # PTE_RUN_FAIL (which is expected and informative in that environment).
         supports_serialize=True,
+        xfail_patterns=_NEUTRON_XFAILS,
     )
 
 

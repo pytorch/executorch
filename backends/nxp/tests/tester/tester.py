@@ -6,7 +6,7 @@
 """
 NeutronTester -- backend-specific Tester subclass for the Neutron backend.
 
-Usage in a test::
+Usage in a test:
 
     NeutronTester(model, example_inputs) \
         .quantize() \
@@ -52,19 +52,21 @@ from executorch.backends.test.harness.stages import (
     Serialize,
     Stage,
     StageType,
+    ToEdgeTransformAndLower,
     ToExecutorch,
 )
 from executorch.exir import (
     EdgeCompileConfig,
-    EdgeProgramManager,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
 from torch.export import ExportedProgram
 from torch.utils._pytree import tree_flatten, tree_unflatten
 
-logger = logging.getLogger(__name__)
-
+# ---------------------------------------------------------------------------
+# Module logger used by NeutronSerialize for diagnostic warnings.
+# ---------------------------------------------------------------------------
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Default number of random calibration samples used when no custom calibration
@@ -73,17 +75,17 @@ logger = logging.getLogger(__name__)
 _DEFAULT_NUM_CALIBRATION_SAMPLES = 4
 
 
-def _random_tensor_like(t: torch.Tensor, original: torch.Tensor) -> torch.Tensor:
-    """Generate a calibration tensor with the same shape and dtype as t.
+def _calibration_tensor_like(t: torch.Tensor, original: torch.Tensor) -> torch.Tensor:
+    """Return a tensor suitable for PTQ calibration with the same shape and dtype as t.
 
-    For floating-point tensors, returns a uniform [0, 1) random tensor to
+    For floating-point tensors, returns values uniformly drawn from [eps, 1) to
     avoid NaN in ops like log/sqrt. For integer and bool tensors, clones the
     original example tensor so that calibration inputs have realistic values
     (e.g. valid embedding indices, bool masks).
     """
     if t.is_floating_point():
-        # Uniform [0, 1) avoids negative values that cause NaN in log, sqrt.
-        return torch.rand_like(t)
+        eps = torch.finfo(torch.float32).eps
+        return torch.rand_like(t) * (1.0 - eps) + eps
     # Integer and bool dtypes: reuse the original example tensor value so that
     # HistogramObserver never receives a freshly-generated integer tensor.
     return original.clone()
@@ -96,13 +98,17 @@ def _make_random_calibration_inputs(
     """Generate random calibration samples compatible with example_inputs.
 
     example_inputs may be a tuple of tensors or a flat sequence that has already
-    been tree-flattened.  Non-tensor items are passed through unchanged.
+    been tree-flattened. Non-tensor items are passed through unchanged.
     """
     flat, spec = tree_flatten(example_inputs)
     samples = []
     for _ in range(num_samples):
         flat_sample = [
-            _random_tensor_like(item, item) if isinstance(item, torch.Tensor) else item
+            (
+                _calibration_tensor_like(item, item)
+                if isinstance(item, torch.Tensor)
+                else item
+            )
             for item in flat
         ]
         samples.append(tree_unflatten(flat_sample, spec))
@@ -213,11 +219,12 @@ class NeutronQuantize(Stage):
 # ---------------------------------------------------------------------------
 
 
-class NeutronToEdgeTransformAndLower(Stage):
+class NeutronToEdgeTransformAndLower(ToEdgeTransformAndLower):
     """Runs to_edge_transform_and_lower with the Neutron partitioner.
 
-    This is the stage that actually calls neutron-converter to produce the NPU
-    payload and embeds it in the edge program as a delegate blob.
+    Inherits from ToEdgeTransformAndLower (the shared harness base) and
+    overrides run() to inject the NeutronPartitioner, Neutron edge passes,
+    and the optional post-quant state dict.
     """
 
     def __init__(
@@ -228,6 +235,10 @@ class NeutronToEdgeTransformAndLower(Stage):
         use_neutron_for_format_conversion: bool = True,
         use_quant_state_dict: bool = True,
     ):
+        # Initialize the base with no partitioners -- we build the Neutron
+        # partitioner inside run() because it requires the compiled spec and
+        # the post-quant state dict from the exported artifact.
+        super().__init__()
         self._target = target
         self._operators_not_to_delegate = operators_not_to_delegate or []
         self._custom_delegation_options = (
@@ -235,12 +246,6 @@ class NeutronToEdgeTransformAndLower(Stage):
         )
         self._use_neutron_for_format_conversion = use_neutron_for_format_conversion
         self._use_quant_state_dict = use_quant_state_dict
-        self._edge_program_manager: Optional[EdgeProgramManager] = None
-
-    # Stage protocol ---
-
-    def stage_type(self) -> StageType:
-        return StageType.TO_EDGE_TRANSFORM_AND_LOWER
 
     def run(
         self,
@@ -253,8 +258,7 @@ class NeutronToEdgeTransformAndLower(Stage):
         # Re-export the quantized graph module to get a clean ExportedProgram.
         if isinstance(artifact, torch.fx.GraphModule):
             # artifact is the output of the Quantize stage (a GraphModule).
-            # We need to re-export it as a proper ExportedProgram.
-            # Use the inputs stored by the tester's run() as example inputs.
+            # Re-export it as a proper ExportedProgram before lowering.
             if inputs is None:
                 raise RuntimeError(
                     "NeutronToEdgeTransformAndLower requires inputs for re-export."
@@ -270,12 +274,10 @@ class NeutronToEdgeTransformAndLower(Stage):
         # Build the post-quant state dict for the partitioner if requested.
         post_quant_state_dict = None
         if self._use_quant_state_dict:
-            try:
-                post_quant_state_dict = artifact.state_dict()
-            except Exception:
-                pass
+            post_quant_state_dict = artifact.state_dict
 
         preserve_ops = [
+            torch.ops.aten.pad.default,
             torch.ops.aten.prelu.default,
             torch.ops.aten.hardswish.default,
         ]
@@ -306,15 +308,9 @@ class NeutronToEdgeTransformAndLower(Stage):
             NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])
         )
 
-        self._edge_program_manager = edge_program_manager
-
-    @property
-    def artifact(self) -> EdgeProgramManager:
-        return self._edge_program_manager
-
-    @property
-    def graph_module(self) -> torch.fx.GraphModule:
-        return self._edge_program_manager.exported_program().graph_module
+        # Store using the attribute name expected by the base class so that the
+        # inherited artifact property returns the correct EdgeProgramManager.
+        self.edge_dialect_program = edge_program_manager
 
 
 # ---------------------------------------------------------------------------
@@ -463,9 +459,11 @@ class NeutronSerialize(Serialize):
                 f.write(self.buffer)
 
             # --- Write input tensors as raw binary files ---
-            # The runner accepts:
-            #   --dataset <dir>       for single-input models (one .bin per sample)
-            #   --inputs a.bin,b.bin  for multi-input models (one path per tensor)
+            # Input tensors are written as zero-padded numbered files:
+            #   0000.bin, 0001.bin, ... (one file per tensor in the flat input list)
+            # The runner CLI flags then differ by arity:
+            #   --dataset <dir>    for single-input models (reads *.bin files in dir)
+            #   --inputs p0,p1,... for multi-input models (one absolute path per tensor)
             dataset_dir = os.path.join(tmp_dir, "dataset")
             os.makedirs(dataset_dir)
             flat_inputs, _ = tree_flatten(inputs)
@@ -528,7 +526,17 @@ class NeutronSerialize(Serialize):
                     sizes, dtype = output_specs[i]
                     np_dtype = _TORCH_TO_NUMPY.get(dtype, np.float32)
                 else:
-                    # Fallback: assume float32 flat tensor if metadata is unavailable.
+                    # Fallback: output tensor metadata could not be read from the
+                    # .pte buffer (pybindings unavailable or output index out of
+                    # range). Interpret raw bytes as a flat float32 tensor. Shape
+                    # and dtype may be incorrect -- compare with caution.
+                    _log.warning(
+                        "Output tensor metadata unavailable for output %d (%s); "
+                        "interpreting raw bytes as a flat float32 tensor. "
+                        "Shape and dtype may be wrong.",
+                        i,
+                        os.path.basename(fpath),
+                    )
                     sizes = None
                     np_dtype = np.float32
 
@@ -552,7 +560,7 @@ class NeutronTester(TesterBase):
     Provides Neutron-specific implementations for the Quantize,
     ToEdgeTransformAndLower, ToExecutorch, and Serialize stages.
 
-    Example::
+    Example:
 
         NeutronTester(MyModel(), example_inputs) \
             .quantize() \
@@ -571,6 +579,7 @@ class NeutronTester(TesterBase):
         operators_not_to_delegate: Optional[List[str]] = None,
         custom_delegation_options: Optional[CustomDelegationOptions] = None,
         use_neutron_for_format_conversion: bool = True,
+        use_quant_state_dict: bool = True,
         calibration_samples: Optional[Iterable[Tuple[torch.Tensor, ...]]] = None,
         get_calibration_inputs_fn: Optional[Callable] = None,
         num_calibration_samples: int = _DEFAULT_NUM_CALIBRATION_SAMPLES,
@@ -580,6 +589,7 @@ class NeutronTester(TesterBase):
         self._operators_not_to_delegate = operators_not_to_delegate
         self._custom_delegation_options = custom_delegation_options
         self._use_neutron_for_format_conversion = use_neutron_for_format_conversion
+        self._use_quant_state_dict = use_quant_state_dict
         self._calibration_samples = calibration_samples
         self._get_calibration_inputs_fn = get_calibration_inputs_fn
         self._num_calibration_samples = num_calibration_samples
@@ -623,4 +633,5 @@ class NeutronTester(TesterBase):
             operators_not_to_delegate=self._operators_not_to_delegate,
             custom_delegation_options=self._custom_delegation_options,
             use_neutron_for_format_conversion=self._use_neutron_for_format_conversion,
+            use_quant_state_dict=self._use_quant_state_dict,
         )
