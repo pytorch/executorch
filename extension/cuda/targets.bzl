@@ -7,6 +7,18 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Keep runtime types independent of the caller-stream implementation.
+    runtime.cxx_library(
+        name = "runtime_api",
+        exported_headers = [
+            "runtime_api.h",
+        ],
+        visibility = ["PUBLIC"],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+    )
+
     # Backend-neutral: both the CUDA and TensorRT delegates can depend on it to
     # share a caller's stream. The caller-stream thread-local must be one
     # instance per process, so the main target stays shareable: OSS cxx_library
@@ -21,6 +33,9 @@ def define_common_targets():
         exported_headers = [
             "caller_stream.h",
             "export.h",
+        ],
+        exported_deps = [
+            ":runtime_api",
         ],
         # Opt out of the OSS force_static default so consumers *can* link one
         # shared instance and keep the thread-local unique (see above); the
