@@ -22,7 +22,11 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torch.fx.passes.infra.pass_manager import PassManager as GraphModulePassManager
 from torchao.quantization import quantize_
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from torchao.quantization.pt2e.quantizer import (
     ComposableQuantizer,
     Quantizer as TorchAOPT2EQuantizer,
@@ -423,6 +427,15 @@ class QuantizeStage(Stage):
         else:
             raise ValueError("No quantizers detected")
 
+    @staticmethod
+    def _apply_passes(
+        model: "torch.fx.GraphModule",
+        passes: Optional[List[Callable]],
+    ) -> "torch.fx.GraphModule":
+        for pass_fn in passes or []:
+            model = pass_fn(model)
+        return model
+
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
             logging.info(
@@ -433,6 +446,7 @@ class QuantizeStage(Stage):
 
         assert isinstance(artifact.data, dict)
 
+        recipe = self._quantization_recipe
         models = artifact.data
         example_inputs = artifact.get_context("example_inputs")
 
@@ -447,15 +461,53 @@ class QuantizeStage(Stage):
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers  # pyre-ignore
+            # Pass 1: pre-prepare passes.
+            captured_graph = self._apply_passes(
+                captured_graph, recipe.pre_prepare_passes
             )
-            prepared_model = prepare_pt2e(captured_graph, quantizer)
 
-            for calibration_input in example_inputs[method_name]:
-                prepared_model(*calibration_input)
+            quantizer = self._get_quantizer_for_prepare_pt2e(recipe.quantizers)
+
+            if recipe.is_qat:
+                if recipe.train_fn is None:
+                    raise ValueError("train_fn must be provided when is_qat=True")
+                prepared_model = prepare_qat_pt2e(captured_graph, quantizer)
+
+                # Pass 2: post-prepare passes.
+                prepared_model = self._apply_passes(
+                    prepared_model, recipe.post_prepare_passes
+                )
+
+                recipe.train_fn(prepared_model)
+            else:
+                prepared_model = prepare_pt2e(captured_graph, quantizer)
+
+                # Pass 2: post-prepare passes.
+                prepared_model = self._apply_passes(
+                    prepared_model, recipe.post_prepare_passes
+                )
+
+                # Use custom calibration inputs when provided; fall back to example inputs.
+                if recipe.calibration_inputs_fn is not None:
+                    calibration_inputs = recipe.calibration_inputs_fn()
+                else:
+                    calibration_inputs = example_inputs[method_name]
+
+                for calibration_input in calibration_inputs:
+                    prepared_model(*calibration_input)
+
+            # Pass 3: pre-convert passes.
+            prepared_model = self._apply_passes(
+                prepared_model, recipe.pre_convert_passes
+            )
 
             quantized_model = convert_pt2e(prepared_model)
+
+            # Pass 4: post-convert passes.
+            quantized_model = self._apply_passes(
+                quantized_model, recipe.post_convert_passes
+            )
+
             quantized_models[method_name] = quantized_model
 
         self._artifact = artifact.copy_with_new_data(quantized_models)

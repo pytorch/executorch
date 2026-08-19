@@ -8,7 +8,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, List, Optional
+from typing import Callable, Iterable, List, Optional
 
 import torch
 from executorch.exir import EdgeProgramManager, ExportedProgram
@@ -88,16 +88,50 @@ class QuantizationRecipe:
     """
     Configuration recipe for quantization.
 
-    This class holds the configuration parameters for quantizing a model.
+    This class holds the configuration parameters for quantizing a model, supporting
+    both post-training quantization (PTQ) and quantization-aware training (QAT).
 
     Attributes:
-        quantizers: Optional list of quantizers for model quantization
+        quantizers: Optional list of quantizers for model quantization.
         ao_quantization_configs: Optional list of AOQuantizationConfig objects that pair
-                                 AOBaseConfig with optional filter functions
+                                 AOBaseConfig with optional filter functions.
+        is_qat: If True, use the QAT flow (prepare_qat_pt2e -> train_fn -> convert_pt2e).
+                If False (default), use the PTQ flow (prepare_pt2e -> calibrate -> convert_pt2e).
+        calibration_inputs_fn: Optional callable returning an iterable of input tuples used for
+                               PTQ calibration. When None (default), the example inputs are used.
+                               Ignored when is_qat=True.
+        train_fn: Callable that receives the prepared GraphModule and trains it.
+                  Required when is_qat=True; ignored otherwise.
+        pre_prepare_passes: Optional list of callables applied to the captured GraphModule
+                            before prepare_pt2e / prepare_qat_pt2e.
+                            Each callable receives a GraphModule and must return a GraphModule.
+        post_prepare_passes: Optional list of callables applied to the prepared GraphModule
+                             after prepare_pt2e / prepare_qat_pt2e and before calibration / training.
+                             Each callable receives a GraphModule and must return a GraphModule.
+        pre_convert_passes: Optional list of callables applied to the GraphModule after
+                            calibration (PTQ) or training (QAT) and before convert_pt2e.
+                            Each callable receives a GraphModule and must return a GraphModule.
+        post_convert_passes: Optional list of callables applied to the GraphModule after convert_pt2e.
+                             Each callable receives a GraphModule and must return a GraphModule.
     """
 
     quantizers: Optional[List[Quantizer]] = None
     ao_quantization_configs: Optional[List[AOQuantizationConfig]] = None
+    is_qat: bool = False
+    calibration_inputs_fn: Optional[Callable[[], Iterable[tuple]]] = None
+    train_fn: Optional[Callable[["torch.fx.GraphModule"], None]] = None
+    pre_prepare_passes: Optional[
+        List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
+    ] = None
+    post_prepare_passes: Optional[
+        List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
+    ] = None
+    pre_convert_passes: Optional[
+        List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
+    ] = None
+    post_convert_passes: Optional[
+        List[Callable[["torch.fx.GraphModule"], "torch.fx.GraphModule"]]
+    ] = None
 
     def get_quantizers(self) -> Optional[List[Quantizer]]:
         """
@@ -249,60 +283,135 @@ class ExportRecipe:
         Returns:
             Combined ExportRecipe for multi-backend deployment
         """
-        # Extract components from individual recipes
-        all_partitioners = []
-        all_quantizers = []
-        all_ao_quantization_configs = []
-        all_pre_edge_passes = []
-        all_transform_passes = []
+
+        # Scalar fields that must be identical across all recipes.
+        def _assert_agree(field_name: str, values: list) -> None:
+            unique = set(values)
+            if len(unique) > 1:
+                raise ValueError(
+                    f"Cannot combine recipes with conflicting '{field_name}' values: {unique}"
+                )
+
+        # Collect all components.
+        all_partitioners: list = []
+        all_quantizers: list = []
+        all_ao_quantization_configs: list = []
+        all_pre_edge_passes: list = []
+        all_edge_transform_passes: list = []
+        all_edge_manager_transform_passes: list = []
+        all_pre_prepare_passes: list = []
+        all_post_prepare_passes: list = []
+        all_pre_convert_passes: list = []
+        all_post_convert_passes: list = []
         combined_backend_config = None
 
+        is_qat_values: list = []
+        train_fn_values: list = []
+        calibration_inputs_fn_values: list = []
+        strict_values: list = []
+        mode_values: list = []
+        pipeline_stages_values: list = []
+        source_transform_in_place_values: list = []
+
         for recipe in backend_recipes:
-            # Collect pre-edge transform passes
             if recipe.aten_transform_passes:
                 all_pre_edge_passes.extend(recipe.aten_transform_passes)
 
-            # Collect partitioners from lowering recipes
-            if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
-                all_partitioners.extend(recipe.lowering_recipe.partitioners)
-
-            # Collect transform passes from lowering recipes
-            if recipe.lowering_recipe and recipe.lowering_recipe.edge_transform_passes:
-                all_transform_passes.extend(
-                    recipe.lowering_recipe.edge_transform_passes
-                )
-
-            # Collect for quantize stage
-            if quantization_recipe := recipe.quantization_recipe:
-                # Collect PT2E quantizers
-                if quantization_recipe.quantizers:
-                    all_quantizers.extend(quantization_recipe.quantizers)
-
-                # Collect source transform configs
-                if quantization_recipe.ao_quantization_configs:
-                    all_ao_quantization_configs.extend(
-                        quantization_recipe.ao_quantization_configs
+            if lr := recipe.lowering_recipe:
+                if lr.partitioners:
+                    all_partitioners.extend(lr.partitioners)
+                if lr.edge_transform_passes:
+                    all_edge_transform_passes.extend(lr.edge_transform_passes)
+                if lr.edge_manager_transform_passes:
+                    all_edge_manager_transform_passes.extend(
+                        lr.edge_manager_transform_passes
                     )
 
-            # Use the first backend config as base
+            if qr := recipe.quantization_recipe:
+                if qr.quantizers:
+                    all_quantizers.extend(qr.quantizers)
+                if qr.ao_quantization_configs:
+                    all_ao_quantization_configs.extend(qr.ao_quantization_configs)
+                is_qat_values.append(qr.is_qat)
+                train_fn_values.append(qr.train_fn)
+                calibration_inputs_fn_values.append(qr.calibration_inputs_fn)
+                if qr.pre_prepare_passes:
+                    all_pre_prepare_passes.extend(qr.pre_prepare_passes)
+                if qr.post_prepare_passes:
+                    all_post_prepare_passes.extend(qr.post_prepare_passes)
+                if qr.pre_convert_passes:
+                    all_pre_convert_passes.extend(qr.pre_convert_passes)
+                if qr.post_convert_passes:
+                    all_post_convert_passes.extend(qr.post_convert_passes)
+
+            strict_values.append(recipe.strict)
+            mode_values.append(recipe.mode)
+            pipeline_stages_values.append(
+                tuple(recipe.pipeline_stages) if recipe.pipeline_stages else None
+            )
+            source_transform_in_place_values.append(recipe.source_transform_in_place)
+
             if combined_backend_config is None and recipe.executorch_backend_config:
                 combined_backend_config = copy.deepcopy(
                     recipe.executorch_backend_config
                 )
 
-        # Create combined quantization recipe
+        # Validate fields that must agree across all recipes.
+        _assert_agree("strict", strict_values)
+        _assert_agree("mode", mode_values)
+        _assert_agree("pipeline_stages", pipeline_stages_values)
+        _assert_agree("source_transform_in_place", source_transform_in_place_values)
+
+        # is_qat must agree across all recipes that carry a QuantizationRecipe.
+        _assert_agree("is_qat", is_qat_values)
+        # train_fn must have at most one non-None value across all recipes.
+        non_none_train_fns = [f for f in train_fn_values if f is not None]
+        if len(non_none_train_fns) > 1:
+            raise ValueError(
+                "Cannot combine recipes: more than one recipe provides a train_fn."
+            )
+        # Multiple calibration_inputs_fn values are chained into a single factory.
+        non_none_calib_fns = [f for f in calibration_inputs_fn_values if f is not None]
+        if len(non_none_calib_fns) > 1:
+            _fns = non_none_calib_fns
+
+            def _combined_calib_fn():
+                for _fn in _fns:
+                    yield from _fn()
+
+            combined_calib_fn = _combined_calib_fn
+        else:
+            combined_calib_fn = non_none_calib_fns[0] if non_none_calib_fns else None
+
+        # Build combined QuantizationRecipe.
         combined_quantization_recipe = None
-        if all_quantizers or all_ao_quantization_configs:
+        if (
+            all_quantizers
+            or all_ao_quantization_configs
+            or all_pre_prepare_passes
+            or all_post_prepare_passes
+            or all_pre_convert_passes
+            or all_post_convert_passes
+        ):
             combined_quantization_recipe = QuantizationRecipe(
-                quantizers=all_quantizers if all_quantizers else None,
-                ao_quantization_configs=(
-                    all_ao_quantization_configs if all_ao_quantization_configs else None
-                ),
+                quantizers=all_quantizers or None,
+                ao_quantization_configs=all_ao_quantization_configs or None,
+                is_qat=is_qat_values[0] if is_qat_values else False,
+                train_fn=non_none_train_fns[0] if non_none_train_fns else None,
+                calibration_inputs_fn=combined_calib_fn,
+                pre_prepare_passes=all_pre_prepare_passes or None,
+                post_prepare_passes=all_post_prepare_passes or None,
+                pre_convert_passes=all_pre_convert_passes or None,
+                post_convert_passes=all_post_convert_passes or None,
             )
 
         # Create combined lowering recipe
         combined_lowering_recipe = None
-        if all_partitioners or all_transform_passes:
+        if (
+            all_partitioners
+            or all_edge_transform_passes
+            or all_edge_manager_transform_passes
+        ):
             edge_compile_config = None
             for recipe in backend_recipes:
                 if (
@@ -313,10 +422,9 @@ class ExportRecipe:
                     break
 
             combined_lowering_recipe = LoweringRecipe(
-                partitioners=all_partitioners if all_partitioners else None,
-                edge_transform_passes=(
-                    all_transform_passes if all_transform_passes else None
-                ),
+                partitioners=all_partitioners or None,
+                edge_transform_passes=all_edge_transform_passes or None,
+                edge_manager_transform_passes=all_edge_manager_transform_passes or None,
                 edge_compile_config=edge_compile_config or EdgeCompileConfig(),
             )
 
@@ -326,7 +434,19 @@ class ExportRecipe:
         return cls(
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
-            aten_transform_passes=all_pre_edge_passes,
+            aten_transform_passes=all_pre_edge_passes or None,
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=combined_backend_config,
+            strict=strict_values[0] if strict_values else True,
+            mode=mode_values[0] if mode_values else Mode.RELEASE,
+            pipeline_stages=(
+                list(pipeline_stages_values[0])
+                if pipeline_stages_values and pipeline_stages_values[0] is not None
+                else None
+            ),
+            source_transform_in_place=(
+                source_transform_in_place_values[0]
+                if source_transform_in_place_values
+                else False
+            ),
         )
