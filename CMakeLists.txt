@@ -193,17 +193,20 @@ if(DEFINED EXECUTORCH_BAREMETAL_SKIP_INSTALL
 endif()
 
 if(EXECUTORCH_BUILD_SHARED)
-  # Refused rather than silently reconciled, for the same reason the platform check below exists: a
-  # configuration this mode cannot honour should stop here, not produce something that looks built.
+  # Refused rather than silently reconciled, for the same reason the platform
+  # check below exists: a configuration this mode cannot honour should stop
+  # here, not produce something that looks built.
   #
-  # This mode consolidates the component static archives into one shared runtime, extracting each
-  # archive's contents so a single library owns the operator and backend registries. BUILD_SHARED_LIBS
-  # makes those same components shared objects instead, and --whole-archive against a shared object
-  # absorbs nothing and reports nothing: measured, the consolidated library then links successfully
-  # while containing none of the core, which is the split-registry failure this library exists to
-  # prevent. The untyped core target also claims the same libexecutorch file name under that option, so
-  # Ninja stops with "multiple rules generate libexecutorch.so" while Unix Makefiles does not notice and
-  # writes one of the two at random.
+  # This mode consolidates the component static archives into one shared
+  # runtime, extracting each archive's contents so a single library owns the
+  # operator and backend registries. BUILD_SHARED_LIBS makes those same
+  # components shared objects instead, and --whole-archive against a shared
+  # object absorbs nothing and reports nothing: measured, the consolidated
+  # library then links successfully while containing none of the core, which is
+  # the split-registry failure this library exists to prevent. The untyped core
+  # target also claims the same libexecutorch file name under that option, so
+  # Ninja stops with "multiple rules generate libexecutorch.so" while Unix
+  # Makefiles does not notice and writes one of the two at random.
   if(BUILD_SHARED_LIBS)
     message(
       FATAL_ERROR
@@ -1420,12 +1423,17 @@ if(EXECUTORCH_BUILD_PYBIND)
   # errors out with "ld: duplicate LC_RPATH '@loader_path'" against the one
   # <site-packages>/torch/lib/libtorch_cpu.dylib already carries.
   if(NOT APPLE)
-    # Both this list and executorch_target_shared_runtime_path below name the editable-install hop
-    # src/executorch/lib, so the entry arrived twice and the loader searched the same directory twice
-    # on every load. Neither source is wrong, so collapse the repeats instead of dropping one.
-    string(REPLACE ":" ";" _python_extension_rpath_list "${_python_extension_rpath}")
+    # Both this list and executorch_target_shared_runtime_path below name the
+    # editable-install hop src/executorch/lib, so the entry arrived twice and
+    # the loader searched the same directory twice on every load. Neither source
+    # is wrong, so collapse the repeats instead of dropping one.
+    string(REPLACE ":" ";" _python_extension_rpath_list
+                   "${_python_extension_rpath}"
+    )
     list(REMOVE_DUPLICATES _python_extension_rpath_list)
-    string(REPLACE ";" ":" _python_extension_rpath "${_python_extension_rpath_list}")
+    string(REPLACE ";" ":" _python_extension_rpath
+                   "${_python_extension_rpath_list}"
+    )
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "${_python_extension_rpath}"
                               INSTALL_RPATH "${_python_extension_rpath}"
