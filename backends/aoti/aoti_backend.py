@@ -250,11 +250,10 @@ class AotiBackend(ABC):
                 custom_pass(device_edge_program.graph_module)
 
         # ``run_decompositions`` retraces the complete ExportedProgram even
-        # when none of the table's operators occur in the graph. Large CUDA
-        # models make that no-op expensive, so only run it when it can apply.
-        if contains_any_op(
-            device_edge_program.graph_module, decomposition_table.keys()
-        ):
+        # when none of the table's operators occur in the graph. The in-place
+        # passes above preserve graph inputs and outputs, so the existing graph
+        # signature remains valid when the decomposition table cannot apply.
+        if contains_any_op(device_edge_program.graph_module, decomposition_table):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )

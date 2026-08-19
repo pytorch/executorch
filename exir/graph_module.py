@@ -165,12 +165,14 @@ def contains_any_op(
     while queue:
         current_graph_module = queue.pop(0)
         for node in current_graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
             # EdgeOpOverload wraps the original ATen overload in ``_op``.
             # Decomposition tables are keyed by the latter.
             target = node.target
             if not isinstance(target, torch._ops.OpOverload):
                 target = getattr(target, "_op", target)
-            if node.op == "call_function" and target in ops:
+            if target in ops:
                 return True
         queue.extend(
             submodule

@@ -35,6 +35,29 @@ class TestContainsAnyOp(unittest.TestCase):
         add.target = EdgeOp()
 
         self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
+        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
+
+    def test_matches_op_in_control_flow_submodule(self) -> None:
+        true_graph, _ = self._add_graph()
+        false_graph, _ = self._add_graph()
+
+        graph = torch.fx.Graph()
+        pred = graph.placeholder("pred")
+        lhs = graph.placeholder("lhs")
+        rhs = graph.placeholder("rhs")
+        true_branch = graph.get_attr("true_graph")
+        false_branch = graph.get_attr("false_graph")
+        result = graph.call_function(
+            torch.ops.higher_order.cond,
+            (pred, true_branch, false_branch, [lhs, rhs]),
+        )
+        graph.output(result)
+        graph_module = torch.fx.GraphModule(
+            {"true_graph": true_graph, "false_graph": false_graph}, graph
+        )
+
+        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
+        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
 
 
 if __name__ == "__main__":

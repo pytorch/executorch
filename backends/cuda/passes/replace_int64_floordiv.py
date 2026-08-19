@@ -8,8 +8,8 @@
 Graph Transformation Pass for Integer Floor-Division Replacement.
 
 Rewrites integer (int64/int32) floor-division into a float64-domain floor to
-work around an AOTInductor/Inductor CUDA miscompile that is still present in
-the repository's pinned PyTorch 2.13 build:
+work around an AOTInductor/Inductor CUDA miscompile that is still present as
+of PyTorch 2.13:
 
     floor_divide(a, b)  ->  floor(a.to(float64) / b.to(float64)).to(orig_int_dtype)
 """
