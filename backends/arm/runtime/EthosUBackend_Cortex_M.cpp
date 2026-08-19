@@ -54,6 +54,21 @@ namespace arm {
 
 struct PlatformState {};
 
+// TODO: Upstream ethosu_driver_is_registered() into the core driver.
+// Keep the weak fallback until all builds are confirmed to be using a driver
+// with ethosu_driver_is_registered() implemented, at which point the weak
+// fallback can be removed.
+extern "C" __attribute__((weak)) bool ethosu_driver_is_registered(void) {
+  return true;
+}
+
+bool platform_is_available() {
+  // Check whether ethosu_init() was called before ExecuTorch runs.
+  // If ethosu_init() was not called and this unconditionally returned true,
+  // then the firmware freezes without any error.
+  return ethosu_driver_is_registered();
+}
+
 PlatformState* platform_init(
     executorch::runtime::ArrayRef<executorch::runtime::CompileSpec> /*specs*/,
     executorch::runtime::MemoryAllocator* /*allocator*/) {
