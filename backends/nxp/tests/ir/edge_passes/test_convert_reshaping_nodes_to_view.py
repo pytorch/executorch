@@ -4,11 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-
-# noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.ops_aliases import AddTensor, ViewCopy
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import SqueezeAddModel, UnsqueezeAddModel
@@ -16,6 +13,7 @@ from executorch.backends.nxp.tests.nsys_testing import (
     AllCloseOutputComparator,
     lower_run_compare,
 )
+from executorch.backends.nxp.tests.ops_aliases import AddTensor, ViewCopy
 
 
 @pytest.fixture(autouse=True)

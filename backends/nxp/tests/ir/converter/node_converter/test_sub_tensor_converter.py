@@ -8,12 +8,6 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.ops_aliases import (
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-    SubTensor,
-)
 
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import (
@@ -27,6 +21,12 @@ from executorch.backends.nxp.tests.model_output_comparator import (
 )
 from executorch.backends.nxp.tests.models import MaxPoolSubTensorModule, SubTensorModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    SubTensor,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
