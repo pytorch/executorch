@@ -1282,8 +1282,15 @@ def test_wheel_platform_tag() -> None:
 def _names_a_build_directory(entry: str) -> bool:
     """Whether a runtime path entry points inside the tree that built the wheel.
 
-    Compared as whole path components, the same way packaging decides what to strip, so the two do not
-    describe the build tree differently. A bare substring test also matched unrelated user directories.
+    Compared as whole path components, matching packaging's own test at setup.py:1288 including its
+    anchored lib.<platform>-<pyver> form, because a bare prefix also matched a real user directory such
+    as lib.backup.
+
+    The build-directory rule matches packaging. The surrounding check does NOT: packaging is a denylist
+    that keeps any absolute path it has no relative answer for, while the caller here allows only four
+    suffixes, so a library recording /usr/lib64 or /opt/rocm/lib would fail this check even though
+    packaging deliberately preserved it. No shipped wheel records one today. Reconciling the two is a
+    separate change; do not read this helper as evidence that they already agree.
 
     A torch directory is exempt even when it names a CI worker tree. The macOS extension records no
     relative route to torch, so packaging keeps the absolute one as the only route it has, and rejecting
@@ -1294,7 +1301,9 @@ def _names_a_build_directory(entry: str) -> bool:
     """
     parts = entry.split("/")
     if any(
-        part in ("pip-out", "cmake-out") or part.startswith("lib.") for part in parts
+        part in ("pip-out", "cmake-out")
+        or re.fullmatch(r"lib\.[^/]+-(cpython-\d+|\d+(?:\.\d+)*)", part)
+        for part in parts
     ):
         return True
     if entry.rstrip("/").endswith("/torch/lib"):
