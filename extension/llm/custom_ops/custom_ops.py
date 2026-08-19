@@ -396,9 +396,10 @@ def _validate_channelwise_gated_delta_rule_params(
     assert (
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
-    assert (
-        decay.dim() == 4
-    ), f"Expected decay to be 4 dimensional but got {decay.dim()} dimensions."
+    assert decay.dim() in (3, 4), (
+        "Expected decay to be 4 dimensional (channelwise) or 3 dimensional "
+        f"(scalar) but got {decay.dim()} dimensions."
+    )
     assert (
         beta.dim() == 3
     ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
@@ -419,7 +420,7 @@ def _validate_channelwise_gated_delta_rule_params(
         ), f"Expected {name} to be float32 but got {tensor.dtype}"
 
     assert query.size(0) == key.size(0) and query.shape[2:] == key.shape[2:]
-    assert key.shape == decay.shape
+    assert decay.shape == (key.shape if decay.dim() == 4 else key.shape[:3])
     assert key.shape[:3] == value.shape[:3]
     assert beta.shape == key.shape[:3]
     assert query.size(1) % key.size(1) == 0

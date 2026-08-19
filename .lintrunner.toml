@@ -735,3 +735,28 @@ init_command = [
   '--requirement=requirements-lintrunner.txt',
 ]
 is_formatter = true
+
+
+[[linter]]
+code = 'CPP_BANNED_FUNCTIONS'
+include_patterns = [
+    'examples/arm/**/*.c',
+    'examples/arm/**/*.cc',
+    'examples/arm/**/*.cpp',
+    'examples/arm/**/*.h',
+    'examples/arm/**/*.hpp',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cpp_banned_functions_linter',
+    '--config=backends/arm/scripts/banned_functions.json',
+    '--',
+    '@{{PATHSFILE}}',
+]

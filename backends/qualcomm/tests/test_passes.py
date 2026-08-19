@@ -15,6 +15,10 @@ from executorch.backends.qualcomm._passes import (
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_qnn_pass_manager_cls,
 )
+from executorch.backends.qualcomm.builders.op_custom_op import (
+    _resolve_qnn_data_type,
+    CustomOp,
+)
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
@@ -22,6 +26,7 @@ from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, Quant
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QcomChipset,
     QnnExecuTorchBackendType,
+    QnnExecuTorchOpPackageInfo,
 )
 from executorch.backends.qualcomm.tests.models import (
     BroadcastAndMutate,
@@ -473,6 +478,46 @@ class TestPasses(unittest.TestCase):
                         f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
                     )
 
+    def test_partitioner_falls_back_on_op_without_visitor(self):
+        """QnnOperatorSupport must reject an op that has no node visitor by returning
+        False (CPU fallback), not by KeyError-ing on the node_visitors lookup.
+
+        Uses aten.frac.default: it has no QNN node visitor and is not on any partition
+        operator list, so it exercises the missing-visitor guard directly. (bitwise_not,
+        the op that first surfaced this on Mamba2, is now in to_be_implemented_operator,
+        which returns earlier and would not reach the guard.)
+        """
+
+        class FracModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.frac(x) + x
+
+        sample_input = (torch.randn(1, 4),)
+
+        # Guard against a vacuous test: the visitor-less op must actually be present.
+        exported = torch.export.export(FracModule().eval(), sample_input)
+        self.assertTrue(
+            any(
+                node.op == "call_function" and "frac" in str(node.target)
+                for node in exported.graph.nodes
+            ),
+            "expected aten.frac.default in the traced graph",
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            # Must not raise KeyError: frac falls back to CPU; the rest may delegate.
+            edge = to_edge_transform_and_lower_to_qnn(
+                FracModule().eval(), sample_input, compiler_specs
+            )
+            edge.to_executorch()
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+
     def test_index_put_int64_value_not_quantized(self):
         """QNN's IndexPut annotator must skip a non-float (int64) value arg.
 
@@ -677,6 +722,78 @@ class TestPasses(unittest.TestCase):
                     ),
                     "dedupe must not rank-promote the USER_INPUT_MUTATION write-back",
                 )
+
+    def _custom_op_node(self, arg, arg_name):
+        """A CustomOp builder plus a single-arg node, driven through define_node so
+        the branch dispatch is exercised rather than the type helper in isolation.
+        Branch order matters: str must be matched before Iterable, since str is
+        itself Iterable and would otherwise take the tensor-param path."""
+
+        class _Arg:
+            name = arg_name
+
+        class _Schema:
+            arguments = [_Arg()]
+
+        class _Target:
+            _schema = _Schema()
+
+        node = MagicMock()
+        node.name = "my_ops_foo_default"
+        node.target = _Target()
+        node.args = (arg,)
+
+        info = QnnExecuTorchOpPackageInfo()
+        info.custom_op_name = "my_ops.foo.default"
+        info.op_package_name = "FooOpPackage"
+        info.qnn_op_type_name = "Foo"
+        return CustomOp(info, {}, None, False, True), node
+
+    def test_custom_op_rejects_str_arg(self):
+        """A str custom-op arg must name the argument and the missing binding.
+
+        str is Iterable, so before the guard it reached the tensor-param branch and
+        died on QNN_TENSOR_TYPE_MAP[type(arg[0])] with a bare KeyError. Strings are
+        not a QNN limitation: QNN_DATATYPE_STRING exists and PyQnnManagerAdaptor.cpp
+        already reads it; only AddScalarParam has no case for it.
+        """
+        builder, node = self._custom_op_node("bilinear", "soft_nms_method")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        message = str(ctx.exception)
+        self.assertIn("soft_nms_method", message)
+        self.assertIn("my_ops.foo.default", message)
+        self.assertIn("QNN_DATATYPE_STRING", message)
+        # A str must not be reported as a tensor param element type.
+        self.assertNotIn("element type", message)
+
+    def test_custom_op_rejects_unmapped_element_type(self):
+        """A list whose element type has no QNN mapping -- str[] among them -- must
+        report the element type rather than KeyError."""
+        builder, node = self._custom_op_node(["linear", "gaussian"], "modes")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        self.assertIn("element type", str(ctx.exception))
+        self.assertIn("modes", str(ctx.exception))
+
+    def test_custom_op_rejects_empty_sequence(self):
+        """An empty sequence arg used to IndexError on arg[0] inside define_node."""
+        builder, node = self._custom_op_node([], "sizes")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        self.assertIn("sizes", str(ctx.exception))
+        self.assertIn("empty", str(ctx.exception))
+
+    def test_custom_op_resolves_supported_types(self):
+        """Guard against a vacuous suite: the mapped scalar types still resolve.
+
+        Checked at the helper rather than through define_node, because a valid arg
+        carries on into output-tensor handling, which needs real tensor meta.
+        """
+        for py_type in (int, float, bool):
+            self.assertIsNotNone(
+                _resolve_qnn_data_type(py_type, "arg", "my_ops.foo.default")
+            )
 
 
 if __name__ == "__main__":

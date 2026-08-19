@@ -118,7 +118,7 @@ function setup_toolchain() {
 }
 
 function setup_path_toolchain() {
-    toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+    local toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
     append_env_in_setup_path PATH ${toolchain_bin_path}
 
     if [[ "${target_toolchain}" == "linux-musl" ]]; then

@@ -247,11 +247,14 @@ A mismatch there is the bug, found in seconds instead of hours.
 
 ### Things that are not obvious
 
-- **`link_mode=static` is mandatory.** The Uno Q defaults to Dynamic, which
-  builds the sketch as a Zephyr loadable extension. A library this size never
-  starts that way: no serial output at all, so the board looks dead and offers
-  nothing to diagnose. Dynamic also reports only the extension's size, roughly
-  half the real figure.
+- **`link_mode=static` is mandatory, and Dynamic is the default.** In the IDE
+  that is `Tools > Link mode > Static`, which is per-sketch and resets every
+  time you open another example. Dynamic does a relocatable link (`-r`), which
+  makes `--gc-sections` inert: nothing unused is stripped, so every vendored
+  operator survives and the build overflows flash with
+  `Sketch too big; text section exceeds available space`. Same sketch, core
+  0.90.0: 507,876 bytes on Static, 787,508 on Dynamic. It fails at compile
+  time, so there is nothing to see on the serial port either way.
 - **`ET_LOG` has to be routed somewhere.** `zephyr.cpp` logs through `fprintf`,
   and `platform_stubs.c` stubs `fprintf` out. The build script rewrites the
   logger to call a weak `et_arduino_log` hook, which the examples implement
@@ -266,7 +269,8 @@ A mismatch there is the bug, found in seconds instead of hours.
 
 | Symptom | Cause |
 |---|---|
-| No serial output at all | Built in Dynamic link mode, or `Arduino_RouterBridge` missing |
+| `Sketch too big; text section exceeds available space` | Built in Dynamic link mode. Set `Tools > Link mode > Static`, per sketch |
+| No serial output at all | `Arduino_RouterBridge` missing, or the monitor attached after `setup()` had already printed |
 | `Program::load` -> `0x23` | Model header put the array in a section the linker discards; use `pte_to_header.py` from this directory, not the Ethos-U one |
 | `load_method` -> `0x14` | Operator not in the registered set; regenerate with `ROOT_OPS=` |
 | `load_method` -> `0x21` | `method_pool` too small; the log line gives the exact shortfall |
@@ -474,29 +478,64 @@ currently supports (`architectures=zephyr`). Other Arduino cores do not run
 Zephyr and have no link mode setting; they need a platform abstraction layer
 port before they can compile at all, and their memory behaviour is untested.
 
-On the Zephyr core, the Uno Q defaults to Dynamic link mode, which builds the
-sketch as a Zephyr loadable extension. Sketches this size never start that way: no serial output
-at all, so the board looks dead and offers nothing to diagnose. Build with
-`link_mode=static`. A 2 KB sketch runs fine under Dynamic, so the ceiling sits
-somewhere between that and these builds; it has not been pinned down.
+On the Zephyr core the Uno Q defaults to **Dynamic**, and every example fails to
+build that way. In the IDE, set `Tools > Link mode > Static`. It is a per-sketch
+setting: opening another example puts it back to Dynamic.
 
-Dynamic also reports only the extension's own size, which reads far lower than
-what the board actually holds. Measured on an Arduino Uno Q, board core 0.55.2,
-against 786,432 bytes of flash and 131,072 bytes of RAM:
+Dynamic builds the sketch as a Zephyr loadable extension via a relocatable link
+(`-r`). `--gc-sections` is passed in both modes but can only work in a final
+link, where the linker has an entry point to trace reachability from. Under `-r`
+there is nothing to trace from and the output will be linked again later, so
+every section has to be kept. Nothing unused is stripped, and because a loadable
+extension is loaded into RAM, the retained code is charged against RAM as well
+as flash:
 
-| Build | Flash (static) | RAM | Dynamic reported | On hardware |
-|-------|---------------|-----|------------------|-------------|
-| HelloExecuTorch | 472,728 (60%) | 3,060 (2%) | 27% | `Model loaded OK!`, 1 method |
-| AddModel | 507,664 (64%) | 11,252 (8%) | 30% | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
-| KeywordSpotting (CMSIS-NN) | 557,520 (70%) | 46,068 (35%) | 30% | 10/10 keywords correct |
+| AddModel, core 0.90.0 | Flash | RAM |
+|---|---|---|
+| `link_mode=static` | 507,876 (64%) | 12,268 (4%) |
+| `link_mode=dynamic` | 787,508 (100%) — **overflows** | 249,021 (94%) |
+
+This is not something the library can work around. Trimming the vendored
+operator set to only the registered ops — 15 sources instead of 172 — moved the
+Dynamic build by 852 bytes, still over the limit. The bulk is the runtime,
+flatbuffers and CMSIS-NN, all of which Static strips and Dynamic cannot.
+
+Measured on an Arduino Uno Q, board core **0.90.0**, at `link_mode=static`,
+against 786,432 bytes of flash and 262,144 bytes of RAM:
+
+| Build | Flash | RAM | On hardware |
+|-------|-------|-----|-------------|
+| HelloExecuTorch | 472,952 (60%) | 3,052 (1%) | `Model loaded OK!`, 1 method |
+| AddModel | 507,876 (64%) | 12,268 (4%) | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
+| KeywordSpotting (CMSIS-NN) | 563,672 (71%) | 47,084 (17%) | detects `yes`, logit 8.95 |
+
+Core 0.55.2 reported a 131,072-byte RAM ceiling; 0.90.0 reports 262,144. Figures
+from before that change are not comparable.
 
 All CMSIS-NN sources are compiled, but the linker's
 `--gc-sections` discards unused functions from the final binary.
 
-RAM is the binding constraint, not flash. Zephyr reserves 32 KB of main stack
-and a 32 KB heap out of 128 KB before the sketch gets any, and the arena the
-sketch hands to `MemoryManager` comes out of what remains. KeywordSpotting's
-DS-CNN plans 16 KB of buffers but needs considerably more for the method's own
-structures: a 28 KB arena fails `load_method` with `MemoryAllocationFailed`
-(0x21), and a 64 KB one loads but then fails `execute` with `InvalidProgram`
-(0x23), which is memory being overrun rather than a malformed program.
+RAM is the binding constraint, not flash. Zephyr reserves a main stack and a heap
+before the sketch gets any, and the arena the sketch hands to `MemoryManager`
+comes out of what remains. KeywordSpotting's DS-CNN plans 16 KB of buffers but
+needs considerably more for the method's own structures, which leaves a usable
+band rather than a floor to clear.
+
+Measured on core **0.55.2**, where Zephyr took a 32 KB stack and a 32 KB heap out
+of 128 KB:
+
+| Arena | Result |
+|-------|--------|
+| 28 KB | `load_method` fails, `MemoryAllocationFailed` (0x21), 180 B short |
+| 40 KB | Works. What the sketch ships |
+| 64 KB | Globals reach 70,644, past Zephyr's reservation. It ran and printed the right answer, which is what makes it dangerous rather than safe |
+
+The sketch ships 40 KB for that reason, and growing it is not automatically
+safer: `arduino-cli` reports RAM against the whole region and knows nothing about
+Zephyr's stack and heap, so the 64 KB build still reported a comfortable 53%
+while overlapping reserved memory. Read the arena as bounded on both sides.
+
+**The upper bound has not been re-measured on core 0.90.0**, which reports twice
+the RAM (262,144). 40 KB is confirmed working there — 47,084 bytes of globals,
+17% — but whether the ceiling moved with the reported total is unverified. Treat
+anything above 40 KB as untested on 0.90.0.
