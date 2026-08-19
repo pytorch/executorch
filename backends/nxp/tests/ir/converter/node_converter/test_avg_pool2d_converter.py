@@ -8,17 +8,17 @@ import numpy as np
 # noinspection PyUnusedImports
 import pytest
 import torch
-from executorch.backends.nxp.ops_aliases import (
-    AvgPool2D,
-    ExecutorchDelegateCall,
-    ViewCopy,
-)
 
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
 from executorch.backends.nxp.tests.graph_verifier import DetailedGraphVerifier
 from executorch.backends.nxp.tests.models import AvgPool2dModule
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    AvgPool2D,
+    ExecutorchDelegateCall,
+    ViewCopy,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -112,10 +112,10 @@ class TestAvgPool2D:
         assert graph_contains_any_of_ops(delegated_ep.graph, [AvgPool2D])
 
 
-class TestAvgPool1DTo2D:
+class TestAvgPool1D:
 
     # Just a basic test to verify that the operator gets extended to the 2D variant correctly.
-    def test__basic_nsys_inference(self, mocker, request, use_qat):
+    def test__basic_nsys_inference(self, mocker, request):
         input_shape = (2, 4, 6)  # The old flow limited the batch size to 1.
         model = AvgPool1DModule()
         graph_verifier = DetailedGraphVerifier(
@@ -124,4 +124,4 @@ class TestAvgPool1DTo2D:
             expected_non_delegated_ops={},
         )
 
-        lower_run_compare(model, input_shape, graph_verifier, request, use_qat=use_qat)
+        lower_run_compare(model, input_shape, graph_verifier, request)

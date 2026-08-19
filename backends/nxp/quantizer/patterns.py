@@ -279,16 +279,7 @@ class AbsPattern(SharedSpecPattern):
         return [torch.ops.aten.abs.default]
 
 
-class AdaptiveAvgPool1DPattern(SharedSpecPattern):
-    """
-    Quantizer for AdaptiveAvgPool1D operator.
-    """
-
-    def partition_types(self):
-        return [torch.ops.aten.adaptive_avg_pool1d.default]
-
-
-class AdaptiveAvgPool2DPattern(SharedSpecPattern):
+class AdaptiveAvgPoolPattern(SharedSpecPattern):
     """
     Quantizer for AdaptiveAvgPool2D operator.
     """
