@@ -146,3 +146,19 @@ class DecoderInference:
             *self.get_inputs(input_ids, attn_mask, hidden_states, tok_embedding)
         )
         return logits
+
+    def make_forward_fn(self) -> Callable:
+        k = self._k_caches
+        v = self._v_caches
+        pos = self.pos_ids
+
+        def _forward(
+            model: Union[torch.nn.Module, torch.fx.GraphModule],
+            model_inputs: dict,
+        ) -> torch.Tensor:
+            input_ids = model_inputs["input_ids"]
+            attn_masks = model_inputs["attention_mask"]
+            out = model(input_ids, *attn_masks, pos, *k, *v)
+            return out[0] if isinstance(out, (tuple, list)) else out
+
+        return _forward

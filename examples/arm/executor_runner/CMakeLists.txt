@@ -101,6 +101,11 @@ option(
   "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
   OFF
 )
+set(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE
+    ""
+    CACHE STRING
+          "Size of the SRAM-backed planned fast memory pool used for mem_id=3"
+)
 
 if(NOT DEFINED PYTHON_EXECUTABLE)
   find_package(
@@ -201,6 +206,10 @@ message(
 message(
   STATUS
     "ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE = ${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}"
+)
+message(
+  STATUS
+    "ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE = ${ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE}"
 )
 
 # Dependencies from the Ethos-U Core This is the platform target of
@@ -676,6 +685,14 @@ if(DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}
+  )
+endif()
+
+if(ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE)
+  target_compile_definitions(
+    arm_executor_runner
+    PUBLIC
+      ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE=${ET_ARM_BAREMETAL_PLANNED_FAST_MEMORY_SIZE}
   )
 endif()
 

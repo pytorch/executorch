@@ -357,6 +357,7 @@ def _export_with_offgraph_cache(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    prefill_chunk_size: int = 512,
 ) -> None:
     """
     Export using the off-graph KV cache op (kvcache::update_and_attend).
@@ -384,6 +385,14 @@ def _export_with_offgraph_cache(
         "bf16": torch.bfloat16,
     }
     torch_dtype = torch_dtype_map.get(dtype, torch.bfloat16)
+
+    # The chunk is the largest single step, so it cannot exceed the sequence
+    # length traced below. Checked before the model loads, which is slow.
+    if prefill_chunk_size < 1 or prefill_chunk_size > max_seq_len - 1:
+        raise ValueError(
+            f"--prefill-chunk-size {prefill_chunk_size} must be in "
+            f"[1, {max_seq_len - 1}], the largest step this export traces"
+        )
 
     register_mlx_offgraph_attention()
     logger.info("Registered MLX off-graph attention (update_and_attend)")
@@ -429,6 +438,16 @@ def _export_with_offgraph_cache(
     cache_windows = [
         sliding_window if t == "sliding_attention" else 0 for t in layer_types
     ]
+    # Beyond the window the chunk, not the window, decides how much a sliding
+    # layer holds, which is the opposite of the point.
+    sliding = [w for w in cache_windows if w > 0]
+    if sliding and prefill_chunk_size > min(sliding):
+        raise ValueError(
+            f"--prefill-chunk-size {prefill_chunk_size} exceeds the sliding "
+            f"window {min(sliding)}: a ring layer holds window + chunk - 1 "
+            "slots, so the chunk would dominate the window"
+        )
+
     kv_metadata = {
         # The cache count, not num_hidden_layers: gemma-4 E2B shares KV across
         # its tail, so 15 caches for 35 layers.
@@ -436,6 +455,7 @@ def _export_with_offgraph_cache(
         "get_kv_heads": torch.tensor(cache_kv_heads, dtype=torch.int32),
         "get_head_dims": torch.tensor(cache_head_dims, dtype=torch.int32),
         "get_windows": torch.tensor(cache_windows, dtype=torch.int32),
+        "get_prefill_chunk_size": prefill_chunk_size,
     }
     logger.info(
         f"KV cache layout: {len(layer_types)} caches, "
@@ -512,6 +532,7 @@ def export_llama_hf(
     no_tie_word_embeddings: bool = False,
     qlinear_group_size: Optional[int] = None,
     qembedding_group_size: Optional[int] = None,
+    prefill_chunk_size: int = 512,
 ) -> None:
     """
     Export a HuggingFace Llama model to ExecuTorch with MLX backend.
@@ -544,6 +565,7 @@ def export_llama_hf(
             no_tie_word_embeddings=no_tie_word_embeddings,
             qlinear_group_size=qlinear_group_size,
             qembedding_group_size=qembedding_group_size,
+            prefill_chunk_size=prefill_chunk_size,
         )
     elif use_custom_sdpa or use_custom_kv_cache:
         logger.info(
@@ -637,6 +659,14 @@ def main():
         help="Use the off-graph KV cache op (kvcache::update_and_attend); "
         "replaces --use-custom-sdpa/--use-custom-kv-cache",
     )
+    parser.add_argument(
+        "--prefill-chunk-size",
+        type=int,
+        default=512,
+        help="Off-graph: tokens per prefill step, published for the runner. "
+        "It is the largest single write, so a ring layer is sized "
+        "window + chunk - 1; it may not exceed the sliding window",
+    )
 
     args = parser.parse_args()
 
@@ -654,6 +684,7 @@ def main():
         no_tie_word_embeddings=args.no_tie_word_embeddings,
         qlinear_group_size=args.qlinear_group_size,
         qembedding_group_size=args.qembedding_group_size,
+        prefill_chunk_size=args.prefill_chunk_size,
     )
 
 

@@ -189,7 +189,10 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     float temperature,
     const std::string& method_name,
     Module::LoadMode load_mode) {
-  if (data_path.has_value()) {
+  // An empty path is not a path. Callers that build the optional from a
+  // language whose "no value" is an empty string would otherwise reach the
+  // loader with "", which fails to open and takes the whole load down with it.
+  if (data_path.has_value() && !data_path.value().empty()) {
     std::vector<std::string> data_files;
     data_files.push_back(data_path.value());
     return create_text_llm_runner(
@@ -355,7 +358,7 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
 
   // Create the Module
   std::unique_ptr<Module> module;
-  if (data_path.has_value()) {
+  if (data_path.has_value() && !data_path.value().empty()) {
     module = std::make_unique<Module>(model_path, data_path.value(), load_mode);
   } else {
     module = std::make_unique<Module>(model_path, load_mode);

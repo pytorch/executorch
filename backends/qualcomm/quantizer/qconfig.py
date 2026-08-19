@@ -998,7 +998,7 @@ def get_qat_per_channel_quant_config(
             observer_or_fake_quant_ctr=act_fake_quant_ctr,
         )
 
-    weight_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
+    weight_fake_quant_ctr = FakeQuantize.with_args(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
         quant_min=(
             -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
@@ -1006,7 +1006,7 @@ def get_qat_per_channel_quant_config(
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=ch_axis,
-        observer=MovingAveragePerChannelMinMaxObserver.with_args(**extra_args),
+        observer=PerChannelParamObserver.with_args(**extra_args),
     )
     weight_quantization_spec = QuantizationSpec(
         dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,

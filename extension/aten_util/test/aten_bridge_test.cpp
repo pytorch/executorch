@@ -319,6 +319,30 @@ TEST(ATenBridgeTest, DeviceMappingAbortsOnUnknownType) {
       "");
 }
 
+TEST(ATenBridgeTest, ReverseDeviceMapping) {
+  // Needs no accelerator: only the mapping is under test.
+  using executorch::runtime::etensor::DeviceType;
+
+  const auto cpu =
+      torch_to_executorch_device(c10::Device(c10::DeviceType::CPU));
+  ASSERT_TRUE(cpu.has_value());
+  EXPECT_EQ(cpu->type(), DeviceType::CPU);
+
+  const auto cuda =
+      torch_to_executorch_device(c10::Device(c10::DeviceType::CUDA, 7));
+  ASSERT_TRUE(cuda.has_value());
+  EXPECT_EQ(cuda->type(), DeviceType::CUDA);
+  EXPECT_EQ(cuda->index(), 7);
+}
+
+TEST(ATenBridgeTest, ReverseDeviceMappingReportsAnUnrepresentableDevice) {
+  // Reported rather than fatal, unlike the other direction: a caller can hand
+  // in any device PyTorch supports, and the caller is the one holding the
+  // context worth putting in the error.
+  EXPECT_FALSE(torch_to_executorch_device(c10::Device(c10::DeviceType::Meta))
+                   .has_value());
+}
+
 TEST(ATenBridgeTest, AliasATTensorToETensorHandlesAnEmptyTensor) {
   // An empty tensor has a null data pointer, so this is the only case that
   // distinguishes dropping the device, passing it through options alone (which

@@ -65,17 +65,12 @@ def mlx_sdpa_with_start_pos_forward(
 
     Returns (output, None) where output is [B, seq_len, num_heads, head_dim] (BSHD).
     """
-    # HuggingFace calls every registered implementation with the same argument
-    # list. Drop the ones handled elsewhere, and refuse the rest rather than
-    # ignoring them silently. softcap and head_mask stay named because models
-    # pass them unconditionally, often as None -- the value is what matters.
-    kwargs.pop("is_causal", None)
-    kwargs.pop("use_cache", None)
-    kwargs.pop("sliding_window", None)  # the export routes sliding layers away
-    if kwargs.pop("dropout", 0.0):
+    # Refuse only what would silently change the result. Anything else in
+    # kwargs is ignored: HuggingFace forwards model-level arguments down into
+    # attention -- gemma 4 sends `labels` -- so the set is open-ended and
+    # rejecting the unknown breaks models that pass something harmless.
+    if kwargs.get("dropout"):
         raise ValueError("mlx attention does not support dropout")
-    if kwargs:
-        raise ValueError(f"mlx attention got unsupported args: {sorted(kwargs)}")
     if softcap is not None:
         raise ValueError("mlx attention does not support softcap")
     if head_mask is not None:
@@ -152,15 +147,9 @@ def mlx_offgraph_attention_forward(
 
     Returns (output, None) where output is [B, q_len, num_heads, head_dim] (BSHD).
     """
-    kwargs.pop("is_causal", None)
-    kwargs.pop("use_cache", None)
-    kwargs.pop("sliding_window", None)  # the cache applies the window
-    if kwargs.pop("dropout", 0.0):
+    # As above: reject only what changes the result, ignore the rest.
+    if kwargs.get("dropout"):
         raise ValueError("mlx_offgraph attention does not support dropout")
-    if kwargs:
-        raise ValueError(
-            f"mlx_offgraph attention got unsupported args: {sorted(kwargs)}"
-        )
     if softcap is not None:
         raise ValueError("mlx_offgraph attention does not support softcap")
     if head_mask is not None:

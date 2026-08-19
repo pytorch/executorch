@@ -63,7 +63,7 @@ class ChannelsLastOpSpec:
     # Positional arg indices of tensor inputs that should be permuted NCHW→NHWC.
     input_indices: list[int]
 
-    # Indices of the outputs that should be permuted NCHW→NHWC.
+    # Indices of the outputs that should be permuted NHWC→NCHW.
     output_indices: list[int]
 
     # If provided, this function must return True for a node to be replaced.
@@ -99,6 +99,14 @@ _DEFAULT_OP_MAP: dict[Target, ChannelsLastOpSpec] = {
         target=exir_ops.edge.channels_last.max_pool2d_with_indices.default,
         input_indices=[0],
         output_indices=[0, 1],
+        filter_fn=_requires_rank([3, 4]),
+    ),
+    # RemoveGetItemPass turns max_pool2d_with_indices + getitem(0) into this
+    # single-output operator before backend layout lowering.
+    exir_ops.edge.aten.max_pool2d.default: ChannelsLastOpSpec(
+        target=exir_ops.edge.channels_last.max_pool2d.default,
+        input_indices=[0],
+        output_indices=[0],
         filter_fn=_requires_rank([3, 4]),
     ),
     exir_ops.edge.aten.upsample_bilinear2d.vec: ChannelsLastOpSpec(

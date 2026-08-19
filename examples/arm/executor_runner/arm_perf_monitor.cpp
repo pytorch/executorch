@@ -1,4 +1,4 @@
-/* Copyright 2024-2025 Arm Limited and/or its affiliates.
+/* Copyright 2024-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ namespace {
 
 // Returns the Armv8.1-M PMU cycle counter; 0 on cores without it.
 static inline uint64_t arm_pmu_cycles() {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   return ARM_PMU_Get_CCNTR();
 #else
   return 0;
@@ -139,18 +139,18 @@ void StartMeasurements() {
 }
 
 void StopMeasurements(int num_inferences) {
-#if defined(__ARM_ARCH_8_1M_MAIN__)
+#if defined(__PMU_PRESENT) && (__PMU_PRESENT == 1U)
   ARM_PMU_CNTR_Disable(
       PMU_CNTENCLR_CCNTR_ENABLE_Msk | PMU_CNTENCLR_CNT0_ENABLE_Msk |
       PMU_CNTENCLR_CNT1_ENABLE_Msk);
 #endif
-  uint32_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
+  uint64_t cycle_count = arm_pmu_cycles() - ethosu_ArmCycleCountStart;
 
   // Number of comand streams handled by the NPU
   ET_LOG(Info, "NPU Inferences : %d", num_inferences);
   ET_LOG(
       Info,
-      "NPU delegations: %d (%.2f per inference)",
+      "NPU delegations: %" PRIu32 " (%.2f per inference)",
       ethosu_delegation_count,
       (double)ethosu_delegation_count / num_inferences);
   ET_LOG(Info, "Profiler report, CPU cycles per operator:");
@@ -159,7 +159,7 @@ void StopMeasurements(int num_inferences) {
   // together
   ET_LOG(
       Info,
-      "ethos-u : cycle_cnt : %d cycles (%.2f per inference)",
+      "ethos-u : cycle_cnt : %" PRIu64 " cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
   // We could print a list of the cycles used by the other delegates here in the
@@ -167,14 +167,14 @@ void StopMeasurements(int num_inferences) {
   // ..." will be the same number as ethos-u : cycle_cnt and not the sum of all
   ET_LOG(
       Info,
-      "Operator(s) total: %d CPU cycles (%.2f per inference)",
+      "Operator(s) total: %" PRIu64 " CPU cycles (%.2f per inference)",
       ethosu_ArmBackendExecuteCycleCount,
       (double)ethosu_ArmBackendExecuteCycleCount / num_inferences);
   // Total CPU cycles used in the executorch method->execute()
   // Other delegates and no delegates are counted in this
   ET_LOG(
       Info,
-      "Inference runtime: %d CPU cycles total (%.2f per inference)",
+      "Inference runtime: %" PRIu64 " CPU cycles total (%.2f per inference)",
       cycle_count,
       (double)cycle_count / num_inferences);
 
@@ -235,8 +235,10 @@ void StopMeasurements(int num_inferences) {
 }
 
 #else
+// cppcheck-suppress unusedFunction
 void StartMeasurements() {}
 
+// cppcheck-suppress unusedFunction
 void StopMeasurements(int num_inferences) {
   (void)num_inferences;
 }

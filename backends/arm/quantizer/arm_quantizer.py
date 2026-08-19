@@ -108,6 +108,7 @@ __all__ = [
     "get_symmetric_a16w8_quantization_config",
     "get_symmetric_quantization_config",
     "get_uint8_io_quantization_config",
+    "get_vgf_snorm_quantization_config",
 ]
 
 logger = logging.getLogger(__name__)
@@ -311,6 +312,48 @@ def get_symmetric_quantization_config(
         weight_quantization_spec,
         bias_quantization_spec,
         label,
+    )
+
+
+@functools.lru_cache
+def get_vgf_snorm_quantization_config(
+    is_per_channel: bool = True,
+    is_qat: bool = False,
+    weight_qmin: int = -127,
+    weight_qmax: int = 127,
+    eps: float = 2**-16,
+) -> VGFQuantizationConfig:
+    """Create a VGF config compatible with signed normalized sampled images.
+
+    Args:
+        is_per_channel (bool): Whether to use per-channel quantization for
+            weights.
+        is_qat (bool): Whether the configuration targets quantization aware
+            training.
+        weight_qmin (int): Minimum weight quantization value.
+        weight_qmax (int): Maximum weight quantization value.
+        eps (float): Minimum scale value used by observers.
+
+    Returns:
+        VGFQuantizationConfig: VGF quantization settings using the SNORM-safe
+        activation range ``[-127, 127]``.
+
+    """
+    config = get_symmetric_quantization_config(
+        is_per_channel=is_per_channel,
+        is_qat=is_qat,
+        act_qmin=-127,
+        act_qmax=127,
+        weight_qmin=weight_qmin,
+        weight_qmax=weight_qmax,
+        eps=eps,
+    )
+    return VGFQuantizationConfig(
+        config.input_activation,
+        config.output_activation,
+        config.weight,
+        config.bias,
+        config.label,
     )
 
 
