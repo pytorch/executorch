@@ -1,5 +1,12 @@
 # Building from Source
 
+On Linux and macOS you may not need to build at all. `pip install executorch` ships the
+runtime as prebuilt libraries with headers and a CMake package, so a C++ program can link
+it directly. See [Using the prebuilt libraries from the pip package](using-executorch-cpp.md#using-the-prebuilt-libraries-from-the-pip-package),
+including the CUDA packages for running on a GPU. Build from source when you need a
+platform the package does not cover, a build option it does not enable, or your own
+changes to the runtime.
+
 ExecuTorch uses [CMake](https://cmake.org/) as the primary build system.
 Even if you don't use CMake directly, CMake can emit scripts for other format
 like Make, Ninja or Xcode. For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
