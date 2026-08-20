@@ -93,6 +93,7 @@ fbcode_target(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
+        "target_smem.py",
     ],
     visibility = ["PUBLIC"],
     deps = [

@@ -22,6 +22,7 @@ from executorch.backends.cuda.passes.move_cond_predicate_to_cpu import (
 from executorch.backends.cuda.passes.replace_int64_floordiv import (
     ReplaceInt64FloorDivWithFloatPass,
 )
+from executorch.backends.cuda.target_smem import target_smem_context
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
@@ -565,6 +566,7 @@ class CudaBackend(AotiBackend, BackendDetails):
         compilation for the CUDA backend. Each manager is documented at
         its own `enter_context` call site below.
 
+        The optional shared-memory target applies to every CUDA compilation.
         The low-memory export monkey-patch (CPU clones for mutated buffers)
         is gated on the ``low_memory_mode`` compile spec — only models that
         explicitly opt in (currently Qwen3.5 MoE) get it. Other models go
@@ -592,6 +594,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 # `ReplaceEdgeOpWithTritonOpPass` are unaffected; this is
                 # only the fallback for the `triton_kernel_mode="OFF"` path.
                 stack.enter_context(torch.nn.attention.sdpa_kernel([SDPBackend.MATH]))
+                stack.enter_context(target_smem_context())
                 if low_memory_mode == "ON":
                     # Force AOTI's mutated-buffer clones onto CPU during
                     # compile so we stay under tight GPU memory caps (e.g.

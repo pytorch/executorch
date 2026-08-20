@@ -4,8 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import contextlib
 import unittest
 from typing import Tuple
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -55,6 +57,16 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
             CudaBackend.get_aoti_compile_options(
                 [CompileSpec(key="autotune_at_compile_time", value=b"MAYBE")]
             )
+
+    def test_target_smem_context_is_applied(self):
+        with patch(
+            "executorch.backends.cuda.cuda_backend.target_smem_context",
+            return_value=contextlib.nullcontext(),
+        ) as target_smem_context:
+            with CudaBackend.get_extra_aoti_compile_context_manager([]):
+                pass
+
+        target_smem_context.assert_called_once_with()
 
 
 class TestCudaExport(unittest.TestCase):
