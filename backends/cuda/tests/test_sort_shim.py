@@ -155,6 +155,7 @@ class TestSortShim(unittest.TestCase):
             options = CudaBackend.get_aoti_compile_options([])
 
         self.assertEqual(len(options["aot_inductor.custom_ops_to_c_shims"]), 4)
+        self.assertNotIn("aot_inductor.precompile_headers", options)
 
     def test_rocm_advertises_no_unbuilt_shims(self):
         """ROCm does not advertise CUDA-only shims."""
@@ -164,6 +165,7 @@ class TestSortShim(unittest.TestCase):
 
         self.assertEqual(fallbacks, {})
         self.assertNotIn("aot_inductor.custom_ops_to_c_shims", options)
+        self.assertNotIn("aot_inductor.precompile_headers", options)
 
 
 if __name__ == "__main__":
