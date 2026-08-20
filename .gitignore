@@ -83,7 +83,6 @@ xcuserdata/
 /src/executorch/include/
 /src/executorch/share/
 /src/executorch/version.py
-/dflash_benchmarks.md
 *_etdump
 CMakeUserPresets.json
 
@@ -101,6 +100,3 @@ zephyr_dev_root.backup.*/
 # Agents
 .claude/*.local.*
 extension/pybindings/mlx.metallib
-
-# Scratch/WIP work not ready for review -- never committed
-/wip/
