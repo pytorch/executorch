@@ -9,14 +9,11 @@ from typing import List, Optional, Tuple
 
 import executorch.exir as exir
 import torch
-from executorch.backends.samsung._passes.fuse_conv_act import FuseConvActPass
-from executorch.backends.samsung._passes.remove_useless_ops import RemoveUselessOpPass
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer.quantizer import EnnQuantizer, Precision
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
-from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -42,14 +39,6 @@ def get_edge_compile_config():
             exir_ops.edge.aten.hardsigmoid.default,
         ],
     )
-
-
-def get_enn_pass_list() -> List[PassType]:
-    return [
-        RemoveUselessOpPass(),
-        RemoveCloneOpsTransform(),
-        FuseConvActPass(),
-    ]
 
 
 def quantize_module(
@@ -82,12 +71,8 @@ def to_edge_transform_and_lower_to_enn(
 ) -> exir.ExecutorchProgramManager:
     assert compile_specs is not None, "For now, we must deliver complile specs"
     prog = torch.export.export(module, inputs)
-    pass_list = get_enn_pass_list()
-    if custom_pass_config:
-        pass_list.extend(custom_pass_config)
     return to_edge_transform_and_lower(
         prog,
-        pass_list,
-        {"forward": [EnnPartitioner(compile_specs)]},
+        partitioner={"forward": [EnnPartitioner(compile_specs)]},
         compile_config=get_edge_compile_config(),
     )

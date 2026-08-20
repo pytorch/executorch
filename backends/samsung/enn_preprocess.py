@@ -18,8 +18,13 @@ from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
 from executorch.backends.samsung._passes.fold_qdq import FoldQDQPass
+from executorch.backends.samsung._passes.fuse_activation import FuseActivationPass
 from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
+from executorch.backends.samsung._passes.remove_useless_ops import RemoveUselessOpPass
 from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
+from executorch.backends.samsung._passes.transform_quantized_mask import (
+    TransformQuantizedMaskPass,
+)
 from executorch.backends.samsung.builders.node_visitor import get_node_visitors
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
@@ -30,6 +35,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTrans
 from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
@@ -59,9 +65,13 @@ class EnnBackend(BackendDetails):
 
         enn_preprocess_passes = PassManager(
             passes=[
+                RemoveUselessOpPass(),
+                RemoveCloneOpsTransform(),
                 AnnotateQparamsPass(edge_program),
+                FuseActivationPass(),
                 FoldQDQPass(),
                 ConstantPropPass(edge_program),
+                TransformQuantizedMaskPass(edge_program),
                 Conv1dToConv2d(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
                 AddmmToLinearTransform(),
@@ -79,6 +89,7 @@ class EnnBackend(BackendDetails):
         node_visitors = get_node_visitors(edge_program)
 
         vals_to_ids: Dict[torch.fx.Node, int] = {}
+        placeholder_vistor = node_visitors["placeholder"]
         for node in pass_result.graph_module.graph.nodes:
             if node.op == "call_function":
                 logging.info(f"Visiting: {node}, {node.target.__name__}")
@@ -90,9 +101,11 @@ class EnnBackend(BackendDetails):
                     raise RuntimeError(
                         f"{node.target.__name__}" " is not supported in ENN Delegate"
                     )
+            elif node.op == "placeholder":
+                logging.info(f"Visiting input of graph: {node}")
+                placeholder_vistor.define_node(node, enn_graph, vals_to_ids)
             elif node.op in [
                 "get_attr",
-                "placeholder",
                 "output",
             ]:
                 continue
