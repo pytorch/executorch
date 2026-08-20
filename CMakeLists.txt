@@ -486,8 +486,8 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   if(APPLE)
     # Use hidden visibility for pthreadpool on Apple platforms to avoid issues
     # with pthreadpool symbols from libtorch_cpu taking precedence over the ones
-    # from the pthreadpool library statically linked in _portable_lib. The
-    # pthreadpool public APIs are marked as weak by default on some Apple
+    # from the pthreadpool library statically linked in the Python extension.
+    # The pthreadpool public APIs are marked as weak by default on some Apple
     # platforms, so setting to hidden visibility works around this by not
     # putting the symbol in the indirection table. See
     # https://github.com/pytorch/executorch/issues/14321 for more details.
@@ -1257,24 +1257,21 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs aoti_common)
   endif()
 
-  # RPATH for _portable_lib.so. It sits in
+  # RPATH for the Python extension. It sits in
   # <site-packages>/executorch/extension/pybindings, so torch is three levels up
-  # and the wheel's own lib/ directory is two. Mach-O spells the loader relative
-  # token differently and takes a list rather than a colon joined string, so
-  # both differ here while the layout reasoning does not.
-  if(APPLE)
-    set(_portable_lib_origin "@loader_path")
-    set(_portable_lib_rpath_separator ";")
-  else()
-    set(_portable_lib_origin "$ORIGIN")
-    set(_portable_lib_rpath_separator ":")
-  endif()
-  set(_portable_lib_rpath "${_portable_lib_origin}/../../../torch/lib")
+  # and the wheel's own lib/ directory is two.
+  #
+  # ELF spelling. The Mach-O branch below takes only the Torch hop from this
+  # list, because nothing else records it there. The other entries reach a
+  # Mach-O build another way: executorch_target_shared_runtime_path emits lib
+  # and src/executorch/lib, and setup.py's _SIBLING_LIBRARY_DIRECTORIES adds
+  # backends/cuda in the platform's own token at packaging time.
+  set(_python_extension_rpath "$ORIGIN/../../../torch/lib")
   # An editable install copies this extension into a package directory whose
   # subdirectories are symlinks to the checkout, and the loader resolves the
   # origin token against the real path, so the runtime sits two levels up and
   # then inside src/executorch/lib rather than beside the copy.
-  string(APPEND _portable_lib_rpath ":$ORIGIN/../../src/executorch/lib")
+  string(APPEND _python_extension_rpath ":$ORIGIN/../../src/executorch/lib")
 
   if(EXECUTORCH_BUILD_EXTENSION_MODULE)
     # extension_module_static is already bundled into libexecutorch.so; linking
@@ -1324,20 +1321,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_CUDA OR EXECUTORCH_BUILD_ROCM)
-    string(
-      APPEND
-      _portable_lib_rpath
-      "${_portable_lib_rpath_separator}${_portable_lib_origin}/../../backends/cuda"
-    )
+    string(APPEND _python_extension_rpath ":$ORIGIN/../../backends/cuda")
   endif()
 
   if(EXECUTORCH_BUILD_QNN)
     list(APPEND _dep_libs qnn_executorch_backend)
-    string(
-      APPEND
-      _portable_lib_rpath
-      "${_portable_lib_rpath_separator}${_portable_lib_origin}/../../backends/qualcomm"
-    )
+    string(APPEND _python_extension_rpath ":$ORIGIN/../../backends/qualcomm")
   endif()
 
   if(EXECUTORCH_BUILD_ENN)
@@ -1399,10 +1388,10 @@ if(EXECUTORCH_BUILD_PYBIND)
   # portable_lib.py in the same python package. PyTorch requires C++20, so
   # pybindings must be compiled with C++20.
   set_target_properties(
-    portable_lib PROPERTIES OUTPUT_NAME "_portable_lib" CXX_STANDARD 20
+    portable_lib PROPERTIES OUTPUT_NAME "_C" CXX_STANDARD 20
   )
   target_compile_definitions(
-    portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
+    portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_C
   )
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
@@ -1457,13 +1446,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # A token with a subpath is a distinct entry, and this target already ships
   # several.
   if(APPLE)
-    set(_portable_lib_torch_path "@loader_path/../../../torch/lib")
+    set(_python_extension_torch_path "@loader_path/../../../torch/lib")
   else()
-    set(_portable_lib_torch_path "${_portable_lib_rpath}")
+    set(_python_extension_torch_path "${_python_extension_rpath}")
   endif()
   set_target_properties(
-    portable_lib PROPERTIES BUILD_RPATH "${_portable_lib_torch_path}"
-                            INSTALL_RPATH "${_portable_lib_torch_path}"
+    portable_lib PROPERTIES BUILD_RPATH "${_python_extension_torch_path}"
+                            INSTALL_RPATH "${_python_extension_torch_path}"
   )
   executorch_target_shared_runtime_path(
     portable_lib "extension/pybindings" "executorch/extension/pybindings"
@@ -1499,10 +1488,10 @@ if(EXECUTORCH_BUILD_PYBIND)
           LIBRARY DESTINATION executorch/extension/pybindings
   )
 
-  # Copy MLX metallib next to _portable_lib.so for editable installs. MLX uses
-  # dladdr() to find the directory containing the library with MLX code, then
-  # looks for mlx.metallib in that directory. When MLX is statically linked into
-  # _portable_lib.so, we need the metallib colocated with it.
+  # Copy the MLX metallib next to the Python extension for editable installs.
+  # MLX uses dladdr() to find the directory containing the library with MLX
+  # code, then looks for mlx.metallib in that directory. When MLX is statically
+  # linked into the Python extension, we need the metallib colocated with it.
   executorch_target_copy_mlx_metallib(portable_lib)
 endif()
 

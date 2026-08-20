@@ -493,6 +493,18 @@ function(executorch_target_shared_runtime_path target_name wheel_subdir
   if(_existing)
     set(_paths "${_existing}${_separator}${_paths}")
   endif()
+  # Collapse repeats here rather than at a call site. A caller that already set
+  # a runtime path may name a hop this function also emits, and the shipped
+  # extension carried $ORIGIN/../../src/executorch/lib twice for exactly that
+  # reason, so the loader searched one nonexistent directory twice on every
+  # load. This is the only point where both contributions are present, so doing
+  # it here covers every caller rather than one.
+  #
+  # Order is preserved, which matters: the loader searches in sequence, so the
+  # wheel's own lib/ has to stay ahead of any fallback.
+  string(REPLACE "${_separator}" ";" _deduplicated "${_paths}")
+  list(REMOVE_DUPLICATES _deduplicated)
+  string(REPLACE ";" "${_separator}" _paths "${_deduplicated}")
   set_target_properties(
     ${target_name} PROPERTIES BUILD_RPATH "${_paths}" INSTALL_RPATH "${_paths}"
   )
