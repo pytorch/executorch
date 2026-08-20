@@ -20,7 +20,7 @@ from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import contains_any_op
+from executorch.exir.graph_module import contains_any_call_fn_target_op
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
 
@@ -253,7 +253,9 @@ class AotiBackend(ABC):
         # when none of the table's operators occur in the graph. The in-place
         # passes above preserve graph inputs and outputs, so the existing graph
         # signature remains valid when the decomposition table cannot apply.
-        if contains_any_op(device_edge_program.graph_module, decomposition_table):
+        if contains_any_call_fn_target_op(
+            device_edge_program.graph_module, decomposition_table
+        ):
             device_edge_program = device_edge_program.run_decompositions(
                 decomposition_table
             )

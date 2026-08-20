@@ -7,10 +7,10 @@
 import unittest
 
 import torch
-from executorch.exir.graph_module import contains_any_op
+from executorch.exir.graph_module import contains_any_call_fn_target_op
 
 
-class TestContainsAnyOp(unittest.TestCase):
+class TestContainsAnyCallFnTargetOp(unittest.TestCase):
     @staticmethod
     def _add_graph() -> tuple[torch.fx.GraphModule, torch.fx.Node]:
         graph = torch.fx.Graph()
@@ -23,8 +23,12 @@ class TestContainsAnyOp(unittest.TestCase):
     def test_matches_aten_op(self) -> None:
         graph_module, _ = self._add_graph()
 
-        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
-        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
+        self.assertTrue(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.add.Tensor})
+        )
+        self.assertFalse(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.mul.Tensor})
+        )
 
     def test_matches_wrapped_edge_op(self) -> None:
         graph_module, add = self._add_graph()
@@ -34,8 +38,12 @@ class TestContainsAnyOp(unittest.TestCase):
 
         add.target = EdgeOp()
 
-        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
-        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
+        self.assertTrue(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.add.Tensor})
+        )
+        self.assertFalse(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.mul.Tensor})
+        )
 
     def test_matches_op_in_control_flow_submodule(self) -> None:
         true_graph, _ = self._add_graph()
@@ -56,8 +64,12 @@ class TestContainsAnyOp(unittest.TestCase):
             {"true_graph": true_graph, "false_graph": false_graph}, graph
         )
 
-        self.assertTrue(contains_any_op(graph_module, {torch.ops.aten.add.Tensor}))
-        self.assertFalse(contains_any_op(graph_module, {torch.ops.aten.mul.Tensor}))
+        self.assertTrue(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.add.Tensor})
+        )
+        self.assertFalse(
+            contains_any_call_fn_target_op(graph_module, {torch.ops.aten.mul.Tensor})
+        )
 
 
 if __name__ == "__main__":

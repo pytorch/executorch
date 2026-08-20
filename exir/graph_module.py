@@ -153,7 +153,7 @@ def bfs_trace_with_node_process(
         queue.extend(control_flow_submodules)
 
 
-def contains_any_op(
+def contains_any_call_fn_target_op(
     graph_module: torch.fx.GraphModule,
     ops: Collection[Any],
 ) -> bool:
