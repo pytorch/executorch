@@ -31,16 +31,13 @@ endif()
 # Use dynamic linking for the GPU runtime.
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
-# Keep cuRAND confined to CUDA-only operator shims.
 if(EXECUTORCH_BUILD_ROCM)
   find_package(hip CONFIG REQUIRED)
   set(_cuda_runtime_libraries hip::host)
-  set(_cuda_shim_libraries hip::host)
   set(_cuda_include_directories "")
 else()
   find_package(CUDAToolkit REQUIRED)
   set(_cuda_runtime_libraries CUDA::cudart)
-  set(_cuda_shim_libraries CUDA::cudart CUDA::curand)
   set(_cuda_include_directories ${CUDAToolkit_INCLUDE_DIRS})
 endif()
 
@@ -185,23 +182,42 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform ${_cuda_shim_libraries}
+    aoti_cuda_shims PRIVATE cuda_platform ${_cuda_runtime_libraries}
                             extension_cuda ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
   target_link_libraries(aoti_cuda_shims PRIVATE aoti_common_shims_slim_obj)
 else()
+  # The whole-archive pair is PRIVATE so it applies to this library's own link
+  # and does not replay at the link of anything that links this one. In PUBLIC
+  # scope the archive was extracted again by each consumer, so the translation
+  # unit holding SlimTensor's per-device current stream thread_local landed in
+  # three shipped binaries, and one copy per process is what makes that state
+  # agree. The MSVC branch above uses PRIVATE for the same reason.
   target_link_libraries(
     aoti_cuda_shims
-    PRIVATE cuda_platform
-    PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           ${_cuda_shim_libraries} extension_cuda ${CMAKE_DL_LIBS}
+    PRIVATE cuda_platform -Wl,--whole-archive aoti_common_shims_slim
+            -Wl,--no-whole-archive
+    PUBLIC ${_cuda_runtime_libraries} extension_cuda ${CMAKE_DL_LIBS}
   )
 endif()
 
 if(NOT _cuda_is_msvc_toolchain)
   executorch_target_link_options_shared_lib(aoti_cuda_shims)
+endif()
+
+# This library links the CUDA runtime directly and the wheel ships it, so it
+# needs a search path for the same reason the delegate does. Without one it can
+# ship with no runtime path at all, on a builder where the runtime resolves from
+# an implicit link directory, and the wheel then adds no relative hop either,
+# because the step that adds one has nothing to rewrite. Guarded like every
+# other call, because the helper is only meaningful for an install whose
+# dependencies sit beside the target, which is what a shared build produces. It
+# appends to any INSTALL_RPATH the caller set rather than replacing it, so a
+# source install keeps its own paths.
+if(EXECUTORCH_BUILD_SHARED)
+  executorch_target_shipped_runtime_path(aoti_cuda_shims)
 endif()
 
 install(
@@ -220,7 +236,25 @@ if(_cuda_is_msvc_toolchain)
   list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
 endif()
 
-add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
+# Build the delegate as a shared library for the wheel so a process has one copy
+# of it, and keep it static everywhere else so no other build changes.
+#
+# ROCm is not one of the wheels. Packaging selects this file on the CUDA flag
+# alone, so a shared library built here for a ROCm install is linked by the
+# Python extension and then never copied beside it, and the installed extension
+# fails to load on a missing dependency. Static is also what a ROCm build
+# produced before the wheel layout existed, so nothing there changes.
+if(EXECUTORCH_BUILD_SHARED AND NOT EXECUTORCH_BUILD_ROCM)
+  set(_executorch_cuda_ships_libraries ON)
+  set(_aoti_cuda_backend_library_type SHARED)
+else()
+  set(_executorch_cuda_ships_libraries OFF)
+  set(_aoti_cuda_backend_library_type STATIC)
+endif()
+add_library(
+  aoti_cuda_backend ${_aoti_cuda_backend_library_type}
+                    ${_aoti_cuda_backend_sources}
+)
 
 target_include_directories(
   aoti_cuda_backend
@@ -263,6 +297,26 @@ else()
 endif()
 
 executorch_target_link_options_shared_lib(aoti_cuda_backend)
+
+if(EXECUTORCH_BUILD_SHARED)
+  # Resolve the runtime from the shared library rather than from the static
+  # core, so the delegate registers into the one registry the process has. True
+  # of a static delegate in a shared build too, which is what ROCm builds.
+  target_link_libraries(aoti_cuda_backend PUBLIC executorch_shared)
+endif()
+
+if(_executorch_cuda_ships_libraries)
+  # Named after what the library provides rather than after the target that
+  # produces it, matching the other shipped delegates, so the file reads as
+  # libexecutorch_backend_cuda.so. The target name stays as it is because the
+  # rest of the build already refers to it.
+  set_target_properties(
+    aoti_cuda_backend PROPERTIES OUTPUT_NAME executorch_backend_cuda
+  )
+  executorch_target_soname_policy(aoti_cuda_backend)
+  # Ships beside the runtime in the wheel's lib/ directory.
+  executorch_target_shipped_runtime_path(aoti_cuda_backend)
+endif()
 
 install(
   TARGETS aoti_cuda_backend

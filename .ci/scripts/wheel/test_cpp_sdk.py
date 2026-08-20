@@ -873,16 +873,10 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         # tests a configuration no consumer of this package is ever in.
         "-DC10_USING_CUSTOM_GENERATED_MACROS",
     ]
-    # A CUDA wheel's headers reference the CUDA runtime, which the wheel does not publish headers for and
-    # states as a requirement instead. A consumer of that component supplies a toolkit of its own, so this
-    # check does the same rather than treating the header as unbuildable. Taken from the toolkit itself, so
-    # it follows whichever toolkit the build used instead of a list of prefixes that goes stale.
-    nvcc = shutil.which("nvcc")
-    cuda_root = os.environ.get("CUDA_HOME") or (
-        str(Path(nvcc).parent.parent) if nvcc else ""
-    )
-    if cuda_root and (Path(cuda_root) / "include" / "cuda_runtime.h").is_file():
-        includes.append(f"-I{Path(cuda_root) / 'include'}")
+    # Deliberately no CUDA toolkit include directory. A CUDA wheel's own headers have to compile
+    # against nothing but the wheel, the same as every other header here. Adding the builder's toolkit
+    # would measure the build machine rather than the consumer, and a header that only compiles that way
+    # fails in the consumer's project instead of here.
     # Headers a wheel-only consumer cannot compile and is not expected to. Each needs something outside the
     # package: a platform that is not the one being built for, or a third-party library the wheel does not
     # carry. They ship because a source build includes them, and holding them to this rule would report a
