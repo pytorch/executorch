@@ -246,9 +246,18 @@ function(_executorch_find_library _output _base_name)
       ""
       PARENT_SCOPE
   )
-  file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
-       "${_executorch_package_root}/lib/${_base_name}.so.*"
-  )
+  # Mach-O puts the version before the suffix, libfoo.1.dylib, where ELF puts it
+  # after, libfoo.so.1, so the versioned pattern differs and not just the
+  # suffix.
+  if(APPLE)
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.dylib"
+         "${_executorch_package_root}/lib/${_base_name}.*.dylib"
+    )
+  else()
+    file(GLOB _matches "${_executorch_package_root}/lib/${_base_name}.so"
+         "${_executorch_package_root}/lib/${_base_name}.so.*"
+    )
+  endif()
   list(LENGTH _matches _count)
   if(_count EQUAL 0)
     return()
@@ -431,6 +440,17 @@ elseif(_executorch_runtime_library)
                  "LINKER:-rpath,$ORIGIN" "LINKER:-rpath,$ORIGIN/../lib"
                  "LINKER:-rpath,${_executorch_package_root}/lib"
       )
+    elseif(APPLE)
+      # Same purpose, in Mach-O spelling. The token differs, and there is no
+      # weaker older variant of the load command, so the tag selection flag has
+      # no counterpart here.
+      set_property(
+        TARGET executorch::runtime
+        APPEND
+        PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+                 "LINKER:-rpath,@loader_path/../lib"
+                 "LINKER:-rpath,${_executorch_package_root}/lib"
+      )
     endif()
   endif()
 endif()
@@ -500,9 +520,11 @@ function(_executorch_define_component _suffix _library_name)
       PROPERTY INTERFACE_LINK_LIBRARIES executorch::runtime
     )
   endif()
-  # Guarded on Linux because these are GNU linker options. A wheel only ships
-  # these components on Linux, so a consumer configured for another system is
-  # either cross-compiling from the wrong package or has nothing to retain.
+  # Spelled per platform because the options and the loader relative token
+  # differ. ELF takes $ORIGIN and needs a flag to choose the newer tag; Mach-O
+  # takes @loader_path and has no weaker older variant to choose against. A
+  # consumer configured for any other system is either cross-compiling from the
+  # wrong package or has nothing to retain.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_property(
       TARGET ${_target}
@@ -533,6 +555,17 @@ function(_executorch_define_component _suffix _library_name)
                # --no-as-needed applies only to what follows within the pushed
                # state, so the pop restores whatever the consumer had.
                "LINKER:--push-state,--no-as-needed,${_library},--pop-state"
+    )
+  elseif(APPLE)
+    # Mach-O spelling of the same two search paths. There is no --no-as-needed
+    # equivalent to bracket: the linker records a dependency on a dylib it was
+    # given, so nothing needs to be forced to stay.
+    set_property(
+      TARGET ${_target}
+      APPEND
+      PROPERTY INTERFACE_LINK_OPTIONS "LINKER:-rpath,@loader_path"
+               "LINKER:-rpath,@loader_path/../lib"
+               "LINKER:-rpath,${_executorch_package_root}/lib"
     )
   endif()
   if(NOT _component_OPT_IN)
@@ -716,25 +749,21 @@ if(NOT _portable_lib_LIBRARY)
 endif()
 
 if(_portable_lib_LIBRARY)
-  set(EXECUTORCH_FOUND ON)
   message(
-    STATUS "ExecuTorch portable library is found at ${_portable_lib_LIBRARY}"
+    STATUS "ExecuTorch Python extension is found at ${_portable_lib_LIBRARY}"
   )
-  # Only when nothing else is linkable, which is the fused layout: a macOS wheel
-  # ships this extension and no separate runtime library, so the appends above
-  # never ran and this is the only thing there is to offer. On a split wheel the
-  # runtime is already there and this is skipped, because the extension carries
-  # unresolved interpreter symbols and a plain C++ application that links it
-  # fails with a page of PyUnicode_InternFromString style errors.
+  # Defined so that a caller who specifically wants the extension, such as a
+  # custom operator project, can name the target, and deliberately kept out of
+  # EXECUTORCH_LIBRARIES and out of the found decision. The extension carries
+  # unresolved interpreter symbols, so a plain C++ application that links it
+  # fails with a page of PyUnicode_InternFromString style errors. Offering it as
+  # find_package's answer meant a wheel with no linkable library configured
+  # cleanly and failed at link instead of saying so, and it no longer stands in
+  # for a fused layout: every platform that ships a runtime now ships it as its
+  # own file.
   #
-  # Measured both layouts: split gives the runtime and its components, fused
-  # gives _portable_lib. Callers who specifically want the extension, such as a
-  # custom operator project, ask for the target by name rather than relying on
-  # this, and that target carries the C++20 requirement PyTorch's headers need
-  # while the runtime components require C++17.
-  if(NOT EXECUTORCH_LIBRARIES)
-    list(APPEND EXECUTORCH_LIBRARIES _portable_lib)
-  endif()
+  # The target carries the C++20 requirement PyTorch's headers need, while the
+  # runtime components require C++17.
   if(TARGET _portable_lib)
     # This file ran already in the same configure, because another subproject
     # called find_package too. No in-tree target uses this name, so it can only
@@ -810,11 +839,21 @@ endif()
 # match the EXECUTORCH_FOUND spelling this file documents. Without this, a
 # REQUIRED find_package would succeed even when nothing usable was located.
 set(executorch_FOUND ${EXECUTORCH_FOUND})
-if(NOT executorch_FOUND AND executorch_FIND_REQUIRED)
-  message(
-    FATAL_ERROR
-      "Found the ExecuTorch package but neither the shared runtime nor the Python "
-      "extension could be located inside it."
+if(NOT executorch_FOUND)
+  # The reason, not an error: the single REQUIRED gate at the bottom of this
+  # file raises. A component request that fails replaces this with a message
+  # naming the component, which is the more specific answer to what was asked
+  # for.
+  #
+  # One string rather than several arguments. Several make a list, and message()
+  # joins a list with semicolons, which lands separators mid sentence.
+  string(
+    CONCAT
+      executorch_NOT_FOUND_MESSAGE
+      "this ExecuTorch package ships the headers but no linkable library. The wheel "
+      "for this platform carries the Python extension only, which cannot stand in for "
+      "the runtime because it references the interpreter, so a C++ consumer has "
+      "nothing to link against"
   )
 endif()
 

@@ -68,12 +68,22 @@ function(executorch_target_whole_archive target_name archive_target)
   # de-duplication problem above, and because this file's pre-existing
   # SHELL:LINKER: helpers already break on a path containing a space, which is
   # the more common case. Both fail loudly at link time rather than producing a
-  # binary whose registrations are quietly missing.
-  target_link_options(
-    ${target_name}
-    PRIVATE
-    "LINKER:--push-state,--whole-archive,$<TARGET_FILE:${archive_target}>,--pop-state"
-  )
+  # binary whose registrations are quietly missing. Mach-O has no bracketing
+  # pair: -force_load takes the archive directly, so the push and pop that scope
+  # --whole-archive have no counterpart and must not be emitted. ld rejects them
+  # outright rather than ignoring them.
+  if(APPLE)
+    target_link_options(
+      ${target_name} PRIVATE
+      "SHELL:LINKER:-force_load,$<TARGET_FILE:${archive_target}>"
+    )
+  else()
+    target_link_options(
+      ${target_name}
+      PRIVATE
+      "LINKER:--push-state,--whole-archive,$<TARGET_FILE:${archive_target}>,--pop-state"
+    )
+  endif()
   # Also link it the ordinary way. A link option naming a file is not a build
   # prerequisite, so on its own it lets the archive be rebuilt while the library
   # bundling it keeps the previous contents, which is a stale registration
@@ -90,16 +100,26 @@ function(executorch_target_link_options_shared_lib target_name)
   # constructor. Export scoped --no-as-needed retention instead, which is what
   # actually keeps a registration-only shared library on the link line.
   get_target_property(_target_type ${target_name} TYPE)
-  if(_target_type STREQUAL "SHARED_LIBRARY" AND NOT (APPLE OR MSVC))
-    target_link_options(
-      ${target_name}
-      INTERFACE
-      # One option with the library inside it, for two reasons. A SHELL: string
-      # would split on spaces and break a path containing one, and separate
-      # options repeat identical text that CMake de-duplicates, which silently
-      # leaves every library after the first outside any --no-as-needed scope.
-      "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${target_name}>,--pop-state"
-    )
+  # A shared library is never an archive, so the archive handling below does not
+  # apply to one on any platform. On Apple it actively harms: -force_load on a
+  # shared library makes every consumer absorb a copy of its contents, which put
+  # a second operator registry inside the runtime library.
+  if(_target_type STREQUAL "SHARED_LIBRARY" AND NOT MSVC)
+    # Mach-O keeps a library named on the link line whether or not anything
+    # references it, so there is nothing to counter and ld rejects the GNU
+    # flags.
+    if(NOT APPLE)
+      target_link_options(
+        ${target_name}
+        INTERFACE
+        # One option with the library inside it, for two reasons. A SHELL:
+        # string would split on spaces and break a path containing one, and
+        # separate options repeat identical text that CMake de-duplicates, which
+        # silently leaves every library after the first outside any
+        # --no-as-needed scope.
+        "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${target_name}>,--pop-state"
+      )
+    endif()
     # Retention is fully handled above, and applying whole-archive to a shared
     # library below would do nothing: that flag governs archive member
     # extraction, and this target is not an archive.
@@ -335,12 +355,32 @@ function(executorch_target_retain_shared_library target_name library_target)
   # Scoped per library for the same reason as whole-archive above: unique option
   # text, so nothing is de-duplicated out of the retention scope. Without this a
   # registration-only library is dropped under the default --as-needed and its
-  # static initializer never runs.
-  target_link_options(
-    ${target_name}
-    PRIVATE
-    "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${library_target}>,--pop-state"
-  )
+  # static initializer never runs. Mach-O records a library named on the link
+  # line whether or not anything references it, so there is nothing to counter
+  # and ld rejects the GNU flags. Named as a link option on Apple too, because
+  # CMake emits options before every ordered link library. That ordering is what
+  # makes the shared runtime resolve the registry symbols ahead of a static
+  # archive that also defines them, so no archive member is extracted and the
+  # process keeps one registry. Measured on the GNU side: the option sits at
+  # link slot 9 and the archive at 17, and the archive member is never
+  # extracted. Mach-O keeps a named library regardless, so the path alone is
+  # enough there and the --as-needed dance does not apply.
+  if(APPLE)
+    # Plain rather than SHELL:. This file already states the reason at the
+    # --no-as-needed helper above: a SHELL: string splits on spaces and breaks a
+    # path containing one. That helper needs SHELL: anyway because LINKER: joins
+    # its arguments with commas; there is no LINKER: prefix here, so SHELL: buys
+    # nothing and only takes on the space hazard.
+    target_link_options(
+      ${target_name} PRIVATE "$<TARGET_FILE:${library_target}>"
+    )
+  else()
+    target_link_options(
+      ${target_name}
+      PRIVATE
+      "LINKER:--push-state,--no-as-needed,$<TARGET_FILE:${library_target}>,--pop-state"
+    )
+  endif()
   target_link_libraries(${target_name} PRIVATE ${library_target})
 endfunction()
 
@@ -355,8 +395,32 @@ endfunction()
 # recorded directories are what resolves them there, and packaging strips them
 # so nothing absolute ships.
 function(executorch_target_shipped_runtime_path target_name)
+  # Mach-O spells the same idea @loader_path.
+  if(APPLE)
+    set(_origin "@loader_path")
+  else()
+    set(_origin "$ORIGIN")
+  endif()
+  # Appended rather than assigned, because a caller may have set INSTALL_RPATH
+  # to reach its own dependencies and replacing it silently drops them from the
+  # installed library. The origin entry goes first, since the shipped libraries
+  # sit beside this target, and anything the caller asked for follows as a
+  # fallback.
+  get_target_property(
+    _executorch_existing_install_rpath ${target_name} INSTALL_RPATH
+  )
+  if(NOT _executorch_existing_install_rpath)
+    set(_executorch_existing_install_rpath "${CMAKE_INSTALL_RPATH}")
+  endif()
+  set(_executorch_install_rpath "${_origin}")
+  foreach(_entry IN LISTS _executorch_existing_install_rpath)
+    if(NOT _entry STREQUAL "${_origin}")
+      list(APPEND _executorch_install_rpath "${_entry}")
+    endif()
+  endforeach()
   set_target_properties(
-    ${target_name} PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN"
+    ${target_name} PROPERTIES BUILD_RPATH "${_origin}"
+                              INSTALL_RPATH "${_executorch_install_rpath}"
   )
 endfunction()
 
@@ -378,19 +442,28 @@ endfunction()
 function(executorch_target_shared_runtime_path target_name wheel_subdir
          install_destination
 )
-  if(NOT EXECUTORCH_BUILD_SHARED OR APPLE)
+  if(NOT EXECUTORCH_BUILD_SHARED)
     return()
+  endif()
+  # Mach-O spells the token differently and takes a list rather than a colon
+  # joined string, so both differ here while the mechanism does not.
+  if(APPLE)
+    set(_origin "@loader_path")
+    set(_separator ";")
+  else()
+    set(_origin "$ORIGIN")
+    set(_separator ":")
   endif()
   # Up out of the subdirectory, then into the package's lib/.
   string(REGEX REPLACE "[^/]+" ".." _up "${wheel_subdir}")
-  set(_paths "$ORIGIN/${_up}/lib")
+  set(_paths "${_origin}/${_up}/lib")
   # A checkout has neither the wheel directory nor the install prefix, and the
   # only place the runtime exists is the package directory, which is a symlink
   # farm. The loader resolves the origin token against the real path, so
   # reaching it takes the same hops plus src/executorch. Emitting it here keeps
   # a source build working without a post-link rewrite, which needs a tool the
   # install path does not provide.
-  string(APPEND _paths ":$ORIGIN/${_up}/src/executorch/lib")
+  string(APPEND _paths "${_separator}${_origin}/${_up}/src/executorch/lib")
   # Made absolute lexically, so a destination that is already absolute, as a
   # ${CMAKE_INSTALL_LIBDIR} based one becomes, is handled the same as a prefix
   # relative one.
@@ -415,10 +488,10 @@ function(executorch_target_shared_runtime_path target_name wheel_subdir
   file(RELATIVE_PATH _to_libdir "${_installed_dir}"
        "${CMAKE_INSTALL_FULL_LIBDIR}"
   )
-  string(APPEND _paths ":$ORIGIN/${_to_libdir}")
+  string(APPEND _paths "${_separator}${_origin}/${_to_libdir}")
   get_target_property(_existing ${target_name} INSTALL_RPATH)
   if(_existing)
-    set(_paths "${_existing}:${_paths}")
+    set(_paths "${_existing}${_separator}${_paths}")
   endif()
   set_target_properties(
     ${target_name} PROPERTIES BUILD_RPATH "${_paths}" INSTALL_RPATH "${_paths}"
@@ -438,6 +511,14 @@ endfunction()
 # libexecutorch.so.1. A symlink is not an alternative, since a zip has no
 # portable symlink support.
 function(executorch_target_soname_policy target_name)
+  # Mach-O records the path a library expects to live at, and a consumer copies
+  # that path verbatim, so a library shipped somewhere other than where it was
+  # built is unfindable unless the recorded name is relative to whoever loads
+  # it. Set that before the wheel check, because the wheel is exactly the case
+  # that relocates.
+  if(APPLE)
+    set_target_properties(${target_name} PROPERTIES INSTALL_NAME_DIR "@rpath")
+  endif()
   if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
     return()
   endif()

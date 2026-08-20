@@ -47,9 +47,9 @@ cover.
 
 ### Using the prebuilt libraries from the pip package
 
-On Linux, `pip install executorch` ships the runtime as prebuilt shared libraries together with the
-headers and a CMake package. So a C++ program can use ExecuTorch without building it from source,
-and without knowing much CMake.
+On Linux and macOS, `pip install executorch` ships the runtime as prebuilt shared libraries together
+with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
+source, and without knowing much CMake.
 
 #### Run your first model in four steps
 
@@ -168,16 +168,16 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::backend_xnnpack)
 ```
 
-These are the components the Linux package provides:
+These are the components the package provides:
 
 | Component | What it gives you | Where |
 | --- | --- | --- |
-| `runtime` | The engine. Always needed. | Linux |
-| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux |
-| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux |
-| `threadpool` | Multi-threaded execution. | Linux |
-| `etdump` | Profiling, to record what ran and how long it took. | Linux |
-| `kernels_quantized` | The quantized operator kernels | Linux |
+| `runtime` | The engine. Always needed. | Linux, macOS |
+| `kernels_optimized` | Fast CPU operators. The usual choice. | Linux, macOS |
+| `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux, macOS |
+| `threadpool` | Multi-threaded execution. | Linux, macOS |
+| `etdump` | Profiling, to record what ran and how long it took. | Linux, macOS |
+| `kernels_quantized` | The quantized operator kernels | Linux, macOS |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
 | `backend_openvino` | The OpenVINO delegate | Linux |
@@ -195,9 +195,14 @@ foreach(_component
 endforeach()
 ```
 
-The macOS wheel keeps everything inside the Python extension rather than shipping separate C++
-libraries, so there is nothing for a C++ application to link there; use it from Python, or build
-from source if you need C++ on macOS.
+On macOS the Core ML and MLX delegates are registered inside the Python extension rather than
+shipped as separate C++ libraries, so a C++ application there cannot link them as components; use
+them from Python, or build from source if you need them in C++.
+
+Profiling a Core ML model records `DELEGATE_CALL`, which tells you how long the delegate ran in
+total. It does not record the individual operators inside the delegate, because that detail comes
+from the Core ML developer tools sources, and the wheel does not build them. An XNNPACK model
+records both.
 
 A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
 model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure
