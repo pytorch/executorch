@@ -43,9 +43,10 @@
 # Not the Python extension, which carries unresolved interpreter symbols that
 # only resolve inside an interpreter, so a standalone application linking it
 # fails with a page of PyUnicode_InternFromString errors. A project building a
-# custom operator against the extension asks for the _C target by name, which is
-# the long-standing contract for that and also carries the C++20 requirement
-# PyTorch's headers need.
+# custom operator links the runtime, which is where the operator registry lives
+# once the runtime is split out of the extension. The extension is not offered
+# as a link target: its undefined CPython symbols only resolve inside an
+# interpreter.
 #
 # EXECUTORCH_BUILD_VERSION -- The full version this package was built from,
 # including any prerelease suffix and local version label. Compare this when an
@@ -384,9 +385,7 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
       "instead. Linking it is not sufficient on its own: an imported target would also carry the "
       "include directories, the compile definitions and the C++ standard, so here a consumer has "
       "to apply EXECUTORCH_INCLUDE_DIRS, EXECUTORCH_COMPILE_DEFINITIONS and "
-      "EXECUTORCH_CXX_STANDARD itself. The prebuilt Python extension is still "
-      "defined, with the absolute package path only, so it links in place but is "
-      "not relocatable."
+      "EXECUTORCH_CXX_STANDARD itself."
   )
 elseif(_executorch_runtime_library)
   set(EXECUTORCH_FOUND ON)
@@ -690,10 +689,18 @@ elseif(_executorch_runtime_library) # Tested on the located library rather than
   set(EXT_SUFFIX "")
   set(_C_LIBRARY "")
 else()
+  # Reported rather than fatal. The arm above only fires when a runtime library
+  # was located, and a Windows wheel ships none: lib/ holds the CMake package
+  # and nothing else. So a Windows consumer whose interpreter is not callable as
+  # python3 reached this branch and find_package aborted its configure even
+  # under QUIET, which an optional-dependency probe must never do. Leaving the
+  # extension unset lets the caller see executorch_FOUND=0 and carry on.
   message(
-    FATAL_ERROR
-      "Failed to retrieve sysconfig config var EXT_SUFFIX: ${SYSCONFIG_ERROR}"
+    STATUS
+      "Python not usable and no runtime library located, so this package offers nothing: ${SYSCONFIG_ERROR}"
   )
+  set(EXT_SUFFIX "")
+  set(_C_LIBRARY "")
 endif()
 
 if(EXT_SUFFIX)
@@ -717,14 +724,23 @@ if(NOT _C_LIBRARY)
   # by a 3.12 interpreter yields a suffix that names no file here, and the
   # package then reported itself as not found on a complete install. The shipped
   # extension carries its own suffix in its name, so take it from the package.
+  # Loop invariant, so chosen once above the loop rather than per candidate.
+  if(WIN32)
+    set(_executorch_extension_suffixes "pyd")
+  elseif(APPLE)
+    set(_executorch_extension_suffixes "so|dylib")
+  else()
+    set(_executorch_extension_suffixes "so")
+  endif()
   file(GLOB _C_matches "${_executorch_package_root}/extension/pybindings/_C.*")
   foreach(_candidate IN LISTS _C_matches)
-    if(_candidate MATCHES "\\.(so|pyd|dylib)$")
+    if(_candidate MATCHES "\\.(${_executorch_extension_suffixes})$")
       set(_C_LIBRARY "${_candidate}")
       break()
     endif()
   endforeach()
   unset(_C_matches)
+  unset(_executorch_extension_suffixes)
 endif()
 
 if(_C_LIBRARY)
@@ -740,127 +756,30 @@ if(_C_LIBRARY)
   # own file.
   #
   # The target carries the C++20 requirement PyTorch's headers need, while the
-  # runtime components require C++17.
-  if(TARGET executorch::_C)
-    # This file ran already in the same configure, because another subproject
-    # called find_package too. No in-tree target uses this name, so it can only
-    # be the imported one defined below, and re-setting its properties to the
-    # same values is harmless.
-    message(STATUS "executorch: _C is already defined, reusing it")
-  else()
-    add_library(executorch::_C STATIC IMPORTED)
-  endif()
-
-  # The extension names the shipped runtime by absolute path, so a consumer
-  # links but cannot start once its binary moves unless the same search paths
-  # the runtime target publishes are attached here too. The relative entries use
-  # the origin token, which CMake writes incorrectly before 3.28, so an older
-  # consumer would record a malformed path. The absolute package directory has
-  # no token and is always safe, so publish that alone rather than nothing: an
-  # in-place build still finds the runtime, and no consumer receives a corrupted
-  # entry.
-  set(_executorch_extension_paths_are_safe ON)
-  if(CMAKE_VERSION VERSION_LESS 3.28)
-    set(_executorch_extension_paths_are_safe OFF)
-  endif()
-  set(_executorch_extension_link_options
-      "LINKER:-rpath,${_executorch_package_root}/lib"
-  )
-  if(_executorch_extension_paths_are_safe)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-      # Matches the runtime target: without this the linker records DT_RPATH,
-      # which is searched ahead of LD_LIBRARY_PATH and is inherited by a
-      # dependency's dependencies, so a consumer could not point a locally built
-      # runtime at their own application.
-      list(PREPEND _executorch_extension_link_options
-           "LINKER:--enable-new-dtags" "LINKER:-rpath,$ORIGIN"
-           "LINKER:-rpath,$ORIGIN/../lib"
-      )
-    elseif(APPLE)
-      list(PREPEND _executorch_extension_link_options
-           "LINKER:-rpath,@loader_path" "LINKER:-rpath,@loader_path/../lib"
-      )
-    endif()
-  endif()
-  set_property(
-    TARGET executorch::_C
-    APPEND
-    PROPERTY INTERFACE_LINK_OPTIONS ${_executorch_extension_link_options}
-  )
-
-  # Earlier wheels named this extension _portable_lib in EXECUTORCH_LIBRARIES,
-  # so a project may link that name. Aliased rather than dropped, because
-  # dropping it gives a bare "target not found" with no hint that the name
-  # moved.
-  if(NOT TARGET executorch::_portable_lib)
-    add_library(executorch::_portable_lib ALIAS executorch::_C)
+  # runtime components require C++17. _portable_lib was the name before the
+  # extension was renamed, so a project may link that name. Aliased to the
+  # runtime, not to the extension: the extension is a Python module whose
+  # undefined CPython symbols only resolve inside an interpreter, so linking it
+  # from C++ produced a binary that either failed to link or died at startup on
+  # PyInstanceMethod_Type. The runtime is what such a project actually wanted,
+  # and a custom operator registers into the same registry either way, since the
+  # registry moved into the runtime when it was split out of the extension.
+  # Measured: the in-tree custom operator built against executorch::runtime at
+  # C++17 links with nothing unresolved and adds wheel_check::custom_double.out
+  # to the registry when loaded into a live interpreter. Guarded on the target
+  # existing, not just on the extension being present. An ALIAS to a target that
+  # does not exist is a hard CMake error, and executorch::runtime is only
+  # defined from 3.28. Below that the package offers no imported targets at all
+  # and a consumer links through EXECUTORCH_LIBRARIES, so the aliases follow the
+  # same contract rather than aborting the configure of a complete install.
+  if(TARGET executorch::runtime AND NOT TARGET executorch::_portable_lib)
+    add_library(executorch::_portable_lib ALIAS executorch::runtime)
   endif()
   # A project built against an earlier wheel links this bare name, which that
-  # wheel defined and advertised through EXECUTORCH_LIBRARIES. Kept as an alias
-  # so the one target carries the properties and the old name cannot drift from
-  # the new one.
-  if(NOT TARGET _portable_lib)
-    add_library(_portable_lib ALIAS executorch::_C)
-  endif()
-  # PyTorch requires C++20, so pybindings must be compiled with C++20.
-  set_target_properties(
-    executorch::_C
-    PROPERTIES
-      IMPORTED_LOCATION "${_C_LIBRARY}"
-      INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-      # An interface requirement rather than CXX_STANDARD: an imported
-      # target compiles nothing itself, and CXX_STANDARD does not reach
-      # consumers, so a custom-op build linking this could still
-      # compile
-      # as C++17 and fail against headers that need C++20.
-      INTERFACE_COMPILE_FEATURES cxx_std_20
-      # The runtime's definitions. A custom-op build that links only this target
-      # compiles against the same headers and needs them too. The thread pool
-      # definition is appended after this call rather than listed here, because
-      # whether it applies depends on a variable set further up.
-      INTERFACE_COMPILE_DEFINITIONS
-      "C10_USING_CUSTOM_GENERATED_MACROS;@EXECUTORCH_TRACER_DEFINITION@"
-  )
-  # Appended here rather than listed above, because whether the thread pool
-  # definition applies depends on whether this wheel shipped it. Without it a
-  # consumer compiles the serial inline copies of parallel_for while the shipped
-  # libraries carry the real ones, and the serial version wins wherever it was
-  # inlined, with no diagnostic. It does not arrive transitively because the
-  # runtime is attached here as a file path, not as the target.
-  set(_executorch_extension_needs_threadpool OFF)
-  if("ET_USE_THREADPOOL" IN_LIST EXECUTORCH_COMPILE_DEFINITIONS)
-    set(_executorch_extension_needs_threadpool ON)
-  endif()
-  if(_executorch_extension_needs_threadpool)
-    set_property(
-      TARGET executorch::_C
-      APPEND
-      PROPERTY INTERFACE_COMPILE_DEFINITIONS ET_USE_THREADPOOL
-    )
-  endif()
-  # The extension links the runtime rather than containing it, so it no longer
-  # satisfies the runtime symbols a custom-op library references. Put the
-  # shipped runtime on this target's interface, which is where the definitions
-  # moved to, so an out-of-tree operator project keeps building and loading
-  # against the extension exactly as it did before. Without this a custom
-  # operator links and then fails to load with an undefined runtime symbol.
-  #
-  # The file path rather than executorch::runtime, because that target is only
-  # defined on CMake 3.28 or newer while this one is defined deliberately on
-  # every version, so a consumer on an older CMake can still link the extension.
-  if(_executorch_runtime_library)
-    set_property(
-      TARGET executorch::_C
-      APPEND
-      PROPERTY INTERFACE_LINK_LIBRARIES "${_executorch_runtime_library}"
-    )
-    # CMake adds a linked library's directory to the consumer's build tree
-    # runtime search path and strips it on install, so an installed consumer
-    # library reports libexecutorch.so as not found. Publish the directories
-    # rather than forcing them onto the target: an interface link option reaches
-    # every consumer and survives install, which would bake this machine's
-    # package location into a library the consumer ships onward. A consumer that
-    # installs elsewhere adds these to its own INSTALL_RPATH.
+  # wheel defined and advertised through EXECUTORCH_LIBRARIES. Same aliasing,
+  # same reason.
+  if(TARGET executorch::runtime AND NOT TARGET _portable_lib)
+    add_library(_portable_lib ALIAS executorch::runtime)
   endif()
 endif()
 

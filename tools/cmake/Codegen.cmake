@@ -330,6 +330,8 @@ function(gen_custom_ops_aot_lib)
   find_package_torch()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
+  # ATen headers require C++20.
+  set_target_properties(${GEN_LIB_NAME} PROPERTIES CXX_STANDARD 20)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)

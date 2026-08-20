@@ -29,6 +29,7 @@ from executorch.exir.backend.test.device_util import (
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.propagate_device_pass import (
     _get_target_device_from_compile_specs,
     _parse_device_spec_value,
@@ -1269,6 +1270,75 @@ class TestPropagateDevicePass(unittest.TestCase):
         repr_str = repr(spec)
         self.assertIn("device=", repr_str)
         self.assertIn("CPU", repr_str)
+
+    def test_skipping_copies_requires_unallocated_graph_io(self):
+        """Skipping a boundary copy is only complete when the runtime also stops reserving its own
+        buffer for that tensor.
+
+        Memory planning allocates graph inputs and outputs by default. A planned input carries
+        allocation info, and the runtime fills a planned input by copying the caller's memory into the
+        buffer it reserved, so the copy the export asked to skip comes back at run time. For device
+        memory that copy is also a host memcpy into a device pointer, which crashes.
+
+        This pins the pairing the configuration needs, because the two settings live in different
+        places and nothing else connects them.
+        """
+
+        class Model(torch.nn.Module):
+            def forward(self, a, b):
+                return torch.add(a, b)
+
+        model = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2))
+        skip_copies = PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True,
+            skip_d2h_for_method_outputs=True,
+        )
+
+        def planned_io(config: ExecutorchBackendConfig):
+            """Whether the program reserves its own buffer for each graph input and output."""
+            lowered = to_edge_transform_and_lower(
+                torch.export.export(model, inputs),
+                partitioner=[DeviceAwarePartitioner("cuda:0")],
+            ).to_executorch(config)
+            plan = lowered.executorch_program.execution_plan[0]
+            planned = lambda indices: [  # noqa: E731
+                getattr(plan.values[index].val, "allocation_info", None) is not None
+                for index in indices
+            ]
+            return planned(plan.inputs), planned(plan.outputs)
+
+        # Default planning reserves buffers, so the runtime copies into them despite the skip flags.
+        planned_inputs, planned_outputs = planned_io(
+            ExecutorchBackendConfig(
+                propagate_device_config=skip_copies,
+                enable_non_cpu_memory_planning=True,
+            )
+        )
+        self.assertTrue(
+            all(planned_inputs),
+            "graph inputs are expected to be planned by default, which is why the pairing below "
+            f"is needed, but got {planned_inputs}",
+        )
+
+        # Asking planning to leave them alone is what actually removes the copy.
+        planned_inputs, planned_outputs = planned_io(
+            ExecutorchBackendConfig(
+                propagate_device_config=skip_copies,
+                enable_non_cpu_memory_planning=True,
+                memory_planning_pass=MemoryPlanningPass(
+                    alloc_graph_input=False, alloc_graph_output=False
+                ),
+            )
+        )
+        self.assertFalse(
+            any(planned_inputs),
+            f"no graph input should be planned when the caller provides it, got {planned_inputs}",
+        )
+        self.assertFalse(
+            any(planned_outputs),
+            f"no graph output should be planned when it stays on the device, got {planned_outputs}",
+        )
 
 
 if __name__ == "__main__":

@@ -37,6 +37,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+
 # Registry entry points. A second definer of any of these means a second
 # process-wide registry.
 _REGISTRY_SYMBOLS = (
@@ -378,6 +381,35 @@ def _recorded_dependencies(library) -> set:
     }
 
 
+def _raw_recorded_identity(library) -> str | None:
+    """The identity exactly as recorded, without reducing it to a basename.
+
+    Separate from _recorded_identity because that function's basename reduction is correct for
+    comparing names but hides whether the recorded string is absolute, which is a different fault.
+    """
+    section = _dynamic_section(library)
+    if section is None:
+        return None
+    # otool -l prints a name field for LC_LOAD_DYLIB as well as LC_ID_DYLIB, so the current load
+    # command has to be tracked: taking the first name line returned a dependency such as
+    # /usr/lib/libc++.1.dylib for a library that has no install name at all, which would report an
+    # absolute install name where the truth is that there is none.
+    in_id_command = False
+    for line in section.splitlines():
+        stripped = line.strip()
+        if sys.platform == "darwin":
+            if stripped.startswith("cmd "):
+                # Containment, matching how every other otool -l parser in this file reads a load
+                # command. Exact equality would return None for every library if any otool spelled
+                # the line differently, and the absolute check would then inspect nothing and pass.
+                in_id_command = "LC_ID_DYLIB" in stripped
+            elif in_id_command and stripped.startswith("name "):
+                return stripped.split(" (offset", 1)[0][len("name ") :]
+        elif "SONAME" in stripped and "[" in stripped:
+            return stripped.split("[", 1)[1].rstrip("]")
+    return None
+
+
 def _recorded_identity(library) -> str | None:
     """The name this library tells a consumer to record when linking against it.
 
@@ -686,8 +718,8 @@ def _is_export_only(library: Path) -> bool:
 
     Excluded from the single-owner check for the one component that genuinely has two
     copies. Counting them there would report a duplicate for something that is not one,
-    and the alternative, making them resolve the kernels from the shipped library, would
-    mean an export-time library depending on a runtime layout it never uses.
+    and the plugin does resolve its registrar from the shipped library now, while the code
+    generator still compiles the kernel bodies into it for the dispatcher half.
 
     Recognised by linking torch, which is the property that makes a library export-side.
     Python extensions link torch too and are not export-side operator libraries, so they
@@ -719,14 +751,15 @@ def _assert_single_definer(
     has zero definers and is reported as such. What must never happen is two.
 
     `allow_export_copy` excuses the export-side libraries for one component only. The
-    quantized kernels genuinely exist twice, once in the runtime library and once in the
-    library torch loads at export time, because each side registers into a table the
-    other never reads. Loading both into one process does abort on the second
-    registration, so what this check enforces for that component is one owner among the
-    runtime libraries, not the absence of the export copy. Excusing every component
-    would disarm the check where duplication is a real fault: two of these libraries
-    defined the backend registry symbols in one released wheel and not in the release
-    before it, so the duplication this catches does happen.
+    export plugin no longer carries its own registrar, but the code generator still
+    compiles the kernels into it for the dispatcher half, so the symbols appear twice:
+    once in the runtime library and once in the library torch loads at export time,
+    because each side registers into a table the other never reads. Loading both used to
+    abort on the second registration, so what this check enforces for that component is
+    one owner among the runtime libraries, not the absence of the export copy. Excusing
+    every component would disarm the check where duplication is a real fault: two of
+    these libraries defined the backend registry symbols in one released wheel and not
+    in the release before it, so the duplication this catches does happen.
     """
     assert _tool("nm") is not None, "nm is required to inspect the wheel"
 
@@ -815,8 +848,8 @@ def _resolve_required(required):
 # runs a build when imported, and duplicated deliberately so a rename on the packaging
 # side has to be made here too rather than silently agreeing with itself.
 _EXPECTED_CUDA_PACKAGES = {
-    "12": ("nvidia-cuda-runtime-cu12",),
-    "13": ("nvidia-cuda-runtime",),
+    "12": ("nvidia-cuda-runtime-cu12>=12,<13",),
+    "13": ("nvidia-cuda-runtime>=13,<14",),
 }
 
 
@@ -939,7 +972,7 @@ _OWNED_COMPONENTS = (
 # The one component that legitimately exists twice. The quantized kernels are compiled into the runtime
 # library and again into the library torch loads at export time, because each side registers into a
 # table the other never reads, so a second definer there is expected rather than a fault. A process
-# that loads both does abort on the second registration, which is why this is named per component and
+# that loads both used to abort on the second registration, which is why this is named per component and
 # the check stays armed for every other component, where a second definer means two registries or two thread
 # pools in one process.
 _COMPONENTS_WITH_AN_EXPORT_COPY = frozenset({"set of quantized kernels"})
@@ -1090,14 +1123,21 @@ find_package(executorch REQUIRED)
 # An unknown name here would be passed to the linker as a plain library rather
 # than reported, so the include directories would silently not arrive and the
 # build would fail later on a missing header.
-if(NOT TARGET executorch::_C)
-  message(FATAL_ERROR "cannot link a target that does not exist: executorch::_C")
+if(NOT TARGET executorch::runtime)
+  message(FATAL_ERROR "cannot link a target that does not exist: executorch::runtime")
+endif()
+# The name earlier wheels advertised still has to resolve, so a project that links it
+# keeps configuring rather than failing on an unknown target.
+if(NOT TARGET executorch::_portable_lib)
+  message(FATAL_ERROR "the legacy alias executorch::_portable_lib no longer resolves")
 endif()
 
 add_library(custom_op_check SHARED custom_op.cpp)
-# The legacy contract: a custom-op library links the shipped Python extension,
-# which owns the operator registry it registers into.
-target_link_libraries(custom_op_check PRIVATE executorch::_C)
+# The runtime owns the operator registry. It used to live in the Python extension, so a
+# custom-op library linked that; since the split it is in libexecutorch, and linking the
+# extension from C++ cannot work because its CPython symbols only resolve inside an
+# interpreter. Linking the runtime reaches the same registry singleton.
+target_link_libraries(custom_op_check PRIVATE executorch::runtime)
 # The runtime headers include c10 headers, which belong to torch rather than to
 # this wheel, so an out-of-tree operator project supplies them the same way it
 # supplies torch itself. The package config does not and should not ship them.
@@ -2216,10 +2256,25 @@ def test_shipped_library_names_are_expected() -> None:
     # The recorded identity has to match the file name, or a consumer records a
     # dependency on a name the wheel does not contain.
     mismatched = {}
+    absolute = {}
     for library in shipped:
         identity = _recorded_identity(library)
         if identity != library.name:
             mismatched[library.name] = identity
+        # Checked separately from the name comparison above, which deliberately reduces to a
+        # basename so an @rpath/ prefix compares equal. That reduction also makes an absolute
+        # install name compare equal, and a consumer copies the recorded string verbatim into its
+        # own load command, so an absolute one only resolves on the machine that built the wheel.
+        raw = _raw_recorded_identity(library)
+        if raw is not None and raw.startswith("/"):
+            absolute[library.name] = raw
+    # Before the name comparison: this is the more specific condition of the two. On ELF the
+    # recorded soname is returned whole, so an absolute one populates both sets, and reporting the
+    # name mismatch first would claim the wheel does not ship a file it does ship.
+    assert not absolute, (
+        "shipped libraries record an absolute install name, so a consumer copies a path that "
+        f"exists only on the build machine: {absolute}"
+    )
     assert not mismatched, (
         "shipped libraries record an identity that is not their file name, so a "
         f"consumer would look for a file the wheel does not ship: {mismatched}"
@@ -2351,10 +2406,20 @@ def test_declared_dependencies_match_the_wheel_tag() -> None:
     def distribution_name(requirement: str) -> str:
         return re.split(r"[\s;\[<>=!~(]", requirement.strip(), maxsplit=1)[0]
 
+    # The specifier is part of what is compared, not just the name: a bound is only correct
+    # relative to the train the libraries were linked against, so a name-only comparison accepted
+    # nvidia-cuda-runtime<13 and ==14.0 on a cu130 wheel. Compared through packaging's own parser
+    # rather than as text, because it reorders the clauses it emits: a declared ">=13,<14" appears
+    # in METADATA as "<14,>=13". A raw string comparison therefore failed on a correctly built
+    # wheel, which is a self-inflicted gate rather than a defect in the wheel.
+    def normalized_requirement(requirement: str) -> str:
+        parsed = Requirement(requirement)
+        return f"{canonicalize_name(parsed.name)}{parsed.specifier}"
+
     cuda = sorted(
-        name
-        for name in (distribution_name(r) for r in requirements)
-        if name.lower().startswith("nvidia")
+        normalized_requirement(r)
+        for r in requirements
+        if distribution_name(r).lower().startswith("nvidia")
     )
 
     # The local version segment of the installed version states what the wheel was built for.
@@ -2375,7 +2440,10 @@ def test_declared_dependencies_match_the_wheel_tag() -> None:
         # declares one package and omits the others still cannot load, and one-direction only
         # would accept it.
         train = local[len("cu") : len("cu") + 2]
-        expected = set(_EXPECTED_CUDA_PACKAGES.get(train, ()))
+        expected = {
+            normalized_requirement(requirement)
+            for requirement in _EXPECTED_CUDA_PACKAGES.get(train, ())
+        }
         assert expected, (
             f"version {version} names CUDA train {train}, which this check has no expected "
             f"package list for. Add it beside the packaging list it mirrors."
@@ -2383,6 +2451,22 @@ def test_declared_dependencies_match_the_wheel_tag() -> None:
         actual = set(cuda)
         wrong = sorted(actual - expected)
         missing = sorted(expected - actual)
+        # Split by distribution name before the set difference is reported, so the message names the
+        # actual fault. Comparing whole requirement strings makes a correct package with a missing
+        # bound look identical to a package from the wrong train, and the second message would be
+        # false. Diagnostic precision is the reason this comparison is exact rather than a heuristic.
+        expected_by_name = {distribution_name(r): r for r in expected}
+        misbounded = sorted(
+            (declared, expected_by_name[distribution_name(declared)])
+            for declared in wrong
+            if distribution_name(declared) in expected_by_name
+        )
+        assert not misbounded, (
+            f"version {version} is a CUDA {train} wheel and names the right runtime packages, but "
+            f"their version specifiers are not the ones packaging declares: "
+            + ", ".join(f"{d!r} should be {e!r}" for d, e in misbounded)
+            + ". A user could resolve a CUDA major whose libcudart this wheel's libraries cannot load."
+        )
         assert not wrong, (
             f"version {version} is a CUDA {train} wheel, but it declares {wrong}, which belong to "
             f"another CUDA train. Expected only {sorted(expected)}. A user would install a runtime "
