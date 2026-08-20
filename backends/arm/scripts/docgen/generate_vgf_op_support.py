@@ -2196,6 +2196,15 @@ def _collect_backend_supported_ops(  # noqa: C901
     return expected
 
 
+def _format_markdown_table_row(cells: Sequence[str]) -> str:
+    # Serializes a list of cell values into a Markdown table row.
+    # It escapes literal | characters inside cells so they aren’t
+    # interpreted as column separators,
+    # then joins the cells using Markdown’s | delimiter.
+    escaped_cells = (cell.replace("|", r"\|") for cell in cells)
+    return "| " + " | ".join(escaped_cells) + " |"
+
+
 def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
     exact_rows, _unresolved, _diagnostics = _scan_vgf_pipeline_tests(repo_root)
     command = "python backends/arm/scripts/docgen/generate_vgf_op_support.py"
@@ -2244,7 +2253,7 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
                 _format_items(exact_row.quantization_modes, QUANTIZATION_MODE_ORDER),
                 _format_test_items(exact_row.tests),
             ]
-            lines.append("| " + " | ".join(cells) + " |")
+            lines.append(_format_markdown_table_row(cells))
     else:
         public_rows = _public_rows_from_exact_rows(exact_rows)
         lines.extend(
@@ -2262,8 +2271,7 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
                 _format_backtick_items(public_row.dtypes, DTYPE_ORDER),
                 _format_items(public_row.quantization_modes, QUANTIZATION_MODE_ORDER),
             ]
-            lines.append("| " + " | ".join(cells) + " |")
-
+            lines.append(_format_markdown_table_row(cells))
     return "\n".join(lines).rstrip() + "\n"
 
 
