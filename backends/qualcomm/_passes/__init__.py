@@ -52,6 +52,7 @@ from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
 from .fold_qdq import FoldQDQ
 from .fuse_consecutive_cast import FuseConsecutiveCast
+from .fuse_consecutive_reshape import FuseConsecutiveReshape
 from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_cast_for_fp_act_quantized_weight import InsertCastForFpActQuantizedWeight
@@ -121,6 +122,7 @@ __all__ = [
     FixedLinearKeepDim,
     FoldQDQ,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,

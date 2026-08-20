@@ -55,6 +55,7 @@ from executorch.backends.qualcomm._passes import (
     FixedLinearKeepDim,
     FoldQDQ,
     FuseConsecutiveCast,
+    FuseConsecutiveReshape,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertCastForFpActQuantizedWeight,
@@ -237,6 +238,7 @@ class QnnPassManager(PassManager):
         """Return preprocess pipeline pass classes. Override in subclasses to add backend-specific passes."""
         passes = [
             FoldQDQ,
+            FuseConsecutiveReshape,
             ConvertMhaToSha,
             InsertRequantize,
             InsertIOQDQ,
