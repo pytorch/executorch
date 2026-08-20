@@ -29,6 +29,7 @@ import importlib.metadata
 import importlib.util
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -143,6 +144,7 @@ else:
     _BUNDLED_THREADPOOL_SYMBOLS = ("pthreadpool_create", "cpuinfo_initialize")
 # The delegate's own entry points. A second definer means the delegate is compiled
 # into the Python extension as well, which would register it twice in one process.
+_QNN_BACKEND_SYMBOLS = ("QnnExecuTorchBackendRegister",)
 _OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
 
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
@@ -859,6 +861,11 @@ _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
 # Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
 _REQUIRED_ON_LINUX = "linux-only"
+# Narrower than the marker above on purpose. The Qualcomm SDK the delegate builds
+# against is published for Linux x86_64 only, so the aarch64 Linux wheels ship no such
+# library and demanding it there would fail a wheel that is correct. Reusing the
+# Linux-wide marker would do exactly that.
+_REQUIRED_ON_LINUX_X86 = "linux-x86-only"
 
 
 def _resolve_required(required):
@@ -867,6 +874,8 @@ def _resolve_required(required):
         return bool(_wheel_cuda_train())
     if required == _REQUIRED_ON_LINUX:
         return sys.platform == "linux"
+    if required == _REQUIRED_ON_LINUX_X86:
+        return sys.platform == "linux" and platform.machine() in ("x86_64", "amd64")
     return required
 
 
@@ -993,6 +1002,16 @@ _OWNED_COMPONENTS = (
         _OPENVINO_BACKEND_SYMBOLS,
         _library_file_name("libexecutorch_backend_openvino"),
         _REQUIRED_ON_LINUX,
+    ),
+    # Required on Linux x86_64 only, where the Qualcomm SDK the delegate builds against
+    # is published. A fixed False would pass a wheel that compiled the delegate back
+    # into the extension, since no library ships, the row skips, and one definer inside
+    # the extension is the monolithic layout a definer count cannot distinguish.
+    (
+        "Qualcomm delegate",
+        _QNN_BACKEND_SYMBOLS,
+        _library_file_name("libexecutorch_backend_qnn"),
+        _REQUIRED_ON_LINUX_X86,
     ),
 )
 
