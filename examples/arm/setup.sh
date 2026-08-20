@@ -311,6 +311,11 @@ function create_setup_path(){
 if [[ $is_script_sourced -eq 0 ]]; then
     set -e
 
+    if [[ -n "$("${et_dir}/.ci/scripts/detect_ci.sh" --and-not-debug)" ]]; then
+        ARM_SETUP_CURL_PROGRESS_ARGS=(--no-progress-meter)
+        export PIP_PROGRESS_BAR=off
+    fi
+
     check_options "$@"
 
     if [[ "${#target_toolchains[@]}" -eq 0 ]]; then
