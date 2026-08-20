@@ -379,7 +379,7 @@ def update_cache_with_indices_meta(
     return torch.empty((1,), dtype=value.dtype, device="meta")
 
 
-def _validate_channelwise_gated_delta_rule_params(
+def _validate_gated_delta_rule_params(
     query,
     key,
     value,
@@ -436,8 +436,8 @@ def _validate_channelwise_gated_delta_rule_params(
     )
 
 
-@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
-def channelwise_gated_delta_rule_meta(
+@impl(custom_ops_lib, "gated_delta_rule", "Meta")
+def gated_delta_rule_meta(
     query,
     key,
     value,
@@ -445,7 +445,7 @@ def channelwise_gated_delta_rule_meta(
     beta,
     initial_state,
 ):
-    _validate_channelwise_gated_delta_rule_params(
+    _validate_gated_delta_rule_params(
         query,
         key,
         value,
@@ -455,6 +455,20 @@ def channelwise_gated_delta_rule_meta(
     )
     output_shape = (*query.shape[:3], value.size(3))
     return query.new_empty(output_shape), torch.empty_like(initial_state)
+
+
+# Deprecated alias of gated_delta_rule, kept so graphs built against the
+# pre-scalar-decay name keep tracing. Remove once those have been re-exported.
+@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
+def channelwise_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    return gated_delta_rule_meta(query, key, value, decay, beta, initial_state)
 
 
 def _validate_quantized_sdpa_params(

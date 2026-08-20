@@ -67,7 +67,7 @@ To export with the Qualcomm AI Engine Direct Backend, ensure the following:
 
 ```bash
 # export llama
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --compile_only
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --compile_only
 ```
 Note: end-to-end [instructions](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/README.md)
 
@@ -81,7 +81,7 @@ Note: end-to-end [instructions](https://github.com/pytorch/executorch/blob/main/
 **3.3 Run model**
 ```bash
 # Run llama
-python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --pre_gen_pte ${PATH_TO_ARTIFACT}
+python examples/qualcomm/oss_scripts/llama/llama.py --build_folder build-android --device ${SERIAL_NUM} --soc_model ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --pre_gen_pte ${PATH_TO_ARTIFACT}
 ```
 
 ## What is coming?

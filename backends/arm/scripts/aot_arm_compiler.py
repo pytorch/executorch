@@ -156,6 +156,7 @@ def _load_python_module_model(
     """Load a model and inputs from a Python source file.
 
     The file must define `ModelUnderTest` and `ModelInputs` attributes.
+
     """
     if not model_name.endswith(".py"):
         return None
@@ -222,6 +223,7 @@ def get_model_and_inputs_from_name(
     Raises:
         RuntimeError: If the model cannot be resolved or required inputs are
             missing.
+
     """
     example_inputs = _load_example_inputs(model_input)
 
@@ -344,7 +346,8 @@ def quantize(
     calibration_samples: Optional[List[Tuple[torch.Tensor, ...]]] = None,
 ) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
-    export."""
+    export.
+    """
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
 

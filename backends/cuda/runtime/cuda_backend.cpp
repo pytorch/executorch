@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Include SlimTensor headers for CUDA backend
@@ -1061,7 +1062,17 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    // Names this method must load itself because the cached tensor under the
+    // same name belongs to a different constant.
+    std::unordered_set<std::string> not_shared;
+
     // Phase 2 (locked): pure cache lookup against shared_constant_tensors_.
+    // A cache hit here is provisional: the name matches, but whether the
+    // tensors match is only known after extraction, so a hit can still be
+    // rejected below. Only the path that loads the blob can check this. When
+    // every name is already cached there is nothing to compare against
+    // without re-uploading the blob, which costs too much device memory to
+    // do on every method, so that case still shares on the name alone.
     {
       std::lock_guard<std::mutex> guard(shared_constants_mutex_);
       for (const auto& [fqn, _] : fqn_to_name) {
@@ -1134,17 +1145,22 @@ class ET_EXPERIMENTAL CudaBackend final
           if (cached_it == shared_constant_tensors_.end()) {
             // New constant — add to cache.
             shared_constant_tensors_[fqn] = extracted_it->second;
-          } else {
-            // Same FQN seen before — verify the cached tensor is still
-            // compatible with what THIS method expects. On mismatch the
-            // helper logs the offending field and returns an error.
-            ET_CHECK_OK_OR_RETURN_ERROR(
-                check_cached_constant_match(
-                    fqn, cached_it->second, extracted_it->second),
-                "Constant '%s' in method '%s' is incompatible with the "
-                "cached version from a previous method. Refusing to share.",
+          } else if (
+              check_cached_constant_match(
+                  fqn, cached_it->second, extracted_it->second) != Error::Ok) {
+            // Same name, different tensor. AOTInductor names a lifted constant
+            // by position within one compiled module, so two methods each own a
+            // "_tensor_constant2" holding unrelated data, and a name is only
+            // evidence of sharing when the tensors agree. Sharing this pair
+            // would alias mismatched storage, so leave this method's own
+            // constant in place and keep the cached one for whoever matches it.
+            ET_LOG(
+                Info,
+                "Constant '%s' in method '%s' differs from the cached copy; "
+                "using this method's own copy instead of sharing",
                 fqn.c_str(),
                 method_name.c_str());
+            not_shared.insert(fqn);
           }
         }
         ET_LOG(
@@ -1173,6 +1189,9 @@ class ET_EXPERIMENTAL CudaBackend final
       {
         std::lock_guard<std::mutex> guard(shared_constants_mutex_);
         for (const auto& [fqn, internal_name] : fqn_to_name) {
+          if (not_shared.count(fqn) != 0) {
+            continue;
+          }
           auto it = shared_constant_tensors_.find(fqn);
           if (it != shared_constant_tensors_.end()) {
             pairs.push_back({internal_name.c_str(), it->second});

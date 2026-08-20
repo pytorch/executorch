@@ -300,6 +300,24 @@ def test_depthwise_conv2d_uses_explicit_nhwc_operator():
     assert program.module()(x).shape == torch.Size([1, 4, 8, 8])
 
 
+def test_grouped_conv2d_uses_explicit_nhwc_operator():
+    # groups=2 is neither dense nor depthwise, so it must reach the regular
+    # NHWC convolution rather than the depthwise one.
+    x = torch.randn(1, 4, 8, 8)
+    program = _lower(Conv2d(4, 4, groups=2), (x,))
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert (
+        _count(
+            program,
+            exir_ops.edge.cortex_m.quantized_depthwise_conv2d_nhwc.default,
+        )
+        == 0
+    )
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
+    assert program.module()(x).shape == torch.Size([1, 4, 8, 8])
+
+
 def test_adjacent_convolutions_eliminate_internal_copies():
     x = torch.randn(1, 3, 8, 8)
     program = _lower(TwoConv2d(), (x,))
