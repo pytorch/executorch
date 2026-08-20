@@ -50,10 +50,17 @@ execute_process(
 if(SYSCONFIG_RESULT EQUAL 0)
   message(STATUS "Sysconfig extension suffix: ${EXT_SUFFIX}")
 else()
+  # Reported rather than fatal. The arm above only fires when a runtime library
+  # was located, and a Windows wheel ships none: lib/ holds the CMake package
+  # and nothing else. So a Windows consumer whose interpreter is not callable as
+  # python3 reached this branch and find_package aborted its configure even
+  # under QUIET, which an optional-dependency probe must never do. Leaving the
+  # extension unset lets the caller see executorch_FOUND=0 and carry on.
   message(
-    FATAL_ERROR
-      "Failed to retrieve sysconfig config var EXT_SUFFIX: ${SYSCONFIG_ERROR}"
+    STATUS
+      "Python not usable and no runtime library located, so this package offers nothing: ${SYSCONFIG_ERROR}"
   )
+  set(EXT_SUFFIX "")
 endif()
 
 find_library(
