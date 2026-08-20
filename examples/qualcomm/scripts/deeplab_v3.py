@@ -7,7 +7,6 @@
 import json
 import logging
 import os
-import random
 import re
 from multiprocessing.connection import Client
 
@@ -41,23 +40,23 @@ def get_dataset(data_size, dataset_dir, download):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    dataset = list(
-        datasets.VOCSegmentation(
-            root=os.path.join(dataset_dir, "voc_image"),
-            year="2012",
-            image_set="val",
-            transform=preprocess,
-            download=download,
-        )
+    dataset = datasets.VOCSegmentation(
+        root=os.path.join(dataset_dir, "voc_image"),
+        year="2012",
+        image_set="val",
+        transform=preprocess,
+        download=download,
+    )
+    
+    data_loader = torch.utils.data.DataLoader(
+        dataset, shuffle=True, collate_fn=lambda batch: batch[0]
     )
 
     # prepare input data
-    random.shuffle(dataset)
     inputs, targets = [], []
-    for index, data in enumerate(dataset):
+    for index, (image, target) in enumerate(data_loader):
         if index >= data_size:
             break
-        image, target = data
         inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
 
