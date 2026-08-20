@@ -27,7 +27,6 @@ from transformers import AutoModelForCausalLM
 
 
 def load_draft_model(draft_id: str, target_state_dict: dict) -> DFlashDraftModel:
-
     path = Path(snapshot_download(draft_id, allow_patterns=["*.safetensors", "*.json"]))
     config = load_dflash_config(path)
     model = DFlashDraftModel(config)
@@ -230,6 +229,7 @@ def main():
         "get_max_ctx_len": max_ctx_len,
         "get_prefill_chunk_size": prefill_chunk_size,
         "get_max_block_len": block_size,
+        "get_mask_token_id": draft_config.mask_token_id,
     }
     edge = exir.to_edge_transform_and_lower(
         {"target": target_exported, "draft": exported},

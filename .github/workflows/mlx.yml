@@ -681,7 +681,8 @@ jobs:
 
   # DFlash speculative decoding: target and draft exported as two methods of one
   # .pte. Also the only coverage that the constants the export publishes
-  # (get_max_ctx_len / get_prefill_chunk_size / get_max_block_len) match what
+  # (get_max_ctx_len / get_prefill_chunk_size / get_max_block_len /
+  # get_mask_token_id) match what
   # the runner derives from them -- the runner takes no capacity or block flags.
   test-mlx-dflash:
     needs: run-decision
@@ -705,7 +706,7 @@ jobs:
 
         MAX_CTX_LEN=1024
         PREFILL_CHUNK_SIZE=128
-        N_DRAFT=4
+        N_DRAFT=3
         DRAFT_MODEL=z-lab/Qwen3-4B-DFlash-b16
         PTE=/tmp/qwen3_4b_dflash.pte
 
@@ -734,8 +735,9 @@ jobs:
         # a silently broken runner rather than a failed export. Kept on one line:
         # a YAML block scalar indents every line, which python -c would reject.
         BLOCK_SIZE=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).block_size)")
-        echo "draft checkpoint block_size: ${BLOCK_SIZE}"
-        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_ctx_len', 'get_prefill_chunk_size', 'get_max_block_len']}; want = {'get_max_ctx_len': ${MAX_CTX_LEN}, 'get_prefill_chunk_size': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
+        MASK_TOKEN_ID=$(${CONDA_RUN} python -c "from huggingface_hub import snapshot_download; from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config; print(load_dflash_config(snapshot_download('${DRAFT_MODEL}', allow_patterns=['*.json'])).mask_token_id)")
+        echo "draft checkpoint block_size: ${BLOCK_SIZE} mask_token_id: ${MASK_TOKEN_ID}"
+        ${CONDA_RUN} python -c "from executorch.runtime import Runtime, Verification; from executorch.backends.mlx.examples.llm.runtime_meta import read_const_int as r; p = Runtime.get().load_program('${PTE}', verification=Verification.Minimal); got = {n: r(p, n) for n in ['get_max_ctx_len', 'get_prefill_chunk_size', 'get_max_block_len', 'get_mask_token_id']}; want = {'get_max_ctx_len': ${MAX_CTX_LEN}, 'get_prefill_chunk_size': ${PREFILL_CHUNK_SIZE}, 'get_max_block_len': ${BLOCK_SIZE}, 'get_mask_token_id': ${MASK_TOKEN_ID}}; print('published:', got); assert got == want, f'mismatch: {got} != {want}'; assert {'draft', 'target'} <= set(p.method_names), p.method_names; print('Success: constants match and both methods present')"
         echo "::endgroup::"
 
         echo "::group::Run DFlash speculative decoding"

@@ -29,7 +29,7 @@ import torch
 from executorch.backends.mlx.examples.llm.runtime_meta import (
     apply_chat_template,
     chunked_prefill,
-    get_eos_token_id,
+    get_eos_token_ids,
     load_text_processor,
     read_model_limits,
 )
@@ -83,7 +83,7 @@ def run_inference(
 
     generated_tokens = input_ids[0].tolist()
     seq_len = input_ids.shape[1]
-    eos_token_id = get_eos_token_id(text_processor)
+    eos_token_ids = get_eos_token_ids(text_processor, model_id=model_id)
 
     start_time = time.time()
 
@@ -93,8 +93,7 @@ def run_inference(
 
     prefill_time = time.time() - start_time
     logger.info(
-        f"Prefill time: {prefill_time:.3f}s "
-        f"({seq_len / prefill_time:.1f} tokens/sec)"
+        f"Prefill time: {prefill_time:.3f}s ({seq_len / prefill_time:.1f} tokens/sec)"
     )
 
     # Get the next token from the last position
@@ -118,7 +117,7 @@ def run_inference(
         next_token = torch.argmax(next_token_logits).item()
         generated_tokens.append(next_token)
 
-        if eos_token_id is not None and next_token == eos_token_id:
+        if next_token in eos_token_ids:
             logger.info(f"EOS token reached at position {i + 1}")
             break
 

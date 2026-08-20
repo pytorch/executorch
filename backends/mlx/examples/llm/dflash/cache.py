@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Persistent per-layer KV cache for the DFlash draft model. 
+"""Persistent per-layer KV cache for the DFlash draft model.
 
-Uses the TorchExportableModuleWithStaticCache pattern with mutable cache buffers and an explicit cache_position. Built on the existing MLX KVCache so cache writes use the MLX KV-cache operator rather than Python slicing. 
+Uses the TorchExportableModuleWithStaticCache pattern with mutable cache buffers and an explicit cache_position. Built on the existing MLX KVCache so cache writes use the MLX KV-cache operator rather than Python slicing.
 """
 
 from typing import Tuple, Union

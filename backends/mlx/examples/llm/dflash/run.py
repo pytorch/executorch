@@ -22,21 +22,18 @@ confirmed since the last time it ran rather than reprojecting the full history.
 
 import argparse
 import time
-from pathlib import Path
 
 import torch
 
-from executorch.backends.mlx.examples.llm.dflash.model import load_dflash_config
 from executorch.backends.mlx.examples.llm.runtime_meta import (
     apply_chat_template,
     chunked_prefill,
-    get_eos_token_id,
+    get_eos_token_ids,
     load_text_processor,
     read_const_int,
     read_model_limits,
 )
 from executorch.runtime import Runtime, Verification
-from huggingface_hub import snapshot_download
 
 
 def first_mismatch(draft_ids, target_ids):
@@ -59,12 +56,13 @@ def compute_block_len(
     return bs
 
 
-def truncate_at_eos(new_tokens, accepted, eos_id):
-    """Truncate right after eos_id if present, and clamp accepted so it
+def truncate_at_eos(new_tokens, accepted, eos_ids):
+    """Truncate right after the first EOS if present, and clamp accepted so it
     never claims more accepted draft tokens than survive truncation."""
-    if eos_id in new_tokens:
-        new_tokens = new_tokens[: new_tokens.index(eos_id) + 1]
-        accepted = min(accepted, len(new_tokens) - 1)
+    for i, token in enumerate(new_tokens):
+        if token in eos_ids:
+            new_tokens = new_tokens[: i + 1]
+            return new_tokens, min(accepted, len(new_tokens) - 1)
     return new_tokens, accepted
 
 
@@ -72,7 +70,6 @@ def parse_args():
     """Parse the runner's CLI arguments."""
     p = argparse.ArgumentParser()
     p.add_argument("--pte", default="qwen3_4b_dflash.pte")
-    p.add_argument("--draft-model", default="z-lab/Qwen3-4B-DFlash-b16")
     p.add_argument("--tokenizer", default="Qwen/Qwen3-4B")
     p.add_argument("--prompt", default="The capital of France is")
     p.add_argument("--max-new-tokens", type=int, default=64)
@@ -171,17 +168,12 @@ def print_summary(
 def main():
     args = parse_args()
 
-    config = load_dflash_config(
-        Path(
-            snapshot_download(
-                args.draft_model, allow_patterns=["*.json"], local_files_only=True
-            )
-        )
-    )
-    mask_id = config.mask_token_id
-
     tokenizer = load_text_processor(args.tokenizer, local_files_only=True)
-    eos_id = get_eos_token_id(tokenizer)
+    eos_ids = get_eos_token_ids(
+        tokenizer, model_id=args.tokenizer, local_files_only=True
+    )
+    if not eos_ids:
+        raise ValueError(f"No EOS token id found for {args.tokenizer}")
 
     rt = Runtime.get()
     program = rt.load_program(args.pte, verification=Verification.Minimal)
@@ -191,6 +183,12 @@ def main():
     max_ctx_len, prefill_chunk_size, block_len = resolve_limits(
         program, args.pte, args.n_draft
     )
+    mask_id = read_const_int(program, "get_mask_token_id")
+    if mask_id is None:
+        raise ValueError(
+            f"{args.pte} publishes no get_mask_token_id; re-export it with "
+            "dflash/export.py."
+        )
 
     prompt_ids = encode_prompt(tokenizer, args)
     prompt_len = prompt_ids.shape[1]
@@ -279,14 +277,14 @@ def main():
         if args.verbose:
             print(
                 f"round {rounds}: pos={pos} ctx_len={prev_ctx_len} "
-                f"draft_exec={_draft_exec_time*1000:.1f}ms target_exec={_target_exec_time*1000:.1f}ms "
+                f"draft_exec={_draft_exec_time * 1000:.1f}ms target_exec={_target_exec_time * 1000:.1f}ms "
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
         new_tokens = draft_ids[:accepted] + [target_ids[accepted]]
 
         # Truncate at EOS before updating stats, so a round that hits EOS
         # doesn't over-count tokens that never actually get emitted.
-        new_tokens, accepted = truncate_at_eos(new_tokens, accepted, eos_id)
+        new_tokens, accepted = truncate_at_eos(new_tokens, accepted, eos_ids)
         accepted_total += accepted
         emitted_total += len(new_tokens)
         generated.extend(new_tokens)
@@ -297,7 +295,7 @@ def main():
             [pending_ctx, new_hidden[:, : len(new_tokens), :].float()], dim=1
         )
 
-        if eos_id in new_tokens:
+        if eos_ids.intersection(new_tokens):
             break
 
     dt = time.time() - t0

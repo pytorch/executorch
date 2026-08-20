@@ -169,10 +169,38 @@ def apply_chat_template(
     return out.input_ids if hasattr(out, "input_ids") else out
 
 
-def get_eos_token_id(processor) -> Optional[int]:
-    """Return the EOS id, looking through a processor to its tokenizer."""
-    eos_token_id = getattr(processor, "eos_token_id", None)
-    if eos_token_id is not None:
-        return eos_token_id
-    tokenizer = getattr(processor, "tokenizer", None)
-    return getattr(tokenizer, "eos_token_id", None)
+def get_eos_token_ids(processor, model_id=None, local_files_only=False):
+    """Collect every id that should stop generation.
+
+    A checkpoint can declare several: Qwen3 stops on both ``<|im_end|>`` and
+    ``<|endoftext|>``, but only the former is ``tokenizer.eos_token_id``. The
+    rest live in generation_config, so pass ``model_id`` to pick them up.
+    """
+    eos_ids = set()
+
+    candidate = getattr(processor, "eos_token_id", None)
+    if candidate is None:
+        candidate = getattr(getattr(processor, "tokenizer", None), "eos_token_id", None)
+    eos_ids.update(_as_id_set(candidate))
+
+    if model_id is not None:
+        try:
+            from transformers import GenerationConfig
+
+            generation_config = GenerationConfig.from_pretrained(
+                model_id, local_files_only=local_files_only
+            )
+            eos_ids.update(_as_id_set(generation_config.eos_token_id))
+        except Exception as exc:
+            logger.info(f"No generation_config eos ids for {model_id}: {exc}")
+
+    return eos_ids
+
+
+def _as_id_set(value):
+    """Normalize an int / list / None token-id field into a set of ints."""
+    if value is None:
+        return set()
+    if isinstance(value, int):
+        return {value}
+    return {int(v) for v in value if v is not None}
