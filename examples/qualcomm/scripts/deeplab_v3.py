@@ -47,7 +47,7 @@ def get_dataset(data_size, dataset_dir, download):
         transform=preprocess,
         download=download,
     )
-    
+
     data_loader = torch.utils.data.DataLoader(
         dataset, shuffle=True, collate_fn=lambda batch: batch[0]
     )
