@@ -198,19 +198,28 @@ inside it.
 exported without them expects device tensors. Passing the wrong kind is a caller error, not
 something the runtime corrects, so the two are not interchangeable at run time.
 
-**From C++ it is the same contract.** With the copies skipped, build the input tensor over a
-device pointer:
+**From C++ it is the same contract.** With the copies skipped, the input has to be a tensor
+the delegate will accept as device resident. `clone_tensor_ptr_to` allocates on the device
+and copies the data across:
 
 ```cpp
-void* device = nullptr;
-cudaMalloc(&device, count * sizeof(float));
-cudaMemcpy(device, host.data(), count * sizeof(float), cudaMemcpyHostToDevice);
-
-auto input = from_blob(device, {rows, columns}, ScalarType::Float);
+auto host_input = make_tensor_ptr({rows, columns}, std::move(data));
+auto input = clone_tensor_ptr_to(host_input, DeviceType::CUDA);
 auto result = module.forward(input);
 ```
 
-With the default export, pass a host pointer instead and the runtime handles the transfer.
+`from_blob` is not enough on its own. It has no device parameter, so the tensor it returns
+is tagged CPU whatever the pointer points at, and the delegate rejects it.
+
+**How the delegate decides a tensor is device resident.** Two checks, in this order. First
+the tensor's own `device_type` has to be `CUDA`, which is metadata set by whoever built the
+tensor. Then, because that tag is only a claim, the delegate calls
+`cudaPointerGetAttributes` on the data pointer and requires the memory to really be
+`cudaMemoryTypeDevice` or `cudaMemoryTypeManaged`. A CUDA-tagged tensor backed by host
+memory is caught there rather than corrupting the run.
+
+With the default export, pass an ordinary host tensor instead and the runtime handles the
+transfer.
 
 ----
 
