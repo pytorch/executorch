@@ -121,14 +121,23 @@ def test_cuda_libraries_resolve_relatively() -> None:
         for line in output.splitlines():
             if "RPATH" in line or "RUNPATH" in line:
                 entries += line.split("[", 1)[1].rstrip("]").strip().split(":")
+        # Resolved against the library's own directory rather than pattern-matched. Accepting any
+        # entry that merely starts with $ORIGIN and mentions nvidia pins the presence of a hop, not
+        # that the hop lands anywhere: $ORIGIN/nvidia-does-not-exist satisfied the old form. A hop
+        # at the wrong depth is exactly the defect this check exists to catch.
         relative = [
             entry
             for entry in entries
             if entry.startswith("$ORIGIN") and "nvidia" in entry
+            # Stat last, so the filesystem is only touched for an entry that could match.
+            and (library.parent / entry.replace("$ORIGIN/", "").replace("$ORIGIN", "."))
+            .resolve()
+            .is_dir()
         ]
         assert relative, (
-            f"{name} links the CUDA runtime but has no relative path to the CUDA wheels "
-            f"installed beside it, so it can only resolve where the builder had a toolkit: "
+            f"{name} links the CUDA runtime but records no relative path that RESOLVES to an "
+            f"installed CUDA wheel directory, so it can only resolve where the builder had a "
+            f"toolkit: "
             f"{entries}"
         )
         print(f"✓ {name} resolves the CUDA runtime relatively ({relative[0]})")
