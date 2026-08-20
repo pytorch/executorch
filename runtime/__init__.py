@@ -303,8 +303,7 @@ class Runtime:
             debug_buffer_size: Size of the debug buffer in bytes for ETDump data.
                 Only used when enable_etdump=True. Default is 0.
             data_path: Path to a .ptd file holding data the program keeps outside the PTE,
-                such as the weights a CUDA export writes to a separate file. Omitting it for
-                such a program loads cleanly and then fails when a method runs.
+                such as the weights a CUDA export writes to a separate file.
 
         Returns:
             The loaded Program instance.
