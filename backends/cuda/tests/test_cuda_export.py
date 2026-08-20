@@ -6,6 +6,7 @@
 
 import unittest
 from typing import Tuple
+from unittest import mock
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -17,6 +18,50 @@ from torch.export import export
 
 
 class TestCudaBackendCompileOptions(unittest.TestCase):
+    def test_low_memory_triton_reduction_loads_stay_loop_scoped(self):
+        from executorch.backends.cuda.cuda_backend import (
+            _keep_triton_reduction_loads_loop_scoped,
+        )
+        from torch._inductor.codegen.triton import IndexingOptions
+
+        original_has_rmask = IndexingOptions.has_rmask
+        indexing = object.__new__(IndexingOptions)
+        with _keep_triton_reduction_loads_loop_scoped():
+            self.assertTrue(indexing.has_rmask())
+        self.assertIs(IndexingOptions.has_rmask, original_has_rmask)
+
+    def test_low_memory_autotune_rehydrates_aliased_storage_for_full_run(self):
+        from executorch.backends.cuda.cuda_backend import _compile_time_cpu_clones
+        from torch._inductor.runtime.triton_heuristics import CachingAutotuner
+
+        base = torch.empty_strided((4, 4), (4, 1))
+        view = base[:, 1:]
+        base.untyped_storage().resize_(0)
+        original_run = CachingAutotuner.run
+        test_case = self
+
+        def fake_run(_autotuner, base_arg, view_arg, *, stream):
+            test_case.assertGreater(base_arg.untyped_storage().nbytes(), 0)
+            test_case.assertEqual(
+                base_arg.untyped_storage()._cdata,
+                view_arg.untyped_storage()._cdata,
+            )
+            test_case.assertEqual(view_arg.storage_offset(), 1)
+            test_case.assertEqual(torch.count_nonzero(base_arg), 0)
+            test_case.assertEqual(stream, 123)
+            return "run-result"
+
+        CachingAutotuner.run = fake_run
+        try:
+            autotuner = object.__new__(CachingAutotuner)
+            with _compile_time_cpu_clones(torch.device("cuda")):
+                result = autotuner.run(base, view, stream=123)
+        finally:
+            CachingAutotuner.run = original_run
+
+        self.assertEqual(result, "run-result")
+        self.assertEqual(base.untyped_storage().nbytes(), 0)
+
     def test_emulate_precision_casts_compile_spec(self):
         options = CudaBackend.get_aoti_compile_options(
             [CompileSpec(key="emulate_precision_casts", value=b"OFF")]
@@ -65,6 +110,21 @@ class TestCudaExport(unittest.TestCase):
         # Skip tests if CUDA is not available
         if not torch.cuda.is_available():
             self.skipTest("CUDA is not available")
+
+    def test_rehydrated_storage_is_synchronized_before_release(self):
+        from executorch.backends.cuda.cuda_backend import _rehydrate_emptied_tensors
+
+        tensor = torch.empty(16, device="cuda")
+        tensor.untyped_storage().resize_(0)
+
+        with mock.patch.object(
+            torch.cuda, "synchronize", wraps=torch.cuda.synchronize
+        ) as synchronize:
+            with _rehydrate_emptied_tensors([tensor]):
+                tensor.zero_()
+
+        synchronize.assert_called_once_with(tensor.device)
+        self.assertEqual(tensor.untyped_storage().nbytes(), 0)
 
     def _export_to_cuda_with_lower(
         self,

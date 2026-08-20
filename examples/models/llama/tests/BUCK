@@ -20,6 +20,10 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "test_qwen3_5_attention.py",
     ],
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models/llama:llama_transformer",

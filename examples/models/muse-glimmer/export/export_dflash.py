@@ -716,7 +716,7 @@ def main() -> None:
     target_src.add_argument(
         "--target-gguf",
         default=None,
-        help="Path to target GGUF (e.g. muse-glimmer-30B-kquant-17gb.gguf).",
+        help="Path to target GGUF (e.g. Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf).",
     )
     target_src.add_argument(
         "--target-mlx",
@@ -728,7 +728,7 @@ def main() -> None:
     draft_src.add_argument(
         "--draft-gguf",
         default=None,
-        help="Path to draft DFlash GGUF (e.g. dflash-kquant.gguf).",
+        help="Path to draft DFlash GGUF (e.g. dflash-Muse-Glimmer-30B-Q4_K_M.gguf).",
     )
     draft_src.add_argument(
         "--draft-mlx",

@@ -1,0 +1,22 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+# Separate from //executorch/exir:lib because the implementation depends on a
+# concrete backend, and backends/native depends on exir:lib. Keeping this its own
+# target is what makes the graph acyclic.
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "native",
+    typing = True,
+    srcs = [
+        "__init__.py",
+        "native.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
