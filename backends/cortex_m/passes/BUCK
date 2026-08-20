@@ -37,7 +37,6 @@ fbcode_target(_kind = runtime.python_library,
         "decompose_mean_pass.py",
         "matmul_to_bmm_pass.py",
         "quantized_clamp_activation_pass.py",
-        "scratch_buffer_sizes.py",
     ],
     deps=[
         "//caffe2:torch",
@@ -47,6 +46,7 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/backends/cortex_m/ops:ops",
         "//executorch/backends/cortex_m/passes:passes_utils",
         "//executorch/backends/cortex_m/passes:replace_quant_nodes_pass",
+        "//executorch/backends/cortex_m/passes:scratch_buffer_sizes",
         "//executorch/backends/transforms:aten_to_dialect_pass",
         "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/transforms:replace_scalar_with_tensor",
@@ -55,6 +55,19 @@ fbcode_target(_kind = runtime.python_library,
         "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
         "//executorch/exir/program:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name="scratch_buffer_sizes",
+    srcs=[
+        "scratch_buffer_sizes.py",
+    ],
+    deps=[
+        "//caffe2:torch",
+        "//executorch/backends/cortex_m:cmsis_nn",
+        "//executorch/backends/cortex_m/ops:ops",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
