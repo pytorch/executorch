@@ -6,6 +6,10 @@
 
 
 import contextlib
+import copy
+import ctypes
+import functools
+import gc
 import logging
 import os
 import shutil
@@ -25,6 +29,7 @@ from executorch.backends.cuda.passes.replace_int64_floordiv import (
 from executorch.backends.cuda.triton.replacement_pass import (
     ReplaceEdgeOpWithTritonOpPass,
 )
+from executorch.exir._serialize._cord import FileBackedData
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import BackendDetails
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -58,6 +63,14 @@ _CPU_CLONE_GUARD = threading.local()
 
 def _is_cpu_clone_active() -> bool:
     return getattr(_CPU_CLONE_GUARD, "active", False)
+
+
+def _trim_host_memory() -> None:
+    gc.collect()
+    try:
+        ctypes.CDLL(None).malloc_trim(0)
+    except AttributeError:
+        pass
 
 
 @contextlib.contextmanager
@@ -102,6 +115,12 @@ def _is_emptied(x) -> bool:
         and x.numel() > 0
         and x.untyped_storage().nbytes() == 0
     )
+
+
+def _tensor_properties_for_low_memory(tensor, original):
+    if _is_cpu_clone_active() and _is_emptied(tensor):
+        return None
+    return original(tensor)
 
 
 def _required_storage_nbytes(x: torch.Tensor) -> int:
@@ -156,10 +175,14 @@ def _rehydrate_emptied_tensors(tensors):
 
 
 @contextlib.contextmanager
-def _compile_time_cpu_clones(target_device: torch.device):
+def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     """Force AOTI's mutated-buffer clones onto CPU while preserving the
     serialized constants' target device."""
-    from torch._inductor import compile_fx as _cfx, graph as _graph
+    from torch._inductor import (
+        codecache as _codecache,
+        compile_fx as _cfx,
+        graph as _graph,
+    )
     from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
     from torch._inductor.graph import GraphLowering as _GL
     from torch._inductor.runtime.triton_heuristics import CachingAutotuner as _Autotuner
@@ -168,6 +191,17 @@ def _compile_time_cpu_clones(target_device: torch.device):
     orig_codegen_device = _Cpp.codegen_device
     orig_get_const = _GL.get_original_value_of_constant
     orig_is_same = _graph.is_same_tensor
+    orig_tensor_properties = _codecache.TensorProperties
+    orig_determine_aoti_mmap_flags = _codecache.determine_aoti_mmap_flags
+
+    def _force_external_weights_for_streaming(consts_size):
+        # ``pickle_weights`` normally tells AOTI that no external binary blob
+        # exists. We materialize that pickle output as a streamed blob below,
+        # so the generated wrapper must use the matching external-weights ABI.
+        if _is_cpu_clone_active():
+            return True, False
+        return orig_determine_aoti_mmap_flags(consts_size)
+
     orig_autotuner_run = _Autotuner.run
 
     def _is_same_skip_emptied(data, value):
@@ -241,6 +275,10 @@ def _compile_time_cpu_clones(target_device: torch.device):
     _Cpp.codegen_device = _codegen_device_target_aware
     _GL.get_original_value_of_constant = _get_const_synthesize_zeros
     _graph.is_same_tensor = _is_same_skip_emptied
+    _codecache.TensorProperties = functools.partial(
+        _tensor_properties_for_low_memory, original=orig_tensor_properties
+    )
+    _codecache.determine_aoti_mmap_flags = _force_external_weights_for_streaming
     _Autotuner.run = _autotuner_run_with_rehydrated_emptied_args
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
@@ -252,6 +290,8 @@ def _compile_time_cpu_clones(target_device: torch.device):
         _Cpp.codegen_device = orig_codegen_device
         _GL.get_original_value_of_constant = orig_get_const
         _graph.is_same_tensor = orig_is_same
+        _codecache.TensorProperties = orig_tensor_properties
+        _codecache.determine_aoti_mmap_flags = orig_determine_aoti_mmap_flags
         _Autotuner.run = orig_autotuner_run
 
 
@@ -359,6 +399,41 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     if value not in ["ON", "OFF"]:
         raise ValueError(f"Invalid {spec.key}: {value}. Expected 'ON' or 'OFF'.")
     return value == "ON"
+
+
+def _write_aoti_weights_blob(weights, blob_path: str) -> None:
+    """Stream AOTI tensor storages without creating a model-sized bytes object."""
+    _trim_host_memory()
+    tensors = [tensor for tensor, _ in weights.values()]
+    all_cuda = all(tensor.is_cuda for tensor in tensors)
+    chunk_size = 8 * 1024 * 1024
+
+    with open(blob_path, "wb") as output:
+        for tensor in tensors:
+            if tensor.is_mkldnn:
+                raise RuntimeError("MKLDNN constants are not supported by CUDA AOTI")
+            storage = tensor.untyped_storage()
+            nbytes = storage.nbytes()
+            if nbytes and tensor.is_cuda:
+                byte_tensor = torch.empty(
+                    0, dtype=torch.uint8, device=tensor.device
+                ).set_(storage, 0, (nbytes,), (1,))
+                for offset in range(0, nbytes, chunk_size):
+                    cpu_chunk = byte_tensor[offset : offset + chunk_size].cpu()
+                    output.write(memoryview(cpu_chunk.numpy()))
+                del byte_tensor, cpu_chunk
+            elif nbytes:
+                raw_array = (ctypes.c_ubyte * nbytes).from_address(storage.data_ptr())
+                raw_view = memoryview(raw_array).cast("B")
+                for offset in range(0, nbytes, chunk_size):
+                    output.write(raw_view[offset : offset + chunk_size])
+                del raw_view, raw_array
+            # Match AOTInductor's binary_blob layout: CUDA-only constants are
+            # packed, while CPU/mixed constants are aligned to 64 bytes.
+            if not all_cuda and (padding := (-nbytes) % 64):
+                output.write(bytes(padding))
+            del storage
+    _trim_host_memory()
 
 
 @final
@@ -476,6 +551,81 @@ class CudaBackend(AotiBackend, BackendDetails):
         return True
 
     @classmethod
+    def load_weights_blob(
+        cls, blob_path: str, compile_specs: List[CompileSpec]
+    ) -> tuple[Any, str]:
+        """Keep low-memory CUDA weights file-backed during PTE serialization.
+
+        The streamed file has the same layout as AOTInductor's ``binary_blob``.
+        Keeping it file-backed avoids reading another model-sized copy into
+        host memory without changing its bytes.
+        """
+        if not cls._is_low_memory_mode(compile_specs):
+            return super().load_weights_blob(blob_path, compile_specs)
+        blob_data = FileBackedData.move_from(blob_path)
+        return blob_data, blob_data.sha256().hex()
+
+    @classmethod
+    def materialize_weights_blob(
+        cls, paths: Any, compile_specs: List[CompileSpec]
+    ) -> Any:
+        if not cls._is_low_memory_mode(compile_specs) or not isinstance(paths, list):
+            return paths
+
+        from torch.export.pt2_archive._package_weights import Weights
+
+        weights = [path for path in paths if isinstance(path, Weights)]
+        if not weights:
+            return paths
+        if len(weights) != 1:
+            raise RuntimeError(
+                f"Expected one CUDA AOTI weights output, got {len(weights)}"
+            )
+
+        so_path = next(
+            (
+                path
+                for path in paths
+                if isinstance(path, str) and path.endswith(".wrapper.so")
+            ),
+            None,
+        )
+        if so_path is None:
+            raise RuntimeError(f"Expected a CUDA AOTI .wrapper.so output, got {paths}")
+        blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
+        _write_aoti_weights_blob(weights[0], blob_path)
+
+        # Forcing the external-weights ABI makes Inductor emit an empty blob
+        # path alongside the Weights object. Replace that file in place and do
+        # not add a duplicate path to the returned package outputs.
+        materialized = [path for path in paths if not isinstance(path, Weights)]
+        if blob_path not in materialized:
+            materialized.append(blob_path)
+        return materialized
+
+    @classmethod
+    def copy_exported_program_for_preprocess(
+        cls, edge_program, compile_specs: List[CompileSpec]
+    ):
+        """Copy graph structure while sharing immutable tensor storage.
+
+        CUDA preprocessing replaces state-dict entries when moving them to the
+        target device; it does not mutate the source tensors.  Memoizing those
+        tensors therefore avoids a model-sized host copy for every delegated
+        method while preserving an independent graph and state-dict mapping.
+        """
+        if not cls._is_low_memory_mode(compile_specs):
+            return copy.deepcopy(edge_program)
+
+        tensor_memo = {
+            id(tensor): tensor
+            for values in (edge_program.state_dict, edge_program.constants)
+            for tensor in values.values()
+            if isinstance(tensor, torch.Tensor)
+        }
+        return copy.deepcopy(edge_program, tensor_memo)
+
+    @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
         # ROCm does not build the CUDA-only .cu fallback shims.
         if torch.version.hip is not None:
@@ -588,8 +738,13 @@ class CudaBackend(AotiBackend, BackendDetails):
             # Separate weight constants from the .so file
             "aot_inductor.package": True,
             "aot_inductor.package_constants_in_so": False,
-            # Store weight constants on disk in a binary blob
-            "aot_inductor.package_constants_on_disk_format": "binary_blob",
+            # Store weight constants on disk in a binary blob. Low-memory mode
+            # asks AOTI for a Weights object and streams the equivalent blob in
+            # materialize_weights_blob; its context also forces the generated
+            # wrapper to use the required external-weights ABI.
+            "aot_inductor.package_constants_on_disk_format": cls._weights_format(
+                compile_specs
+            ),
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # Use TRITON for GEMM (General Matrix Multiply) operations tuning only to avoid using operators in libtorch
@@ -696,6 +851,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                     stack.enter_context(
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )
+                    _trim_host_memory()
                 yield
 
         return _combined()
@@ -707,6 +863,14 @@ class CudaBackend(AotiBackend, BackendDetails):
             if spec.key == "low_memory_mode":
                 return spec.value.decode("utf-8").upper() == "ON"
         return False
+
+    @classmethod
+    def _weights_format(cls, compile_specs: List[CompileSpec]) -> str:
+        return (
+            "pickle_weights"
+            if cls._is_low_memory_mode(compile_specs)
+            else "binary_blob"
+        )
 
     @classmethod
     def move_program_to_device(
