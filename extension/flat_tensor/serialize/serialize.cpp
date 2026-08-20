@@ -191,7 +191,8 @@ runtime::Error save_ptd(
   i = tensor_map.size();
   for (const auto& [name, tensor] : tensor_map) {
     out.write(
-        reinterpret_cast<const char*>(tensor.data_ptr()), tensor.nbytes());
+        reinterpret_cast<const char*>(tensor.const_data_ptr()),
+        tensor.nbytes());
     // Don't pad last entry.
     if (i != 1) {
       write_nulls(out, padding_required(tensor.nbytes(), tensor_alignment));
