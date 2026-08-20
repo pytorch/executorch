@@ -772,14 +772,43 @@ if(_C_LIBRARY)
   # defined from 3.28. Below that the package offers no imported targets at all
   # and a consumer links through EXECUTORCH_LIBRARIES, so the aliases follow the
   # same contract rather than aborting the configure of a complete install.
-  if(TARGET executorch::runtime AND NOT TARGET executorch::_portable_lib)
-    add_library(executorch::_portable_lib ALIAS executorch::runtime)
-  endif()
-  # A project built against an earlier wheel links this bare name, which that
-  # wheel defined and advertised through EXECUTORCH_LIBRARIES. Same aliasing,
-  # same reason.
-  if(TARGET executorch::runtime AND NOT TARGET _portable_lib)
-    add_library(_portable_lib ALIAS executorch::runtime)
+  if(TARGET executorch::runtime)
+    if(NOT TARGET executorch::_portable_lib)
+      add_library(executorch::_portable_lib ALIAS executorch::runtime)
+    endif()
+    # A project built against an earlier wheel links this bare name, which that
+    # wheel defined and advertised through EXECUTORCH_LIBRARIES.
+    if(NOT TARGET _portable_lib)
+      add_library(_portable_lib ALIAS executorch::runtime)
+    endif()
+  else()
+    # Below 3.28 there is no executorch::runtime to alias, and an ALIAS to a
+    # missing target is a hard error, so these cannot simply be guarded away: an
+    # unknown bare name becomes -l_portable_lib and the consumer dies at link
+    # with nothing said during configure. Define real imported targets instead,
+    # carrying the same interface this path publishes through the variables.
+    foreach(_compat_target executorch::_portable_lib _portable_lib)
+      if(NOT TARGET ${_compat_target})
+        add_library(${_compat_target} INTERFACE IMPORTED)
+        set_target_properties(
+          ${_compat_target}
+          PROPERTIES INTERFACE_LINK_LIBRARIES "${EXECUTORCH_LIBRARIES}"
+                     INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
+                     INTERFACE_COMPILE_DEFINITIONS
+                     "${EXECUTORCH_COMPILE_DEFINITIONS}"
+                     # The standard too, not only the paths and definitions.
+                     # Without it a
+                     # consumer linking this target compiles the vendored c10
+                     # headers with
+                     # whatever its compiler defaults to, which is the case the
+                     # variable
+                     # above exists to cover.
+                     INTERFACE_COMPILE_FEATURES
+                     "cxx_std_${EXECUTORCH_CXX_STANDARD}"
+        )
+      endif()
+    endforeach()
+    unset(_compat_target)
   endif()
 endif()
 

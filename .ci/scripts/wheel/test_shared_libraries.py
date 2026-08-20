@@ -969,12 +969,13 @@ _OWNED_COMPONENTS = (
     ),
 )
 
-# The one component that legitimately exists twice. The quantized kernels are compiled into the runtime
-# library and again into the library torch loads at export time, because each side registers into a
-# table the other never reads, so a second definer there is expected rather than a fault. A process
-# that loads both used to abort on the second registration, which is why this is named per component and
-# the check stays armed for every other component, where a second definer means two registries or two thread
-# pools in one process.
+# The one component that legitimately exists twice. The code generator compiles the quantized kernel
+# bodies into the library torch loads at export time, for the dispatcher half, and they are also in the
+# runtime library that owns the ExecuTorch registrar. Measured on a shipped wheel: both define
+# quantize_per_tensor_out, neither carries an ExecuTorch registrar of its own, and loading both in one
+# process exits cleanly. So the duplicate here is a build artifact of the two registration mechanisms,
+# not two registries. Named per component rather than switched off globally, because for every other
+# component a second definer does mean two registries or two thread pools in one process.
 _COMPONENTS_WITH_AN_EXPORT_COPY = frozenset({"set of quantized kernels"})
 
 
