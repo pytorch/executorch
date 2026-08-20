@@ -130,6 +130,7 @@ instead:
 
 ```python
 from executorch.exir import ExecutorchBackendConfig
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.propagate_device_config import PropagateDeviceConfig
 
 exec_program = et_program.to_executorch(
@@ -139,6 +140,13 @@ exec_program = et_program.to_executorch(
             skip_d2h_for_method_outputs=True,
         ),
         enable_non_cpu_memory_planning=True,
+        # Required alongside the skips. Memory planning reserves a buffer for graph inputs and
+        # outputs by default, and the runtime fills a planned input by copying the caller's
+        # memory into that buffer, which reintroduces the copy you just asked to skip. On device
+        # memory that copy is a host memcpy into a device pointer, which is undefined.
+        memory_planning_pass=MemoryPlanningPass(
+            alloc_graph_input=False, alloc_graph_output=False
+        ),
     )
 )
 ```
@@ -156,18 +164,35 @@ also on the GPU.
 **The two flags are independent.** Skip only the input copies if you produce data on the GPU but
 want results back on the host, or only the output copies for the reverse.
 
-**Both flags require `enable_non_cpu_memory_planning=True`.** Setting one without it raises a
-`ValueError`, because copy insertion happens during device-aware memory planning. The error
-message says as much.
+**Both flags need `enable_non_cpu_memory_planning=True`.** It defaults to `True`, so leaving it
+out works, and the snippet above sets it explicitly only to make the requirement visible. Setting
+it to `False` while asking for either skip raises a `ValueError`, because copy insertion happens
+during device-aware memory planning.
 
-**You can choose per method.** Each flag also accepts a dict keyed by method name, so one
-program can have a GPU-resident fast path and a host-copying convenience path:
+**Both flags also need unplanned graph inputs and outputs**, via
+`MemoryPlanningPass(alloc_graph_input=False, alloc_graph_output=False)` as shown above. Without
+it the program still reserves its own buffer and the runtime copies into it, so the copy comes
+back at run time. The runtime rejects that case rather than performing a host copy into device
+memory.
+
+**Per-method selection is on the outer config, not on the flags.** Pass a dict of
+`PropagateDeviceConfig` keyed by method name:
 
 ```python
-PropagateDeviceConfig(
-    skip_h2d_for_method_inputs={"forward": True, "forward_from_host": False},
+ExecutorchBackendConfig(
+    propagate_device_config={
+        "forward": PropagateDeviceConfig(
+            skip_h2d_for_method_inputs=True, skip_d2h_for_method_outputs=True
+        ),
+        "forward_from_host": PropagateDeviceConfig(),
+    },
+    ...
 )
 ```
+
+Do not pass a dict to `skip_h2d_for_method_inputs` itself. The pass reads that field for
+truthiness, so any non-empty dict enables the skip for every method regardless of the values
+inside it.
 
 **The choice is baked into the `.pte`.** A program exported with copies expects host tensors; one
 exported without them expects device tensors. Passing the wrong kind is a caller error, not
