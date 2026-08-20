@@ -26,9 +26,6 @@ The properties verified here are the ones the split exists to create:
 """
 
 import importlib.metadata
-
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
 import importlib.util
 import json
 import os
@@ -39,6 +36,9 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 # Registry entry points. A second definer of any of these means a second
 # process-wide registry.
