@@ -131,7 +131,7 @@ class Qwen35AttentionTest(unittest.TestCase):
         # the decode (T == 1) and prefill (T > 1) routes.
         from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
-        op = torch.ops.llama.channelwise_gated_delta_rule.default
+        op = torch.ops.llama.gated_delta_rule.default
 
         for seq_len in (1, 5, 40):
             with self.subTest(seq_len=seq_len):
