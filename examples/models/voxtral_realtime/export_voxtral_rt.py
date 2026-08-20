@@ -562,6 +562,45 @@ def lower_to_executorch(
 # ---------------------------------------------------------------------------
 
 
+def _validate_rocm_args(parser, args):
+    if torch.version.hip is None:
+        parser.error("--backend=rocm requires a ROCm PyTorch build")
+    if not torch.cuda.is_available():
+        parser.error("--backend=rocm requires a visible AMD GPU")
+    if args.dtype != "bf16":
+        parser.error("--backend=rocm currently requires --dtype=bf16")
+    if args.qlinear not in (None, "4w"):
+        parser.error("ROCm decoder quantization currently supports only 4w")
+    if args.qlinear_encoder not in (None, "4w"):
+        parser.error("ROCm encoder quantization currently supports only 4w")
+    if args.qembedding not in (None, "8w"):
+        parser.error("ROCm embedding quantization currently supports only 8w")
+    if (
+        args.qlinear_packing_format == "tile_packed_to_4d"
+        or args.qlinear_encoder_packing_format == "tile_packed_to_4d"
+    ):
+        parser.error(
+            "tile_packed_to_4d requires a CUDA-only int4 fallback; "
+            "omit the packing format for ROCm"
+        )
+    if args.rocm_packed_matvec and args.qlinear != "4w":
+        parser.error("--rocm-packed-matvec requires --qlinear=4w")
+
+
+def _validate_export_args(parser, args, backend_for_export):
+    if args.backend == "rocm":
+        _validate_rocm_args(parser, args)
+    elif args.rocm_packed_matvec:
+        parser.error("--rocm-packed-matvec requires --backend=rocm")
+
+    if args.qlinear == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
+    if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
+        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
+    if args.sliding_window is not None and not args.streaming:
+        parser.error("--sliding-window only applies to --streaming mode")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export Voxtral Realtime to ExecuTorch"
@@ -691,40 +730,7 @@ def main():
     backend_for_export = (
         "cuda" if args.backend in ("cuda-windows", "rocm") else args.backend
     )
-
-    if args.backend == "rocm":
-        if torch.version.hip is None:
-            parser.error("--backend=rocm requires a ROCm PyTorch build")
-        if not torch.cuda.is_available():
-            parser.error("--backend=rocm requires a visible AMD GPU")
-        if args.dtype != "bf16":
-            parser.error("--backend=rocm currently requires --dtype=bf16")
-        if args.qlinear not in (None, "4w"):
-            parser.error("ROCm decoder quantization currently supports only 4w")
-        if args.qlinear_encoder not in (None, "4w"):
-            parser.error("ROCm encoder quantization currently supports only 4w")
-        if args.qembedding not in (None, "8w"):
-            parser.error("ROCm embedding quantization currently supports only 8w")
-        if (
-            args.qlinear_packing_format == "tile_packed_to_4d"
-            or args.qlinear_encoder_packing_format == "tile_packed_to_4d"
-        ):
-            parser.error(
-                "tile_packed_to_4d requires a CUDA-only int4 fallback; "
-                "omit the packing format for ROCm"
-            )
-        if args.rocm_packed_matvec and args.qlinear != "4w":
-            parser.error("--rocm-packed-matvec requires --qlinear=4w")
-    elif args.rocm_packed_matvec:
-        parser.error("--rocm-packed-matvec requires --backend=rocm")
-
-    # Validate fpa4w quantization requires Metal backend
-    if args.qlinear == "fpa4w" and backend_for_export != "metal":
-        parser.error("--qlinear=fpa4w can only be used with --backend=metal")
-    if args.qlinear_encoder == "fpa4w" and backend_for_export != "metal":
-        parser.error("--qlinear-encoder=fpa4w can only be used with --backend=metal")
-    if args.sliding_window is not None and not args.streaming:
-        parser.error("--sliding-window only applies to --streaming mode")
+    _validate_export_args(parser, args, backend_for_export)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
