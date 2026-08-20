@@ -52,6 +52,7 @@ def define_arm_tests():
     test_files += [
         "quantizer/test_generic_annotater.py",
         "quantizer/test_uint8_io_quantization.py",
+        "quantizer/test_vgf_snorm_quantization.py",
     ]
 
     # Misc tests
@@ -76,10 +77,6 @@ def define_arm_tests():
         # "misc/test_dim_order.py", (TODO - T238390249)
     ]
 
-    # Deprecation tests
-    test_files += [
-        "deprecation/test_arm_compile_spec_deprecation.py",
-    ]
 
     # These import the top-level executorch.backends.arm package, whose
     # __init__ eagerly imports torch. Pulling that into pytest collection fails
@@ -87,6 +84,7 @@ def define_arm_tests():
     # surface is covered by a dedicated backward-compatibility CI job.
     if runtime.is_oss:
         test_files += [
+            "misc/test_docgen_op_support.py",
             "misc/test_public_api_manifest.py",
             "misc/test_validate_public_api_manifest.py",
         ]
@@ -149,7 +147,9 @@ def define_arm_tests():
                 # __init__ (and its torch import) into pytest collection.
                 "//executorch/backends/arm/scripts/public_api_manifest:public_api_manifest",
                 "//executorch/backends/arm:public_api",
-            ] if runtime.is_oss else []),
+            ] if runtime.is_oss else []) + ([
+                "//executorch/backends/arm/scripts/docgen:generate_vgf_op_support",
+            ] if test_file == "misc/test_docgen_op_support.py" else []),
         )
 
     if not runtime.is_oss and _ENABLE_VGF:

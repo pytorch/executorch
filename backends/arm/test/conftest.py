@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 """Pytest hooks and fixtures for the Arm test suite."""
 
+from __future__ import annotations
+
 import logging
 import os
 import random
@@ -11,11 +13,8 @@ import sys
 from typing import Any
 
 import pytest
-from executorch.backends.arm.vgf.model_converter import (
-    get_model_converter_minimum_version_failure_reason,
-    get_model_converter_version_text,
-    MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
-)
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 # ==== Pytest hooks ====
@@ -26,6 +25,8 @@ def pytest_configure(config):
 
     if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
         pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+    if getattr(config.option, "dump_artifacts", False) and config.option.dump_artifacts:
+        pytest._test_options["dump_artifacts"] = config.option.dump_artifacts  # type: ignore[attr-defined]
 
     logging.basicConfig(stream=sys.stdout)
     seed, seed_label = _setup_random_seed()
@@ -64,6 +65,20 @@ def pytest_collection_modifyitems(config, items):
     if not _has_rife_vgf_quant_tests(items):
         return
 
+    try:
+        from executorch.backends.arm.vgf.model_converter import (
+            get_model_converter_minimum_version_failure_reason,
+            get_model_converter_version_text,
+            MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        )
+    except Exception:
+        logger.warning(
+            "Could not import the model-converter version helpers; leaving the "
+            "RIFE VGF quant tests unmarked.",
+            exc_info=True,
+        )
+        return
+
     version_text = get_model_converter_version_text()
     if version_text is None:
         return
@@ -91,6 +106,12 @@ def pytest_addoption(parser):
         "--llama_inputs",
         nargs="+",
         help="List of two files. Firstly .pt file. Secondly .json",
+    )
+    try_addoption(
+        "--dump_artifacts",
+        dest="dump_artifacts",
+        metavar="DIR",
+        help="Dump Arm test artifacts into DIR/<test-name>.",
     )
 
 
@@ -160,7 +181,6 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
     RuntimeError instead of returning False.
 
     """
-
     if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:

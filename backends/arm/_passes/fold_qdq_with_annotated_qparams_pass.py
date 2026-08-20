@@ -405,11 +405,13 @@ class FoldAndAnnotateQParamsPass(ArmPass):
 
             input_qparams: dict[int, QuantArgs] = {}
             input_nodes_to_remove: dict[int, set[Node]] = {}
+            input_nodes_seen: set[Node] = set()
             for i, arg in enumerate(n.args):
                 qparams, nodes_to_remove = self._extract_arg_input_params(arg)
                 if qparams is not None:
                     input_qparams[i] = qparams
-                    input_nodes_to_remove[i] = nodes_to_remove
+                    input_nodes_to_remove[i] = nodes_to_remove - input_nodes_seen
+                    input_nodes_seen.update(nodes_to_remove)
 
             preserve_qdq = self._has_partial_binary_tensor_qdq_inputs(n, input_qparams)
             graph_modified = graph_modified or not preserve_qdq

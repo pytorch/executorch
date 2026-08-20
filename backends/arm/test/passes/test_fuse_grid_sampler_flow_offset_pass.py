@@ -13,6 +13,14 @@ from unittest.mock import Mock
 import pytest
 import torch
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    get_symmetric_quantization_config,
+)
+from executorch.backends.arm.quantizer.quantization_config import (
+    _is_canonical_flow_offset_grid_sampler,
+    VGFQuantizationConfig,
+)
 from executorch.backends.arm.vgf._passes import fuse_grid_sampler_flow_offset
 from executorch.backends.arm.vgf._passes.fuse_grid_sampler_flow_offset import (
     _match_flow_offset_grid,
@@ -28,6 +36,10 @@ from executorch.backends.arm.vgf.shaders.grid_sampler import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Graph
+from torchao.quantization.pt2e.quantizer import (
+    FixedQParamsQuantizationSpec,
+    QuantizationSpec,
+)
 
 
 def _build_grid_axis(
@@ -198,6 +210,96 @@ def _arm_tensor_glslc():
         )
     if result.returncode != 0:
         pytest.skip("glslc does not support GL_ARM_tensors")
+
+
+def _build_aten_flow_offset_grid_sampler(
+    *,
+    padding=1,
+    height=8,
+    width=12,
+    image_shape=None,
+    flow_shape=None,
+    output_shape=None,
+    reverse_add_operands=False,
+    add_alpha=None,
+    slice_step=None,
+    linspace_dtype=None,
+):
+    graph = Graph()
+    image = graph.placeholder("image")
+    image.meta["val"] = torch.empty(image_shape or (1, 4, height, width))
+    flow = graph.placeholder("flow")
+    flow.meta["val"] = torch.empty(flow_shape or (1, 4, height, width))
+
+    linspace_kwargs = {} if linspace_dtype is None else {"dtype": linspace_dtype}
+
+    horizontal = graph.call_function(
+        torch.ops.aten.linspace.default,
+        args=(-1.0, 1.0, width),
+        kwargs=linspace_kwargs,
+    )
+    horizontal = graph.call_function(
+        torch.ops.aten.view.default,
+        args=(horizontal, [1, 1, 1, width]),
+    )
+    horizontal = graph.call_function(
+        torch.ops.aten.expand.default,
+        args=(horizontal, [1, -1, height, -1]),
+    )
+    vertical = graph.call_function(
+        torch.ops.aten.linspace.default,
+        args=(-1.0, 1.0, height),
+        kwargs=linspace_kwargs,
+    )
+    vertical = graph.call_function(
+        torch.ops.aten.view.default,
+        args=(vertical, [1, 1, height, 1]),
+    )
+    vertical = graph.call_function(
+        torch.ops.aten.expand.default,
+        args=(vertical, [1, -1, -1, width]),
+    )
+    base_grid = graph.call_function(
+        torch.ops.aten.cat.default,
+        args=([horizontal, vertical], 1),
+    )
+    base_grid.meta["val"] = torch.empty(1, 2, height, width)
+    flow_slice = graph.call_function(
+        torch.ops.aten.slice.Tensor,
+        args=(flow, 1, 0, 2),
+        kwargs={} if slice_step is None else {"step": slice_step},
+    )
+    add_args = (
+        (flow_slice, base_grid) if reverse_add_operands else (base_grid, flow_slice)
+    )
+    grid = graph.call_function(
+        torch.ops.aten.add.Tensor,
+        args=add_args,
+        kwargs={} if add_alpha is None else {"alpha": add_alpha},
+    )
+    grid = graph.call_function(
+        torch.ops.aten.permute.default,
+        args=(grid, [0, 2, 3, 1]),
+    )
+    grid_sampler = graph.call_function(
+        torch.ops.aten.grid_sampler.default,
+        args=(image, grid, 0, padding, True),
+    )
+    grid_sampler.meta["val"] = torch.empty(
+        output_shape or tuple(image.meta["val"].shape)
+    )
+    return grid_sampler, image
+
+
+def _vgf_quantization_config(config=None):
+    config = config or get_symmetric_quantization_config()
+    return VGFQuantizationConfig(
+        config.input_activation,
+        config.output_activation,
+        config.weight,
+        config.bias,
+        config.label,
+    )
 
 
 @pytest.mark.parametrize(
@@ -533,3 +635,81 @@ def test_build_flow_offset_grid_sampler_payload_rejects_invalid_contract(
 ):
     with pytest.raises(ValueError, match=error):
         _build_payload(**overrides)
+
+
+def test_vgf_quantization_uses_snorm_safe_observed_qparams_for_flow_offset_sampler():
+    grid_sampler, image = _build_aten_flow_offset_grid_sampler()
+    config = _vgf_quantization_config()
+
+    assert _is_canonical_flow_offset_grid_sampler(grid_sampler)
+    input_qspec = config.get_input_act_qspec(grid_sampler, image)
+    output_qspec = config.get_output_act_qspec(grid_sampler)
+    for qspec, configured_qspec in (
+        (input_qspec, config.input_activation),
+        (output_qspec, config.output_activation),
+    ):
+        assert isinstance(qspec, QuantizationSpec)
+        assert isinstance(configured_qspec, QuantizationSpec)
+        assert qspec.observer_or_fake_quant_ctr == (
+            configured_qspec.observer_or_fake_quant_ctr
+        )
+        assert qspec.quant_min == -127
+        assert qspec.quant_max == 127
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({}, id="canonical"),
+        pytest.param({"image_shape": (1, 3, 8, 12)}, id="three-channel-image"),
+        pytest.param({"reverse_add_operands": True}, id="reversed-add"),
+        pytest.param({"add_alpha": 1}, id="explicit-unit-alpha"),
+        pytest.param({"slice_step": 1}, id="explicit-unit-slice-step"),
+    ],
+)
+def test_vgf_quantization_matches_supported_flow_offset_variants(kwargs):
+    grid_sampler, _ = _build_aten_flow_offset_grid_sampler(**kwargs)
+
+    assert _is_canonical_flow_offset_grid_sampler(grid_sampler)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"padding": 0}, id="zero-padding"),
+        pytest.param({"add_alpha": 2}, id="non-unit-add-alpha"),
+        pytest.param({"slice_step": 2}, id="non-unit-slice-step"),
+        pytest.param({"linspace_dtype": torch.int8}, id="integer-linspace"),
+        pytest.param({"height": 1}, id="singleton-height"),
+        pytest.param({"width": 1}, id="singleton-width"),
+        pytest.param({"flow_shape": (1, 4)}, id="rank-two-flow"),
+        pytest.param({"flow_shape": (1, 4, 8)}, id="rank-three-flow"),
+        pytest.param({"flow_shape": (1, 4, 8, 12, 1)}, id="rank-five-flow"),
+        pytest.param({"image_shape": (2, 4, 8, 12)}, id="batched-image"),
+        pytest.param({"image_shape": (1, 2, 8, 12)}, id="two-channel-image"),
+        pytest.param({"image_shape": (1, 4, 7, 12)}, id="different-image-shape"),
+        pytest.param({"output_shape": (1, 4, 7, 12)}, id="different-output-shape"),
+    ],
+)
+def test_vgf_quantization_keeps_fixed_qparams_for_unsupported_variants(kwargs):
+    grid_sampler, image = _build_aten_flow_offset_grid_sampler(**kwargs)
+    config = _vgf_quantization_config()
+
+    assert not _is_canonical_flow_offset_grid_sampler(grid_sampler)
+    assert isinstance(
+        config.get_input_act_qspec(grid_sampler, image),
+        FixedQParamsQuantizationSpec,
+    )
+    assert isinstance(
+        config.get_output_act_qspec(grid_sampler),
+        FixedQParamsQuantizationSpec,
+    )
+
+
+def test_vgf_quantization_leaves_a16w8_flow_offset_sampler_unquantized():
+    grid_sampler, image = _build_aten_flow_offset_grid_sampler()
+    config = _vgf_quantization_config(get_symmetric_a16w8_quantization_config())
+
+    assert _is_canonical_flow_offset_grid_sampler(grid_sampler)
+    assert config.get_input_act_qspec(grid_sampler, image) is None
+    assert config.get_output_act_qspec(grid_sampler) is None

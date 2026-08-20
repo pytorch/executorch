@@ -273,7 +273,7 @@ def test_collection_hook_skips_converter_probe_when_no_rife_vgf_quant(monkeypatc
     def fail_probe():
         raise AssertionError("converter probe should not run")
 
-    monkeypatch.setattr(arm_conftest, "get_model_converter_version_text", fail_probe)
+    monkeypatch.setattr(model_converter, "get_model_converter_version_text", fail_probe)
 
     arm_conftest.pytest_collection_modifyitems(
         None,

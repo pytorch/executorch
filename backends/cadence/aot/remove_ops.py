@@ -24,6 +24,9 @@ from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransf
 from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
     RemovePermutesAroundElementwiseOps as _SharedRemovePermutesAroundElementwiseOps,
 )
+from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
+    ReplaceSqueezeAndUnsqueezeWithViewPass as _SharedReplaceSqueezeAndUnsqueezeWithViewPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from executorch.exir.pass_base import (
@@ -590,6 +593,12 @@ class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
         return True
 
 
+class ReplaceSqueezeAndUnsqueezeWithViewPassImported(
+    _SharedReplaceSqueezeAndUnsqueezeWithViewPass
+):
+    pass
+
+
 class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
     def __init__(self) -> None:
         super().__init__(
@@ -840,6 +849,9 @@ class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
 
 class CommonRemovePasses:
     passes: List[Type[ExportPass]] = [
+        # Canonicalise squeeze/unsqueeze to view_copy first: the nop-view and
+        # permute passes below both reason about view_copy only.
+        ReplaceSqueezeAndUnsqueezeWithViewPassImported,
         RemoveAliasCopyOpPass,
         RemoveNopExpandOpPass,
         RemoveNopSliceOrViewOpPass,
