@@ -14,7 +14,7 @@
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/runtime/core/error.h>
 
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <gtest/gtest.h>
 
 #include <memory>

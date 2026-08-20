@@ -17,6 +17,9 @@ from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops impor
     FuseCascadedTransposeOrPermuteOps,
 )
 from executorch.backends.transforms.fuse_cascaded_view_ops import FuseCascadedViewOps
+from executorch.backends.transforms.fuse_transpose_or_permute_op_pairs_pass import (
+    FuseTransposeOrPermuteOpPairsPass,
+)
 from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
     PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
 )
@@ -549,6 +552,191 @@ class PostponePermuteBelowSqueezeViewTest(unittest.TestCase):
         targets = get_compute_nodes(result.graph_module)
         self.assertEqual(targets[0], exir_ops.edge.aten.view_copy.default)
         self.assertEqual(targets[1], exir_ops.edge.aten.permute_copy.default)
+
+
+class FuseTransposeOrPermuteOpPairsTest(unittest.TestCase):
+    def test_per_tensor_qdq_is_bypassed(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    args=(to_nhwc, 0.25, 0, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+                before = copy.deepcopy(graph_module)
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertTrue(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    0,
+                )
+                validate_numerics(
+                    before,
+                    result.graph_module,
+                    [x_data],
+                    "FuseTransposeOrPermuteOpPairsPass",
+                )
+
+    def test_per_channel_qdq_is_not_bypassed_without_axis_remap(self) -> None:
+        for op, x_data in (
+            (
+                exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+                torch.randn(1, 2, 3, 4),
+            ),
+            (
+                exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+                torch.randint(-128, 127, (1, 2, 3, 4), dtype=torch.int8),
+            ),
+        ):
+            with self.subTest(op=op):
+                builder = GraphBuilder()
+                x = builder.placeholder("x", x_data)
+                scales = builder.placeholder("scales", torch.tensor([0.25, 0.5]))
+                zero_points = builder.placeholder(
+                    "zero_points", torch.tensor([0, 0], dtype=torch.int64)
+                )
+                to_nhwc = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(x, [0, 2, 3, 1]),
+                )
+                qdq = builder.call_operator(
+                    op=op,
+                    # NHWC axis 3 would need to become NCHW axis 1 if the
+                    # surrounding permutes were removed.
+                    args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+                )
+                to_nchw = builder.call_operator(
+                    op=exir_ops.edge.aten.permute_copy.default,
+                    args=(qdq, [0, 3, 1, 2]),
+                )
+                builder.output([to_nchw])
+                graph_module = builder.get_graph_module()
+                before = copy.deepcopy(graph_module)
+
+                result = cast(
+                    PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module)
+                )
+
+                self.assertFalse(result.modified)
+                self.assertEqual(
+                    count_node(
+                        result.graph_module, exir_ops.edge.aten.permute_copy.default
+                    ),
+                    2,
+                )
+                validate_numerics(
+                    before,
+                    result.graph_module,
+                    [x_data, torch.tensor([0.25, 0.5]), torch.tensor([0, 0])],
+                    "FuseTransposeOrPermuteOpPairsPass",
+                )
+
+    def test_per_channel_qdq_chain_is_not_bypassed(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        scales_data = torch.tensor([0.25, 0.5])
+        zero_points_data = torch.tensor([0, 0], dtype=torch.int64)
+        x = builder.placeholder("x", x_data)
+        scales = builder.placeholder("scales", scales_data)
+        zero_points = builder.placeholder("zero_points", zero_points_data)
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        quantize = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+            args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+        )
+        dequantize = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+            args=(quantize, scales, zero_points, 3, -128, 127, torch.int8),
+        )
+        to_nchw = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(dequantize, [0, 3, 1, 2]),
+        )
+        builder.output([to_nchw])
+        graph_module = builder.get_graph_module()
+        before = copy.deepcopy(graph_module)
+
+        result = cast(PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            2,
+        )
+        validate_numerics(
+            before,
+            result.graph_module,
+            [x_data, scales_data, zero_points_data],
+            "FuseTransposeOrPermuteOpPairsPass",
+        )
+
+    def test_per_channel_branch_blocks_shared_permute_fusion(self) -> None:
+        builder = GraphBuilder()
+        x_data = torch.randn(1, 2, 3, 4)
+        scales_data = torch.tensor([0.25, 0.5])
+        zero_points_data = torch.tensor([0, 0], dtype=torch.int64)
+        x = builder.placeholder("x", x_data)
+        scales = builder.placeholder("scales", scales_data)
+        zero_points = builder.placeholder("zero_points", zero_points_data)
+        to_nhwc = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 2, 3, 1]),
+        )
+        per_tensor = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(to_nhwc, 0.25, 0, -128, 127, torch.int8),
+        )
+        per_channel = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+            args=(to_nhwc, scales, zero_points, 3, -128, 127, torch.int8),
+        )
+        per_tensor_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(per_tensor, [0, 3, 1, 2]),
+        )
+        per_channel_out = builder.call_operator(
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(per_channel, [0, 3, 1, 2]),
+        )
+        builder.output([per_tensor_out, per_channel_out])
+        graph_module = builder.get_graph_module()
+
+        result = cast(PassResult, FuseTransposeOrPermuteOpPairsPass()(graph_module))
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            count_node(result.graph_module, exir_ops.edge.aten.permute_copy.default),
+            3,
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────

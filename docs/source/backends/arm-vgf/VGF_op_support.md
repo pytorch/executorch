@@ -27,11 +27,11 @@ Total supported PyTorch APIs: **153**.
 | `torch.asinh` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.atan` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.atanh` | FP, INT | `FP32`, `INT8` | 8x8 |
-| `torch.batch_norm` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.batch_norm` | FP | `FP32` | - |
 | `torch.bitwise_and` / `&` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.bitwise_left_shift` / `<<` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.bitwise_not` / `~` | FP, INT | `FP32`, `INT8`, `BOOL` | 8x8 |
-| `torch.bitwise_or` / `|` | FP, INT | `FP32`, `INT8` | 8x8 |
+| `torch.bitwise_or` / `\|` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.bitwise_right_shift` / `>>` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.bitwise_xor` / `^` | FP, INT | `FP32`, `INT8` | 8x8 |
 | `torch.bmm` | FP, INT | `FP32`, `INT8` | 8x8 |

@@ -2902,19 +2902,20 @@ class Linear(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(3, 512),)
+        input_shapes = [(3, 512), (3, 3, 512), (3, 3, 3, 512)]
         biases = [True, False]
-        for use_bias in biases:
-            with subtests.test(msg=f"use_bias:{use_bias}"):
-                with expected as metrics:
-                    export_and_verify(
-                        module=__class__(use_bias=use_bias),
-                        inputs=inputs,
-                        qnn_config=qnn_config,
-                        quantizer=quantizer,
-                        compile_specs=compile_spec,
-                        metrics=metrics,
-                    )
+        for input_shape in input_shapes:
+            for use_bias in biases:
+                with subtests.test(msg=f"rank:{len(input_shape)}, use_bias:{use_bias}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
 
 
 class LinearNonConstantWeight(torch.nn.Module):
@@ -2942,19 +2943,48 @@ class LinearNonConstantWeight(torch.nn.Module):
     @staticmethod
     @unpack_fixtures
     def test(subtests, qnn_config, quantizer, compile_spec, expected):
-        inputs = (torch.randn(3, 512),)
+        input_shapes = [(3, 512), (3, 3, 512), (3, 3, 3, 512)]
         biases = [True, False]
-        for use_bias in biases:
-            with subtests.test(msg=f"use_bias:{use_bias}"):
-                with expected as metrics:
-                    export_and_verify(
-                        module=__class__(use_bias=use_bias),
-                        inputs=inputs,
-                        qnn_config=qnn_config,
-                        quantizer=quantizer,
-                        compile_specs=compile_spec,
-                        metrics=metrics,
-                    )
+        for input_shape in input_shapes:
+            for use_bias in biases:
+                with subtests.test(msg=f"rank:{len(input_shape)}, use_bias:{use_bias}"):
+                    with expected as metrics:
+                        export_and_verify(
+                            module=__class__(use_bias=use_bias),
+                            inputs=(torch.randn(input_shape),),
+                            qnn_config=qnn_config,
+                            quantizer=quantizer,
+                            compile_specs=compile_spec,
+                            metrics=metrics,
+                        )
+
+
+class LinearSharedWeight(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.shared_weight_0 = torch.nn.Parameter(torch.randn(32, 512))
+        self.shared_weight_1 = torch.nn.Parameter(torch.randn(32, 512))
+
+    def forward(self, x, y):
+        x_0 = torch.nn.functional.linear(x, self.shared_weight_0)
+        y_0 = torch.nn.functional.linear(y, self.shared_weight_0)
+        x_1 = torch.nn.functional.linear(x, self.shared_weight_1)
+        y_1 = torch.nn.functional.linear(y, self.shared_weight_1)
+        return (x_0 + y_0) + (x_1 + y_1)
+
+    @staticmethod
+    @unpack_fixtures
+    def test(qnn_config, quantizer, compile_spec, expected):
+        inputs = (torch.randn(3, 512), torch.randn(3, 512))
+        with expected as metrics:
+            export_and_verify(
+                module=__class__(),
+                inputs=inputs,
+                qnn_config=qnn_config,
+                quantizer=quantizer,
+                compile_specs=compile_spec,
+                metrics=metrics,
+            )
 
 
 class Log(torch.nn.Module):
