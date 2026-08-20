@@ -584,13 +584,15 @@ _executorch_define_component(kernels_optimized executorch_kernels_optimized)
 # The quantized kernels, optional in the same way: a wheel built without them
 # simply has no such library and the component is not defined.
 #
-# Opt in rather than part of the aggregate. The export-time plugin that
-# executorch.kernels.quantized loads registers the same operator names, and the
-# runtime stops on a repeat registration rather than choosing one, so a process
-# holding both dies. Measured: linking this library and importing that module in
-# either order aborts with "Re-registering quantized_decomposed::add.out". None
-# of the other shipped components collide this way, so only this one is held
-# back, and a consumer that wants it names it.
+# Opt in rather than part of the aggregate. The code generator compiles these
+# kernel bodies into the export-time plugin that executorch.kernels.quantized
+# loads as well as into this library, so the same operators are defined twice in
+# a process that holds both. Loading both no longer aborts, because the wheel
+# build no longer produces a second ExecuTorch registrar, but a consumer that
+# gets these kernels without asking would still be linking a second copy of them
+# on the strength of a name it did not choose. None of the other shipped
+# components are duplicated this way, so only this one is held back, and a
+# consumer that wants it names it.
 _executorch_define_component(
   kernels_quantized executorch_kernels_quantized OPT_IN
 )
@@ -649,9 +651,10 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
 
-# Find prebuilt _C.<EXT_SUFFIX>.so. This is the legacy contract used to build
-# custom-op extensions against the Python module, and is kept working
-# independently of the runtime target above.
+# Find prebuilt _C.<EXT_SUFFIX>.so, the extension a custom-op project builds
+# against. Reported for that purpose only, not published as a target: see the
+# block below the search for why the name earlier wheels used is not carried
+# forward.
 
 # Find python
 if(DEFINED ENV{CONDA_DEFAULT_ENV} AND NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL
