@@ -90,9 +90,9 @@ logging.basicConfig(
 # something the wheel does not carry. Publishing one is worse than leaving it out: the failure arrives in
 # someone else's project rather than here.
 #
-# Matched on the path ending, not the bare file name. Two different headers here share the name
-# tensor_util.h, one a widely included utility and one a test helper, so a name match either kept the test
-# helper or removed the utility everything needs.
+# Matched on the path ending, not the bare file name, so an entry names one specific header rather than
+# every file that happens to share its name. Anything under a directory beginning with "test" is already
+# dropped separately, so those need no entry here.
 #
 # Only headers that nothing else the wheel installs includes belong here. A header other shipped headers
 # pull in must keep shipping even when it cannot be compiled on its own.
@@ -101,8 +101,6 @@ _UNSHIPPABLE_HEADERS = frozenset(
         # Needs a header generated when the schema is compiled, which in turn needs the FlatBuffers C++
         # headers. Those are a third-party library this wheel does not vendor.
         "runtime/executor/tensor_parser.h",
-        # A test helper, needing a test framework the wheel does not ship.
-        "runtime/core/testing_util/error_matchers.h",
         # Reads processor details through cpuinfo, whose headers the wheel does not publish.
         "extension/threadpool/cpuinfo_utils.h",
         # Holds a pthreadpool member by value, so it needs that library's header, which the wheel does not
