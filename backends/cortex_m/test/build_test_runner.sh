@@ -56,8 +56,10 @@ ops_list=(
     cortex_m::quantize_per_tensor.out
     cortex_m::dequantize_per_tensor.out
     cortex_m::quantized_add.out
+    cortex_m::quantized_add_nhwc.out
     cortex_m::quantized_div.out
     cortex_m::quantized_mul.out
+    cortex_m::quantized_mul_nhwc.out
     cortex_m::quantized_activation.out
     cortex_m::minimum.out
     cortex_m::maximum.out

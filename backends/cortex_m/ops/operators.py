@@ -137,6 +137,23 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_add_nhwc("
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max) -> Tensor"
+)
+
+lib.define(
+    "quantized_add_nhwc.out("
+    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
+    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "int activation_min, int activation_max, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 @register_fake("cortex_m::quantized_add")  # type: ignore[misc]
 def quantized_add_meta(
@@ -199,6 +216,78 @@ def quantized_add_impl(
     return result
 
 
+@register_fake("cortex_m::quantized_add_nhwc")  # type: ignore[misc]
+def quantized_add_nhwc_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    if self.dim() != 4 or other.dim() != 4:
+        raise RuntimeError("cortex_m.quantized_add_nhwc expects 4D inputs")
+    result = quantized_add_meta(
+        self.permute(0, 3, 1, 2),
+        self_zero_point,
+        self_multiplier,
+        self_shift,
+        other.permute(0, 3, 1, 2),
+        other_zero_point,
+        other_multiplier,
+        other_shift,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        activation_min,
+        activation_max,
+    )
+    return result.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_add_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_add_nhwc_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    self_multiplier: int,
+    self_shift: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    other_multiplier: int,
+    other_shift: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+    activation_min: int,
+    activation_max: int,
+) -> torch.Tensor:
+    if self.dim() != 4 or other.dim() != 4:
+        raise RuntimeError("cortex_m.quantized_add_nhwc expects 4D inputs")
+    result = quantized_add_impl(
+        self.permute(0, 3, 1, 2),
+        self_zero_point,
+        self_multiplier,
+        self_shift,
+        other.permute(0, 3, 1, 2),
+        other_zero_point,
+        other_multiplier,
+        other_shift,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+        activation_min,
+        activation_max,
+    )
+    return result.permute(0, 2, 3, 1).contiguous()
+
+
 # ===================================================================
 # QUANTIZED MUL OPERATION DEFINITION
 # ===================================================================
@@ -210,6 +299,20 @@ lib.define(
 )
 lib.define(
     "quantized_mul.out("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_mul_nhwc("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_mul_nhwc.out("
     "Tensor self, int self_zero_point, "
     "Tensor other, int other_zero_point, "
     "int output_zero_point, int output_multiplier, int output_shift, "
@@ -262,6 +365,54 @@ def quantized_mul_impl(
     result_quantized = requantize_cmsis(result_fp, output_multiplier, output_shift)
     result = torch.clamp(result_quantized + output_zero_point, -128, 127).to(torch.int8)
     return result
+
+
+@register_fake("cortex_m::quantized_mul_nhwc")  # type: ignore[misc]
+def quantized_mul_nhwc_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    if self.dim() != 4 or other.dim() != 4:
+        raise RuntimeError("cortex_m.quantized_mul_nhwc expects 4D inputs")
+    result = quantized_mul_meta(
+        self.permute(0, 3, 1, 2),
+        self_zero_point,
+        other.permute(0, 3, 1, 2),
+        other_zero_point,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+    )
+    return result.permute(0, 2, 3, 1).contiguous()
+
+
+@impl(lib, "quantized_mul_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_mul_nhwc_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_multiplier: int,
+    output_shift: int,
+) -> torch.Tensor:
+    if self.dim() != 4 or other.dim() != 4:
+        raise RuntimeError("cortex_m.quantized_mul_nhwc expects 4D inputs")
+    result = quantized_mul_impl(
+        self.permute(0, 3, 1, 2),
+        self_zero_point,
+        other.permute(0, 3, 1, 2),
+        other_zero_point,
+        output_zero_point,
+        output_multiplier,
+        output_shift,
+    )
+    return result.permute(0, 2, 3, 1).contiguous()
 
 
 # ===================================================================

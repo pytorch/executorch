@@ -149,7 +149,10 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
-inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+inline bool is_channel_broadcast(
+    const Tensor& tensor1,
+    const Tensor& tensor2,
+    int64_t channel_dim) {
   if (tensor1.dim() != tensor2.dim()) {
     return false;
   }
@@ -158,14 +161,20 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
     return false;
   }
 
-  if (tensor1.size(1) != tensor2.size(1)) {
+  if (tensor1.size(channel_dim) != tensor2.size(channel_dim)) {
     return false;
   }
 
-  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
-  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
+  const bool tensor1_channels_only =
+      tensor1.numel() == tensor1.size(channel_dim);
+  const bool tensor2_channels_only =
+      tensor2.numel() == tensor2.size(channel_dim);
 
   return tensor1_channels_only || tensor2_channels_only;
+}
+
+inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
+  return is_channel_broadcast(tensor1, tensor2, 1);
 }
 
 inline bool check_int32_within_range(

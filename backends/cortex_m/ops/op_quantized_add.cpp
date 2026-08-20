@@ -13,8 +13,7 @@ namespace cortex_m {
 namespace native {
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
-// cppcheck-suppress unusedFunction
-Tensor& quantized_add_out(
+static Tensor& quantized_add_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
     const int64_t input1_zero_point,
@@ -29,16 +28,51 @@ Tensor& quantized_add_out(
     const int64_t output_shift,
     const int64_t activation_min,
     const int64_t activation_max,
+    ActivationLayout layout,
+    const char* op_name,
     Tensor& out) {
-  // Validate tensor types and dim order
-  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  const int64_t channel_dim = layout == ActivationLayout::NHWCLogical ? 3 : 1;
+  bool channel_broadcast =
+      is_channel_broadcast(input1_int8, input2_int8, channel_dim);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/
+      channel_broadcast && layout == ActivationLayout::NCHWLogical,
       /*require_same_sizes=*/!channel_broadcast);
+  if (layout == ActivationLayout::NHWCLogical) {
+    ET_CHECK_MSG(
+        input1_int8.dim() == 4 && input2_int8.dim() == 4 && out.dim() == 4,
+        "%s: tensors must be 4-D",
+        op_name);
+    ET_CHECK_MSG(
+        executorch::runtime::is_contiguous_dim_order(
+            input1_int8.dim_order().data(), input1_int8.dim_order().size()) &&
+            executorch::runtime::is_contiguous_dim_order(
+                input2_int8.dim_order().data(),
+                input2_int8.dim_order().size()) &&
+            executorch::runtime::is_contiguous_dim_order(
+                out.dim_order().data(), out.dim_order().size()),
+        "%s: tensors must use contiguous dimension order",
+        op_name);
+  } else if (channel_broadcast) {
+    ET_CHECK_MSG(
+        is_channels_last_tensor(input1_int8) &&
+            is_channels_last_tensor(input2_int8) &&
+            is_channels_last_tensor(out),
+        "%s: channel-broadcast tensors must use channels-last dimension order",
+        op_name);
+  }
+  if (channel_broadcast) {
+    const Tensor& full_input =
+        input1_int8.numel() > input2_int8.numel() ? input1_int8 : input2_int8;
+    ET_CHECK_MSG(
+        out.sizes() == full_input.sizes(),
+        "%s: output must have the broadcast result shape",
+        op_name);
+  }
 
   // Validate quantization parameters
   validate_quantization_params(
@@ -54,7 +88,8 @@ Tensor& quantized_add_out(
 
   ET_LOG(
       Debug,
-      "quantized_add_out: input1_int8.sizes() = %zu",
+      "%s: input1_int8.sizes() = %zu",
+      op_name,
       input1_int8.sizes().size());
 
   int32_t zp1 = static_cast<int32_t>(input1_zero_point);
@@ -101,7 +136,7 @@ Tensor& quantized_add_out(
       std::swap<int>(input1_shift_val, input2_shift_val);
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
-    adds_per_loop = input1_int8.size(1);
+    adds_per_loop = input1_int8.size(channel_dim);
   } else {
     adds_per_loop = out.numel();
   }
@@ -130,7 +165,8 @@ Tensor& quantized_add_out(
     if (status != ARM_CMSIS_NN_SUCCESS) {
       ET_LOG(
           Error,
-          "quantized_add_out: arm_elementwise_add_s8 failed with status [%d]",
+          "%s: arm_elementwise_add_s8 failed with status [%d]",
+          op_name,
           status);
 
       context.fail(Error::Internal); // Fail the execution context
@@ -139,9 +175,84 @@ Tensor& quantized_add_out(
   }
   ET_LOG(
       Debug,
-      "quantized_add_out: Successfully completed with AoT-computed parameters!");
+      "%s: Successfully completed with AoT-computed parameters!",
+      op_name);
 
   return out;
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_add_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_add_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input1_multiplier,
+      input1_shift,
+      input2_int8,
+      input2_zero_point,
+      input2_multiplier,
+      input2_shift,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      activation_min,
+      activation_max,
+      ActivationLayout::NCHWLogical,
+      "quantized_add_out",
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_add_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const int64_t input1_multiplier,
+    const int64_t input1_shift,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t input2_multiplier,
+    const int64_t input2_shift,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    Tensor& out) {
+  return quantized_add_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input1_multiplier,
+      input1_shift,
+      input2_int8,
+      input2_zero_point,
+      input2_multiplier,
+      input2_shift,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      activation_min,
+      activation_max,
+      ActivationLayout::NHWCLogical,
+      "quantized_add_nhwc_out",
+      out);
 }
 
 } // namespace native
