@@ -178,12 +178,16 @@ These are the components the Linux package provides:
 | `threadpool` | Multi-threaded execution. | Linux |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux |
 | `kernels_quantized` | The quantized operator kernels | Linux |
+| `backend_cuda` | The CUDA delegate | Linux |
+| `extension_cuda` | The CUDA stream extension | Linux |
 
 To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
-foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack threadpool etdump)
+foreach(_component
+        runtime kernels_optimized kernels_quantized backend_xnnpack
+        backend_cuda extension_cuda threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()

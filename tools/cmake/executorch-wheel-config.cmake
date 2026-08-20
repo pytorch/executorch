@@ -70,6 +70,8 @@
 #                                model. Not part of EXECUTORCH_LIBRARIES, see
 #                                below.
 # executorch::backend_xnnpack    The XNNPACK delegate.
+# executorch::backend_cuda       The CUDA delegate. Linux only.
+# executorch::extension_cuda     The CUDA stream extension. Linux only.
 # executorch::threadpool         The shared thread pool.
 # executorch::etdump             The profiler.
 # ~~~
@@ -307,9 +309,11 @@ if(_executorch_runtime_library AND NOT _executorch_targets_supported)
   # route has no per-component target to opt into, so they are offered through
   # EXECUTORCH_QUANTIZED_KERNELS_LIBRARY instead and a consumer that wants them
   # links that as well.
-  foreach(_executorch_component IN
-          ITEMS libexecutorch_kernels_optimized libexecutorch_backend_xnnpack
-                libexecutorch_threadpool libexecutorch_etdump
+  foreach(
+    _executorch_component IN
+    ITEMS libexecutorch_kernels_optimized libexecutorch_backend_xnnpack
+          libexecutorch_backend_cuda libexecutorch_extension_cuda
+          libexecutorch_threadpool libexecutorch_etdump
   )
     _executorch_find_library(
       _executorch_component_library "${_executorch_component}"
@@ -599,6 +603,11 @@ if(TARGET executorch::runtime AND TARGET executorch::threadpool)
 endif()
 
 _executorch_define_component(backend_xnnpack executorch_backend_xnnpack)
+# The CUDA delegate and its stream helper, present only in a wheel built from a
+# CUDA index. A CPU wheel defines neither, so a consumer asking for one is told
+# while configuring.
+_executorch_define_component(backend_cuda executorch_backend_cuda)
+_executorch_define_component(extension_cuda executorch_extension_cuda)
 
 # Find prebuilt _portable_lib.<EXT_SUFFIX>.so. This is the legacy contract used
 # to build custom-op extensions against the Python module, and is kept working

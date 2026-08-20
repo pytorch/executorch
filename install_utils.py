@@ -9,6 +9,8 @@ import functools
 import os
 import platform
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 from typing import List, Optional
@@ -105,8 +107,10 @@ def _get_cuda_version():
     """
     try:
         # Get CUDA version from nvcc (CUDA compiler)
+        # Same selection rule as _detected_cuda_major, so the two cannot disagree about which
+        # toolkit this build uses.
         nvcc_result = subprocess.run(
-            ["nvcc", "--version"], capture_output=True, text=True, check=True
+            _selected_nvcc(), capture_output=True, text=True, check=True
         )
         # Parse nvcc output for CUDA version
         # Output contains line like "Cuda compilation tools, release 12.6, V12.6.68"
@@ -139,6 +143,89 @@ def _get_cuda_version():
             f"nvcc command failed with error: {e}. "
             "Ensure CUDA is properly installed."
         )
+
+
+def _selected_nvcc() -> List[str]:
+    """The nvcc command line to ask for a version, matching what the build will use.
+
+    Reading the bare command described whichever toolkit was on PATH, while the build also honours
+    these variables. Packaging then declared the runtime for one toolkit while compiling against
+    another, or declared nothing at all when the selected compiler was not on PATH.
+    """
+    # CMake reads -DCMAKE_CUDA_COMPILER from the command line and CUDACXX from the environment. It does
+    # NOT read an environment variable named CMAKE_CUDA_COMPILER, measured with cmake 3.31.8, so asking
+    # the environment for that name first described a compiler the build would never use.
+    explicit = _extract_cmake_define(_cmake_args_from_env(), "CMAKE_CUDA_COMPILER")
+    if not explicit:
+        explicit = os.environ.get("CUDACXX")
+    if explicit:
+        # Only the program, because CMake accepts trailing options here and splits them off:
+        # measured, CUDACXX="/path/nvcc -allow-unsupported-compiler" still compiles with
+        # /path/nvcc. Passing the whole value as one program name found nothing, so a build
+        # that compiles fine reported no toolkit at all. That option is a common workaround
+        # on a newer host compiler, so the value is not unusual.
+        #
+        # Splitting also matches CMake on an unquoted path containing a space, which CMake
+        # reports as NOTFOUND rather than treating as one name, so this reads nothing exactly
+        # where the build would also refuse to compile.
+        program = shlex.split(explicit) or [explicit]
+        return [program[0], "--version"]
+    # Follow CMake's COMPILER search, since that is what decides which nvcc compiles the sources:
+    # CUDACXX above, then PATH, then CUDA_PATH. PATH has to come before CUDA_PATH. Measured with
+    # only PATH pointing at 13.0 on a box whose conventional symlink is 12.8, CMake compiles with
+    # 13.0, so consulting the symlink first reported 12.8 and produced metadata for a train the
+    # binaries were not built with.
+    #
+    # The list stops at CUDA_PATH because CMake's compiler search does:
+    # CMakeDetermineCUDACompiler.cmake sets its search paths to CUDA_PATH/bin and nothing else.
+    # Adding the conventional /usr/local/cuda symlink reported a toolkit on a box where CMake finds
+    # no compiler at all, which drops the CUDA sources silently, and the guard meant to catch that
+    # reads this same value.
+    #
+    # CUDAToolkit_ROOT is deliberately absent: it steers find_package(CUDAToolkit) but CMake's
+    # compiler search ignores it, so reading it here names a compiler that will not be used.
+    on_path = shutil.which("nvcc")
+    if on_path:
+        return [on_path, "--version"]
+    cuda_path = os.environ.get("CUDA_PATH")
+    if cuda_path:
+        candidate = os.path.join(cuda_path, "bin", "nvcc")
+        if os.path.exists(candidate):
+            return [candidate, "--version"]
+    return ["nvcc", "--version"]
+
+
+def _cmake_args_from_env() -> List[str]:
+    """CMAKE_ARGS split into arguments, tolerating an unbalanced quote.
+
+    shlex is the right parser for a value naming a shell argument list, but it raises on an unbalanced
+    quote, and a path containing an apostrophe is enough to trigger it.
+    """
+    raw = os.environ.get("CMAKE_ARGS", "")
+    try:
+        return shlex.split(raw)
+    except ValueError:
+        return raw.split()
+
+
+@functools.lru_cache(maxsize=1)
+def _detected_cuda_major() -> Optional[int]:
+    """The CUDA major version of the installed toolkit, or None if none is installed.
+
+    Kept separate from `_get_cuda_version` because the mismatch guard in the wheel build
+    needs the major regardless of whether the exact (major, minor) is listed in
+    SUPPORTED_CUDA_VERSIONS. Reading through the validator caused the guard to see an
+    empty detection for any unlisted minor (say 12.8), so a cu130 row built on a CUDA 12
+    toolkit produced a wheel with no error.
+    """
+    try:
+        result = subprocess.run(
+            _selected_nvcc(), capture_output=True, text=True, check=True
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    match = re.search(r"release (\d+)\.\d+", result.stdout)
+    return int(match.group(1)) if match else None
 
 
 def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
