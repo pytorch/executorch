@@ -71,7 +71,8 @@ def _trim_host_memory() -> None:
         ctypes.CDLL(None).malloc_trim(0)
     except AttributeError:
         pass
-      
+
+
 @contextlib.contextmanager
 def _keep_triton_reduction_loads_loop_scoped():
     """Conservatively treating loads as reduction-masked keeps each definition in its
@@ -120,7 +121,8 @@ def _tensor_properties_for_low_memory(tensor, original):
     if _is_cpu_clone_active() and _is_emptied(tensor):
         return None
     return original(tensor)
-  
+
+
 def _required_storage_nbytes(x: torch.Tensor) -> int:
     """Return the backing storage required by ``x``'s logical view."""
     if x.numel() == 0:
@@ -199,6 +201,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         if _is_cpu_clone_active():
             return True, False
         return orig_determine_aoti_mmap_flags(consts_size)
+
     orig_autotuner_run = _Autotuner.run
 
     def _is_same_skip_emptied(data, value):
