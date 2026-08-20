@@ -1468,8 +1468,8 @@ class CustomBuild(build):
             if cmake_cache.is_enabled("EXECUTORCH_BUILD_MLX"):
                 cmake_build_args += ["--target", "mlxdelegate"]
 
-            # The libraries a C++ consumer links out of the wheel. Until now they were
-            # reached as dependencies of the Python extension, which meant a shared
+            # The libraries a C++ consumer links out of the wheel. Most of them used to
+            # be reached as dependencies of the Python extension, which meant a shared
             # build with the bindings off asked for none of them and packaging then
             # looked for files no target had been told to produce. Each condition here
             # is the one its packaging entry carries, so the two lists cannot drift.
@@ -1482,6 +1482,8 @@ class CustomBuild(build):
                     cmake_build_args += ["--target", "extension_threadpool"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_OPTIMIZED"):
                     cmake_build_args += ["--target", "optimized_native_cpu_ops_lib"]
+                if cmake_cache.is_enabled("EXECUTORCH_BUILD_KERNELS_QUANTIZED"):
+                    cmake_build_args += ["--target", "executorch_quantized_ops"]
                 if cmake_cache.is_enabled("EXECUTORCH_BUILD_XNNPACK"):
                     cmake_build_args += ["--target", "xnnpack_backend"]
 
@@ -1600,6 +1602,19 @@ setup(
                     dependent_cmake_flags=[
                         "EXECUTORCH_BUILD_SHARED",
                         "EXECUTORCH_BUILD_KERNELS_OPTIMIZED",
+                    ],
+                ),
+                # The quantized kernels, as their own library rather than code
+                # fused into the AOT-only extension beside the Python bindings.
+                # A C++ application running a quantized model could not link
+                # them before.
+                BuiltFile(
+                    src_dir="%CMAKE_CACHE_DIR%/kernels/quantized/",
+                    src_name="libexecutorch_kernels_quantized.so",
+                    dst="executorch/lib/libexecutorch_kernels_quantized.so",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_KERNELS_QUANTIZED",
                     ],
                 ),
                 # Install the XNNPACK delegate beside them, so a process has one

@@ -97,7 +97,16 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 
     # Register quantized ops to portable_lib, so that they're available via
     # pybindings.
-    if(TARGET portable_lib)
+    #
+    # Only when this build has no shared quantized library to link instead. That
+    # library and this block compile the same sources against the same yaml, so
+    # a build producing both put two identical registrars in one process: the
+    # operator sets are identical by construction, and measured on the shipped
+    # wheel neither library carried one the other lacked. Registration is a
+    # static initializer, so both fire on load and the second aborts the
+    # process. Where the shared library exists the AOT plugin links it below
+    # rather than carrying its own copy.
+    if(TARGET portable_lib AND NOT EXECUTORCH_BUILD_SHARED)
       add_library(quantized_pybind_kernels_lib ${_quantized_kernels__srcs})
       target_link_libraries(
         quantized_pybind_kernels_lib PRIVATE portable_lib executorch_core
@@ -125,6 +134,15 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib
       )
 
+    endif()
+
+    # Outside the gate above. That gate only decides whether this build compiles
+    # its own copy of the kernels; the runtime search path below is needed
+    # either way, because the plugin links torch and the Python extension
+    # directly through Codegen.cmake regardless. Removing it left an Apple build
+    # with no route to torch/lib, where the loader cannot fall back on a
+    # non-absolute name the way Linux can.
+    if(TARGET portable_lib)
       # pip wheels will need to be able to find the dependent libraries. On
       # Linux, the .so has non-absolute dependencies on libs like
       # "_portable_lib.so" without paths; as long as we `import torch` first,
@@ -164,14 +182,14 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-# The thread pool carries the define that switches parallel_for from a serial
-# fallback to the real threaded implementation, so without it quantize,
-# dequantize and choose_qparams run on one core. Guarded because a bare metal
-# target builds these kernels without a thread pool at all, where the serial
-# fallback is the only correct choice.
 target_link_libraries(
   quantized_kernels PRIVATE executorch_core kernels_util_all_deps
 )
+# The thread pool carries the define that switches parallel_for from a serial
+# fallback to the real threaded implementation. Without it choose_qparams runs
+# on one core, as does the ARM path in quantize. Guarded because a bare metal
+# target builds these kernels without a thread pool at all, where the serial
+# fallback is the only correct choice.
 if(TARGET extension_threadpool)
   target_link_libraries(quantized_kernels PRIVATE extension_threadpool)
 endif()
@@ -200,8 +218,29 @@ if(EXECUTORCH_BUILD_SHARED)
   # This library holds no symbol a consumer names, only registration
   # constructors, so a link with --as-needed would drop it and register nothing.
   executorch_target_link_options_shared_lib(executorch_quantized_ops)
-  # Ships beside libexecutorch.so, so it resolves the runtime from there rather
-  # than from wherever it was built. Without this the installed library has an
-  # empty search path and a consumer that links it cannot start.
+  # The export plugin gets its kernels from this one library rather than
+  # compiling its own copy, so the process holds a single registrar. Attached
+  # here rather than beside the plugin's other properties because that block
+  # runs before this target exists. The plugin already routes kernels/quantized/
+  # to lib/ for its runtime search path, which is where this library ships, and
+  # the --as-needed retention above is an interface property so it reaches the
+  # plugin too.
+  if(TARGET quantized_ops_aot_lib)
+    target_link_libraries(quantized_ops_aot_lib PUBLIC executorch_quantized_ops)
+  endif()
+  # Named after what the library provides rather than after the target that
+  # produces it, matching the optimized kernels next to it, so the shipped file
+  # reads as libexecutorch_kernels_quantized.so. The target name stays as it is
+  # because a source build already refers to it. Only for the wheel, for the
+  # same reason as the optimized kernels: a source install has been shipping the
+  # old file name with a versioned soname.
+  if(EXECUTORCH_BUILD_WHEEL_DO_NOT_USE)
+    set_target_properties(
+      executorch_quantized_ops PROPERTIES OUTPUT_NAME
+                                          executorch_kernels_quantized
+    )
+  endif()
+  # Ships beside libexecutorch.so in the wheel's lib/ directory, so it resolves
+  # the runtime from there rather than from wherever it was built.
   executorch_target_shipped_runtime_path(executorch_quantized_ops)
 endif()
