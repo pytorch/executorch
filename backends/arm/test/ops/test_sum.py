@@ -64,6 +64,18 @@ class Sum(torch.nn.Module):
         return x.sum(dim=dim, keepdim=keepdim)
 
 
+class SumDimNone(torch.nn.Module):
+    # dim=None reduces over all dims. It is baked into the module (rather than
+    # passed as a forward argument) so the FVP bundled program does not need to
+    # serialize None as a model input, which it cannot do.
+    def __init__(self, keepdim: bool):
+        super().__init__()
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor):
+        return x.sum(dim=None, keepdim=self.keepdim)
+
+
 @common.parametrize(
     "test_data",
     Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
@@ -98,33 +110,35 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
     pipeline.run()
 
 
-# dim=None cases skipped: executorch.devtools.bundled_program.config rejects
-# None as a model input (cannot be serialized into the bundled program).
-_DIM_NONE_SKIP_REASON = "bundled_program cannot serialize None as a model input"
-_dim_none_skips = {
-    "dim_None": _DIM_NONE_SKIP_REASON,
-    "dim_None_4d_tensor": _DIM_NONE_SKIP_REASON,
-}
+def _module_and_inputs(test_data: Tuple):
+    # dim=None reduces over all dims; bake it into the module so the FVP bundled
+    # program does not need to serialize None as a model input (which it cannot).
+    x, dim, keepdim = test_data()
+    if dim is None:
+        return SumDimNone(keepdim), (x,)
+    return Sum(), (x, dim, keepdim)
 
 
-@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
+@common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone300
 def test_sum_u55_INT_1_0(test_data: Tuple):
+    module, inputs = _module_and_inputs(test_data)
     pipeline = EthosU55PipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        module,
+        inputs,
         aten_op,
         exir_ops=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters, skips=_dim_none_skips)
+@common.parametrize("test_data", Sum.test_parameters)
 @common.XfailIfNoCorstone320
 def test_sum_u85_INT_1_0(test_data: Tuple):
+    module, inputs = _module_and_inputs(test_data)
     pipeline = EthosU85PipelineINT[input_t1](
-        Sum(),
-        test_data(),
+        module,
+        inputs,
         aten_op,
         exir_ops=[],
     )
