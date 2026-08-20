@@ -2394,12 +2394,19 @@ setup(
                 ),
                 # The stream helper this library needs ships in lib/ from here on,
                 # alongside the other components a C++ consumer links.
+                # The Qualcomm delegate, beside the others so a C++ consumer links it
+                # the same way. Only the adapter ships here: the Qualcomm runtime is
+                # resolved by name at run time and comes from the vendor SDK, which a
+                # user installs separately. The shared build renames the output to
+                # match its siblings, so this looks for that name.
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/qualcomm/%BUILD_TYPE%/",
-                    src_name="qnn_executorch_backend",
-                    dst="executorch/backends/qualcomm/",
-                    is_dynamic_lib=True,
-                    dependent_cmake_flags=["EXECUTORCH_BUILD_QNN"],
+                    src_name="*executorch_backend_qnn" + _dynamic_lib_suffix(),
+                    dst="executorch/lib/",
+                    dependent_cmake_flags=[
+                        "EXECUTORCH_BUILD_SHARED",
+                        "EXECUTORCH_BUILD_QNN",
+                    ],
                 ),
                 BuiltExtension(
                     src_dir="backends/qualcomm/%BUILD_TYPE%/",
