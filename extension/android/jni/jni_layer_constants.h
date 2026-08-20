@@ -6,8 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <unordered_map>
-
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace executorch::extension {
@@ -39,58 +37,109 @@ constexpr static int kTensorDTypeBits16 = 22;
 
 using executorch::aten::ScalarType;
 
-const std::unordered_map<ScalarType, int> scalar_type_to_java_dtype = {
-    {ScalarType::Byte, kTensorDTypeUInt8},
-    {ScalarType::Char, kTensorDTypeInt8},
-    {ScalarType::Short, kTensorDTypeInt16},
-    {ScalarType::Int, kTensorDTypeInt32},
-    {ScalarType::Long, kTensorDTypeInt64},
-    {ScalarType::Half, kTensorDTypeHalf},
-    {ScalarType::Float, kTensorDTypeFloat},
-    {ScalarType::Double, kTensorDTypeDouble},
+// Returns the Java dtype code for a ScalarType, or -1 if unsupported.
+constexpr int scalar_type_to_java_dtype(ScalarType scalar_type) {
+  switch (scalar_type) {
+    case ScalarType::Byte:
+      return kTensorDTypeUInt8;
+    case ScalarType::Char:
+      return kTensorDTypeInt8;
+    case ScalarType::Short:
+      return kTensorDTypeInt16;
+    case ScalarType::Int:
+      return kTensorDTypeInt32;
+    case ScalarType::Long:
+      return kTensorDTypeInt64;
+    case ScalarType::Half:
+      return kTensorDTypeHalf;
+    case ScalarType::Float:
+      return kTensorDTypeFloat;
+    case ScalarType::Double:
+      return kTensorDTypeDouble;
     // These types are not supported yet
-    // {ScalarType::ComplexHalf, kTensorDTypeComplexHalf},
-    // {ScalarType::ComplexFloat, kTensorDTypeComplexFloat},
-    // {ScalarType::ComplexDouble, kTensorDTypeComplexDouble},
-    {ScalarType::Bool, kTensorDTypeBool},
-    {ScalarType::QInt8, kTensorDTypeQint8},
-    {ScalarType::QUInt8, kTensorDTypeQuint8},
-    {ScalarType::QInt32, kTensorDTypeQint32},
-    {ScalarType::BFloat16, kTensorDTypeBFloat16},
-    {ScalarType::QUInt4x2, kTensorDTypeQuint4x2},
-    {ScalarType::QUInt2x4, kTensorDTypeQuint2x4},
-    {ScalarType::Bits1x8, kTensorDTypeBits1x8},
-    {ScalarType::Bits2x4, kTensorDTypeBits2x4},
-    {ScalarType::Bits4x2, kTensorDTypeBits4x2},
-    {ScalarType::Bits8, kTensorDTypeBits8},
-    {ScalarType::Bits16, kTensorDTypeBits16},
-};
+    // case ScalarType::ComplexHalf:
+    // case ScalarType::ComplexFloat:
+    // case ScalarType::ComplexDouble:
+    case ScalarType::Bool:
+      return kTensorDTypeBool;
+    case ScalarType::QInt8:
+      return kTensorDTypeQint8;
+    case ScalarType::QUInt8:
+      return kTensorDTypeQuint8;
+    case ScalarType::QInt32:
+      return kTensorDTypeQint32;
+    case ScalarType::BFloat16:
+      return kTensorDTypeBFloat16;
+    case ScalarType::QUInt4x2:
+      return kTensorDTypeQuint4x2;
+    case ScalarType::QUInt2x4:
+      return kTensorDTypeQuint2x4;
+    case ScalarType::Bits1x8:
+      return kTensorDTypeBits1x8;
+    case ScalarType::Bits2x4:
+      return kTensorDTypeBits2x4;
+    case ScalarType::Bits4x2:
+      return kTensorDTypeBits4x2;
+    case ScalarType::Bits8:
+      return kTensorDTypeBits8;
+    case ScalarType::Bits16:
+      return kTensorDTypeBits16;
+    default:
+      return -1;
+  }
+}
 
-const std::unordered_map<int, ScalarType> java_dtype_to_scalar_type = {
-    {kTensorDTypeUInt8, ScalarType::Byte},
-    {kTensorDTypeInt8, ScalarType::Char},
-    {kTensorDTypeInt16, ScalarType::Short},
-    {kTensorDTypeInt32, ScalarType::Int},
-    {kTensorDTypeInt64, ScalarType::Long},
-    {kTensorDTypeHalf, ScalarType::Half},
-    {kTensorDTypeFloat, ScalarType::Float},
-    {kTensorDTypeDouble, ScalarType::Double},
+// Returns the ScalarType for a Java dtype code, or ScalarType::Undefined if
+// unsupported.
+constexpr ScalarType java_dtype_to_scalar_type(int java_dtype) {
+  switch (java_dtype) {
+    case kTensorDTypeUInt8:
+      return ScalarType::Byte;
+    case kTensorDTypeInt8:
+      return ScalarType::Char;
+    case kTensorDTypeInt16:
+      return ScalarType::Short;
+    case kTensorDTypeInt32:
+      return ScalarType::Int;
+    case kTensorDTypeInt64:
+      return ScalarType::Long;
+    case kTensorDTypeHalf:
+      return ScalarType::Half;
+    case kTensorDTypeFloat:
+      return ScalarType::Float;
+    case kTensorDTypeDouble:
+      return ScalarType::Double;
     // These types are not supported yet
-    // {kTensorDTypeComplexHalf, ScalarType::ComplexHalf},
-    // {kTensorDTypeComplexFloat, ScalarType::ComplexFloat},
-    // {kTensorDTypeComplexDouble, ScalarType::ComplexDouble},
-    {kTensorDTypeBool, ScalarType::Bool},
-    {kTensorDTypeQint8, ScalarType::QInt8},
-    {kTensorDTypeQuint8, ScalarType::QUInt8},
-    {kTensorDTypeQint32, ScalarType::QInt32},
-    {kTensorDTypeBFloat16, ScalarType::BFloat16},
-    {kTensorDTypeQuint4x2, ScalarType::QUInt4x2},
-    {kTensorDTypeQuint2x4, ScalarType::QUInt2x4},
-    {kTensorDTypeBits1x8, ScalarType::Bits1x8},
-    {kTensorDTypeBits2x4, ScalarType::Bits2x4},
-    {kTensorDTypeBits4x2, ScalarType::Bits4x2},
-    {kTensorDTypeBits8, ScalarType::Bits8},
-    {kTensorDTypeBits16, ScalarType::Bits16},
-};
+    // case kTensorDTypeComplexHalf:
+    // case kTensorDTypeComplexFloat:
+    // case kTensorDTypeComplexDouble:
+    case kTensorDTypeBool:
+      return ScalarType::Bool;
+    case kTensorDTypeQint8:
+      return ScalarType::QInt8;
+    case kTensorDTypeQuint8:
+      return ScalarType::QUInt8;
+    case kTensorDTypeQint32:
+      return ScalarType::QInt32;
+    case kTensorDTypeBFloat16:
+      return ScalarType::BFloat16;
+    case kTensorDTypeQuint4x2:
+      return ScalarType::QUInt4x2;
+    case kTensorDTypeQuint2x4:
+      return ScalarType::QUInt2x4;
+    case kTensorDTypeBits1x8:
+      return ScalarType::Bits1x8;
+    case kTensorDTypeBits2x4:
+      return ScalarType::Bits2x4;
+    case kTensorDTypeBits4x2:
+      return ScalarType::Bits4x2;
+    case kTensorDTypeBits8:
+      return ScalarType::Bits8;
+    case kTensorDTypeBits16:
+      return ScalarType::Bits16;
+    default:
+      return ScalarType::Undefined;
+  }
+}
 
 } // namespace executorch::extension
