@@ -460,6 +460,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
     parser.add_argument(
+        "--xnnpack-enable-bf16",
+        action="store_true",
+        help="Delegate BF16 operators to XNNPACK. Requires runtime hardware support.",
+    )
+    parser.add_argument(
         "--use-torchao-kernels",
         action="store_true",
         help="Delegate tied-embedding and quantized linear ops to torchao kernels",
@@ -1534,11 +1539,17 @@ def _get_xnnpack_partitioners(llm_config: LlmConfig) -> Optional[List[Partitione
     # both xnnpack and xnnpack_extended_ops are enabled.
     if llm_config.backend.xnnpack.enabled:
         partitioners.append(
-            get_xnnpack_partitioner(dynamic_quant_only_partitioner=True)
+            get_xnnpack_partitioner(
+                dynamic_quant_only_partitioner=True,
+                enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+            )
         )
         if llm_config.backend.xnnpack.extended_ops:
             partitioners.append(
-                get_xnnpack_partitioner(dynamic_quant_only_partitioner=False)
+                get_xnnpack_partitioner(
+                    dynamic_quant_only_partitioner=False,
+                    enable_bf16=llm_config.backend.xnnpack.enable_bf16,
+                )
             )
 
     return partitioners if partitioners else None
@@ -1724,6 +1735,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
             gen_tag_fn=gen_tag_fn,
+            enable_bf16=llm_config.backend.xnnpack.enable_bf16,
         )
     elif llm_config.backend.openvino.enabled:
         builder = _to_edge_and_lower_llama_openvino(
