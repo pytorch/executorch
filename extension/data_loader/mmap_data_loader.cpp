@@ -79,7 +79,7 @@ Result<MmapDataLoader> MmapDataLoader::from(
     return Error::AccessFailed;
   }
   if ((page_size & ~(page_size - 1)) != page_size) {
-    ET_LOG(Error, "Page size 0x%ld is not a power of 2", page_size);
+    ET_LOG(Error, "Page size 0x%lx is not a power of 2", page_size);
     return Error::InvalidState;
   }
 
@@ -211,7 +211,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
-      "Failed to map %s: mmap(..., size=%zd, ..., fd=%d, offset=0x%zx)",
+      "Failed to map %s: mmap(..., size=%zu, ..., fd=%d, offset=0x%zx)",
       file_name_,
       range.size,
       fd_,
@@ -224,7 +224,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
         ET_LOG(
             Debug,
-            "Ignoring mlock error for file %s (off=0x%zd): "
+            "Ignoring mlock error for file %s (off=0x%zx): "
             "mlock(%p, %zu) failed: %s (%d)",
             file_name_,
             offset,
@@ -235,7 +235,7 @@ Result<FreeableBuffer> MmapDataLoader::load(
       } else {
         ET_LOG(
             Error,
-            "File %s (off=0x%zd): mlock(%p, %zu) failed: %s (%d)",
+            "File %s (off=0x%zx): mlock(%p, %zu) failed: %s (%d)",
             file_name_,
             offset,
             pages,
@@ -321,7 +321,7 @@ Error MmapDataLoader::load_into(
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
-      "Failed to map %s: mmap(..., size=%zd, ..., fd=%d, offset=0x%zx)",
+      "Failed to map %s: mmap(..., size=%zu, ..., fd=%d, offset=0x%zx)",
       file_name_,
       range.size,
       fd_,

@@ -149,14 +149,14 @@ ET_NODISCARD Error validateTensorLayout(
       InvalidExternalData,
       "Dim order size mismatch. Expected %d, got %u.",
       dim,
-      s_tensor->dim_order()->size());
+      static_cast<unsigned>(s_tensor->dim_order()->size()));
   for (int i = 0; i < dim; i++) {
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->sizes()->Get(i) == expected_layout.sizes()[i],
         InvalidExternalData,
         "Sizes mismatch. Expected %d, got %d for size at index %d.",
-        s_tensor->sizes()->Get(i),
-        expected_layout.sizes()[i],
+        static_cast<int>(s_tensor->sizes()->Get(i)),
+        static_cast<int>(expected_layout.sizes()[i]),
         i);
     ET_CHECK_OR_RETURN_ERROR(
         s_tensor->dim_order()->Get(i) == expected_layout.dim_order()[i],

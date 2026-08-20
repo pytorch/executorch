@@ -26,7 +26,7 @@ Error EnnExecutor::initialize(const char* binary_buf_addr, size_t buf_size) {
   ET_CHECK_OR_RETURN_ERROR(
       ret == ENN_RET_SUCCESS, Internal, "Enn initialize failed.");
 
-  ET_LOG(Info, "Start to open model %p, %ld", binary_buf_addr, buf_size);
+  ET_LOG(Info, "Start to open model %p, %zu", binary_buf_addr, buf_size);
   ret = enn_api_inst->EnnOpenModelFromMemory(
       binary_buf_addr, buf_size, &model_id_);
 
@@ -58,13 +58,13 @@ Error EnnExecutor::eval(
   ET_CHECK_OR_RETURN_ERROR(
       inputs.size() == getInputSize(),
       InvalidArgument,
-      "Invalid number of inputs, expect %" PRIu32 " while get %ld",
+      "Invalid number of inputs, expect %" PRId32 " while get %zu",
       getInputSize(),
       inputs.size());
   ET_CHECK_OR_RETURN_ERROR(
       outputs.size() == getOutputSize(),
       InvalidArgument,
-      "Invalid number of outputs, expected %" PRIu32 " while get %ld",
+      "Invalid number of outputs, expected %" PRId32 " while get %zu",
       getOutputSize(),
       outputs.size());
 

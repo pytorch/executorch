@@ -511,7 +511,7 @@ class ET_EXPERIMENTAL CudaBackend final
         !c10::add_overflows(n_inputs, n_outputs, &n_io_sum) &&
             n_io_sum == args.size(),
         InvalidArgument,
-        "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
+        "number of user input %zu and output %zu generated from AOT Inductor does not match ET runner's %zu. Exit.",
         n_inputs,
         n_outputs,
         args.size())
@@ -736,7 +736,7 @@ class ET_EXPERIMENTAL CudaBackend final
         error == Error::Ok,
         Internal,
         "AOTInductorModelContainerRun failed with error code %d",
-        error);
+        static_cast<int>(error));
 
     if (is_capture_step) {
       // End capture → instantiate graph

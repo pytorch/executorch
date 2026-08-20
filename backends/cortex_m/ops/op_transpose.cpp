@@ -53,7 +53,7 @@ Tensor& transpose_out(
   if (perm.size() != static_cast<int64_t>(rank)) {
     ET_LOG(
         Error,
-        "transpose_out: permutation length %zd does not match tensor rank %zu",
+        "transpose_out: permutation length %zu does not match tensor rank %zu",
         perm.size(),
         rank);
     context.fail(Error::InvalidArgument);
