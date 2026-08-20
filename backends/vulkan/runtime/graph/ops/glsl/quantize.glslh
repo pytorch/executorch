@@ -1,0 +1,25 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef QUANTIZE_GLSLH
+#define QUANTIZE_GLSLH
+
+OUT_T quantize_val(IN_T value, float scale_val, int zero_point_val) {
+  float inv_scale = 1.0 / scale_val;
+
+  float rounded_float = round(inv_scale * float(value));
+
+  int qvalue = zero_point_val + int(rounded_float);
+
+  qvalue = max(qvalue, quant_min);
+  qvalue = min(qvalue, quant_max);
+
+  return OUT_T(qvalue);
+}
+
+#endif // QUANTIZE_GLSLH

@@ -1,0 +1,158 @@
+/*
+ * Copyright (c) Qualcomm Innovation Center, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+#pragma once
+
+#include <executorch/backends/qualcomm/aot/wrappers/OpWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/qc_compiler_spec_generated.h>
+#include <executorch/backends/qualcomm/runtime/Logging.h>
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendUnifiedRegistry.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
+#include <executorch/runtime/core/error.h>
+
+#include <memory>
+#include <unordered_map>
+
+namespace executorch {
+namespace backends {
+namespace qnn {
+class QnnManager {
+ public:
+  // Construct QnnManager
+  explicit QnnManager(
+      const QnnExecuTorchOptions* options,
+      const QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
+  ~QnnManager();
+  // Initialize the shared backend bundle such as QnnBackend and QnnDevice
+  executorch::runtime::Error InitBackend();
+  // Initialize the non-shared QNN components, create the QnnGraph using the
+  // provided graph_names. Note: For online_prepare or deserialization, the
+  // graph name will be obtained from the binary.
+  executorch::runtime::Error InitContext(
+      std::optional<std::vector<std::string>> graph_names = std::nullopt);
+  // This function only initialize the context cache to get spill fill buffer
+  // size
+  executorch::runtime::Error InitContextCache();
+  executorch::runtime::Error AllocateTensor(const std::string& graph_name);
+  executorch::runtime::Error AllocateTensor(
+      const std::string& graph_name,
+      std::vector<std::shared_ptr<TensorWrapper>>& inputs,
+      std::vector<std::shared_ptr<TensorWrapper>>& outputs);
+
+  executorch::runtime::Error Execute(
+      const std::string& graph_name,
+      const std::vector<Qnn_Tensor_t>& input_tensor_structs,
+      std::vector<Qnn_Tensor_t>& output_tensor_structs,
+      executorch::runtime::EventTracer* event_tracer);
+
+  executorch::runtime::Error ProfileExecuteData(
+      const std::string& graph_name,
+      executorch::runtime::EventTracer* event_tracer);
+
+  // Destroy all QNN components and decrease reference count of shared QNN
+  // resource
+  void Destroy();
+  // Only destroy all non-shared QNN components
+  void DestroyContext();
+
+  bool IsAvailable() {
+    return true;
+  }
+
+  bool IsOnlinePrepare() {
+    return options_->online_prepare();
+  }
+
+  bool IsTensorDump() {
+    return options_->dump_intermediate_outputs();
+  }
+
+  bool IsNodeSupportedByBackend(
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
+
+  executorch::runtime::Error GetContextBinary(
+      QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
+  executorch::runtime::Error CompileDlc();
+  executorch::runtime::Error Compile(
+      const std::string& graph_name,
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
+
+  executorch::runtime::Error RegisterMem(
+      void* data_ptr,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+
+  // Pre-register custom memory handle from the SharedBuffer before execution
+  executorch::runtime::Error PreRegisterMem();
+
+  uint64_t GetSpillFillBufferSize() {
+    auto* htp_backend_cache_ptr = static_cast<HtpBackendCache*>(
+        backend_params_ptr_->qnn_backend_cache_ptr_.get());
+    return htp_backend_cache_ptr->GetSpillFillBufferSize();
+  }
+
+  std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs(
+      const std::string& graph_name) {
+    return !input_tensors_.count(graph_name)
+        ? std::vector<std::shared_ptr<TensorWrapper>>()
+        : input_tensors_[graph_name];
+  }
+
+  std::vector<std::shared_ptr<TensorWrapper>> GetGraphOutputs(
+      const std::string& graph_name) {
+    return !output_tensors_.count(graph_name)
+        ? std::vector<std::shared_ptr<TensorWrapper>>()
+        : output_tensors_[graph_name];
+  }
+
+  std::vector<std::string> GetGraphNames() {
+    return backend_params_ptr_->qnn_context_ptr_->GetGraphNames();
+  }
+
+ private:
+  QnnExecuTorchContextBinary qnn_context_blob_;
+  std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
+  std::shared_ptr<QnnBackendBundle>
+      backend_bundle_ptr_; // New member to hold shared resources
+  const QnnExecuTorchOptions* options_;
+  std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
+      input_tensors_;
+  std::unordered_map<std::string, std::vector<std::shared_ptr<TensorWrapper>>>
+      output_tensors_;
+  executorch::runtime::Error RegisterIonMem(
+      void* data_ptr,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+  executorch::runtime::Error RegisterCustomMem(
+      void* data_ptr,
+      void* custom_mem_base,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+  std::unordered_map<Qnn_DataType_t, executorch::aten::ScalarType>
+      qnn_dtype_to_scalar_type_ = {
+          {Qnn_DataType_t::QNN_DATATYPE_INT_32,
+           executorch::aten::ScalarType::Int},
+          {Qnn_DataType_t::QNN_DATATYPE_FLOAT_32,
+           executorch::aten::ScalarType::Float},
+          {Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8,
+           executorch::aten::ScalarType::Char},
+          {Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_16,
+           executorch::aten::ScalarType::Short},
+          {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8,
+           executorch::aten::ScalarType::Byte},
+          {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16,
+           executorch::aten::ScalarType::UInt16},
+  };
+
+  // Manager for handling DLC (Deep Learning Container)
+  std::shared_ptr<QnnDlcManager> qnn_dlc_manager_;
+};
+} // namespace qnn
+} // namespace backends
+} // namespace executorch

@@ -1,0 +1,26 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT_INPUT_SUMS_LOAD_GLSLH
+#define LINEAR_INT_INPUT_SUMS_LOAD_GLSLH
+
+#include "linear_int_per_in_channel_params.glslh"
+
+#extension GL_EXT_control_flow_attributes : require
+
+void store_int8_input_sums_tile_for_group(
+    out IntPerInChannelParams sums,
+    const int m4_start,
+    const int quant_group_idx,
+    const int M4) {
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    t_int8_input_sums[quant_group_idx * M4 + m4] = sums.data[m4];
+  }
+}
+
+#endif // LINEAR_INT_INPUT_SUMS_LOAD_GLSLH

@@ -1,0 +1,432 @@
+# ExecuTorch Arm&reg; Backend
+
+This subtree contains the Arm&reg; Backend implementation for ExecuTorch.
+It supports multiple targets using a common infrastructure, that lowers
+PyTorch models to a TOSA representation. This representation is used to
+deploy to the following targets:
+
+- **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
+- **VKML using VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan Machine Learning (VKML) devices.
+
+The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
+chosen target. The AOT flow supports the following development operating systems:
+
+- Linux aarch64
+- Linux x86_64
+- macOS&trade; with Apple&reg; Silicon
+
+In addition, the following deployment paths are supported by this backend:
+
+- Bare metal build of a reference runtime for Arm&reg; Cortex&reg;-M with Ethos-U acceleration:
+  - Full testing is available in tree using Corstone&trade; Fixed Virtual Platforms (FVP).
+- Linux target support for VGF capable targets, using the executor_runner.
+
+More information on TOSA can be found here: https://www.mlplatform.org/tosa/tosa_spec.html.
+
+## Public API Boundary
+
+The Arm backend public Python API is the set of symbols tracked in
+`backends/arm/public_api_manifests/api_manifest_running.toml`. Other modules,
+helpers, scripts, and directory layouts in this subtree are implementation
+details and may change without deprecation.
+
+In particular, `backends/arm/tosa` contains shared lowering implementation for
+Arm backends. It is not a stable public package except for symbols explicitly
+listed in the public API manifest. Prefer the target-specific public APIs in
+`executorch.backends.arm.ethosu` and `executorch.backends.arm.vgf` for
+application code.
+
+## Directory Layout
+
+Below is an overview of the key folder and files in this directory:
+
+```
+backends/arm/
+│
+├── _passes/                       # Graph transformation passes
+│   ├── arm_pass_manager.py        # Defines ordering of graph transformations
+│   └── *_pass.py                  # Graph transformation implementation
+│
+├── common/                        # Common functionality used across the backend
+│
+├── debug/                         # Debugging schema and functionality
+│
+├── ethosu/                        # Implementations of EthosUPartitioner and EthosUBackend
+│
+├── operator_support/              # Checks if operators can be partitioned
+│
+├── operators/                     # ATen → TOSA serialization
+│   ├── node_visitor.py            # Defines base class for ATen → TOSA node visitors
+│   └── op_*.py                    # Lowering implementations for individual operators
+│
+├── quantizer/                     # Quantization-related logic
+│   ├── arm_quantizer.py           # EthosUQuantizer and VGFQuantizer definitions
+│   └── quantization_annotator.py  # Defines how operators are annotated for quantization
+│
+├── runtime/                       # Backends for running inference on target devices
+│   ├── EthosUBackend.cpp
+│   └── VGFBackend.cpp
+│
+├── scripts/                       # Auxiliary build, dependency installation and utility scripts
+│
+├── test/                          # Unit tests for the backend
+│   ├── ops/                       # Operator level unit tests
+│   ├── models/                    # Model level unit tests
+│   └── tester/                    # Testing harnesses and utilities
+│
+├── tosa/                          # Shared TOSA backend implementation and dialect
+│
+└── vgf/                           # Implementations of VgfPartitioner and VgfBackend
+```
+
+## Building
+
+The Arm backend can be built using the following command:
+
+```
+./install_executorch.sh
+```
+
+**NOTE:** While developing, it can be convenient to use `./install_executorch.sh --editable`, which creates an editable installation of ExecuTorch.
+
+### Target-specific setup and build
+
+Pick one of the target flows below. Each flow has a one-time setup step and a build command.
+
+### Baremetal (Ethos-U) workflow
+
+Builds ExecuTorch runtime libraries for Cortex-M with Ethos-U acceleration.
+
+Setup:
+
+```
+./examples/arm/setup.sh --i-agree-to-the-contained-eula
+```
+
+Build:
+
+```
+./backends/arm/scripts/build_executorch.sh
+```
+
+### VGF (Vulkan ML extensions) workflow
+
+Setup:
+
+```
+./examples/arm/setup.sh --disable-ethos-u-deps --enable-mlsdk-deps
+```
+
+This is the default setup path and installs the MLSDK components from pip.
+Developers who need local source builds can use:
+
+```
+./backends/arm/scripts/setup-mlsdk-from-source.sh
+```
+
+The current flow lowers to TOSA and converts to VGF for use in external projects,
+so the `executor_runner` is not typically used here.
+
+### Compiling models with the Python API
+
+Use the Python API as the primary way to compile your own models. It lets you
+keep model construction, export inputs, quantization, custom passes, and artifact
+generation in your application code. The `aot_arm_compiler.py` script is useful
+for simple examples and smoke tests, but production code should call the
+ExecuTorch and Arm backend APIs directly.
+
+The delegated Python API flow is:
+
+1. Prepare the model and representative example inputs.
+2. Create a target-specific Arm compile spec.
+3. Export the model with `torch.export.export`.
+4. Optionally quantize with the target-specific Arm quantizer and re-export the
+   quantized graph.
+5. Create the matching Arm partitioner from the compile spec.
+6. Lower with `to_edge_transform_and_lower`.
+7. Convert to an ExecuTorch program and save the PTE file.
+
+For complete examples of that flow, including quantization and target-specific
+compile specs, see:
+
+- [Arm Ethos-U tutorial](../../docs/source/backends/arm-ethos-u/tutorials/ethos-u-getting-started.md)
+- [Arm VGF tutorial](../../docs/source/backends/arm-vgf/tutorials/vgf-getting-started.md)
+- [Arm Cortex-M backend overview](../../docs/source/backends/arm-cortex-m/arm-cortex-m-overview.md)
+- [Ethos-U porting guide](../../examples/arm/ethos-u-porting-guide.md)
+
+Additional examples are available in `examples/arm`.
+
+### Direct Drive (experimental, Ethos-U85 on Linux) workflow
+
+Direct Drive enables execution on Ethos-U85 via the Linux driver stack.
+
+Driver stack (Linux) and API:
+
+```
+https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack
+```
+
+An FVP with Linux is available for Direct Drive, but it must be built and run
+manually. See:
+
+```
+https://corstone1000.docs.arm.com/en/corstone1000-2025.12/
+```
+
+Setup:
+
+```
+./examples/arm/setup.sh --i-agree-to-the-contained-eula --target-toolchain linux-musl
+source ./examples/arm/arm-scratch/setup_path.sh
+```
+
+Build:
+
+```
+./backends/arm/scripts/build_executorch.sh \
+  --toolchain=aarch64-linux-musl-gcc \
+  --build_type=Debug
+```
+
+Note: setup selects the linux-musl toolchain; build uses the aarch64-linux-musl GCC toolchain name.
+
+If your Yocto image enables the dropbear SSH server, you can copy the
+`executor_runner` binary into the running FVP via scp:
+
+```
+scp -P 2222 arm_test/cmake-out/executor_runner root@127.0.0.1:/tmp/
+```
+
+#### Direct Drive model (PTE) workflow
+
+For a quick test with the example `add` model,
+`aot_arm_compiler.py` can be used:
+
+```
+python3 -m backends.arm.scripts.aot_arm_compiler \
+  --model_name examples/arm/example_modules/add.py \
+  --delegate \
+  --quantize \
+  --target ethos-u85-256 \
+  --direct_drive
+```
+
+For production use, the Python API described in
+[Compiling models with the Python API](#compiling-models-with-the-python-api)
+should be used. Use an Ethos-U85 target and set the Direct Drive `extra_flags` when creating the `EthosUCompileSpec`:
+
+```python
+compile_spec = EthosUCompileSpec(
+    target="ethos-u85-256",
+    extra_flags=["--separate-io-regions", "--cop-format=COP2"],
+)
+```
+
+Then save the generated program as e.g. `model.pte` or
+update the copy and run commands below to match your output file name.
+
+Copy the `executor_runner` binary and the generated PTE file to the running FVP:
+
+```
+scp -P 2222 arm_test/cmake-out/executor_runner model.pte root@127.0.0.1:/tmp/
+```
+
+Run the model on the FVP:
+
+```
+ssh -p 2222 root@127.0.0.1 -t "/tmp/executor_runner -model_path /tmp/model.pte -num_executions 1"
+```
+
+## Testing
+
+There are two approaches for running the tests for the Arm backend. This section will explain these two approaches:
+
+### Using test_arm_backend.sh
+
+The backend provides a script `backends/arm/test/test_arm_backend.sh`, which is used in the `trunk` CI workflow.
+This approach is useful for checking your change against this workflow on your own machine.
+These scripts also install the necessary dependencies to run the tests.
+Below is an overview of some of the testing options this script provides:
+
+| Command                                              | Description                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| `test_arm_backend.sh test_pytest_ops_no_target`    | Runs operator unit tests for non-target specific use-cases.  |
+| `test_arm_backend.sh test_pytest_models_no_target` | Runs model unit tests for non-target specific use-cases.     |
+| `test_arm_backend.sh test_pytest_ops_tosa`         | Runs operator unit tests for TOSA specific use-cases.        |
+| `test_arm_backend.sh test_pytest_models_tosa`      | Runs model unit tests for TOSA specific use-cases.           |
+| `test_arm_backend.sh test_run_tosa`                | Runs end-to-end unit tests for TOSA specific use-cases.      |
+| `test_arm_backend.sh test_pytest_ops_ethos_u55`    | Runs operator unit tests for Ethos-U55 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u55` | Runs model unit tests for Ethos-U55 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u55`           | Runs end-to-end unit tests for Ethos-U55 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_ethos_u85`    | Runs operator unit tests for Ethos-U85 specific use-cases.   |
+| `test_arm_backend.sh test_pytest_models_ethos_u85` | Runs model unit tests for Ethos-U85 specific use-cases.      |
+| `test_arm_backend.sh test_run_ethos_u85`           | Runs end-to-end unit tests for Ethos-U85 specific use-cases. |
+| `test_arm_backend.sh test_pytest_ops_vkml`         | Runs operator unit tests for VKML/VGF specific use-cases.    |
+| `test_arm_backend.sh test_pytest_models_vkml`      | Runs model unit tests for VKML/VGF specific use-cases.       |
+| `test_arm_backend.sh test_run_vkml`                | Runs end-to-end unit tests for VKML/VGF specific use-cases.  |
+| `test_arm_backend.sh test_model_smollm2_135M_ethos_u85`      | Runs smollm2_135M for Ethos-U85 specific use-cases.                          |
+| `test_arm_backend.sh test_ootb_tests_ethos_u`      | Runs out-of-the-box tests for Ethos-U.                       |
+| `test_arm_backend.sh test_ootb_tests_tosa`         | Runs out-of-the-box tests for TOSA.                          |
+| `test_arm_backend.sh test_ootb_tests_vgf`          | Runs out-of-the-box tests for VKML/VGF.                      |
+| `test_arm_backend.sh test_deit_e2e_ethos_u`        | Runs DEiT end-to-end tests on Ethos-U.                       |
+| `test_arm_backend.sh test_smaller_stories_llama_tosa` | Runs Llama model tests for TOSA.                          |
+| `test_arm_backend.sh test_smaller_stories_llama_vkml` | Runs Llama model tests for VKML/VGF.                      |
+| `test_arm_backend.sh test_memory_allocation`       | Runs memory allocation tests for Ethos-U specific targets    |
+
+For more information, please refer to the `backends/arm/test/test_arm_backend.sh` script.
+
+### Using pytest
+
+The Arm backend uses `pytest` to run the unit test suite in `backends/arm/test`.
+This option offers flexibility, allowing a specific test or a particular subset of the testsuite to be run.
+Below provides some examples of how to use it:
+
+- To run all the unit tests run the following command:
+
+  ```
+  pytest -v -n auto backends/arm/test/
+  ```
+
+- To run a specific test in a file:
+
+  ```
+  pytest -v backends/arm/test/ops/test_add.py -k test_add_tensor_tosa_INT_3
+  ```
+
+#### Testing Dependencies
+
+Some tests, with `u55`, `u85` and `vgf` in the name require external dependencies to run if you use `pytest`:
+
+- When a test contains `u55` or `u85`, you must run the following to setup the executor_runner:
+  ```
+  ./backends/arm/scripts/build_executorch.sh
+  ./backends/arm/test/setup_testing.sh
+  ```
+- When a test contains `vgf`, you must run the following to install the ML SDK:
+  ```
+  ./backends/arm/scripts/build_executorch.sh
+  ./backends/arm/test/setup_testing_vkml.sh
+  ```
+
+In addition, some model tests in the Arm backend require third-party libraries or packages.
+To run these tests, install the required dependencies directly:
+
+```
+bash backends/arm/scripts/install_models_for_test.sh
+```
+
+Installing model test dependencies is a standalone process. The script installs
+only the dependencies needed for model tests, skipping all other setup
+procedures.
+
+## Using git hooks
+
+The repo-wide pre-commit hook (lintrunner + torch_pin sync) is installed automatically
+by `./install_executorch.sh`. To install the Arm-specific pre-push hook (license checks,
+commit message format, docgen):
+
+```
+cp backends/arm/scripts/pre-push .git/hooks/
+```
+
+## Notes on model specific and optional passes
+
+The current TOSA version does not support int64. However, int64 is commonly used in many models. In order to lower the operators with int64 inputs and/or outputs to TOSA, a few passes have been developed to handle the int64-related issues. The main idea behind these passes is to replace the uses of int64 with int32 where feasible.
+
+- For floating-point models, these passes need to run very early in the lowering process and can be passed in to the to_edge_transform_and_lower() function call as an optional parameter.
+- For quantized models, these transformations will be automatically handled during annotation before the export stage.
+
+List of model specific and optional passes:
+
+- ConvertInt64ConstOpsToInt32Pass
+  - Functionalities:
+    - Rewrites constant-producing ops that output int64 to instead output int32, when values are within int32 bounds.
+  - Supported Ops:
+    - `torch.full`, `torch.arange`, `torch.eye`, `torch.linspace`, `torch.tensor`
+  - Example usage:
+    - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+    - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+
+- ConvertInt64OutputOpsToInt32Pass
+  - Overview:
+    - Rewrites or removes operations that produce int64 outputs, converting them to int32 where possible.
+    - Overflow checks are applied selectively; for ops without such checks, users need to ensure values fit within the int32 range.
+  - Functionalities:
+    1. Handling casting to int64:
+       - (1) int32 -> int64:
+         - Removes the cast and redirect uses of int64 to int32
+       - (2) other types -> int64:
+         - Rewrites the cast to other types -> int32
+       - Supported Ops:
+         - torch.ops.aten.to.\[dtype|dtype_layout\]
+         - exir_ops.edge.dim_order_ops.\_to_dim_order_copy.default
+    2. Post-process argmax outputs:
+       - Inserts an int64->int32 cast after the argmax operations that produce int64 outputs:
+       - Supported Ops:
+         - torch.ops.aten.argmax.default
+         - exir_ops.edge.aten.argmax.default
+  - Example usage:
+    - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+    - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+
+- InsertInt32CastsAfterInt64PlaceholdersPass
+  - Functionalities:
+    - Inserts an int64 -> int32 cast immediately after each int64 placeholder (graph input).
+    - Redirects all uses of each int64 placeholder to its int32 cast output.
+    - Inserts local int32 -> int64 casts at call sites where an operator requires int64 inputs, e.g. `torch.nn.functional.one_hot`
+  - Pass ordering:
+    - When used with `ConvertInt64ConstOpsToInt32Pass` and `ConvertInt64OutputOpsToInt32Pass`, run this pass last.
+    - Rationale: Those passes may cause retracing to re-infer some int64 placeholders as int32. Running this pass last casts only inputs that remain int64, minimizing inserted casts.
+  - Example usage:
+    - backends/arm/test/models/test_llama.py
+    - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+    - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+
+- ToDevicePass
+  - This is a utility for moving an already-quantized or already-decomposed GraphModule to another device.
+  - it is intended to be used immediately before rerunning / retracing / torch.export.export(...)
+  - Functionalities:
+    - Calls `.to(device)` on the GraphModule and rewrites explicit `device=` kwargs on `call_function` nodes to a user-specified device.
+    - Useful when manually moving an already-quantized or already-decomposed graph module to another device for validation, since some constant-producing nodes may still carry an export-time device kwarg.
+  - Example usage:
+    - `from executorch.exir.passes import ToDevicePass`
+    - `graph_module = ToDevicePass("cpu")(graph_module).graph_module`
+    - backends/arm/test/misc/test_post_quant_device_switch.py
+
+## Profiling of VGF Backend
+
+VGF profiling now emits both host-side ExecuTorch event tracer ranges and Vulkan timestamp-query measurements. The host ranges split init into `VGF_INIT_*` phases, including `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE`, and split execute into `VGF_COPY_INPUTS`, `VGF_QUEUE_SUBMIT`, `VGF_QUEUE_WAIT_IDLE`, `VGF_TIMESTAMP_QUERY_READBACK`, `VGF_DISPATCH_AND_WAIT`, and `VGF_COPY_OUTPUTS`. Vulkan timestamp queries are inserted into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`, producing `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. To collect a profile, build the VGF runner with event tracing enabled, run the model with an ETDump path, then convert the ETDump to Chrome trace JSON:
+
+```bash
+mkdir -p etdumps traces
+
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+
+python ./backends/arm/scripts/etdump_to_chrome_trace.py \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --output ./etdumps/vgf_timestamps_trace.json
+```
+
+Open the result in Chrome by navigating to `chrome://tracing`, selecting **Load**, and choosing `./traces/vgf_timestamps_trace.json`. The key fields to inspect are `VGF_INIT_CREATE_DATA_GRAPH_PIPELINE` for pipeline creation/init cost, `VGF_QUEUE_SUBMIT` and `VGF_QUEUE_WAIT_IDLE` for host-side submission/wait overhead, and `VGF_DATA_GRAPH_DEVICE_TIME` for device-side data-graph execution time.
+
+VGF profiling can emit optional Vulkan timestamp-query measurements. Vulkan timestamp queries are controlled by the `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` environment variable. Set it to `1` to insert timestamp queries into the recorded VGF command buffer around `vkCmdDispatchDataGraphARM()`. When enabled, the backend emits `VGF_DATA_GRAPH_DEVICE_TIME`, which measures device-side elapsed time for the submitted data-graph command buffer region. If `EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES` is unset or set to `0`, only host-side ExecuTorch event tracer ranges are collected and no Vulkan timestamp-query readback is performed. Note that the timestamp-query measurements will be printed out and not included into `.etdp`.
+
+So, in this case the command is:
+
+```bash
+EXECUTORCH_VGF_ENABLE_TIMESTAMP_QUERIES=1 \
+./cmake-out-vgf/executor_runner \
+  --model_path vgf_mobilenetv2_out/mobilenet_v2_vgf_int8.pte \
+  --num_executions 10 \
+  --etdump_path ./etdumps/vgf_timestamps.etdp \
+  --print_output none
+```
+
+## Help & Improvements
+
+If you have problems or questions, or have suggestions for ways to improve the Arm backend, please reach out
+to the Arm team developing this backend, or create an issue on [here](https://www.github.com/pytorch/executorch/issues) and add the "partner: arm" label.

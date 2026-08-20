@@ -1,0 +1,41 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+binary_scalar_texture:
+  parameter_names_with_default_values:
+    OPERATOR: power_of(X, Y)
+    IS_COMPARISON_OP: false
+    DTYPE: float
+    SCALAR_VALUE_TYPE: float
+    STORAGE: texture3d
+  generate_variant_forall:
+    combination:
+      parameter_names: [DTYPE, SCALAR_VALUE_TYPE]
+      combos:
+       - parameter_values: [half, float]
+       - parameter_values: [float, float]
+       - parameter_values: [int32, int32]
+       - parameter_values: [int32, float]
+  shader_variants:
+    - NAME: pow_scalar_texture3d
+    - NAME: eq_scalar_texture3d
+      OPERATOR: equal(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: ne_scalar_texture3d
+      OPERATOR: notEqual(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: lt_scalar_texture3d
+      OPERATOR: lessThan(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: le_scalar_texture3d
+      OPERATOR: lessThanEqual(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: gt_scalar_texture3d
+      OPERATOR: greaterThan(X, Y)
+      IS_COMPARISON_OP: true
+    - NAME: ge_scalar_texture3d
+      OPERATOR: greaterThanEqual(X, Y)
+      IS_COMPARISON_OP: true

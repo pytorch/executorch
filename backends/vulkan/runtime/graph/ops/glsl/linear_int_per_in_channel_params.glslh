@@ -1,0 +1,22 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT_PER_IN_CHANNEL_PARAMS_GLSLH
+#define LINEAR_INT_PER_IN_CHANNEL_PARAMS_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct IntPerInChannelParams {
+  ivec4 data[TILE_M4];
+};
+
+void initialize(out IntPerInChannelParams params) {
+  [[unroll]] for (int i = 0; i < TILE_M4; i++) { params.data[i] = ivec4(0); }
+}
+
+#endif // LINEAR_INT_PER_IN_CHANNEL_PARAMS_GLSLH

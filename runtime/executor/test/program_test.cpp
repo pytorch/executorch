@@ -1,0 +1,996 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/runtime/executor/program.h>
+
+#include <cctype>
+#include <filesystem>
+
+#include <cstring>
+#include <memory>
+
+#include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
+#include <executorch/test/utils/DeathTest.h>
+
+#include <gtest/gtest.h>
+
+using namespace ::testing;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using torch::executor::util::BufferDataLoader;
+using torch::executor::util::FileDataLoader;
+
+// Verification level to use for tests not specifically focused on verification.
+// Use the highest level to exercise it more.
+constexpr Program::Verification kDefaultVerification =
+    Program::Verification::InternalConsistency;
+
+class ProgramTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    executorch::runtime::runtime_init();
+
+    // Load the serialized ModuleAdd data.
+    const char* path = std::getenv("ET_MODULE_ADD_PATH");
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
+    ASSERT_EQ(loader.error(), Error::Ok);
+
+    // This file should always be compatible.
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(header.error(), Error::Ok);
+    EXPECT_EQ(
+        Program::check_header(header->data(), header->size()),
+        Program::HeaderStatus::CompatibleVersion);
+
+    add_loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
+
+    // Load the serialized ModuleMultiEntry data.
+    path = std::getenv("ET_MODULE_MULTI_ENTRY_PATH");
+    Result<FileDataLoader> multi_loader = FileDataLoader::from(path);
+    ASSERT_EQ(multi_loader.error(), Error::Ok);
+
+    // This file should always be compatible.
+    Result<FreeableBuffer> multi_header = multi_loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(multi_header.error(), Error::Ok);
+    EXPECT_EQ(
+        Program::check_header(multi_header->data(), multi_header->size()),
+        Program::HeaderStatus::CompatibleVersion);
+
+    multi_loader_ =
+        std::make_unique<FileDataLoader>(std::move(multi_loader.get()));
+  }
+
+  std::unique_ptr<FileDataLoader> add_loader_;
+  std::unique_ptr<FileDataLoader> multi_loader_;
+};
+
+namespace executorch {
+namespace runtime {
+namespace testing {
+// Provides access to private Program methods.
+class ProgramTestFriend final {
+ public:
+  ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
+      const Program* program,
+      const DataLoader::SegmentInfo& segment_info) {
+    return program->LoadSegment(segment_info);
+  }
+
+  ET_NODISCARD static Error load_mutable_subsegment_into(
+      const Program* program,
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size,
+      void* buffer) {
+    return program->load_mutable_subsegment_into(
+        mutable_data_segments_index, offset_index, size, buffer);
+  }
+
+  const static executorch_flatbuffer::Program* GetInternalProgram(
+      const Program* program) {
+    return program->internal_program_;
+  }
+  static Result<const void*> get_constant_buffer_data(
+      const Program* program,
+      size_t buffer_index,
+      size_t nbytes) {
+    return program->get_constant_buffer_data(buffer_index, nbytes);
+  }
+
+  // Constructs a Program directly with a chosen segment_base_offset and a
+  // pre-built FlatBuffer body. Used to set up malformed states (e.g.
+  // segment_base_offset != 0 but segments == null) that Program::load cannot
+  // produce, since segment_base_offset is driven only by the extended header.
+  static Program MakeProgram(
+      DataLoader* loader,
+      size_t segment_base_offset,
+      const executorch_flatbuffer::Program* internal_program) {
+    return Program(
+        loader,
+        segment_base_offset,
+        FreeableBuffer{},
+        internal_program,
+        FreeableBuffer{},
+        std::nullopt);
+  }
+};
+} // namespace testing
+} // namespace runtime
+} // namespace executorch
+
+using executorch::runtime::testing::ProgramTestFriend;
+
+TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
+  // Parse the Program from the data.
+  Result<Program> program =
+      Program::load(add_loader_.get(), Program::Verification::Minimal);
+
+  // Should have succeeded.
+  EXPECT_EQ(program.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, DataParsesWithInternalConsistencyVerification) {
+  // Parse the Program from the data.
+  Result<Program> program = Program::load(
+      add_loader_.get(), Program::Verification::InternalConsistency);
+
+  // Should have succeeded.
+  EXPECT_EQ(program.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, BadMagicFailsToLoad) {
+  // Make a local copy of the data.
+  size_t data_len = add_loader_->size().get();
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+    // FreeableBuffer goes out of scope and frees its data.
+  }
+
+  // Corrupt the magic value.
+  EXPECT_EQ(data[4], 'E');
+  data[4] = 'X';
+  EXPECT_EQ(data[5], 'T');
+  data[5] = 'Y';
+
+  // Wrap the modified data in a loader.
+  BufferDataLoader data_loader(data.get(), data_len);
+
+  {
+    // Parse the Program from the data. Use minimal verification to show that
+    // even this catches the header problem.
+    Result<Program> program =
+        Program::load(&data_loader, Program::Verification::Minimal);
+
+    // Should fail.
+    ASSERT_EQ(program.error(), Error::InvalidProgram);
+  }
+
+  // Fix the data.
+  data[4] = 'E';
+  data[5] = 'T';
+
+  {
+    // Parse the Program from the data again.
+    Result<Program> program =
+        Program::load(&data_loader, Program::Verification::Minimal);
+
+    // Should now succeed.
+    ASSERT_EQ(program.error(), Error::Ok);
+  }
+}
+
+// These tests require ET_ENABLE_PROGRAM_VERIFICATION to be enabled.
+// In Release builds, verification is disabled by default to save binary size.
+#ifndef ET_ENABLE_PROGRAM_VERIFICATION
+#define ET_ENABLE_PROGRAM_VERIFICATION 1
+#endif
+
+// ET_ENABLE_DEPRECATED_CONSTANT_BUFFER is 1 by default, and
+// set to 0 in the root CMakeLists.txt for OSS builds.
+#ifndef ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+#define ET_ENABLE_DEPRECATED_CONSTANT_BUFFER 1
+#endif
+
+#if ET_ENABLE_PROGRAM_VERIFICATION
+
+TEST_F(ProgramTest, VerificationCatchesTruncation) {
+  // Get the program data.
+  size_t full_data_len = add_loader_->size().get();
+  Result<FreeableBuffer> full_data = add_loader_->load(
+      /*offset=*/0,
+      full_data_len,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(full_data.error(), Error::Ok);
+
+  // Make a loader that only exposes half of the data.
+  BufferDataLoader half_data_loader(full_data->data(), full_data_len / 2);
+
+  // Loading with full verification should fail.
+  Result<Program> program = Program::load(
+      &half_data_loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, VerificationCatchesCorruption) {
+  // Make a local copy of the data.
+  size_t data_len = add_loader_->size().get();
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+    // FreeableBuffer goes out of scope and frees its data.
+  }
+
+  // Corrupt the second half of the data.
+  std::memset(&data[data_len / 2], 0x55, data_len - (data_len / 2));
+
+  // Wrap the corrupted data in a loader.
+  BufferDataLoader data_loader(data.get(), data_len);
+
+  // Should fail to parse corrupted data when using full verification.
+  Result<Program> program =
+      Program::load(&data_loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::InvalidProgram);
+}
+
+#endif // ET_ENABLE_PROGRAM_VERIFICATION
+
+TEST_F(ProgramTest, MinimalVerificationCatchesInvalidRootOffset) {
+  // Make a local copy of the data.
+  size_t data_len = add_loader_->size().get();
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+  }
+
+  // Corrupt the root offset (first 4 bytes) to point beyond the buffer.
+  // Use WriteScalar for correct little-endian encoding.
+  flatbuffers::WriteScalar<flatbuffers::uoffset_t>(
+      data.get(), static_cast<flatbuffers::uoffset_t>(data_len + 1000));
+
+  // Wrap the corrupted data in a loader.
+  BufferDataLoader data_loader(data.get(), data_len);
+
+  // Should fail with Minimal verification due to invalid root offset.
+  Result<Program> program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+  ASSERT_EQ(program.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, UnalignedProgramDataFails) {
+  // Make a local copy of the data, on an odd alignment.
+  size_t data_len = add_loader_->size().get();
+  auto data = std::make_unique<char[]>(data_len + 1);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get() + 1, src->data(), data_len);
+    // FreeableBuffer goes out of scope and frees its data.
+  }
+
+  // Wrap the offset data in a loader.
+  BufferDataLoader data_loader(data.get() + 1, data_len);
+
+  // Should refuse to accept unaligned data.
+  Result<Program> program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+  ASSERT_NE(program.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
+  // Load a program with no appended segments.
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  EXPECT_EQ(program.error(), Error::Ok);
+
+  // Loading a non-program segment should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Backend,
+      /*segment_index=*/0,
+      "some-backend");
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_NE(segment.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadSegmentWithNullSegmentsDoesNotCrash) {
+  // A non-zero segment_base_offset with an absent `segments` table must return
+  // InvalidProgram rather than dereferencing null.
+  flatbuffers::FlatBufferBuilder builder(256);
+  builder.Finish(
+      executorch_flatbuffer::CreateProgram(builder),
+      executorch_flatbuffer::ProgramIdentifier());
+  const auto* internal_program =
+      executorch_flatbuffer::GetProgram(builder.GetBufferPointer());
+
+  uint8_t dummy[16] = {};
+  BufferDataLoader loader(dummy, sizeof(dummy));
+  Program program =
+      ProgramTestFriend::MakeProgram(&loader, 16, internal_program);
+
+  Result<FreeableBuffer> result = ProgramTestFriend::LoadSegment(
+      &program,
+      DataLoader::SegmentInfo(
+          DataLoader::SegmentInfo::Type::Backend, /*segment_index=*/0, "b"));
+  EXPECT_EQ(result.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, LoadMutableSubsegmentWithNullSegmentsDoesNotCrash) {
+  // Same malformed state reached through load_mutable_subsegment_into:
+  // mutable_data_segments is populated so the function passes its own guards,
+  // but segments is absent.
+  flatbuffers::FlatBufferBuilder builder(256);
+  auto subsegment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+  builder.Finish(
+      executorch_flatbuffer::CreateProgram(
+          builder,
+          /*version=*/0,
+          /*execution_plan=*/0,
+          /*constant_buffer=*/0,
+          /*backend_delegate_data=*/0,
+          /*segments=*/0,
+          /*constant_segment=*/0,
+          builder.CreateVector(
+              std::vector<flatbuffers::Offset<
+                  executorch_flatbuffer::SubsegmentOffsets>>{subsegment})),
+      executorch_flatbuffer::ProgramIdentifier());
+  const auto* internal_program =
+      executorch_flatbuffer::GetProgram(builder.GetBufferPointer());
+
+  uint8_t dummy[16] = {};
+  BufferDataLoader loader(dummy, sizeof(dummy));
+  Program program =
+      ProgramTestFriend::MakeProgram(&loader, 16, internal_program);
+
+  uint8_t out[4] = {};
+  EXPECT_EQ(
+      ProgramTestFriend::load_mutable_subsegment_into(
+          &program,
+          /*mutable_data_segments_index=*/0,
+          /*offset_index=*/0,
+          sizeof(out),
+          out),
+      Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, ShortDataHeader) {
+  Result<FreeableBuffer> header = add_loader_->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(header.error(), Error::Ok);
+
+  // Provide less than the required amount of data.
+  EXPECT_EQ(
+      Program::check_header(header->data(), Program::kMinHeadBytes - 1),
+      Program::HeaderStatus::ShortData);
+}
+
+TEST_F(ProgramTest, IncompatibleHeader) {
+  // Make a local copy of the header.
+  size_t data_len = Program::kMinHeadBytes;
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+    // FreeableBuffer goes out of scope and frees its data.
+  }
+
+  // Change the number part of the magic value to a different value.
+  EXPECT_EQ(data[4], 'E');
+  EXPECT_EQ(data[5], 'T');
+  EXPECT_TRUE(std::isdigit(data[6])) << "Not a digit: " << data[6];
+  EXPECT_TRUE(std::isdigit(data[7])) << "Not a digit: " << data[7];
+
+  // Modify the tens digit.
+  if (data[6] == '9') {
+    data[6] = '0';
+  } else {
+    data[6] += 1;
+  }
+  EXPECT_TRUE(std::isdigit(data[6])) << "Not a digit: " << data[6];
+
+  // Should count as present but incompatible.
+  EXPECT_EQ(
+      Program::check_header(data.get(), data_len),
+      Program::HeaderStatus::IncompatibleVersion);
+}
+
+TEST_F(ProgramTest, HeaderNotPresent) {
+  // Make a local copy of the header.
+  size_t data_len = Program::kMinHeadBytes;
+  auto data = std::make_unique<char[]>(data_len);
+  {
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    ASSERT_EQ(src.error(), Error::Ok);
+    ASSERT_EQ(src->size(), data_len);
+    memcpy(data.get(), src->data(), data_len);
+    // FreeableBuffer goes out of scope and frees its data.
+  }
+
+  // Corrupt the magic value.
+  EXPECT_EQ(data[4], 'E');
+  data[4] = 'X';
+  EXPECT_EQ(data[5], 'T');
+  data[5] = 'Y';
+
+  // The header is not present.
+  EXPECT_EQ(
+      Program::check_header(data.get(), data_len),
+      Program::HeaderStatus::NotPresent);
+}
+
+TEST_F(ProgramTest, getMethods) {
+  // Parse the Program from the data.
+  Result<Program> program_res =
+      Program::load(multi_loader_.get(), kDefaultVerification);
+  EXPECT_EQ(program_res.error(), Error::Ok);
+
+  Program program(std::move(program_res.get()));
+
+  // Method calls should succeed without hitting ET_CHECK.
+  EXPECT_EQ(program.num_methods(), 2);
+  auto res = program.get_method_name(0);
+  EXPECT_TRUE(res.ok());
+  EXPECT_EQ(strcmp(res.get(), "forward"), 0);
+  auto res2 = program.get_method_name(1);
+  EXPECT_TRUE(res2.ok());
+  EXPECT_EQ(strcmp(res2.get(), "forward2"), 0);
+}
+
+TEST_F(ProgramTest, GetNamedDataMap_Fail) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Get the named data map. Expect to fail, as add.pte does not have any
+  // named data segments.
+  Result<const executorch::runtime::NamedDataMap*> named_data_map =
+      program->get_named_data_map();
+  EXPECT_EQ(named_data_map.error(), Error::NotFound);
+}
+
+// Test that the deprecated Load method (capital 'L') still works.
+TEST_F(ProgramTest, DEPRECATEDLoad) {
+  // Parse the Program from the data.
+  // NOLINTNEXTLINE(facebook-hte-Deprecated)
+  Result<Program> program_res = Program::Load(multi_loader_.get());
+  EXPECT_EQ(program_res.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_NE(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Expect 1 constant segment, placeholder for non-const tensors.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+}
+
+TEST_F(ProgramTest, LoadConstantSegment) {
+  // Load the serialized ModuleAddMul data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_ADD_MUL_PATH");
+  Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+  ASSERT_EQ(linear_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(linear_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(linear_header->data(), linear_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&linear_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data, which is currently always in segment index
+  // zero.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_EQ(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect one segment containing the constants.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Check constant segment offsets.
+  EXPECT_EQ(flatbuffer_program->constant_segment()->segment_index(), 0);
+  EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
+}
+
+TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
+  // Load the serialized ModuleAddMul data, with constants in the flatbuffer and
+  // no constants in the segment.
+  const char* linear_path =
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+  ASSERT_EQ(linear_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(linear_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(linear_header->data(), linear_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&linear_loader.get());
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect no segments.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 0);
+
+  // The constant buffer should exist.
+  EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
+#else
+  // The deprecated in-flatbuffer constant_buffer path is disabled; loading a
+  // PTE that relies on it must be rejected.
+  EXPECT_EQ(program.error(), Error::InvalidProgram);
+#endif
+}
+
+TEST_F(ProgramTest, LoadFromMutableSegment) {
+  // Load the serialized ModuleSimpleTrain data.
+  auto path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  Result<FileDataLoader> training_loader = FileDataLoader::from(path);
+  ASSERT_EQ(training_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> training_header = training_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(training_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(training_header->data(), training_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&training_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // The linear layer weight tensor is 3x3 floats = 36 bytes.
+  // Load the full weight data to verify the loading mechanism works correctly.
+  constexpr size_t kWeightSize = 36;
+  uint8_t buffer[kWeightSize] = {0};
+  uint8_t buffer2[kWeightSize] = {0};
+
+  // Load the mutable segment data (linear.weight at offset_index 1)
+  Error err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, kWeightSize, buffer);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Load the same data into a second buffer
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, kWeightSize, buffer2);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Verify both loads return identical data
+  EXPECT_EQ(std::memcmp(buffer, buffer2, kWeightSize), 0)
+      << "Loading the same segment twice should return identical data";
+
+  // Verify that the loaded data is non-trivial (not all zeros).
+  bool has_nonzero = false;
+  for (size_t i = 0; i < kWeightSize; ++i) {
+    if (buffer[i] != 0) {
+      has_nonzero = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(has_nonzero)
+      << "Loaded mutable segment data should not be all zeros";
+
+  // Mutate the local buffer and reload to verify source immutability
+  std::memset(buffer, 0xFF, kWeightSize);
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, kWeightSize, buffer);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Verify the reloaded data matches the original (local mutation didn't
+  // affect the file source)
+  EXPECT_EQ(std::memcmp(buffer, buffer2, kWeightSize), 0)
+      << "Reloading after local mutation should return original data";
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect 2 segments. 1 mutable segment and 1 constant segment.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 2);
+
+  // Expect a mutable data segment.
+  EXPECT_EQ(flatbuffer_program->mutable_data_segments()->size(), 1);
+
+  // Expect the 0 index to be reserved and the offsets for weight and bias of
+  // linear to be indices 1 and 2.
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->size(),
+      3);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(0),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(1),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(2),
+      36);
+
+  // Loading beyond file should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, 500, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond offsets should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 500, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond segments should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 500, 1, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadAndCheckPTESize) {
+  // Load the serialized ModuleAddMul data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_ADD_MUL_PATH");
+  Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+  ASSERT_EQ(linear_loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&linear_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Create a truncated file.
+  Result<FreeableBuffer> truncated_file = linear_loader->load(
+      0, 200, DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(truncated_file.error(), Error::Ok);
+
+  BufferDataLoader truncated_loader =
+      BufferDataLoader(truncated_file->data(), 200);
+  Result<Program> truncated_program = Program::load(&truncated_loader);
+  ASSERT_EQ(truncated_program.error(), Error::InvalidProgram);
+}
+
+// Regression test for null pointer dereference in
+// get_output_flattening_encoding when container_meta_type is missing from the
+// ExecutionPlan.
+TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingContainerMetaType) {
+  // Build a minimal valid Program with an ExecutionPlan that has NO
+  // container_meta_type. This would previously crash with a null pointer
+  // dereference.
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create a minimal ExecutionPlan with name but NO container_meta_type
+  auto plan_name = builder.CreateString("forward");
+
+  // Create empty vectors for required fields
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  // Build ExecutionPlan WITHOUT container_meta_type (it will be null)
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      0, // container_meta_type = null (this is the vulnerability trigger)
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  // Create empty segment info
+  auto empty_constant_buffer = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{});
+  auto empty_backend_data = builder.CreateVector(
+      std::vector<flatbuffers::Offset<
+          executorch_flatbuffer::BackendDelegateInlineData>>{});
+  auto empty_segments = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
+
+  // Placeholder constant_segment.
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  // Build the Program
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0, // version
+      execution_plans,
+      empty_constant_buffer,
+      empty_backend_data,
+      empty_segments,
+      constant_segment);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  // Copy to 16-byte aligned buffer (required by Program::load)
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(builder.GetSize(), sizeof(aligned_buffer));
+  std::memcpy(aligned_buffer, builder.GetBufferPointer(), builder.GetSize());
+
+  // Load the malformed program
+  BufferDataLoader data_loader(aligned_buffer, builder.GetSize());
+  Result<Program> loaded_program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+
+  // Program should load successfully (the malformed data is valid FlatBuffer)
+  ASSERT_EQ(loaded_program.error(), Error::Ok);
+
+  // Calling get_output_flattening_encoding should return an error,
+  // NOT crash with null pointer dereference
+  Result<const char*> encoding =
+      loaded_program->get_output_flattening_encoding("forward");
+
+  // Should return InvalidProgram error due to missing container_meta_type
+  EXPECT_EQ(encoding.error(), Error::InvalidProgram);
+}
+
+// Test that get_output_flattening_encoding handles missing encoded_out_str
+TEST_F(ProgramTest, GetOutputFlatteningEncodingWithMissingEncodedOutStr) {
+  flatbuffers::FlatBufferBuilder builder(2048);
+
+  // Create ContainerMetadata with encoded_inp_str but NO encoded_out_str
+  auto inp_str = builder.CreateString("test_input");
+  auto container_meta = executorch_flatbuffer::CreateContainerMetadata(
+      builder,
+      inp_str,
+      0); // encoded_out_str = null
+
+  auto plan_name = builder.CreateString("forward");
+  auto empty_values = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{});
+  auto empty_inputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_outputs = builder.CreateVector(std::vector<int32_t>{});
+  auto empty_chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{});
+  auto empty_operators = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{});
+  auto empty_delegates = builder.CreateVector(
+      std::vector<
+          flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{});
+  auto buffer_sizes = builder.CreateVector(std::vector<int64_t>{0});
+
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      plan_name,
+      container_meta, // container_meta_type exists
+      empty_values,
+      empty_inputs,
+      empty_outputs,
+      empty_chains,
+      empty_operators,
+      empty_delegates,
+      buffer_sizes);
+
+  auto execution_plans = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+          execution_plan});
+
+  auto empty_constant_buffer = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{});
+  auto empty_backend_data = builder.CreateVector(
+      std::vector<flatbuffers::Offset<
+          executorch_flatbuffer::BackendDelegateInlineData>>{});
+  auto empty_segments = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{});
+
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      execution_plans,
+      empty_constant_buffer,
+      empty_backend_data,
+      empty_segments,
+      constant_segment);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  // Copy to 16-byte aligned buffer (required by Program::load)
+  alignas(16) uint8_t aligned_buffer[2048];
+  ASSERT_LE(builder.GetSize(), sizeof(aligned_buffer));
+  std::memcpy(aligned_buffer, builder.GetBufferPointer(), builder.GetSize());
+
+  BufferDataLoader data_loader(aligned_buffer, builder.GetSize());
+  Result<Program> loaded_program =
+      Program::load(&data_loader, Program::Verification::Minimal);
+
+  ASSERT_EQ(loaded_program.error(), Error::Ok);
+
+  // Should return error for missing encoded_out_str, not crash
+  Result<const char*> encoding =
+      loaded_program->get_output_flattening_encoding("forward");
+
+  EXPECT_EQ(encoding.error(), Error::InvalidProgram);
+}
+
+TEST_F(ProgramTest, NullPlanNameDoesNotCrash) {
+  flatbuffers::FlatBufferBuilder builder(1024);
+
+  // Create dummy execution_plan with null plan_name.
+  auto execution_plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      0,
+      0, // name=null, container_meta_type=null
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>{}),
+      builder.CreateVector(std::vector<int64_t>{0}));
+
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      0,
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{
+              execution_plan}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<
+              executorch_flatbuffer::BackendDelegateInlineData>>{}),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}),
+      constant_segment);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+
+  alignas(16) uint8_t buf[2048];
+  std::memcpy(buf, builder.GetBufferPointer(), builder.GetSize());
+  BufferDataLoader loader(buf, builder.GetSize());
+
+  Result<Program> p = Program::load(&loader, Program::Verification::Minimal);
+  ASSERT_EQ(p.error(), Error::Ok);
+
+  // Should return error, not crash
+  EXPECT_EQ(p->method_meta("forward").error(), Error::InvalidArgument);
+}
+
+#if ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
+  const char* path =
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> loader = FileDataLoader::from(path);
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Request way more bytes than any buffer could contain
+  Result<const void*> data = ProgramTestFriend::get_constant_buffer_data(
+      &program.get(), /*buffer_index=*/0, /*nbytes=*/SIZE_MAX);
+
+  EXPECT_EQ(data.error(), Error::InvalidArgument);
+}
+#endif // ET_ENABLE_DEPRECATED_CONSTANT_BUFFER

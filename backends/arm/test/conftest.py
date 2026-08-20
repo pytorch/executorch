@@ -1,0 +1,149 @@
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import logging
+import os
+import random
+import sys
+from typing import Any
+
+import pytest
+
+"""
+This file contains the pytest hooks, fixtures etc. for the Arm test suite.
+"""
+
+
+# ==== Pytest hooks ====
+
+
+def pytest_configure(config):
+    pytest._test_options = {}  # type: ignore[attr-defined]
+
+    if getattr(config.option, "llama_inputs", False) and config.option.llama_inputs:
+        pytest._test_options["llama_inputs"] = config.option.llama_inputs  # type: ignore[attr-defined]
+
+    logging.basicConfig(stream=sys.stdout)
+    seed, seed_label = _setup_random_seed()
+    config._test_seed = seed
+    config._test_seed_label = seed_label
+
+    if os.environ.get("TEST_RUNTIME_IS_NOT_OSS", "0") != "1":
+        # This imports/uses torch early, which doesn't work in some Buck2 test environments.
+        # Since this only makes randomness deterministic (reducing flakiness), it's mainly meant for
+        # local/OSS project test runs.
+        _set_random_seed(seed)
+
+
+def pytest_report_header(config):
+    return config._test_seed_label
+
+
+def pytest_collection_modifyitems(config, items):
+    pass
+
+
+def pytest_addoption(parser):
+    def try_addoption(*args, **kwargs):
+        try:
+            parser.addoption(*args, **kwargs)
+        except Exception:  # nosec B110 - pytest redefines options, safe to ignore
+            pass
+
+    try_addoption("--arm_quantize_io", action="store_true", help="Deprecated.")
+    try_addoption("--arm_run_corstoneFVP", action="store_true", help="Deprecated.")
+    try_addoption(
+        "--llama_inputs",
+        nargs="+",
+        help="List of two files. Firstly .pt file. Secondly .json",
+    )
+
+
+def pytest_sessionstart(session):
+    pass
+
+
+def pytest_sessionfinish(session, exitstatus):
+    pass
+
+
+# ==== End of Pytest hooks =====
+
+
+# ==== Pytest fixtures =====
+
+
+@pytest.fixture(autouse=True)
+def set_random_seed(request):
+    """Control random numbers in Arm test suite. Default behavior is to use a
+    fixed seed (0), which ensures reproducible tests. Use the env variable
+    TEST_SEED to set a custom session seed, or set it to RANDOM to choose a
+    random session seed.
+
+    Examples:
+    As default use fixed seed (0) for reproducible tests
+        pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
+    Use a random seed for the test session
+        TEST_SEED=RANDOM pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
+    Rerun with a specific seed
+        TEST_SEED=3478246 pytest --config-file=/dev/null --verbose -s --color=yes  backends/arm/test/ops/test_avg_pool.py -k <TESTCASE>
+
+    """
+    _set_random_seed(request.config._test_seed)
+
+
+def _setup_random_seed():
+    seed_env = os.environ.get("TEST_SEED", "0")
+    if seed_env == "RANDOM":
+        random.seed()  # reset seed, in case any other test has fiddled with it
+        seed = random.randint(0, 2**32 - 1)  # nosec B311 - non-crypto seed for tests
+        seed_label = f"TEST_SEED=RANDOM using:{seed}"
+    elif str.isdigit(seed_env):
+        seed = int(seed_env)
+        seed_label = f"TEST_SEED={seed}"
+    else:
+        raise TypeError("TEST_SEED env variable must be integers or the string RANDOM")
+
+    return seed, seed_label
+
+
+def _set_random_seed(seed):
+    import torch
+
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+
+# ==== End of Pytest fixtures =====
+
+
+def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
+    """Returns whether an option is successfully enabled, i.e. if the flag was
+    given to pytest and the necessary requirements are available.
+
+    The optional parameter 'fail_if_not_enabled' makes the function raise a
+    RuntimeError instead of returning False.
+
+    """
+
+    if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
+        return True
+    else:
+        if fail_if_not_enabled:
+            raise RuntimeError(f"Required option '{option}' for test is not enabled")
+        else:
+            return False
+
+
+def get_option(option: str) -> Any | None:
+    """Returns the value of an pytest option if it is set, otherwise None.
+
+    Args:
+        option (str): The option to check for.
+
+    """
+    if option in pytest._test_options:  # type: ignore[attr-defined]
+        return pytest._test_options[option]  # type: ignore[attr-defined]
+    return None

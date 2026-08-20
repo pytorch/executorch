@@ -1,0 +1,82 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Shared attention weight tile load for both LLM SDPA and fused SDPA
+ * (used in the AV shader to read softmax output).
+ *
+ * The attn_weights tensor layout is [head, S, L] in both cases:
+ *   index = (head * S * L4) + (s * L4) + l4
+ *
+ * No layout switch needed — both variants use the same index formula.
+ *
+ * Optional macros:
+ *   INPUT_BUFFER — use buffer path; otherwise texture. Set at the shader
+ *                  level when IO_STORAGE == "buffer" and applies to all
+ *                  IO tensors uniformly (attn_weights now follows the
+ *                  output's storage type).
+ */
+
+#ifndef SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+#define SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+LINEAR_FP_INPUT_TILE_VEC4_T load_attn_weight_c4(
+    const int c4,
+    const int s,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+#ifdef INPUT_BUFFER
+  return t_attn_weights[(q_h * S * C4) + (s * C4) + c4];
+#else
+  return texelFetch(t_attn_weights, ivec3(c4, s, q_h), 0);
+#endif
+}
+
+void load_attn_weight_tile_no_checks(
+    out FPInputTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_K4; ++c4) {
+      tile.data[s][c4] =
+          load_attn_weight_c4(c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+    }
+  }
+}
+
+void load_attn_weight_tile_with_checks(
+    out FPInputTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_K4; ++c4) {
+      if (c4_start + c4 < C4 && s_start + s < S) {
+        tile.data[s][c4] =
+            load_attn_weight_c4(c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+      } else {
+        tile.data[s][c4] = LINEAR_FP_INPUT_TILE_VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH

@@ -1,0 +1,90 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_common.glslh"
+#include "linear_fp_input_tile.glslh"
+#include "linear_fp_output_tile.glslh"
+#include "linear_fp_per_out_channel_params.glslh"
+#include "linear_int4_weight_tile.glslh"
+
+VEC4_T unpack_packed_4xint4(const int int8x4, const int n4_group) {
+  return VEC4_T(
+      extract_4bit_from_packed_int_le(int8x4, n4_group + 0),
+      extract_4bit_from_packed_int_le(int8x4, n4_group + 2),
+      extract_4bit_from_packed_int_le(int8x4, n4_group + 4),
+      extract_4bit_from_packed_int_le(int8x4, n4_group + 6));
+}
+
+T extract_4bit_from_weight_block(
+    const ivec4 block,
+    const int col,
+    const int row) {
+  return T(((block[row] >> (4 * col)) & 0xF) - 8);
+}
+
+void fp_accumulate_with_int4_weight(
+    inout FPOutTile accum,
+    FPInputTile in_tile,
+    Int4WeightTile w_tile,
+    FPPerOutChannelParams scales_tile,
+    FPPerOutChannelParams zeros_tile) {
+  // Accum tile is indexed as accum[m][n4][n4i]
+  // -> gives fp accumulator for output tile element at (x = n, y = m)
+  // Input tile is indexed as in_tile.data[m][k4]
+  // -> gives vec4 containing the fp inputs at index
+  //    (k, m), (k + 1, m), (k + 2, m), (k + 3, m)
+  // Weight tile is indexed as w_tile.data[k4][n8][n4i]
+  // -> gives packed integer containing the 8x 4-bit quantized values at index
+  //    (n, k), (n, k + 1), (n, k + 2), (n, k + 3),
+  //    (n + 4, k), (n + 4, k + 1), (n + 4, k + 2), (n + 4, k + 3)
+  VEC4_T weight_texels[2];
+  [[unroll]] for (int n8 = 0; n8 < TILE_N8; ++n8) {
+    const int n4 = mul_2(n8);
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      [[unroll]] for (int k4i = 0; k4i < 4; ++k4i) {
+        const int base_col_1 = mul_2(k4i);
+        const int base_col_2 = base_col_1 + 1;
+        weight_texels[0] = VEC4_T(
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 0),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 1),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 2),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 3));
+        weight_texels[1] = VEC4_T(
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 0),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 1),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 2),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 3));
+
+        weight_texels[0] =
+            fma(weight_texels[0], scales_tile.data[n4], zeros_tile.data[n4]);
+        weight_texels[1] =
+            fma(weight_texels[1],
+                scales_tile.data[n4 + 1],
+                zeros_tile.data[n4 + 1]);
+
+        [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+          accum.data[m][n4] =
+              fma(VEC4_T(in_tile.data[m][k4][k4i]),
+                  weight_texels[0],
+                  accum.data[m][n4]);
+          accum.data[m][n4 + 1] =
+              fma(VEC4_T(in_tile.data[m][k4][k4i]),
+                  weight_texels[1],
+                  accum.data[m][n4 + 1]);
+        }
+      }
+    }
+  }
+}
+
+#endif // LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH

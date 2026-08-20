@@ -1,0 +1,31 @@
+name: Test ARM Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-arm:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: arm
+      flows: >-
+        ${{ github.event_name == 'pull_request'
+            && '["arm_tosa_fp", "arm_vgf_fp"]'
+            || '["arm_tosa_fp", "arm_tosa_int", "arm_ethos_u55", "arm_ethos_u85", "arm_vgf_fp", "arm_vgf_int"]' }}
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk

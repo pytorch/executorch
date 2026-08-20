@@ -1,0 +1,43 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/backends/qualcomm/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "preprocess",
+    srcs = ["qnn_preprocess.py"],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//executorch/backends/qualcomm/_passes:passes",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_utils",
+    srcs = ["export_utils.py"],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/debugger:qnn_intermediate_debugger",
+        "//executorch/backends/qualcomm/quantizer:quantizer",
+        "//executorch/backends/qualcomm/serialization:serialization",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:memory_planning_pass",
+        "//pytorch/ao:torchao",
+    ],
+)

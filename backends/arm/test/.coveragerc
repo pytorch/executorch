@@ -1,0 +1,9 @@
+[run]
+omit =
+    *__init__.py*
+    *_debug_passes.py
+
+[report]
+skip_covered = true
+exclude_also =
+    raise NotImplementedError

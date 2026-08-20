@@ -1,0 +1,6 @@
+/source/tutorials
+/_build
+/sphinxbuild_py
+/sphinxbuild_cpp
+/src
+source/sg_execution_times.rst

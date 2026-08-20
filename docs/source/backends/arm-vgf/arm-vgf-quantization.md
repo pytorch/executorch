@@ -1,0 +1,113 @@
+# Quantization
+
+The Arm VGF delegate can be used to execute quantized models. To quantize a model so that is supported by this delegate, the `VgfQuantizer` should be used.
+
+Currently the symmetric `int8` config defined by `executorch.backends.arm.quantizer.arm_quantizer.get_symmetric_quantization_config` is the main config available to use with the VGF quantizer.
+
+### Supported Quantization Schemes
+
+The quantization schemes supported by the VGF Backend are:
+- 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
+    - Supports both static and dynamic activations
+    - Supports per-channel and per-tensor schemes
+
+Weight-only quantization is not currently supported on the VGF backend.
+
+### Partial Quantization
+
+The VGF backend supports partial quantization, where only parts of the model
+are quantized while others remain in floating-point. This can be useful for
+models where certain layers are not well-suited for quantization or when a
+balance between performance and accuracy is desired.
+
+For every node (op) in the graph, the quantizer looks at the *quantization
+configuration* set for that specific node. If the configuration is set to
+`None`, the node is left in floating-point; if it is provided (not `None`), the
+node is quantized according to that configuration.
+
+With the [Quantization API](#quantization-api), users can specify the
+quantization configurations for specific layers or submodules of the model. The
+`set_global` method is first used to set a default quantization configuration
+(could be `None` as explained above) for all nodes in the model. Then,
+configurations for specific layers or submodules can override the global
+setting using the `set_module_name` or `set_module_type` methods.
+
+### Quantization API
+
+```python
+class VgfQuantizer(compile_spec: 'VgfCompileSpec', use_composable_quantizer: 'bool' = True) -> 'None'
+```
+Quantizer supported by the Arm Vgf backend.
+
+.. warning::
+    The composable quantizer is now the default implementation. Setting
+    ``use_composable_quantizer=False`` is deprecated and will be removed in
+    two minor releases.
+
+Args:
+- **compile_spec (VgfCompileSpec)**: Backend compile specification for Vgf
+        targets.
+- **use_composable_quantizer (bool)**: Whether to use the composable
+        quantizer implementation. Setting this to ``False`` is deprecated
+        and will be removed in two minor releases. See
+        [issue #17701](https://github.com/pytorch/executorch/issues/17701)
+        for details.
+
+```python
+def VgfQuantizer.add_quantizer(self, quantizer: 'Quantizer') -> 'TOSAQuantizer':
+```
+Insert a quantizer with highest precedence.
+
+```python
+def VgfQuantizer.set_global(self, quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set the global quantization config for VGF lowering.
+
+```python
+def VgfQuantizer.set_io(self, quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set the quantization config used for model inputs and outputs.
+
+```python
+def VgfQuantizer.set_module_name(self, module_name: 'str', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set the quantization config for a specific module name.
+
+```python
+def VgfQuantizer.set_module_type(self, module_type: 'Callable', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set the quantization config for a specific module type.
+
+```python
+def VgfQuantizer.set_node_finder(self, quantization_config: 'Optional[QuantizationConfig]', node_finder: 'NodeFinder') -> 'TOSAQuantizer':
+```
+Set quantization_config for nodes matched by a custom NodeFinder.
+
+Args:
+- **quantization_config (Optional[QuantizationConfig])**: Configuration
+        describing quantization settings for nodes matched by the provided
+        NodeFinder. ``None`` indicates no quantization.
+- **node_finder (NodeFinder)**: Predicate used to select nodes.
+
+```python
+def VgfQuantizer.set_node_name(self, node_name: 'str', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set quantization config for a specific node name.
+
+```python
+def VgfQuantizer.set_node_target(self, node_target: 'OpOverload', quantization_config: 'Optional[QuantizationConfig]') -> 'TOSAQuantizer':
+```
+Set quantization config for a specific operator target.
+
+```python
+def VgfQuantizer.transform_for_annotation(self, model: 'GraphModule') -> 'GraphModule':
+```
+Transform the graph to prepare it for quantization annotation.
+
+Decomposes all operators where required to get correct quantization parameters.
+
+Args:
+- **model (GraphModule)**: Model whose graph will be transformed.
+
+Returns:
+- **GraphModule**: Transformed model prepared for annotation.

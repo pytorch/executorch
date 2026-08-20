@@ -1,0 +1,263 @@
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from copy import copy
+from math import prod
+from typing import Set, Type
+
+import torch
+from executorch.backends.arm._passes import ArmOpTargetedPass
+from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
+
+
+def get_meandim_decomposition(op) -> tuple:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
+        return (
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.mul.Tensor,
+        )
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
+        return (
+            torch.ops.aten.sum.dim_IntList,
+            torch.ops.aten.mul.Tensor,
+        )
+    raise RuntimeError(f"Can't get meandim decomposition for op {op}")
+
+
+def get_dynamic_meandim_decomposition(op) -> tuple:
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
+        return (
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.aten.mul.Tensor,
+            exir_ops.edge.aten.full.default,
+            exir_ops.edge.aten.reciprocal.default,
+            exir_ops.edge.aten.expand_copy.default,
+        )
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
+        raise NotImplementedError(
+            "Dynamic mean.dim decomposition is not supported for torch.aten.mean."
+        )
+    raise RuntimeError(f"Can't get meandim decomposition for op {op}")
+
+
+def get_view(op):
+    if op in (exir_ops.edge.aten.mean.dim, exir_ops.edge.aten.mean.default):
+        return exir_ops.edge.aten.view_copy.default
+    if op in (torch.ops.aten.mean.dim, torch.ops.aten.mean.default):
+        return torch.ops.aten.reshape.default
+    raise RuntimeError(f"Can't get meandim decomposition for op {op}")
+
+
+def get_quantization(op):
+    """Returns quant and dequant op of same type (per_channel/ tensor) as op if
+    op is a dequant node, None otherwise.
+    """
+    if op in DQ_OPS:
+        # Input of op can be placeholder, can't use that to get quant node directly.
+        quant_type_index = DQ_OPS.index(op)
+        return Q_OPS[quant_type_index], op
+    return None
+
+
+class DecomposeMeanDimPass(ArmOpTargetedPass):
+    """Decomposes a meandim into sum + mul (1/N).
+
+    Each reduction dimension is handled via REDUCE_SUM followed by
+    multiplication by 1/N, which works on any axis without layout
+    constraints (unlike AVG_POOL2D which only pools over spatial H×W).
+
+    For rank < 4, the input is reshaped to 4D by padding with dim=1 from the
+    left.
+
+    Example:
+        x = mean_dim(x, (0,2), keepdim=False) # x = (c,h,w)
+    Becomes:
+        x = view_copy.default(x, new_shape=(1,c,h,w)) # Reshape to 4D
+        x = sum.dim_IntList(x, dim=(1,3), keepdims=True) # Reduce c,w with sum
+        x = mul.Tensor(x, 1/(c*w)) # Divide by number of elements to get mean
+        x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
+
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOTPass,
+        DecomposeSumPass,
+        SizeAdjustInputPass,
+    }
+    target_ops = (
+        exir_ops.edge.aten.mean.dim,
+        torch.ops.aten.mean.dim,
+        exir_ops.edge.aten.mean.default,
+        torch.ops.aten.mean.default,
+    )
+    check_allowed_to_transform = True
+
+    def __init__(self, graph_module, tosa_spec, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._graph_module = graph_module
+        self._tosa_spec = tosa_spec
+
+    def call_operator(self, op, args, kwargs, meta, updated=False):
+        if op not in self.target_ops or not self.allowed_to_transform(meta):
+            return super().call_operator(op, args, kwargs, meta, updated)
+
+        x = get_node_arg(args, 0)
+        input_shape = list(x.data.shape)
+        output_shape = list(meta["val"].shape)
+
+        dims_to_reduce = get_node_arg(args, 1, range(len(input_shape)))
+        if dims_to_reduce is None:
+            dims_to_reduce = range(len(input_shape))
+
+        dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
+
+        has_symbolic_reduce_dim = any(
+            isinstance(input_shape[dim], torch.SymInt) for dim in dims_to_reduce
+        )
+        if has_symbolic_reduce_dim and get_quantization(x.node.target) is not None:
+            raise NotImplementedError(
+                "Quantized mean.dim with symbolic reduced dimensions is not supported"
+            )
+
+        view_op = get_view(op)
+
+        if not has_symbolic_reduce_dim:
+            # for static shapes we should ensure that we only keep non 1 dimensions.
+            dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
+
+        # Reshape to 4D
+        if len(input_shape) != 4:
+            new_shape = copy(input_shape)
+
+            while len(new_shape) < 4:
+                new_shape.insert(0, 1)
+                dims_to_reduce = [dim + 1 for dim in dims_to_reduce]
+
+            while len(new_shape) > 4:
+                i = new_shape.pop(0)
+                new_shape[0] = new_shape[0] * i
+                dims_to_reduce = [dim - 1 for dim in dims_to_reduce]
+
+            x = super().call_operator(view_op, (x, new_shape), {}, meta, True)
+            x = self._maybe_insert_q_dq_after(x, meta)
+
+        # Reshape back to 5D if necessary
+        if len(input_shape) > 4:
+            original_dims = input_shape[:-3]
+            temp_shape = list(x.data.shape)[1:]
+            temp_shape = original_dims + temp_shape
+            dims_to_reduce = [dim + len(original_dims) - 1 for dim in dims_to_reduce]
+
+            x = super().call_operator(view_op, (x, temp_shape), {}, meta, True)
+            x = self._maybe_insert_q_dq_after(x, meta)
+
+        if has_symbolic_reduce_dim:
+            x = self._reduce_by_sum_symbolic(op, x, dims_to_reduce, meta)
+        else:
+            x = self._reduce_by_sum(op, x, dims_to_reduce, meta)
+
+        # Reshape to correct output shape if necessary
+        if list(x.data.shape) != output_shape:
+            x = super().call_operator(view_op, (x, output_shape), {}, meta, True)
+
+        return x
+
+    def _reduce_by_sum_symbolic(self, op, input_node, dims, meta):
+        input_shape = input_node.data.size()
+        reduced_shape = [input_shape[dim] for dim in dims]
+
+        sum_op, mul_op, full_op, recip_op, expand_op = (
+            get_dynamic_meandim_decomposition(op)
+        )
+
+        sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
+
+        ones = super().call_operator(
+            full_op,
+            ([1], 1.0),
+            {"dtype": meta.data["val"].dtype, "device": input_node.data.device},
+            meta,
+            True,
+        )
+        expanded_ones = super().call_operator(
+            expand_op,
+            (ones, reduced_shape),
+            {},
+            meta,
+            True,
+        )
+        counts = super().call_operator(
+            sum_op,
+            (expanded_ones, list(range(len(reduced_shape))), True),
+            {},
+            meta,
+            True,
+        )
+        recip = super().call_operator(recip_op, (counts,), {}, meta, True)
+        return super().call_operator(mul_op, (sum, recip), {}, meta, True)
+
+    def _reduce_by_sum(self, op, input_node, dims, meta):
+        if len(dims) == 0:
+            return input_node
+
+        input_shape = input_node.data.size()
+        N = prod((n for i, n in enumerate(input_shape) if i in dims))
+        sum_op, mul_op = get_meandim_decomposition(op)
+
+        sum = super().call_operator(sum_op, (input_node, dims, True), {}, meta, True)
+        divisor = super().call_scalar(1 / N, meta)
+        if (quant_ops := get_quantization(input_node.node.target)) is not None:
+            q_op, dq_op = quant_ops
+            # Scale needs to be adjusted with N, since it was computed on data
+            # after the division with N.
+            sum_quant_args = (input_node.node.args[1] * N, *input_node.node.args[2:])
+            q_args = (sum, *sum_quant_args)
+            sum = super().call_operator(
+                q_op,
+                q_args,
+                kwargs={},
+                meta=meta,
+                updated=True,
+            )
+            dq_args = (sum, *sum_quant_args)
+            sum = super().call_operator(
+                dq_op, dq_args, kwargs={}, meta=meta, updated=True
+            )
+
+        return super().call_operator(mul_op, (sum, divisor), {}, meta, True)
+
+    def _maybe_insert_q_dq_after(self, op, meta):
+        """If the input node of op is a dequant node, insert a q-dq pair after
+        op with identical quantization parameters.
+        """
+
+        if len(op.node.all_input_nodes) > 1:
+            raise ValueError(
+                f"Expected one input to {op.node}, got inputs {op.node.all_input_nodes}"
+            )
+        input_node = op.node.all_input_nodes[0]
+        if (quant_ops := get_quantization(input_node.target)) is None:
+            return op
+
+        q_op, dq_op = quant_ops
+        quant_args = list(input_node.args[1:])
+        q_args = (op, *quant_args)
+        out = super().call_operator(
+            q_op,
+            q_args,
+            kwargs={},
+            meta=meta,
+            updated=True,
+        )
+        dq_args = (out, *quant_args)
+        return super().call_operator(dq_op, dq_args, kwargs={}, meta=meta, updated=True)

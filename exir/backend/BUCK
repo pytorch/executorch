@@ -1,0 +1,108 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+oncall("executorch")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+
+non_fbcode_target(_kind = define_common_targets,)
+
+# !!!! fbcode/executorch/exir/backend/TARGETS was merged into this file, see https://fburl.com/workplace/xl8l9yuo for more info !!!!
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/backends:backends.bzl", "get_all_cpu_aot_and_backend_targets")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+
+fbcode_target(_kind = define_common_targets,)
+
+# Use runtime.python_library instead of the one defined in python_library.bzl,
+# so we can have access to EXECUTORCH_CLIENTS list.
+fbcode_target(_kind = runtime.python_library,
+    name = "backend_api",
+    srcs = [
+        "backend_api.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":backend_details",
+        ":compile_spec_schema",
+        "//caffe2:torch",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "compile_spec_schema",
+    srcs = [
+        "compile_spec_schema.py",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "operator_support",
+    srcs = [
+        "operator_support.py",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "partitioner",
+    srcs = [
+        "partitioner.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":compile_spec_schema",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "backend_details",
+    srcs = [
+        "backend_details.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":compile_spec_schema",
+        ":partitioner",
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+    ],
+)
+
+# backend_lib includes all ahead of time apis and supported backends,
+# it's supposed to be only used on server side and not for production on device.
+fbcode_target(_kind = runtime.python_library,
+    name = "backend_lib",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":backend_api",
+        ":backend_details",
+        ":utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+    ] + get_all_cpu_aot_and_backend_targets(),
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/pandas:pandas",
+        "//caffe2:torch",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
+    ],
+)

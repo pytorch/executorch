@@ -1,0 +1,142 @@
+# Copyright 2024-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import numpy as np
+import torch
+
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
+from executorch.backends.nxp.backend.data_format import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
+    softmax_options,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from torch.fx import Node
+from torch.nn import Parameter
+
+
+class SoftmaxConverter(NodeConverter):
+
+    @staticmethod
+    def _get_channels_dim(node: Node) -> int:
+        """Get the dimension index for channels, based on data format.
+        :return: 1 for the channels_first format (NCHW), rank-1 for the channels_last format (NHWC).
+        """
+        rank = len(node.meta["val"].shape)
+        return 1 if node.meta[NXP_NODE_FORMAT].is_channels_first() else rank - 1
+
+    @staticmethod
+    def _get_spatial_dims(node: Node) -> list[int]:
+        """Extract spatial dimensions from the node's input shape.
+        Returns a list with [N, H, W] (or equivalent for other ranks).
+        """
+        input_shape = list(node.meta["val"].shape)
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # NCHW: skip the channel dimension at index 1
+            return [input_shape[0]] + input_shape[2:]
+        else:
+            # NHWC: skip the last dimension
+            return input_shape[:-1]
+
+    @staticmethod
+    def _get_total_spatial_size(node: Node) -> int:
+        """Calculate total spatial size (product of all spatial dimensions)."""
+        return int(np.prod(SoftmaxConverter._get_spatial_dims(node)))
+
+    @staticmethod
+    def _get_channels(node: Node) -> int:
+        """Get the number of channels from the node's input shape."""
+        return node.meta["val"].shape[SoftmaxConverter._get_channels_dim(node)]
+
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        """Hardware constraints:
+        1. Input and Output must be INT8/UINT8
+        2. Channels <= 2040
+        3. Total spatial size (N*H*W) <= 4096
+        4. Total size (channels * spatial_size) <= 524288
+        """
+        # Constraint 1: Input and Output must be INT8/UINT8.
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
+            return False
+
+        # Constraint 2: Channel size limit
+        channels = SoftmaxConverter._get_channels(node)
+        if channels > 2040:
+            return False
+
+        # Constraint 3: Spatial size limit
+        total_spatial_size = SoftmaxConverter._get_total_spatial_size(node)
+        if total_spatial_size > 4096:
+            return False
+
+        # Constraint 4: Total processing size limit
+        if channels * total_spatial_size > 524288:
+            return False
+
+        return True
+
+    @staticmethod
+    def _normalize_dim(dim: int, rank: int) -> int:
+        """Make sure the dimension index `dim` is positive.
+        :arg dim: The dimension index (can be negative)
+        :arg rank: The total number of dimensions
+
+        :return: Positive dimension index
+        """
+        return dim % rank
+
+    @staticmethod
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        """Check if the softmax operation is supported in NeutronIR.
+        NeutronIR only supports softmax along the channels dimension.
+        """
+        dim = SoftmaxConverter._normalize_dim(node.args[1], len(node.meta["val"].shape))
+
+        # NeutronIR only supports the `dim` as the channels dimension
+        channels_dim = SoftmaxConverter._get_channels_dim(node)
+        if dim != channels_dim:
+            return False
+
+        half_to_float = node.args[2] if len(node.args) > 2 else False
+        if half_to_float:
+            # This argument states that the Softmax has a float16 input and output, but the computation is done in
+            #  float32. Neutron doesn't support float16 quantization, so this case should never happen.
+            raise ValueError(
+                f"Softmax node `{node}` has `half_to_float = True`, which is not supported. "
+                "There is an issue with the NXP backend. Please report this."
+            )
+
+        return True
+
+    def convert(self, node: Node):
+        """Convert `aten._softmax.default` node to NeutronIR.
+        The schema is:
+        aten::_softmax(
+            Tensor self,
+            int dim,
+            bool half_to_float
+        ) -> Tensor
+        """
+        self.assert_convertible(node)
+
+        t_op = self._create_tflite_op_with_io_tensors(node)
+        t_op.builtin_options = softmax_options.Softmax(beta=1.0)
+
+        self.builder.append_operators([t_op])

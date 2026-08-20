@@ -1,0 +1,14 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+pack_q8_linear_weight:
+  parameter_names_with_default_values:
+    STORAGE: buffer
+  shader_variants:
+    - NAME: pack_q8_linear_weight_buffer
+      STORAGE: buffer
+    - NAME: pack_q8_linear_weight_texture2d
+      STORAGE: texture2d

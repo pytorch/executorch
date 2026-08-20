@@ -1,0 +1,236 @@
+ [
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "op_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "quantize",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#dce9e9"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "op_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "aten.",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#b4e3f5"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "cluster",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#d0eae9"
+      },
+      "node_border_color": {
+        "id": "node_border_color",
+        "value": "#ffffff"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 0",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#fff1d5"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 1",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#fdffcc"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 2",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#ccffcc"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 3",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#ccffff"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 4",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#ffc6e2"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 5",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#ffcaff"
+      }
+    },
+    "version": "v2"
+  },
+  {
+    "queries": [
+      {
+        "type": "node_type",
+        "nodeType": "layer_nodes"
+      },
+      {
+        "type": "regex",
+        "queryRegex": "partition 6",
+        "matchTypes": [
+          "title"
+        ]
+      }
+    ],
+    "nodeType": "op_nodes",
+    "styles": {
+      "node_bg_color": {
+        "id": "node_bg_color",
+        "value": "#d7d7ff"
+      }
+    },
+    "version": "v2"
+  }
+]

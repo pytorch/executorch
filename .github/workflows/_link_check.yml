@@ -1,0 +1,100 @@
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      base_ref:
+        description: Commit to diff against. Empty, or all zeros, means check the whole tree.
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  lint-urls:
+    if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-url-lint') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Lint URLs
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            args=("$BASE_REF" "$HEAD_REF")
+          fi
+          ./scripts/lint_urls.sh "${args[@]}" || {
+            echo
+            echo "URL lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-url-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the URL you want to skip checking."
+            exit 1
+          }
+
+  lint-xrefs:
+    if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-xref-lint') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Lint cross-references
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            args=("$BASE_REF" "$HEAD_REF")
+          fi
+          ./scripts/lint_xrefs.sh "${args[@]}" || {
+            echo
+            echo "Xref lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-xref-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the reference you want to skip checking."
+            exit 1
+          }
+
+  lint-file-size:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Lint file sizes
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            args=("$BASE_REF" "$HEAD_REF")
+          fi
+          chmod +x ./scripts/lint_file_size.sh
+          ./scripts/lint_file_size.sh "${args[@]}" || {
+            echo
+            echo "File size lint failed: some files exceed the 1 MB limit."
+            echo "If you really need large files, consider using Git LFS or storing them elsewhere."
+            echo "If you really need to get unblocked and check in the file, can add it to the EXCEPTIONS list in scripts/lint_file_size.sh."
+            exit 1
+          }

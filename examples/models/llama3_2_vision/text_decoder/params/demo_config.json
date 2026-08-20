@@ -1,0 +1,18 @@
+{
+  "dim": 4096,
+  "ffn_dim_multiplier": 1.3,
+  "fusion_interval": 4,
+  "intermediate_dim": 14336,
+  "multiple_of": 1024,
+  "n_heads": 32,
+  "n_kv_heads": 8,
+  "n_layers": 32,
+  "n_special_tokens": 8,
+  "norm_eps": 1e-05,
+  "rope_theta": 500000.0,
+  "use_scaled_rope": true,
+  "vision_chunk_size": 560,
+  "vision_max_num_chunks": 4,
+  "vocab_size": 128256,
+  "vision_num_cross_attention_layers": 8
+}

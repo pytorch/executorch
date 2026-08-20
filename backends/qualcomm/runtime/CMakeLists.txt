@@ -1,0 +1,62 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# executorch_backend
+target_sources(
+  executorch_backend INTERFACE ${EXECUTORCH_SOURCE_DIR}/backends/backend.h
+)
+
+# qnn_executorch_header
+target_sources(
+  qnn_executorch_header INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorch.h
+)
+
+# qnn_executorch_backend
+target_sources(
+  qnn_executorch_backend
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorchBackend.h>
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnExecuTorchBackend.cpp
+)
+
+# qnn_manager
+target_sources(
+  qnn_manager
+  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/QnnManager.h>
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnManager.cpp
+)
+
+# qnn_backend_options
+target_sources(
+  qnn_backend_options
+  INTERFACE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendOptions.h
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/QnnBackendOptions.cpp
+)
+
+# logging
+target_sources(
+  qnn_executorch_logging
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/Logging.h>
+  PRIVATE ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
+)
+
+# shared_buffer
+target_sources(
+  shared_buffer PRIVATE ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.h
+                        ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.cpp
+)
+
+# qnn_pal
+if(WIN32)
+  target_sources(
+    qnn_pal PRIVATE ${CMAKE_CURRENT_LIST_DIR}/pal/src/windows/DynamicLoading.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/pal/src/windows/Path.cpp
+  )
+else()
+  target_sources(
+    qnn_pal PRIVATE ${CMAKE_CURRENT_LIST_DIR}/pal/src/linux/DynamicLoading.cpp
+                    ${CMAKE_CURRENT_LIST_DIR}/pal/src/linux/Path.cpp
+  )
+endif()

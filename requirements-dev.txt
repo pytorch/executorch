@@ -1,0 +1,19 @@
+# Pip packages needed to build from source. Mainly for development of ExecuTorch.
+
+cmake>=3.24, <4.0.0  # For building binary targets in the wheel.
+packaging>=24.2 # Lower bound required by setuptools
+pip>=23  # For building the pip package.
+pyyaml  # Imported by the kernel codegen tools.
+setuptools>=77.0.3  # For building the pip package contents.
+wheel  # For building the pip package archive.
+zstd  # Imported by resolve_buck.py.
+certifi  # Imported by resolve_buck.py.
+lintrunner==0.12.7
+lintrunner-adapters==0.14.0
+ruff==0.15.4
+
+pytest<9.0
+pytest-xdist
+pytest-rerunfailures==15.1
+pytest-json-report
+gguf  # For extension/llm/export/test/test_gguf.py (GGUF Q4_K/Q6_K dequant tests).

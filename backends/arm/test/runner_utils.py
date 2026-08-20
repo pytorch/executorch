@@ -1,0 +1,1170 @@
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+import importlib.resources as _resources
+import json
+import logging
+import numbers
+import os
+import re
+import shutil
+import subprocess  # nosec B404 - invoked only for trusted toolchain binaries
+import sys
+import tempfile
+from collections.abc import Iterable
+from pathlib import Path
+from types import NoneType
+from typing import Any, cast, Dict, List, Optional, Tuple
+
+import executorch.backends.arm.test as arm_test_package
+import executorch.backends.arm.tosa.schemas as tosa_schemas_package
+import numpy as np
+import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.constants import (
+    NHWC_INVERSE_ORDER,
+    NHWC_ORDER,
+    NNHWC_INVERSE_ORDER,
+    NNHWC_ORDER,
+)
+from executorch.backends.arm.ethosu import EthosUCompileSpec
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.arm.vgf.model_converter import (
+    find_model_converter_binary,
+    model_converter_env,
+)
+from executorch.exir import ExecutorchProgramManager, ExportedProgram
+from executorch.exir.lowered_backend_module import LoweredBackendModule
+from torch.fx.node import Node
+from torch.overrides import TorchFunctionMode
+from tosa.TosaGraph import TosaGraph  # type: ignore[import-not-found, import-untyped]
+
+logger = logging.getLogger(__name__)
+
+# For Torch 2.12 and later overloads.
+_QDQ_TORCH_OVERLOADS = (
+    ("quantize_per_tensor", ("tensor", "tensor2", "default")),
+    ("dequantize_per_tensor", ("tensor", "tensor2", "default")),
+    ("quantize_per_channel", ("default",)),
+    ("dequantize_per_channel", ("default",)),
+)
+
+# For backward compatibility with Torch versions older than 2.12.
+_QDQ_BACKWARD_COMPAT_OVERLOADS = (
+    ("quantize_per_tensor", ("out",)),
+    ("dequantize_per_tensor", ("out",)),
+    ("quantize_per_channel", ("out",)),
+    ("dequantize_per_channel", ("out",)),
+)
+
+
+def _get_qdq_memory_format_ops() -> tuple[object, ...]:
+    qdq_ops = []
+    backward_compat = dict(_QDQ_BACKWARD_COMPAT_OVERLOADS)
+    ns = torch.ops.quantized_decomposed
+    for op_name, overload_names in _QDQ_TORCH_OVERLOADS:
+        op_packet = getattr(ns, op_name, None)
+        if op_packet is None:
+            continue
+        for overload_name in overload_names + backward_compat[op_name]:
+            if hasattr(op_packet, overload_name):
+                qdq_ops.append(getattr(op_packet, overload_name))
+
+    return tuple(qdq_ops)
+
+
+_QDQ_MEMORY_FORMAT_OPS = _get_qdq_memory_format_ops()
+
+# Copied from PyTorch.
+# From torch/testing/_internal/common_utils.py:torch_to_numpy_dtype_dict
+# To avoid a dependency on _internal stuff.
+_torch_to_numpy_dtype_dict = {
+    torch.bool: np.bool_,
+    torch.uint8: np.uint8,
+    torch.uint16: np.uint16,
+    torch.uint32: np.uint32,
+    torch.uint64: np.uint64,
+    torch.int8: np.int8,
+    torch.int16: np.int16,
+    torch.int32: np.int32,
+    torch.int64: np.int64,
+    torch.float8_e4m3fn: np.uint8,
+    torch.float8_e5m2: np.uint8,
+    torch.float16: np.float16,
+    torch.float32: np.float32,
+    torch.float64: np.float64,
+    torch.bfloat16: np.uint16,
+    torch.complex32: np.complex64,
+    torch.complex64: np.complex64,
+    torch.complex128: np.complex128,
+}
+
+VALID_TARGET = {
+    "corstone-300",
+    "corstone-300-u65",
+    "corstone-320",
+    "vkml_emulation_layer",
+}
+INFER_SHAPES_PATH = "infer_shapes"
+
+
+class QuantizationParams:
+    __slots__ = ["node_name", "zp", "scale", "qmin", "qmax", "dtype"]
+
+    # todo: zps and scales can be per tensors or per channel => a list??
+    def __init__(
+        self,
+        node_name: str,
+        zp: int,
+        scale: float,
+        qmin: int,
+        qmax: int,
+        dtype: torch.dtype,
+    ):
+        self.node_name = node_name  # not need I think, but good for error check
+        self.zp = zp
+        self.scale = scale
+        self.qmin = qmin
+        self.qmax = qmax
+        self.dtype = dtype
+
+
+def get_input_names(
+    program: ExportedProgram, is_lowered_module: bool = False
+) -> list[str]:
+    """Get a list[str] with the names of the inputs to this model.
+
+    Args:
+        program (ExportedProgram): The program to get input names from.
+    Returns:
+        A list of strings with the names of the model input.
+
+    """
+
+    if not is_lowered_module:
+        return [spec.arg.name for spec in program.graph_signature.input_specs]
+    else:
+        return [
+            user_input
+            for user_input in program.graph_signature.user_inputs
+            if isinstance(user_input, str)
+        ]
+
+
+def get_input_quantization_params(
+    program: ExportedProgram,
+) -> list[QuantizationParams]:
+    """Get input QuantizationParams in a program, maximum one per input to the
+    program.
+
+    Args:
+        program (ExportedProgram): The program to get input quantization parameters from.
+    Returns:
+        list[QuantizationParams]: The found quantization parameters.
+
+    """
+
+    quant_params = []
+    input_names = get_input_names(program)
+    num_inputs = len(input_names)
+    for node in program.graph.nodes:
+        if (
+            node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+            and node.args[0].name in input_names
+        ):
+            qp = QuantizationParams(
+                node_name=node.args[0].name,
+                scale=node.args[1],
+                zp=node.args[2],
+                qmin=node.args[3],
+                qmax=node.args[4],
+                dtype=node.args[5],
+            )
+            quant_params.append(qp)
+            if (
+                len(quant_params) == num_inputs
+            ):  # break early if we have all the inputs quantized parameters
+                break
+    if len(quant_params) == 0:
+        logger.warning("No input quantization parameters found in exported model.")
+    return quant_params
+
+
+def get_output_quantization_params(
+    output_node: Node,
+) -> dict[Node, QuantizationParams | None]:
+    """Get output QuantizationParams from a program.
+
+    Args:
+        output_nodes (list(Node)): A list of output nodes to get output quantization parameters from.
+    Returns:
+        dictionary mapping the output nodes to the found quantization parameters.
+        If no quantization parameters were found, the entry is None.
+    Raises:
+        RuntimeError if no output quantization parameters are found.
+
+    """
+    quant_params: dict[Node, QuantizationParams | None] = {}
+    for node in output_node.args[0]:  # type: ignore[union-attr]
+        if (
+            node.target  # type: ignore[union-attr]
+            == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+        ):
+            quant_params[node] = QuantizationParams(  # type: ignore[index]
+                node_name=node.args[0].name,  # type: ignore[arg-type, union-attr]
+                scale=node.args[1],  # type: ignore[arg-type, union-attr]
+                zp=node.args[2],  # type: ignore[arg-type, union-attr]
+                qmin=node.args[3],  # type: ignore[arg-type, union-attr]
+                qmax=node.args[4],  # type: ignore[arg-type, union-attr]
+                dtype=node.args[5],  # type: ignore[arg-type, union-attr]
+            )
+        else:
+            quant_params[node] = None  # type: ignore[index]
+    return quant_params
+
+
+def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+    dim_order = tensor.dim_order()
+    if dim_order == NHWC_ORDER:
+        tensor = tensor.permute(NHWC_ORDER)
+    elif dim_order == NNHWC_ORDER:
+        tensor = tensor.permute(NNHWC_ORDER)
+
+    tensor = tensor.detach()
+    if tensor.dtype == torch.bfloat16:
+        # Numpy doesn't support bfloat16, use, uint16 instead. Dtype is inferred from model anyways.
+        tensor = tensor.view(torch.uint16)
+    elif tensor.dtype == torch.float8_e4m3fn:
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.float8_e5m2:
+        tensor = tensor.view(torch.uint8)
+    return tensor.numpy()
+
+
+def torch_tensor_to_tosa_shape(tensor: torch.Tensor) -> list[int]:
+    shape = list(tensor.shape)
+    dim_order = tensor.dim_order()
+    if dim_order in (NHWC_ORDER, NNHWC_ORDER):
+        shape = [shape[index] for index in dim_order]
+    return [int(dim) for dim in shape]
+
+
+def user_inputs_need_shape_inference(program: ExportedProgram) -> bool:
+    user_inputs = {
+        user_input
+        for user_input in program.graph_signature.user_inputs
+        if isinstance(user_input, str)
+    }
+    for node in program.graph.nodes:
+        if node.op != "placeholder" or node.name not in user_inputs:
+            continue
+        input_tensor = get_first_fake_tensor(node)
+        if any(not isinstance(dim, numbers.Integral) for dim in input_tensor.shape):
+            return True
+    return False
+
+
+def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
+    output_tensor = get_first_fake_tensor(output_node)
+    shape = output_tensor.shape
+    dim_order = output_tensor.dim_order()
+
+    def is_concrete_shape(shape_like) -> bool:
+        return all(isinstance(dim, numbers.Integral) for dim in shape_like)
+
+    def to_torch_tensor() -> torch.Tensor:
+        if output_tensor.dtype == torch.bfloat16 or array.dtype.type is np.void:
+            return torch.frombuffer(array, dtype=output_tensor.dtype)
+        return torch.from_numpy(array)
+
+    if dim_order == NHWC_ORDER:
+        tensor = to_torch_tensor()
+        if is_concrete_shape(shape):
+            tensor = tensor.reshape([shape[i] for i in NHWC_ORDER])
+        return tensor.permute(NHWC_INVERSE_ORDER).contiguous()
+    elif dim_order == NNHWC_ORDER:
+        tensor = to_torch_tensor()
+        if is_concrete_shape(shape):
+            tensor = tensor.reshape([shape[i] for i in NNHWC_ORDER])
+        return tensor.permute(NNHWC_INVERSE_ORDER).contiguous()
+    else:
+        tensor = to_torch_tensor()
+
+        if is_concrete_shape(shape):
+            return tensor.reshape(shape)
+        return tensor
+
+
+class TosaReferenceModelDispatch(TorchFunctionMode):
+    """A context manager for executing call_delegate nodes using the reference
+    model.
+    """
+
+    def __init__(self):
+        self.ran_tosa_dispatch = False
+        super().__init__()
+
+    def _generate_shape_inference_json(
+        self,
+        tosa_buffer: bytes,
+        artifact_path: Path,
+        test_case_path: Path,
+        input_names: list[str],
+        inputs: Tuple[torch.Tensor, ...],
+    ):
+        shapes = dict(
+            zip(input_names, [torch_tensor_to_tosa_shape(input) for input in inputs])
+        )
+        with open(test_case_path, "w", encoding="utf-8") as f:
+            json.dump({"tosa_file": str(artifact_path), "shapes": shapes}, f, indent=2)
+
+    def _run_infer_shapes(
+        self,
+        tosa_buffer: bytes,
+        input_names: list[str],
+        inputs: Tuple[torch.Tensor, ...],
+        temp_dir_path: Path,
+        infer_shapes_path: str = INFER_SHAPES_PATH,
+    ) -> bytes:
+        model_suffix = "model.tosa"
+        tosa_sym_int_model = temp_dir_path / model_suffix
+        tosa_sym_int_model.write_bytes(tosa_buffer)
+        test_case_file = temp_dir_path / "test_case.json"
+
+        self._generate_shape_inference_json(
+            tosa_buffer, tosa_sym_int_model, test_case_file, input_names, inputs
+        )
+        subprocess.run(
+            [
+                infer_shapes_path,
+                f"{test_case_file}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )  # nosec
+        resolved_file = temp_dir_path / f"resolved_{model_suffix}"
+        with open(resolved_file, "rb") as f:
+            return f.read()
+
+    def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
+        tosa_buffer = lowered_backend_module.processed_bytes
+        compile_spec = TosaCompileSpec._from_list(lowered_backend_module.compile_specs)
+        tosa_spec = compile_spec.tosa_spec
+        output_node = lowered_backend_module.original_module.graph.output_node()
+        if tosa_spec.support_extension("shape") and user_inputs_need_shape_inference(
+            lowered_backend_module.original_module
+        ):
+            input_names = get_input_names(lowered_backend_module.original_module, True)
+            # Generate json file for shape inference extension, which is required by the reference model.
+            with tempfile.TemporaryDirectory() as temp_dir:
+                tosa_buffer = self._run_infer_shapes(
+                    tosa_buffer, input_names, inputs, Path(temp_dir)
+                )
+
+        return run_tosa_graph(tosa_buffer, tosa_spec, inputs, output_node)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        super().__exit__(exc_type, exc_val, exc_tb)
+        # Only raise this error if we ran the model without errors.
+        if not self.ran_tosa_dispatch and exc_type is None:
+            raise RuntimeError(
+                "Ran model with TosaReferenceModelDispatch but never ran TOSABackend delegate."
+            )
+
+    def __torch_function__(self, func, types, args=..., kwargs=None):
+        if func is torch._higher_order_ops.executorch_call_delegate:
+            lowered_backend_module = cast(LoweredBackendModule, args[0])
+            if lowered_backend_module.backend_id == "TOSABackend":
+                self.ran_tosa_dispatch = True
+                return self._tosa_dispatch(lowered_backend_module, args[1:])
+            else:
+                raise RuntimeError(
+                    f"Ran model with TosaReferenceModelDispatch but call_delegate with {lowered_backend_module.backend_id=} != 'TOSABackend'."
+                )
+
+        kwargs = kwargs or {}
+
+        # This is a hack since Q/DQ ops does not handle channels last input correctly: the simplest and most robust
+        # workaround is to simply run them in channels first format and then convert back to channels last.
+        if func in _QDQ_MEMORY_FORMAT_OPS:
+
+            input_dim_order = args[0].dim_order()
+            if input_dim_order in (NHWC_ORDER, NNHWC_ORDER):
+                args = [args[0].to(memory_format=torch.contiguous_format), *args[1:]]
+                res = func(*args, **kwargs)
+                return res.to(memory_format=torch.channels_last)
+
+        return func(*args, **kwargs)
+
+
+def run_target(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor, ...],
+    intermediate_path: str | Path,
+    target_board: str,
+    elf_path: str | Path,
+    timeout: int = 120,  # s
+):
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    if target_board == "vkml_emulation_layer":
+        return run_vkml_emulation_layer(
+            executorch_program_manager,
+            inputs,
+            intermediate_path,
+            elf_path,
+        )
+    return run_corstone(
+        executorch_program_manager,
+        inputs,
+        intermediate_path,
+        target_board,
+        elf_path,
+        timeout,
+    )
+
+
+def save_inputs_to_file(
+    exported_program: ExportedProgram,
+    inputs: Tuple[torch.Tensor, ...],
+    intermediate_path: str | Path,
+):
+    input_file_paths: list[str] = []
+    input_names = get_input_names(exported_program)
+    for input_name, input_ in zip(input_names, inputs):
+        input_path = save_bytes(intermediate_path, input_, input_name)  # type: ignore[arg-type]
+        input_file_paths.append(input_path)
+
+    return input_file_paths
+
+
+def get_output_from_file(
+    exported_program: ExportedProgram,
+    intermediate_path: str | Path,
+    output_base_name: str,
+):
+    output_np = []
+    output_node = exported_program.graph_module.graph.output_node()
+    for i, node in enumerate(output_node.args[0]):  # type: ignore[union-attr]
+        output_dtype = node.meta["val"].dtype
+        tosa_ref_output = np.fromfile(  # type: ignore[var-annotated]
+            os.path.join(intermediate_path, f"{output_base_name}-{i}.bin"),
+            _torch_to_numpy_dtype_dict[output_dtype],
+        )
+
+        output_np.append(numpy_to_torch_tensor(tosa_ref_output, node))
+    return tuple(output_np)
+
+
+def run_vkml_emulation_layer(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor, ...],
+    intermediate_path: str | Path,
+    elf_path: str | Path,
+):
+    """Executes an inference of the exported_program on ML Emulation Layer for Vulkan
+    Args:
+        `executorch_program_manager`: The executorch program to run.
+        `intermediate_path`: Directory to save the .pte and capture outputs.
+        `elf_path`: Path to the Vulkan-capable executor_runner binary.
+    """
+    exported_program = executorch_program_manager.exported_program()
+    intermediate_path = Path(intermediate_path)
+    intermediate_path.mkdir(exist_ok=True)
+    elf_path = Path(elf_path)
+    if not elf_path.exists():
+        raise FileNotFoundError(f"Did not find elf file {elf_path}")
+
+    # Save pte to file
+    pte_path = os.path.join(intermediate_path, "program.pte")
+    with open(pte_path, "wb") as f:
+        f.write(executorch_program_manager.buffer)
+
+    output_base_name = "out"
+    out_path = os.path.join(intermediate_path, output_base_name)
+
+    cmd_line = f"{elf_path} -model_path {pte_path} -output_file {out_path}"
+
+    input_string = None
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    for input_path in input_paths:
+        if input_string is None:
+            input_string = f" -inputs={input_path}"
+        else:
+            input_string += f",{input_path}"
+    if input_string is not None:
+        cmd_line += input_string
+    cmd_line = cmd_line.split()
+
+    result = _run_cmd(cmd_line, env=_get_vkml_runtime_env())
+
+    # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
+    result_stdout = result.stdout.decode()  # noqa: F841
+
+    return get_output_from_file(exported_program, intermediate_path, output_base_name)
+
+
+def run_corstone(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor, ...],
+    intermediate_path: str | Path,
+    target_board: str,
+    elf_path: str | Path,
+    timeout: int = 120,  # s
+) -> list[torch.Tensor]:
+    """Executes an inference of the exported_program on FVP.
+
+    Returns a list of tensors with the output.
+    Args:
+        `executorch_program_manager`: The executorch program to run.
+        The output of a EdgeProgramManager.to_executorch() call.
+        `inputs`: A list of tensors with the inputs of the inference.
+        `dump_path`: A directory where the .pte and inputs are saved to file.
+                     The output tensors are saved in `dump_path`/out.
+        `target_board`: Whether to run the corstone-300 FVP or the corstone-320 FVP
+        `elf_path`: The path to the runtime elf. Needs to have semihosting enabled
+        and match the target_board.
+        `timeout`: The timeout until the FVP terminates the elf, in seconds.
+    A runtime with semihosting needs
+    Limitations:
+        Relies on the output tensors from the exported program
+        to figure out the shape and dtype of the buffer that was
+        output from the FVP.
+
+    """
+    exported_program = executorch_program_manager.exported_program()
+    intermediate_path = Path(intermediate_path)
+    intermediate_path.mkdir(exist_ok=True)
+    elf_path = Path(elf_path)
+    if not elf_path.exists():
+        raise FileNotFoundError(f"Did not find elf file {elf_path}")
+
+    # Save pte to file
+    pte_path = os.path.join(intermediate_path, "program.pte")
+    with open(pte_path, "wb") as f:
+        f.write(executorch_program_manager.buffer)
+
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Keep semihosting command line short: the FVP truncates long cmd strings.
+    # Alias generated input files to compact names in the same directory.
+    aliased_input_paths = []
+    for idx, input_path in enumerate(input_paths):
+        short_name = f"i{idx}.bin"
+        short_path = os.path.join(intermediate_path, short_name)
+        if os.path.abspath(input_path) != os.path.abspath(short_path):
+            shutil.copyfile(input_path, short_path)
+        aliased_input_paths.append(short_path)
+
+    output_base_name = "out"
+
+    cmd_line = "executor_runner -m program.pte -o out"
+    for input_path in aliased_input_paths:
+        # Use local basenames to avoid '/var' -> '/private/var' resolve expansion
+        # on macOS, which can produce long '../../..' paths and exceed FVP's
+        # semihosting cmd_line limit.
+        relative_path = Path(input_path).name
+        cmd_line += f" -i {relative_path}"
+
+    if len(cmd_line) > 256:
+        raise ValueError(
+            "The argument passed to the FVP should be less than 256 characters long, otherwise it gets truncated"
+        )
+
+    match target_board:
+        case "corstone-300" | "corstone-300-u65":
+            if target_board == "corstone-300":
+                fvp = "FVP_Corstone_SSE-300_Ethos-U55"
+                num_macs = 128
+            else:
+                fvp = "FVP_Corstone_SSE-300_Ethos-U65"
+                num_macs = 256
+            command_args = [
+                fvp,
+                "-C",
+                f"ethosu.num_macs={num_macs}",
+                "-C",
+                "mps3_board.visualisation.disable-visualisation=1",
+                "-C",
+                "mps3_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps3_board.uart0.out_file='-'",
+                "-C",
+                "cpu0.semihosting-enable=1",
+                "-C",
+                "cpu0.semihosting-stack_base=0",
+                "-C",
+                "cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"cpu0.semihosting-cwd={intermediate_path}",
+                "-C",
+                "ethosu.extra_args='--fast'",
+                "-C",
+                f"cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                str(elf_path),
+                "--timelimit",
+                f"{timeout}",
+            ]
+        case "corstone-320":
+            command_args = [
+                "FVP_Corstone_SSE-320",
+                "-C",
+                "mps4_board.subsystem.ethosu.num_macs=128",
+                "-C",
+                "mps4_board.visualisation.disable-visualisation=1",
+                "-C",
+                "vis_hdlcd.disable_visualisation=1",
+                "-C",
+                "mps4_board.telnetterminal0.start_telnet=0",
+                "-C",
+                "mps4_board.uart0.out_file='-'",
+                "-C",
+                "mps4_board.uart0.unbuffered_output=1",
+                "-C",
+                "mps4_board.uart0.shutdown_on_eot=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-enable=1",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-stack_base=0",
+                "-C",
+                "mps4_board.subsystem.cpu0.semihosting-heap_limit=0",
+                "-C",
+                f"mps4_board.subsystem.cpu0.semihosting-cwd={intermediate_path}",
+                "-C",
+                "mps4_board.subsystem.ethosu.extra_args='--fast'",
+                "-C",
+                f"mps4_board.subsystem.cpu0.semihosting-cmd_line='{cmd_line}'",
+                "-a",
+                str(elf_path),
+                "--timelimit",
+                f"{timeout}",
+            ]
+        case _:
+            raise ValueError(f"Unknown target board {target_board}")
+
+    result = _run_cmd(command_args)
+
+    # Regex to check for error or fault messages in stdout from FVP
+    result_stdout = result.stdout.decode()
+    error_regex = r"(^[EF][: ].*$)|(^.*Hard fault.*$)|(^.*Assertion.*$)"
+    pattern = re.compile(error_regex, re.MULTILINE)
+    regex_matches = [m.group(0) for m in pattern.finditer(result_stdout)]
+
+    if regex_matches:
+        logger.error(
+            f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
+        )
+        # Pretty-print regex matches
+        pretty_matches = "\n".join(f"{m.strip()}" for i, m in enumerate(regex_matches))
+        logger.error(
+            f"Corstone simulation failed. Problems: {len(regex_matches)} found:\n{pretty_matches}"
+        )
+        raise RuntimeError(
+            f"Corstone simulation failed. Problems: {len(regex_matches)} found:\n{pretty_matches}"
+        )
+    else:
+        logger.info(
+            f"Corstone simulation:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
+        )
+
+    return get_output_from_file(exported_program, intermediate_path, output_base_name)
+
+
+def prep_data_for_save(
+    data,
+    input_name: str,
+    quant_param: Optional[QuantizationParams] = None,
+):
+    if isinstance(data, torch.Tensor):
+        data_np = torch_tensor_to_numpy(data)
+    elif isinstance(data, (int, float, bool, NoneType)):
+        return np.array(data)
+    else:
+        raise RuntimeError(
+            f"Input dtype {type(data)} could not be converted to numpy array."
+        )
+
+    if quant_param is not None:
+        assert quant_param.node_name in input_name, (
+            f"The quantization params name '{quant_param.node_name}' does not "
+            f"match the input tensor name '{input_name}'."
+        )
+        data_np = (
+            ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
+            .round()
+            .clip(quant_param.qmin, quant_param.qmax)
+            .astype(
+                f"{quant_param.dtype}".replace("torch.", "")
+            )  # Use string format of dtype to convert to numpy dtype
+        )
+
+    return data_np
+
+
+def save_bytes(
+    path: str,
+    data,
+    input_name: str,
+    quant_param: Optional[QuantizationParams] = None,
+) -> str:
+    """Serializes and saves 'data' in byte format, possibly quantizing it
+    before.
+
+    Parameters:
+        path: the directory where to save the data.
+        data: the data to save.
+        input_name: the name of the file, without file-ending.
+        quant_param: the parameters to use for quantization.
+    Returns:
+        the full file path of the output.
+
+    """
+    data_np = prep_data_for_save(data, input_name, quant_param)
+    file_path = os.path.join(path, input_name + ".bin")
+    with open(file_path, "w+b") as f:
+        data_np_bytes = data_np.tobytes()
+        f.write(data_np_bytes)
+
+    return file_path
+
+
+def _prepend_env_path(existing: str | None, value: str) -> str:
+    if not existing:
+        return value
+
+    parts = [part for part in existing.split(os.path.pathsep) if part]
+    if value in parts:
+        return existing
+    return os.path.pathsep.join([value, *parts])
+
+
+def _find_local_vulkan_sdk_root() -> Path | None:
+    repo_root = Path(__file__).resolve().parents[3]
+    sdk_base_dir = repo_root / "examples/arm/arm-scratch/vulkan_sdk"
+    if not sdk_base_dir.is_dir():
+        return None
+
+    if sys.platform == "darwin":
+        candidates = sorted(
+            path for path in sdk_base_dir.glob("*/macOS") if path.is_dir()
+        )
+    else:
+        arch = os.uname().machine
+        arch_aliases = [arch]
+        if arch == "arm64":
+            arch_aliases.append("aarch64")
+        candidates = sorted(
+            path
+            for alias in arch_aliases
+            for path in sdk_base_dir.glob(f"*/{alias}")
+            if path.is_dir()
+        )
+
+    if not candidates:
+        return None
+    return candidates[-1]
+
+
+def _get_vkml_runtime_env() -> dict[str, str]:
+    """Return an environment with the Vulkan runtime variables needed for
+    VKML.
+    """
+    env = os.environ.copy()
+    sdk_root = _find_local_vulkan_sdk_root()
+    if sdk_root is None:
+        return env
+
+    env["VULKAN_SDK"] = str(sdk_root)
+    env["PATH"] = _prepend_env_path(env.get("PATH"), str(sdk_root / "bin"))
+
+    if sys.platform == "darwin":
+        env["DYLD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("DYLD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+        moltenvk_icd = sdk_root / "share/vulkan/icd.d/MoltenVK_icd.json"
+        if moltenvk_icd.is_file():
+            env["VK_DRIVER_FILES"] = _prepend_env_path(
+                env.get("VK_DRIVER_FILES"), str(moltenvk_icd)
+            )
+        else:
+            logger.debug(
+                "MoltenVK ICD file not found at %s; leaving VK_DRIVER_FILES unset.",
+                moltenvk_icd,
+            )
+    else:
+        env["LD_LIBRARY_PATH"] = _prepend_env_path(
+            env.get("LD_LIBRARY_PATH"), str(sdk_root / "lib")
+        )
+
+    return env
+
+
+def _run_cmd(
+    cmd: List[str], check=True, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a command and check for errors.
+
+    Args:
+    cmd (List[str]): The command to run as a list.
+
+    """
+    try:
+        result = subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+            cmd, check=check, capture_output=True, env=env
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        arg_string = " ".join(cmd)
+        raise RuntimeError(
+            f"Failed running command {arg_string}\nStderr: {e.stderr.decode()}\nStdout: {e.stdout.decode()}"
+        )
+
+
+# Name of an optional resource containing the `flatc` executable.
+_FLATC_RESOURCE_NAME: str = "flatbuffers-flatc"
+
+
+def _run_flatc(args: List[str]) -> None:
+    """Runs the `flatc` command with the provided args.
+
+    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
+    Otherwise, expects the `flatc` tool to be available on the system path.
+
+    """
+    flatc_resource = _resources.files(arm_test_package).joinpath(_FLATC_RESOURCE_NAME)
+    if flatc_resource.is_file():
+        # Use the provided flatc binary from resources.
+        with _resources.as_file(flatc_resource) as flatc_path:
+            subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+                [str(flatc_path)] + args, check=True
+            )
+    else:
+        # Expect the `flatc` tool to be on the system path or set as an env var.
+        flatc_executable: str | None = os.getenv("FLATC_EXECUTABLE")
+        if not flatc_executable:
+            flatc_executable = shutil.which("flatc")
+        if not flatc_executable:
+            raise RuntimeError(
+                "flatc not found. Either add it to PATH, set FLATC_EXECUTABLE env var, "
+                "or ensure the flatbuffers-flatc resource is available."
+            )
+        subprocess.run(  # nosec B603 - cmd constructed from trusted inputs
+            [flatc_executable] + args, check=True
+        )
+
+
+def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
+    """This function is used to dump the TOSA flatbuffer to a human readable
+    format, using flatc.
+
+    It is used for debugging purposes.
+
+    """
+
+    tmp = tempfile.mkdtemp()
+    tosa_input_file = os.path.join(tmp, "output.tosa")
+    with open(tosa_input_file, "wb") as f:
+        f.write(tosa_fb)
+    tosa_graph = TosaGraph.GetRootAsTosaGraph(tosa_fb)
+    version = tosa_graph.Version()
+    major = version._Major()
+    minor = version._Minor()
+    patch = version._Patch()
+    if not ((major == 1 and minor <= 1)):
+        raise RuntimeError(
+            f"Unsupported version in TOSA flatbuffer: version={major}.{minor}.{patch}"
+        )
+
+    # Write schema file to temp directory using importlib.resources
+    tosa_schema_file = os.path.join(tmp, f"tosa_{major}.{minor}.fbs")
+    with open(tosa_schema_file, "wb") as schema_file:
+        schema_file.write(
+            _resources.read_binary(tosa_schemas_package, f"tosa_{major}.{minor}.fbs")
+        )
+
+    flatc_args = [
+        "--json",
+        "--strict-json",
+        "-o",
+        tmp,
+        "--raw-binary",
+        "-t",
+        tosa_schema_file,
+        "--",
+        tosa_input_file,
+    ]
+    _run_flatc(flatc_args)
+    with open(os.path.join(tmp, "output.json"), "r") as f:
+        json_out = json.load(f)
+
+    # Cast float tensors to proper dtype.
+    try:
+        for region in json_out["regions"]:
+            for block in region["blocks"]:
+                for tensor in block["tensors"]:
+                    if "data" in tensor:
+                        if tensor["type"] == "FP32":
+                            data = np.array(tensor["data"])
+                            data = data.astype(np.int8)
+                            data = np.frombuffer(data, dtype=np.float32)
+                        data = data.reshape(tensor["shape"])
+                        tensor["data"] = data
+    except Exception:  # nosec B110 - best-effort casting for debug output only
+        pass
+
+    return json_out
+
+
+def _tosa_refmodel_loglevel(loglevel: int) -> str:
+    """Converts a logging loglevel to tosa_reference_model logginglevel,
+    returned as string.
+    """
+    loglevel_map = {
+        logging.INFO: "INFO",
+        logging.CRITICAL: "LOW",
+        logging.ERROR: "LOW",
+        logging.WARNING: "MED",
+        logging.DEBUG: "HIGH",
+        logging.NOTSET: "MED",
+    }
+    clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
+    return loglevel_map[clamped_logging_level]
+
+
+def corstone300_installed() -> bool:
+    cmd_u55 = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    try:
+        _run_cmd(cmd_u55, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def corstone300_u65_installed() -> bool:
+    cmd_u65 = ["FVP_Corstone_SSE-300_Ethos-U65", "--version"]
+    try:
+        _run_cmd(cmd_u65, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def corstone320_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-320", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except Exception:
+        return False
+    return True
+
+
+def model_converter_installed() -> bool:
+    model_converter = find_model_converter_binary()
+    if model_converter is None:
+        return False
+
+    try:
+        _run_cmd([model_converter, "--version"], check=True, env=model_converter_env())
+    except Exception:
+        return False
+
+    return True
+
+
+def vkml_emulation_layer_installed() -> bool:
+    # Check VK_INSTANCE_LAYERS
+    vk_instance_layers = os.environ.get("VK_INSTANCE_LAYERS", "")
+    required_layers = {
+        "VK_LAYER_ML_Graph_Emulation",
+        "VK_LAYER_ML_Tensor_Emulation",
+    }
+    existing_layers = set(vk_instance_layers.split(":"))
+    layers_exists = required_layers.issubset(existing_layers)
+
+    # Check dynamic library search paths for the emulation layer deploy dir.
+    library_paths = []
+    ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+    if ld_library_path:
+        library_paths.extend(ld_library_path.split(os.path.pathsep))
+    if dyld_library_path:
+        library_paths.extend(dyld_library_path.split(os.path.pathsep))
+
+    deploy_exists = False
+    deploy_markers = ("emulation-layer/deploy", "emulation_layer/deploy")
+    for path in library_paths:
+        if any(marker in path for marker in deploy_markers) and os.path.isdir(path):
+            deploy_exists = True
+
+    return layers_exists and deploy_exists
+
+
+def _elf_search_roots() -> list[Path]:
+    roots: list[Path] = []
+
+    for env_var in (
+        "EXECUTORCH_ROOT",
+        "GITHUB_WORKSPACE",
+        "BUILD_WORKSPACE_DIRECTORY",
+    ):
+        env_root = os.environ.get(env_var)
+        if env_root:
+            roots.append(Path(env_root).expanduser())
+
+    cwd = Path.cwd().resolve()
+    search_parents = [cwd, *cwd.parents, *Path(__file__).resolve().parents]
+    for parent in search_parents:
+        if (parent / "examples" / "arm").is_dir() or (parent / "arm_test").exists():
+            roots.append(parent)
+
+    unique_roots: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in seen:
+            unique_roots.append(resolved)
+            seen.add(resolved)
+    return unique_roots
+
+
+def _elf_path_candidates(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> list[Path]:
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    portable_ops_str = "portable-ops_" if use_portable_ops else ""
+    if target_board in ("corstone-300", "corstone-300-u65", "corstone-320"):
+        build_dir = Path(
+            "arm_test",
+            f"arm_semihosting_executor_runner_"
+            f"{portable_ops_str}{target_board}{build_dir_suffix}",
+        )
+        binary_name = "arm_executor_runner"
+    else:
+        build_dir = Path(
+            "arm_test", f"arm_executor_runner_{portable_ops_str}vkml{build_dir_suffix}"
+        )
+        binary_name = "executor_runner"
+
+    candidates: list[Path] = []
+    for root in _elf_search_roots():
+        root_build_dir = root / build_dir
+        candidates.extend(
+            [
+                root_build_dir / binary_name,
+                root_build_dir / "Release" / binary_name,
+                root_build_dir / "examples" / "arm" / "executor_runner" / binary_name,
+                root_build_dir
+                / "examples"
+                / "arm"
+                / "executor_runner"
+                / "Release"
+                / binary_name,
+            ]
+        )
+
+    unique_candidates: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen:
+            unique_candidates.append(resolved)
+            seen.add(resolved)
+    return unique_candidates
+
+
+def _resolve_existing_elf_path(elf_candidates: Iterable[Path]) -> Path:
+    checked: list[Path] = []
+    for elf_path in elf_candidates:
+        checked.append(elf_path)
+        if elf_path.exists():
+            return elf_path
+
+    checked_paths = ", ".join(str(path) for path in checked)
+    raise FileNotFoundError(
+        "Did not find build arm_executor_runner or executor_runner. "
+        f"Tried: {checked_paths}. "
+        "Run setup_testing.sh or setup_testing_vkml.sh?"
+    )
+
+
+def get_elf_path(
+    target_board: str, use_portable_ops: bool = False, build_dir_suffix: str = ""
+) -> str:
+    elf_path = _resolve_existing_elf_path(
+        _elf_path_candidates(
+            target_board,
+            use_portable_ops=use_portable_ops,
+            build_dir_suffix=build_dir_suffix,
+        )
+    )
+    return str(elf_path)
+
+
+def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
+    try:
+        get_elf_path(target_board, use_portable_ops=use_portable_ops)
+    except Exception:
+        return False
+    else:
+        return True
+
+
+def run_tosa_graph(
+    graph: Any,
+    tosa_version: TosaSpecification,
+    inputs: list[torch.Tensor],
+    output_node: Node,
+) -> list[torch.Tensor]:
+    """Runs the TOSA reference model with inputs and returns the result."""
+
+    # Convert tensors to numpy arrays with correct dim_order
+    inputs_np = [torch_tensor_to_numpy(input_tensor) for input_tensor in inputs]
+
+    if isinstance(tosa_version, Tosa_1_00):
+        import tosa_reference_model as reference_model  # type: ignore[import-not-found, import-untyped]
+
+        debug_mode = "ALL" if logger.getEffectiveLevel() <= logging.DEBUG else None
+        outputs_np, status = reference_model.run(
+            graph,
+            inputs_np,
+            verbosity=_tosa_refmodel_loglevel(logger.getEffectiveLevel()),
+            initialize_variable_tensor_from_numpy=True,
+            debug_mode=debug_mode,
+        )
+    else:
+        raise ValueError(
+            f"Unknown TOSA specification: {tosa_version}. No refererence model available to run for this specification version"
+        )
+
+    assert (
+        status == reference_model.GraphStatus.TOSA_VALID
+    ), "Non-valid TOSA given to reference model."
+
+    # Convert output numpy arrays to tensors with same dim_order as the output nodes
+    result = [
+        numpy_to_torch_tensor(output_array, node)
+        for output_array, node in zip(outputs_np, output_node.args[0])  # type: ignore[arg-type]
+    ]
+
+    return result
+
+
+def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
+    if isinstance(compile_spec, VgfCompileSpec):
+        return "vkml_emulation_layer"
+    if isinstance(compile_spec, EthosUCompileSpec):
+        if "u55" in compile_spec.target:
+            return "corstone-300"
+        if "u65" in compile_spec.target:
+            return "corstone-300-u65"
+        if "u85" in compile_spec.target:
+            return "corstone-320"
+    return None

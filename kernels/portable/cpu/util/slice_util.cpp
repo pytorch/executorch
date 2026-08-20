@@ -1,0 +1,277 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <c10/util/irange.h>
+#include <executorch/kernels/portable/cpu/util/slice_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/thread_parallel_interface.h>
+#include <cstring>
+
+namespace torch {
+namespace executor {
+
+using Tensor = executorch::aten::Tensor;
+
+bool check_narrow_copy_args(
+    const Tensor& in,
+    int64_t dim,
+    int64_t start,
+    int64_t length,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  ET_CHECK_OR_RETURN_FALSE(
+      length >= 0, "length must be non-negative; length = %" PRId64, length);
+  ET_LOG_AND_RETURN_IF_FALSE(start >= -in.size(dim));
+  ET_LOG_AND_RETURN_IF_FALSE(start <= in.size(dim));
+  if (start < 0) {
+    start += in.size(dim);
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(start + length <= in.size(dim));
+  return true;
+}
+
+void get_narrow_copy_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    int64_t length,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+
+  for (const auto d : c10::irange(in.dim())) {
+    out_sizes[d] = in.size(d);
+  }
+  out_sizes[dim] = length;
+}
+
+bool check_slice_copy_args(
+    const Tensor& in,
+    int64_t dim,
+    int64_t step,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  ET_CHECK_OR_RETURN_FALSE(
+      step > 0, "slice step must be greater than zero; step = %" PRId64, step);
+  return true;
+}
+
+void get_slice_copy_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    int64_t length,
+    executorch::aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  get_narrow_copy_out_target_size(in, dim, length, out_sizes, out_ndim);
+}
+
+bool check_slice_scatter_args(
+    const Tensor& input,
+    const Tensor& src,
+    int64_t dim,
+    int64_t num_values,
+    int64_t step,
+    Tensor output) {
+  ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
+
+  // Check dim. The dim planned to be selected on shall exist in input
+  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
+
+  // Input and output tensors should be the same shape and dtype
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape_and_dtype(input, output));
+
+  // The input.dim() shall equal to src.dim()
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_rank(input, src));
+
+  // Check step. Step must be greater than zero
+  ET_CHECK_OR_RETURN_FALSE(
+      step > 0, "slice step must be greater than zero; step = %" PRId64, step);
+
+  // The size of src tensor should follow these rules:
+  // - src.size(i) shall equal to input.size(i) if i != dim,
+  // - src.size(dim) shall equal to num_values
+  for (const auto d : c10::irange(input.dim())) {
+    if (d != dim) {
+      ET_LOG_AND_RETURN_IF_FALSE(
+          tensors_have_same_size_at_dims(input, d, src, d));
+    } else {
+      ET_CHECK_OR_RETURN_FALSE(
+          src.size(d) == num_values,
+          "input.size(%zu) %zd != num_values %" PRId64 " | dim = %" PRId64 ")",
+          d,
+          input.size(d),
+          num_values,
+          dim);
+    }
+  }
+
+  return true;
+}
+
+int64_t adjust_slice_indices(
+    int64_t dim_length,
+    int64_t* start,
+    int64_t* end,
+    int64_t step) {
+  int64_t num_values = 0;
+
+  // Update start and end index
+  // First convert it to c++ style from python style if needed.
+  // The start index is using python style E.g., for the shape {2, 3, 4},
+  // dim = -1 would refer to dim[2], dim = -2 would refer to dim[1], and so on.
+  *start = *start < 0 ? *start + dim_length : *start;
+  *end = *end < 0 ? *end + dim_length : *end;
+  // Second, if start or end still negative, which means user want to start or
+  // end slicing from very beginning, so set it to zero
+  *start = *start < 0 ? 0 : *start;
+  *end = *end < 0 ? 0 : *end;
+  // Last, if start or end larger than maximum value (dim_length - 1), indicates
+  // user want to start slicing after end or slicing until the end, so update it
+  // to dim_length
+  *start = *start > dim_length ? dim_length : *start;
+  *end = *end > dim_length ? dim_length : *end;
+
+  if (*start >= dim_length || *end <= 0 || *start >= *end) {
+    // Set num_values to 0 if interval [start, end) is non-exist or do not
+    // overlap with [0, dim_length)
+    num_values = 0;
+  } else {
+    // Update num_values to min(max_num_values, num_values)
+    num_values = (*end - 1 - *start) / step + 1;
+  }
+  return num_values;
+}
+
+void compute_slice(
+    KernelRuntimeContext& ctx,
+    const Tensor& in,
+    int64_t dim,
+    int64_t start,
+    int64_t length,
+    int64_t step,
+    Tensor& out) {
+  // No slicing requested.
+  if (length <= 0) {
+    return;
+  }
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      dim < in.dim(),
+      InvalidArgument,
+      /* void */,
+      "Requested dim is larger than input tensor dim");
+  size_t dim_length = in.size(dim);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      start >= 0 && length >= 0 && step >= 0,
+      InvalidArgument,
+      /* void */,
+      "Input args should be >= 0.");
+  int64_t requested_slice = start + (length - 1) * step;
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      static_cast<uint64_t>(requested_slice) <
+          static_cast<uint64_t>(dim_length),
+      InvalidArgument,
+      /* void */,
+      "Requested slice is larger than the dim size");
+
+  size_t leading_dims = getLeadingDims(in, dim);
+  size_t trailing_dims = getTrailingDims(in, dim);
+
+  if (trailing_dims == 0) {
+    return;
+  }
+
+  size_t length_per_step = trailing_dims * in.element_size();
+
+  const char* input_data = in.const_data_ptr<char>();
+  char* dest = out.mutable_data_ptr<char>();
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      out.nbytes() >= (length * leading_dims * length_per_step),
+      InvalidArgument,
+      /* void */,
+      "out.nbytes() is smaller than the expected slice size.");
+  // Thresholds for enabling multithreading:
+  // - Minimum number of leading dimensions: 8
+  // - Minimum total elements to copy: 32768 (GRAIN_SIZE)
+  constexpr int64_t MIN_LEADING_DIMS_FOR_MT = 8;
+  constexpr int64_t MIN_ELEMENTS_FOR_MT =
+      executorch::extension::internal::GRAIN_SIZE;
+
+  const int64_t total_elements = leading_dims * length * trailing_dims;
+  const bool use_multithreading = leading_dims >= MIN_LEADING_DIMS_FOR_MT &&
+      total_elements >= MIN_ELEMENTS_FOR_MT;
+
+  // Contiguous fast path for step == 1 (the common case:
+  // tensor.narrow, x[a:b], KV cache reads, etc.). When step == 1, the per-row
+  // slice is one contiguous block of `length * length_per_step` bytes — replace
+  // `length` calls of memcpy(length_per_step) with a single bulk memcpy.
+  const bool step_is_one = (step == 1);
+  const size_t row_bytes = static_cast<size_t>(length) * length_per_step;
+  if (use_multithreading) {
+    // Use parallel_for to distribute work across leading dimensions
+    // Calculate grain size based on number of elements per leading dimension
+    const int64_t grain_size = MIN_LEADING_DIMS_FOR_MT;
+
+    if (step_is_one) {
+      executorch::extension::parallel_for(
+          0, leading_dims, grain_size, [&](const auto begin, const auto end) {
+            for (const auto i : c10::irange(begin, end)) {
+              const char* src =
+                  input_data + (i * dim_length + start) * length_per_step;
+              char* local_dest = dest + i * row_bytes;
+              memcpy(local_dest, src, row_bytes);
+            }
+          });
+    } else {
+      executorch::extension::parallel_for(
+          0, leading_dims, grain_size, [&](const auto begin, const auto end) {
+            for (const auto i : c10::irange(begin, end)) {
+              const char* src =
+                  input_data + (i * dim_length + start) * length_per_step;
+              char* local_dest = dest + i * row_bytes;
+              for ([[maybe_unused]] const auto j : c10::irange(length)) {
+                memcpy(local_dest, src, length_per_step);
+                src += step * length_per_step;
+                local_dest += length_per_step;
+              }
+            }
+          });
+    }
+  } else {
+    // Single-threaded path for small workloads
+    if (step_is_one) {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src =
+            input_data + (i * dim_length + start) * length_per_step;
+        memcpy(dest, src, row_bytes);
+        dest += row_bytes;
+      }
+    } else {
+      for (const auto i : c10::irange(leading_dims)) {
+        const char* src =
+            input_data + (i * dim_length + start) * length_per_step;
+        for ([[maybe_unused]] const auto j : c10::irange(length)) {
+          memcpy(dest, src, length_per_step);
+          src += step * length_per_step;
+          dest += length_per_step;
+        }
+      }
+    }
+  }
+}
+
+} // namespace executor
+} // namespace torch

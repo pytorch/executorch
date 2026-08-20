@@ -1,0 +1,145 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_DW_Q8_UTILS_GLSLH
+#define CONV2D_DW_Q8_UTILS_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+vec4 dequantize(const int packed_texel, const float scale, const int zp) {
+  return vec4(unpack_int8x4(packed_texel) - zp) * scale;
+}
+
+vec4 dequantize(const int packed_texel, const vec4 scales) {
+  return vec4(unpack_int8x4(packed_texel)) * scales;
+}
+
+bool in_bounds(
+    const int block_w,
+    const int block_h,
+    const int block_c4,
+    const Conv2dBlockExtents block_extents) {
+  ivec3 idx = ivec3(block_w, block_h, block_c4);
+  if (any(lessThan(idx, ivec3(0)))) {
+    return false;
+  }
+  if (any(greaterThanEqual(idx, block_extents.data))) {
+    return false;
+  }
+
+  return true;
+}
+
+struct FPOutBlock {
+  vec4[4] data;
+};
+
+ivec4 quantize(
+    const vec4 texel, const float inv_scale, const int zp) {
+  vec4 quantized = round(texel * inv_scale) + zp;
+  return clamp(ivec4(quantized), -128, 127);
+}
+
+ivec4 quantize_and_pack(
+    FPOutBlock out_block, const float inv_scale, const int zp) {
+  ivec4 packed_block;
+  for (int row = 0; row < 4; ++row) {
+    ivec4 quantized_texel = quantize(out_block.data[row], inv_scale, zp);
+    packed_block[row] = pack_into_int32(quantized_texel);
+  }
+  return packed_block;
+}
+
+// Load a 4xint8 block of weights. Equivalent to unpacked_weights[kh][kw][c:c+4].
+int load_weight_1w4c(
+  int kw,  // w coordinate
+  int kh,  // h coordinate
+  int oc4, // channel block
+  int KW4, // kernel width / 4 (rounded up)
+  int OC4  // out channels count / 4 (rounded up)
+  ) {
+
+  // Find the packed block index. Weights are packed as 4W4C tiles.
+  int kw4 = kw / 4; // W block
+  int linear_idx = ((kh * KW4 + kw4) * OC4 + oc4) * 4;
+  int block_x_offset = kw % 4;
+#ifdef WEIGHT_BUFFER
+  return t_packed_int8_weight[linear_idx + block_x_offset];
+#else
+  return texelFetch(t_packed_int8_weight, ivec2(oc4, kh * KW4 + kw4), 0)[block_x_offset];
+#endif
+}
+
+// Load a 4xint8 block of inputs - channel c through c+3 (c = oc4*4) at
+// the given spatial location. Equivalent to unpacked_input[0][c:c+4][h][w].
+int load_input_1w4c(
+  int w,   // w coordinate
+  int h,   // h coordinate
+  int oc4, // channel block
+  int OC4, // out channels / 4 (rounded up)
+  Conv2dBlockExtents block_extents
+) {
+  int block_w = w / 4;
+
+  if (in_bounds(block_w, h, oc4, block_extents) && w >= 0) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+    const int buffer_idx =
+        (h * block_extents.data_xz + block_w * block_extents.data.z + oc4) * 4 + (w % 4);
+    return t_packed_int8_input[buffer_idx];
+#else
+    #error Unimplemented
+#endif
+  } else {
+    return pack_into_int32(ivec4(input_zp));
+  }
+}
+
+#ifdef DEBUG_MODE
+
+void printInputWindow1D(const InputWindow1D input_window) {
+  debugPrintfEXT("InputWindow1D contents (len = %d): \\n", input_window.len);
+  for (int i = 0; i < min(input_window.len, MAX_WINDOW_WIDTH); ++i) {
+    debugPrintfEXT(
+        "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+        i,
+        input_window.data[i].x,
+        input_window.data[i].y,
+        input_window.data[i].z,
+        input_window.data[i].w);
+  }
+}
+
+void printWeightRow(const WeightRow weight_row) {
+  debugPrintfEXT("WeightRow contents (len = %d): \\n", weight_row.len);
+  for (int i = 0; i < min(weight_row.len, MAX_KERNEL_WIDTH); ++i) {
+    debugPrintfEXT(
+        "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+        i,
+        weight_row.data[i].x,
+        weight_row.data[i].y,
+        weight_row.data[i].z,
+        weight_row.data[i].w);
+  }
+}
+
+void printFPOutBlock(const FPOutBlock out_block) {
+    debugPrintfEXT("FPOutBlock contents: \\n");
+    for (int i = 0; i < 4; ++i) {
+      debugPrintfEXT(
+          "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+          i,
+          out_block.data[i].x,
+          out_block.data[i].y,
+          out_block.data[i].z,
+          out_block.data[i].w);
+    }
+  }
+
+#endif // DEBUG_MODE
+
+#endif // CONV2D_DW_Q8_UTILS_GLSLH

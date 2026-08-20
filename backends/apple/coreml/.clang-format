@@ -1,0 +1,27 @@
+BasedOnStyle: WebKit
+AllowShortIfStatementsOnASingleLine: false
+BreakBeforeBinaryOperators: None
+BreakConstructorInitializers: BeforeColon
+IndentCaseLabels: true
+SortIncludes: true
+SpaceBeforeRangeBasedForLoopColon: false
+SpaceBeforeParens: ControlStatements
+AlignAfterOpenBracket: Align
+NamespaceIndentation: None
+MaxEmptyLinesToKeep: 2
+#AlignConsecutiveAssignments: true
+
+ColumnLimit: 120
+
+# When breaking up parameter/argument lists across multiple lines,
+# put only one per line instead of packing as many as possible.
+BinPackArguments: false
+BinPackParameters: false
+
+# Control of individual brace wrapping cases.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  BeforeCatch: true
+
+# Options for aligning backslashes in escaped newlines.
+AlignEscapedNewlines: Left

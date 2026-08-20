@@ -1,0 +1,96 @@
+# .github/release.yml
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Breaking Changes 🛠
+      labels:
+        - Semver-Major
+        - breaking-change
+    - title: API
+      labels:
+        - "release notes: api"
+    - title: ARM
+      labels:
+        - "release notes: arm"
+        - "module: arm"
+        - "partner: arm"
+    - title: NXP
+      labels:
+        - "release notes: nxp"
+        - "module: nxp"
+    - title: Exir
+      labels:
+        - "release notes: exir"
+        - "module: exir"
+    - title: Misc
+      labels:
+        - "release notes: misc"
+    - title: Apple
+      labels:
+        - "release notes: apple"
+        - "module: coreml"
+        - "module: mps"
+    - title: Android
+      labels:
+        - "module: android"
+    - title: IOS
+      labels:
+        - "module: ios"
+    - title: Build
+      labels:
+        - "release notes: build"
+    - title: Vulkan
+      labels:
+        - "release notes: vulkan"
+        - "module: vulkan"
+    - title: Cadence
+      labels:
+        - "release notes: cadence"
+        - "module: cadence"
+    - title: Runtime
+      labels:
+        - "release notes: runtime"
+        - "module: runtime"
+    - title: XNNPACK
+      labels:
+        - "release notes: xnnpack"
+        - "module: xnnpack"
+    - title: Devtools
+      labels:
+        - "release notes: devtools"   
+        - "module: devtools"
+    - title: Examples
+      labels:
+        - "release notes: examples"
+    - title: LLM
+      labels:
+        - "module: llm"
+    - title: Mediatek
+      labels:
+        - "release notes: mediatek"
+        - "partner: mediatek"
+    - title: Openvino
+      labels:
+        - "release notes: openvino"
+    - title: Qualcomm
+      labels:
+        - "release notes: qualcomm"
+        - "partner: qualcomm"
+        - "module: qnn"
+    - title: Training
+      labels:
+        - "release notes: training"
+        - "module: training"
+    - title: Quantization
+      labels:
+        - "release notes: quantization" 
+    - title: Ops & kernels
+      labels:
+        - "release notes: ops & kernels"
+        - "module: kernels"
+    - title: Other Changes
+      labels:
+        - "*"

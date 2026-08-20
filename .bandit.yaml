@@ -1,0 +1,3 @@
+# Centralized Bandit configuration used by lintrunner.
+skips:
+  - B101

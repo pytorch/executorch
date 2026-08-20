@@ -1,0 +1,38 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+embedding_q4gsw:
+  parameter_names_with_default_values:
+    DTYPE: half
+    SCALES_DTYPE: half
+    STORAGE: buffer
+    WEIGHT_STORAGE: buffer
+    IS_LINEAR_WEIGHT: false
+  generate_variant_forall:
+    STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: embedding_q4gsw
+    - NAME: embedding_q4gsw_float_scales
+      SCALES_DTYPE: float
+    - NAME: embedding_q4gsw_linear_weight_buffer
+      IS_LINEAR_WEIGHT: true
+      WEIGHT_STORAGE: buffer
+    - NAME: embedding_q4gsw_linear_weight_texture2d
+      IS_LINEAR_WEIGHT: true
+      WEIGHT_STORAGE: texture2d
+    - NAME: embedding_q4gsw_float_scales_linear_weight_buffer
+      SCALES_DTYPE: float
+      IS_LINEAR_WEIGHT: true
+      WEIGHT_STORAGE: buffer
+    - NAME: embedding_q4gsw_float_scales_linear_weight_texture2d
+      SCALES_DTYPE: float
+      IS_LINEAR_WEIGHT: true
+      WEIGHT_STORAGE: texture2d

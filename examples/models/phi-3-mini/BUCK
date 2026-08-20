@@ -1,0 +1,32 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_phi-3-mini",
+    main_function = "executorch.examples.models.phi-3-mini.export_phi-3-mini.main",
+    deps = [
+        ":export_phi-3-mini_library",
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_phi-3-mini_library",
+    srcs = [
+        "export_phi-3-mini.py",
+        "phi_3_mini.py",
+        "static_cache.py",
+    ],
+    _is_external_target = True,
+    visibility = ["PUBLIC"],
+    deps = [
+        "fbsource//third-party/pypi/transformers:transformers",  # @manual
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:export_lib",
+    ],
+)

@@ -1,0 +1,6 @@
+{
+    "description": "Template used by LLaMa2-chat.",
+    "prompt_input": "[INST] {instruction} [/INST]",
+    "prompt_no_input": "[INST] {instruction} [/INST]",
+    "response_split": "[/INST]"
+}
