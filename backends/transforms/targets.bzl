@@ -591,6 +591,20 @@ def define_common_targets():
     )
 
     runtime.python_test(
+        name = "test_to_contiguous_channels_last_pipeline",
+        srcs = [
+            "test/test_to_contiguous_channels_last_pipeline.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":to_contiguous_channels_last_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
+    runtime.python_test(
         name = "test_convert_conv1d_to_conv2d_pass",
         srcs = [
             "test/test_convert_conv1d_to_conv2d_pass.py",

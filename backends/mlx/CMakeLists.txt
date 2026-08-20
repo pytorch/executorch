@@ -339,16 +339,16 @@ install(
 # exist)
 #
 # where {binary_dir} is determined at runtime via dladdr() on the library
-# containing MLX code. When MLX is statically linked into _portable_lib.so, this
-# is the directory containing _portable_lib.so.
+# containing MLX code. When MLX is statically linked into _C.so, this is the
+# directory containing _C.so.
 #
 # For the installed library, we put metallib in lib/ alongside libmlx.a. The
 # metallib is produced in the mlx_external build tree (MLX_METAL_JIT=ON does not
 # install it); _mlx_metallib points there.
 install(FILES ${_mlx_metallib} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-# Cache the metallib path for pybindings to copy it next to _portable_lib.so
-# This enables editable installs to work correctly
+# Cache the metallib path for pybindings to copy it next to _C.so. This enables
+# editable installs to work correctly
 set(MLX_METALLIB_PATH
     "${_mlx_metallib}"
     CACHE INTERNAL "Path to mlx.metallib for pybindings"

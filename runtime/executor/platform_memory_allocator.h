@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include <c10/util/safe_numerics.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>

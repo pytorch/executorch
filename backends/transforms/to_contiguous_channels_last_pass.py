@@ -86,9 +86,8 @@ class ToContiguousChannelsLastPass(ExportPass):
     surviving layout copies. Strict mode rejects structurally unsafe copies and
     supported source anchors that were not converted. It does not reject
     user-authored permutes or estimate peak arena usage after memory planning.
-    Additional permutable ops must be layout-equivariant without argument
-    remapping. ``can_propagate`` is consulted by every transform that moves a
-    layout copy across a graph node.
+    ``can_propagate`` is consulted by every transform that moves a layout copy
+    across a graph node.
     """
 
     _MAX_OPTIMIZATION_ITERATIONS = 8
@@ -97,7 +96,6 @@ class ToContiguousChannelsLastPass(ExportPass):
         self,
         exported_program: ExportedProgram,
         op_map: dict[Target, ChannelsLastOpSpec] | None = None,
-        extra_permutable_ops: set[Target] | None = None,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
         layout_pad_target: Target | None = None,
         strict: bool = False,
@@ -105,9 +103,6 @@ class ToContiguousChannelsLastPass(ExportPass):
         super().__init__()
         self.exported_program = exported_program
         self.op_map = op_map
-        self.extra_permutable_ops: set[Target] = set()
-        if extra_permutable_ops:
-            self.extra_permutable_ops |= extra_permutable_ops
         self.can_propagate = can_propagate
         self.layout_pad_target = layout_pad_target
         self.strict = strict
@@ -177,7 +172,6 @@ class ToContiguousChannelsLastPass(ExportPass):
             FuseCascadedViewOps(),
             FuseCascadedTransposeOrPermuteOps(can_propagate=self.can_propagate),
             RemovePermutesAroundElementwiseOps(
-                self.extra_permutable_ops,
                 exported_program=self.exported_program,
                 allow_layout_boundary_propagation=True,
                 layout_pad_target=self.layout_pad_target,

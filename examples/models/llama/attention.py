@@ -74,13 +74,13 @@ def register_attention(name: str):
 def _get_gated_delta_rule_op() -> Optional[Any]:
     """Return the fused gated delta rule op, or None if it is unavailable.
 
-    ``channelwise_gated_delta_rule`` accepts a per-head scalar decay as a 3D
+    ``gated_delta_rule`` accepts a per-head scalar decay as a 3D
     ``[B, H, T]`` tensor, which is the layout GatedDeltaNet produces. Resolve it
     lazily (importing the custom ops library on first use) and memoize so
     environments without the custom op fall back to the Python recurrence.
     """
     try:
-        return torch.ops.llama.channelwise_gated_delta_rule.default
+        return torch.ops.llama.gated_delta_rule.default
     except (AttributeError, RuntimeError):
         pass
 
@@ -91,7 +91,7 @@ def _get_gated_delta_rule_op() -> Optional[Any]:
         return None
 
     try:
-        return torch.ops.llama.channelwise_gated_delta_rule.default
+        return torch.ops.llama.gated_delta_rule.default
     except (AttributeError, RuntimeError):
         return None
 

@@ -339,15 +339,26 @@ function(gen_custom_ops_aot_lib)
   executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
   if(TARGET portable_lib)
     target_link_libraries(${GEN_LIB_NAME} PRIVATE portable_lib)
+  elseif(TARGET executorch_shared)
+    # Named here as well as retained below, because a PRIVATE link does not
+    # carry the runtime's include directories and compile definitions, and a
+    # shared build without the pybind extension would then compile against no
+    # runtime headers.
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_shared)
   else()
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_core)
   endif()
+  executorch_target_link_shared_runtime(${GEN_LIB_NAME})
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
+#
+# SHARED opts this library into being a shared object. It is opt-in because most
+# callers want the default static library, and only the one shipped in the wheel
+# needs to be shared so a process has a single copy of the kernels.
 function(gen_operators_lib)
   set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS DTYPE_SELECTIVE_BUILD)
-  cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
+  cmake_parse_arguments(GEN "SHARED" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
@@ -360,7 +371,17 @@ function(gen_operators_lib)
     set(_opvariant_h ${_out_dir}/selected_op_variants.h)
   endif()
 
-  add_library(${GEN_LIB_NAME})
+  if(GEN_SHARED)
+    add_library(${GEN_LIB_NAME} SHARED)
+    # The caller names the library and sets its version, because the shipped
+    # name describes what the library provides rather than which generation
+    # target produced it, and only the caller knows that.
+    #
+    # Ships beside the runtime in the wheel's lib/ directory.
+    executorch_target_shipped_runtime_path(${GEN_LIB_NAME})
+  else()
+    add_library(${GEN_LIB_NAME})
+  endif()
 
   set(_srcs_list ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
                  ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
@@ -370,6 +391,21 @@ function(gen_operators_lib)
   endif()
   target_sources(${GEN_LIB_NAME} PRIVATE ${_srcs_list})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  # Resolve the runtime from the shared library rather than from the static core
+  # in GEN_DEPS. Linking the static core gives this library its own copy of the
+  # operator table, so its static initializer registers into a table nothing
+  # else reads and the operators appear missing at run time.
+  #
+  # Only when this target is itself shared. On a static target the retention
+  # helper cannot work: PRIVATE link options are dropped on a static library, so
+  # the --no-as-needed scope never reaches whatever links it, and the helper is
+  # fatal on that rather than pretending. A static operators library is
+  # extracted whole into its consumer, and the consumer is what retains the
+  # runtime, so there is nothing to do here. It still needs the runtime's
+  # headers, which come through GEN_DEPS.
+  if(GEN_SHARED)
+    executorch_target_link_shared_runtime(${GEN_LIB_NAME})
+  endif()
   set(portable_kernels_check "portable_kernels")
   if(GEN_KERNEL_LIBS)
 
