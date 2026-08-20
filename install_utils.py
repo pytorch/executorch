@@ -142,22 +142,62 @@ def _get_cuda_version():
 
 
 def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
-    prefix = f"-D{name}="
-    for arg in args:
-        if arg.startswith(prefix):
-            return arg[len(prefix) :]
-    return None
+    """The value CMake would use for -D<name>, which is the last one given.
+
+    Repeating a definition is how a caller overrides an earlier one, and CMake keeps the last, so returning
+    the first would let packaging read one value while the build used another.
+
+    All three spellings CMake accepts are matched, because it treats them identically: -D<name>=<value>,
+    -D<name>:<type>=<value>, and -D followed by <name>=<value> as a separate argument. Matching only the
+    first meant a caller who switched an option off in either of the other two forms was read as leaving it
+    on, so a CPU row could ship a wheel carrying CUDA.
+    """
+    # A bare -D takes its definition from the next argument, so both spellings collapse to one form.
+    definitions = []
+    remaining = iter(args)
+    for arg in remaining:
+        if arg == "-D":
+            definitions.append(next(remaining, ""))
+        elif arg.startswith("-D"):
+            definitions.append(arg[2:])
+
+    # The name may carry a CMake type, as in EXECUTORCH_BUILD_CUDA:BOOL.
+    pattern = re.compile(rf"{re.escape(name)}(?::\w+)?=(.*)", re.DOTALL)
+    value = None
+    for definition in definitions:
+        match = pattern.fullmatch(definition)
+        if match:
+            value = match.group(1)
+    return value
+
+
+_CMAKE_FALSE_CONSTANTS = frozenset(
+    {"off", "false", "n", "no", "0", "", "ignore", "notfound"}
+)
+
+
+def cmake_boolean_is_true(value: str) -> bool:
+    """Whether a CMake option value reads as true, by CMake's own rule.
+
+    CMake decides false by exclusion, comparing against its false constants as strings without
+    parsing a number. So a bare 0 is false while 0.0 is true, and a word it does not recognise,
+    enabled for instance, is true.
+
+    Defined here, and imported by the cache reader rather than the reverse, because this module has
+    to import with nothing on the path. Readers that used a whitelist of true words plus a numeric
+    test disagreed with CMake and with each other, which let packaging declare no CUDA runtime for a
+    build CMake had turned CUDA on for.
+    """
+    normalized = value.strip().lower()
+    if normalized in _CMAKE_FALSE_CONSTANTS:
+        return False
+    return not normalized.endswith("-notfound")
 
 
 def _normalize_cmake_bool(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
-    normalized = value.strip().upper()
-    if normalized in {"ON", "1", "TRUE", "YES"}:
-        return True
-    if normalized in {"OFF", "0", "FALSE", "NO"}:
-        return False
-    return default
+    return cmake_boolean_is_true(value)
 
 
 def _cuda_version_to_pytorch_suffix(major, minor):
