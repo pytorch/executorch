@@ -758,7 +758,9 @@ def build_qat_model(
     prepared_model = prepare_qat_pt2e(exported_model, quantizer)
     cast(Any, prepared_model).to(memory_format=torch.channels_last)
     prepared_model = move_exported_model_to_train(prepared_model)
-    optimizer = torch.optim.SGD(prepared_model.parameters(), lr=lr, momentum=0.9)
+    optimizer = torch.optim.SGD(
+        prepared_model.parameters(), lr=lr, momentum=0.9, foreach=True
+    )
 
     for step in range(steps):
         total_loss = 0.0
