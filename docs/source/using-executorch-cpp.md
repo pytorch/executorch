@@ -180,6 +180,7 @@ These are the components the Linux package provides:
 | `kernels_quantized` | The quantized operator kernels | Linux |
 | `backend_cuda` | The CUDA delegate | Linux |
 | `extension_cuda` | The CUDA stream extension | Linux |
+| `backend_openvino` | The OpenVINO delegate | Linux |
 
 To see what your own install offers, ask CMake:
 
@@ -187,7 +188,7 @@ To see what your own install offers, ask CMake:
 find_package(executorch REQUIRED)
 foreach(_component
         runtime kernels_optimized kernels_quantized backend_xnnpack
-        backend_cuda extension_cuda threadpool etdump)
+        backend_cuda extension_cuda backend_openvino threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
@@ -212,6 +213,19 @@ target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 The quantized kernels are deliberately left out of that variable, because loading
 `executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
 stops the runtime.
+
+The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
+itself, and the adapter opens `libopenvino_c.so` by name when the model is loaded. Python callers
+get that path set for them on import; a standalone C++ program does not, so install the runtime and
+point the program at it:
+
+```bash
+pip install "executorch[openvino]"
+export OPENVINO_LIB_PATH="$(python -c 'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])')"
+```
+
+Without it the delegate still registers and the program still links, and the failure arrives later,
+when the model is loaded.
 
 #### When something does not work
 

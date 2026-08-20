@@ -1309,6 +1309,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_OPENVINO)
+    # Under a shared build this resolves to the shipped library rather than a
+    # static archive, so the delegate is not copied into the extension and the
+    # process registers it once.
     list(APPEND _dep_libs openvino_backend)
   endif()
 
