@@ -91,7 +91,7 @@ def test_cuda_libraries_resolve_relatively() -> None:
 
     Every shipped library that links the CUDA runtime is inspected, wherever it lives. Naming
     only the two in lib/ skipped libaoti_cuda_shims.so, which sits under backends/cuda/, links
-    cudart and curand, and carries the device code, so an absolute toolkit path on the library
+    cudart, and carries the device code, so an absolute toolkit path on the library
     that matters most shipped green.
     """
     readelf = test_shared_libraries._tool("readelf")
