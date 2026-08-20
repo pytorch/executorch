@@ -1945,6 +1945,322 @@ document.write(`
 </section>
 <section id="building-with-cmake">
 <h2>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Link to this heading">#</a></h2>
+<p>There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip
+package needs no source checkout and is the quicker option. Building from source gives
+you every option the project has, and is what you need for a platform the wheel does not
+cover.</p>
+<section id="using-the-prebuilt-libraries-from-the-pip-package">
+<h3>Using the prebuilt libraries from the pip package<a class="headerlink" href="#using-the-prebuilt-libraries-from-the-pip-package" title="Link to this heading">#</a></h3>
+<p>On Linux and macOS, <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">executorch</span></code> ships the runtime as prebuilt shared libraries together
+with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from
+source, and without knowing much CMake.</p>
+<section id="run-your-first-model-in-four-steps">
+<h4>Run your first model in four steps<a class="headerlink" href="#run-your-first-model-in-four-steps" title="Link to this heading">#</a></h4>
+<p>Copy these three files into an empty folder and follow along. No prior CMake knowledge needed.</p>
+<p><strong>1. Install, and make a model file.</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">executorch</span> <span class="n">torch</span> <span class="o">--</span><span class="n">extra</span><span class="o">-</span><span class="n">index</span><span class="o">-</span><span class="n">url</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">download</span><span class="o">.</span><span class="n">pytorch</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="n">whl</span><span class="o">/</span><span class="n">cpu</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">torch</span></code> is named explicitly because the wheel does not depend on it, so you bring your own torch and
+keep the version under your control. You need it only to create a model file in step 1, not to run
+the C++ program.</p>
+<p>A C++ program loads a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, which is a model that has already been exported. C++ cannot
+create one, so make it in Python first:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># export.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+
+<span class="n">example</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">Add</span><span class="p">(),</span> <span class="n">example</span><span class="p">)</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="nb">open</span><span class="p">(</span><span class="s2">"model.pte"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="n">export</span><span class="o">.</span><span class="n">py</span>
+</pre></div>
+</div>
+<p><strong>2. Write the program.</strong></p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;cstdio&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"model.pte"</span><span class="p">);</span>
+
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="kt">float</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="o">&gt;</span><span class="w"> </span><span class="n">a</span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">};</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="kt">float</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="o">&gt;</span><span class="w"> </span><span class="n">b</span><span class="p">{</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="mi">40</span><span class="p">};</span>
+
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">({</span><span class="n">make_tensor_ptr</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">},</span><span class="w"> </span><span class="n">a</span><span class="p">.</span><span class="n">data</span><span class="p">()),</span>
+<span class="w">                                      </span><span class="n">make_tensor_ptr</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">},</span><span class="w"> </span><span class="n">b</span><span class="p">.</span><span class="n">data</span><span class="p">())});</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">result</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">printf</span><span class="p">(</span><span class="s">"forward failed: 0x%x</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">unsigned</span><span class="p">)</span><span class="n">result</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="o">-&gt;</span><span class="n">at</span><span class="p">(</span><span class="mi">0</span><span class="p">).</span><span class="n">toTensor</span><span class="p">();</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">out</span><span class="p">.</span><span class="n">numel</span><span class="p">();</span><span class="w"> </span><span class="o">++</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">printf</span><span class="p">(</span><span class="s">"%g "</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="p">.</span><span class="n">const_data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()[</span><span class="n">i</span><span class="p">]);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="n">std</span><span class="o">::</span><span class="n">printf</span><span class="p">(</span><span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>3. Write six lines of CMake.</strong></p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="c"># CMakeLists.txt</span>
+<span class="nb">cmake_minimum_required</span><span class="p">(</span><span class="s">VERSION</span><span class="w"> </span><span class="s">3.28</span><span class="p">)</span>
+<span class="nb">project</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">CXX</span><span class="p">)</span>
+
+<span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="p">)</span>
+
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">main.cpp</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">executorch::runtime</span>
+<span class="w">                                  </span><span class="s">executorch::kernels_optimized</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Two lines matter. <code class="docutils literal notranslate"><span class="pre">find_package</span></code> finds the installed ExecuTorch, and <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code> says
+which parts you want. Every model needs at least these two: <code class="docutils literal notranslate"><span class="pre">runtime</span></code> is the engine that executes a
+program, and a kernel component such as <code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> provides the maths the model computes
+with. With only the engine, a model loads and then fails with a missing operator.</p>
+<p><strong>4. Build and run.</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="o">-</span><span class="n">S</span> <span class="o">.</span> <span class="o">-</span><span class="n">B</span> <span class="n">build</span> \
+  <span class="o">-</span><span class="n">DCMAKE_PREFIX_PATH</span><span class="o">=</span><span class="s2">"$(python -c 'import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / "</span><span class="n">share</span><span class="s2">" / "</span><span class="n">cmake</span><span class="s2">")')"</span>
+<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">build</span>
+<span class="o">./</span><span class="n">build</span><span class="o">/</span><span class="n">app</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">11</span> <span class="mi">22</span> <span class="mi">33</span> <span class="mi">44</span>
+</pre></div>
+</div>
+<p>That is the two input arrays added together. The long <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-c</span></code> part just prints where pip put the
+CMake package, so CMake can find it. Run <code class="docutils literal notranslate"><span class="pre">./build/app</span></code> from the folder holding <code class="docutils literal notranslate"><span class="pre">model.pte</span></code>, because
+the path in <code class="docutils literal notranslate"><span class="pre">main.cpp</span></code> is relative.</p>
+</section>
+<section id="adding-kernels-and-backends">
+<h4>Adding kernels and backends<a class="headerlink" href="#adding-kernels-and-backends" title="Link to this heading">#</a></h4>
+<p>Add a component to both lines to get more. Nothing else in the program changes.</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="w"> </span><span class="s">backend_xnnpack</span><span class="p">)</span>
+
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">executorch::runtime</span>
+<span class="w">                                  </span><span class="s">executorch::kernels_optimized</span>
+<span class="w">                                  </span><span class="s">executorch::backend_xnnpack</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>These are the components the package provides:</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Component</p></th>
+<th class="head"><p>What it gives you</p></th>
+<th class="head"><p>Where</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">runtime</span></code></p></td>
+<td><p>The engine. Always needed.</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code></p></td>
+<td><p>Fast CPU operators. The usual choice.</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">backend_xnnpack</span></code></p></td>
+<td><p>The XNNPACK backend, for models exported with it.</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">threadpool</span></code></p></td>
+<td><p>Multi-threaded execution.</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">etdump</span></code></p></td>
+<td><p>Profiling, to record what ran and how long it took.</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">kernels_quantized</span></code></p></td>
+<td><p>The quantized operator kernels</p></td>
+<td><p>Linux, macOS</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">backend_cuda</span></code></p></td>
+<td><p>The CUDA delegate</p></td>
+<td><p>Linux</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">extension_cuda</span></code></p></td>
+<td><p>The CUDA stream extension</p></td>
+<td><p>Linux</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">backend_openvino</span></code></p></td>
+<td><p>The OpenVINO delegate</p></td>
+<td><p>Linux</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>To see what your own install offers, ask CMake:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+<span class="nb">foreach</span><span class="p">(</span><span class="s">_component</span>
+<span class="w">        </span><span class="s">runtime</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="w"> </span><span class="s">kernels_quantized</span><span class="w"> </span><span class="s">backend_xnnpack</span>
+<span class="w">        </span><span class="s">backend_cuda</span><span class="w"> </span><span class="s">extension_cuda</span><span class="w"> </span><span class="s">backend_openvino</span><span class="w"> </span><span class="s">threadpool</span><span class="w"> </span><span class="s">etdump</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">if</span><span class="p">(</span><span class="s">TARGET</span><span class="w"> </span><span class="s">executorch::</span><span class="o">${</span><span class="nv">_component</span><span class="o">}</span><span class="p">)</span>
+<span class="w">    </span><span class="nb">message</span><span class="p">(</span><span class="s">STATUS</span><span class="w"> </span><span class="s2">"have ${_component}"</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">endif</span><span class="p">()</span>
+<span class="nb">endforeach</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>On macOS the Core ML and MLX delegates are registered inside the Python extension rather than
+shipped as separate C++ libraries, so a C++ application there cannot link them as components; use
+them from Python, or build from source if you need them in C++.</p>
+<p>Profiling a Core ML model records <code class="docutils literal notranslate"><span class="pre">DELEGATE_CALL</span></code>, which tells you how long the delegate ran in
+total. It does not record the individual operators inside the delegate, because that detail comes
+from the Core ML developer tools sources, and the wheel does not build them. An XNNPACK model
+records both.</p>
+<p>A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain
+model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure
+what a model needs, start with <code class="docutils literal notranslate"><span class="pre">runtime</span></code> and <code class="docutils literal notranslate"><span class="pre">kernels_optimized</span></code> and add what the error asks for.</p>
+<p>If you would rather not choose, one variable links the common set:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_LIBRARIES</span><span class="o">}</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The quantized kernels are deliberately left out of that variable, because loading
+<code class="docutils literal notranslate"><span class="pre">executorch.kernels.quantized</span></code> in Python registers the same operators and a duplicate registration
+stops the runtime.</p>
+<p>The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime
+itself, and the adapter opens <code class="docutils literal notranslate"><span class="pre">libopenvino_c.so</span></code> by name when the model is loaded. Python callers
+get that path set for them on import; a standalone C++ program does not, so install the runtime and
+point the program at it:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"executorch[openvino]"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENVINO_LIB_PATH</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), "libs", "libopenvino_c.so*")))[0])'</span><span class="k">)</span><span class="s2">"</span>
+</pre></div>
+</div>
+<p>Without it the delegate still registers and the program still links, and the failure arrives later,
+when the model is loaded.</p>
+</section>
+<section id="when-something-does-not-work">
+<h4>When something does not work<a class="headerlink" href="#when-something-does-not-work" title="Link to this heading">#</a></h4>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">find_package</span></code> could not find executorch: the <code class="docutils literal notranslate"><span class="pre">-DCMAKE_PREFIX_PATH=...</span></code> argument is missing or
+points somewhere else. Run the <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-c</span></code> line on its own and check the folder exists.</p></li>
+<li><p>The program builds but fails to load the model: the path is relative, so run it from the folder
+containing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p></li>
+<li><p>A missing operator at run time: add a kernel component, usually
+<code class="docutils literal notranslate"><span class="pre">executorch::kernels_optimized</span></code>.</p></li>
+<li><p>The model fails to load complaining about a backend: link the backend it was exported for.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch::runtime</span></code> is not a target: imported targets need CMake 3.28 or newer. On an older
+CMake the package still works, but you name variables instead of targets, and you have to pass on
+the definitions and the C++ standard requirement yourself:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">cmake_minimum_required</span><span class="p">(</span><span class="s">VERSION</span><span class="w"> </span><span class="s">3.19</span><span class="p">)</span>
+<span class="nb">project</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">CXX</span><span class="p">)</span>
+
+<span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="p">)</span>
+
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">main.cpp</span><span class="p">)</span>
+<span class="nb">target_include_directories</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_INCLUDE_DIRS</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">target_compile_definitions</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_COMPILE_DEFINITIONS</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">target_compile_features</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">cxx_std_</span><span class="o">${</span><span class="nv">EXECUTORCH_CXX_STANDARD</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_LIBRARIES</span><span class="o">}</span><span class="p">)</span>
+<span class="nb">set_target_properties</span><span class="p">(</span>
+<span class="w">  </span><span class="s">app</span><span class="w"> </span><span class="s">PROPERTIES</span><span class="w"> </span><span class="s">INSTALL_RPATH</span><span class="w"> </span><span class="s2">"${EXECUTORCH_RUNTIME_LIBRARY_DIR}"</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Leaving out <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_COMPILE_DEFINITIONS</span></code> fails with a missing
+<code class="docutils literal notranslate"><span class="pre">torch/headeronly/macros/cmake_macros.h</span></code>, because the vendored headers look for a file that only
+exists inside a PyTorch build.</p>
+<p><code class="docutils literal notranslate"><span class="pre">INSTALL_RPATH</span></code> matters once you run <code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--install</span></code>. CMake gives your program a search path while
+it sits in the build directory and removes that path when installing, so an installed program cannot
+find the libraries unless you record where they live.</p>
+<p>Quantized kernels are not part of <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARIES</span></code>, so add them when your model needs them:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_QUANTIZED_KERNELS_LIBRARY</span><span class="o">}</span><span class="p">)</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<p>You should not need <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code>. The shipped libraries record where their neighbours live, so
+they find each other once the program links against the installed package.</p>
+</section>
+</section>
+<section id="running-on-a-gpu-with-the-cuda-package">
+<h3>Running on a GPU with the CUDA package<a class="headerlink" href="#running-on-a-gpu-with-the-cuda-package" title="Link to this heading">#</a></h3>
+<p>The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
+matching the CUDA version you have (<code class="docutils literal notranslate"><span class="pre">cu126</span></code>, <code class="docutils literal notranslate"><span class="pre">cu130</span></code> or <code class="docutils literal notranslate"><span class="pre">cu132</span></code>). For CUDA 12.6:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">executorch</span> <span class="n">torch</span> \
+  <span class="o">--</span><span class="n">index</span><span class="o">-</span><span class="n">url</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">download</span><span class="o">.</span><span class="n">pytorch</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="n">whl</span><span class="o">/</span><span class="n">cu126</span> \
+  <span class="o">--</span><span class="n">extra</span><span class="o">-</span><span class="n">index</span><span class="o">-</span><span class="n">url</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">pypi</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="n">simple</span>
+</pre></div>
+</div>
+<p>CUDA wheels are built for Python 3.10 through 3.13. On a newer Python there is no CUDA wheel to
+install, so pip falls back to the CPU one.</p>
+<p>The second index is required: a bare <code class="docutils literal notranslate"><span class="pre">--index-url</span></code> replaces PyPI rather than adding to it, and some
+dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because
+exporting a model for CUDA runs through torch.</p>
+<p>Everything above stays the same. Add the CUDA backend to both CMake lines:</p>
+<div class="highlight-cmake notranslate"><div class="highlight"><pre><span></span><span class="nb">find_package</span><span class="p">(</span><span class="s">executorch</span><span class="w"> </span><span class="s">REQUIRED</span><span class="w"> </span><span class="s">COMPONENTS</span><span class="w"> </span><span class="s">kernels_optimized</span><span class="w"> </span><span class="s">backend_cuda</span><span class="p">)</span>
+
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">app</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">executorch::runtime</span>
+<span class="w">                                  </span><span class="s">executorch::kernels_optimized</span>
+<span class="w">                                  </span><span class="s">executorch::backend_cuda</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The model has to be exported for CUDA as well, on a machine with a GPU. That step also needs the
+CUDA compiler (<code class="docutils literal notranslate"><span class="pre">nvcc</span></code>) on your <code class="docutils literal notranslate"><span class="pre">PATH</span></code>, because the backend compiles the model into GPU code ahead
+of time. <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> does not provide it, so install the CUDA Toolkit for this step and check it
+with <code class="docutils literal notranslate"><span class="pre">nvcc</span> <span class="pre">--version</span></code>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># export_cuda.py, the same model as before with one line added</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.cuda.cuda_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">CudaPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.export_util.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_pte_program</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+
+<span class="n">example</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">Add</span><span class="p">(),</span> <span class="n">example</span><span class="p">),</span> <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">CudaPartitioner</span><span class="p">([])]</span>
+<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="s2">"model"</span><span class="p">,</span> <span class="s2">"."</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">save_pte_program</span></code> is used instead of writing the buffer by hand because the CUDA backend puts its
+model weights in a <strong>separate data file</strong> next to <code class="docutils literal notranslate"><span class="pre">model.pte</span></code>. The compiled GPU code stays
+inside <code class="docutils literal notranslate"><span class="pre">model.pte</span></code>. Writing only the program file loses the weights, so the model then fails when it
+runs.</p>
+<p>The backend chooses that file’s name, so check what was written:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ ls
+aoti_cuda_blob.ptd  model.pte
+</pre></div>
+</div>
+<p>Load both from C++, passing the data file as the second argument:</p>
+<div class="highlight-cpp notranslate"><div class="highlight"><pre><span></span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">"model.pte"</span><span class="p">,</span><span class="w"> </span><span class="s">"aoti_cuda_blob.ptd"</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The CUDA backend is still experimental, so exporting prints a warning saying so.</p>
+<p>By default the runtime copies inputs to the GPU and results back, so your program keeps passing
+ordinary CPU tensors and nothing else changes.</p>
+<p>One thing to check first, and the numbers matter. If a model fails with a message about no kernel
+image being available for the device, your GPU is not one these packages were built for. The floor
+is <strong>compute capability 8.0</strong>, which means an NVIDIA Ampere generation card or newer.</p>
+<p>Check your own GPU:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">c</span> <span class="s1">'import torch; print(torch.cuda.get_device_capability())'</span>
+</pre></div>
+</div>
+<p>A result below <code class="docutils literal notranslate"><span class="pre">(8,</span> <span class="pre">0)</span></code> is not covered. Above the floor the answer depends on the package: each one
+covers what the PyTorch build for the same platform and CUDA version covers, and the ARM packages
+reach fewer cards in that range than the x86_64 ones, so a card at or above <code class="docutils literal notranslate"><span class="pre">(8,</span> <span class="pre">0)</span></code> can still be
+outside an ARM package. Note that <code class="docutils literal notranslate"><span class="pre">torch.cuda.get_arch_list()</span></code> is not the right check either:
+PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that
+list and still not be supported.</p>
+</section>
+<section id="building-from-source">
+<h3>Building from source<a class="headerlink" href="#building-from-source" title="Link to this heading">#</a></h3>
 <p>ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_MODULE</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_EXTENSION_TENSOR</span></code> CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> target as a CMake dependency, along with <code class="docutils literal notranslate"><span class="pre">executorch_backends</span></code>, <code class="docutils literal notranslate"><span class="pre">executorch_extensions</span></code>, and <code class="docutils literal notranslate"><span class="pre">extension_kernels</span></code>, to link all configured backends, extensions, and kernels.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># CMakeLists.txt</span>
 <span class="n">add_subdirectory</span><span class="p">(</span><span class="s2">"executorch"</span><span class="p">)</span>
@@ -1958,6 +2274,7 @@ document.write(`
 </pre></div>
 </div>
 <p>See <a class="reference internal" href="using-executorch-building-from-source.html"><span class="std std-doc">Building from Source</span></a> for more information on the CMake build process.</p>
+</section>
 </section>
 <section id="reference-runners">
 <h2>Reference Runners<a class="headerlink" href="#reference-runners" title="Link to this heading">#</a></h2>
@@ -2099,7 +2416,17 @@ document.write(`
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#high-level-apis">High-Level APIs</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#low-level-apis">Low-Level APIs</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-with-cmake">Building with CMake</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-with-cmake">Building with CMake</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#using-the-prebuilt-libraries-from-the-pip-package">Using the prebuilt libraries from the pip package</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#run-your-first-model-in-four-steps">Run your first model in four steps</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#adding-kernels-and-backends">Adding kernels and backends</a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#when-something-does-not-work">When something does not work</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#running-on-a-gpu-with-the-cuda-package">Running on a GPU with the CUDA package</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#building-from-source">Building from source</a></li>
+</ul>
+</li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reference-runners">Reference Runners</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a></li>
 </ul>
@@ -2327,7 +2654,7 @@ document.write(`
        "headline": "Using ExecuTorch with C++",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment.",
        "url": "/using-executorch-cpp.html",
-       "articleBody": "Using ExecuTorch with C++# In order to support a wide variety of devices, from high-end mobile phones down to tiny embedded systems, ExecuTorch provides an API surface with a high degree of customizability. The C++ APIs expose advanced configuration options, such as controlling memory allocation, placement, and data loading. To meet the needs of both application and embedded programming, ExecuTorch provides a low-level, highly-customizable core set of APIs, and set of high-level extensions, which abstract away many of the low-level details that are not relevant for mobile application programming. High-Level APIs# The C++ Module class provides the high-level interface to load and execute a model from C++. It is responsible for loading the .pte file, configuring memory allocation and placement, and running the model. The Module constructor takes a file path and provides a simplified forward() method to run the model. In addition the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the TensorPtr class, which is a \u201cfat\u201d smart pointer. It provides ownership over the tensor data and metadata, such as size and strides. The make_tensor_ptr and from_blob methods, defined in tensor.h, provide owning and non-owning tensor creation APIs, respectively. #include \u003cexecutorch/extension/module/module.h\u003e #include \u003cexecutorch/extension/tensor/tensor.h\u003e using namespace ::executorch::extension; // Load the model. Module module(\"/path/to/model.pte\"); // Create an input tensor. float input[1 * 3 * 256 * 256]; auto tensor = from_blob(input, {1, 3, 256, 256}); // Perform an inference. const auto result = module.forward(tensor); if (result.ok()) { // Retrieve the output data. const auto output = result-\u003eat(0).toTensor().const_data_ptr\u003cfloat\u003e(); } For more information on the Module class, see Running an ExecuTorch Model Using the Module Extension in C++. For information on high-level tensor APIs, see Managing Tensor Memory in C++. For complete examples of building and running a C++ application using the Module API, refer to our examples GitHub repository. Low-Level APIs# Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see Detailed C++ Runtime APIs Tutorial. Building with CMake# ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the EXECUTORCH_BUILD_EXTENSION_MODULE and EXECUTORCH_BUILD_EXTENSION_TENSOR CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the executorch target as a CMake dependency, along with executorch_backends, executorch_extensions, and extension_kernels, to link all configured backends, extensions, and kernels. # CMakeLists.txt add_subdirectory(\"executorch\") ... target_link_libraries( my_target PRIVATE executorch executorch::backends executorch::extensions executorch::kernels) See Building from Source for more information on the CMake build process. Reference Runners# The ExecuTorch repository includes several reference runners, which are simple programs that load and execute a .pte file, typically with random inputs. These can be used to sanity check model execution on a development platform and as a code reference for runtime integration. The executor_runner target is built by default when building with CMake. It can be invoked as follows: ./cmake-out/executor_runner --model_path path/to/model.pte The runner source code can be found in the ExecuTorch repo under examples/portable/executor_runner.cpp. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See examples/apple/coreml and the examples directory for more information. Next Steps# Runtime API Reference for documentation on the available C++ runtime APIs. Running an ExecuTorch Model Using the Module Extension in C++ for information on the high-level Module API. Managing Tensor Memory in C++ for information on high-level tensor APIs. Running an ExecuTorch Model in C++ Tutorial for information on the low-level runtime APIs. Building from Source for information on CMake build integration.",
+       "articleBody": "Using ExecuTorch with C++# In order to support a wide variety of devices, from high-end mobile phones down to tiny embedded systems, ExecuTorch provides an API surface with a high degree of customizability. The C++ APIs expose advanced configuration options, such as controlling memory allocation, placement, and data loading. To meet the needs of both application and embedded programming, ExecuTorch provides a low-level, highly-customizable core set of APIs, and set of high-level extensions, which abstract away many of the low-level details that are not relevant for mobile application programming. High-Level APIs# The C++ Module class provides the high-level interface to load and execute a model from C++. It is responsible for loading the .pte file, configuring memory allocation and placement, and running the model. The Module constructor takes a file path and provides a simplified forward() method to run the model. In addition the Module class, the tensor extension provides an encapsulated interface to define and manage tensor memory. It provides the TensorPtr class, which is a \u201cfat\u201d smart pointer. It provides ownership over the tensor data and metadata, such as size and strides. The make_tensor_ptr and from_blob methods, defined in tensor.h, provide owning and non-owning tensor creation APIs, respectively. #include \u003cexecutorch/extension/module/module.h\u003e #include \u003cexecutorch/extension/tensor/tensor.h\u003e using namespace ::executorch::extension; // Load the model. Module module(\"/path/to/model.pte\"); // Create an input tensor. float input[1 * 3 * 256 * 256]; auto tensor = from_blob(input, {1, 3, 256, 256}); // Perform an inference. const auto result = module.forward(tensor); if (result.ok()) { // Retrieve the output data. const auto output = result-\u003eat(0).toTensor().const_data_ptr\u003cfloat\u003e(); } For more information on the Module class, see Running an ExecuTorch Model Using the Module Extension in C++. For information on high-level tensor APIs, see Managing Tensor Memory in C++. For complete examples of building and running a C++ application using the Module API, refer to our examples GitHub repository. Low-Level APIs# Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see Detailed C++ Runtime APIs Tutorial. Building with CMake# There are two ways to get the C++ runtime. Linking the prebuilt libraries from the pip package needs no source checkout and is the quicker option. Building from source gives you every option the project has, and is what you need for a platform the wheel does not cover. Using the prebuilt libraries from the pip package# On Linux and macOS, pip install executorch ships the runtime as prebuilt shared libraries together with the headers and a CMake package. So a C++ program can use ExecuTorch without building it from source, and without knowing much CMake. Run your first model in four steps# Copy these three files into an empty folder and follow along. No prior CMake knowledge needed. 1. Install, and make a model file. pip install executorch torch --extra-index-url https://download.pytorch.org/whl/cpu torch is named explicitly because the wheel does not depend on it, so you bring your own torch and keep the version under your control. You need it only to create a model file in step 1, not to run the C++ program. A C++ program loads a .pte file, which is a model that has already been exported. C++ cannot create one, so make it in Python first: # export.py import torch from executorch.exir import to_edge_transform_and_lower class Add(torch.nn.Module): def forward(self, x, y): return x + y example = (torch.ones(2, 2), torch.ones(2, 2)) program = to_edge_transform_and_lower( torch.export.export(Add(), example) ).to_executorch() open(\"model.pte\", \"wb\").write(program.buffer) python export.py 2. Write the program. // main.cpp #include \u003cexecutorch/extension/module/module.h\u003e #include \u003cexecutorch/extension/tensor/tensor.h\u003e #include \u003ccstdio\u003e using namespace executorch::extension; int main() { Module module(\"model.pte\"); std::array\u003cfloat, 4\u003e a{1, 2, 3, 4}; std::array\u003cfloat, 4\u003e b{10, 20, 30, 40}; const auto result = module.forward({make_tensor_ptr({2, 2}, a.data()), make_tensor_ptr({2, 2}, b.data())}); if (!result.ok()) { std::printf(\"forward failed: 0x%x\\n\", (unsigned)result.error()); return 1; } const auto out = result-\u003eat(0).toTensor(); for (int i = 0; i \u003c out.numel(); ++i) { std::printf(\"%g \", out.const_data_ptr\u003cfloat\u003e()[i]); } std::printf(\"\\n\"); return 0; } 3. Write six lines of CMake. # CMakeLists.txt cmake_minimum_required(VERSION 3.28) project(app CXX) find_package(executorch REQUIRED COMPONENTS kernels_optimized) add_executable(app main.cpp) target_link_libraries(app PRIVATE executorch::runtime executorch::kernels_optimized) Two lines matter. find_package finds the installed ExecuTorch, and target_link_libraries says which parts you want. Every model needs at least these two: runtime is the engine that executes a program, and a kernel component such as kernels_optimized provides the maths the model computes with. With only the engine, a model loads and then fails with a missing operator. 4. Build and run. cmake -S . -B build \\ -DCMAKE_PREFIX_PATH=\"$(python -c \u0027import executorch, pathlib; print(pathlib.Path(executorch.__path__[0]) / \"share\" / \"cmake\")\u0027)\" cmake --build build ./build/app 11 22 33 44 That is the two input arrays added together. The long python -c part just prints where pip put the CMake package, so CMake can find it. Run ./build/app from the folder holding model.pte, because the path in main.cpp is relative. Adding kernels and backends# Add a component to both lines to get more. Nothing else in the program changes. find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_xnnpack) target_link_libraries(app PRIVATE executorch::runtime executorch::kernels_optimized executorch::backend_xnnpack) These are the components the package provides: Component What it gives you Where runtime The engine. Always needed. Linux, macOS kernels_optimized Fast CPU operators. The usual choice. Linux, macOS backend_xnnpack The XNNPACK backend, for models exported with it. Linux, macOS threadpool Multi-threaded execution. Linux, macOS etdump Profiling, to record what ran and how long it took. Linux, macOS kernels_quantized The quantized operator kernels Linux, macOS backend_cuda The CUDA delegate Linux extension_cuda The CUDA stream extension Linux backend_openvino The OpenVINO delegate Linux To see what your own install offers, ask CMake: find_package(executorch REQUIRED) foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack backend_cuda extension_cuda backend_openvino threadpool etdump) if(TARGET executorch::${_component}) message(STATUS \"have ${_component}\") endif() endforeach() On macOS the Core ML and MLX delegates are registered inside the Python extension rather than shipped as separate C++ libraries, so a C++ application there cannot link them as components; use them from Python, or build from source if you need them in C++. Profiling a Core ML model records DELEGATE_CALL, which tells you how long the delegate ran in total. It does not record the individual operators inside the delegate, because that detail comes from the Core ML developer tools sources, and the wheel does not build them. An XNNPACK model records both. A backend is only needed if the model was exported for it. Linking XNNPACK does not make a plain model faster, and a model exported for XNNPACK will fail to load without it. If you are not sure what a model needs, start with runtime and kernels_optimized and add what the error asks for. If you would rather not choose, one variable links the common set: find_package(executorch REQUIRED) target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES}) The quantized kernels are deliberately left out of that variable, because loading executorch.kernels.quantized in Python registers the same operators and a duplicate registration stops the runtime. The OpenVINO delegate needs one more step. The wheel ships the adapter, not the OpenVINO runtime itself, and the adapter opens libopenvino_c.so by name when the model is loaded. Python callers get that path set for them on import; a standalone C++ program does not, so install the runtime and point the program at it: pip install \"executorch[openvino]\" export OPENVINO_LIB_PATH=\"$(python -c \u0027import glob, openvino, os; print(sorted(glob.glob(os.path.join(os.path.dirname(openvino.__file__), \"libs\", \"libopenvino_c.so*\")))[0])\u0027)\" Without it the delegate still registers and the program still links, and the failure arrives later, when the model is loaded. When something does not work# find_package could not find executorch: the -DCMAKE_PREFIX_PATH=... argument is missing or points somewhere else. Run the python -c line on its own and check the folder exists. The program builds but fails to load the model: the path is relative, so run it from the folder containing the .pte file. A missing operator at run time: add a kernel component, usually executorch::kernels_optimized. The model fails to load complaining about a backend: link the backend it was exported for. executorch::runtime is not a target: imported targets need CMake 3.28 or newer. On an older CMake the package still works, but you name variables instead of targets, and you have to pass on the definitions and the C++ standard requirement yourself: cmake_minimum_required(VERSION 3.19) project(app CXX) find_package(executorch REQUIRED) add_executable(app main.cpp) target_include_directories(app PRIVATE ${EXECUTORCH_INCLUDE_DIRS}) target_compile_definitions(app PRIVATE ${EXECUTORCH_COMPILE_DEFINITIONS}) target_compile_features(app PRIVATE cxx_std_${EXECUTORCH_CXX_STANDARD}) target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES}) set_target_properties( app PROPERTIES INSTALL_RPATH \"${EXECUTORCH_RUNTIME_LIBRARY_DIR}\" ) Leaving out EXECUTORCH_COMPILE_DEFINITIONS fails with a missing torch/headeronly/macros/cmake_macros.h, because the vendored headers look for a file that only exists inside a PyTorch build. INSTALL_RPATH matters once you run cmake --install. CMake gives your program a search path while it sits in the build directory and removes that path when installing, so an installed program cannot find the libraries unless you record where they live. Quantized kernels are not part of EXECUTORCH_LIBRARIES, so add them when your model needs them: target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY}) You should not need LD_LIBRARY_PATH. The shipped libraries record where their neighbours live, so they find each other once the program links against the installed package. Running on a GPU with the CUDA package# The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index matching the CUDA version you have (cu126, cu130 or cu132). For CUDA 12.6: pip install executorch torch \\ --index-url https://download.pytorch.org/whl/cu126 \\ --extra-index-url https://pypi.org/simple CUDA wheels are built for Python 3.10 through 3.13. On a newer Python there is no CUDA wheel to install, so pip falls back to the CPU one. The second index is required: a bare --index-url replaces PyPI rather than adding to it, and some dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because exporting a model for CUDA runs through torch. Everything above stays the same. Add the CUDA backend to both CMake lines: find_package(executorch REQUIRED COMPONENTS kernels_optimized backend_cuda) target_link_libraries(app PRIVATE executorch::runtime executorch::kernels_optimized executorch::backend_cuda) The model has to be exported for CUDA as well, on a machine with a GPU. That step also needs the CUDA compiler (nvcc) on your PATH, because the backend compiles the model into GPU code ahead of time. pip install does not provide it, so install the CUDA Toolkit for this step and check it with nvcc --version. # export_cuda.py, the same model as before with one line added import torch from executorch.exir import to_edge_transform_and_lower from executorch.backends.cuda.cuda_partitioner import CudaPartitioner from executorch.extension.export_util.utils import save_pte_program class Add(torch.nn.Module): def forward(self, x, y): return x + y example = (torch.ones(2, 2), torch.ones(2, 2)) program = to_edge_transform_and_lower( torch.export.export(Add(), example), partitioner=[CudaPartitioner([])] ).to_executorch() save_pte_program(program, \"model\", \".\") save_pte_program is used instead of writing the buffer by hand because the CUDA backend puts its model weights in a separate data file next to model.pte. The compiled GPU code stays inside model.pte. Writing only the program file loses the weights, so the model then fails when it runs. The backend chooses that file\u2019s name, so check what was written: $ ls aoti_cuda_blob.ptd model.pte Load both from C++, passing the data file as the second argument: Module module(\"model.pte\", \"aoti_cuda_blob.ptd\"); The CUDA backend is still experimental, so exporting prints a warning saying so. By default the runtime copies inputs to the GPU and results back, so your program keeps passing ordinary CPU tensors and nothing else changes. One thing to check first, and the numbers matter. If a model fails with a message about no kernel image being available for the device, your GPU is not one these packages were built for. The floor is compute capability 8.0, which means an NVIDIA Ampere generation card or newer. Check your own GPU: python -c \u0027import torch; print(torch.cuda.get_device_capability())\u0027 A result below (8, 0) is not covered. Above the floor the answer depends on the package: each one covers what the PyTorch build for the same platform and CUDA version covers, and the ARM packages reach fewer cards in that range than the x86_64 ones, so a card at or above (8, 0) can still be outside an ARM package. Note that torch.cuda.get_arch_list() is not the right check either: PyTorch builds for a wider set at the bottom than these packages do, so a GPU can appear in that list and still not be supported. Building from source# ExecuTorch uses CMake as the primary build system. Inclusion of the module and tensor APIs are controlled by the EXECUTORCH_BUILD_EXTENSION_MODULE and EXECUTORCH_BUILD_EXTENSION_TENSOR CMake options. As these APIs may not be supported on embedded systems, they are disabled by default when building from source. The low-level API surface is always included. To link, add the executorch target as a CMake dependency, along with executorch_backends, executorch_extensions, and extension_kernels, to link all configured backends, extensions, and kernels. # CMakeLists.txt add_subdirectory(\"executorch\") ... target_link_libraries( my_target PRIVATE executorch executorch::backends executorch::extensions executorch::kernels) See Building from Source for more information on the CMake build process. Reference Runners# The ExecuTorch repository includes several reference runners, which are simple programs that load and execute a .pte file, typically with random inputs. These can be used to sanity check model execution on a development platform and as a code reference for runtime integration. The executor_runner target is built by default when building with CMake. It can be invoked as follows: ./cmake-out/executor_runner --model_path path/to/model.pte The runner source code can be found in the ExecuTorch repo under examples/portable/executor_runner.cpp. Some backends, such as CoreML, have dedicated runners to showcase backend and platform-specific functionality. See examples/apple/coreml and the examples directory for more information. Next Steps# Runtime API Reference for documentation on the available C++ runtime APIs. Running an ExecuTorch Model Using the Module Extension in C++ for information on the high-level Module API. Managing Tensor Memory in C++ for information on high-level tensor APIs. Running an ExecuTorch Model in C++ Tutorial for information on the low-level runtime APIs. Building from Source for information on CMake build integration.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
