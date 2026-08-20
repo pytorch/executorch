@@ -38,6 +38,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.sub.Scalar,
     exir_ops.edge.aten.mul.Scalar,
     exir_ops.edge.aten.div.Scalar,
+    exir_ops.edge.aten.pow.Tensor_Scalar,
 ]
 
 
