@@ -23,16 +23,16 @@ class DFlashDraftKVCache(nn.Module):
         num_layers: int,
         num_heads: int,
         head_dim: int,
-        max_seq_len: int,
+        max_ctx_len: int,
         dtype: torch.dtype = torch.float32,
     ):
         super().__init__()
-        self.max_seq_len = max_seq_len
+        self.max_ctx_len = max_ctx_len
         self.layers = nn.ModuleList(
             [
                 KVCache(
                     max_batch_size=1,
-                    max_context_length=max_seq_len,
+                    max_context_length=max_ctx_len,
                     n_heads=num_heads,
                     head_dim=head_dim,
                     enable_dynamic_shape=True,
