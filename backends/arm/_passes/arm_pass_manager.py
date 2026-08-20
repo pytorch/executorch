@@ -219,6 +219,7 @@ def _graph_pass_name(graph_pass: Callable[[GraphModule], PassResult | None]) -> 
 class _ExportedProgramGraphPassAdapter(ExportedProgramPassBase):
     def __init__(self, graph_pass: Callable[[GraphModule], PassResult | None]) -> None:
         self.graph_pass = graph_pass
+        self.__name__ = _graph_pass_name(graph_pass)
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         graph_pass = cast(Any, self.graph_pass)
