@@ -129,6 +129,9 @@ VkDevice create_logical_device(
 #ifdef VK_NV_cooperative_matrix2
       VK_NV_COOPERATIVE_MATRIX_2_EXTENSION_NAME,
 #endif /* VK_NV_cooperative_matrix2 */
+#ifdef VK_EXT_subgroup_size_control
+      VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME,
+#endif /* VK_EXT_subgroup_size_control */
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -136,6 +139,20 @@ VkDevice create_logical_device(
       physical_device.handle,
       enabled_device_extensions,
       requested_device_extensions);
+
+  // Enable the base device features that ExecuTorch shaders rely on, but only
+  // those that the physical device reports as supported. With pEnabledFeatures
+  // left null, all base features are disabled; using a shader that performs
+  // e.g. int16 arithmetic without enabling shaderInt16 is invalid usage and
+  // crashes on drivers that enforce it. Unsupported features stay VK_FALSE, so
+  // this is a no-op on devices that lack them.
+  VkPhysicalDeviceFeatures enabled_features{};
+  enabled_features.shaderInt16 =
+      physical_device.supports_int16_shader_types ? VK_TRUE : VK_FALSE;
+  enabled_features.shaderInt64 =
+      physical_device.supports_int64_shader_types ? VK_TRUE : VK_FALSE;
+  enabled_features.shaderFloat64 =
+      physical_device.supports_float64_shader_types ? VK_TRUE : VK_FALSE;
 
   VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
@@ -148,7 +165,7 @@ VkDevice create_logical_device(
       static_cast<uint32_t>(
           enabled_device_extensions.size()), // enabledExtensionCount
       enabled_device_extensions.data(), // ppEnabledExtensionNames
-      nullptr, // pEnabledFeatures
+      &enabled_features, // pEnabledFeatures
   };
 
   void* extension_list_top = nullptr;
@@ -199,6 +216,19 @@ VkDevice create_logical_device(
   extension_list_top = &cooperative_matrix2_features;
 #endif /* VK_NV_cooperative_matrix2 */
 
+#ifdef VK_EXT_subgroup_size_control
+  // Only enable the feature struct if the extension was actually requested
+  // and the feature flag is set on the physical device. The extension itself
+  // is filtered into enabled_device_extensions by
+  // find_requested_device_extensions.
+  VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features{
+      physical_device.subgroup_size_control_features};
+  if (physical_device.supports_subgroup_size_control) {
+    subgroup_size_control_features.pNext = extension_list_top;
+    extension_list_top = &subgroup_size_control_features;
+  }
+#endif /* VK_EXT_subgroup_size_control */
+
   device_create_info.pNext = extension_list_top;
 
   VkDevice handle = nullptr;
@@ -218,41 +248,31 @@ VkDevice create_logical_device(
 bool test_linear_tiling_3d_image_support(
     VkDevice device,
     VkPhysicalDevice physical_device) {
-  // Test creating a 3D image with linear tiling to see if it is supported.
-  // According to the Vulkan spec, linear tiling may not be supported for 3D
-  // images.
-  VkExtent3D image_extents{1u, 1u, 1u};
-  const VkImageCreateInfo image_create_info{
-      VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, // sType
-      nullptr, // pNext
-      0u, // flags
-      VK_IMAGE_TYPE_3D, // imageType
-      VK_FORMAT_R32G32B32A32_SFLOAT, // format
-      image_extents, // extents
-      1u, // mipLevels
-      1u, // arrayLayers
-      VK_SAMPLE_COUNT_1_BIT, // samples
-      VK_IMAGE_TILING_LINEAR, // tiling
-      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, // usage
-      VK_SHARING_MODE_EXCLUSIVE, // sharingMode
-      0u, // queueFamilyIndexCount
-      nullptr, // pQueueFamilyIndices
-      VK_IMAGE_LAYOUT_UNDEFINED, // initialLayout
-  };
-  VkImage image = VK_NULL_HANDLE;
-  VkResult res = vkCreateImage(device, &image_create_info, nullptr, &image);
+  (void)device;
+  // ExecuTorch allocates 3D image tensors that are used as both sampled and
+  // storage images, with FP32 (VK_FORMAT_R32G32B32A32_SFLOAT) being the most
+  // demanding format. Linear tiling may only be used if the physical device
+  // supports creating such images; per the Vulkan spec, linear tiling support
+  // for 3D images is optional.
+  //
+  // vkGetPhysicalDeviceImageFormatProperties is the authoritative query for
+  // this exact (format, type, tiling, usage) combination. A vkCreateImage probe
+  // is unreliable: some drivers (e.g. NVIDIA) accept a trivial 1x1x1 linear 3D
+  // image even though larger linear 3D storage images of the same format are
+  // unsupported, and checking only the SAMPLED format feature misses that the
+  // STORAGE usage is unsupported -- both lead to VK_ERROR_FORMAT_NOT_SUPPORTED
+  // when allocating real tensors.
+  VkImageFormatProperties format_props;
+  const VkResult res = vkGetPhysicalDeviceImageFormatProperties(
+      physical_device,
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      VK_IMAGE_TYPE_3D,
+      VK_IMAGE_TILING_LINEAR,
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+      0u,
+      &format_props);
 
-  if (res == VK_SUCCESS) {
-    vkDestroyImage(device, image, nullptr);
-
-    VkFormatProperties props;
-    vkGetPhysicalDeviceFormatProperties(
-        physical_device, VK_FORMAT_R32G32B32A32_SFLOAT, &props);
-
-    return props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-  }
-
-  return false;
+  return res == VK_SUCCESS;
 }
 
 } // namespace
@@ -405,7 +425,7 @@ std::string Adapter::stringize() const {
   ss << "    deviceType:    " << device_type << std::endl;
   ss << "    deviceName:    " << properties.deviceName << std::endl;
 
-#define PRINT_BOOL(value, name) \
+#define PRINT_VALUE(value, name) \
   ss << "      " << std::left << std::setw(36) << #name << value << std::endl;
 
 #define PRINT_PROP(struct, name)                                       \
@@ -452,7 +472,7 @@ std::string Adapter::stringize() const {
 #endif /* VK_KHR_8bit_storage */
 
   ss << "    Shader 16bit and 8bit Features {" << std::endl;
-  PRINT_BOOL(physical_device_.supports_int16_shader_types, shaderInt16)
+  PRINT_VALUE(physical_device_.supports_int16_shader_types, shaderInt16)
 #ifdef VK_KHR_shader_float16_int8
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
@@ -460,8 +480,29 @@ std::string Adapter::stringize() const {
   ss << "    }" << std::endl;
 
   ss << "    Shader 64bit Features {" << std::endl;
-  PRINT_BOOL(physical_device_.supports_int64_shader_types, shaderInt64)
-  PRINT_BOOL(physical_device_.supports_float64_shader_types, shaderFloat64)
+  PRINT_VALUE(physical_device_.supports_int64_shader_types, shaderInt64)
+  PRINT_VALUE(physical_device_.supports_float64_shader_types, shaderFloat64)
+  ss << "    }" << std::endl;
+
+  ss << "    Subgroup Properties {" << std::endl;
+  PRINT_VALUE(subgroup_size(), subgroupSize)
+  PRINT_VALUE(supports_subgroup_compute_basic(), computeSubgroupBasic)
+  PRINT_VALUE(supports_subgroup_compute_shuffle(), computeSubgroupShuffle)
+  PRINT_VALUE(supports_subgroup_compute_ballot(), computeSubgroupBallot)
+  PRINT_VALUE(supports_subgroup_compute_vote(), computeSubgroupVote)
+  PRINT_VALUE(supports_subgroup_compute_arithmetic(), computeSubgroupArithmetic)
+  PRINT_VALUE(
+      supports_subgroup_compute_shuffle_relative(),
+      computeSubgroupShuffleRelative)
+  PRINT_VALUE(supports_subgroup_compute_clustered(), computeSubgroupClustered)
+  PRINT_VALUE(supports_subgroup_compute_quad(), computeSubgroupQuad)
+  PRINT_VALUE(min_subgroup_size(), minSubgroupSize)
+  PRINT_VALUE(max_subgroup_size(), maxSubgroupSize)
+  PRINT_VALUE(supports_subgroup_size_control(), subgroupSizeControl)
+  PRINT_VALUE(supports_compute_full_subgroups(), computeFullSubgroups)
+  PRINT_VALUE(
+      supports_required_subgroup_size_for_compute(),
+      requiredSubgroupSizeStages_compute)
   ss << "    }" << std::endl;
 
 #ifdef VK_KHR_shader_integer_dot_product
@@ -612,6 +653,25 @@ std::string Adapter::stringize() const {
 std::ostream& operator<<(std::ostream& os, const Adapter& adapter) {
   os << adapter.stringize() << std::endl;
   return os;
+}
+
+uint32_t resolve_required_subgroup_size(
+    const ShaderInfo& shader,
+    Adapter* adapter) {
+  if (shader.required_subgroup_size == 0u) {
+    return 0u;
+  }
+  if (!adapter->supports_required_subgroup_size_for_compute()) {
+    throw ShaderNotSupportedError(
+        shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
+  }
+  const uint32_t resolved = shader.required_subgroup_size;
+  if (resolved < adapter->min_subgroup_size() ||
+      resolved > adapter->max_subgroup_size()) {
+    throw ShaderNotSupportedError(
+        shader.kernel_name, VulkanExtension::SUBGROUP_SIZE_CONTROL);
+  }
+  return resolved;
 }
 
 } // namespace vkapi

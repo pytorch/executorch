@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -17,7 +18,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::aten::TensorList;
@@ -402,7 +402,7 @@ TEST_F(OpSplitCopyTensorOutTest, OutOfRangeDimsDie) {
 }
 
 TEST_F(OpSplitCopyTensorOutTest, DtypeMismatchDies) {
-  GTEST_SKIP() << "ATen kernel can handle dtype mismatch";
+  ET_SKIP_IF(true, "ATen kernel can handle dtype mismatch");
   TensorFactory<ScalarType::Int> tf_int;
   TensorListFactory<ScalarType::Int> tlf_int;
   TensorListFactory<ScalarType::Float> tlf_float;
@@ -474,9 +474,9 @@ TEST_F(OpSplitCopyTensorOutTest, WrongNumOutputEntriesDies) {
 }
 
 TEST_F(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle wrong out shape";
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen kernel can handle wrong out shape");
   TensorFactory<ScalarType::Int> tf;
   TensorListFactory<ScalarType::Int> tlf;
 
@@ -563,14 +563,16 @@ TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
       {2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(
+    OpSplitCopyTensorOutTest,
+    DISABLED_DynamicShapeUpperBoundLargerThanExpected) {
   test_dynamic_shape(
       {10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpSplitCopyTensorOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape not supported";
+// DISABLED: Dynamic shape not supported
+TEST_F(OpSplitCopyTensorOutTest, DISABLED_DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }

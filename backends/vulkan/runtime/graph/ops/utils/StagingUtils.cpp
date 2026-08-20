@@ -80,7 +80,19 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  kernel_name = "image_to_nchw";
+  // On a discrete GPU the staging buffer is read back over PCIe, so the
+  // output-centric (coalesced-write) variant is a large win. On integrated GPUs
+  // the staging buffer is not PCIe-backed, and the coalesced variant's
+  // redundant texture fetches make it a net loss -- so default to the
+  // texel-centric variant there.
+  //
+  // Gate on device type, not has_unified_memory(): a discrete GPU with
+  // Resizable BAR exposes a DEVICE_LOCAL | HOST_VISIBLE memory type, so
+  // has_unified_memory() returns true for it and would wrongly route it to the
+  // texel-centric path (measured ~10x end-to-end regression on an RTX 4080).
+  const bool coalesced_writes =
+      !graph.context()->adapter_ptr()->is_integrated_gpu();
+  kernel_name = coalesced_writes ? "image_to_nchw_coalesced" : "image_to_nchw";
   add_storage_type_suffix(kernel_name, src_storage_type);
   add_dtype_suffix(kernel_name, src_dtype);
   add_dtype_suffix(kernel_name, staging_dtype);

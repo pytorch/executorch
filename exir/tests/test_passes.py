@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -74,6 +75,7 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
 )
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.schema import TensorShapeDynamism
@@ -542,6 +544,32 @@ class TestPasses(unittest.TestCase):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
+    def test_export_pass_preserves_graph_module_meta(self) -> None:
+        """ExportPass should preserve GraphModule-level meta through re-tracing."""
+
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        class NullPass(ExportPass):
+            pass
+
+        prog = to_edge(
+            export(Foo(), (torch.ones(3, 2),), strict=True),
+        )
+        # Set custom metadata on the graph module before the pass.
+        prog.exported_program().graph_module.meta["custom"] = {
+            "test_key": "test_value",
+            "nested": {"a": 1},
+        }
+
+        new_prog = prog.transform([NullPass()])
+        new_meta = new_prog.exported_program().graph_module.meta
+
+        self.assertIn("custom", new_meta)
+        self.assertEqual(new_meta["custom"]["test_key"], "test_value")
+        self.assertEqual(new_meta["custom"]["nested"]["a"], 1)
+
     def test_export_scalar_to_tensor_pass(self) -> None:
         # Build a graph with a scalar argument where schema expects tensor
         graph = torch.fx.Graph()
@@ -866,6 +894,47 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(spec[1].shape_dynamism, TensorShapeDynamism.DYNAMIC_BOUND)
         self.assertEqual(spec[1].shape[1], 3)  # Second dim is static
 
+    def test_eval_upper_bound_int_oo_falls_back_to_hint(self) -> None:
+        """When bound_sympy returns int_oo (no finite upper bound from
+        constraints), eval_upper_bound should fall back to the trace hint
+        for backed symbols rather than returning int_oo."""
+
+        class SimpleModel(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        m = SimpleModel()
+        dim0 = torch.export.Dim("batch", min=1)
+        ep = export(
+            m,
+            (torch.randn(4, 8),),
+            dynamic_shapes={"x": {0: dim0}},
+        )
+        edge = to_edge(ep)
+
+        gm = edge.exported_program().graph_module
+        x_node = next(
+            n for n in gm.graph.nodes if n.op == "placeholder" and n.name == "x"
+        )
+        sym_dim = x_node.meta["val"].shape[0]
+        self.assertIsInstance(sym_dim, torch.SymInt)
+
+        try:
+            from torch.utils._sympy.numbers import int_oo
+        except ImportError:
+            self.skipTest("int_oo not available in this torch version")
+        from torch.utils._sympy.value_ranges import bound_sympy
+
+        raw_upper = bound_sympy(
+            sym_dim.node.expr, sym_dim.node.shape_env.var_to_range
+        ).upper
+        self.assertIs(raw_upper, int_oo)
+
+        self.assertEqual(eval_upper_bound(sym_dim), 4)
+
+        et = edge.to_executorch()
+        self.assertIsNotNone(et)
+
     def test_compile_fix_broken_ops(self) -> None:
         class ExportableLoop(nn.Module):
             def __init__(self, hidden_size, out_channels):
@@ -940,6 +1009,43 @@ class TestPasses(unittest.TestCase):
             torch.allclose(prog.exported_program().module()(inp), model(inp))
         )
 
+    def test_remove_invalid_ops_filters_aliased_list_returns(self) -> None:
+        """Verify _remove_invalid_ops_for_not_decompose filters ops that return
+        aliased tensor lists (e.g. split, chunk) even when torchgen's
+        aliased_return_names() fails to detect them. Regression test for
+        https://github.com/pytorch/executorch/issues/11723
+        """
+        from executorch.exir.program._program import (
+            _remove_invalid_ops_for_not_decompose,
+        )
+
+        # These ops return Tensor(a)[] — a list of aliased views.
+        # torchgen's aliased_return_names() misses the alias annotation on
+        # list returns, so the fallback check on op._schema.returns is needed.
+        aliased_list_ops = [
+            torch.ops.aten.split.Tensor,
+            torch.ops.aten.chunk.default,
+            torch.ops.aten.tensor_split.sections,
+            torch.ops.aten.split_with_sizes.default,
+        ]
+        for op in aliased_list_ops:
+            result = _remove_invalid_ops_for_not_decompose([op])
+            self.assertNotIn(
+                op,
+                result,
+                f"{op} should be filtered out because it returns aliased tensors",
+            )
+
+        # Non-aliased ops should be preserved.
+        preserved_ops = [torch.ops.aten.linear.default]
+        for op in preserved_ops:
+            result = _remove_invalid_ops_for_not_decompose([op])
+            self.assertIn(
+                op,
+                result,
+                f"{op} should be preserved because it has no aliased returns",
+            )
+
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -998,6 +1104,53 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(len(alloc_nodes) > 0)
         for node in alloc_nodes:
             self.assertTrue(isinstance(node.meta.get("spec", None), TensorSpec))
+
+    def test_to_out_var_dynamic_alloc_uses_concrete_upper_bounds(self) -> None:
+        class DynamicRelu(nn.Module):
+            def forward(self, x):
+                return torch.relu(x)
+
+        eager_model = DynamicRelu()
+        inputs = (torch.randn(2, 4, 8, 3),)
+        dynamic_shapes = {
+            "x": {
+                0: torch.export.Dim("batch", min=0, max=2),
+                2: torch.export.Dim("height", min=0, max=8),
+                3: torch.export.Dim("width", min=0, max=8),
+            }
+        }
+        prog = to_edge(
+            export(
+                eager_model,
+                inputs,
+                dynamic_shapes=dynamic_shapes,
+                strict=True,
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_prog = prog.transform(
+            [
+                SpecPropPass(),
+                ConstraintBasedSymShapeEvalPass(),
+            ]
+        )
+
+        new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+
+        alloc_nodes = []
+        for node in new_gm.graph.nodes:
+            if node.target == memory.alloc:
+                alloc_nodes.append(node)
+
+        self.assertTrue(len(alloc_nodes) > 0)
+        for node in alloc_nodes:
+            alloc_spec = node.args[0]
+            self.assertIsInstance(alloc_spec, tuple)
+            shape, _dtype = alloc_spec
+            for dim in shape:
+                self.assertIsInstance(dim, int)
 
     def test_debug_pass_file_log(self) -> None:
         eager_model = Mul()
@@ -1468,6 +1621,42 @@ class TestPasses(unittest.TestCase):
         edge.exported_program()._validate()
         edge.to_executorch()
 
+    def test_constant_prop_preserves_memory_alloc(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + 1
+
+        for custom_skip_targets in (None, set()):
+            with self.subTest(custom_skip_targets=custom_skip_targets):
+                edge = to_edge(
+                    export(Add(), (torch.ones(1),), strict=True),
+                    compile_config=EdgeCompileConfig(_skip_dim_order=False),
+                )
+                exported_program = edge.exported_program()
+                [add] = exported_program.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.add.Tensor
+                )
+                with exported_program.graph.inserting_before(add):
+                    alloc = exported_program.graph.call_function(
+                        memory.alloc, args=(((1,), torch.float32),)
+                    )
+                alloc.meta["val"] = torch.empty(1, dtype=torch.float32, device="meta")
+                add.args = (add.args[0], alloc)
+                exported_program.graph_module.recompile()
+
+                new_ep = constant_prop_pass(
+                    exported_program, custom_skip_targets=custom_skip_targets
+                )
+
+                self.assertEqual(
+                    new_ep.graph.find_nodes(op="call_function", target=memory.alloc),
+                    [alloc],
+                )
+                self.assertNotIn(alloc.name, new_ep.constants)
+                FileCheck().check("executorch_exir_memory_alloc").check_not(
+                    "_prop_tensor_constant"
+                ).run(new_ep.graph_module.code)
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -1646,9 +1835,7 @@ class TestPasses(unittest.TestCase):
         # lower to edge dialect
         edge_prog = to_edge(
             aten_prog,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _use_edge_ops=True
-            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
         edge_prog = edge_prog.to_backend(XnnpackPartitioner())
 

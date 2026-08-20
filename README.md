@@ -7,7 +7,7 @@
 <div align="center">
   <a href="https://pypi.org/project/executorch/"><img src="https://img.shields.io/pypi/v/executorch?style=for-the-badge&color=blue" alt="PyPI - Version"></a>
   <a href="https://github.com/pytorch/executorch/graphs/contributors"><img src="https://img.shields.io/github/contributors/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Contributors"></a>
-  <a href="https://github.com/pytorch/executorch/stargazers"><img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Stars"></a>
+  <a href="https://github.com/pytorch/executorch/stargazers"><!-- @lint-ignore GitHub serves 404 on /stargazers to non-browser clients --><img src="https://img.shields.io/github/stars/pytorch/executorch?style=for-the-badge&color=blue" alt="GitHub - Stars"></a>
   <a href="https://discord.gg/Dh43CKSAdc"><img src="https://img.shields.io/badge/Discord-Join%20Us-blue?logo=discord&logoColor=white&style=for-the-badge" alt="Discord - Chat with Us"></a>
   <a href="https://docs.pytorch.org/executorch/main/index.html"><img src="https://img.shields.io/badge/Documentation-blue?logo=googledocs&logoColor=white&style=for-the-badge" alt="Documentation"></a>
 </div>
@@ -41,7 +41,7 @@ Deploy **LLMs, vision, speech, and multimodal models** with the same PyTorch API
 - **🔒 Native PyTorch Export** — Direct export from PyTorch. No .onnx, .tflite, or intermediate format conversions. Preserve model semantics.
 - **⚡ Production-Proven** — Powers billions of users at [Meta with real-time on-device inference](https://engineering.fb.com/2025/07/28/android/executorch-on-device-ml-meta-family-of-apps/).
 - **💾 Tiny Runtime** — 50KB base footprint. Runs on microcontrollers to high-end smartphones.
-- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Qualcomm, ARM, MediaTek, Vulkan, and more.
+- **🚀 [12+ Hardware Backends](https://docs.pytorch.org/executorch/main/backends-overview.html)** — Open-source acceleration for Apple, Samsung, Qualcomm, ARM, MediaTek, Vulkan, and more.
 - **🎯 One Export, Multiple Backends** — Switch hardware targets with a single line change. Deploy the same model everywhere.
 
 ## How It Works
@@ -204,7 +204,7 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language), [Gemma](examples/models/gemma3) (vision-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [YOLO26](examples/models/yolo26/README.md), [Whisper](examples/models/whisper/README.md) <!-- @lint-ignore -->
 
 **Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models • [Unsloth](https://docs.unsloth.ai/new/deploy-llms-phone) for fine-tuned LLM deployment <!-- @lint-ignore -->
 
@@ -236,6 +236,21 @@ We welcome contributions from the community!
 - 🎮 [**Discord**](https://discord.gg/Dh43CKSAdc) — Chat with the team and community
 - 🐛 [**Issues**](https://github.com/pytorch/executorch/issues) — Report bugs or request features
 - 🤝 [**Contributing Guide**](CONTRIBUTING.md) — Guidelines and codebase structure
+
+## Citing ExecuTorch
+
+If you found ExecuTorch helpful in your research and would like to acknowledge it, please cite us using the following BibTeX:
+
+```bibtex
+@article{executorch2026,
+    title={{ExecuTorch} - A Unified {PyTorch} Solution to Run {AI} Models On-Device},
+    author={Nachin, Mergen and Desai, Digant and Jia, Sicheng Stephen and Lai, Chen and Liu, Mengwei and Szwejbka, Jacob and Alvarez, Raziel and Ascani, RJ and Bort, Dave and Candales, Manuel and
+  others},
+    journal={arXiv preprint arXiv:2605.08195},
+    url={https://github.com/pytorch/executorch},
+    year={2026}
+  }
+```
 
 ## License
 

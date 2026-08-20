@@ -107,7 +107,11 @@ class BatchNorm(NodeVisitor):
             if quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
                 quant_attrs = quant_attrs.copy()
                 quant_range = quant_attrs[QCOM_QUANT_MAX] - quant_attrs[QCOM_QUANT_MIN]
-                quant_attrs[QCOM_ZERO_POINT] = 0
+                quant_attrs[QCOM_ZERO_POINT] = (
+                    0
+                    if quant_range <= torch.iinfo(torch.uint8).max
+                    else (quant_range + 1) // 2
+                )
                 quant_attrs[QCOM_SCALE] = 1.0 / quant_range
                 filter_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 

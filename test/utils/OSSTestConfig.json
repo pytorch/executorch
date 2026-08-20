@@ -52,7 +52,8 @@
         "directory": "extension/tensor/test",
         "sources": [
             "tensor_ptr_maker_test.cpp",
-            "tensor_ptr_test.cpp"
+            "tensor_ptr_test.cpp",
+            "tensor_ptr_device_test.cpp"
         ],
         "additional_libs": [
             "extension_tensor"
@@ -74,7 +75,6 @@
             "bfloat16_test.cpp",
             "dont_shadow_complex_test.c",
             "half_test.cpp",
-            "optional_test.cpp",
             "scalar_test.cpp",
             "tensor_impl_test.cpp",
             "tensor_test.cpp"

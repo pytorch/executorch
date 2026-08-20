@@ -289,6 +289,67 @@ lib.define(
 lib.impl(name, linear_q4gsw, "CompositeExplicitAutograd")
 linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
 
+
+# Backward of linear_q4gsw wrt input (for on-device LoRA training through a frozen
+# 4-bit base): d_x = d_out @ dequant(W). Reference impl extracts dequant(W) via the
+# forward on an identity so it is layout-agnostic; the runtime dispatches this op to
+# the tiled q4gsw_backward WGSL kernel (contracts over N).
+def linear_q4gsw_backward_impl(
+    d_out: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    in_features = int(weights.shape[1]) * 2
+    eye = torch.eye(in_features, dtype=d_out.dtype, device=d_out.device)
+    w_t = linear_q4gsw(eye, weights, weight_scales, group_size)  # [in, out]
+    return d_out @ w_t.t()  # [M, out] @ [out, in] = [M, in]
+
+
+def linear_q4gsw_backward_meta(
+    d_out: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    return d_out.new_empty(d_out.shape[:-1] + (int(weights.shape[1]) * 2,))
+
+
+name = "linear_q4gsw_backward"
+lib.define(
+    f"{name}(Tensor d_out, Tensor weights, Tensor weight_scales, int group_size) -> Tensor"
+)
+lib.impl(name, linear_q4gsw_backward_impl, "CompositeExplicitAutograd")
+lib.impl(name, linear_q4gsw_backward_meta, "Meta")
+linear_q4gsw_backward_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def linear_q4gsw_setup_context(ctx, inputs, output) -> None:
+    _x, weights, weight_scales, group_size, _bias = inputs
+    ctx.save_for_backward(weights, weight_scales)
+    ctx.group_size = group_size
+
+
+def linear_q4gsw_backward(ctx, grad_out):
+    weights, weight_scales = ctx.saved_tensors
+    d_x = torch.ops.et_vk.linear_q4gsw_backward(
+        grad_out, weights, weight_scales, ctx.group_size
+    )
+    return (
+        d_x,
+        None,
+        None,
+        None,
+        None,
+    )  # grads for (x, weights, scales, group_size, bias)
+
+
+torch.library.register_autograd(
+    f"{namespace}::linear_q4gsw",
+    linear_q4gsw_backward,
+    setup_context=linear_q4gsw_setup_context,
+)
+
 name = "linear_dq8ca_q4gsw"
 lib.define(
     f"""
@@ -828,6 +889,55 @@ lib.define(
 lib.impl(name, apply_rotary_emb_hf_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_hf_op = getattr(getattr(torch.ops, namespace), name)
 
+##################################
+## apply_rotary_emb_interleaved ##
+##################################
+
+
+def apply_rotary_emb_interleaved_impl(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # EdgeTAM's pair-interleaved complex-number RoPE.
+    #   x:         [B, N, C] with (real, imag) pairs interleaved along C
+    #   freqs_cis: any rank whose flattened layout is [N, C]. Commonly 2D
+    #              [N, C] or 4D [1, N, C/2, 2] from
+    #              `torch.view_as_real(...).unsqueeze(0)`. The (cos, sin)
+    #              pairs are interleaved along the innermost axis in the
+    #              flattened view.
+    # Semantically equivalent to:
+    #   freqs_cis.reshape(N, C // 2, 2) -> (cos, sin)
+    #   out[2k]   = x[2k] * cos[k] - x[2k+1] * sin[k]
+    #   out[2k+1] = x[2k] * sin[k] + x[2k+1] * cos[k]
+    B, N, C = x.shape
+    a_real, a_imag = x.view(B, N, C // 2, 2).unbind(-1)
+    # Use reshape so callers may pass freqs_cis at any rank.
+    cs = freqs_cis.reshape(N, C // 2, 2)
+    b_real, b_imag = cs[..., 0], cs[..., 1]
+    out = torch.stack(
+        (a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real),
+        dim=-1,
+    )
+    return out.view(B, N, C)
+
+
+def apply_rotary_emb_interleaved_meta(
+    x: torch.Tensor, freqs_cis: torch.Tensor
+) -> torch.Tensor:
+    # Meta kernel: shape-only. Keeps the op opaque during torch.export (no
+    # inlining of view/reshape calls into the exported graph) and does not
+    # constrain the rank of freqs_cis — any shape with N * C elements is
+    # accepted by the Vulkan dispatcher.
+    return torch.empty_like(x)
+
+
+name = "apply_rotary_emb_interleaved"
+lib.define(f"{name}(Tensor x, Tensor freqs_cis) -> Tensor")
+# CPU kernel preserves eager-mode reference semantics.
+lib.impl(name, apply_rotary_emb_interleaved_impl, "CPU")
+# Meta kernel keeps the op opaque in the exported graph.
+lib.impl(name, apply_rotary_emb_interleaved_meta, "Meta")
+apply_rotary_emb_interleaved_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## q8ta_add ##
 ########################
@@ -905,6 +1015,39 @@ lib.define(
 lib.impl(name, q8ta_relu_impl, "CompositeExplicitAutograd")
 q8ta_relu_op = getattr(getattr(torch.ops, namespace), name)
 
+###########################
+## q8ta_pixel_shuffle    ##
+###########################
+
+
+def q8ta_pixel_shuffle_impl(
+    input: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    output_inv_scale: float,
+    output_zero_point: int,
+    upscale_factor: int,
+):
+    # Reference Python impl for op registration. The runtime kernel does a
+    # fused byte-shuffle (and optional requantize when scales differ).
+    output_scale = 1.0 / output_inv_scale
+    dequant = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, input_scale, input_zero_point, -128, 127, input.dtype
+    )
+    shuffled = torch.nn.functional.pixel_shuffle(dequant, upscale_factor)
+    requantized = torch.ops.quantized_decomposed.quantize_per_tensor(
+        shuffled, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+    return requantized
+
+
+name = "q8ta_pixel_shuffle"
+lib.define(
+    f"{name}(Tensor input, float input_scale, int input_zero_point, float output_inv_scale, int output_zero_point, int upscale_factor) -> Tensor"
+)
+lib.impl(name, q8ta_pixel_shuffle_impl, "CompositeExplicitAutograd")
+q8ta_pixel_shuffle_op = getattr(getattr(torch.ops, namespace), name)
+
 ########################
 ## embedding_q4gsw ##
 ########################
@@ -959,3 +1102,220 @@ name = "select_as_symint"
 lib.define(f"{name}(Tensor x, int dim, int index) -> SymInt")
 lib.impl(name, select_as_symint_impl, "Meta")
 select_as_symint_op = getattr(getattr(torch.ops, namespace), name)
+
+##########
+## sdpa ##
+##########
+
+
+def sdpa_impl(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+    scale: Optional[float] = None,
+):
+    if scale is None:
+        scale = 1.0 / (q.size(-1) ** 0.5)
+    attn = torch.matmul(q, k.transpose(-2, -1)) * scale
+    if attn_mask is not None:
+        attn = attn + attn_mask
+    attn = torch.softmax(attn, dim=-1)
+    return torch.matmul(attn, v)
+
+
+name = "sdpa"
+lib.define(
+    f"{name}(Tensor q, Tensor k, Tensor v, Tensor? attn_mask = None, float? scale = None) -> Tensor"
+)
+lib.impl(name, sdpa_impl, "CompositeExplicitAutograd")
+sdpa_op = getattr(getattr(torch.ops, namespace), name)
+
+################
+## rms_norm ##
+################
+
+
+def rms_norm_impl(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    input_dtype = x.dtype
+    variance = x.float().pow(2).mean(-1, keepdim=True)
+    x_normed = x.float() * torch.rsqrt(variance + eps)
+    return (x_normed * weight.float()).to(input_dtype)
+
+
+name = "rms_norm"
+lib.define(f"{name}(Tensor x, Tensor weight, float eps) -> Tensor")
+lib.impl(name, rms_norm_impl, "CompositeExplicitAutograd")
+rms_norm_op = getattr(getattr(torch.ops, namespace), name)
+
+
+########################
+## fused_ce (training) ##
+########################
+
+
+def fused_ce_impl(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    mask = labels >= 0
+    safe = labels.clamp(min=0).long()
+    lse = torch.logsumexp(logits, dim=-1)
+    picked = logits.gather(-1, safe[:, None]).squeeze(-1)
+    loss = torch.where(mask, (lse - picked) / n_valid, torch.zeros_like(lse)).sum()
+    softmax = torch.softmax(logits, dim=-1)
+    onehot = torch.nn.functional.one_hot(safe, logits.shape[-1]).to(logits.dtype)
+    dlogits = torch.where(
+        mask[:, None], (softmax - onehot) / n_valid, torch.zeros_like(softmax)
+    )
+    return loss, dlogits
+
+
+def fused_ce_meta(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    n_valid: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return logits.new_empty([]), torch.empty_like(logits)
+
+
+def fused_ce_setup_context(ctx, inputs, output) -> None:
+    ctx.save_for_backward(output[1])
+
+
+def fused_ce_backward(ctx, grad_loss, grad_dlogits):
+    (dlogits,) = ctx.saved_tensors
+    return grad_loss * dlogits, None, None
+
+
+name = "fused_ce"
+lib.define(f"{name}(Tensor logits, Tensor labels, float n_valid) -> (Tensor, Tensor)")
+lib.impl(name, fused_ce_impl, "CompositeExplicitAutograd")
+lib.impl(name, fused_ce_meta, "Meta")
+torch.library.register_autograd(
+    f"{namespace}::{name}", fused_ce_backward, setup_context=fused_ce_setup_context
+)
+fused_ce_op = getattr(getattr(torch.ops, namespace), name)
+
+
+###########################
+## adamw_step (training) ##
+###########################
+
+
+def adamw_step_impl(
+    param: torch.Tensor,
+    m: torch.Tensor,
+    v: torch.Tensor,
+    grad: torch.Tensor,
+    lr: float,
+    beta1: float,
+    beta2: float,
+    eps: float,
+    weight_decay: float,
+    bias_correction1: float,
+    bias_correction2: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    param.mul_(1.0 - lr * weight_decay)
+    m.mul_(beta1).add_(grad, alpha=1.0 - beta1)
+    v.mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
+    mhat = m / bias_correction1
+    denom = (v / bias_correction2).sqrt() + eps
+    param.addcdiv_(mhat, denom, value=-lr)
+    return param, m, v
+
+
+def adamw_step_meta(
+    param: torch.Tensor,
+    m: torch.Tensor,
+    v: torch.Tensor,
+    grad: torch.Tensor,
+    lr: float,
+    beta1: float,
+    beta2: float,
+    eps: float,
+    weight_decay: float,
+    bias_correction1: float,
+    bias_correction2: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return param, m, v
+
+
+name = "adamw_step"
+lib.define(
+    f"{name}(Tensor(a!) param, Tensor(b!) m, Tensor(c!) v, Tensor grad, float lr, float beta1, float beta2, float eps, float weight_decay, float bias_correction1, float bias_correction2) -> (Tensor(a!), Tensor(b!), Tensor(c!))"
+)
+lib.impl(name, adamw_step_impl, "CompositeExplicitAutograd")
+lib.impl(name, adamw_step_meta, "Meta")
+adamw_step_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# STE weight gradient d_out^T @ x through the frozen 4-bit linear_q4gsw base.
+def linear_dW_impl(
+    d_out: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
+    return d_out.reshape(-1, d_out.shape[-1]).t() @ x.reshape(-1, x.shape[-1])
+
+
+def linear_dW_meta(
+    d_out: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
+    return d_out.new_empty((d_out.shape[-1], x.shape[-1]))
+
+
+name = "linear_dW"
+lib.define(f"{name}(Tensor d_out, Tensor x) -> Tensor")
+lib.impl(name, linear_dW_impl, "CompositeExplicitAutograd")
+lib.impl(name, linear_dW_meta, "Meta")
+linear_dW_op = getattr(getattr(torch.ops, namespace), name)
+
+
+##################
+## q4gsw_requant ##
+##################
+
+
+# STE re-quant of fp32 latent weights into the frozen-scale 4-bit codes.
+def q4gsw_requant_impl(
+    latent: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    n, k = latent.shape
+    group_idx = torch.arange(k, device=latent.device) // group_size
+    scale_full = scales.t()[:, group_idx]  # [N, K]: scales[k // group_size, n]
+    nonzero = scale_full != 0
+    safe = torch.where(nonzero, scale_full, torch.ones_like(scale_full))
+    q = torch.round(latent / safe)
+    q = torch.where(nonzero, q, torch.zeros_like(q))
+    codes = (torch.clamp(q, -8, 7).to(torch.int32) + 8) & 0xF  # [N, K] in 0..15
+    k_packed = (k + 1) // 2
+    packed = torch.zeros((n, k_packed), dtype=torch.uint8, device=latent.device)
+    packed[:, :] = codes[:, 0::2].to(torch.uint8)
+    if k > 1:
+        high = codes[:, 1::2].to(torch.uint8)
+        packed[:, : high.shape[1]] |= high << 4
+    return packed
+
+
+def q4gsw_requant_meta(
+    latent: torch.Tensor,
+    scales: torch.Tensor,
+    group_size: int,
+) -> torch.Tensor:
+    n, k = latent.shape
+    return latent.new_empty((n, (k + 1) // 2), dtype=torch.uint8)
+
+
+name = "q4gsw_requant"
+lib.define(f"{name}(Tensor latent, Tensor scales, int group_size) -> Tensor")
+lib.impl(name, q4gsw_requant_impl, "CompositeExplicitAutograd")
+lib.impl(name, q4gsw_requant_meta, "Meta")
+q4gsw_requant_op = getattr(getattr(torch.ops, namespace), name)

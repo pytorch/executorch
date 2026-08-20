@@ -6,7 +6,7 @@
 
 import copy
 
-from typing import cast, Optional, Set, Type
+from typing import cast, ClassVar, Optional, Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
@@ -38,6 +38,19 @@ def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
         if qspec.qmax == 7 and qspec.qmin == -7:
             return TosaSpecialDtype.INT4
     return None
+
+
+def _merge_qparams(qspec_1: QuantArgs, qspec_2: QuantArgs) -> QuantArgs:
+    """Merge two QuantArgs when inputs are quantized differently.
+
+    Requires same dtype; picks the first's parameters by default.
+
+    """
+    if qspec_1.dtype != qspec_2.dtype:
+        raise RuntimeError(
+            f"Cannot merge qparams of different dtypes: {qspec_1.dtype} vs {qspec_2.dtype}"
+        )
+    return qspec_1
 
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
@@ -114,64 +127,136 @@ class FoldAndAnnotateQParamsPass(ArmPass):
         InsertTableOpsPass,
         RemoveNoopPass,
     }
+    _default_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+    )
+    _mixed_profile_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        *_default_partial_binary_qdq_targets,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.mm.default,
+        exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.grid_sampler_2d.default,
+    )
 
     def __init__(
-        self, exported_program: Optional[ExportedProgram] = None, *args, **kwargs
+        self,
+        exported_program: Optional[ExportedProgram] = None,
+        *args,
+        preserve_partial_binary_tensor_qdq: bool = False,
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.exported_program = exported_program
+        self.preserve_partial_binary_tensor_qdq = preserve_partial_binary_tensor_qdq
 
-    def fold_and_annotate_arg(
-        self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
-    ) -> None:
-        input_qparams = None
-        nodes_to_remove = set()
+    def _extract_input_params(
+        self, arg_list: list[Node]
+    ) -> tuple[Optional[QuantArgs], set[Node]]:
+        input_qparams: Optional[QuantArgs] = None
+        nodes_to_remove: set[Node] = set()
         for arg in arg_list:
             if not isinstance(arg, Node):
-                return
-
-            arg_quant_params = None
+                return None, set()
+            arg_quant: Optional[QuantArgs] = None
             if arg.target in DQ_OPS:
                 args = arg.args
                 scales = args[1]
                 if (
-                    isinstance(args[1], Node)
+                    isinstance(scales, Node)
                     and self.exported_program is not None
-                    and is_param_node(self.exported_program, args[1])
+                    and is_param_node(self.exported_program, scales)
                 ):
-                    scales = get_param_tensor(self.exported_program, args[1])
+                    scales = get_param_tensor(self.exported_program, scales)
                 zps = args[2]
                 if (
-                    isinstance(args[2], Node)
+                    isinstance(zps, Node)
                     and self.exported_program is not None
-                    and is_param_node(self.exported_program, args[2])
+                    and is_param_node(self.exported_program, zps)
                 ):
-                    zps = get_param_tensor(self.exported_program, args[2])
-                arg_quant_params = QuantArgs.from_operator(
+                    zps = get_param_tensor(self.exported_program, zps)
+                arg_quant = QuantArgs.from_operator(
                     arg.target, (args[0], scales, zps, *args[3:])
                 )
-                # add arg to nodes_to_remove to fold the dq-node
                 nodes_to_remove.add(arg)
-            if input_qparams is not None and input_qparams != arg_quant_params:
-                # Two args are quantized differently
-                raise RuntimeError("Input qparams do not match")
-            input_qparams = arg_quant_params
-        if input_qparams is not None:
-            node.meta["input_qparams"][i] = input_qparams
-            for n in nodes_to_remove:
-                if n.target not in DQ_OPS:
-                    raise RuntimeError(
-                        f"Expected one of {DQ_OPS} dq_op, got {n.target}"
-                    )
+            if arg_quant is not None:
+                if input_qparams is None:
+                    input_qparams = arg_quant
+                elif input_qparams != arg_quant:
+                    input_qparams = _merge_qparams(input_qparams, arg_quant)
+        return input_qparams, nodes_to_remove
 
-                node.replace_input_with(n, cast(Node, n.args[0]))
-                if len(n.users) == 0:
-                    graph_module.graph.erase_node(n)
-            special_dtype = _get_special_dtype(input_qparams)
-            if special_dtype:
-                node.all_input_nodes[i].meta[
-                    TosaSpecialDtype.meta_key()
-                ] = special_dtype
+    def _annotate_input_params(
+        self,
+        graph_module: GraphModule,
+        node: Node,
+        index: int,
+        input_qparams: QuantArgs,
+        nodes_to_remove: set[Node],
+        remove_qdq: bool = True,
+    ) -> None:
+        node.meta["input_qparams"][index] = input_qparams
+
+        if not remove_qdq:
+            return
+
+        for dq in nodes_to_remove:
+            if dq.target not in DQ_OPS:
+                raise RuntimeError(f"Expected one of {DQ_OPS} dq_op, got {dq.target}")
+            node.replace_input_with(dq, cast(Node, dq.args[0]))
+            if not dq.users:
+                graph_module.graph.erase_node(dq)
+
+        special = _get_special_dtype(input_qparams)
+        if special:
+            node.all_input_nodes[index].meta[TosaSpecialDtype.meta_key()] = special
+
+    def fold_and_annotate_arg(
+        self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
+    ) -> None:
+        input_qparams, nodes_to_remove = self._extract_input_params(arg_list)
+        if input_qparams is None:
+            return
+        self._annotate_input_params(
+            graph_module, node, i, input_qparams, nodes_to_remove
+        )
+
+    def _extract_arg_input_params(
+        self, arg: object
+    ) -> tuple[Optional[QuantArgs], set[Node]]:
+        if isinstance(arg, (list, tuple)):
+            return self._extract_input_params(list(arg))
+        if isinstance(arg, Node):
+            return self._extract_input_params([arg])
+        return None, set()
+
+    def _has_partial_binary_tensor_qdq_inputs(
+        self, node: Node, input_qparams: dict[int, QuantArgs]
+    ) -> bool:
+        targets = (
+            self._mixed_profile_partial_binary_qdq_targets
+            if self.preserve_partial_binary_tensor_qdq
+            else self._default_partial_binary_qdq_targets
+        )
+        if node.target not in targets:
+            return False
+
+        lhs_idx, rhs_idx = 0, 1
+        if lhs_idx >= len(node.args) or rhs_idx >= len(node.args):
+            return False
+        if not isinstance(node.args[lhs_idx], Node) or not isinstance(
+            node.args[rhs_idx], Node
+        ):
+            return False
+        return (lhs_idx in input_qparams) != (rhs_idx in input_qparams)
 
     def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
         """Fold outmost quant nodes inside submodule.
@@ -277,9 +362,30 @@ class FoldAndAnnotateQParamsPass(ArmPass):
             return False
         return True
 
+    @staticmethod
+    def _correct_output_dtype(node: torch.fx.Node):
+        if node.target not in {
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        }:
+            return
+        if len(node.meta["output_qparams"]) == 0:
+            return
+        output_qparams = cast(QuantArgs, node.meta["output_qparams"][0])
+
+        if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            if output_qparams.scale != 1.0 or output_qparams.zp != 0.0:
+                raise ValueError(
+                    f"Expected quantized {node.target} '{node.name}' to have unit scale and zero point."
+                )
+
+        set_node_arg(node, "dtype", output_qparams.dtype)
+
     def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
 
         # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        graph_modified = False
+        metadata_modified = False
         for n in graph_module.graph.nodes:
             n = cast(Node, n)
             if not FoldAndAnnotateQParamsPass.is_foldable(n):
@@ -297,17 +403,34 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                     "output_qparams should not have been set at this point"
                 )
 
+            input_qparams: dict[int, QuantArgs] = {}
+            input_nodes_to_remove: dict[int, set[Node]] = {}
+            input_nodes_seen: set[Node] = set()
+            for i, arg in enumerate(n.args):
+                qparams, nodes_to_remove = self._extract_arg_input_params(arg)
+                if qparams is not None:
+                    input_qparams[i] = qparams
+                    input_nodes_to_remove[i] = nodes_to_remove - input_nodes_seen
+                    input_nodes_seen.update(nodes_to_remove)
+
+            preserve_qdq = self._has_partial_binary_tensor_qdq_inputs(n, input_qparams)
+            graph_modified = graph_modified or not preserve_qdq
+            metadata_modified = True
+
             # for the inputs and outputs search the graph for quantization info and
             # store the information in a dict with order of the _tensor_ inputs as key,
             # ignoring any other arguments to the target node.
             n.meta["input_qparams"] = {}
             n.meta["output_qparams"] = {}
-            for i, arg in enumerate(n.args):
-                if isinstance(arg, (list, tuple)):
-                    self.fold_and_annotate_arg(graph_module, n, arg, i)  # type: ignore
-
-                elif isinstance(arg, Node):
-                    self.fold_and_annotate_arg(graph_module, n, [arg], i)
+            for i, qparams in input_qparams.items():
+                self._annotate_input_params(
+                    graph_module,
+                    n,
+                    i,
+                    qparams,
+                    input_nodes_to_remove[i],
+                    remove_qdq=not preserve_qdq,
+                )
 
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
@@ -320,18 +443,13 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                     user.target, user.args
                 )
 
-                user.replace_all_uses_with(n)
-                graph_module.graph.erase_node(user)
+                if not preserve_qdq:
+                    user.replace_all_uses_with(n)
+                    graph_module.graph.erase_node(user)
 
             # Some op(s) contain a "dtype" key in their node kwargs. Set this
             # to the type of output qparams.
-            output_qparams = n.meta["output_qparams"]
-            if (
-                n.target in {exir_ops.edge.aten.sum.dim_IntList}
-                and len(output_qparams) > 0
-            ):
-                output_dtype = output_qparams[0].dtype
-                set_node_arg(n, "dtype", output_dtype)
+            FoldAndAnnotateQParamsPass._correct_output_dtype(n)
 
             if n.target in (
                 torch.ops.higher_order.cond,
@@ -340,10 +458,10 @@ class FoldAndAnnotateQParamsPass(ArmPass):
                 self._handle_control_flow_node(n, graph_module)
 
         # retrace the graph to update the fake tensor types
-        graph_module = super().call(graph_module).graph_module
+        if graph_modified:
+            graph_module = super().call(graph_module).graph_module
 
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        return PassResult(graph_module, metadata_modified or graph_modified)
 
 
 class QuantizeClampArgumentsPass(ArmPass):
@@ -395,6 +513,5 @@ class QuantizeClampArgumentsPass(ArmPass):
         if modified:
             # Retrace to refresh fake tensor metadata after updating clamp min/max.
             graph_module = super().call(graph_module).graph_module
-            graph_module.recompile()
 
         return PassResult(graph_module, modified)

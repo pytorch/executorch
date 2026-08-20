@@ -22,13 +22,12 @@ namespace executorch {
 namespace runtime {
 
 /**
- * Validates that computing numel (number of elements) from the tensor's sizes
- * will not overflow. This check should be performed before creating TensorImpl
- * objects to prevent undefined behavior from integer overflow.
+ * Validates that a tensor's metadata is semantically valid: sizes are
+ * non-negative, scalar type is valid, and computing numel/nbytes will not
+ * overflow.
  *
  * @param[in] tensor The flatbuffer Tensor to validate.
- * @return Error::Ok if the numel calculation is safe, Error::InvalidProgram
- *     if computing numel would overflow.
+ * @return Error::Ok if validation passes, Error::InvalidProgram otherwise.
  */
 ET_NODISCARD Error validate_tensor(const executorch_flatbuffer::Tensor* tensor);
 

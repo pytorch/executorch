@@ -311,6 +311,7 @@ set(all_test_sources
     "op_upsample_bilinear2d_aa_test.cpp"
     "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
+    "op_var_mean_test.cpp"
     "op_view_as_real_copy_test.cpp"
     "op_view_copy_test.cpp"
     "op_where_test.cpp"
@@ -410,6 +411,7 @@ if(TARGET quantized_kernels)
   set(_quantized_kernels_test_sources
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_add_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_choose_qparams_test.cpp"
+      "${EXECUTORCH_ROOT}/kernels/quantized/test/op_dequantize_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding2b_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding4b_test.cpp"
       "${EXECUTORCH_ROOT}/kernels/quantized/test/op_embedding_test.cpp"

@@ -1,5 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024-25 Arm Limited and/or its affiliates.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -191,6 +191,24 @@ def _parse_args() -> argparse.Namespace:
         help="Only installs necessary dependencies for core executorch and skips "
         " packages necessary for running example scripts.",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Pass -v to pip when installing the ExecuTorch package.",
+    )
+    allowed_optional_dependencies = ["ethos_u", "vgf", "openvino"]
+    parser.add_argument(
+        "--optional-dependency",
+        action="append",
+        choices=allowed_optional_dependencies,
+        default=[],
+        metavar="EXTRA",
+        help="Install a named optional dependency from pyproject.toml. Can be "
+        "passed multiple times, for example "
+        "--optional-dependency ethos_u --optional-dependency openvino. "
+        f"Allowed values: {', '.join(allowed_optional_dependencies)}",
+    )
     return parser.parse_args()
 
 
@@ -214,6 +232,10 @@ def main(args):
     install_requirements(use_pytorch_nightly)
 
     # Step 2: Install core package
+    package_spec = "."
+    if args.optional_dependency:
+        extras = ",".join(dict.fromkeys(args.optional_dependency))
+        package_spec = f".[{extras}]"
     cmd = (
         [
             sys.executable,
@@ -223,11 +245,12 @@ def main(args):
         ]
         + (["--editable"] if args.editable else [])
         + [
-            ".",
+            package_spec,
             "--no-build-isolation",
-            "-v",
         ]
     )
+    if args.verbose:
+        cmd.append("-v")
     subprocess.run(cmd, check=True)
 
     # Step 3: Extra (optional) packages that is only useful for running examples.

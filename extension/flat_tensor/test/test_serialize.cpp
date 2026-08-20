@@ -22,7 +22,6 @@
 
 using namespace ::testing;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 
 class FlatTensorSerializeTest : public ::testing::Test {
  protected:

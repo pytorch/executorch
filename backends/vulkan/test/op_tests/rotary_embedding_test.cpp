@@ -820,3 +820,227 @@ TEST(
       /*start_pos=*/10,
       /*max_seq_len=*/64);
 }
+
+//
+// Interleaved (EdgeTAM) RoPE reference and tests
+//
+// x:         [B, N, C] with (real, imag) pairs interleaved along C
+// freqs_cis: any rank with N * C elements. Commonly 2D [N, C] or 4D
+//            [1, N, C/2, 2] from torch.view_as_real(...).unsqueeze(0). The
+//            (cos, sin) pairs are interleaved along the innermost axis in
+//            the flattened view.
+//
+
+at::Tensor rotary_embedding_interleaved_impl(
+    const at::Tensor& x,
+    const at::Tensor& freqs_cis) {
+  const int64_t B = x.size(0);
+  const int64_t N = x.size(1);
+  const int64_t C = x.size(2);
+
+  std::vector<at::Tensor> x_pairs = at::unbind(x.reshape({B, N, C / 2, 2}), -1);
+  at::Tensor& a_real = x_pairs[0];
+  at::Tensor& a_imag = x_pairs[1];
+
+  at::Tensor freqs_3d = freqs_cis.reshape({N, C / 2, 2});
+  std::vector<at::Tensor> freq_pairs = at::unbind(freqs_3d, -1);
+  at::Tensor& b_real = freq_pairs[0];
+  at::Tensor& b_imag = freq_pairs[1];
+
+  at::Tensor out_real = a_real * b_real - a_imag * b_imag;
+  at::Tensor out_imag = a_real * b_imag + a_imag * b_real;
+
+  return at::stack({out_real, out_imag}, -1).reshape({B, N, C});
+}
+
+void test_reference_interleaved(
+    const int B = 1,
+    const int N = 256,
+    const int C = 256,
+    const at::ScalarType dtype = at::kFloat,
+    const std::vector<int64_t>& freqs_shape = {}) {
+  at::Tensor x = at::rand({B, N, C}, at::device(at::kCPU).dtype(dtype));
+  std::vector<int64_t> fshape =
+      freqs_shape.empty() ? std::vector<int64_t>{N, C} : freqs_shape;
+  at::Tensor freqs_cis = at::rand(fshape, at::device(at::kCPU).dtype(dtype));
+
+  at::Tensor ref = rotary_embedding_interleaved_impl(x, freqs_cis);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
+  // freqs_cis is always buffer-backed: the shader flat-indexes it so it is
+  // insensitive to the tensor's declared rank (matches op_registry pinning).
+  IOValueRef r_freqs_cis = graph.add_input_tensor(
+      freqs_cis.sizes().vec(),
+      from_at_scalartype(freqs_cis.scalar_type()),
+      utils::kBuffer);
+
+  const ValueRef r_out = graph.add_tensor(
+      ref.sizes().vec(), from_at_scalartype(ref.scalar_type()));
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_interleaved.default")
+  (graph, {r_x.value, r_freqs_cis.value, r_out});
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_x.staging,
+      x.const_data_ptr(),
+      x.numel(),
+      from_at_scalartype(x.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cis.staging,
+      freqs_cis.const_data_ptr(),
+      freqs_cis.numel(),
+      from_at_scalartype(freqs_cis.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(ref);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
+
+  const double tol = (dtype == at::kHalf) ? 5e-3 : 1e-4;
+  EXPECT_TRUE(at::allclose(ref, vk_out, tol, tol));
+}
+
+// EdgeTAM self-attention shape
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_fp32) {
+  test_reference_interleaved(/*B=*/1, /*N=*/256, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_fp16) {
+  test_reference_interleaved(/*B=*/1, /*N=*/256, /*C=*/256, at::kHalf);
+}
+
+// EdgeTAM cross-attention memory-bank shape
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_fp32) {
+  test_reference_interleaved(/*B=*/1, /*N=*/1792, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_fp16) {
+  test_reference_interleaved(/*B=*/1, /*N=*/1792, /*C=*/256, at::kHalf);
+}
+
+// Buffer storage path
+void test_reference_interleaved_buffer(
+    const int B = 1,
+    const int N = 256,
+    const int C = 256,
+    const at::ScalarType dtype = at::kFloat,
+    const std::vector<int64_t>& freqs_shape = {}) {
+  at::Tensor x = at::rand({B, N, C}, at::device(at::kCPU).dtype(dtype));
+  std::vector<int64_t> fshape =
+      freqs_shape.empty() ? std::vector<int64_t>{N, C} : freqs_shape;
+  at::Tensor freqs_cis = at::rand(fshape, at::device(at::kCPU).dtype(dtype));
+
+  at::Tensor ref = rotary_embedding_interleaved_impl(x, freqs_cis);
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+
+  IOValueRef r_x = graph.add_input_tensor(
+      x.sizes().vec(), from_at_scalartype(x.scalar_type()));
+  IOValueRef r_freqs_cis = graph.add_input_tensor(
+      freqs_cis.sizes().vec(), from_at_scalartype(freqs_cis.scalar_type()));
+
+  const ValueRef r_out = graph.add_tensor(
+      ref.sizes().vec(), from_at_scalartype(ref.scalar_type()));
+
+  VK_GET_OP_FN("et_vk.apply_rotary_emb_interleaved.default")
+  (graph, {r_x.value, r_freqs_cis.value, r_out});
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  graph.propagate_resize();
+  graph.maybe_cast_and_copy_into_staging(
+      r_x.staging,
+      x.const_data_ptr(),
+      x.numel(),
+      from_at_scalartype(x.scalar_type()));
+  graph.maybe_cast_and_copy_into_staging(
+      r_freqs_cis.staging,
+      freqs_cis.const_data_ptr(),
+      freqs_cis.numel(),
+      from_at_scalartype(freqs_cis.scalar_type()));
+
+  graph.execute();
+
+  at::Tensor vk_out = at::empty_like(ref);
+  graph.maybe_cast_and_copy_from_staging(
+      staging_out,
+      vk_out.mutable_data_ptr(),
+      vk_out.numel(),
+      from_at_scalartype(vk_out.scalar_type()));
+
+  const double tol = (dtype == at::kHalf) ? 5e-3 : 1e-4;
+  EXPECT_TRUE(at::allclose(ref, vk_out, tol, tol));
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_buffer_fp32) {
+  test_reference_interleaved_buffer(
+      /*B=*/1, /*N=*/256, /*C=*/256, at::kFloat);
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_buffer_fp32) {
+  test_reference_interleaved_buffer(
+      /*B=*/1, /*N=*/1792, /*C=*/256, at::kFloat);
+}
+
+// 4D freqs_cis [1, N, C/2, 2] — EdgeTAM exporter emits this shape directly
+// from torch.view_as_real(...).unsqueeze(0), so this case must work without
+// the caller inserting a view_copy.
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_buffer_4d_freqs) {
+  test_reference_interleaved_buffer(
+      /*B=*/1,
+      /*N=*/256,
+      /*C=*/256,
+      at::kFloat,
+      /*freqs_shape=*/{1, 256, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_buffer_4d_freqs) {
+  test_reference_interleaved_buffer(
+      /*B=*/1,
+      /*N=*/1792,
+      /*C=*/256,
+      at::kFloat,
+      /*freqs_shape=*/{1, 1792, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_self_attn_4d_freqs_fp16) {
+  test_reference_interleaved(
+      /*B=*/1,
+      /*N=*/256,
+      /*C=*/256,
+      at::kHalf,
+      /*freqs_shape=*/{1, 256, 128, 2});
+}
+
+TEST(VulkanRotaryEmbeddingInterleavedTest, edgetam_cross_attn_4d_freqs_fp16) {
+  test_reference_interleaved(
+      /*B=*/1,
+      /*N=*/1792,
+      /*C=*/256,
+      at::kHalf,
+      /*freqs_shape=*/{1, 1792, 128, 2});
+}

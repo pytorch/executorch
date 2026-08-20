@@ -55,7 +55,7 @@ mv $MODEL_NAME*.pte "$APP_PATH/Resources/Models/MobileNet/"
 
 say "Downloading Labels"
 
-curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
+curl --retry 3 --retry-all-errors https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
   -o "$APP_PATH/Resources/Models/MobileNet/imagenet_classes.txt"
 
 say "Creating Simulator"

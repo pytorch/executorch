@@ -175,4 +175,19 @@ for all core ATen ops.
 
 ## Backend Dialect
 
-See this [doc](compiler-backend-dialect.md)
+Backend dialect is the optional, target-aware stage after Edge dialect. It is
+used when a backend needs to rewrite the graph with backend-specific operators,
+metadata, or delegated lowered modules before the program is converted to an
+ExecuTorch program. For example, a backend pass can replace an Edge dialect
+subgraph such as `addmm` followed by `relu` with a single backend operator that
+the target can execute more efficiently.
+
+Unlike custom operators that may appear in eager mode, ATen dialect, or Edge
+dialect, backend-specific operators are introduced only by passes that run after
+Edge dialect. They are useful for target-specific fusions, lowering patterns,
+or delegate integration where the resulting graph contains nodes meaningful only
+to the selected backend.
+
+For details on when to use backend-specific operators, how they differ from
+custom operators and delegates, and how to register replacement patterns with
+`bind_pattern_to_op`, see [Backend Dialect](compiler-backend-dialect.md).

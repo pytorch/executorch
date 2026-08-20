@@ -70,6 +70,56 @@ int32_t Sampler::sample_mult(T* probabilities, float coin) {
 }
 
 template <typename T>
+int32_t Sampler::sample_topk(T* probabilities, float coin) {
+  // top-k sampling samples from the k highest-probability tokens.
+  // coin is a random number in [0, 1), usually from random_f32().
+  //
+  // TODO: probindex is allocated on every call; lifting it to a member
+  // would avoid per-token heap allocation in autoregressive loops.
+  const int n = vocab_size_;
+  const int k = std::min(topk_, n);
+  // Defensive: callers gate on topk_ > 0, but a private helper should not
+  // rely on external invariants. Fall back to a deterministic index.
+  if (k <= 0) {
+    return 0;
+  }
+
+  std::unique_ptr<ProbIndex<T>[]> probindex =
+      std::make_unique<ProbIndex<T>[]>(n);
+  for (int i = 0; i < n; i++) {
+    probindex[i].index = i;
+    probindex[i].prob = probabilities[i];
+  }
+
+  auto compare = [](const ProbIndex<T>& a, const ProbIndex<T>& b) {
+    return a.prob > b.prob;
+  };
+  // Partial sort: only the top-k entries need to be sorted in descending order.
+  std::partial_sort(
+      probindex.get(), probindex.get() + k, probindex.get() + n, compare);
+
+  // Sum of the top-k probabilities. Used to scale `coin` instead of
+  // explicitly renormalizing the k probs — mathematically equivalent and
+  // saves k divisions. Accumulate in float so FP16/BF16 inputs don't lose
+  // precision over k summands.
+  float topk_sum = 0.0f;
+  for (int i = 0; i < k; i++) {
+    topk_sum += static_cast<float>(probindex[i].prob);
+  }
+
+  // Sample from the (implicitly renormalized) top-k distribution.
+  const float r = coin * topk_sum;
+  float cdf = 0.0f;
+  for (int i = 0; i < k; i++) {
+    cdf += static_cast<float>(probindex[i].prob);
+    if (r < cdf) {
+      return probindex[i].index;
+    }
+  }
+  return probindex[k - 1].index; // in case of rounding errors
+}
+
+template <typename T>
 int32_t Sampler::sample_topp(T* probabilities, float coin) {
   // top-p sampling (or "nucleus sampling") samples from the smallest set of
   // tokens that exceed probability topp. This way we never sample tokens that
@@ -186,7 +236,10 @@ int32_t Sampler::sample(T* logits) {
     // flip a (float) coin (this is our source of entropy for sampling)
     float coin = random_f32(&rng_state_);
     // we sample from this distribution to get the next token
-    if (topp_ <= 0 || topp_ >= 1) {
+    if (topk_ > 0 && topk_ < vocab_size_) {
+      // top-k sampling, restrict to the k most likely tokens
+      next = sample_topk(logits, coin);
+    } else if (topp_ <= 0 || topp_ >= 1) {
       // simply sample from the predicted probability distribution
       next = sample_mult(logits, coin);
     } else {

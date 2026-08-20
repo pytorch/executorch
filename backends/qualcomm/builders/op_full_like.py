@@ -25,8 +25,8 @@ class FullLike(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnManager.TensorWrapper],
     ) -> PyQnnManager.PyQnnOpWrapper:
-        in_tensor = node.args[0].meta["val"]
-        ref_tensor = torch.zeros(in_tensor.shape, dtype=in_tensor.dtype)
+        in_tensor = self.get_tensor(node, node)
+        ref_tensor = torch.zeros(list(in_tensor.shape), dtype=in_tensor.dtype)
         out_tensor = torch.full_like(ref_tensor, node.args[1])
 
         # since we can derive the constant value of current op in AoT stage

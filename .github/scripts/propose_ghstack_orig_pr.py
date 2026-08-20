@@ -52,12 +52,9 @@ def extract_stack_from_body(pr_body: str) -> List[int]:
     """
 
     prs = []
-    ghstack_begin = (
-        "Stack from [ghstack](https://github.com/ezyang/ghstack) (oldest at bottom):"
-    )
     ghstack_begin_seen = False
     for line in pr_body.splitlines():
-        if ghstack_begin in line:
+        if line.startswith("Stack from [ghstack]"):
             ghstack_begin_seen = True
         if not ghstack_begin_seen:
             continue

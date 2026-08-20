@@ -69,7 +69,7 @@ class FuseBatchNormWithLinearPass(PassBase):
             attr_itr = getattr(attr_itr, atom)
         return attr_itr
 
-    def call(self, graph_module: GraphModule) -> PassResult | None:
+    def call(self, graph_module: GraphModule) -> PassResult:
         def _is_batch_norm(node_: Node) -> bool:
             return (
                 node_.op == "call_function"
@@ -81,7 +81,7 @@ class FuseBatchNormWithLinearPass(PassBase):
                 node_.op == "call_function"
                 and node_.target == torch.ops.aten.linear.default
             )
-            has_single_user = len(node.users) == 1
+            has_single_user = len(node_.users) == 1
 
             return is_linear and has_single_user
 
@@ -177,7 +177,12 @@ class FuseBatchNormWithLinearPass(PassBase):
 
             # Replace the uses of the BatchNorm with the Linear.
             bn_node.replace_all_uses_with(linear_node)
+            graph_module.graph.erase_node(bn_node)
 
             made_changes = True
+
+        if made_changes:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
 
         return PassResult(graph_module, made_changes)

@@ -13,20 +13,18 @@ from typing import Callable, List
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.export_utils import (
+    build_executorch_binary,
+    QnnConfig,
+    setup_common_args_and_variables,
+    SimpleADB,
+)
 
 from executorch.examples.qualcomm.oss_scripts.efficientSAM.source_transformation import (
     replace_maskdecoder_with_custom_op,
     replace_pos_emb_with_custom_op,
 )
-from executorch.examples.qualcomm.utils import (
-    build_executorch_binary,
-    class_agnostic_mIoU,
-    get_backend_type,
-    make_output_dir,
-    parse_skip_delegation_node,
-    setup_common_args_and_variables,
-    SimpleADB,
-)
+from executorch.examples.qualcomm.utils import class_agnostic_mIoU, make_output_dir
 from PIL import Image, ImageDraw
 from scipy.ndimage import label
 from torch.utils.data import DataLoader, Dataset
@@ -211,7 +209,7 @@ def save_mask(mask, input, save_path):
 
 
 def main(args):
-    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+    qnn_config = QnnConfig.load_config(args.config_file if args.config_file else args)
 
     os.makedirs(args.artifact, exist_ok=True)
 
@@ -232,38 +230,22 @@ def main(args):
     pte_filename = "efficientSAM_qnn"
 
     # lower to QNN
-    backend = get_backend_type(args.backend)
     build_executorch_binary(
-        model,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
+        model=model,
+        qnn_config=qnn_config,
+        file_name=f"{args.artifact}/{pte_filename}",
         dataset=inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        backend=backend,
-        shared_buffer=args.shared_buffer,
-        online_prepare=args.online_prepare,
     )
-
-    if args.compile_only:
-        return
 
     workspace = f"/data/local/tmp/{getpass.getuser()}/executorch/{pte_filename}"
     pte_path = f"{args.artifact}/{pte_filename}.pte"
 
     adb = SimpleADB(
-        qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        build_path=f"{args.build_folder}",
+        qnn_config=qnn_config,
         pte_path=pte_path,
         workspace=workspace,
-        device_id=args.device,
-        host_id=args.host,
-        soc_model=args.model,
-        shared_buffer=args.shared_buffer,
-        target=args.target,
     )
-    adb.push(inputs=inputs, backends={backend})
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -336,7 +318,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

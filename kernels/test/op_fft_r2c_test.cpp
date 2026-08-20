@@ -9,6 +9,7 @@
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/kernels/test/supported_features_skip.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -131,10 +132,9 @@ TEST_F(OpFftR2cOutTest, MultipleDims) {
 }
 
 TEST_F(OpFftR2cOutTest, InvalidNorm) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen MKL path does not validate norm";
-    return;
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen MKL path does not validate norm");
   auto invalid_norm = [this](int64_t norm) {
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(norm);
   };
@@ -145,10 +145,9 @@ TEST_F(OpFftR2cOutTest, InvalidNorm) {
 }
 
 TEST_F(OpFftR2cOutTest, InvalidDim) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen fails UBSAN";
-    return;
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen fails UBSAN");
   auto negative_dim = [this]() {
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(0, -1);
     test_dtype<float, ScalarType::Float, /* expect_failure = */ true>(0, 3);
@@ -159,10 +158,9 @@ TEST_F(OpFftR2cOutTest, InvalidDim) {
 
 // TODO: support this and patch test accordingly!
 TEST_F(OpFftR2cOutTest, TwoSidedIsNotSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen supports two-sided";
-    return;
-  }
+  ET_SKIP_IF(
+      torch::executor::testing::SupportedFeatures::get()->is_aten,
+      "ATen supports two-sided");
   auto twosided = [this]() {
     test_dtype<double, ScalarType::Double, /* expect_failure = */ true>(
         0, 1, false);

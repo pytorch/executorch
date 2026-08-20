@@ -10,7 +10,9 @@ import executorch
 import executorch.backends.test.harness.stages as BaseStages
 
 import torch
-from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
 from executorch.backends.qualcomm.utils.utils import (
@@ -59,6 +61,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
         use_fp16: bool = True,
     ):
         backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
+        self.backend_type = backend_options.backend_type
         self.chipset = get_soc_to_chipset_map()[soc_model]
         self.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.chipset,
@@ -75,8 +78,9 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     def run(
         self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
     ) -> None:
-        ep = QnnPassManager().transform_for_export_pipeline(artifact)
-        transform_passes = QnnPassManager().get_to_edge_transform_passes(ep)
+        pass_manager = get_qnn_pass_manager_cls(self.backend_type)()
+        ep = pass_manager.transform_for_export_pipeline(artifact)
+        transform_passes = pass_manager.get_to_edge_transform_passes(ep)
 
         self.edge_dialect_program = to_edge_transform_and_lower(
             ep,

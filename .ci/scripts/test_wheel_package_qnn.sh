@@ -177,6 +177,9 @@ PY
   "$PIPBIN" install . --no-build-isolation
   popd > /dev/null
 
+  # Install qualcomm backend dependencies  
+  "$PIPBIN" install -r "$REPO_ROOT/backends/qualcomm/requirements.txt"
+
   echo "=== [$LABEL] Import smoke tests ==="
   "$PYBIN" -c "import executorch; print('executorch imported successfully')"
   "$PYBIN" -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"

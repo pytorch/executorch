@@ -1,57 +1,63 @@
 # Git Hooks
 
-This directory contains Git hooks for the ExecuTorch repository.
+This directory contains Git hooks for the ExecuTorch repository. It is used as
+`core.hooksPath`, so git looks here instead of `.git/hooks/`.
 
-## Pre-commit Hook
+## Hooks
 
-The pre-commit hook automatically updates the PyTorch commit pin in `.ci/docker/ci_commit_pins/pytorch.txt` whenever `torch_pin.py` is modified.
+### pre-commit
 
-### How It Works
+Runs on every commit:
 
-1. When you commit changes to `torch_pin.py`, the hook detects the change
-2. It parses the `NIGHTLY_VERSION` field (e.g., `dev20251004`)
-3. Converts it to a date string (e.g., `2025-10-04`)
-4. Fetches the corresponding commit hash from the PyTorch nightly branch at https://github.com/pytorch/pytorch/tree/nightly
-5. Updates `.ci/docker/ci_commit_pins/pytorch.txt` with the new commit hash
-6. Automatically stages the updated file for commit
+1. **torch_pin sync** — when `torch_pin.py` is staged, updates the PyTorch commit
+   pin in `.ci/docker/ci_commit_pins/pytorch.txt` and syncs grafted c10 files.
+2. **lintrunner** — runs `lintrunner -a --revision HEAD^ --skip MYPY` on changed
+   files. Auto-fixes formatting and blocks on lint errors. Soft-fails if lintrunner
+   is not installed. Runs `lintrunner init` automatically when `.lintrunner.toml`
+   changes.
 
-### Installation
+### pre-push
 
-To install the Git hooks, run:
+Delegates to `.git/hooks/pre-push` if one exists. This allows backend-specific
+pre-push hooks (e.g., ARM's license and commit message checks) to work alongside
+the repo-wide hooks.
+
+## Installation
+
+Hooks are installed automatically by `./install_executorch.sh`.
+
+To install manually:
 
 ```bash
-.githooks/install.sh
+git config core.hooksPath .githooks
 ```
 
-This will copy the pre-commit hook to `.git/hooks/` and make it executable.
+### ARM backend pre-push
 
-### Manual Usage
-
-You can also run the update script manually at any time:
+ARM contributors should additionally install the ARM-specific pre-push hook:
 
 ```bash
-python .github/scripts/update_pytorch_pin.py
+cp backends/arm/scripts/pre-push .git/hooks/
 ```
 
-### Uninstalling
+## Bypassing
 
-To remove the pre-commit hook:
+To skip hooks for a single commit or push:
 
 ```bash
-rm .git/hooks/pre-commit
+git commit --no-verify
+git push --no-verify
 ```
 
 ## Troubleshooting
 
-If the hook fails during a commit:
+If the torch_pin hook fails:
 
 1. Check that Python 3 is available in your PATH
 2. Ensure you have internet connectivity to fetch commits from GitHub
 3. Verify that the `NIGHTLY_VERSION` in `torch_pin.py` is in the correct format (`devYYYYMMDD`)
-4. Make sure the corresponding nightly release exists in the PyTorch nightly branch
 
-You can run the script manually to see detailed error messages:
+If lintrunner fails:
 
-```bash
-python .github/scripts/update_pytorch_pin.py
-```
+1. Run `lintrunner init` to install linter tools
+2. Check that your virtual environment is activated

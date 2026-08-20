@@ -11,13 +11,10 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
-from torch._subclasses.fake_tensor import FakeTensorMode
 
-
-def add_fake_tensor_to_node(padding_node, input_shape, padding_args, dtype):
-    fake_mode = FakeTensorMode()
-
+def add_fake_tensor_to_node(padding_node, input_shape, padding_args, dtype, fake_mode):
     with fake_mode:
         batch, channels, height, width = input_shape
         pad_left, pad_right, pad_top, pad_bottom = padding_args
@@ -113,6 +110,7 @@ class RecomposePadMaxPool2d(ExportPass):
                         input_node.meta["val"].shape,
                         padding,
                         input_node.meta["val"].dtype,
+                        input_node.meta["val"].fake_mode,
                     )
                     if quant_attrs:
                         padding_node.meta["quant_attrs"] = node.meta["quant_attrs"]
@@ -142,6 +140,5 @@ class RecomposePadMaxPool2d(ExportPass):
                         for user in node.users.copy():
                             user.replace_input_with(node, maxpool2d_node_tuple)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

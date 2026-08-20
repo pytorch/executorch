@@ -27,4 +27,68 @@ if git diff --cached --name-only | grep -q "^torch_pin.py$"; then
     fi
 fi
 
-exit 0
+# --- lintrunner ---
+
+if ! command -v lintrunner >/dev/null 2>&1; then
+    echo "Warning: lintrunner not found. Skipping lint checks."
+    echo "Install with: pip install lintrunner lintrunner-adapters && lintrunner init"
+    exit 0
+fi
+
+if [ ! -f .lintrunner.toml ]; then
+    echo "Warning: .lintrunner.toml not found. Skipping lint checks."
+    exit 0
+fi
+
+git_dir=$(git rev-parse --git-dir)
+
+# Portable hash: sha256sum (Linux) or shasum (macOS)
+if command -v sha256sum >/dev/null 2>&1; then
+    toml_hash=$(sha256sum .lintrunner.toml | cut -d' ' -f1)
+else
+    toml_hash=$(shasum -a 256 .lintrunner.toml | cut -d' ' -f1)
+fi
+stored_hash=""
+[ -f "${git_dir}/.lintrunner_init_hash" ] && stored_hash=$(cat "${git_dir}/.lintrunner_init_hash")
+
+if [ "${toml_hash}" != "${stored_hash}" ]; then
+    echo "Running lintrunner init..."
+    if lintrunner init; then
+        echo "${toml_hash}" > "${git_dir}/.lintrunner_init_hash"
+    else
+        echo "lintrunner init failed. Run 'lintrunner init' manually."
+        exit 1
+    fi
+fi
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# Use HEAD^ if it exists (skip on initial commit)
+revision_flag="--revision HEAD^"
+if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+    revision_flag=""
+fi
+
+lintrunner -a $revision_flag --skip MYPY
+lint_status=$?
+
+# Check if lintrunner modified any staged files. If so, block the commit
+# so the user can review the changes before committing.
+files_modified=0
+while IFS= read -r path; do
+    [ -z "${path}" ] && continue
+    if ! git diff --quiet -- "${path}" 2>/dev/null; then
+        files_modified=1
+        break
+    fi
+done <<< "${staged_files}"
+
+if [ $files_modified -eq 1 ]; then
+    echo "Lintrunner modified files. Review with 'git diff', then 'git add -u && git commit'."
+    exit 1
+fi
+
+if [ $lint_status -ne 0 ]; then
+    echo "Lint errors found. Fix them and try again, or use 'git commit --no-verify' to skip."
+    exit 1
+fi

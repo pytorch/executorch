@@ -151,6 +151,8 @@ constexpr const char* to_string(const Error error) {
       return "Error::RegistrationExceedingMaxKernels";
     case Error::RegistrationAlreadyRegistered:
       return "Error::RegistrationAlreadyRegistered";
+    default:
+      return "Error::Unknown";
   }
 }
 

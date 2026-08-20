@@ -4,7 +4,9 @@ ciflow_push_tags:
 - ciflow/android
 - ciflow/apple
 - ciflow/cuda
+- ciflow/cuda-perf
 - ciflow/metal
+- ciflow/mlx
 - ciflow/nightly
 - ciflow/trunk
 - ciflow/binaries

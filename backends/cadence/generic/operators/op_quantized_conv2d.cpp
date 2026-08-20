@@ -935,6 +935,7 @@ Tensor& quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     ET_UNUSED int64_t out_multiplier,
     ET_UNUSED int64_t out_shift,
+    ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   quantized_conv2d_nhwc(
       input,
@@ -949,6 +950,40 @@ Tensor& quantized_conv2d_nhwc_per_tensor_out(
       bias_scale,
       output_scale,
       output_zero_point,
+      out);
+  return out;
+}
+
+Tensor& quantized_conv2d_depthwise_nhwc_out(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    ET_UNUSED int64_t out_multiplier,
+    ET_UNUSED int64_t out_shift,
+    Tensor& out) {
+  quantized_conv2d_nhwc(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      static_cast<int16_t>(groups),
+      static_cast<int32_t>(in_zero_point),
+      static_cast<int32_t>(weight_zero_point),
+      static_cast<float>(bias_scale),
+      static_cast<float>(output_scale),
+      static_cast<int32_t>(output_zero_point),
       out);
   return out;
 }

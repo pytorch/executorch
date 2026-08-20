@@ -1,7 +1,7 @@
 ## Tutorial to run [eval_decoder_model_qnn.py](./eval_decoder_model_qnn.py)
 This script, [`eval_decoder_model_qnn.py`](./eval_decoder_model_qnn.py), is designed to evaluate large language models (LLMs) from transformers that have been compiled into ExecuTorch Portable Executable (PTE) format for execution on Qualcomm devices. It leverages the `lm-evaluation-harness` library to perform various NLP evaluation tasks.
 
-> ⚠️ **Important:** Note that this script runs PTE files generated specifically for Hugging Face Transformers, such as [qwen2_5.py](../qwen2_5/qwen2_5.py), rather than [the static LLaMA version](../llama/llama.py).
+> ⚠️ **Important:** Note that this script runs PTE files generated specifically for Hugging Face Transformers, such as [hf_causal_lm.py](../hf_causal_lm.py), rather than [the static LLaMA version](../llama/llama.py).
 
 ### Features:
 
@@ -32,7 +32,7 @@ The script evaluates the model by running the PTE file on a connected Qualcomm d
 *   `--tasks`: (Optional, default: `["wikitext"]`) A list of `lm-evaluation-harness` tasks to evaluate. You can specify multiple tasks separated by spaces (e.g., `--tasks wikitext piqa`).
 *   `--limit`: (Optional) Number of samples to evaluate per task. If not set, all samples will be evaluated.
 *   `--num_fewshot`: (Optional) Number of examples to use in few-shot context for evaluation.
-*   `--model`: (Required for QNN execution) The SoC model name (e.g., `SM8550`, `SM8650`).
+*   `--soc_model`: (Required for QNN execution) The SoC model name (e.g., `SM8550`, `SM8650`).
 *   `--device`: (Required for QNN execution) The ADB device ID.
 *   `--host`: (Required for QNN execution) The ADB host ID (usually `localhost`).
 *   `--build_folder`: (Optional, default: `build-android`) The build folder for ExecuTorch artifacts, relative to the current directory.
@@ -44,7 +44,7 @@ python examples/qualcomm/oss_scripts/llm_utils/eval_decoder_model_qnn.py \
     --artifact ./eval_output \
     --tokenizer_path /path/to/your/tokenizer.model \
     --pte /path/to/your/model.pte \
-    --model SM8550 \
+    --soc_model SM8550 \
     --device YOUR_DEVICE_ID \
     --host localhost \
     --tasks wikitext \
@@ -62,7 +62,7 @@ python examples/qualcomm/oss_scripts/llm_utils/eval_decoder_model_qnn.py \
     --tokenizer_path /path/to/your/tokenizer.model \
     --pte /path/to/your/model.pte \
     --logits_quant_attr_path /path/to/your/logits_quant_attrs.json \
-    --model SM8550 \
+    --soc_model SM8550 \
     --device YOUR_DEVICE_ID \
     --host localhost \
     --tasks wikitext \

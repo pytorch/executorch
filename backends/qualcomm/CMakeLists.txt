@@ -77,28 +77,49 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
+if(MSVC)
+  add_compile_options("/wd4996")
+else()
+  add_compile_options("-Wall" "-Werror" "-fvisibility=hidden")
+endif()
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
-# GNU emit wanring for ignored attributes Unfortunately, we use [[maybe_unused]]
-# which can be ignored by GNU. So we make it a warning, not an error in GNU.
+# GNU emits warning for ignored attributes Unfortunately, we use
+# [[maybe_unused]] which can be ignored by GNU. So we make it a warning, not an
+# error in GNU.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options("-Wno-error=attributes")
   add_link_options("-flto=auto")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-  # strip symbols
-  add_link_options("-s")
-
-  # --gc-sections is added by torch.
-  add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
+  if(MSVC)
+    add_compile_options("/O2")
+  else()
+    # strip symbols
+    add_link_options(LINKER:-s,--gc-sections)
+    if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
+      add_compile_options(
+        "-Os"
+        "-ffunction-sections"
+        "-fdata-sections"
+        "-frtti"
+        "-fno-exceptions"
+        "-fomit-frame-pointer"
+        "-fno-asynchronous-unwind-tables"
+      )
+    else()
+      add_compile_options(
+        "-O3" "-ffunction-sections" "-fdata-sections" "-frtti"
+      )
+    endif()
+  endif()
 endif()
 
 include_directories(
   BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
-  ${QNN_SDK_ROOT}/share/QNN/converter/jni
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
+  ${QNN_EXECUTORCH_ROOT_DIR}/runtime/pal/include
 )
 
 set(_qnn_schema__srcs backends/qualcomm/serialization/qc_compiler_spec.fbs)
@@ -155,6 +176,7 @@ add_library(qnn_logger STATIC)
 add_library(qnn_manager STATIC)
 add_library(qnn_mem_manager STATIC)
 add_library(qnn_op_package_manager STATIC)
+add_library(qnn_pal STATIC)
 add_library(qnn_profiler STATIC)
 add_library(qnn_schema INTERFACE ${_qnn_schema__outputs})
 add_library(qnn_sys_function_interface INTERFACE)
@@ -168,11 +190,12 @@ add_library(wrappers STATIC)
 target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
   qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging
-                             ${CMAKE_DL_LIBS}
+                             qnn_pal ${CMAKE_DL_LIBS}
 )
 target_link_libraries(
-  qnn_sys_implementation PRIVATE qnn_sys_function_interface
-                                 qnn_executorch_logging ${CMAKE_DL_LIBS}
+  qnn_sys_implementation
+  PRIVATE qnn_sys_function_interface qnn_executorch_logging qnn_pal
+          ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_executorch_logging PRIVATE qnn_schema)
 target_link_libraries(qnn_profiler PRIVATE qnn_executorch_logging)
@@ -223,6 +246,7 @@ target_link_libraries(
           qnn_context
           qnn_graph
           qnn_mem_manager
+          qnn_pal
 )
 
 target_link_libraries(
@@ -230,41 +254,61 @@ target_link_libraries(
                       qnn_schema shared_buffer qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend
-  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
-          extension_tensor qnn_backend_options
+  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
+                                 executorch_core qnn_backend_options
 )
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
   # Add macro here so we can dlopen the correct .so library.
-  if(DSP_TYPE STREQUAL "3")
-    string(TOUPPER ${DSP_VERSION} CAPITAL_DSP_VERSION)
-    set(HEXAGON_LIB "libQnnHtp${CAPITAL_DSP_VERSION}.so")
+  if(DSP_TYPE STREQUAL "0")
+    message(
+      STATUS
+        "aDSP direct and non-direct mode uses shared libraries under different folders but have the same name, skipping HEXAGON_LIB override."
+    )
+    # Just random string here since QnnBackendUnifiedRegistry.h will ignore this
+    # macro for aDSP case.
+    add_compile_definitions(HEXAGON_LIB="")
+  elseif(DSP_TYPE STREQUAL "3")
+    string(TOUPPER ${CDSP_VERSION} CAPITAL_CDSP_VERSION)
+    set(HEXAGON_LIB "libQnnHtp${CAPITAL_CDSP_VERSION}.so")
     add_compile_definitions(HEXAGON_LIB="${HEXAGON_LIB}")
     message(STATUS "For hexagon build, using HTP Library: ${HEXAGON_LIB}")
   else()
     message(FATAL_ERROR "Unknown DSP_TYPE ${DSP_TYPE}")
   endif()
 
+  # aDSP will also use cDSP c/c++ library since aDSP does not have these
+  # libraries.
   target_link_libraries(
     qnn_executorch_backend
     PRIVATE
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc.so
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++.so.1
-      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${DSP_VERSION}/G0/pic/libc++abi.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc.so
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++.so.1
+      ${HEXAGON_TOOLS_ROOT}/Tools/target/hexagon/lib/${CDSP_VERSION}/G0/pic/libc++abi.so.1
   )
 endif()
 
-set_target_properties(
-  qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
-)
+if(MSVC)
+  target_compile_definitions(
+    qnn_executorch_backend PRIVATE QNN_EXECUTORCH_BUILDING_DLL
+  )
+  set_target_properties(
+    qnn_executorch_backend PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
+  )
+else()
+  set_target_properties(
+    qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  )
+endif()
 target_link_libraries(
-  shared_buffer PRIVATE qnn_executorch_logging ${CMAKE_DL_LIBS}
+  shared_buffer PRIVATE qnn_executorch_logging qnn_pal ${CMAKE_DL_LIBS}
 )
 #
 # add linker option
 #
-executorch_target_link_options_shared_lib(qnn_executorch_backend)
+if(NOT MSVC)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
+endif()
 
 #
 # add sources
@@ -296,7 +340,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
 endif()
 
 # QNN pybind
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64")
   add_subdirectory(
     ${EXECUTORCH_SOURCE_DIR}/third-party/pybind11
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11
@@ -330,9 +374,13 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
 
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     # need to allow exceptions in pybind
-    set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
-                                -fexceptions
-    )
+    if(MSVC)
+      set(_pybind_compile_options /wd4996 /EHsc)
+    else()
+      set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                                  -fexceptions
+      )
+    endif()
     target_compile_options(
       PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
     )

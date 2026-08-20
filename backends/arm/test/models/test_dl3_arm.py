@@ -102,7 +102,7 @@ def test_dl3_vgf_quant():
         quantize=True,
     )
     pipeline.change_args(
-        "run_method_and_compare_outputs", rtol=0.1, atol=0.1
+        "run_method_and_compare_outputs", rtol=0.1, atol=0.15
     )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 

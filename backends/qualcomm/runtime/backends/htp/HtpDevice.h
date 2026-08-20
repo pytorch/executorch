@@ -56,7 +56,9 @@ class HtpDevice : public QnnDevice {
   void ReleasePerformanceVote();
 
   inline bool IsPerfModeEnabled() {
-    return get_option(htp_options_->performance_mode()) !=
+    return get_option(
+               htp_options_->performance_mode(),
+               QNN_RUNTIME_HTP_PERFORMANCE_MODE) !=
         QnnExecuTorchHtpPerformanceMode::kHtpDefault;
   }
 

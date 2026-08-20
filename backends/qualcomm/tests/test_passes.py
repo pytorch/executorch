@@ -1,25 +1,217 @@
 import unittest
+from unittest.mock import MagicMock
 
 import torch
 from executorch.backends.qualcomm._passes import (
+    AnnotateQuantAttrs,
     ConvertBmmToMatmul,
     ConvertMhaToSha,
+    ExpandBroadcastTensorShape,
+    FoldQDQ,
+    InsertIOQDQ,
     InsertReshapeForReduceOps,
     RemoveRedundancy,
 )
-from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
-from executorch.backends.qualcomm.tests.models import TopKandIndex
+from executorch.backends.qualcomm._passes.qnn_pass_manager import (
+    get_qnn_pass_manager_cls,
+)
+from executorch.backends.qualcomm.builders.op_custom_op import (
+    _resolve_qnn_data_type,
+    CustomOp,
+)
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnOperatorSupport
+from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchOpPackageInfo,
+)
+from executorch.backends.qualcomm.tests.models import (
+    BroadcastAndMutate,
+    HardSigmoid,
+    Reciprocal,
+    TopKandIndex,
+)
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.exir import to_edge
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.debug_handle_utils import DEBUG_HANDLE_KEY
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export.exported_program import OutputKind
+from torch.library import Library
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestPasses(unittest.TestCase):
+    def _build_context_loader_edge_program(self, op_name, check_ir_validity=True):
+        graph_name = "forward"
+        custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
+        self.addCleanup(custom_op._destroy)
+        custom_op.define(f"{op_name}(Tensor[] inputs) -> Any")
+
+        @torch.library.impl(
+            custom_op, op_name, dispatch_key="CompositeExplicitAutograd"
+        )
+        def op_impl(inputs):
+            return (torch.zeros((1, 2), device="meta", dtype=inputs[0].dtype),)
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return getattr(
+                    getattr(torch.ops, OpContextLoader.namespace), op_name
+                ).default((x,))
+
+        exported_program = torch.export.export(
+            Model(), (torch.ones(1, 2),), strict=True
+        )
+        compile_config = (
+            None if check_ir_validity else EdgeCompileConfig(_check_ir_validity=False)
+        )
+        edge_program_manager = to_edge(
+            {graph_name: exported_program},
+            compile_config=compile_config,
+        )
+        edge_program = edge_program_manager._edge_programs[graph_name]
+        context_loader_nodes = [
+            node
+            for node in edge_program.graph.nodes
+            if node.op == "call_function"
+            and OpContextLoader.namespace in str(node.target)
+        ]
+        return edge_program, context_loader_nodes
+
+    def test_context_loader_edge_op_is_delegated(self):
+        op_name = "ctx_loader_delegation"
+        ctx_bin = b"qnn_context_binary"
+        _, context_loader_nodes = self._build_context_loader_edge_program(
+            op_name, check_ir_validity=False
+        )
+        self.assertEqual(1, len(context_loader_nodes))
+        context_loader_nodes[0].meta[OpContextLoader.meta_ctx_bin] = ctx_bin
+
+        # A fully constructed QnnOperatorSupport needs a live QNN manager, so
+        # drive is_node_supported with a mock self: the context-loader node is
+        # force-passed without touching instance state beyond the log label.
+        support = MagicMock()
+        support.phase = "QnnPartitioner"
+        self.assertTrue(
+            QnnOperatorSupport.is_node_supported(support, None, context_loader_nodes[0])
+        )
+
+    def test_build_op_wrappers_returns_context_binary(self):
+        op_name = "ctx_loader_build"
+        ctx_bin = b"qnn_context_binary"
+        edge_program, context_loader_nodes = self._build_context_loader_edge_program(
+            op_name, check_ir_validity=False
+        )
+        for node in context_loader_nodes:
+            node.meta[OpContextLoader.meta_ctx_bin] = ctx_bin
+
+        # For a graph whose only op is the context-binary loader, _build_op_wrappers
+        # returns the stamped context binary directly, before any QNN compilation.
+        result = QnnBackend._build_op_wrappers(
+            edge_program,
+            enable_tensor_dump=False,
+            op_package_infos=[],
+            use_mha2sha=False,
+            backend_type=QnnExecuTorchBackendType.kHtpBackend,
+        )
+        self.assertEqual(ctx_bin, result)
+
+    def test_context_loader_op_lowers_with_ir_validation(self):
+        op_name = "ctx_loader_validation"
+
+        # from_context_binary lowers with IR validity checks enabled (the
+        # default). The context-loader custom op survives the edge verifier
+        # because its namespace is not aten, so no validation is disabled and
+        # the loader node is still present for downstream stamping.
+        _, context_loader_nodes = self._build_context_loader_edge_program(
+            op_name, check_ir_validity=True
+        )
+        self.assertEqual(1, len(context_loader_nodes))
+
+    def _build_quantized_graph(self):
+        """Build a quantized graph through AnnotateQuantAttrs + FoldQDQ."""
+
+        class AddModule(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        module = AddModule().eval()
+        sample_input = (torch.randn(1, 4),)
+
+        exported = torch.export.export(module, sample_input, strict=True).module()
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+        prepared = prepare_pt2e(exported, quantizer)
+        prepared(*sample_input)
+        qdq_module = convert_pt2e(prepared)
+
+        edge_program = to_edge(
+            torch.export.export(qdq_module, sample_input, strict=True)
+        )
+        ep = edge_program.exported_program()
+        gm = ep.graph_module
+
+        gm = AnnotateQuantAttrs(ep)(gm).graph_module
+        gm = FoldQDQ(ep)(gm).graph_module
+        return gm, ep
+
+    def test_insert_io_qdq_handles_dequant_encoding(self):
+        """InsertIOQDQ should not KeyError when a node with a dequantize
+        encoding feeds the output node (e.g. pre-quantized LLM parameters)."""
+        gm, ep = self._build_quantized_graph()
+
+        # Wire b__frozen_param0 (which has dequantize encoding) to output,
+        # simulating the LLM topology from github issue #17732.
+        param_node = None
+        output_node = None
+        for n in gm.graph.nodes:
+            if n.name == "b__frozen_param0":
+                param_node = n
+            if n.op == "output":
+                output_node = n
+
+        self.assertIsNotNone(param_node)
+        old_args = output_node.args[0]
+        output_node.args = (
+            ((old_args,) if not isinstance(old_args, tuple) else old_args)
+            + (param_node,),
+        )
+        gm.graph.lint()
+        gm.recompile()
+
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+
+        dq_nodes = [
+            n
+            for n in gm.graph.nodes
+            if n.op == "call_function"
+            and hasattr(n.target, "__name__")
+            and "dequantize" in n.target.__name__
+            and any(u.op == "output" for u in n.users.keys())
+        ]
+        self.assertGreaterEqual(len(dq_nodes), 1)
+
+    def test_insert_io_qdq_no_revisit(self):
+        """InsertIOQDQ must not revisit newly inserted nodes."""
+        gm, ep = self._build_quantized_graph()
+
+        node_count_before = len(list(gm.graph.nodes))
+        pass_instance = InsertIOQDQ(ep)
+        pass_instance._insert(gm)
+        node_count_after = len(list(gm.graph.nodes))
+
+        # AddModule with one input and one output should insert exactly
+        # one quantize (input) and one dequantize (output) = +2 nodes.
+        self.assertEqual(node_count_after, node_count_before + 2)
+
     def test_insert_reshape_for_argmax(self):
         class ArgmaxModule(torch.nn.Module):
             def forward(self, x):
@@ -211,6 +403,397 @@ class TestPasses(unittest.TestCase):
             0,
             f"Following nodes did not find a match in the graph: {name_handle_map.keys()}",
         )
+
+    def test_decompose_reciprocal_backend_aware(self):
+        sample_input = (torch.tensor([2.0]),)
+        target = torch.ops.aten.reciprocal.default
+        decomposed_backends = (
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kGpuBackend,
+            QnnExecuTorchBackendType.kLpaiBackend,
+        )
+        preserved_backends = (QnnExecuTorchBackendType.kUndefinedBackend,)
+
+        for backend, should_decompose in [
+            *[(b, True) for b in decomposed_backends],
+            *[(b, False) for b in preserved_backends],
+        ]:
+            # The annotation pipeline is skipped for the GPU backend, as it does not support quantized data types
+            pipelines = (
+                ("export",)
+                if backend == QnnExecuTorchBackendType.kGpuBackend
+                else ("annotation", "export")
+            )
+            for pipeline in pipelines:
+                with self.subTest(backend=backend, pipeline=pipeline):
+                    ep = torch.export.export(Reciprocal(), sample_input, strict=True)
+                    pm = get_qnn_pass_manager_cls(backend)()
+                    if pipeline == "annotation":
+                        pm.transform_for_annotation_pipeline(ep.graph_module)
+                    else:
+                        pm.transform_for_export_pipeline(ep)
+                    has_target = any(
+                        n.target == target for n in ep.graph_module.graph.nodes
+                    )
+                    self.assertNotEqual(
+                        has_target,
+                        should_decompose,
+                        f"reciprocal {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
+                    )
+
+    def test_decompose_hardsigmoid_backend_aware(self):
+        sample_input = (torch.tensor([2.0]),)
+        target = torch.ops.aten.hardsigmoid.default
+        decomposed_backends = (QnnExecuTorchBackendType.kLpaiBackend,)
+        preserved_backends = (
+            QnnExecuTorchBackendType.kGpuBackend,
+            QnnExecuTorchBackendType.kHtpBackend,
+            QnnExecuTorchBackendType.kUndefinedBackend,
+        )
+
+        for backend, should_decompose in [
+            *[(b, True) for b in decomposed_backends],
+            *[(b, False) for b in preserved_backends],
+        ]:
+            # The annotation pipeline is skipped for the GPU backend, as it does not support quantized data types
+            pipelines = (
+                ("export",)
+                if backend == QnnExecuTorchBackendType.kGpuBackend
+                else ("annotation", "export")
+            )
+            for pipeline in pipelines:
+                with self.subTest(backend=backend, pipeline=pipeline):
+                    ep = torch.export.export(HardSigmoid(), sample_input, strict=True)
+                    pm = get_qnn_pass_manager_cls(backend)()
+                    if pipeline == "annotation":
+                        pm.transform_for_annotation_pipeline(ep.graph_module)
+                    else:
+                        pm.transform_for_export_pipeline(ep)
+                    has_target = any(
+                        n.target == target for n in ep.graph_module.graph.nodes
+                    )
+                    self.assertNotEqual(
+                        has_target,
+                        should_decompose,
+                        f"hardsigmoid {'should' if should_decompose else 'should NOT'} be decomposed for {backend.name}",
+                    )
+
+    def test_partitioner_falls_back_on_op_without_visitor(self):
+        """QnnOperatorSupport must reject an op that has no node visitor by returning
+        False (CPU fallback), not by KeyError-ing on the node_visitors lookup.
+
+        Uses aten.frac.default: it has no QNN node visitor and is not on any partition
+        operator list, so it exercises the missing-visitor guard directly. (bitwise_not,
+        the op that first surfaced this on Mamba2, is now in to_be_implemented_operator,
+        which returns earlier and would not reach the guard.)
+        """
+
+        class FracModule(torch.nn.Module):
+            def forward(self, x):
+                return torch.frac(x) + x
+
+        sample_input = (torch.randn(1, 4),)
+
+        # Guard against a vacuous test: the visitor-less op must actually be present.
+        exported = torch.export.export(FracModule().eval(), sample_input)
+        self.assertTrue(
+            any(
+                node.op == "call_function" and "frac" in str(node.target)
+                for node in exported.graph.nodes
+            ),
+            "expected aten.frac.default in the traced graph",
+        )
+
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            # Must not raise KeyError: frac falls back to CPU; the rest may delegate.
+            edge = to_edge_transform_and_lower_to_qnn(
+                FracModule().eval(), sample_input, compiler_specs
+            )
+            edge.to_executorch()
+        except RuntimeError as e:
+            if "QNN" in str(e) or "qnn" in str(e):
+                self.skipTest(f"QNN SDK not available: {e}")
+
+    def test_index_put_int64_value_not_quantized(self):
+        """QNN's IndexPut annotator must skip a non-float (int64) value arg.
+
+        Regression for MoE (Mixtral) routing, where index_put's value is an int64
+        arange: annotating it makes quantize_per_tensor assert a float input, so
+        to_executorch() fails. Only float tensors may be annotated.
+        Exercised on both the HTP and LPAI annotators, which share the guard.
+        """
+
+        class IndexPutInt64Value(torch.nn.Module):
+            def forward(self, x):
+                buf = torch.zeros(4, dtype=torch.long)
+                idx = torch.arange(
+                    4, dtype=torch.int64
+                )  # int64 value written by index_put
+                buf = buf.index_put((torch.tensor([0, 1, 2, 3]),), idx)
+                return x + buf.to(torch.float32)
+
+        module = IndexPutInt64Value().eval()
+        sample_input = (torch.randn(4),)
+
+        def run_backend(backend):
+            quantizer = QnnQuantizer(backend=backend)
+            quantizer.set_default_quant_config(quant_dtype=QuantDtype.use_8a8w)
+            gm = (
+                torch.export.export(module, sample_input)
+                .run_decompositions({})
+                .module()
+            )
+            prepared = prepare_pt2e(gm, quantizer)
+            prepared(*sample_input)
+            converted = convert_pt2e(prepared)
+            # Re-export runs the quantize_per_tensor meta kernel; before the dtype
+            # guard this raised "Expecting input to have dtype torch.float32" on the
+            # int64 value.
+            torch.export.export(converted, sample_input)
+
+        # HTP is the core QNN quantizer backend; a failure here is a real regression,
+        # not something to swallow. LPAI additionally needs quantized_aot_lib, so only
+        # that missing optional dependency is allowed to skip the LPAI leg.
+        run_backend(QnnExecuTorchBackendType.kHtpBackend)
+        try:
+            run_backend(QnnExecuTorchBackendType.kLpaiBackend)
+        except Exception as e:
+            if "quantized_aot_lib" in str(e):
+                self.skipTest(f"LPAI quantizer unavailable: {e}")
+            raise
+
+    def test_expand_broadcast_preserves_rank0_input_mutation(self):
+        """A rank-0 user input that is BOTH broadcast (needs rank promotion) AND mutated in
+        place must keep its USER_INPUT_MUTATION write-back on the rank-0 value.
+
+        Regression for the all-users rewrite: it redirected *every* consumer of the operand to
+        the promoted (1,) view, including the in-place mutation, so the write-back became
+        copy_(dst=(), src=(1,)) and to_executorch() failed with "expand: too few dimensions".
+        Asserts the broadcast consumes the promoted view while the mutation path stays rank-0.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        broadcast = [
+            n for n in gm.graph.nodes if n.target == add and n.meta["val"].dim() == 1
+        ]
+        self.assertTrue(broadcast)
+        self.assertTrue(
+            any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for n in broadcast
+                for a in n.args
+            ),
+            "the broadcast operand should be rank-promoted to a view_copy",
+        )
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        checked = 0
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                checked += 1
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "rank promotion leaked into the USER_INPUT_MUTATION write-back path",
+                )
+        self.assertEqual(
+            checked,
+            len(mutated),
+            "did not find every mutation-output node in the graph",
+        )
+
+    def test_expand_broadcast_promotes_per_consumer(self):
+        """One tensor feeding two broadcasts of different output rank must be promoted
+        independently per broadcast node, not shared. The all-users rewrite reshaped the
+        operand once (to the first broadcast's rank) and redirected the second broadcast too,
+        mis-shaping it."""
+        add = exir_ops.edge.aten.add.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoBroadcasts(torch.nn.Module):
+            def forward(self, a2d, a1d, b):
+                return (
+                    a2d + b,
+                    a1d + b,
+                )  # b:(4,) -> rank-2 needs a view; rank-1 does not
+
+        exported = torch.export.export(
+            TwoBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        for node in gm.graph.nodes:
+            if node.target != add:
+                continue
+            has_view = any(
+                isinstance(a, torch.fx.Node) and a.target == view_copy
+                for a in node.args
+            )
+            if node.meta["val"].dim() == 2:
+                self.assertTrue(has_view, "rank-2 broadcast operand should be promoted")
+            if node.meta["val"].dim() == 1:
+                self.assertFalse(
+                    has_view, "rank-1 broadcast operand should not be promoted"
+                )
+
+    def test_expand_broadcast_dedupes_shared_same_rank(self):
+        """One operand feeding two broadcasts of the SAME output rank must be promoted with a
+        single shared view_copy, not one per broadcast node.
+
+        Regression for the per-node redirect (PR #21583): redirecting only the current node's
+        input fixed the rank-0 mutation bug but created a separate view_copy for every broadcast
+        consumer, so `a2d + b, a2d - b` (b:(4,)) produced two identical (1,4) reshapes. Deduping
+        by (operand, new_rank) collapses them to one while keeping the rank-0 mutation path (whose
+        operand is never rank-promoted) at rank-0 -- so this coexists with
+        test_expand_broadcast_preserves_rank0_input_mutation.
+        """
+        add = exir_ops.edge.aten.add.Tensor
+        sub = exir_ops.edge.aten.sub.Tensor
+        view_copy = exir_ops.edge.aten.view_copy.default
+
+        class TwoSameRankBroadcasts(torch.nn.Module):
+            def forward(self, a2d, b):
+                return a2d + b, a2d - b  # b:(4,) promoted to (1,4) for both
+
+        exported = torch.export.export(
+            TwoSameRankBroadcasts().eval(),
+            (torch.randn(3, 4), torch.randn(4)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        views = [n for n in gm.graph.nodes if n.target == view_copy]
+        self.assertEqual(
+            len(views), 1, "the shared operand should yield exactly one view_copy"
+        )
+        shared = views[0]
+        for target in (add, sub):
+            broadcast = [n for n in gm.graph.nodes if n.target == target]
+            self.assertTrue(broadcast)
+            self.assertTrue(
+                all(shared in n.args for n in broadcast),
+                "both same-rank broadcasts should consume the shared view_copy",
+            )
+
+        exported = torch.export.export(
+            BroadcastAndMutate().eval(),
+            (torch.randn(1, 4), torch.tensor(0)),
+            strict=True,
+        )
+        ep = to_edge(exported).exported_program()
+        gm = ExpandBroadcastTensorShape()(ep.graph_module).graph_module
+
+        mutated = {
+            spec.arg.name
+            for spec in ep.graph_signature.output_specs
+            if spec.kind == OutputKind.USER_INPUT_MUTATION
+        }
+        self.assertTrue(mutated)
+        for node in gm.graph.nodes:
+            if node.name in mutated:
+                self.assertFalse(
+                    any(
+                        isinstance(a, torch.fx.Node) and a.target == view_copy
+                        for a in node.args
+                    ),
+                    "dedupe must not rank-promote the USER_INPUT_MUTATION write-back",
+                )
+
+    def _custom_op_node(self, arg, arg_name):
+        """A CustomOp builder plus a single-arg node, driven through define_node so
+        the branch dispatch is exercised rather than the type helper in isolation.
+        Branch order matters: str must be matched before Iterable, since str is
+        itself Iterable and would otherwise take the tensor-param path."""
+
+        class _Arg:
+            name = arg_name
+
+        class _Schema:
+            arguments = [_Arg()]
+
+        class _Target:
+            _schema = _Schema()
+
+        node = MagicMock()
+        node.name = "my_ops_foo_default"
+        node.target = _Target()
+        node.args = (arg,)
+
+        info = QnnExecuTorchOpPackageInfo()
+        info.custom_op_name = "my_ops.foo.default"
+        info.op_package_name = "FooOpPackage"
+        info.qnn_op_type_name = "Foo"
+        return CustomOp(info, {}, None, False, True), node
+
+    def test_custom_op_rejects_str_arg(self):
+        """A str custom-op arg must name the argument and the missing binding.
+
+        str is Iterable, so before the guard it reached the tensor-param branch and
+        died on QNN_TENSOR_TYPE_MAP[type(arg[0])] with a bare KeyError. Strings are
+        not a QNN limitation: QNN_DATATYPE_STRING exists and PyQnnManagerAdaptor.cpp
+        already reads it; only AddScalarParam has no case for it.
+        """
+        builder, node = self._custom_op_node("bilinear", "soft_nms_method")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        message = str(ctx.exception)
+        self.assertIn("soft_nms_method", message)
+        self.assertIn("my_ops.foo.default", message)
+        self.assertIn("QNN_DATATYPE_STRING", message)
+        # A str must not be reported as a tensor param element type.
+        self.assertNotIn("element type", message)
+
+    def test_custom_op_rejects_unmapped_element_type(self):
+        """A list whose element type has no QNN mapping -- str[] among them -- must
+        report the element type rather than KeyError."""
+        builder, node = self._custom_op_node(["linear", "gaussian"], "modes")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        self.assertIn("element type", str(ctx.exception))
+        self.assertIn("modes", str(ctx.exception))
+
+    def test_custom_op_rejects_empty_sequence(self):
+        """An empty sequence arg used to IndexError on arg[0] inside define_node."""
+        builder, node = self._custom_op_node([], "sizes")
+        with self.assertRaises(ValueError) as ctx:
+            builder.define_node(node, {})
+        self.assertIn("sizes", str(ctx.exception))
+        self.assertIn("empty", str(ctx.exception))
+
+    def test_custom_op_resolves_supported_types(self):
+        """Guard against a vacuous suite: the mapped scalar types still resolve.
+
+        Checked at the helper rather than through define_node, because a valid arg
+        carries on into output-tensor handling, which needs real tensor meta.
+        """
+        for py_type in (int, float, bool):
+            self.assertIsNotNone(
+                _resolve_qnn_data_type(py_type, "arg", "my_ops.foo.default")
+            )
 
 
 if __name__ == "__main__":

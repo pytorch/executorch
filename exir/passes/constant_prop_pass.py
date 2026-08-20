@@ -11,6 +11,7 @@ from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
 import torch
+from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.operator.util import _QUANT_PRIMITIVES
@@ -141,7 +142,11 @@ def get_propagated_const_tensor_dict(
         all_skip_targets = _DEFAULT_SKIP_TARGETS
 
     for node in exported_program.graph.nodes:
-        if node.op != "call_function" or node.target in all_skip_targets:
+        if (
+            node.op != "call_function"
+            or node.target is memory.alloc
+            or node.target in all_skip_targets
+        ):
             continue
 
         if not is_const(

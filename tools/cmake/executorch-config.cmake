@@ -28,6 +28,11 @@ cmake_minimum_required(VERSION 3.24)
 include(CMakeFindDependencyMacro)
 find_package(tokenizers CONFIG)
 
+# Load dependencies published by enabled backend targets.
+include("${CMAKE_CURRENT_LIST_DIR}/executorch-backend-dependencies.cmake"
+        OPTIONAL
+)
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(required_lib_list executorch executorch_core portable_kernels)
 set(EXECUTORCH_LIBRARIES)
@@ -63,6 +68,8 @@ set(optional_lib_list
     coreml_inmemoryfs
     coremldelegate
     mpsdelegate
+    mlxdelegate
+    mlx
     metal_backend
     neuron_backend
     qnn_executorch_backend
@@ -118,3 +125,55 @@ set_property(
   TARGET executorch_core PROPERTY INTERFACE_LINK_LIBRARIES
                                   ${FIXED_EXECUTORCH_CORE_LINK_LIBRARIES}
 )
+
+# Expose MLX library and metallib path for downstream consumers
+if(TARGET mlxdelegate)
+  # Create imported target for mlx library if not already defined (mlx is built
+  # by MLX's CMake but we need to expose it for linking)
+  if(NOT TARGET mlx)
+    find_library(
+      _mlx_library mlx
+      HINTS "${_root}/lib"
+      CMAKE_FIND_ROOT_PATH_BOTH
+    )
+    if(_mlx_library)
+      add_library(mlx STATIC IMPORTED)
+      set_target_properties(mlx PROPERTIES IMPORTED_LOCATION "${_mlx_library}")
+      # libmlx.a is a static archive with no transitive link deps, so re-add the
+      # frameworks MLX links PUBLIC (mirrors
+      # third-party/mlx/CMakeLists.txt:209). Must match the in-tree imported
+      # target in backends/mlx/CMakeLists.txt.
+      if(APPLE)
+        find_library(METAL_FRAMEWORK Metal)
+        find_library(FOUNDATION_FRAMEWORK Foundation)
+        find_library(QUARTZ_FRAMEWORK QuartzCore)
+        if(METAL_FRAMEWORK
+           AND FOUNDATION_FRAMEWORK
+           AND QUARTZ_FRAMEWORK
+        )
+          set_target_properties(
+            mlx
+            PROPERTIES
+              INTERFACE_LINK_LIBRARIES
+              "${METAL_FRAMEWORK};${FOUNDATION_FRAMEWORK};${QUARTZ_FRAMEWORK}"
+          )
+        endif()
+      endif()
+      message(STATUS "Found mlx library at: ${_mlx_library}")
+    endif()
+  endif()
+
+  # Find metallib for runtime distribution
+  find_file(
+    _mlx_metallib mlx.metallib
+    HINTS "${_root}/lib"
+    CMAKE_FIND_ROOT_PATH_BOTH
+  )
+  if(_mlx_metallib)
+    set(MLX_METALLIB_PATH
+        "${_mlx_metallib}"
+        CACHE FILEPATH "Path to mlx.metallib for runtime distribution"
+    )
+    message(STATUS "Found mlx.metallib at: ${MLX_METALLIB_PATH}")
+  endif()
+endif()

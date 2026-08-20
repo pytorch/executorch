@@ -1,13 +1,14 @@
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
 import os
+import shutil
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from executorch.backends.test.harness import Tester
 from executorch.backends.test.harness.stages import Quantize
@@ -44,11 +45,38 @@ class TestFlow:
     skip_patterns: list[str] = field(default_factory=lambda: [])
     """ Tests with names containing any substrings in this list are skipped. """
 
+    xfail_patterns: list[str] = field(default_factory=lambda: [])
+    """ Tests with names containing any substrings in this list are expected to fail.
+    They still run, so the report keeps recording how they fail; the marker is strict,
+    so one that starts passing is reported rather than silently ignored. """
+
+    param_skip_reasons: dict[str, dict[Any, str]] = field(default_factory=dict)
+    """ Skip tests with a given reason when a pytest parameter matches a given value."""
+
     supports_serialize: bool = True
     """ True if the test flow supports the Serialize stage. """
 
-    def should_skip_test(self, test_name: str) -> bool:
-        return any(pattern in test_name for pattern in self.skip_patterns)
+    def should_skip_test(
+        self, test_name: str, params: dict[str, Any] | None = None
+    ) -> tuple[bool, str]:
+        if any(pattern in test_name for pattern in self.skip_patterns):
+            return True, f"Skipped by {self.name} skip_patterns"
+
+        if params is None:
+            return False, ""
+
+        for param_name, values_to_skip in self.param_skip_reasons.items():
+            if param_name not in params:
+                continue
+
+            parameter = params[param_name]
+            if parameter in values_to_skip:
+                return True, values_to_skip[parameter]
+
+        return False, ""
+
+    def should_xfail_test(self, test_name: str) -> bool:
+        return any(pattern in test_name for pattern in self.xfail_patterns)
 
     def __str__(self):
         return self.name
@@ -96,6 +124,12 @@ def _load_vulkan() -> list[TestFlow]:
     )
 
     return [VULKAN_TEST_FLOW, VULKAN_STATIC_INT8_PER_CHANNEL_TEST_FLOW]
+
+
+def _load_webgpu() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.webgpu import WEBGPU_TEST_FLOW
+
+    return [WEBGPU_TEST_FLOW]
 
 
 def _load_openvino() -> list[TestFlow]:
@@ -151,6 +185,17 @@ def _load_arm() -> list[TestFlow]:
     ]
 
 
+def _load_cortex_m() -> list[TestFlow]:
+    # Every case runs on the FVP, so without it the whole flow fails the same way.
+    if not shutil.which("FVP_Corstone_SSE-300_Ethos-U55"):
+        logger.info("Skipping Cortex-M flow registration: Corstone-300 FVP not on PATH")
+        return []
+
+    from executorch.backends.test.suite.flows.cortex_m import CORTEX_M_TEST_FLOW
+
+    return [CORTEX_M_TEST_FLOW]
+
+
 def all_flows() -> dict[str, TestFlow]:
     from executorch.backends.test.suite.flows.portable import PORTABLE_TEST_FLOW
 
@@ -159,9 +204,20 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_xnnpack, "XNNPACK")
         + _register_flow(_load_coreml, "Core ML")
         + _register_flow(_load_vulkan, "Vulkan")
+        + _register_flow(_load_webgpu, "WebGPU")
         + _register_flow(_load_openvino, "OpenVINO")
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
+        + _register_flow(_load_cortex_m, "Cortex-M")
     )
+
+    try:
+        from executorch.backends.test.suite.flows.mlx import MLX_TEST_FLOW
+
+        flows += [
+            MLX_TEST_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping MLX flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

@@ -8,6 +8,7 @@
 #import "ETCoreMLModelManager.h"
 
 #import "ETCoreMLAsset.h"
+#import "ETCoreMLCacheProtocol.h"
 #import "ETCoreMLAssetManager.h"
 #import "ETCoreMLDefaultModelExecutor.h"
 #import "ETCoreMLLogging.h"
@@ -43,6 +44,14 @@
 namespace {
 
 using namespace executorchcoreml;
+
+NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values) {
+    NSMutableOrderedSet<NSString *> *result = [NSMutableOrderedSet orderedSetWithCapacity:values.size()];
+    for (const auto& value : values) {
+        [result addObject:@(value.c_str())];
+    }
+    return result;
+}
 
 enum class ModelAssetType: uint8_t {
     CompiledModel,
@@ -209,15 +218,6 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
     }
 
     return std::nullopt;
-}
-
-NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values) {
-    NSMutableOrderedSet<NSString *> *result = [NSMutableOrderedSet orderedSetWithCapacity:values.size()];
-    for (const auto& value : values) {
-        [result addObject:@(value.c_str())];
-    }
-
-    return result;
 }
 
 NSURL * _Nullable write_model_files(NSURL *dst_url,
@@ -428,6 +428,9 @@ NSString *raw_model_identifier(NSString *identifier) {
     return modelAsset;
 }
 
+// TODO(asset-manager-deprecation): Remove modelURL parameter when asset manager path is removed.
+// The modelURL parameter exists only to support the legacy asset manager path, which passes
+// an existing model URL instead of extracting from inMemoryFS. The cache path always passes nil.
 - (nullable NSURL *)compiledModelURLWithIdentifier:(NSString *)identifier
                                           modelURL:(nullable NSURL *)modelURL
                                         inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
@@ -443,6 +446,7 @@ NSString *raw_model_identifier(NSString *identifier) {
 
     // If modelURL is not provided, write model files to the destination directory (dstURL)
     // and obtain a URL pointing to them. Otherwise, use the provided modelURL.
+    // TODO(asset-manager-deprecation): Simplify to always call write_model_files when asset manager is removed.
     modelURL = (modelURL == nil) ? ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error) : modelURL;
     if (!modelURL) {
         // Failed to generate or locate model files, return nil.
@@ -469,6 +473,9 @@ NSString *raw_model_identifier(NSString *identifier) {
     }
 }
 
+// TODO(asset-manager-deprecation): Remove this method when asset manager path is removed.
+// This method is only used by the legacy asset manager path. The new cache path uses
+// compiledModelURLWithMetadata:inMemoryFS:cache:error: instead.
 - (nullable ETCoreMLAsset *)compiledModelAssetWithMetadata:(const ModelMetadata&)metadata
                                                   modelURL:(nullable NSURL *)modelURL
                                                 inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
@@ -516,6 +523,56 @@ NSString *raw_model_identifier(NSString *identifier) {
     // compiledModelAsset can still be nil if our backup path failed
 
     return compiledModelAsset;
+}
+
+- (nullable NSURL *)compiledModelURLWithMetadata:(const ModelMetadata&)metadata
+                                      inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                           cache:(id<ETCoreMLCache>)cache
+                                           error:(NSError * __autoreleasing *)error {
+    NSString *identifier = @(metadata.identifier.c_str());
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    // Check cache for existing compiled model
+    NSURL *cachedModelURL = [cache cachedModelURLForIdentifier:identifier error:nil];
+    if (cachedModelURL) {
+        ETCoreMLLogInfo("Cache Hit: Successfully retrieved compiled model with identifier=%@ from the cache.", identifier);
+        return cachedModelURL;
+    }
+
+    ETCoreMLLogInfo("Cache Miss: Compiled Model with identifier=%@ was not found in the cache.", identifier);
+
+    // Get temp directory from cache (guaranteed same filesystem for atomic moves)
+    NSURL *tempDirURL = [cache temporaryDirectoryWithError:error];
+    if (!tempDirURL) {
+        return nil;
+    }
+
+    // Compile/extract model to temp directory
+    NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
+                                                          modelURL:nil
+                                                        inMemoryFS:inMemoryFS
+                                                            dstURL:tempDirURL
+                                                             error:error];
+    if (!compiledModelURL) {
+        [fm removeItemAtURL:tempDirURL error:nil];
+        return nil;
+    }
+
+    // Store compiled model in cache (moves from temp to models/)
+    ETCoreMLLogInfo("Successfully compiled model with identifier=%@. Storing in cache.", identifier);
+    NSURL *resultURL = [cache storeModelAtURL:compiledModelURL withIdentifier:identifier error:error];
+
+    // Clean up temp directory (storeModelAtURL moves the model, so just remove any leftovers)
+    [fm removeItemAtURL:tempDirURL error:nil];
+
+    if (!resultURL) {
+        ETCoreMLLogInfo("Failed to store model with identifier=%@ in cache.", identifier);
+        if (error && *error) {
+            ETCoreMLLogInfo("Cache store error: %@", (*error).localizedDescription);
+        }
+    }
+
+    return resultURL;
 }
 
 #if ET_EVENT_TRACER_ENABLED
@@ -615,6 +672,40 @@ NSString *raw_model_identifier(NSString *identifier) {
 }
 #endif
 
+- (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
+                                                     inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                                  configuration:(MLModelConfiguration *)configuration
+                                                          cache:(id<ETCoreMLCache>)cache
+                                                          error:(NSError * __autoreleasing *)error {
+    // Get or compile the model URL using the provided cache
+    NSURL *compiledModelURL = [self compiledModelURLWithMetadata:metadata
+                                                      inMemoryFS:inMemoryFS
+                                                           cache:cache
+                                                           error:error];
+    if (!compiledModelURL) {
+        return nil;
+    }
+
+    // Create model directly - no loader indirection needed for cache path
+    NSString *identifier = @(metadata.identifier.c_str());
+    NSOrderedSet<NSString *> *orderedInputNames = get_ordered_set(metadata.input_names);
+    NSOrderedSet<NSString *> *orderedOutputNames = get_ordered_set(metadata.output_names);
+
+    ETCoreMLModel *model = [[ETCoreMLModel alloc] initWithCompiledModelURL:compiledModelURL
+                                                                identifier:identifier
+                                                             configuration:configuration
+                                                         orderedInputNames:orderedInputNames
+                                                        orderedOutputNames:orderedOutputNames
+                                                                     error:error];
+    if (!model) {
+        // Remove corrupted cache entry so next load attempt will recompile
+        [cache removeCachedModelWithIdentifier:identifier error:nil];
+        return nil;
+    }
+
+    return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
+}
+
 
 - (nullable id<ETCoreMLModelExecutor>)_modelExecutorWithAOTData:(NSData *)data
                                                    configuration:(MLModelConfiguration *)configuration
@@ -655,7 +746,7 @@ NSString *raw_model_identifier(NSString *identifier) {
                                           "Multifunction CoreML models require a methodName for metadata lookup.");
             return nil;
         }
-        
+
         std::string method_name_str = [methodName UTF8String];
         const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
         if (method_metadata != nullptr) {
@@ -685,7 +776,7 @@ NSString *raw_model_identifier(NSString *identifier) {
                                           "Multifunction CoreML models require a functionName.");
             return nil;
         }
-        
+
 #if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
         if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
             configuration.functionName = functionName;
@@ -724,6 +815,100 @@ NSString *raw_model_identifier(NSString *identifier) {
     return executor;
 }
 
+- (nullable id<ETCoreMLModelExecutor>)_modelExecutorWithAOTData:(NSData *)data
+                                                    configuration:(MLModelConfiguration *)configuration
+                                                       methodName:(nullable NSString *)methodName
+                                                     functionName:(nullable NSString *)functionName
+                                                            cache:(id<ETCoreMLCache>)cache
+                                                            error:(NSError * __autoreleasing *)error {
+    using namespace inmemoryfs;
+
+    auto buffer = MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
+    std::unique_ptr<InMemoryFileSystem> inMemoryFS = inmemoryfs::make_from_buffer(std::move(buffer));
+    if (!inMemoryFS) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "Model data is corrupted.");
+        return nil;
+    }
+
+    std::optional<ModelMetadata> metadata = ::get_model_metadata(inMemoryFS.get());
+    if (!metadata) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedMetadata,
+                                      "Metadata is invalid or missing.");
+        return nil;
+    }
+
+    auto metadataValue = metadata.value();
+    BOOL isMultifunction = metadataValue.is_multifunction();
+
+    if (isMultifunction) {
+        if (methodName == nil || methodName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a methodName for metadata lookup.");
+            return nil;
+        }
+
+        std::string method_name_str = [methodName UTF8String];
+        const MethodMetadata* method_metadata = metadataValue.get_method_metadata(method_name_str);
+        if (method_metadata != nullptr) {
+            metadataValue.input_names = method_metadata->input_names;
+            metadataValue.output_names = method_metadata->output_names;
+        } else {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Method '%@' not found in multifunction model metadata.",
+                                          methodName);
+            return nil;
+        }
+    }
+
+    if (isMultifunction) {
+        if (functionName == nil || functionName.length == 0) {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require a functionName.");
+            return nil;
+        }
+
+#if defined(__IPHONE_18_0) || defined(__MAC_15_0) || defined(__TVOS_18_0) || defined(__WATCHOS_11_0)
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            configuration.functionName = functionName;
+        } else {
+            ETCoreMLLogErrorAndSetNSError(error,
+                                          ETCoreMLErrorCorruptedModel,
+                                          "Multifunction CoreML models require iOS 18.0+ / macOS 15.0+.");
+            return nil;
+        }
+#else
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "Multifunction CoreML models require iOS 18.0+ / macOS 15.0+ SDK to build.");
+        return nil;
+#endif
+    }
+
+    // Note: We intentionally skip add_compute_unit for the cache path.
+    // The cache key is based on model identifier only, not compute unit.
+    // The same compiled model should be used regardless of compute unit.
+
+    NSString *identifier = @(metadataValue.identifier.c_str());
+    __block id<ETCoreMLModelExecutor> executor = nil;
+    dispatch_queue_t loadingQueue = [self queueForLoadingModelWithIdentifier:identifier];
+    auto inMemoryFSPtr = inMemoryFS.get();
+    dispatch_sync(loadingQueue, ^{
+        executor = [self modelExecutorWithMetadata:metadataValue
+                                        inMemoryFS:inMemoryFSPtr
+                                     configuration:configuration
+                                             cache:cache
+                                             error:error];
+    });
+
+    return executor;
+}
+
 - (dispatch_queue_t)queueForLoadingModelWithIdentifier:(NSString *)identifier {
     os_unfair_lock_lock(&_lock);
     dispatch_queue_t queue = [self.modelIdentifierToLoadingQueueMap objectForKey:identifier];
@@ -755,6 +940,40 @@ NSString *raw_model_identifier(NSString *identifier) {
                                                            configuration:configuration
                                                               methodName:methodName
                                                             functionName:functionName
+                                                                   error:error];
+    {
+        os_unfair_lock_lock(&_lock);
+        if (executor) {
+            NSValue *key = [NSValue valueWithPointer:(__bridge void *)executor.model];
+            self.handleToExecutorMap[key] = executor;
+        }
+        os_unfair_lock_unlock(&_lock);
+    }
+
+    return (__bridge ModelHandle *)executor.model;
+}
+
+- (ModelHandle *)loadModelFromAOTData:(NSData*)data
+                        configuration:(MLModelConfiguration*)configuration
+                           methodName:(nullable NSString*)methodName
+                         functionName:(nullable NSString*)functionName
+                                cache:(nullable id<ETCoreMLCache>)cache
+                                error:(NSError* __autoreleasing*)error {
+    // If cache is nil, use the existing asset-based path (status quo)
+    if (cache == nil) {
+        return [self loadModelFromAOTData:data
+                            configuration:configuration
+                               methodName:methodName
+                             functionName:functionName
+                                    error:error];
+    }
+
+    // Use the cache-based path
+    id<ETCoreMLModelExecutor> executor = [self _modelExecutorWithAOTData:data
+                                                           configuration:configuration
+                                                              methodName:methodName
+                                                            functionName:functionName
+                                                                   cache:cache
                                                                    error:error];
     {
         os_unfair_lock_lock(&_lock);

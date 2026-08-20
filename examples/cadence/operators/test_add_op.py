@@ -64,9 +64,7 @@ class ATenOpTestCases(unittest.TestCase):
         Y = torch.randn(Yshape)
 
         model.eval()
-        export_and_run_model(
-            model, (X, Y), file_name=self._testMethodName, run_and_compare=False
-        )
+        export_and_run_model(model, (X, Y), file_name=self._testMethodName)
 
     # pyre-fixme[16]: Module `parameterized.parameterized` has no attribute `expand`.
     @parameterized.expand(
@@ -114,9 +112,7 @@ class ATenOpTestCases(unittest.TestCase):
         Y = 2.34
 
         model.eval()
-        export_and_run_model(
-            model, (X, Y), file_name=self._testMethodName, run_and_compare=False
-        )
+        export_and_run_model(model, (X, Y), file_name=self._testMethodName)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+import operator
 from copy import copy
 from typing import cast, Dict, Optional, Set, Tuple, Type
 
@@ -17,6 +18,8 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -34,10 +37,59 @@ class InsertRescalePass(ArmPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
+    _mxfp_payload_dtypes = {
+        TosaSpecialDtype.FP4E2M1,
+        TosaSpecialDtype.FP6E2M3,
+        TosaSpecialDtype.FP6E3M2,
+    }
+
+    def _ensure_uint8_io_only(self, graph_module: GraphModule) -> None:
+        """Ensure uint8 tensors only appear at IO boundaries.
+
+        TOSA has no true uint8 tensor type; unsigned semantics are carried via
+        RESCALE input/output flags. If uint8 appears for other nodes, it means
+        unsigned data leaked past IO.
+
+        """
+        for node in graph_module.graph.nodes:
+            meta_val = node.meta.get("val")
+            if not isinstance(meta_val, torch.Tensor):
+                continue
+            if meta_val.dtype != torch.uint8:
+                continue
+            if node.op in ("placeholder", "output"):
+                continue
+            if node.op == "call_function":
+                if node.target == operator.getitem and all(
+                    user.op == "output" for user in node.users
+                ):
+                    continue
+                if node.target == exir_ops.backend.tosa.RESCALE.default:
+                    continue
+                if (
+                    node.target
+                    == exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+                ):
+                    # dim_order is a view-like transform; allow it to preserve uint8 at IO.
+                    continue
+            if node.meta.get(TosaSpecialDtype.meta_key()) in self._mxfp_payload_dtypes:
+                # Sub-byte FP types are stored uint8 arrays, so we need an exception for those.
+                continue
+
+            raise ValueError(
+                f"Found internal uint8 tensor at node {node.name} "
+                f"({node.target}). Uint8 is only allowed at IO boundaries."
+            )
+
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
         dq_args = QuantArgs.from_operator(node.target, node.args)
         q_args = QuantArgs.from_operator(user.target, user.args)
         new_scale = dq_args.scale / q_args.scale
+        input_unsigned = dq_args.dtype == torch.uint8
+        output_unsigned = q_args.dtype == torch.uint8
+        # TOSA has no true uint8 tensors; unsigned semantics are handled via
+        # the RESCALE flags, so uint8 does not propagate as a tensor dtype.
+        output_dtype = torch.int8 if output_unsigned else q_args.dtype
 
         with graph_module.graph.inserting_before(node):
             rescale_node = create_node(
@@ -45,15 +97,27 @@ class InsertRescalePass(ArmPass):
                 exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
-                    q_args.dtype,
+                    output_dtype,
                     [new_scale],
                     dq_args.zp,
                     q_args.zp,
                 ),
+                kwargs={
+                    "input_unsigned": input_unsigned,
+                    "output_unsigned": output_unsigned,
+                },
             )
             rescale_node.meta = copy(user.meta)
             user.replace_all_uses_with(rescale_node)
             graph_module.graph.erase_node(user)
+
+    def should_run_pass(self, graph_module: GraphModule) -> bool:
+        if not get_context_spec().support_integer():
+            return False
+        return any(
+            graph_module.graph.find_nodes(op="call_function", target=target, sort=False)
+            for target in DQ_OPS
+        )
 
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
@@ -73,6 +137,9 @@ class InsertRescalePass(ArmPass):
         graph_module = super().call(graph_module).graph_module
         graph_module.recompile()
         return PassResult(graph_module, modified)
+
+    def ensures(self, graph_module: GraphModule) -> None:
+        self._ensure_uint8_io_only(graph_module)
 
 
 class InsertRescaleInt32Pass(ArmPass):
@@ -460,7 +527,13 @@ class InsertControlFlowRescalesPass(ArmPass):
             input_node = input_nodes[qargs_index]
             if len(input_node.users) == 0:
                 continue
-            if len(out_qparams_map := input_node.meta.get("output_qparams", {})) != 1:
+            out_qparams_map = input_node.meta.get("output_qparams", {})
+            if len(out_qparams_map) == 0:
+                # Nested control-flow submodules may also expose frozen captured
+                # values as placeholders. Those are not control-flow boundary
+                # inputs, so there is no qparam pair to bridge with a RESCALE.
+                continue
+            if len(out_qparams_map) != 1:
                 raise ValueError(
                     f"Expected submodule input {input_node} to have exactly one output qparam, got {out_qparams_map}"
                 )

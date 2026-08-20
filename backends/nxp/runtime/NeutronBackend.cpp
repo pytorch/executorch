@@ -10,6 +10,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include "NeutronDriver.h"
@@ -24,6 +25,8 @@ namespace neutron {
 #define BUFFER_ALIGNMENT 16
 #define ALIGN_SIZE(size) \
   ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
+
+#define KOPC_CALLARGS 6 // The operation for TileIR
 
 // clang-format off
 /* Header schema:
@@ -42,27 +45,27 @@ namespace neutron {
      +-----------------------------------------------------------------------------------+
 */
 // clang-format on
-#define ITEM_SIZE 1 // 1 Byte
-#define INPUT_TENSOR_FORMAT_LEN_POS 0
-#define OUTPUT_TENSOR_FORMAT_LEN_POS 1
-#define INPUT_ARGS_LEN_POS 2
-#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3 * ITEM_SIZE)
+#define ITEM_SIZE 1U // 1 Byte
+#define INPUT_TENSOR_FORMAT_LEN_POS 0U
+#define OUTPUT_TENSOR_FORMAT_LEN_POS 1U
+#define INPUT_ARGS_LEN_POS 2U
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3U * ITEM_SIZE)
 #define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) \
-  (base + 3 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
-#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                         \
-  (base + 3 * ITEM_SIZE + 1 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                        \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_VERSION_ADDR(base)                                \
-  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-   2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_ADDR(base)                                     \
-  (base +                                                      \
-   ALIGN_SIZE(                                                 \
-       4 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-       2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
+  (base + 3U * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                           \
+  (base + 3U * ITEM_SIZE + 1U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                          \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_VERSION_ADDR(base)                                  \
+  (base + 3U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base)                                       \
+  (base +                                                        \
+   ALIGN_SIZE(                                                   \
+       4U * ITEM_SIZE + 2U * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+       2U * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
@@ -84,11 +87,24 @@ typedef struct {
   const uint8_t* outputMap;
 } NeutronExecutorchConfig;
 
+typedef struct {
+  uint8_t eventCode;
+  uint8_t opCode;
+  uint8_t functionCode;
+  uint8_t timestampCode;
+  uint32_t time;
+} NeutronSingleProfilingEvent;
+
+typedef struct {
+  NeutronSingleProfilingEvent startEvent;
+  NeutronSingleProfilingEvent stopEvent;
+} NeutronFullProfilingEvent;
+
 #ifdef EXTERNAL_MEM
 // Neutron compute has no access to FLASH.
 // Prefetch weights from FLASH to SRAM using memcpy.
 // For a model converted with --fetch_constants_to_sram.
-void copy(void* dst, void* src, uint32_t size, uint32_t channel) {
+void copy(void* dst, const void* src, uint32_t size, uint32_t channel) {
   memcpy(dst, src, size);
 }
 void wait(uint32_t channel) {}
@@ -252,7 +268,7 @@ bool multipleChannelsPresent(const ArrayRef<exec_aten::SizesType>& sizes) {
   if (length < 3) {
     return true;
   }
-  size_t C = sizes[length - 3];
+  exec_aten::SizesType C = sizes[length - 3];
   return C != 1;
 }
 
@@ -273,6 +289,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
     MemoryAllocator* allocator = context.get_runtime_allocator();
 
     auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
+
+    // allocateInstance returns raw, uninitialized memory (no constructor runs),
+    // so set the driver-config timeout explicitly.
+    cfg->mcfg.timeoutSeconds = 60;
 
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
@@ -362,8 +382,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
 
     // Prepare data for through neutron driver.
-    NeutronError neutronRC =
-        neutronModelPrepare((const NeutronModelConfig*)&cfg->mcfg, &cfg->nmh);
+    NeutronError neutronRC = neutronModelPrepare(&cfg->mcfg, &cfg->nmh);
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -433,12 +452,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The tensor is already permuted.
-          ET_LOG(Info, "Using channels last dim order for input %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for input %d.\n", i);
           cfg->dcfg.inputs[i] = arg.const_data_ptr();
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels last.
 
-          ET_LOG(Info, "Transposing input %d to channels last.\n", i);
+          ET_LOG(Debug, "Transposing input %d to channels last.\n", i);
 
           // Allocate buffer, the allocator is reset after each PTE instruction.
           void* buffer = context.allocate(arg.nbytes(), 16);
@@ -508,14 +527,38 @@ class NeutronBackend final : public PyTorchBackendInterface {
       }
     }
 
-#ifdef NEUTRON_PROFILE
-    // TODO: Use trace from BackendExecutionContext.
-    NeutronTraceConfig trace_config{.traceConfig = 0};
-    neutronSetTrace(cfg->nmh, &trace_config);
+    // Resume (clock-ungate) the NPU immediately before inference and suspend it
+    // again immediately after, so its clock only runs during compute
+#ifdef NEUTRON_NPU_POWER_GATING
+    NeutronError resumeRC = neutronResume();
+    if (resumeRC != ENONE) {
+      ET_LOG(Error, "neutronResume failed with error code %ld", resumeRC);
+      return Error::InvalidProgram;
+    }
 #endif
 
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks before neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t start_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks after neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
+
+#ifdef NEUTRON_NPU_POWER_GATING
+    // Suspend (clock-gate) the NPU again regardless of the run result; a failed
+    // suspend only wastes power, so it must not fail the inference.
+    NeutronError suspendRC = neutronSuspend();
+    if (suspendRC != ENONE) {
+      ET_LOG(Error, "neutronSuspend failed with error code %ld", suspendRC);
+    }
+#endif
+
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -542,10 +585,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
         if (is_channels_last_dim_order(dim_order, arg.dim())) {
           // The rest of the model expects the `channels_last` dim order, which
           //  the data already matches.
-          ET_LOG(Info, "Using channels last dim order for output %d.\n", i);
+          ET_LOG(Debug, "Using channels last dim order for output %d.\n", i);
         } else if (is_contiguous_dim_order(dim_order, arg.dim())) {
           // Transpose the data to channels first.
-          ET_LOG(Info, "Transposing output %d to channels first.\n", i);
+          ET_LOG(Debug, "Transposing output %d to channels first.\n", i);
           transposeOutput(
               cfg->dcfg.outputs[i],
               arg.mutable_data_ptr(),
@@ -558,6 +601,53 @@ class NeutronBackend final : public PyTorchBackendInterface {
         }
       }
     }
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Add traced evens only if model has profiling info.
+    auto profile_size = cfg->profileSize;
+    if (profile_size > 0) {
+      int events_num = static_cast<int>(profile_size / 16);
+      auto profiling_index = cfg->numOutputs + 1;
+      char* profile_info =
+          static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
+      NeutronFullProfilingEvent* neutron_events =
+          reinterpret_cast<NeutronFullProfilingEvent*>(profile_info);
+      executorch::runtime::EventTracer* tracer = context.event_tracer();
+      uint32_t start_time = 0;
+      int index = 0;
+      // Post log neutron events from profiling output.
+      for (int i = 0; i < events_num; i++) {
+        if (start_time == 0) {
+          start_time = neutron_events[i].startEvent.time;
+        }
+        if (neutron_events[i].stopEvent.opCode != KOPC_CALLARGS) {
+          // Only KOPC_CALLARGS events can be mapped to original .pte model.
+          continue;
+        } else {
+          event_tracer_log_profiling_delegate(
+              tracer,
+              nullptr,
+              index,
+              start_time,
+              neutron_events[i].stopEvent.time,
+              static_cast<const void*>(
+                  &neutron_events[i].startEvent.functionCode),
+              sizeof(uint8_t));
+          start_time = 0;
+          index++;
+        }
+      }
+      event_tracer_log_profiling_delegate(
+          tracer,
+          nullptr,
+          index,
+          neutron_events[events_num - 1].startEvent.time,
+          neutron_events[events_num - 1].stopEvent.time + stop_ticks -
+              start_ticks,
+          static_cast<const void*>(
+              &neutron_events[events_num - 1].startEvent.functionCode),
+          sizeof(uint8_t));
+    }
+#endif
 
     return Error::Ok;
   }

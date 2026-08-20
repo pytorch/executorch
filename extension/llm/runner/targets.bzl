@@ -17,6 +17,18 @@ def define_common_targets():
         visibility = ["PUBLIC"],
     )
 
+    runtime.cxx_library(
+        name = "llm_session",
+        exported_headers = [
+            "llm_session.h",
+        ],
+        visibility = ["PUBLIC"],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+
     for aten in get_aten_mode_options():
         aten_suffix = "_aten" if aten else ""
 
@@ -68,6 +80,7 @@ def define_common_targets():
             visibility = ["PUBLIC"],
             exported_deps = [
                 ":text_decoder_runner" + aten_suffix,
+                "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//pytorch/tokenizers:headers",
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/tensor:tensor" + aten_suffix,
@@ -127,11 +140,13 @@ def define_common_targets():
             exported_deps = [
                 ":image_prefiller" + aten_suffix,
                 ":irunner",
+                ":llm_session",
                 ":multimodal_runner_lib" + aten_suffix,
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
                 "//executorch/extension/llm/runner/io_manager:io_manager" + aten_suffix,
+                "//executorch/extension/memory_allocator:cpu_caching_allocator",
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:sentencepiece",

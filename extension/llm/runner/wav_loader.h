@@ -14,7 +14,6 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -48,23 +47,52 @@ struct WavHeader {
   uint32_t Subchunk2Size;
 };
 
-inline std::unique_ptr<WavHeader> load_wav_header(const std::string& fp) {
+namespace detail {
+
+// Safe little-endian reads via memcpy (no strict aliasing violation,
+// no alignment requirement). WAV files are always little-endian; these
+// helpers assume the host is also little-endian (x86, ARM).
+inline uint16_t read_le16(const char* p) {
+  uint16_t val;
+  std::memcpy(&val, p, sizeof(val));
+  return val;
+}
+
+inline uint32_t read_le32(const char* p) {
+  uint32_t val;
+  std::memcpy(&val, p, sizeof(val));
+  return val;
+}
+
+/// Read the entire file into a byte buffer. Returns an empty vector on failure.
+inline std::vector<char> read_file(const std::string& fp) {
   std::ifstream file(fp, std::ios::binary);
   if (!file.is_open()) {
-    ET_CHECK_MSG(false, "Failed to open WAV file: %s", fp.c_str());
+    return {};
   }
-
   file.seekg(0, std::ios::end);
-  size_t file_size = file.tellg();
+  auto pos = file.tellg();
+  if (pos < 0 || !file.good()) {
+    return {};
+  }
+  size_t file_size = static_cast<size_t>(pos);
   file.seekg(0, std::ios::beg);
 
   std::vector<char> buffer(file_size);
   file.read(buffer.data(), file_size);
-  file.close();
+  if (static_cast<size_t>(file.gcount()) != file_size) {
+    return {};
+  }
+  return buffer;
+}
 
-  const char* data = buffer.data();
-  size_t data_size = buffer.size();
+} // namespace detail
 
+/// Parse a WAV header from a raw byte buffer.
+/// Returns nullptr if the buffer does not contain a valid WAV file.
+inline std::unique_ptr<WavHeader> load_wav_header(
+    const char* data,
+    size_t data_size) {
   bool has_riff = false;
   bool has_wave = false;
 
@@ -77,104 +105,127 @@ inline std::unique_ptr<WavHeader> load_wav_header(const std::string& fp) {
   }
 
   bool is_wav_file = has_riff && has_wave;
-  std::unique_ptr<WavHeader> header;
+  if (!is_wav_file) {
+    return nullptr;
+  }
 
-  if (is_wav_file) {
-    header = std::make_unique<WavHeader>();
-    size_t default_header_size = sizeof(WavHeader);
+  // Minimum size: 12 (RIFF+size+WAVE) + 24 (fmt chunk header + min fields) = 36
+  // We need at least up to bitsPerSample (offset 34, 2 bytes) = 36 bytes.
+  constexpr size_t kMinHeaderSize = 36;
+  if (data_size < kMinHeaderSize) {
+    ET_LOG(
+        Error,
+        "WAV header detected but file is too small (%zu bytes) to contain a complete header",
+        data_size);
+    return nullptr;
+  }
 
-    size_t data_offset = 0;
-    for (size_t i = 0; i + 4 < data_size; i++) {
-      if (std::memcmp(data + i, "data", 4) == 0) {
-        data_offset = i;
-        break;
-      }
-    }
+  auto header = std::make_unique<WavHeader>();
 
-    if (data_size >= default_header_size) {
-      std::memcpy(
-          reinterpret_cast<char*>(header.get()), data, default_header_size);
+  // Parse RIFF chunk descriptor (bytes 0-11)
+  std::memcpy(header->RIFF, data, 4);
+  header->ChunkSize = detail::read_le32(data + 4);
+  std::memcpy(header->WAVE, data + 8, 4);
 
-      ET_LOG(Info, "WAV header detected, getting raw audio data.");
-      ET_LOG(
-          Info,
-          "RIFF Header: %c%c%c%c",
-          header->RIFF[0],
-          header->RIFF[1],
-          header->RIFF[2],
-          header->RIFF[3]);
-      ET_LOG(Info, "Chunk Size: %d", header->ChunkSize);
-      ET_LOG(
-          Info,
-          "WAVE Header: %c%c%c%c",
-          header->WAVE[0],
-          header->WAVE[1],
-          header->WAVE[2],
-          header->WAVE[3]);
-      ET_LOG(
-          Info,
-          "Format Header: %c%c%c%c",
-          header->fmt[0],
-          header->fmt[1],
-          header->fmt[2],
-          header->fmt[3]);
-      ET_LOG(Info, "Format Chunk Size: %d", header->Subchunk1Size);
-      ET_LOG(Info, "Audio Format: %d", header->AudioFormat);
-      ET_LOG(Info, "Number of Channels: %d", header->NumOfChan);
-      ET_LOG(Info, "Sample Rate: %d", header->SamplesPerSec);
-      ET_LOG(Info, "Byte Rate: %d", header->bytesPerSec);
-      ET_LOG(Info, "Block Align: %d", header->blockAlign);
-      ET_LOG(Info, "Bits per Sample: %d", header->bitsPerSample);
+  // Parse fmt sub-chunk (bytes 12-35)
+  std::memcpy(header->fmt, data + 12, 4);
+  header->Subchunk1Size = detail::read_le32(data + 16);
+  header->AudioFormat = detail::read_le16(data + 20);
+  header->NumOfChan = detail::read_le16(data + 22);
+  header->SamplesPerSec = detail::read_le32(data + 24);
+  header->bytesPerSec = detail::read_le32(data + 28);
+  header->blockAlign = detail::read_le16(data + 32);
+  header->bitsPerSample = detail::read_le16(data + 34);
 
-      if (data_offset != 0) {
-        // Validate that we can safely read the Subchunk2Size (4 bytes at
-        // data_offset + 4) and that the data starts at data_offset + 8
-        if (data_offset + 8 > data_size) {
-          ET_LOG(
-              Error,
-              "WAV file structure is invalid: data chunk header extends beyond file bounds (offset %zu, file size %zu)",
-              data_offset,
-              data_size);
-          throw std::runtime_error(
-              "Invalid WAV file: data chunk header extends beyond file bounds");
-        }
-        header->Subchunk2Size =
-            *reinterpret_cast<const uint32_t*>(data + data_offset + 4);
-        ET_LOG(Info, "Subchunk2Size: %d", header->Subchunk2Size);
-        header->dataOffset = static_cast<uint32_t>(data_offset + 8);
-      } else {
-        ET_LOG(
-            Error,
-            "WAV file structure is invalid, missing Subchunk2ID 'data' field.");
-        throw std::runtime_error("Invalid WAV file structure");
-      }
-    } else {
-      ET_CHECK_MSG(
-          false,
-          "WAV header detected but file is too small to contain a complete header");
+  // Find "data" sub-chunk (may not be immediately after fmt if extra
+  // chunks like LIST or JUNK are present). Start after fmt to avoid
+  // false-matching "data" inside earlier chunk payloads.
+  size_t data_offset = 0;
+  size_t search_start = 12 + 8 + header->Subchunk1Size;
+  for (size_t i = search_start; i + 4 < data_size; i++) {
+    if (std::memcmp(data + i, "data", 4) == 0) {
+      data_offset = i;
+      break;
     }
   }
+
+  if (data_offset == 0) {
+    ET_LOG(
+        Error,
+        "WAV file structure is invalid, missing Subchunk2ID 'data' field.");
+    return nullptr;
+  }
+
+  // Validate that we can safely read the Subchunk2Size (4 bytes at
+  // data_offset + 4) and that the data starts at data_offset + 8
+  if (data_offset + 8 > data_size) {
+    ET_LOG(
+        Error,
+        "WAV file structure is invalid: data chunk header extends beyond file bounds (offset %zu, file size %zu)",
+        data_offset,
+        data_size);
+    return nullptr;
+  }
+
+  // Use memcpy instead of reinterpret_cast to avoid strict aliasing violation
+  header->Subchunk2Size = detail::read_le32(data + data_offset + 4);
+  header->dataOffset = static_cast<uint32_t>(data_offset + 8);
+
+  ET_LOG(Info, "WAV header detected, getting raw audio data.");
+  ET_LOG(
+      Info,
+      "RIFF Header: %c%c%c%c",
+      header->RIFF[0],
+      header->RIFF[1],
+      header->RIFF[2],
+      header->RIFF[3]);
+  ET_LOG(Info, "Chunk Size: %d", header->ChunkSize);
+  ET_LOG(
+      Info,
+      "WAVE Header: %c%c%c%c",
+      header->WAVE[0],
+      header->WAVE[1],
+      header->WAVE[2],
+      header->WAVE[3]);
+  ET_LOG(
+      Info,
+      "Format Header: %c%c%c%c",
+      header->fmt[0],
+      header->fmt[1],
+      header->fmt[2],
+      header->fmt[3]);
+  ET_LOG(Info, "Format Chunk Size: %d", header->Subchunk1Size);
+  ET_LOG(Info, "Audio Format: %d", header->AudioFormat);
+  ET_LOG(Info, "Number of Channels: %d", header->NumOfChan);
+  ET_LOG(Info, "Sample Rate: %d", header->SamplesPerSec);
+  ET_LOG(Info, "Byte Rate: %d", header->bytesPerSec);
+  ET_LOG(Info, "Block Align: %d", header->blockAlign);
+  ET_LOG(Info, "Bits per Sample: %d", header->bitsPerSample);
+  ET_LOG(Info, "Subchunk2Size: %d", header->Subchunk2Size);
 
   return header;
 }
 
+/// Parse a WAV header from a file path.
+inline std::unique_ptr<WavHeader> load_wav_header(const std::string& fp) {
+  std::vector<char> buffer = detail::read_file(fp);
+  if (buffer.empty()) {
+    ET_CHECK_MSG(false, "Failed to open WAV file: %s", fp.c_str());
+  }
+  return load_wav_header(buffer.data(), buffer.size());
+}
+
+/// Load and decode audio samples from a WAV file, returning normalized floats.
+/// Reads the file only once.
 inline std::vector<float> load_wav_audio_data(const std::string& fp) {
-  std::ifstream file(fp, std::ios::binary);
-  if (!file.is_open()) {
+  std::vector<char> buffer = detail::read_file(fp);
+  if (buffer.empty()) {
     ET_CHECK_MSG(false, "Failed to open WAV file: %s", fp.c_str());
   }
 
-  file.seekg(0, std::ios::end);
-  size_t file_size = file.tellg();
-  file.seekg(0, std::ios::beg);
+  auto header = load_wav_header(buffer.data(), buffer.size());
 
-  std::vector<char> buffer(file_size);
-  file.read(buffer.data(), file_size);
-  file.close();
-
-  auto header = load_wav_header(fp);
-
-  if (header.get() == nullptr) {
+  if (header == nullptr) {
     ET_CHECK_MSG(false, "WAV header not detected in file: %s", fp.c_str());
   }
 
@@ -216,29 +267,31 @@ inline std::vector<float> load_wav_audio_data(const std::string& fp) {
     size_t num_samples = data_size / 4;
 
     if (audio_format == kWavFormatIeeeFloat) {
-      // IEEE float format - read directly as floats
-      const float* input_buffer =
-          reinterpret_cast<const float*>(data + data_offset);
-      audio_data.assign(input_buffer, input_buffer + num_samples);
+      // IEEE float format - memcpy avoids strict aliasing / alignment issues
+      audio_data.resize(num_samples);
+      std::memcpy(
+          audio_data.data(), data + data_offset, num_samples * sizeof(float));
     } else {
       // PCM integer format - normalize from int32
-      const int32_t* input_buffer =
-          reinterpret_cast<const int32_t*>(data + data_offset);
       audio_data.resize(num_samples);
       for (size_t i = 0; i < num_samples; ++i) {
-        audio_data[i] = static_cast<float>(
-            static_cast<double>(input_buffer[i]) * kOneOverIntMax);
+        int32_t sample;
+        std::memcpy(
+            &sample, data + data_offset + i * sizeof(int32_t), sizeof(int32_t));
+        audio_data[i] =
+            static_cast<float>(static_cast<double>(sample) * kOneOverIntMax);
       }
     }
   } else if (bits_per_sample == 16) {
     size_t num_samples = data_size / 2;
-    const int16_t* input_buffer =
-        reinterpret_cast<const int16_t*>(data + data_offset);
     audio_data.resize(num_samples);
 
     for (size_t i = 0; i < num_samples; ++i) {
-      audio_data[i] = static_cast<float>(
-          static_cast<double>(input_buffer[i]) * kOneOverShortMax);
+      int16_t sample;
+      std::memcpy(
+          &sample, data + data_offset + i * sizeof(int16_t), sizeof(int16_t));
+      audio_data[i] =
+          static_cast<float>(static_cast<double>(sample) * kOneOverShortMax);
     }
   } else {
     ET_CHECK_MSG(

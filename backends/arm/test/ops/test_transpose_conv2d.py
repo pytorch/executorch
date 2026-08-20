@@ -7,14 +7,14 @@ from typing import Tuple
 
 import conftest
 import torch
-
-from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_a8w4_quantization_config,
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
+
+from executorch.backends.arm.quantizer.quantization_config import TOSAQuantizationConfig
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -53,6 +53,17 @@ class TransposeConv2d(torch.nn.Module):
 
     def forward(self, x):
         return self.deconv(x)
+
+
+class TransposeConv2dFP8(TransposeConv2d):
+    def __init__(self, **kwargs):
+        dtype = kwargs.pop("dtype")
+        super().__init__(**kwargs)
+        self.dtype = dtype
+        self.deconv = self.deconv.to(dtype)
+
+    def get_inputs(self):
+        return (torch.randn(1, self.deconv.in_channels, 10, 10).to(self.dtype),)
 
 
 test_data_FP = {
@@ -232,6 +243,30 @@ test_data_BF16 = {
         dtype=torch.bfloat16,
     ),
 }
+test_data_FP8 = {
+    "basic_fp8e4m3": lambda: (
+        TransposeConv2dFP8(
+            in_channels=16,
+            out_channels=8,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            dtype=torch.float8_e4m3fn,
+        ),
+        "fp8e4m3",
+    ),
+    "basic_fp8e5m2": lambda: (
+        TransposeConv2dFP8(
+            in_channels=16,
+            out_channels=8,
+            kernel_size=4,
+            stride=2,
+            padding=1,
+            dtype=torch.float8_e5m2,
+        ),
+        "fp8e5m2",
+    ),
+}
 
 
 @common.parametrize("test_data", test_data_FP | test_data_FP_fp16 | test_data_BF16)
@@ -246,6 +281,21 @@ def test_conv_transpose2d_tosa_FP(test_data):
         run_on_tosa_ref_model=conftest.is_option_enabled("tosa_ref_model"),
         tosa_extensions=["bf16"],
     )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP8)
+def test_conv_transpose2d_tosa_FP_fp8(test_data):
+    model, tosa_extension = test_data()
+    pipeline = TosaPipelineFP[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        compare_tosa_ref_model_outputs=False,
+        tosa_extensions=[tosa_extension],
+    )
+    pipeline.count_tosa_ops({"TRANSPOSE_CONV2D": 1, "CAST": 1})
     pipeline.run()
 
 
@@ -311,7 +361,7 @@ def test_conv_transpose2d_tosa_INT_qat_axis1_uses_non_fused_fake_quant(test_data
         ),
     )
     quantizer.set_global(
-        QuantizationConfig(
+        TOSAQuantizationConfig(
             input_activation=activation_qspec,
             output_activation=activation_qspec,
             weight=weight_qspec,
@@ -350,7 +400,7 @@ def test_conv_transpose2d_tosa_INT_grouped_qat_axis0_keeps_fused_fake_quant(test
         ),
     )
     quantizer.set_global(
-        QuantizationConfig(
+        TOSAQuantizationConfig(
             input_activation=activation_qspec,
             output_activation=activation_qspec,
             weight=weight_qspec,
@@ -389,7 +439,7 @@ def test_conv_transpose2d_tosa_INT_ptq_observer_updates_axis(test_data):
         ),
     )
     quantizer.set_global(
-        QuantizationConfig(
+        TOSAQuantizationConfig(
             input_activation=activation_qspec,
             output_activation=activation_qspec,
             weight=weight_qspec,
@@ -427,7 +477,7 @@ def test_conv_transpose2d_tosa_INT_qat_correct_qspec_wrong_ctor_axis(test_data):
         ),
     )
     quantizer.set_global(
-        QuantizationConfig(
+        TOSAQuantizationConfig(
             input_activation=activation_qspec,
             output_activation=activation_qspec,
             weight=weight_qspec,
@@ -487,12 +537,15 @@ def test_conv_transpose2d_tosa_INT_a16w8(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_FP | test_data_FP_fp16)
+@common.parametrize("test_data", test_data_FP | test_data_BF16 | test_data_FP_fp16)
 @common.SkipIfNoModelConverter
 def test_conv_transpose2d_vgf_no_quant(test_data):
     model = test_data()
     inputs = model.get_inputs()
     match inputs[0].dtype:
+        case torch.bfloat16:
+            atol = 1e-2
+            rtol = 1e-2
         case torch.float16:
             atol = 5e-3
             rtol = 5e-3

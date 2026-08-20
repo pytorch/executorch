@@ -97,6 +97,14 @@ class TestGenerationConfig(unittest.TestCase):
         result = config.resolve_max_new_tokens(1024, 100)
         self.assertEqual(result, 0)  # max(0, 50 - 100)
 
+        # Test case 6: Use keyword argument with new name
+        config.seq_len = -1
+        config.max_new_tokens = -1
+        result = config.resolve_max_new_tokens(
+            max_context_len=1024, num_tokens_occupied=100
+        )
+        self.assertEqual(result, 924)
+
     def test_repr(self):
         """Test the string representation."""
         config = GenerationConfig()

@@ -1,0 +1,8 @@
+softmax:
+  parameter_names_with_default_values:
+    LOG: 0
+  shader_variants:
+    - NAME: softmax
+      LOG: 0
+    - NAME: log_softmax
+      LOG: 1

@@ -1,0 +1,34 @@
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "//executorch/backends/qualcomm/aot/python:PyQnnManagerAdaptor",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ]
+)
+
+fbcode_target(
+    _kind = runtime.python_library,
+    name = "qnn_intermediate_debugger",
+    srcs = [
+        "format_outputs.py",
+        "qcom_numerical_comparator_base.py",
+        "qcom_numerical_comparator_sample.py",
+        "qnn_intermediate_debugger.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/utils:utils",
+        "//executorch/devtools:lib",
+        "//executorch/exir:sym_util",
+        "fbsource//third-party/pypi/graphviz:graphviz",
+        "fbsource//third-party/pypi/pandas:pandas",
+    ],
+)

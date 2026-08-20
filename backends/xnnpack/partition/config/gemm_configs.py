@@ -38,6 +38,7 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 from executorch.exir.backend.utils import WhyNoPartition
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
@@ -360,21 +361,23 @@ class ConvolutionConfig(GEMMConfig):
         if not super().check_constraints(node, ep):
             return False
 
-        conv_stride = cast(List[int], node.args[3])
-        if len(conv_stride) > 2:
+        kernel_node = get_input_node(node, 1)
+        kernel_shape = get_shape(kernel_node)
+        # The weight rank is the only reliable indicator of the conv dimensionality.
+        # stride, padding and dilation may each be a single value that ATen
+        # broadcasts over every spatial dim.
+        conv_dim = len(kernel_shape) - 2
+        if conv_dim > 2:
             why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
-        kernel_node = get_input_node(node, 1)
-        kernel_shape = get_shape(kernel_node)
         weight_quant_params = QuantParams.from_weights(kernel_node, ep)
         groups = cast(int, node.args[8])
         is_transpose = node.args[6]
 
         # XNNPACK does not support dynamic quantization convs that are not 2D or are depthwise
         if self._detect_precision(node) == ConfigPrecisionType.DYNAMIC_QUANT and (
-            len(conv_stride) != 2
-            or is_depthwise_conv(kernel_shape, groups, is_transpose)
+            conv_dim != 2 or is_depthwise_conv(kernel_shape, groups, is_transpose)
         ):
             why(
                 node,
@@ -395,6 +398,41 @@ class ConvolutionConfig(GEMMConfig):
             )
             return False
         return True
+
+    def _get_act_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram, precision: ConfigPrecisionType
+    ) -> Tuple[bool, List[torch.fx.Node]]:
+        act_input = get_input_node(node, self.act_idx)
+        is_transpose = node.args[6]
+        if (
+            precision != ConfigPrecisionType.FP32
+            and not is_transpose
+            and is_node(act_input)
+            and act_input.target == exir_ops.edge.aten.constant_pad_nd.default
+            and len(act_input.users) == 1
+        ):
+            conv_dim = len(get_shape(get_input_node(node, 1))) - 2
+            is_1d = conv_dim == 1
+            is_2d = conv_dim == 2
+
+            pad_value = (
+                cast(float, act_input.args[2]) if len(act_input.args) > 2 else 0.0
+            )
+            pad_amounts = cast(List[int], act_input.args[1])
+            spatial_only = (
+                is_1d
+                and (len(pad_amounts) <= 2 or all(a == 0 for a in pad_amounts[2:]))
+            ) or (
+                is_2d
+                and (len(pad_amounts) <= 4 or all(a == 0 for a in pad_amounts[4:]))
+            )
+
+            if pad_value == 0.0 and all(a >= 0 for a in pad_amounts) and spatial_only:
+                valid, deps = super()._get_act_deps(act_input, ep, precision)
+                if valid:
+                    return (True, [act_input, *deps])
+
+        return super()._get_act_deps(node, ep, precision)
 
     def supported_precision_types(self):
         return [

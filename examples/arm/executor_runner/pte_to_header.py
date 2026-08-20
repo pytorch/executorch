@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023-2025 Arm Limited and/or its affiliates.
+# Copyright 2023-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -59,7 +60,10 @@ parser.add_argument(
 if __name__ == "__main__":
     args = parser.parse_args()
     outfile = os.path.join(args.outdir, args.outfile)
-    attr = f'__attribute__((section("{args.section}"), aligned(16))) unsigned char '
+    attr = (
+        f'__attribute__((section("{args.section}"), aligned(16))) '
+        "const unsigned char "
+    )
 
     with open(args.pte, "rb") as fr, open(outfile, "w") as fw:
         data = fr.read()

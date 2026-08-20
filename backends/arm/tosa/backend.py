@@ -16,16 +16,12 @@ subsequent stages (for example, JIT or hardware-specific compilers) consume.
 """
 
 import logging
-from itertools import count
-from typing import cast, Dict, final, List
+from typing import cast, final, List
 
 import torch
 
 import tosa_serializer as ts
 
-from executorch.backends.arm._passes.arm_pass_utils import (
-    get_cond_while_submodules_nested,
-)
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
@@ -35,96 +31,32 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
+from executorch.backends.arm.tosa.mapping import (
+    TOSA_CONTROL_FLOW_REGION_NAME_META,
+    TOSA_TENSOR_NAME_META,
+)
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.dim_order_utils import get_memory_format
+from executorch.exir.graph_module import get_cond_while_submodules
 from torch.export.exported_program import ExportedProgram
-from torch.fx import Graph, GraphModule, Node
+from torch.fx import GraphModule, Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
 
 
-def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
-    """Assign deterministic output IDs to leaf outputs.
-
-    Flattens the output structure and assigns the external ID
-    based on the leaf position in the exported output tuple/list.
-
-    Args:
-        ep_graph (Graph): FX graph produced by export preprocessing.
-
-    Returns:
-        dict[str, int]: Mapping from *leaf output node name* to external output index.
-
-    """
-    node2external_id = {}
-
-    def _collect_leaves(arg, nodes):
-        # Collect only FX Nodes that are actual outputs
-        # (ignore ints/None/etc inside structured outputs).
-        if isinstance(arg, Node):
-            nodes.append(arg)
-        elif isinstance(arg, (list, tuple)):
-            for a in arg:
-                _collect_leaves(a, nodes)
-
-    out = ep_graph.output_node()
-    out_leaves: list[Node] = []
-    # First argument of output is the structured container (tuple/list) of outputs
-    _collect_leaves(out.args[0], out_leaves)
-
-    # Map each output leaf's name to its position
-    node2external_id = {leaf.name: idx for idx, leaf in enumerate(out_leaves)}
-
-    return node2external_id
-
-
-def _sort_outputs(graph_module: GraphModule, node_to_id_map: dict[str, int]):
-    """Reorder graph outputs to match ascending external IDs.
-
-    Args:
-        graph_module (GraphModule): Graph to reorder in place.
-        node_to_id_map (dict[str, int]): Mapping from node name to output index.
-
-    Returns:
-        GraphModule: Updated graph module with deterministic output ordering.
-
-    """
-
-    def _external_id(n: Node, node_2_id, fallback: int) -> int:
-        """Return the external ID for ``n`` or ``fallback`` when absent."""
-        return node_2_id.get(n.name, fallback)
-
-    out_node = graph_module.graph.output_node()
-    out_list = cast(tuple, out_node.args[0])
-    _counter = count()
-
-    # sort nodes by the key that is id
-    def _sort_key(t: Node) -> int:
-        """Key function that orders outputs by external ID or position."""
-        return _external_id(t, node_to_id_map, next(_counter))
-
-    orig_ord = tuple(sorted(out_list, key=_sort_key))
-
-    current_order = tuple(out_list)
-    if orig_ord != current_order:
-        replacement = list(orig_ord) if isinstance(out_node.args[0], list) else orig_ord
-        out_node.args = (replacement,)
-        graph_module.graph.lint()
-        graph_module.recompile()
-
-    return graph_module
+def _qualify_control_flow_region_name(
+    parent_region_name: str | None, child_region_name: str
+) -> str:
+    """Return a globally unique TOSA region name for nested control flow."""
+    if parent_region_name is None:
+        return child_region_name
+    return f"{parent_region_name}__{child_region_name}"
 
 
 def _get_matching_fake_tensor(node: Node):
-    """Return a fake tensor with the same properties as node, but with
-    .dim_order() == node.meta["tosa_dim_order"]
-    """
-    fake_tensor = node.meta["val"]
-    desired_dim_order = node.meta["tosa_dim_order"]
-    return fake_tensor.to(memory_format=get_memory_format(list(desired_dim_order)))
+    """Return the fake tensor of node."""
+    return node.meta["val"]
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -226,6 +158,9 @@ class TOSABackend(BackendDetails):
             targetPatch=version.micro,
             targetDraft=True if version.minor > 0 else False,
         )
+
+        if compile_spec.tosa_dev_mode:
+            tosa_graph.setExperimentalDevVersion()
 
         if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
@@ -330,10 +265,45 @@ class TOSABackend(BackendDetails):
             RuntimeError: If an FX node with an unsupported op kind is found.
 
         """
+
+        def _annotate_control_flow_region_names(
+            graph_module: GraphModule, parent_region_name: str | None
+        ) -> None:
+            for node in graph_module.graph.nodes:
+                if node.op != "call_function":
+                    continue
+
+                match node.target:
+                    case torch.ops.higher_order.cond:
+                        arg_indices = [1, 2]
+                    case torch.ops.higher_order.while_loop:
+                        arg_indices = [0, 1]
+                    case _:
+                        continue
+
+                for arg_index in arg_indices:
+                    submodule_node = node.args[arg_index]
+                    if not isinstance(submodule_node, Node):
+                        raise RuntimeError(
+                            f"Expected control flow submodule arg {arg_index} to be a Node."
+                        )
+                    if submodule_node.op != "get_attr":
+                        raise RuntimeError(
+                            f"Expected control flow submodule arg {arg_index} to be a get_attr node."
+                        )
+                    if not isinstance(submodule_node.target, str):
+                        raise RuntimeError(
+                            "Expected control flow submodule target to be a string."
+                        )
+
+                    submodule_node.meta[TOSA_CONTROL_FLOW_REGION_NAME_META] = (
+                        _qualify_control_flow_region_name(
+                            parent_region_name, submodule_node.target
+                        )
+                    )
+
         tosa_spec = compile_spec.tosa_spec
-        node_to_id_map = _annotate_external_ids(graph_module.graph)
         artifact_path = compile_spec._get_intermediate_path()
-        output_order_workaround = compile_spec.get_output_order_workaround()
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
@@ -345,13 +315,9 @@ class TOSABackend(BackendDetails):
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
-        node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+        node_visitors = get_node_visitors(tosa_spec, debug_hook)
 
-        if output_order_workaround:
-            logger.debug("Re-sorting outputs during TOSA lowering.")
-            graph_module = _sort_outputs(graph_module, node_to_id_map)
-        else:
-            logger.debug("No re-sorting outputs (workaround) during TOSA lowering.")
+        _annotate_control_flow_region_names(graph_module, submodule_name)
 
         if submodule_name is not None:
             tosa_graph.startRegion(submodule_name)
@@ -401,7 +367,7 @@ class TOSABackend(BackendDetails):
                 raise
 
         # Recursively preprocess controlflow submodules.
-        for name, submodule, control_flow_node in get_cond_while_submodules_nested(
+        for name, submodule, control_flow_node in get_cond_while_submodules(
             graph_module
         ):
             TOSABackend._regularize_submodule(submodule, control_flow_node)
@@ -411,7 +377,7 @@ class TOSABackend(BackendDetails):
                 compile_spec,
                 tosa_graph,
                 debug_hook,
-                submodule_name=name,
+                submodule_name=_qualify_control_flow_region_name(submodule_name, name),
                 containing_graph_module=graph_module,
             )
 
@@ -439,5 +405,5 @@ class TOSABackend(BackendDetails):
                 compile_spec._get_intermediate_path()
             )
             .dump_debug_info(compile_spec.tosa_debug_mode)
-            .set_output_order_workaround(compile_spec.output_order_workaround)
+            ._set_tosa_dev_mode(compile_spec.tosa_dev_mode)
         )

@@ -260,13 +260,25 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "_program_utils",
+    srcs = [
+        "_program_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "pass_manager",
     srcs = [
         "pass_manager.py",
     ],
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        ":_program_utils",
         ":error",
+        ":pass_base",
         "//caffe2:torch",
     ],
 )

@@ -1,6 +1,3 @@
-[submodule "backends/arm/third-party/ethos-u-core-driver"]
-	path = backends/arm/third-party/ethos-u-core-driver
-	url = https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-core-driver.git
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
@@ -67,3 +64,7 @@
 [submodule "third-party/json"]
 	path = third-party/json
 	url = https://github.com/nlohmann/json.git
+[submodule "backends/mlx/third-party/mlx"]
+	path = backends/mlx/third-party/mlx
+	url = https://github.com/ml-explore/mlx.git
+	shallow = true

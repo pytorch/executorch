@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
@@ -12,10 +12,11 @@ from executorch.exir.pass_base import ExportPass, ProxyValue
 from torch import SymInt
 
 
-class RewriteSlicePass(ArmPass):
+class RewriteSlicePass(ArmOpTargetedPass):
     """Rewrite slice operations with step of 1 to TOSA slice operators."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
+    target_ops = (exir_ops.edge.aten.slice_copy.Tensor,)
 
     def _fixup_start(self, start, input_shape, dim) -> int:
         """Convert negative and out-of-bounds start indices to valid positive
@@ -29,7 +30,7 @@ class RewriteSlicePass(ArmPass):
         return idx
 
     def call_operator(self, op, args, kwargs, meta, updated=False) -> ProxyValue:
-        if op not in (exir_ops.edge.aten.slice_copy.Tensor,):
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta, updated)
 
         if len(args) == 5 and args[4] != 1:

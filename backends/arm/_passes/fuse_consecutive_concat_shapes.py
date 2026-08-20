@@ -6,12 +6,12 @@
 from typing import Any
 
 import torch
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import NodeMetadata, ProxyValue
 
 
-class FuseConsecutiveConcatShapesPass(ArmPass):
+class FuseConsecutiveConcatShapesPass(ArmOpTargetedPass):
     """This pass fuses consecutive tosa.CONCAT_SHAPE operations into a single
     tosa.CONCAT_SHAPE operation with a flattened list of input shapes. E.g.
     tosa.CONCAT_SHAPE([shape1, tosa.CONCAT_SHAPE([shape2, shape3]), shape4])
@@ -24,6 +24,7 @@ class FuseConsecutiveConcatShapesPass(ArmPass):
     """
 
     _passes_required_after = set()
+    target_ops = (exir_ops.backend.tosa.CONCAT_SHAPE.default,)
 
     def _to_proxy_value(
         self, arg: ProxyValue | torch.fx.Node | Any
@@ -42,7 +43,7 @@ class FuseConsecutiveConcatShapesPass(ArmPass):
         meta: NodeMetadata,
         updated: bool | None = False,
     ) -> ProxyValue:
-        if op != exir_ops.backend.tosa.CONCAT_SHAPE.default:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
         arg_list = args[0]
         new_arg_list: list[Any] = []

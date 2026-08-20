@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Disable HF Xet storage to avoid stalled downloads on CI runners
+export HF_HUB_DISABLE_XET=1
+
 # Function to download files from the Hugging Face Hub
 # Arguments:
 # 1. model_id: The Hugging Face repository ID (e.g., "organization/model_name")

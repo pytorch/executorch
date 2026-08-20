@@ -28,7 +28,9 @@ class Silu(torch.nn.Module):
         _input: torch.Tensor,
         _inplace: Optional[bool] = False,
     ):
-        return torch.nn.SiLU(inplace=_inplace)(_input)
+        # Clone so the in-place variant does not overwrite the caller's tensor,
+        # which the pipeline reuses for the comparison run.
+        return torch.nn.SiLU(inplace=_inplace)(_input.clone())
 
     test_data: list[input_t] = {
         "op_silu_rank1_ones": lambda: torch.ones(5),

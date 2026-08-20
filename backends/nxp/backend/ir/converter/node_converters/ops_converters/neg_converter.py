@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 
 from executorch.backends.nxp.backend import edge_helper
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
@@ -41,6 +42,12 @@ class NegConverter(NodeConverter):
                 pass  # Atomic quantization parameters -> per tensor quantization.
             case _:
                 return False  # Everything else is unexpected.
+
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0], [0]
+        ):
+            return False
 
         return True
 

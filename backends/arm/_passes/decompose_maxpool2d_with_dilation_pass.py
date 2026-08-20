@@ -9,7 +9,7 @@ from typing import Set, Type
 
 import torch
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -47,7 +47,7 @@ def _pack_dimension(
     return packed_dim_size, padding + extra_padding, output_size
 
 
-class DecomposeMaxPool2dPass(ArmPass):
+class DecomposeMaxPool2dPass(ArmOpTargetedPass):
     """Decompose dilated max_pool2d (EXIR edge ops) into space-to-batch ->
     maxpool -> batch-to-space.
     """
@@ -55,10 +55,11 @@ class DecomposeMaxPool2dPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {
         SizeAdjustInputPass,
     }
+    target_ops = EDGE_MAXPOOL2D
 
     def call_operator(self, op, args, kwargs, meta):
         # Only intercept EXIR edge max_pool2d ops
-        if op not in EDGE_MAXPOOL2D:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         # detect whether indices variant

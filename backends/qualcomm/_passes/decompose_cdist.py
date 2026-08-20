@@ -6,6 +6,7 @@
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import merge_decomposed_graph
 
@@ -32,8 +33,25 @@ class CDist(torch.nn.Module):
 
 class DecomposeCDist(ExportPass):
     """
-    Decompose for math equivalent op.
+    Decompose aten.cdist and aten._cdist_forward into supported primitives.
+
+    torch.cdist(x, y, p=2) computes pairwise Euclidean distances between all
+    row pairs of two 2D (or batched) input tensors x of shape [..., P, M] and
+    y of shape [..., R, M], returning a distance matrix of shape [..., P, R].
+
+    Decomposition (p=2 only):
+        1. diff[...,i,j] = x[...,i,:] - y[...,j,:]  # broadcast: [...,P,1,M] - [...,1,R,M] -> [...,P,R,M]
+        2. sq_diff       = diff ** 2                  # element-wise square
+        3. sum_sq        = sq_diff.sum(dim=-1)        # sum over feature dim -> [..., P, R]
+        4. dist          = sqrt(sum_sq)               # Euclidean distance matrix [..., P, R]
+
+    Only p=2 is supported.
     """
+
+    cdist_targets = {
+        torch.ops.aten.cdist.default,
+        torch.ops.aten._cdist_forward.default,
+    }
 
     def __init__(self) -> None:
         super().__init__()
@@ -42,7 +60,7 @@ class DecomposeCDist(ExportPass):
         graph = graph_module.graph
         for node in graph.nodes:
             model = CDist()
-            if torch.ops.aten.cdist.default == node.target:
+            if node.target in self.cdist_targets:
                 if len(node.args) > 2:
                     assert (
                         node.args[2] == 2
@@ -64,6 +82,5 @@ class DecomposeCDist(ExportPass):
                     )
                     graph.erase_node(node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

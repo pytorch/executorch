@@ -11,6 +11,7 @@
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/span.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstring>
 
@@ -169,6 +170,46 @@ class LoadBackendOptionsMap final {
    */
   size_t size() const {
     return size_;
+  }
+
+  /**
+   * Non-owning view of a single (backend_id, options) entry, returned by
+   * entry_at(). The pointer / span are valid until the map is mutated or
+   * destroyed.
+   */
+  struct EntryView {
+    const char* backend_id = nullptr;
+    Span<const BackendOption> options;
+  };
+
+  /**
+   * Returns the (backend_id, options) entry at the given index for
+   * enumeration over the map's contents.
+   *
+   * @param index The entry index. Must be < size(); behavior is undefined
+   *     otherwise. Use this together with size() to walk every entry.
+   * @return EntryView referencing the entry's backend_id and options. The
+   *     view is valid until the next mutation of, or destruction of, this
+   *     map.
+   *
+   * Example:
+   * @code
+   *   for (size_t i = 0; i < map.size(); ++i) {
+   *     const auto entry = map.entry_at(i);
+   *     // use entry.backend_id and entry.options ...
+   *   }
+   * @endcode
+   */
+  EntryView entry_at(size_t index) const {
+    ET_DCHECK_MSG(
+        index < size_,
+        "entry_at index %zu out of bounds (size=%zu)",
+        index,
+        size_);
+    return EntryView{
+        entries_[index].backend_id,
+        Span<const BackendOption>(
+            entries_[index].options.data(), entries_[index].options.size())};
   }
 
  private:

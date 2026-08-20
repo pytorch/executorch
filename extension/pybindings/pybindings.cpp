@@ -73,7 +73,6 @@
   })
 
 namespace py = pybind11;
-using executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs;
 using ::executorch::ET_RUNTIME_NAMESPACE::BackendInterface;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_class;
 using ::executorch::ET_RUNTIME_NAMESPACE::get_backend_name;
@@ -87,8 +86,6 @@ using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
 using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::extension::pybindings::PyDataLoader;
-using ::executorch::extension::pybindings::SharedPtrDataLoader;
-using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
@@ -106,6 +103,7 @@ using torch::executor::ETDumpGen;
 #ifndef USE_ATEN_LIB
 using ::executorch::extension::alias_attensor_to_etensor;
 using ::executorch::extension::alias_etensor_to_attensor;
+using ::executorch::extension::torch_to_executorch_device;
 using ::executorch::extension::torch_to_executorch_scalar_type;
 #endif // !USE_ATEN_LIB
 
@@ -114,6 +112,22 @@ namespace extension {
 namespace pybindings {
 
 namespace {
+
+void* mutable_tensor_data_ptr_no_cow(at::Tensor& tensor) {
+  if (tensor.numel() == 0) {
+    return nullptr;
+  }
+
+  auto* storage_data = static_cast<char*>(tensor.unsafeGetTensorImpl()
+                                              ->unsafe_storage()
+                                              .unsafeGetStorageImpl()
+                                              ->_mutable_data_ptr_no_checks()
+                                              .mutable_get());
+  ET_CHECK_MSG(
+      storage_data != nullptr,
+      "Tensor has a non-zero number of elements, but its data is not allocated");
+  return storage_data + tensor.storage_offset() * tensor.itemsize();
+}
 
 void write_data_to_file(const std::string& path, void* buf, size_t size) {
   FILE* f = fopen(path.c_str(), "w+");
@@ -781,18 +795,35 @@ struct PyModule final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
         input_dim_order.push_back(std::move(dim_order));
+        // The runtime has two device types, so a device outside that pair
+        // cannot be represented at all and the tensor would carry a label that
+        // does not describe its memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " + method_name +
+              " is on device " + at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device = mapped_device.value_or(
+            torch::executor::Device(torch::executor::DeviceType::CPU));
         input_tensors.emplace_back(
             type,
             dim,
             input_sizes.back().data(),
             nullptr,
             input_dim_order.back().data(),
-            input_strides.back().data());
+            input_strides.back().data(),
+            torch::executor::TensorShapeDynamism::STATIC,
+            device.type(),
+            device.index());
 
         torch::executor::Tensor temp =
             torch::executor::Tensor(&input_tensors.back());
@@ -807,6 +838,8 @@ struct PyModule final {
         cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +
@@ -1113,17 +1146,35 @@ struct PyMethod final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
-        TensorPtr tensor =
-            for_blob(at_tensor.data_ptr(), std::move(sizes), type)
-                .strides(std::move(strides))
-                .dim_order(std::move(dim_order))
-                .dynamism(aten::TensorShapeDynamism::STATIC)
-                .make_tensor_ptr();
+        // Record where the buffer actually lives. The conversion copied every
+        // other property and left the device at CPU, so an accelerator buffer
+        // was described as host memory.
+        auto mapped_device = torch_to_executorch_device(at_tensor.device());
+        // An empty tensor has no buffer for a label to describe, so it is left
+        // alone rather than rejected for a device it never touches.
+        if (!mapped_device.has_value() && at_tensor.numel() != 0) {
+          throw std::runtime_error(
+              "Input " + std::to_string(i) + " for method " +
+              method_->method_meta().name() + " is on device " +
+              at_tensor.device().str() +
+              ", and only CPU and CUDA tensors can be passed to a method.");
+        }
+        const auto device =
+            mapped_device.value_or(aten::Device(aten::DeviceType::CPU));
+        TensorPtr tensor = for_blob(
+                               mutable_tensor_data_ptr_no_cow(at_tensor),
+                               std::move(sizes),
+                               type)
+                               .strides(std::move(strides))
+                               .dim_order(std::move(dim_order))
+                               .dynamism(aten::TensorShapeDynamism::STATIC)
+                               .device(device)
+                               .make_tensor_ptr();
         input_tensors.push_back(tensor);
         EValue evalue(input_tensors.back());
 #endif
@@ -1135,6 +1186,8 @@ struct PyMethod final {
         cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
       } else if (py::isinstance<py::int_>(python_input)) {
         cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else if (py::isinstance<py::float_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<double>(python_input)));
       } else {
         throw std::runtime_error(
             "Unsupported python type " + type_str +

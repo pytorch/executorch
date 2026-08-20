@@ -8,7 +8,7 @@ This section is intended to describe the necessary steps to take a PyTorch model
 ## System Requirements
 The following are required to install the ExecuTorch host libraries, needed to export models and run from Python. Requirements for target end-user devices are backend dependent. See the appropriate backend documentation for more information.
 
-- Python 3.10 - 3.13
+- Python 3.10 - 3.14
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
 - Linux (x86_64 or ARM64), macOS (ARM64), or Windows (x86_64).
     - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
@@ -78,6 +78,8 @@ Quantization can also be done at this stage to reduce model size and runtime. Qu
 After successfully generating a .pte file, it is common to use the Python runtime APIs to validate the model on the development platform. This can be used to evaluate model accuracy before running on-device.
 
 For the MobileNet V2 model from torchvision used in this example, image inputs are expected as a normalized, float32 tensor with dimensions of (batch, channels, height, width). The output is a tensor containing class logits. See [torchvision.models.mobilenet_v2](https://pytorch.org/vision/main/models/generated/torchvision.models.mobilenet_v2.html) for more information on the input and output tensor format for this model.
+
+For more guidance on image preprocessing, channels-first and channels-last layouts, and CV output decoding, see [Working with Computer Vision Models](working-with-cv-models.md).
 
 ```python
 import torch

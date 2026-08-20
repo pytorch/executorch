@@ -1,5 +1,7 @@
+import logging
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import cache
 from typing import Any, Dict, Optional, Tuple, Type, TypedDict
 
 import torch
@@ -7,7 +9,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.lora import LoRALinear
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.norm import RMSNorm, RMSNormGated
+from executorch.examples.models.llama.norm import (
+    RMSNorm,
+    RMSNormGated,
+    ScalelessRMSNorm,
+)
 from executorch.examples.models.llama.rope import Rope
 
 
@@ -62,6 +68,32 @@ def register_attention(name: str):
         return cls
 
     return decorator
+
+
+@cache
+def _get_gated_delta_rule_op() -> Optional[Any]:
+    """Return the fused gated delta rule op, or None if it is unavailable.
+
+    ``channelwise_gated_delta_rule`` accepts a per-head scalar decay as a 3D
+    ``[B, H, T]`` tensor, which is the layout GatedDeltaNet produces. Resolve it
+    lazily (importing the custom ops library on first use) and memoize so
+    environments without the custom op fall back to the Python recurrence.
+    """
+    try:
+        return torch.ops.llama.channelwise_gated_delta_rule.default
+    except (AttributeError, RuntimeError):
+        pass
+
+    try:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+    except (AssertionError, ImportError, OSError, RuntimeError):
+        logging.debug("Failed to import the ExecuTorch custom ops library")
+        return None
+
+    try:
+        return torch.ops.llama.channelwise_gated_delta_rule.default
+    except (AttributeError, RuntimeError):
+        return None
 
 
 class KVCache(nn.Module):
@@ -375,6 +407,9 @@ class AttentionMHA(Attention):
         self.qk_norm_before_rope = args.qk_norm_before_rope
         self.use_q_gate = args.use_q_gate
         self.enable_dynamic_shape = args.enable_dynamic_shape
+        self.scale_query_by = args.scale_query_by
+        self.use_attn_o_gate = args.use_attn_o_gate
+        self.use_attn_o_norm = args.use_attn_o_norm
         q_out_dim = self.n_heads * self.head_dim * (2 if self.use_q_gate else 1)
 
         # YOCO: Determine if this is a KV shared layer (receives shared KV from donor).
@@ -417,17 +452,26 @@ class AttentionMHA(Attention):
     def _init_norms(self, args: ModelArgs) -> None:
         """Initialize QK normalization layers."""
         if self.use_qk_norm:
-            self.q_norm_fn = RMSNorm(
-                self.head_dim,
-                eps=args.norm_eps,
-                add_unit_offset=args.rms_norm_add_unit_offset,
-            )
-            if self.has_kv_weights:
-                self.k_norm_fn = RMSNorm(
+            if args.qk_norm_affine:
+                self.q_norm_fn = RMSNorm(
                     self.head_dim,
                     eps=args.norm_eps,
                     add_unit_offset=args.rms_norm_add_unit_offset,
                 )
+                if self.has_kv_weights:
+                    self.k_norm_fn = RMSNorm(
+                        self.head_dim,
+                        eps=args.norm_eps,
+                        add_unit_offset=args.rms_norm_add_unit_offset,
+                    )
+            else:
+                self.q_norm_fn = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+                if self.has_kv_weights:
+                    self.k_norm_fn = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+        if self.use_attn_o_norm:
+            self.o_norm = ScalelessRMSNorm(self.head_dim, eps=args.norm_eps)
+        if self.use_attn_o_gate:
+            self.og = nn.Linear(args.dim, self.n_heads * self.head_dim, bias=False)
 
     def _init_projections(self, args: ModelArgs, q_out_dim: int) -> None:
         """Initialize Q/K/V/O projection layers."""
@@ -478,6 +522,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
 
         # Apply RoPE to Q only (K already has RoPE from donor layer)
         q, _ = self.rope.forward(q, q, freqs_cos, freqs_sin)
@@ -485,6 +531,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
 
         return q, k, v
 
@@ -508,6 +556,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
         q, k = self.rope.forward(q, k, freqs_cos, freqs_sin)
@@ -518,6 +568,8 @@ class AttentionMHA(Attention):
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
+            if self.scale_query_by != 1.0:
+                q = q * self.scale_query_by
             k = self.k_norm_fn(k)
 
         return q, k, v
@@ -550,7 +602,14 @@ class AttentionMHA(Attention):
 
         if self.use_kv_cache:
             assert input_pos is not None
-            if self.enable_dynamic_shape:
+            is_ring_buffer = getattr(self.kv_cache, "is_ring_buffer", False)
+
+            if is_ring_buffer:
+                # Ring buffer models compute their own mask after KV cache
+                # update; skip start_pos bounds check since start_pos can
+                # exceed max_context_len for sliding window / attention sink.
+                attn_mask = None
+            elif self.enable_dynamic_shape:
                 start_pos = input_pos[-1].item()
                 torch._check_is_size(start_pos)
                 torch._check(start_pos < self.max_context_len)
@@ -569,14 +628,13 @@ class AttentionMHA(Attention):
                 )
                 k, v = self.kv_cache.update(input_pos, k, v)
 
-            if getattr(self.kv_cache, "is_ring_buffer", False):
+            if is_ring_buffer:
                 attn_mask = self.kv_cache.create_causal_mask_for_ring_buffer(
                     input_pos[0].item(), seqlen
                 )
 
             output = self.SDPA(input_pos, q, k, v, bsz, seqlen, attn_mask)
-            if gate is not None:
-                output = output * torch.sigmoid(gate)
+            output = self._apply_output_transforms(output, x, gate, bsz, seqlen)
 
             if shared_kv is None and self.num_kv_shared_layers > 0:
                 update = {"kv_to_share": (k, v)}
@@ -595,12 +653,26 @@ class AttentionMHA(Attention):
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
         output = output.transpose(1, 2).reshape(bsz, seqlen, -1)
-        if gate is not None:
-            output = output * torch.sigmoid(gate)
+        output = self._apply_output_transforms(output, x, gate, bsz, seqlen)
 
         output = self.wo(output)
 
         return output, None
+
+    def _apply_output_transforms(
+        self, output: torch.Tensor, x: torch.Tensor, gate, bsz: int, seqlen: int
+    ) -> torch.Tensor:
+        if self.use_attn_o_norm or self.use_attn_o_gate:
+            output_4d = output.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+            if self.use_attn_o_norm:
+                output_4d = self.o_norm(output_4d)
+            if self.use_attn_o_gate:
+                og = self.og(x).view(bsz, seqlen, self.n_local_heads, self.head_dim)
+                output_4d = torch.sigmoid(og) * output_4d
+            output = output_4d.reshape(bsz, seqlen, -1)
+        if gate is not None:
+            output = output * torch.sigmoid(gate)
+        return output
 
 
 def _l2norm(x: torch.Tensor, dim: int = -1, eps: float = 1e-6) -> torch.Tensor:
@@ -718,6 +790,47 @@ class AttentionGatedDeltaNet(Attention):
         out = F.silu(out[:, :, -seq_len:]).to(mixed_qkv.dtype)
         return out.transpose(1, 2).contiguous()
 
+    def _naive_gated_delta_rule(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        decay: torch.Tensor,
+        beta: torch.Tensor,
+        initial_state: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch_size, num_heads, sequence_length, _ = key.shape
+        v_head_dim = value.shape[-1]
+
+        core_attn_out = torch.zeros(
+            batch_size,
+            num_heads,
+            sequence_length,
+            v_head_dim,
+            device=value.device,
+            dtype=value.dtype,
+        )
+        last_recurrent_state = initial_state
+
+        for i in range(sequence_length):
+            q_t = query[:, :, i]
+            k_t = key[:, :, i]
+            v_t = value[:, :, i]
+            decay_t = decay[:, :, i].unsqueeze(-1).unsqueeze(-1)
+            beta_t = beta[:, :, i].unsqueeze(-1)
+
+            last_recurrent_state = last_recurrent_state * decay_t
+            kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
+            delta = (v_t - kv_mem) * beta_t
+            last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
+                -1
+            ) * delta.unsqueeze(-2)
+            core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
+                dim=-2
+            )
+
+        return core_attn_out, last_recurrent_state
+
     def _recurrent_gated_delta_rule(
         self,
         query: torch.Tensor,
@@ -736,36 +849,27 @@ class AttentionGatedDeltaNet(Attention):
             for x in (query, key, value, beta, g)
         ]
 
-        batch_size, num_heads, sequence_length, k_head_dim = key.shape
-        v_head_dim = value.shape[-1]
+        batch_size = key.shape[0]
         scale = 1.0 / (query.shape[-1] ** 0.5)
         query = query * scale
+        # The op consumes the decay itself, not its log.
+        decay = g.exp()
+        initial_state = self.recurrent_state[:batch_size].to(torch.float32)
 
-        core_attn_out = torch.zeros(
-            batch_size,
-            num_heads,
-            sequence_length,
-            v_head_dim,
-            device=value.device,
-            dtype=value.dtype,
-        )
-        last_recurrent_state = self.recurrent_state[:batch_size].to(value.dtype)
-
-        for i in range(sequence_length):
-            q_t = query[:, :, i]
-            k_t = key[:, :, i]
-            v_t = value[:, :, i]
-            g_t = g[:, :, i].exp().unsqueeze(-1).unsqueeze(-1)
-            beta_t = beta[:, :, i].unsqueeze(-1)
-
-            last_recurrent_state = last_recurrent_state * g_t
-            kv_mem = (last_recurrent_state * k_t.unsqueeze(-1)).sum(dim=-2)
-            delta = (v_t - kv_mem) * beta_t
-            last_recurrent_state = last_recurrent_state + k_t.unsqueeze(
-                -1
-            ) * delta.unsqueeze(-2)
-            core_attn_out[:, :, i] = (last_recurrent_state * q_t.unsqueeze(-1)).sum(
-                dim=-2
+        op = _get_gated_delta_rule_op()
+        # The fused op is an ExecuTorch portable kernel; it cannot run in eager
+        # mode on CUDA (there is no kernel runtime context, so it aborts with
+        # "No temp allocator provided"). Restrict it to export/compile tracing
+        # and fall back to the Python recurrence for eager CUDA.
+        if op is not None and query.is_cuda and not torch.compiler.is_compiling():
+            op = None
+        if op is not None:
+            core_attn_out, last_recurrent_state = op(
+                query, key, value, decay, beta, initial_state
+            )
+        else:
+            core_attn_out, last_recurrent_state = self._naive_gated_delta_rule(
+                query, key, value, decay, beta, initial_state
             )
 
         with torch.no_grad():

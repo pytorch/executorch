@@ -6,6 +6,7 @@
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import dead_code_elimination_pass
 
 from .utils import copy_meta
 
@@ -21,7 +22,10 @@ class DecomposeExpM1(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
-            if node.target == torch.ops.aten.special_expm1.default:
+            if node.target in {
+                torch.ops.aten.special_expm1.default,
+                torch.ops.aten.expm1.default,
+            }:
                 input_node = node.args[0]
                 with graph_module.graph.inserting_after(input_node):
                     exp_op = torch.ops.aten.exp.default
@@ -41,6 +45,5 @@ class DecomposeExpM1(ExportPass):
                 for user in node.users.copy():
                     user.replace_input_with(node, sub_node)
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)

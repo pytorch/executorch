@@ -21,7 +21,6 @@ using executorch::backends::xnnpack::WorkspaceSharingMode;
 using executorch::backends::xnnpack::XNNWorkspace;
 using executorch::backends::xnnpack::XNNWorkspaceManager;
 using executorch::runtime::Error;
-using executorch::runtime::Result;
 
 class XNNWorkspaceManagerTest : public ::testing::Test {
  protected:
@@ -116,7 +115,11 @@ TEST_F(XNNWorkspaceManagerTest, DisabledModeAcquireDoesNotLock) {
 
   auto [lock, ptr] = workspace->acquire();
   ASSERT_NE(ptr, nullptr);
+#ifdef XNNPACK_WORKSPACE_ALWAYS_LOCK
+  EXPECT_TRUE(lock.owns_lock());
+#else
   EXPECT_FALSE(lock.owns_lock());
+#endif
 }
 
 TEST_F(XNNWorkspaceManagerTest, PerModelMode) {

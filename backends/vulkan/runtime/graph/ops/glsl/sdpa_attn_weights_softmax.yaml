@@ -6,14 +6,30 @@
 
 sdpa_attn_weights_softmax:
   parameter_names_with_default_values:
-    DTYPE: float
+    IN_DTYPE: float
+    OUT_DTYPE: float
     STORAGE: texture3d
+    MODE: llm
   generate_variant_forall:
     STORAGE:
       - VALUE: texture3d
       - VALUE: buffer
-    DTYPE:
-      - VALUE: float
-      - VALUE: half
+    combination:
+      parameter_names: [IN_DTYPE, OUT_DTYPE]
+      combos:
+        - parameter_values: [float, float]
+          suffix: float
+        - parameter_values: [half, half]
+          suffix: half
   shader_variants:
     - NAME: sdpa_attn_weights_softmax
+    - NAME: fused_sdpa_softmax
+      MODE: fused
+      IN_DTYPE: float
+      generate_variant_forall:
+        STORAGE:
+          - VALUE: texture3d
+          - VALUE: buffer
+        OUT_DTYPE:
+          - VALUE: float
+          - VALUE: half

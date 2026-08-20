@@ -169,6 +169,12 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+if(DEFINED EXECUTORCH_XNNPACK_LOG_LEVEL)
+  target_compile_definitions(
+    xnnpack-logging PUBLIC XNN_LOG_LEVEL=${EXECUTORCH_XNNPACK_LOG_LEVEL}
+  )
+endif()
+
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

@@ -11,6 +11,11 @@ on:
         description: 'JSON array of flows to test'
         required: true
         type: string
+      exclude:
+        description: 'JSON array of {flow, suite} pairs to drop from the matrix'
+        required: false
+        type: string
+        default: '[]'
       ref:
         description: 'Git ref to checkout'
         required: false
@@ -36,6 +41,11 @@ on:
         required: false
         type: string
         default: linux.4xlarge.memory
+      docker-image:
+        description: 'Docker image for Linux jobs'
+        required: false
+        type: string
+        default: ci-image:executorch-ubuntu-22.04-clang12
 
 jobs:
   test-backend-linux:
@@ -45,12 +55,13 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       ref: ${{ inputs.ref }}
       runner: ${{ inputs.runner-linux }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
@@ -121,9 +132,11 @@ jobs:
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
+        exclude: ${{ fromJSON(inputs.exclude) }}
 
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
+      default-packages: ""
       ref: ${{ inputs.ref }}
       runner: macos-m1-stable
       python-version: "3.12"

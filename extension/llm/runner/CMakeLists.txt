@@ -28,6 +28,12 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 #
 executorch_load_build_variables()
 
+add_library(extension_llm_session INTERFACE)
+target_link_libraries(extension_llm_session INTERFACE executorch_core)
+target_include_directories(
+  extension_llm_session INTERFACE ${_common_include_directories}
+)
+
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
@@ -39,8 +45,9 @@ add_subdirectory(
   ${CMAKE_CURRENT_BINARY_DIR}/../sampler
 )
 
-set(runner_deps executorch_core extension_module extension_tensor
-                extension_llm_sampler tokenizers::tokenizers
+set(runner_deps
+    executorch_core extension_module extension_tensor extension_llm_sampler
+    extension_memory_allocator tokenizers::tokenizers
 )
 
 # depend on arange_utils
@@ -61,10 +68,13 @@ target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
 )
 
-# If the project is configured to build with CUDA support, try to find a CUDA
-# runtime (prefer the CUDAToolkit package). If found, expose a compile-time
-# macro so sources can conditionally compile CUDA-aware code.
-if(EXECUTORCH_BUILD_CUDA)
+# Link the configured GPU runtime for CUDA-aware runner sources.
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  target_compile_definitions(extension_llm_runner PUBLIC CUDA_AVAILABLE)
+  target_link_libraries(extension_llm_runner PUBLIC hip::host extension_cuda)
+  message(STATUS "HIP found; defining CUDA_AVAILABLE")
+elseif(EXECUTORCH_BUILD_CUDA)
   # Prefer the modern CMake CUDAToolkit module, fall back to searching for the
   # CUDA runtime library (cudart) if the package isn't available.
   find_package(CUDAToolkit QUIET)
@@ -80,6 +90,7 @@ if(EXECUTORCH_BUILD_CUDA)
   endif()
 endif()
 
+install(TARGETS extension_llm_session EXPORT ExecuTorchTargets)
 install(
   TARGETS extension_llm_runner
   EXPORT ExecuTorchTargets
@@ -104,6 +115,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   pybind11_add_module(
     _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
   )
+  strip_python_lib(_llm_runner)
 
   find_package_torch()
   find_library(

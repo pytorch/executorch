@@ -9,6 +9,7 @@ __pycache__/
 
 # Build and tool-generated files
 arm_test/
+riscv_test/
 buck-out/
 buck2-bin/
 build/
@@ -16,13 +17,26 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+backends/webgpu/third-party/
 build-android/
 build-x86/
+build-direct/
 dist/
 arm-scratch/
 executorch.egg-info
+
+# MLX delegate code generated in-tree from backends/mlx/serialization/schema.fbs
+# by generate.py, which the MLX backend runs at build time.
+backends/mlx/_generated_inspector.py
+backends/mlx/runtime/MLXLoader.cpp
+backends/mlx/runtime/MLXLoader.h
+backends/mlx/runtime/schema_generated.h
+backends/mlx/serialization/_generated/
+backends/mlx/serialization/_generated_serializers.py
+backends/mlx/serialization/mlx_graph_schema.py
 pip-out/
 build-profiling/
+**/ddr_*_temp
 
 # Any exported models and profiling outputs
 *.bin
@@ -33,6 +47,10 @@ tokenizer.json
 *.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
+# Arduino examples ship a model, so build_arduino_library.sh has something to
+# turn into the model.h their sketches include. 1.1 KB for the add models,
+# 53 KB for the keyword spotting DS-CNN.
+!examples/arduino/examples/*/model.pte
 
 # Editor temporaries
 *.idea
@@ -66,6 +84,7 @@ xcuserdata/
 /src/executorch/share/
 /src/executorch/version.py
 *_etdump
+CMakeUserPresets.json
 
 # Android
 *.aar
@@ -74,5 +93,10 @@ xcuserdata/
 *.dll
 *.pyd
 
+# Zephyr
+zephyr_dev_root/
+zephyr_dev_root.backup.*/
+
 # Agents
 .claude/*.local.*
+extension/pybindings/mlx.metallib

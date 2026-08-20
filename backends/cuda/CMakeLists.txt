@@ -28,21 +28,32 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-# Use dynamic linking for CUDA runtime
+# Use dynamic linking for the GPU runtime.
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
-find_package(CUDAToolkit REQUIRED)
+# Keep cuRAND confined to CUDA-only operator shims.
+if(EXECUTORCH_BUILD_ROCM)
+  find_package(hip CONFIG REQUIRED)
+  set(_cuda_runtime_libraries hip::host)
+  set(_cuda_shim_libraries hip::host)
+  set(_cuda_include_directories "")
+else()
+  find_package(CUDAToolkit REQUIRED)
+  set(_cuda_runtime_libraries CUDA::cudart)
+  set(_cuda_shim_libraries CUDA::cudart CUDA::curand)
+  set(_cuda_include_directories ${CUDAToolkit_INCLUDE_DIRS})
+endif()
 
 # Try to enable CUDA language when a working CUDA compiler toolchain is
 # available. Some CI environments (notably Windows packaging jobs) provide
 # CUDAToolkit headers/libs but cannot complete CUDA compiler identification. In
 # those cases, keep configuration working and skip CUDA-only sources below.
-if(NOT CMAKE_CUDA_COMPILER)
+if(NOT EXECUTORCH_BUILD_ROCM AND NOT CMAKE_CUDA_COMPILER)
   include(CheckLanguage)
   check_language(CUDA)
 endif()
 
-if(CMAKE_CUDA_COMPILER)
+if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
   enable_language(CUDA)
 endif()
 
@@ -103,19 +114,32 @@ install(
 )
 
 # CUDA-specific AOTI shim symbols (dynamically linked)
-set(_aoti_cuda_shim_sources runtime/shims/memory.cpp
+set(_aoti_cuda_shim_sources runtime/cuda_allocator.cpp runtime/shims/memory.cpp
                             runtime/shims/cuda_guard.cpp
 )
 
-# Only build int4mm shim when CUDA language/toolchain is available.
-if(CMAKE_CUDA_COMPILER)
-  list(APPEND _aoti_cuda_shim_sources runtime/shims/int4mm.cu)
+# Only build CUDA-only operator shims when the CUDA toolchain is available.
+if(NOT EXECUTORCH_BUILD_ROCM AND CMAKE_CUDA_COMPILER)
+  list(
+    APPEND
+    _aoti_cuda_shim_sources
+    runtime/shims/int4mm.cu
+    runtime/shims/int4_plain_mm.cu
+    runtime/shims/int5_plain_mm.cu
+    runtime/shims/int6_plain_mm.cu
+    runtime/shims/int8_plain_mm.cu
+    runtime/shims/sort.cu
+    runtime/shims/rand.cu
+  )
 endif()
 
 add_library(aoti_cuda_shims SHARED ${_aoti_cuda_shim_sources})
 
 # Define CUDA_AVAILABLE to use SlimTensor on GPU in common_shims_slim.h
 target_compile_definitions(aoti_cuda_shims PRIVATE CUDA_AVAILABLE=1)
+if(EXECUTORCH_BUILD_ROCM)
+  target_compile_definitions(aoti_cuda_shims PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
 
 # Define export macros for shared library. Use WIN32 (not just MSVC) so MinGW
 # cross-compiles also emit dllexport symbols for AOTI shims.
@@ -131,7 +155,7 @@ endif()
 
 target_include_directories(
   aoti_cuda_shims
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${_cuda_include_directories} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
 
@@ -150,7 +174,8 @@ endif()
 # retention.
 if(_cuda_is_msvc_toolchain)
   target_link_libraries(
-    aoti_cuda_shims PRIVATE cuda_platform CUDA::cudart ${CMAKE_DL_LIBS}
+    aoti_cuda_shims PRIVATE cuda_platform ${_cuda_shim_libraries}
+                            extension_cuda ${CMAKE_DL_LIBS}
   )
   # Link object library directly so symbols are pulled exactly once while
   # avoiding duplicate static/object inclusion and interface leakage.
@@ -160,7 +185,7 @@ else()
     aoti_cuda_shims
     PRIVATE cuda_platform
     PUBLIC -Wl,--whole-archive aoti_common_shims_slim -Wl,--no-whole-archive
-           CUDA::cudart ${CMAKE_DL_LIBS}
+           ${_cuda_shim_libraries} extension_cuda ${CMAKE_DL_LIBS}
   )
 endif()
 
@@ -175,16 +200,25 @@ install(
 )
 
 # CUDA backend implementation
-set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp)
+set(_aoti_cuda_backend_sources runtime/cuda_backend.cpp
+                               runtime/cuda_mutable_state.cpp
+)
+if(_cuda_is_msvc_toolchain)
+  # MSVC links aoti_cuda_backend into portable_lib without relying on C++
+  # symbols exported from aoti_cuda_shims.dll.
+  list(APPEND _aoti_cuda_backend_sources runtime/cuda_allocator.cpp)
+endif()
 
-# CUDA backend implementation
 add_library(aoti_cuda_backend STATIC ${_aoti_cuda_backend_sources})
 
 target_include_directories(
   aoti_cuda_backend
-  PUBLIC ${CUDAToolkit_INCLUDE_DIRS} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+  PUBLIC ${_cuda_include_directories} $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
          $<INSTALL_INTERFACE:include>
 )
+if(EXECUTORCH_BUILD_ROCM)
+  target_compile_definitions(aoti_cuda_backend PUBLIC EXECUTORCH_USE_HIP=1)
+endif()
 target_compile_options(
   aoti_cuda_backend
   PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_cuda_cxx_compile_options}>"
@@ -199,8 +233,9 @@ endif()
 # directory. On other platforms, use PUBLIC so the dependency propagates to
 # consumers.
 target_link_libraries(
-  aoti_cuda_backend PUBLIC cuda_platform extension_tensor CUDA::cudart
-                           ${CMAKE_DL_LIBS}
+  aoti_cuda_backend
+  PUBLIC cuda_platform extension_tensor ${_cuda_runtime_libraries}
+         extension_cuda ${CMAKE_DL_LIBS}
 )
 
 if(_cuda_is_msvc_toolchain)
@@ -223,3 +258,19 @@ install(
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )
+
+if(BUILD_TESTING)
+  include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
+
+  et_cxx_test(
+    test_cuda_allocator SOURCES runtime/test/test_cuda_allocator.cpp EXTRA_LIBS
+    aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_allocator PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_mutable_state SOURCES runtime/test/test_cuda_mutable_state.cpp
+    EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+endif()

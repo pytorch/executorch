@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -20,7 +21,11 @@ from executorch.backends.xnnpack.utils.quant_utils import (
     is_quant,
     tag_as_implicit_q_dq,
 )
-from executorch.backends.xnnpack.utils.utils import get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_input_node,
+    normalize_mean_dims,
+    normalize_pool2d_args,
+)
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
@@ -163,7 +168,8 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
-        XNNPACK does not support ceil_mode = True and count_include_pad = True
+        XNNPACK does not support ceil_mode = True, or count_include_pad = True
+        when the node has non-zero padding.
         Additionally, we only support divisor_override if divisor_override = pooling region
         """
         if not self.check_common_constraints(node, ep):
@@ -179,7 +185,7 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
         if len(args) >= 6:
             count_include_pad = cast(bool, args[5])
 
-        kernel_size = cast(List[int], args[1])
+        kernel_size, _, padding, _ = normalize_pool2d_args(node, has_dilation=False)
         pooling_region = kernel_size[0] * kernel_size[1]
         divisor_override = pooling_region  # Default divisor is pooling_region
         if len(args) >= 7:
@@ -189,7 +195,7 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
             why(node, reason="ceil mode is not supported")
             return False
 
-        if count_include_pad:
+        if count_include_pad and any(p != 0 for p in padding):
             why(
                 node,
                 reason="zero-padding in the averaging calculation is not supported",
@@ -236,6 +242,27 @@ class CeilConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class CloneConfig(GenericNodePartitionerConfig):
+    target_name = "clone.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        input_meta = node.args[0].meta["val"]
+        output_meta = node.meta["val"]
+        input_dim_order = list(input_meta.dim_order())
+        output_dim_order = list(output_meta.dim_order())
+        if input_dim_order != output_dim_order:
+            why(node, reason="Only dim-order preserving clones are supported.")
+            return False
+
+        return True
 
 
 class ClampConfig(GenericNodePartitionerConfig):
@@ -326,8 +353,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
-        kernel_size = node.args[1]
-        stride = node.args[2]
+        kernel_size, stride, _, _ = normalize_pool2d_args(node, has_dilation=True)
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
 
         # Ceil mode is supported via op padding, which must be statically known.
@@ -335,7 +361,7 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
             why(node, reason="ceil mode is not supported for dynamic shapes")
             return False
 
-        if stride[0] > kernel_size[0] or stride[1] > kernel_size[1]:  # pyre-ignore[16]
+        if stride[0] > kernel_size[0] or stride[1] > kernel_size[1]:
             why(
                 node,
                 reason=f"stride ({stride}) must be less than or equal to kernel size ({kernel_size})",
@@ -384,7 +410,7 @@ class ViewCopyConfig(GenericNodePartitionerConfig):
     target_name = "view_copy.default"
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
-        return [ConfigPrecisionType.FP32]
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
 
     def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
         """
@@ -515,22 +541,38 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         if not self.check_common_constraints(node, ep):
             return False
 
-        dims = node.args[1]
-        output_dims = node.meta["val"].dim()
+        input_rank = get_input_node(node, 0).meta["val"].dim()
+        if input_rank != 4:
+            why(
+                node,
+                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {input_rank}",
+            )
+            return False
 
-        if dims not in ([-2, -1], [-1, -2]):
+        # This path lowers mean.dim to XNNPACK Global Average Pooling, which
+        # cannot encode an explicit dtype override.
+        if node.kwargs.get("dtype") is not None:
+            why(node, reason="mean.dim does not support dtype")
+            return False
+
+        keepdim = len(node.args) >= 3 and bool(node.args[2])
+        try:
+            dims = normalize_mean_dims(node.args[1], input_rank)
+        except ValueError as error:
+            why(node, reason=f"mean.dim has invalid dims: {error}")
+            return False
+
+        if sorted(dims) != [2, 3]:
             why(
                 node,
                 reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
             )
             return False
 
-        if output_dims != 4:
-            why(
-                node,
-                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {output_dims}",
-            )
+        if not keepdim:
+            why(node, reason="mean.dim only supports keepdim=True")
             return False
+
         return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
@@ -722,3 +764,24 @@ class CosConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class UnsqueezeCopyConfig(GenericNodePartitionerConfig):
+    target_name = "unsqueeze_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # The XNNPACK UnsqueezeVisitor only supports unsqueeze on the trailing
+        # dimension. Mirrors the runtime check in op_squeeze.py.
+        dim = node.args[1]
+        input_rank = len(node.args[0].meta["val"].shape)
+        if dim != -1 and dim != input_rank:
+            why(node, reason="unsqueeze_copy only supported on the trailing dimension")
+            return False
+
+        return True

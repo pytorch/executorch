@@ -73,11 +73,20 @@ PhysicalDevice::PhysicalDevice(
 #ifdef VK_KHR_cooperative_matrix
       cooperative_matrix_features{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR},
+      supports_int8_coopmat{false},
 #endif /* VK_KHR_cooperative_matrix */
 #ifdef VK_NV_cooperative_matrix2
       cooperative_matrix2_features{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV},
 #endif /* VK_NV_cooperative_matrix2 */
+#ifdef VK_EXT_subgroup_size_control
+      subgroup_size_control_features{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT,
+          nullptr},
+      subgroup_size_control_properties{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES_EXT,
+          nullptr},
+#endif /* VK_EXT_subgroup_size_control */
       queue_families{},
       num_compute_queues(0),
       api_version_major(0),
@@ -89,6 +98,14 @@ PhysicalDevice::PhysicalDevice(
       has_timestamps(false),
       timestamp_period(0),
       min_ubo_alignment(0),
+      subgroup_size(0),
+      supported_subgroup_ops(0),
+      supported_subgroup_stages(0),
+      min_subgroup_size(0),
+      max_subgroup_size(0),
+      required_subgroup_size_stages(0),
+      supports_subgroup_size_control(false),
+      supports_compute_full_subgroups(false),
       device_name{},
       device_type{DeviceType::UNKNOWN} {
   // Extract physical device properties
@@ -275,6 +292,11 @@ void PhysicalDevice::query_extensions_vk_1_1() {
   extension_list_top = &cooperative_matrix2_features;
 #endif /* VK_NV_cooperative_matrix2 */
 
+#ifdef VK_EXT_subgroup_size_control
+  subgroup_size_control_features.pNext = extension_list_top;
+  extension_list_top = &subgroup_size_control_features;
+#endif /* VK_EXT_subgroup_size_control */
+
   features2.pNext = extension_list_top;
 
   vkGetPhysicalDeviceFeatures2(handle, &features2);
@@ -289,16 +311,95 @@ void PhysicalDevice::query_extensions_vk_1_1() {
     supports_float64_shader_types = true;
   }
 
+#ifdef VK_EXT_subgroup_size_control
+  supports_subgroup_size_control =
+      subgroup_size_control_features.subgroupSizeControl == VK_TRUE;
+  supports_compute_full_subgroups =
+      subgroup_size_control_features.computeFullSubgroups == VK_TRUE;
+#endif /* VK_EXT_subgroup_size_control */
+
+#ifdef VK_KHR_cooperative_matrix
+  if (cooperative_matrix_features.cooperativeMatrix == VK_TRUE) {
+    // Resolve the extension entry point at runtime via vkGetInstanceProcAddr
+    // instead of calling it directly. Builds that link Vulkan without volk do
+    // not have the extension symbol available at link time, so a direct call
+    // fails with an undefined symbol. Mirrors the
+    // vkGetPhysicalDeviceFeatures2KHR / vkGetPhysicalDeviceProperties2KHR
+    // resolution above.
+    auto vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn =
+        (PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR)
+            vkGetInstanceProcAddr(
+                instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR");
+    if (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn != nullptr) {
+      uint32_t count = 0;
+      vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
+          handle, &count, nullptr);
+      if (count > 0) {
+        std::vector<VkCooperativeMatrixPropertiesKHR> props(count);
+        for (auto& p : props) {
+          p.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+          p.pNext = nullptr;
+        }
+        vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR_fn(
+            handle, &count, props.data());
+        for (const auto& p : props) {
+          if (p.AType == VK_COMPONENT_TYPE_SINT8_KHR) {
+            supports_int8_coopmat = true;
+            break;
+          }
+        }
+      }
+    }
+  }
+#endif /* VK_KHR_cooperative_matrix */
+
   // Query properties separately from features
   VkPhysicalDeviceProperties2 properties2{
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
 
+  void* properties_list_top = nullptr;
+
+  VkPhysicalDeviceSubgroupProperties subgroup_properties{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+  subgroup_properties.pNext = properties_list_top;
+  properties_list_top = &subgroup_properties;
+
 #ifdef VK_KHR_shader_integer_dot_product
-  shader_int_dot_product_properties.pNext = nullptr;
-  properties2.pNext = &shader_int_dot_product_properties;
+  shader_int_dot_product_properties.pNext = properties_list_top;
+  properties_list_top = &shader_int_dot_product_properties;
 #endif /* VK_KHR_shader_integer_dot_product */
 
+#ifdef VK_EXT_subgroup_size_control
+  subgroup_size_control_properties.pNext = properties_list_top;
+  properties_list_top = &subgroup_size_control_properties;
+#endif /* VK_EXT_subgroup_size_control */
+
+  properties2.pNext = properties_list_top;
+
   vkGetPhysicalDeviceProperties2(handle, &properties2);
+
+  subgroup_size = subgroup_properties.subgroupSize;
+  supported_subgroup_ops = subgroup_properties.supportedOperations;
+  supported_subgroup_stages = subgroup_properties.supportedStages;
+
+#ifdef VK_EXT_subgroup_size_control
+  if (supports_subgroup_size_control) {
+    min_subgroup_size = subgroup_size_control_properties.minSubgroupSize;
+    max_subgroup_size = subgroup_size_control_properties.maxSubgroupSize;
+    required_subgroup_size_stages =
+        subgroup_size_control_properties.requiredSubgroupSizeStages;
+  } else {
+    // Default to the single subgroup_size when control is unavailable so
+    // callers can use min/max range queries unconditionally.
+    min_subgroup_size = subgroup_size;
+    max_subgroup_size = subgroup_size;
+    required_subgroup_size_stages = 0;
+  }
+#else
+  min_subgroup_size = subgroup_size;
+  max_subgroup_size = subgroup_size;
+  required_subgroup_size_stages = 0;
+#endif /* VK_EXT_subgroup_size_control */
 }
 
 void PhysicalDevice::override_device_name(const std::string& new_name) {

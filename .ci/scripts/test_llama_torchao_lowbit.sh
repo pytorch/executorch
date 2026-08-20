@@ -50,6 +50,9 @@ cmake -DPYTHON_EXECUTABLE=python \
     examples/models/llama
 cmake --build cmake-out/examples/models/llama -j16 --config Release
 
+${PYTHON_EXECUTABLE} -m pytest \
+    extension/llm/custom_ops/test_quantized_moe.py
+
 # Download stories llama110m artifacts
 download_stories_model_artifacts
 

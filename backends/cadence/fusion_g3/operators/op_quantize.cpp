@@ -28,7 +28,9 @@ using ::executorch::runtime::KernelRuntimeContext;
  * updated to have support for below data types, these can be removed and
  * operator need to be updated accordingly
  */
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
 enum datatype { Bits4u = 21, Bits4 = 22 };
+#endif
 
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
@@ -78,6 +80,7 @@ void check_quantize_per_tensor_args(
   } else if (dtype == ScalarType::Short) {
     quant_min_lower_bound = std::numeric_limits<int16_t>::min();
     quant_max_upper_bound = std::numeric_limits<int16_t>::max();
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
   } else if (dtype == (ScalarType)Bits4u) {
     quant_min_lower_bound = std::numeric_limits<uint8_t>::min();
     quant_max_upper_bound = std::numeric_limits<uint8_t>::max();
@@ -90,6 +93,7 @@ void check_quantize_per_tensor_args(
     /* Minimum and maximum values fo signed 4-bit data type */
     quant_min_lower_bound = quant_min_lower_bound >> 4;
     quant_max_upper_bound = quant_max_upper_bound >> 4;
+#endif
   } else if (dtype == ScalarType::Int) {
     quant_min_lower_bound = std::numeric_limits<int32_t>::min();
     quant_max_upper_bound = std::numeric_limits<int32_t>::max();
@@ -243,6 +247,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
     } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
@@ -273,6 +278,7 @@ Tensor& quantize_impl(
           zero_point_data,
           quant_min,
           quant_max);
+#endif
     } else {
       if (axis == NULL) {
         // Vector quantization
@@ -452,6 +458,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
+#ifdef G3_ENABLE_4BIT_QUANTIZATION
     } else if ((out.scalar_type() == (ScalarType)Bits4u) && (optimized)) {
       uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
       XT_KERNEL_CHECK(
@@ -480,6 +487,7 @@ Tensor& quantize_impl(
           scale_data,
           quant_min,
           quant_max);
+#endif
     } else {
       if (axis == NULL) {
         // calculate the quantized input

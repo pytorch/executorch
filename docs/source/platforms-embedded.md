@@ -10,10 +10,10 @@ ExecuTorch supports embedded devices from microcontrollers to edge devices.
 
 ### Microcontrollers
 - [Cadence Xtensa Backend](backends-cadence)
-- [ARM Ethos-U NPU Backend](backends-arm-ethos-u)
+- [ARM Ethos-U NPU Backend](backends/arm-ethos-u/arm-ethos-u-overview.md)
 - [Custom Backend Development](backend-delegates-integration)
 
 ### Edge Devices
-- [ARM Ethos-U NPU Backend](backends-arm-ethos-u)
-- [NXP eIQ Neutron Backend](backend-nxp)
+- [ARM Ethos-U NPU Backend](backends/arm-ethos-u/arm-ethos-u-overview.md)
+- [NXP eIQ Neutron Backend](backends/nxp/nxp-overview.md)
 - [Custom Hardware Integration](backend-delegates-integration)

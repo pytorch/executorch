@@ -1,7 +1,7 @@
 # Cortex-M Backend
 
 > [!NOTE]
-> WIP. This is a temporary/placeholder backend for Cortex-M CPUs. It is not intended to be used in production, but rather as a proof of concept. Things will change without notice.
+> Beta. This backend has been validated with a set of small models (e.g. MLPerf Tiny, MobileNetV2) and provides broad operator coverage through CMSIS-NN accelerated kernels with portable-ops fallback.
 
 ## Overview
 
@@ -19,6 +19,12 @@ examples/arm/arm-scratch/setup_path.sh                                    # Add 
 backends/cortex_m/test/build_test_runner.sh                               # Build executor-runner with cortex-m oplib + kernels registred
 pytest --config-file=backends/arm/test/pytest.ini backends/cortex_m/test  # Run tests with correct configuration file
 ```
+
+For an end-to-end bundled-IO FVP run of a single model (export → build → FVP → `Test_result: PASS`), use `examples/arm/run.sh`:
+```
+examples/arm/run.sh --model_name=<model> --target=cortex-m55+int8 --bundleio
+```
+This drives `aot_arm_compiler --bundleio`, invokes `build_test_runner.sh`, and launches the Corstone-300 FVP via `backends/arm/scripts/run_fvp.sh`.
 
 ## Supported operators
 Refer to `backends/cortex_m/test/ops` for currently supported accelerated ops/dtypes. Additionally, the quantizer targets pure "data-movement ops" such as data copies, slicing and concatenations to use quantized dtypes using the portable-kernels operator library.

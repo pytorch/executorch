@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -25,7 +26,9 @@ from executorch.extension.llm.export.config.llm_config import (
 class TestValidation(unittest.TestCase):
     def test_invalid_attention_sink(self):
         with self.assertRaises(ValueError):
-            ModelConfig(use_attention_sink="4,2048")
+            ModelConfig(use_attention_sink="4")
+        with self.assertRaises(ValueError):
+            ModelConfig(use_attention_sink="4,2048,1024")
 
     def test_invalid_local_global_attention_format(self):
         with self.assertRaises(ValueError):
@@ -34,6 +37,44 @@ class TestValidation(unittest.TestCase):
     def test_quantize_kv_without_kv(self):
         with self.assertRaises(ValueError):
             ModelConfig(quantize_kv_cache=True)
+
+    def test_static_quantize_kv_without_kv(self):
+        with self.assertRaises(ValueError):
+            ModelConfig(static_quantize_kv_cache=True)
+
+    def test_static_quantize_kv_rejects_dynamic_shape(self):
+        with self.assertRaises(ValueError):
+            ModelConfig(use_kv_cache=True, static_quantize_kv_cache=True)
+
+    def test_static_quantize_kv_rejects_dynamic_quantized_kv(self):
+        with self.assertRaises(ValueError):
+            ModelConfig(
+                use_kv_cache=True,
+                enable_dynamic_shape=False,
+                quantize_kv_cache=True,
+                static_quantize_kv_cache=True,
+            )
+
+    def test_static_quantize_kv_rejects_specialized_cache_modes(self):
+        with self.assertRaises(ValueError):
+            ModelConfig(
+                use_kv_cache=True,
+                enable_dynamic_shape=False,
+                static_quantize_kv_cache=True,
+                local_global_attention=[16],
+            )
+        with self.assertRaises(ValueError):
+            ModelConfig(
+                use_kv_cache=True,
+                enable_dynamic_shape=False,
+                static_quantize_kv_cache=True,
+                use_attention_sink="4,2048",
+            )
+
+    def test_static_quantize_kv_rejects_non_finite_scale(self):
+        for scale in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(scale=scale), self.assertRaises(ValueError):
+                ModelConfig(static_quantize_kv_cache_scale=scale)
 
     def test_local_global_attention_without_kv(self):
         with self.assertRaises(ValueError):
@@ -79,7 +120,7 @@ class TestValidConstruction(unittest.TestCase):
             ),
             model=ModelConfig(
                 dtype_override="fp32",
-                use_attention_sink="4,2048,1024",
+                use_attention_sink="4,2048",
                 use_kv_cache=True,
                 local_global_attention="[16, 32]",
             ),

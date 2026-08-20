@@ -11,6 +11,7 @@ non_fbcode_target(_kind = fb_apple_library,
     autoglob_mode = "EXPORT_UNLESS_INTERNAL",
     extension_api_only = True,
     frameworks = [
+        "CoreVideo",
         "Foundation",
     ],
     preprocessor_flags = [
@@ -29,11 +30,13 @@ non_fbcode_target(_kind = fb_apple_library,
     visibility = EXECUTORCH_CLIENTS,
     deps = select({
         "ovr_config//os:macos": [
+            "//xplat/executorch/extension/image:image_processorAppleMac",
             "//xplat/executorch/extension/module:moduleAppleMac",
             "//xplat/executorch/extension/tensor:tensorAppleMac",
             "//xplat/executorch/runtime/platform:platformAppleMac",
         ],
         "DEFAULT": [
+            "//xplat/executorch/extension/image:image_processorApple",
             "//xplat/executorch/extension/module:moduleApple",
             "//xplat/executorch/extension/tensor:tensorApple",
             "//xplat/executorch/runtime/platform:platformApple",

@@ -47,14 +47,15 @@ class GenerationConfig:
         ...
 
     def resolve_max_new_tokens(
-        self, max_context_len: int, num_prompt_tokens: int
+        self, max_context_len: int, num_tokens_occupied: int
     ) -> int:
         """
         Resolve the maximum number of new tokens to generate based on constraints.
 
         Args:
             max_context_len: The maximum context length supported by the model
-            num_prompt_tokens: The number of tokens in the input prompt
+            num_tokens_occupied: The number of token positions already occupied
+                in the context window (e.g. pos after prefill)
 
         Returns:
             The resolved maximum number of new tokens to generate
@@ -82,10 +83,10 @@ class Stats:
     """End time of tokenizer encoding in milliseconds."""
 
     model_execution_start_ms: int
-    """Start time of model execution in milliseconds."""
+    """Start time of the most recent model execution window in milliseconds."""
 
     model_execution_end_ms: int
-    """End time of model execution in milliseconds."""
+    """End time of the most recent model execution window in milliseconds."""
 
     prompt_eval_end_ms: int
     """End time of prompt evaluation in milliseconds."""
@@ -98,6 +99,9 @@ class Stats:
 
     aggregate_sampling_time_ms: int
     """Total time spent in sampling across all tokens."""
+
+    aggregate_model_execution_time_ms: int
+    """Total time spent in model execution across all forward calls."""
 
     num_prompt_tokens: int
     """Number of tokens in the input prompt."""

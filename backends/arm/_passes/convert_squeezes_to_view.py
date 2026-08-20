@@ -6,7 +6,7 @@
 
 from typing import Set, Type
 
-from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.fuse_view_copy_transform_pass import (
     FuseViewCopyTransformPass,
 )
@@ -14,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertSqueezesToViewPass(ArmPass):
+class ConvertSqueezesToViewPass(ArmOpTargetedPass):
     """Replaces squeeze/unsqueeze operators with view.
 
     These are simply special cases of the view op, so removing them gives us
@@ -23,12 +23,13 @@ class ConvertSqueezesToViewPass(ArmPass):
     """
 
     _passes_required_after: Set[Type[ExportPass]] = {FuseViewCopyTransformPass}
+    target_ops = (
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+    )
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in [
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-        ]:
+        if op not in self.target_ops:
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]

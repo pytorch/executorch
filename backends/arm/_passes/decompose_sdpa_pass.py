@@ -24,6 +24,7 @@ class DecomposeScaledDotProductAttentionPass(
         self, graph_module: torch.fx.GraphModule, allow_non_fake_inputs: bool = True
     ) -> PassResult:
         graph = graph_module.graph
+        modified = False
         for node in list(graph.nodes):
             if node.target != torch.ops.aten.scaled_dot_product_attention.default:
                 continue
@@ -32,7 +33,9 @@ class DecomposeScaledDotProductAttentionPass(
 
             # Decompose with the superclass helper to reuse the shared logic.
             super()._decompose_sdpa_node(graph_module, node, allow_non_fake_inputs)
+            modified = True
 
-        graph.eliminate_dead_code()
-        graph_module.recompile()
-        return PassResult(graph_module, True)
+        if modified:
+            graph.eliminate_dead_code()
+            graph_module.recompile()
+        return PassResult(graph_module, modified)

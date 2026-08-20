@@ -8,6 +8,8 @@
 
 import dataclasses
 import math
+import os
+import tempfile
 import unittest
 
 from typing import Dict, List, Optional
@@ -279,6 +281,28 @@ class TestSerialize(unittest.TestCase):
         self._check_named_data_entries(
             TEST_DATA_PAYLOAD.named_data, deserialized_payload.named_data
         )
+
+    def test_file_backed_data_matches_bytes(self) -> None:
+        from executorch.exir._serialize._cord import FileBackedData
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "weights.bin")
+            with open(path, "wb") as f:
+                f.write(TEST_BUFFER[0])
+            file_data = FileBackedData.move_from(path)
+            payload = DataPayload(
+                buffers=[file_data],
+                named_data={"weight": DataEntry(0, 16, None)},
+            )
+            bytes_payload = DataPayload(
+                buffers=[TEST_BUFFER[0]],
+                named_data={"weight": DataEntry(0, 16, None)},
+            )
+            serializer = FlatTensorSerializer(FlatTensorConfig())
+            self.assertEqual(
+                bytes(serializer.serialize(bytes_payload)),
+                bytes(serializer.serialize(payload)),
+            )
 
     def test_deserialize_to_named_data_store_output(self) -> None:
         store = NamedDataStore()
