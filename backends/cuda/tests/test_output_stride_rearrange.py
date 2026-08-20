@@ -20,12 +20,82 @@ Usage:
 
 import glob
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
+RUNNER_PATH = os.environ.get(
+    "EXECUTORCH_EXECUTOR_RUNNER",
+    os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner"),
+)
+
+
+def _save_tensor(tensor, path):
+    tensor = tensor.cpu().contiguous().clone()
+    with open(path, "wb") as f:
+        f.write(bytes(tensor.untyped_storage()))
+
+
+def _load_output(path, shape, strides, dtype):
+    data = np.fromfile(path, dtype=np.uint8)
+    flat = torch.frombuffer(bytearray(data), dtype=dtype)
+    return torch.as_strided(flat, shape, strides).clone()
+
+
+def _run_rocm_runner(module, inputs, output_strides, pte, ptd, tmpdir):
+    if not os.path.exists(RUNNER_PATH):
+        raise RuntimeError(
+            f"executor_runner not found at {RUNNER_PATH}; set "
+            "EXECUTORCH_EXECUTOR_RUNNER to the ROCm runner path"
+        )
+
+    input_files = []
+    for index, tensor in enumerate(inputs):
+        path = os.path.join(tmpdir, f"input-{index}.bin")
+        _save_tensor(tensor, path)
+        input_files.append(path)
+
+    output_base = os.path.join(tmpdir, "output")
+    command = [
+        RUNNER_PATH,
+        f"--model_path={pte}",
+        f"--inputs={','.join(input_files)}",
+        f"--output_file={output_base}",
+    ]
+    if ptd:
+        command.append(f"--data_path={ptd}")
+    env = os.environ.copy()
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(
+        filter(None, [os.path.join(sys.prefix, "lib"), env.get("LD_LIBRARY_PATH")])
+    )
+    result = subprocess.run(command, capture_output=True, text=True, env=env)
+    if result.returncode != 0:
+        details = (
+            f"executor_runner failed:\nstdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+        raise RuntimeError(details)
+
+    with torch.no_grad():
+        outputs = module(*inputs)
+    if isinstance(outputs, torch.Tensor):
+        outputs = (outputs,)
+    return [
+        _load_output(
+            f"{output_base}-{index}.bin",
+            output.shape,
+            output_strides[index],
+            output.dtype,
+        )
+        for index, output in enumerate(outputs)
+    ]
 
 
 def _run_et_aoti(module, inputs, triton_mode="OFF"):
@@ -39,7 +109,6 @@ def _run_et_aoti(module, inputs, triton_mode="OFF"):
     )
     from executorch.exir.backend.compile_spec_schema import CompileSpec
     from executorch.exir.passes import MemoryPlanningPass
-    from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
     ep = torch.export.export(module, inputs, strict=True)
     compile_specs = [
@@ -70,6 +139,21 @@ def _run_et_aoti(module, inputs, triton_mode="OFF"):
             et.write_tensor_data_to_file(tmpdir)
             ptd_files = glob.glob(os.path.join(tmpdir, "*.ptd"))
             ptd = ptd_files[0] if ptd_files else None
+        if torch.version.hip is not None:
+            from executorch.exir.tensor import stride_from_dim_order
+
+            execution_plan = et.executorch_program.execution_plan[0]
+            output_strides = [
+                stride_from_dim_order(
+                    execution_plan.values[index].val.sizes,
+                    execution_plan.values[index].val.dim_order,
+                )
+                for index in execution_plan.outputs
+            ]
+            return _run_rocm_runner(module, inputs, output_strides, pte, ptd, tmpdir)
+
+        from executorch.extension.pybindings.portable_lib import _load_for_executorch
+
         mod = _load_for_executorch(pte, data_path=ptd)
         return mod.run_method("forward", [t.cpu() for t in inputs])
 

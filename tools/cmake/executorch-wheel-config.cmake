@@ -649,10 +649,17 @@ elseif(_executorch_runtime_library) # Tested on the located library rather than
   set(EXT_SUFFIX "")
   set(_portable_lib_LIBRARY "")
 else()
+  # Reported rather than fatal. The arm above only fires when a runtime library
+  # was located, and a Windows wheel ships none: lib/ holds the CMake package
+  # and nothing else. So a Windows consumer whose interpreter is not callable as
+  # python3 reached this branch and find_package aborted its configure even
+  # under QUIET, which an optional-dependency probe must never do. Leaving the
+  # extension unset lets the caller see executorch_FOUND=0 and carry on.
   message(
-    FATAL_ERROR
-      "Failed to retrieve sysconfig config var EXT_SUFFIX: ${SYSCONFIG_ERROR}"
+    STATUS
+      "Python not usable and no runtime library located, so this package offers nothing: ${SYSCONFIG_ERROR}"
   )
+  set(EXT_SUFFIX "")
 endif()
 
 if(EXT_SUFFIX)
@@ -676,16 +683,28 @@ if(NOT _portable_lib_LIBRARY)
   # by a 3.12 interpreter yields a suffix that names no file here, and the
   # package then reported itself as not found on a complete install. The shipped
   # extension carries its own suffix in its name, so take it from the package.
+  # Restricted to the suffix this platform can load, and chosen once above the
+  # loop rather than per candidate. Accepting any of the three meant a package
+  # root from another platform matched: a Windows .pyd inspected from Linux
+  # defined the library with ELF link options attached to it, which cannot work.
+  if(WIN32)
+    set(_portable_lib_suffixes "pyd")
+  elseif(APPLE)
+    set(_portable_lib_suffixes "so|dylib")
+  else()
+    set(_portable_lib_suffixes "so")
+  endif()
   file(GLOB _portable_lib_matches
        "${_executorch_package_root}/extension/pybindings/_portable_lib.*"
   )
   foreach(_candidate IN LISTS _portable_lib_matches)
-    if(_candidate MATCHES "\\.(so|pyd|dylib)$")
+    if(_candidate MATCHES "\\.(${_portable_lib_suffixes})$")
       set(_portable_lib_LIBRARY "${_candidate}")
       break()
     endif()
   endforeach()
   unset(_portable_lib_matches)
+  unset(_portable_lib_suffixes)
 endif()
 
 if(_portable_lib_LIBRARY)
