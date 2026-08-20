@@ -172,8 +172,8 @@ during device-aware memory planning.
 **Both flags also need unplanned graph inputs and outputs**, via
 `MemoryPlanningPass(alloc_graph_input=False, alloc_graph_output=False)` as shown above. Without
 it the program still reserves its own buffer and the runtime copies into it, so the copy comes
-back at run time. The runtime rejects that case rather than performing a host copy into device
-memory.
+back at run time. On device memory that copy is a host memcpy into a device pointer, which is
+undefined, so the program crashes rather than returning a wrong answer.
 
 **Per-method selection is on the outer config, not on the flags.** Pass a dict of
 `PropagateDeviceConfig` keyed by method name:
