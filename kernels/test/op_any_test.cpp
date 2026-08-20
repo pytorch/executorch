@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+
 using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
@@ -227,10 +229,13 @@ TEST_F(OpAnyOutTest, ChannelsLastMultiDimReduction) {
   Tensor in = tf.channels_last_like(tf.make({2, 2, 3, 3}, data));
 
   Tensor out = tf_bool.zeros_channels_last({1, 2, 1, 1});
-  int64_t dims[3] = {0, 2, 3};
-  op_any_dims_out(in, ArrayRef<int64_t>{dims, 3}, /*keepdim=*/true, out);
+  const std::array<int64_t, 3> dims{0, 2, 3};
+  op_any_dims_out(
+      in,
+      ArrayRef<int64_t>{dims.data(), dims.size()},
+      /*keepdim=*/true,
+      out);
 
-  Tensor expected =
-      tf_bool.channels_last_like(tf_bool.make({1, 2, 1, 1}, {false, true}));
+  Tensor expected = tf_bool.make_channels_last({1, 2, 1, 1}, {false, true});
   EXPECT_TENSOR_EQ(out, expected);
 }

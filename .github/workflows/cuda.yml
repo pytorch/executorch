@@ -342,8 +342,8 @@ jobs:
         ctest --test-dir cmake-out -R test_cuda_allocator --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_mutable_state --output-on-failure -V
 
-  export-model-cuda-artifact:
-    name: export-model-cuda-artifact
+  test-model-cuda-e2e:
+    name: test-model-cuda-e2e-${{ matrix.model.name }}-${{ matrix.quant }}
     # Skip this job if the pull request is from a fork (HuggingFace secrets are not available).
     # Path-filtered on push: mirrors the workflow-level pull_request `paths:`
     # filter so push commits that don't touch CUDA-relevant paths skip
@@ -446,7 +446,7 @@ jobs:
               repo: "facebook"
               name: "dinov2-small-imagenet1k-1-layer"
             quant: "quantized-int4-weight-only"
-          # Qwen3 int4-weight-only: no downstream job consumes this artifact
+          # Keep the existing Qwen3 coverage to non-quantized and tile-packed.
           - model:
               repo: "Qwen"
               name: "Qwen3-0.6B"
@@ -471,7 +471,7 @@ jobs:
               name: "whisper-large-v3-turbo"
             quant: "non-quantized"
     with:
-      timeout: 150
+      timeout: 240
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
       gpu-arch-type: cuda
@@ -513,153 +513,10 @@ jobs:
           echo "::endgroup::"
         fi
 
-        source .ci/scripts/export_model_artifact.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
-
-  test-model-cuda-e2e:
-    name: test-model-cuda-e2e
-    # Same path filter as export-model-cuda-artifact above. Also explicitly
-    # gated on the export job succeeding — when needs: jobs are *skipped*
-    # (e.g. fork PR), GitHub still evaluates this if:, so without the
-    # explicit success-check this job would run and then fail trying
-    # to download an artifact that was never produced.
-    needs: [changed-files, export-model-cuda-artifact, run-decision]
-    if: |
-      needs.export-model-cuda-artifact.result == 'success' &&
-      (
-        contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
-        contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
-        contains(needs.changed-files.outputs.changed-files, '.github/workflows/cuda.yml') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test-cuda-build.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/export_model_artifact.sh') ||
-        contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_model_e2e.sh') ||
-        needs.run-decision.outputs.is-full-run == 'true'
-      )
-    uses: pytorch/test-infra/.github/workflows/linux_job_v3.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        model:
-          - repo: "mistralai"
-            name: "Voxtral-Mini-3B-2507"
-          - repo: "mistralai"
-            name: "Voxtral-Mini-4B-Realtime-2602"
-          - repo: "nvidia"
-            name: "diar_streaming_sortformer_4spk-v2"
-          - repo: "openai"
-            name: "whisper-small"
-          - repo: "openai"
-            name: "whisper-large-v3-turbo"
-          - repo: "google"
-            name: "gemma-3-4b-it"
-          - repo: "nvidia"
-            name: "parakeet-tdt"
-          - repo: "facebook"
-            name: "dinov2-small-imagenet1k-1-layer"
-          - repo: "SocialLocalMobile"
-            name: "Qwen3.5-35B-A3B-HQQ-INT4"
-          - repo: "unsloth"
-            name: "gemma-4-31B-it-GGUF"
-        quant:
-          - "non-quantized"
-          - "quantized-int4-tile-packed"
-          - "quantized-int4-weight-only"
-        exclude:
-          # TODO: enable int4-weight-only on gemma3.
-          - model:
-              repo: "google"
-              name: "gemma-3-4b-it"
-            quant: "quantized-int4-weight-only"
-          # Qwen3.5 MoE uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "SocialLocalMobile"
-              name: "Qwen3.5-35B-A3B-HQQ-INT4"
-            quant: "non-quantized"
-          - model:
-              repo: "SocialLocalMobile"
-              name: "Qwen3.5-35B-A3B-HQQ-INT4"
-            quant: "quantized-int4-weight-only"
-          # Gemma 4 31B uses a prequantized checkpoint, only tile-packed
-          - model:
-              repo: "unsloth"
-              name: "gemma-4-31B-it-GGUF"
-            quant: "non-quantized"
-          - model:
-              repo: "unsloth"
-              name: "gemma-4-31B-it-GGUF"
-            quant: "quantized-int4-weight-only"
-          # Voxtral Realtime only supports int4-tile-packed on CUDA
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "non-quantized"
-          - model:
-              repo: "mistralai"
-              name: "Voxtral-Mini-4B-Realtime-2602"
-            quant: "quantized-int4-weight-only"
-          # Sortformer currently supports only non-quantized export
-          - model:
-              repo: "nvidia"
-              name: "diar_streaming_sortformer_4spk-v2"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "nvidia"
-              name: "diar_streaming_sortformer_4spk-v2"
-            quant: "quantized-int4-weight-only"
-          # DINOv2 currently supports only non-quantized export
-          - model:
-              repo: "facebook"
-              name: "dinov2-small-imagenet1k-1-layer"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "facebook"
-              name: "dinov2-small-imagenet1k-1-layer"
-            quant: "quantized-int4-weight-only"
-          - model:
-              repo: "nvidia"
-              name: "parakeet-tdt"
-            quant: "quantized-int4-weight-only"
-          # Whisper: cover all quant types and both sizes with minimal combos
-          # whisper-small: non-quantized only
-          # whisper-large-v3-turbo: int4-tile-packed + int4-weight-only
-          - model:
-              repo: "openai"
-              name: "whisper-small"
-            quant: "quantized-int4-tile-packed"
-          - model:
-              repo: "openai"
-              name: "whisper-small"
-            quant: "quantized-int4-weight-only"
-          - model:
-              repo: "openai"
-              name: "whisper-large-v3-turbo"
-            quant: "non-quantized"
-    with:
-      timeout: 90
-      runner: ${{ (matrix.model.name == 'Qwen3.5-35B-A3B-HQQ-INT4' || matrix.model.name == 'gemma-4-31B-it-GGUF') && 'mt-l-x86iavx512-11-125-a100' || 'mt-l-x86aavx2-29-113-a10g' }}
-      gpu-arch-type: cuda
-      gpu-arch-version: "13.0"
-      use-custom-docker-registry: false
-      submodules: recursive
-      download-artifact: ${{ matrix.model.repo }}-${{ matrix.model.name }}-cuda-${{ matrix.quant }}
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        # OSDC runners can't reach the public PyPI CDN that download.pytorch.org's
-        # transitive deps resolve to. Pre-install torch's pure-python deps from the
-        # in-cluster pypi-cache and drop the default cpu extra-index so the cuda
-        # torch wheel is the only candidate.
-        export PIP_EXTRA_INDEX_URL=
-        # fsspec is pinned to satisfy datasets' fsspec[http]<=2025.3.0 so the later
-        # examples install doesn't try to downgrade it from the public CDN.
-        pip install filelock typing-extensions "setuptools<82" sympy networkx jinja2 "fsspec[http]<=2025.3.0" numpy pillow
-        # OSDC mounts HF_HOME read-only at /mnt/hf_cache; redirect to a writable dir
-        # (RUNNER_TEMP, or /tmp when RUNNER_TEMP isn't writable inside the container).
-        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
-        mkdir -p "${HF_HOME}" 2>/dev/null || export HF_HOME=/tmp/hf_cache
-        mkdir -p "${HF_HOME}"
-        source .ci/scripts/test_model_e2e.sh cuda "${{ matrix.model.repo }}/${{ matrix.model.name }}" "${{ matrix.quant }}" "${RUNNER_ARTIFACT_DIR}"
+        RUN_EXPORT=1 source .ci/scripts/test_model_e2e.sh cuda \
+          "${{ matrix.model.repo }}/${{ matrix.model.name }}" \
+          "${{ matrix.quant }}" \
+          "${RUNNER_ARTIFACT_DIR}"
 
   test-muse-glimmer-cuda-e2e:
     name: test-muse-glimmer-cuda-e2e-${{ matrix.variant }}-${{ matrix.mode }}
@@ -733,13 +590,12 @@ jobs:
 
   test-cuda-pybind:
     name: test-cuda-pybind
-    # This job downloads models exported by export-model-cuda-artifact and runs them using pybind.
-    # Same gating as test-model-cuda-e2e — explicit success-check on the
-    # export job so a skipped export (fork PR, non-sampled push, no path
-    # match) auto-skips this job too.
-    needs: [changed-files, export-model-cuda-artifact, run-decision]
+    # This job downloads models exported by test-model-cuda-e2e and runs them using pybind.
+    # Explicitly check the producer job so a skipped run (fork PR,
+    # non-sampled push, or no path match) auto-skips this job too.
+    needs: [changed-files, test-model-cuda-e2e, run-decision]
     if: |
-      needs.export-model-cuda-artifact.result == 'success' &&
+      needs.test-model-cuda-e2e.result == 'success' &&
       (
         contains(needs.changed-files.outputs.changed-files, 'backends/cuda') ||
         contains(needs.changed-files.outputs.changed-files, 'backends/aoti') ||
