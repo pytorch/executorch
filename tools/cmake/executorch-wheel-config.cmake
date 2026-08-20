@@ -744,72 +744,24 @@ if(NOT _C_LIBRARY)
 endif()
 
 if(_C_LIBRARY)
-  message(STATUS "ExecuTorch Python extension is found at ${_C_LIBRARY}")
-  # Defined so that a caller who specifically wants the extension, such as a
-  # custom operator project, can name the target, and deliberately kept out of
-  # EXECUTORCH_LIBRARIES and out of the found decision. The extension carries
-  # unresolved interpreter symbols, so a plain C++ application that links it
-  # fails with a page of PyUnicode_InternFromString style errors. Offering it as
-  # find_package's answer meant a wheel with no linkable library configured
-  # cleanly and failed at link instead of saying so, and it no longer stands in
-  # for a fused layout: every platform that ships a runtime now ships it as its
-  # own file.
+  # Reported so a custom operator project can see the path, but deliberately not
+  # published as a target and kept out of EXECUTORCH_LIBRARIES and out of the
+  # found decision. The extension carries unresolved interpreter symbols, so a
+  # plain C++ application that links it fails with a page of
+  # PyUnicode_InternFromString style errors. Offering it as find_package's
+  # answer meant a wheel with no linkable library configured cleanly and failed
+  # at link instead of saying so.
   #
-  # The target carries the C++20 requirement PyTorch's headers need, while the
-  # runtime components require C++17. _portable_lib was the name before the
-  # extension was renamed, so a project may link that name. Aliased to the
-  # runtime, not to the extension: the extension is a Python module whose
-  # undefined CPython symbols only resolve inside an interpreter, so linking it
-  # from C++ produced a binary that either failed to link or died at startup on
-  # PyInstanceMethod_Type. The runtime is what such a project actually wanted,
-  # and a custom operator registers into the same registry either way, since the
-  # registry moved into the runtime when it was split out of the extension.
-  # Measured: the in-tree custom operator built against executorch::runtime at
-  # C++17 links with nothing unresolved and adds wheel_check::custom_double.out
-  # to the registry when loaded into a live interpreter. Guarded on the target
-  # existing, not just on the extension being present. An ALIAS to a target that
-  # does not exist is a hard CMake error, and executorch::runtime is only
-  # defined from 3.28. Below that the package offers no imported targets at all
-  # and a consumer links through EXECUTORCH_LIBRARIES, so the aliases follow the
-  # same contract rather than aborting the configure of a complete install.
-  if(TARGET executorch::runtime)
-    if(NOT TARGET executorch::_portable_lib)
-      add_library(executorch::_portable_lib ALIAS executorch::runtime)
-    endif()
-    # A project built against an earlier wheel links this bare name, which that
-    # wheel defined and advertised through EXECUTORCH_LIBRARIES.
-    if(NOT TARGET _portable_lib)
-      add_library(_portable_lib ALIAS executorch::runtime)
-    endif()
-  else()
-    # Below 3.28 there is no executorch::runtime to alias, and an ALIAS to a
-    # missing target is a hard error, so these cannot simply be guarded away: an
-    # unknown bare name becomes -l_portable_lib and the consumer dies at link
-    # with nothing said during configure. Define real imported targets instead,
-    # carrying the same interface this path publishes through the variables.
-    foreach(_compat_target executorch::_portable_lib _portable_lib)
-      if(NOT TARGET ${_compat_target})
-        add_library(${_compat_target} INTERFACE IMPORTED)
-        set_target_properties(
-          ${_compat_target}
-          PROPERTIES INTERFACE_LINK_LIBRARIES "${EXECUTORCH_LIBRARIES}"
-                     INTERFACE_INCLUDE_DIRECTORIES "${EXECUTORCH_INCLUDE_DIRS}"
-                     INTERFACE_COMPILE_DEFINITIONS
-                     "${EXECUTORCH_COMPILE_DEFINITIONS}"
-                     # The standard too, not only the paths and definitions.
-                     # Without it a
-                     # consumer linking this target compiles the vendored c10
-                     # headers with
-                     # whatever its compiler defaults to, which is the case the
-                     # variable
-                     # above exists to cover.
-                     INTERFACE_COMPILE_FEATURES
-                     "cxx_std_${EXECUTORCH_CXX_STANDARD}"
-        )
-      endif()
-    endforeach()
-    unset(_compat_target)
-  endif()
+  # Earlier wheels published this extension as _portable_lib, and that name is
+  # not carried forward. Aliasing it to the runtime looked compatible and was
+  # not: the published target was mutable and demanded C++20, and
+  # $<TARGET_FILE:> on it named the extension, so an alias silently dropped to
+  # C++17, renamed the file it resolves to, and made set_property on it a hard
+  # error. A project that linked the old name should name executorch::runtime,
+  # which is what it actually wanted, and a custom operator registers into the
+  # same registry either way since the registry moved into the runtime when it
+  # was split out of the extension.
+  message(STATUS "ExecuTorch Python extension is found at ${_C_LIBRARY}")
 endif()
 
 # find_package checks <package name>_FOUND, which is case-sensitive and does not

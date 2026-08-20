@@ -31,7 +31,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 # The backend resolves OpenVINO C API symbols via dlopen/dlsym at runtime, so
 # there is no build-time dependency on the OpenVINO SDK.
 
-# Define OpenVINO backend as a static library
+# Shared when the wheel build asks for it, static otherwise.
 if(EXECUTORCH_BUILD_SHARED)
   set(_openvino_backend_library_type SHARED)
 else()

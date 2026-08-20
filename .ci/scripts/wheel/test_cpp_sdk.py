@@ -988,7 +988,6 @@ def test_every_shipped_header_compiles(work_dir: Path) -> None:
         # not compile on their own: each needs a third-party library the wheel links but publishes no
         # headers for, or a platform other than the one being built for.
         "mman_windows.h",  # a Windows compatibility shim, needs the MinGW headers
-        "testing_util/tensor_util.h",  # a test helper, needs a test framework
         # These say in their own text that they must not be included directly, and name the header to
         # include instead. Including one anyway is a use error rather than a packaging defect.
         "c10/util/complex_math.h",
