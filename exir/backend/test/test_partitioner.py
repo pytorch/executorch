@@ -620,6 +620,56 @@ class TestPartitioner(unittest.TestCase):
         ]
         self.assertEqual(len(copy_node), 1)
 
+    def test_buffer_mutated_indirectly_is_not_taken_for_constant(self):
+        """A buffer written a step after it is read still counts as mutated.
+
+        `tag_constant_data` used to decide by looking at a buffer's direct users for the
+        node that performs the mutation. A cache that is concatenated with its new values
+        and written back further down has something else as its user, so it was taken for
+        a constant and handed to the delegate as a buffer. A backend that compiles mutable
+        buffers into state then produced a model asking for state that the partitioner had
+        been told not to take over.
+        """
+
+        class IndirectlyMutated(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cache", torch.zeros(1, 4))
+
+            def forward(self, x):
+                # The buffer's user is the cat, not the write.
+                joined = torch.cat([self.cache, x], dim=1)
+                self.cache.copy_(joined[:, -4:])
+                return joined.sum(1)
+
+        edge = exir.to_edge(
+            torch.export.export(IndirectlyMutated(), (torch.zeros(1, 2),), strict=True)
+        )
+        program = edge.exported_program()
+        signature = program.graph_signature
+        self.assertIn("cache", signature.buffers_to_mutate.values())
+
+        placeholder = next(
+            node
+            for node in program.graph.nodes
+            if node.op == "placeholder" and signature.inputs_to_buffers.get(node.name)
+        )
+        self.assertNotIn(
+            placeholder.name,
+            {user.name for user in placeholder.users} & set(signature.buffers_to_mutate),
+            "this test is only meaningful while the mutation is not a direct user",
+        )
+
+        for node in program.graph.nodes:
+            if node.op == "call_function":
+                node.meta["delegation_tag"] = "tag0"
+        tag_constant_data(program)
+
+        self.assertIsNone(
+            placeholder.meta.get("delegation_tag"),
+            "a mutated buffer must not be tagged as constant data",
+        )
+
     def test_buffer_mutation1(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
