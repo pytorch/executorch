@@ -6,10 +6,16 @@
 
 # pyre-unsafe
 
+from collections import deque
 from typing import Any, Callable, cast
 
 import torch
 import torch.fx
+from executorch.backends.transforms.channels_last_layout import (
+    ATEN_PERMUTE_COPY,
+    is_channels_last_input_normalization_pair,
+    LAYOUT_PERMUTE_COPY,
+)
 from executorch.backends.transforms.permute_pass_utils import (
     FuseOpPairsAcrossBranchesPass,
     get_permuted_dims,
@@ -37,6 +43,42 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     }
 
+    def __init__(
+        self,
+        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
+    ) -> None:
+        super().__init__()
+        self.can_propagate = can_propagate
+
+    def get_fuse_candidates(
+        self,
+        producer: torch.fx.Node,
+        consumer_op_packets: set[EdgeOpOverloadPacket],
+        bypass_ops: set[EdgeOpOverload],
+    ) -> list[torch.fx.Node]:
+        if self.can_propagate is None:
+            return super().get_fuse_candidates(
+                producer, consumer_op_packets, bypass_ops
+            )
+
+        users = deque(producer.users)
+        visited: set[torch.fx.Node] = set()
+        removal_candidates = []
+        while users:
+            user = users.popleft()
+            if user in visited:
+                continue
+            visited.add(user)
+            if user.target in bypass_ops:
+                if not self.can_propagate(user):
+                    return []
+                users.extend(user.users)
+            elif self.can_fuse_for_chain(producer, user, consumer_op_packets):
+                removal_candidates.append(user)
+            else:
+                return []
+        return removal_candidates
+
     def can_fuse_for_chain(
         self,
         producer: torch.fx.Node,
@@ -44,6 +86,8 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         consumer_op_packets: set[EdgeOpOverloadPacket],
     ) -> bool:
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
+            return False
+        if is_channels_last_input_normalization_pair(producer, consumer):
             return False
 
         # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions
@@ -55,7 +99,8 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         # this mapping helps to handle both transpose and permutations
         f: dict[Any, Callable] = {
             exir_ops.edge.aten.transpose_copy.int: get_transposed_dims,
-            exir_ops.edge.aten.permute_copy.default: get_permuted_dims,
+            ATEN_PERMUTE_COPY: get_permuted_dims,
+            LAYOUT_PERMUTE_COPY: get_permuted_dims,
         }
         in_dims = f[producer.target](producer, ident_dims)
         out_dims = f[consumer.target](consumer, in_dims)
@@ -80,6 +125,7 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
                 (consumer.args[0], output_shape),
                 {},
             )
+        view.meta = dict(consumer.meta)
         return view
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -89,10 +135,12 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
             producer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             consumer_op_packets={
                 exir_ops.edge.aten.transpose_copy,
                 exir_ops.edge.aten.permute_copy,
+                exir_ops.edge.channels_last.permute_copy,
             },
             bypass_ops=self.bypass_ops,
         )

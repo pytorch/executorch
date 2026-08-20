@@ -28,7 +28,9 @@ class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps)
 
     def _is_constant(self, node: torch.fx.Node) -> bool:
         # Override fragile string match check with exported program check
-        return super()._is_constant(node) or is_param_node(self.exported_program, node)
+        exported_program = self.exported_program
+        assert exported_program is not None
+        return super()._is_constant(node) or is_param_node(exported_program, node)
 
     def permute_subgraph(self, subgraph) -> bool:
         # TABLE lookup inputs are already tied to the table layout.
