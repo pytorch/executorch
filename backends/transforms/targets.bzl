@@ -543,3 +543,29 @@ def define_common_targets():
             "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
+
+    runtime.python_library(
+        name = "enforce_contiguous_dim_order",
+        srcs = ["enforce_contiguous_dim_order.py"],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+            "//executorch/exir/dialects/_ops:ops",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_enforce_contiguous_dim_order",
+        srcs = [
+            "test/test_enforce_contiguous_dim_order.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            ":enforce_contiguous_dim_order",
+        ],
+    )
