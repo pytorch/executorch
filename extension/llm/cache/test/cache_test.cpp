@@ -281,11 +281,13 @@ struct Cells {
         layer, positions.data(), static_cast<int>(positions.size()));
   }
 
-  // A whole single-layer step: declare it, then place it.
+  // A whole single-layer step: declare it, then place it. A nullptr from here
+  // is the placement's refusal -- admission failing is a test failure.
   const CellStep* step(
       std::vector<int32_t> seq_ids,
       std::vector<int32_t> positions) {
-    return ctl->begin_step(seq_ids) ? place(/*layer=*/0, positions) : nullptr;
+    EXPECT_TRUE(ctl->begin_step(seq_ids)) << "the step was not admitted";
+    return place(/*layer=*/0, positions);
   }
 
   // The same step, from each sequence's tokens rather than the per-token
@@ -306,8 +308,16 @@ struct Cells {
   CellStepper* stepper;
 };
 
-// The mask row for query `i`, as a string of '.' and '1' -- readable.
+// The mask row for query `i`, as a string of '.' and '1'. Explicit steps only:
+// a fused step carries no bits.
 std::string row(const CellStep& step, int i) {
+  EXPECT_EQ(step.kind, MaskKind::Explicit);
+  EXPECT_EQ(
+      step.mask_bits.size(),
+      static_cast<size_t>(step.n_tok) * static_cast<size_t>(step.read_len));
+  if (step.mask_bits.empty()) {
+    return {};
+  }
   std::string out(step.read_len, '.');
   for (int j = 0; j < step.read_len; ++j) {
     out[j] = step.mask_bits[i * step.read_len + j] ? '1' : '.';
@@ -381,6 +391,51 @@ TEST_F(CacheTest, CellForkSharesCellsAndEvictionRefcounts) {
   c.ctl->seq_rm(1, 0, std::nullopt);
   EXPECT_EQ(c.cache.free_cells(), 16);
   EXPECT_EQ(c.cache.used_end(), 0); // the extent comes back too
+}
+
+TEST_F(CacheTest, CellForkCanShareAPrefixOnly) {
+  Cells c(16);
+  c.step_of({{0, 4, 0}}); // positions 0..3
+
+  ASSERT_TRUE(c.ctl->seq_cp(0, 1, /*upto=*/2)); // share positions 0..1 only
+  EXPECT_EQ(c.ctl->seq_len(1), 2);
+  EXPECT_EQ(c.ctl->next_pos(1), 2); // the fork resumes where the prefix ends
+  EXPECT_EQ(c.ctl->seq_len(0), 4); // the source keeps all of its own
+  EXPECT_EQ(c.cache.free_cells(), 12); // still no cell copied
+
+  // Removing the source's shared range frees nothing: the fork still owns it.
+  ASSERT_TRUE(c.ctl->seq_rm(0, 0, 2));
+  EXPECT_EQ(c.cache.free_cells(), 12);
+  EXPECT_EQ(c.ctl->seq_len(1), 2);
+}
+
+TEST_F(CacheTest, CellWindowAndSequenceBothNarrowTheMask) {
+  // The two mask bounds together: a query sees only its own sequence, and only
+  // inside its window.
+  Cells c(16, {ring_layer(2), ring_layer(2)});
+  c.step_of({{0, 3, 0}}); // seq 0 at 0..2
+  const auto* step = c.step_of({{1, 1, 0}, {0, 1, 3}});
+  ASSERT_NE(step, nullptr);
+  ASSERT_EQ(step->kind, MaskKind::Explicit);
+  EXPECT_EQ(step->read_len, 5);
+
+  // Seq 1 holds only its own new cell, and its window reaches no further.
+  EXPECT_EQ(row(*step, 0), "...1.");
+  // Seq 0 at position 3 sees positions 2 and 3 -- cells 2 and 4 -- but not its
+  // own cells 0 and 1, which the window excludes.
+  EXPECT_EQ(row(*step, 1), "..1.1");
+}
+
+TEST_F(CacheTest, CellVerbBetweenLayersInvalidatesTheStep) {
+  Cells c(16);
+  c.step_of({{0, 2, 0}});
+
+  ASSERT_TRUE(c.ctl->begin_step({0}));
+  ASSERT_NE(c.place(0, {2}), nullptr);
+  // A verb rebuilds the table under the step: the placement no longer stands
+  // and the remaining layers are refused.
+  ASSERT_TRUE(c.ctl->seq_rm(0, 0, 1));
+  EXPECT_EQ(c.place(1, {2}), nullptr);
 }
 
 TEST_F(CacheTest, CellRangedRemovalFreesOnlyThatWindow) {
@@ -494,4 +549,25 @@ TEST_F(CacheTest, CellStepProtocolIsEnforced) {
   ASSERT_NE(c.place(0, {0, 1}), nullptr); // 2 tokens, as declared
 
   EXPECT_EQ(c.place(0, {2, 3}), nullptr); // a second step, no begin_step
+
+  EXPECT_EQ(c.place(-1, {0, 1}), nullptr); // layers outside the model
+  EXPECT_EQ(c.place(2, {0, 1}), nullptr);
+}
+
+TEST_F(CacheTest, CellClearReturnsEveryCell) {
+  Cells c(4);
+  EXPECT_EQ(c.cache.capacity(), 4);
+  EXPECT_TRUE(c.ctl->can_extend(4));
+
+  c.step_of({{0, 3, 0}});
+  EXPECT_FALSE(c.ctl->can_extend(2)); // one cell left
+  EXPECT_EQ(c.ctl->seq_len(0), 3);
+
+  c.ctl->clear();
+  EXPECT_TRUE(c.ctl->can_extend(4));
+  EXPECT_EQ(c.cache.free_cells(), 4);
+  EXPECT_EQ(c.cache.used_end(), 0);
+  EXPECT_EQ(c.ctl->seq_len(0), 0);
+  EXPECT_EQ(c.ctl->next_pos(0), 0); // the sequence is gone
+  EXPECT_EQ(c.place(0, {0}), nullptr); // and the step went with it
 }
