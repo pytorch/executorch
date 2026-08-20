@@ -64,7 +64,7 @@ jobs:
       docker-image: ${{ inputs.docker-image }}
       submodules: recursive
       timeout: ${{ inputs.timeout }}
-      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
 
@@ -78,7 +78,7 @@ jobs:
       - name: Download model test artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: test-report-*-models
+          pattern: test-report-${{ inputs.backend }}-*-models
           path: downloaded/
 
       - name: Package golden artifacts
@@ -142,7 +142,7 @@ jobs:
       python-version: "3.12"
       submodules: recursive
       timeout: ${{ inputs.timeout }}
-      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      upload-artifact: test-report-${{ inputs.backend }}-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
 

@@ -403,9 +403,9 @@ struct PyBundledModule : public BundledModule {
 struct ProgramState final {
   std::unique_ptr<DataLoader> loader_;
   std::unique_ptr<Program> program_;
-  // Owned here rather than by PyProgram, beside the loader it reads through, because a
-  // Method borrows the map and outlives the call that loaded it. Both stay alive as long
-  // as any method does.
+  // Owned here rather than by PyProgram, beside the loader it reads
+  // through, because a Method borrows the map and outlives the call that
+  // loaded it. Both stay alive as long as any method does.
   std::unique_ptr<DataLoader> data_map_loader_;
   std::unique_ptr<FlatTensorDataMap> data_map_;
 
@@ -1049,10 +1049,11 @@ inline std::shared_ptr<ProgramState> load_program(
       res.error(),
       "Failed to load program, error: 0x:%" PRIx32,
       static_cast<uint32_t>(res.error()));
-  // A program whose weights live outside the pte names them through a data map. The CUDA
-  // delegate emits exactly that: a pte holding the compiled kernels and a separate file
-  // holding the weights, so loading the pte alone produces a program that fails when a
-  // method runs rather than when it loads.
+  // A program whose weights live outside the pte names them through a data
+  // map. The CUDA delegate emits exactly that: a pte holding the compiled
+  // kernels and a separate file holding the weights, so loading the pte alone
+  // produces a program that fails when a method runs rather than when it
+  // loads.
   std::unique_ptr<DataLoader> data_map_loader;
   std::unique_ptr<FlatTensorDataMap> data_map;
   if (data_path.has_value()) {
