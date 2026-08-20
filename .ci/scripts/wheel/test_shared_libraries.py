@@ -130,6 +130,10 @@ _XNNPACK_SYMBOLS = (
 # have exactly one owner while the bundled code underneath them does not. That is
 # the same failure the split exists to prevent, reached by a different route.
 _BUNDLED_THREADPOOL_SYMBOLS = ("pthreadpool_create", "cpuinfo_initialize")
+# The delegate's own entry points. A second definer means the delegate is compiled
+# into the Python extension as well, which would register it twice in one process.
+_OPENVINO_BACKEND_SYMBOLS = ("executorch::backends::openvino::OpenvinoBackend",)
+
 _BUNDLED_XNNPACK_SYMBOLS = ("xnn_create_runtime_v4",)
 
 # A representative symbol from the profiler. A second definer means two event
@@ -464,6 +468,18 @@ def _wheel_cuda_train() -> str:
 # wheel is inspected, and a row cannot call that at import time.
 _REQUIRED_ON_A_CUDA_WHEEL = "cuda-wheel-only"
 
+# Marker for a row whose owner every Linux wheel carries and no macOS wheel does.
+_REQUIRED_ON_LINUX = "linux-only"
+
+
+def _resolve_required(required):
+    """Turn a row's requirement marker into the answer for the installed wheel."""
+    if required == _REQUIRED_ON_A_CUDA_WHEEL:
+        return bool(_wheel_cuda_train())
+    if required == _REQUIRED_ON_LINUX:
+        return sys.platform == "linux"
+    return required
+
 
 # The exact dependency names packaging declares per CUDA train, mirroring
 # _CUDA_RUNTIME_PACKAGES in setup.py. Listed here rather than imported because setup.py
@@ -569,6 +585,16 @@ _OWNED_COMPONENTS = (
         "libexecutorch_backend_xnnpack.so",
         True,
     ),
+    # Required on Linux, where packaging turns the backend on for every non-minimal
+    # build. A fixed False passed a wheel that had compiled the delegate back into the
+    # extension: no library ships, so the row skips, and one definer inside the
+    # extension is exactly the monolithic layout a definer count cannot distinguish.
+    (
+        "OpenVINO delegate",
+        _OPENVINO_BACKEND_SYMBOLS,
+        "libexecutorch_backend_openvino.so",
+        _REQUIRED_ON_LINUX,
+    ),
 )
 
 # The one component that legitimately exists twice. The quantized kernels are compiled into the runtime
@@ -592,13 +618,11 @@ def test_each_component_has_one_owner() -> None:
     # ships under backends/cuda/, and scanning lib/ alone reported it as absent, which each row
     # treats as an acceptable state and so would have skipped the check entirely.
     shipped = {path.name for path in _shipped_shared_objects(_installed_package_dir())}
-    on_a_cuda_wheel = bool(_wheel_cuda_train())
     for what, symbols, owner, required in _OWNED_COMPONENTS:
-        if required == _REQUIRED_ON_A_CUDA_WHEEL:
-            # Resolved here rather than in the table, because it depends on the installed
-            # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
-            # all and still pass, which is the whole point of these three rows.
-            required = on_a_cuda_wheel
+        # Resolved here rather than in the table, because it depends on the installed
+        # wheel. A fixed False let a wheel tagged +cu126 ship with no CUDA library at
+        # all and still pass, which is the whole point of the conditional rows.
+        required = _resolve_required(required)
         present = any(name.startswith(owner) for name in shipped)
         assert present or not required, (
             f"the wheel ships no {owner}, which owns the {what}. Either packaging "
@@ -1641,6 +1665,7 @@ def test_shipped_library_names_are_expected() -> None:
         # dependency, so both have to ship and both are expected here.
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
+        "libexecutorch_backend_openvino",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
     )
