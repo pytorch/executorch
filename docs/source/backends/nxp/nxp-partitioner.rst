@@ -9,7 +9,12 @@ It has the following arguments:
 * `compile_spec` - list of key-value pairs defining compilation,
 * `neutron_target_spec` - NeutronTargetSpec instance, initialized by SoC id, e.g. "imxrt700",
 * `custom_delegation_options` - custom options for specifying node delegation,
-* `preserve_ops` - list of aten operators to not be decomposed by ExecuTorch.
+* `post_quantization_state_dict` - state-dict of the model right after quantization. During partitioning, the
+                                                `edge_program` only contains fake tensors without any data. In this case,
+                                                this state dict is used instead (if provided). Notice: It may potentially
+                                                contain outdated data,
+* `preserve_ops` - list of aten operators to not decompose during the lowering.
+* `check_op_support` - optional callable to check if an operator is supported.
 
 --------------------
 Compile Spec Options
@@ -18,11 +23,13 @@ To generate the Compile Spec for Neutron backend, you can use the `generate_neut
 Following fields can be set:
 
 * `config` - NXP platform defining the Neutron NPU configuration, e.g. "imxrt700".
+* `intermediates_dir` - Directory to store intermediate artifact files.
 * `extra_flags` - Extra flags for the Neutron compiler.
 * `operators_not_to_delegate` - List of operators that will not be delegated.
 * `use_neutron_for_format_conversion` - If True, let the eIQ Neutron NPU to handle conversion between channel-first (NCHW) and channel-last (NHWC) data formats. That is the Neutron backend will insert `Transpose` ops to ensure that the IO matches the executorch partition, which will be delegated to Neutron.
-* `fetch_constants_to_sram`: If True, the Neutron Converter will insert microinstructions to prefetch weights from FLASH to SRAM. This should be used when the whole model does not fit into SRAM on Neutron-C devices, like i.MX RT700
-* `dump_kernel_selection_code`: Whether Neutron converter dumps kernel selection code, which is used by the selective kernel registration, see :doc:`Neutron Firmware Kernel Selection support <nxp-kernel-selection.md>`.
+* `fetch_constants_to_sram` - If True, the Neutron Converter will insert microinstructions to prefetch weights from FLASH to SRAM. This should be used when the whole model does not fit into SRAM on Neutron-C devices, like i.MX RT700.
+* `dump_kernel_selection_code` - Whether Neutron converter dumps kernel selection code, which is used by the selective kernel registration, see :doc:`Neutron Firmware Kernel Selection support <nxp-kernel-selection.md>`.
+* `use_profiling` - If true Neutron Converter will enable profiling for neutron delegated model.
 
 -------------------------
 Custom Delegation Options
@@ -37,7 +44,7 @@ Operator Support
 Operators are the building blocks of the ML model. See `IRs <https://docs.pytorch.org/docs/stable/torch.compiler_ir.html>`_ for more information on the PyTorch operator set.
 
 This section lists the Edge operators supported by the Neutron backend.
-For detailed constraints of the operators see the ``is_supported`` / ``_is_supported_in_IR`` / ``_is_supported_on_target`` checks in the `Node converters <https://github.com/pytorch/executorch/blob/main/backends/nxp/backend/ir/converter/node_converter.py#L118>`_
+For detailed constraints of the operators see the ``is_supported`` / ``_is_supported_in_IR`` / ``_is_supported_on_target`` checks in the `Node converters <https://github.com/pytorch/executorch/blob/main/backends/nxp/backend/ir/converter/node_converter.py#L105>`_
 
 
 .. csv-table:: Operator Support

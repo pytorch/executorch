@@ -14,7 +14,7 @@
 #include <executorch/backends/cuda/runtime/cuda_mutable_state.h>
 #include <executorch/runtime/core/error.h>
 
-#include <cuda_runtime.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -371,11 +371,17 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
   container.fqns = {"model.state"};
   container.extracted["model.state"] =
       reinterpret_cast<aoti::AtenTensorHandle>(source_tensor.get());
+  FakeContainer stateless_container;
   cu::CudaDelegateHandle handle = fake_container_handle(&container);
+  cu::CudaDelegateHandle stateless_handle =
+      fake_container_handle(&stateless_container);
 
   cu::MutableStateContextOwner c;
   c.register_fqns({"model.state"});
-  c.with_load_scope([&] { cu::mutable_state_note_handle(&handle); });
+  c.with_load_scope([&] {
+    cu::mutable_state_note_handle(&handle);
+    cu::mutable_state_note_handle(&stateless_handle);
+  });
 
   ASSERT_TRUE(c.available());
   EXPECT_EQ(c.bytes_per_session(), 4 * sizeof(float));
@@ -387,6 +393,7 @@ TEST(CudaMutableStateTest, CapturesClonesAndRebindsDeviceBuffer) {
 
   auto token = c.create_session();
   ASSERT_TRUE(token.ok());
+  EXPECT_EQ(cu::mutable_state_rebind_for_execute(&stateless_handle), Error::Ok);
   EXPECT_EQ(cu::mutable_state_rebind_for_execute(&handle), Error::InvalidState);
 
   ASSERT_EQ(

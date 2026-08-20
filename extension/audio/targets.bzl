@@ -1,0 +1,30 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    runtime.python_library(
+        name = "mel_spectrogram_lib",
+        srcs = ["mel_spectrogram.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/devtools/backend_debug:delegation_info",
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+            "//executorch/runtime:runtime",
+            "fbsource//third-party/pypi/datasets:datasets",
+            "fbsource//third-party/pypi/transformers:transformers",
+            "fbsource//third-party/pypi/librosa:librosa",
+            "fbsource//third-party/pypi/soundfile:soundfile"
+        ]
+    )
+
+    python_binary(
+        name = "mel_spectrogram",
+        main_module = "executorch.extension.audio.mel_spectrogram",
+        deps = [
+            ":mel_spectrogram_lib",
+        ],
+    )

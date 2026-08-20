@@ -21,14 +21,6 @@ import unittest
 import torch
 import torch.nn as nn
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_MLX_PACKERS,
-    pack_model,
-    QuantConfig,
-    quantize_model,
-    QuantRecipe,
-    QuantRule,
-)
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_gguf_checkpoint,
     build_random_tiny_model,
@@ -36,6 +28,13 @@ from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     GGUF_CONFIG,
     save_checkpoint,
     TINY_CONFIG,
+)
+from executorch.extension.llm.export.load import assign_state_dict
+from executorch.extension.llm.export.quant import (
+    QuantConfig,
+    quantize_model,
+    QuantRecipe,
+    QuantRule,
 )
 
 _INT4 = QuantConfig(bits=4, group_size=32, symmetric=True, method="min_max")
@@ -67,7 +66,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
 
         for fqn, p in model.named_parameters():
             self.assertNotEqual(p.device.type, "meta", f"Weight '{fqn}' still on meta")
@@ -81,7 +80,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -108,7 +107,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.model import (
@@ -137,7 +136,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         from executorch.examples.models.gemma4_31b.mlx_source_transformations import (
@@ -192,7 +191,7 @@ class TestMlxPipeline(unittest.TestCase):
         with torch.device("meta"):
             model = Gemma4_31B(TINY_CONFIG)
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        pack_model(model, state_dict, DEFAULT_MLX_PACKERS)
+        assign_state_dict(model, state_dict)
         model.eval()
 
         mlx_source_transformations(model, dtype=torch.bfloat16)
@@ -308,23 +307,24 @@ class TestGgufMlxPipeline(unittest.TestCase):
         except ModuleNotFoundError:
             self.skipTest("gguf package not installed")
 
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         # Will fail on missing file, but NOT on "Unsupported backend".
         with self.assertRaisesRegex((FileNotFoundError, OSError, RuntimeError), ".*"):
             load_gguf_model("/nonexistent.gguf", backend="mlx")
 
     def test_mlx_backend_rejects_unknown(self):
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         with self.assertRaisesRegex(ValueError, "Unsupported backend"):
             load_gguf_model("/nonexistent.gguf", backend="tpu")
 
     def test_gs16_packing_preserves_values(self):
         """Q6_K-like weight (gs=16) preserves dequantized values after packing."""
-        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
-        from executorch.examples.models.gemma4_31b.quant.quantize import (
+        from executorch.extension.llm.export.load import assign_one
+        from executorch.extension.llm.export.quant import (
             dequantize_weight,
+            to_exportable,
         )
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
@@ -340,7 +340,7 @@ class TestGgufMlxPipeline(unittest.TestCase):
         before = dequantize_weight(w, torch.float32)
 
         module = nn.Linear(128, 64, bias=False)
-        pack_for_mlx(module, {"weight": w})
+        assign_one(module, "weight", to_exportable("weight", w))
         after = dequantize_weight(module.weight.data, torch.float32)
 
         self.assertTrue(
@@ -350,10 +350,8 @@ class TestGgufMlxPipeline(unittest.TestCase):
 
     def test_embedding_packing_preserves_values(self):
         """MLX embedding packing preserves dequantized weight values."""
-        from executorch.examples.models.gemma4_31b.quant.pack_mlx import pack_for_mlx
-        from executorch.examples.models.gemma4_31b.quant.quantize import (
-            dequantize_weight,
-        )
+        from executorch.extension.llm.export.load import assign_one
+        from executorch.extension.llm.export.quant import dequantize_weight, to_default
         from torchao.quantization import IntxUnpackedToInt8Tensor
 
         w = IntxUnpackedToInt8Tensor(
@@ -368,7 +366,7 @@ class TestGgufMlxPipeline(unittest.TestCase):
         before = dequantize_weight(w, torch.float32)
 
         module = nn.Embedding(256, 128)
-        pack_for_mlx(module, {"weight": w})
+        assign_one(module, "weight", to_default("weight", w))
         after = dequantize_weight(module.weight.data, torch.float32)
 
         self.assertTrue(
@@ -550,7 +548,7 @@ class TestGgufLoadMlx(unittest.TestCase):
             self.skipTest("gguf package required")
 
     def _load(self, tmp):
-        from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
+        from executorch.examples.models.gemma4_31b.export import load_gguf_model
 
         path = os.path.join(tmp, "tiny.gguf")
         build_gguf_checkpoint(path)

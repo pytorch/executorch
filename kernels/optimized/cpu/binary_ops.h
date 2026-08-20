@@ -11,6 +11,7 @@
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_indexes_range.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #include <optional>
@@ -189,10 +190,9 @@ Tensor& handle_last_dim_broadcast_elementwise(
     lhs = &a;
     rhs = &b;
   }
-  auto error = resize_tensor(out, lhs->sizes());
   ET_KERNEL_CHECK_MSG(
       ctx,
-      error == Error::Ok,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out,
       "Failed to resize output tensor.");

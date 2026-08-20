@@ -13,9 +13,8 @@
 #include <executorch/backends/aoti/slim/core/slim_tensor.h>
 #include <executorch/backends/aoti/slim/factory/from_blob.h>
 #include <executorch/backends/cuda/runtime/cuda_delegate_handle.h>
+#include <executorch/extension/cuda/runtime_api.h>
 #include <executorch/runtime/platform/log.h>
-
-#include <cuda_runtime.h>
 
 #include <iterator>
 #include <memory>
@@ -642,10 +641,17 @@ Error mutable_state_rebind_for_execute(CudaDelegateHandle* handle) {
       return Error::Ok;
     }
     auto cit = m.contexts.find(hit->second);
-    if (cit != m.contexts.end() &&
-        (!cit->second.sessions.empty() ||
-         cit->second.rebound_handles.find(handle) !=
-             cit->second.rebound_handles.end())) {
+    if (cit != m.contexts.end()) {
+      const auto desc = cit->second.desc.find(handle);
+      const bool known_stateless =
+          desc != cit->second.desc.end() && desc->second.empty();
+      const bool requires_active_session =
+          (!known_stateless && !cit->second.sessions.empty()) ||
+          cit->second.rebound_handles.find(handle) !=
+              cit->second.rebound_handles.end();
+      if (!requires_active_session) {
+        return Error::Ok;
+      }
       ET_LOG(
           Error, "mutable_state: active session is required for this handle");
       return Error::InvalidState;

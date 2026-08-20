@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from q4gsw_linear_gemm_shmem.wgsl - DO NOT EDIT.
-// wgsl-sha256: 0a1219d3b6781315a21066089fca3f92235587e8af8eb734185f35ea4bfc8a52
+// wgsl-sha256: f0180cad41701807b34912b57d9715c02588c9447783bbf691f93836168fe981
 inline constexpr const char* kQ4gswLinearGemmShmemWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_input: array<f32>;
@@ -33,7 +33,8 @@ struct Params {
 }
 @group(0) @binding(5) var<uniform> params: Params;
 
-override wg_size: u32 = 64u;
+// Fixed 64: 8x8 grid + 512-elem shared tiles are hard-locked to it (no knob).
+const wg_size: u32 = 64u;
 
 // Shmem-staged tiled GEMM (M>1): dequant weight into shmem once per K-tile.
 const WG_M: u32 = 32u;   // output rows per workgroup

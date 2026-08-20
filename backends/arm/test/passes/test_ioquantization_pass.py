@@ -123,6 +123,33 @@ def _build_dq_q_graph(
     return builder.get_graph_module()
 
 
+def test_insert_rescale_should_run_based_on_spec_and_dq():
+    """Check integer support and DQ presence before running the pass."""
+    graph_module = _build_dq_q_graph(
+        torch.randint(-128, 127, (1, 4), dtype=torch.int8),
+        torch.int8,
+        torch.int8,
+        dq_scale=0.5,
+        dq_zp=0,
+        q_scale=0.25,
+        q_zp=0,
+    )
+    insert_rescale = InsertRescalePass()
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+FP")):
+        assert not insert_rescale.should_run_pass(graph_module)
+
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        assert insert_rescale.should_run_pass(graph_module)
+
+    builder = GraphBuilder()
+    x = builder.placeholder("x", torch.rand(1, 4))
+    builder.output([x])
+    graph_without_dq = builder.get_graph_module()
+    with TosaLoweringContext(TosaSpecification.create_from_string("TOSA-1.0+INT")):
+        assert not insert_rescale.should_run_pass(graph_without_dq)
+
+
 def test_insert_rescale_tosa_INT_folds_uint8_input():
     graph_module = _build_dq_q_graph(
         torch.randint(0, 255, (1, 4), dtype=torch.uint8),

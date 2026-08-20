@@ -27,11 +27,13 @@ from executorch.examples.models.gemma4_31b.model import (
     Gemma4_31BConfig,
     RingKVCache,
 )
-from executorch.examples.models.gemma4_31b.quant import (
+from executorch.extension.llm.export.quant import (
     QuantConfig,
     quantize_model,
+    quantize_stream,
     QuantRecipe,
     QuantRule,
+    to_default,
 )
 from safetensors import safe_open
 from safetensors.torch import save_file
@@ -46,7 +48,10 @@ from torchao.prototype.safetensors.safetensors_support import (
 
 TINY_CONFIG = Gemma4_31BConfig(
     vocab_size=256,
-    hidden_size=128,
+    # hidden_size must be a multiple of 256: CUDA int4/int6 superscale packing
+    # uses a per-256-weight scale step, so in-features (K) must be divisible by
+    # 256. Keeps the CUDA pipeline tests on the same shared fixture.
+    hidden_size=256,
     intermediate_size=256,
     num_hidden_layers=6,
     num_attention_heads=4,
@@ -140,7 +145,15 @@ def build_random_tiny_model() -> Gemma4_31B:
 def save_checkpoint(output_dir: str):
     model = build_random_tiny_model()
     model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-    state_dict = quantize_model(model, DEFAULT_RECIPE)
+    # On-disk producer: quantize_stream yields the torchao-native serialization
+    # form (Int4Tensor) that flatten_tensor_state_dict can write. quantize_model
+    # would yield the in-memory ExportableInt4Tensor, which torchao can't flatten.
+    params = ((fqn, p.data) for fqn, p in model.named_parameters())
+    state_dict = dict(quantize_stream(params, DEFAULT_RECIPE))
+    persistent_keys = set(model.state_dict().keys())
+    for fqn, buf in model.named_buffers():
+        if fqn in persistent_keys and fqn not in state_dict:
+            state_dict[fqn] = buf.data
     os.makedirs(output_dir, exist_ok=True)
     td, md = flatten_tensor_state_dict(state_dict)
     save_file(td, os.path.join(output_dir, "model.safetensors"), metadata=md)
@@ -260,7 +273,11 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
 
         model = build_random_tiny_model()
         model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
-        state_dict = quantize_model(model, DEFAULT_RECIPE)
+        # Save form == quantize_stream (torchao-native Int4Tensor), which is what
+        # quantize_and_save writes to disk; quantize_model's Exportable form is
+        # in-memory only and would need torchao registration to flatten.
+        params = ((fqn, p.data) for fqn, p in model.named_parameters())
+        state_dict = dict(quantize_stream(params, DEFAULT_RECIPE, dtype=torch.bfloat16))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "model.safetensors")
@@ -297,6 +314,93 @@ class TestQuantizeSaveLoadRoundtrip(unittest.TestCase):
         self.assertIsInstance(
             state_dict["embed_tokens.weight"], IntxUnpackedToInt8Tensor
         )
+
+    def test_model_free_save_matches_quantize_model(self):
+        """Model-free save (iter_checkpoint + tie_map + quantize_stream) reconstructs
+        the model-based quantize_model state dict.
+
+        quantize_stream yields the serialization form (torchao-native Int4Tensor);
+        quantize_model yields the in-memory Exportable form. They match once the
+        streamed output is passed through the same ``to_default`` convert.
+        """
+        from executorch.examples.models.gemma4_31b.model import _hf_to_model_key
+        from executorch.extension.llm.export.load import iter_checkpoint
+        from executorch.extension.llm.export.quant import identity
+
+        # Reference: instantiate the model, untie lm_head, quantize_model.
+        model = build_random_tiny_model()
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        ref = quantize_model(model, DEFAULT_RECIPE)
+
+        # Model-free: stream a tied HF checkpoint (same seed-42 weights), remap
+        # names, fan lm_head out of the embedding (clone=True), quantize per recipe.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            build_hf_checkpoint(tmpdir)
+            pairs = iter_checkpoint(
+                tmpdir,
+                key_map=_hf_to_model_key,
+                convert=identity,
+                tie_map={"embed_tokens.weight": ("lm_head.weight", True)},
+            )
+            streamed = {
+                fqn: to_default(fqn, v)
+                for fqn, v in quantize_stream(
+                    pairs, DEFAULT_RECIPE, dtype=torch.bfloat16
+                )
+            }
+
+        self.assertEqual(set(streamed), set(ref))
+        for fqn, r in ref.items():
+            got = streamed[fqn]
+            self.assertIs(type(got), type(r), fqn)
+            data_names = getattr(r, "tensor_data_names", None)
+            if data_names:  # quantized subclass -> compare payload bit-exactly
+                for n in data_names:
+                    self.assertTrue(torch.equal(getattr(got, n), getattr(r, n)), fqn)
+            else:
+                self.assertTrue(torch.equal(got, r), fqn)
+
+    def test_load_casts_int4_to_fp16(self):
+        """Loading a bf16-quantized checkpoint with dtype=fp16 re-stamps int4.
+
+        Regression for the convert-then-cast order in iter_checkpoint: a raw
+        torchao Int4Tensor (whose own .to ignores dtype) is first wrapped as an
+        ExportableInt4Tensor by convert, then re-stamped to fp16 by maybe_cast.
+        """
+        from executorch.extension.llm.export.int4 import ExportableInt4Tensor
+        from executorch.extension.llm.export.load import iter_checkpoint
+        from executorch.extension.llm.export.quant import to_default
+        from torchao.quantization import IntxUnpackedToInt8Tensor
+        from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
+
+        model = build_random_tiny_model()
+        model.lm_head.weight = nn.Parameter(model.embed_tokens.weight.clone())
+        # Save the torchao-native form (quantize_stream) -- the real on-disk form.
+        params = ((fqn, p.data) for fqn, p in model.named_parameters())
+        state_dict = dict(quantize_stream(params, DEFAULT_RECIPE, dtype=torch.bfloat16))
+        int4_fqns = {f for f, v in state_dict.items() if isinstance(v, Int4Tensor)}
+        int8_fqns = {
+            f for f, v in state_dict.items() if isinstance(v, IntxUnpackedToInt8Tensor)
+        }
+        self.assertTrue(int4_fqns and int8_fqns)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            td, md = flatten_tensor_state_dict(state_dict)
+            save_file(td, os.path.join(tmpdir, "model.safetensors"), metadata=md)
+            loaded = dict(
+                iter_checkpoint(tmpdir, convert=to_default, dtype=torch.float16)
+            )
+
+        for fqn in int4_fqns:
+            got = loaded[fqn]
+            self.assertIsInstance(got, ExportableInt4Tensor, fqn)
+            self.assertEqual(got.orig_dtype, torch.float16, fqn)
+            self.assertEqual(got.scale.dtype, torch.float16, fqn)
+            self.assertEqual(got.dequantize().dtype, torch.float16, fqn)
+        for fqn in int8_fqns:
+            got = loaded[fqn]
+            self.assertIsInstance(got, IntxUnpackedToInt8Tensor, fqn)
+            self.assertEqual(got.scale.dtype, torch.float16, fqn)
 
 
 class TestRingKVCache(unittest.TestCase):

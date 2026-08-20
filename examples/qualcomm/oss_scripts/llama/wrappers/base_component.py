@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from executorch.backends.qualcomm.serialization.qc_schema import (
     QnnExecuTorchBackendType,
 )
-from executorch.backends.qualcomm.utils.utils import (
+from executorch.backends.qualcomm.utils.check_qnn_version import (
     get_sdk_build_id,
     is_qnn_sdk_version_less_than,
 )
@@ -165,17 +165,19 @@ class Processor:
 @dataclass
 class Request:
     @dataclass
-    class CalibrationData:
-        datasets: Optional[DataLoader] = None
+    class QuantizationData:
+        calib_loader: Optional[DataLoader] = None
         intermediate_outputs: Optional[DataLoader] = None
         qdq_intermediate_outputs: Optional[DataLoader] = None
+        train_loader: Optional[DataLoader] = None
+        val_loader: Optional[DataLoader] = None
 
     @dataclass
     class Data:
         compile_spec: List[CompileSpec] = None
         pte_filename: str = None
         custom_annotation: Any = ()
-        calibration_data: Request.CalibrationData = None
+        quantization_data: Request.QuantizationData = None
         tokenizer: callable = None
         skip_quantize: bool = False
         backend: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend

@@ -166,6 +166,8 @@ def quantize(args):
             quant_dtype=quant_dtype,
             per_channel_conv=args.per_channel,
             per_channel_linear=args.per_row,
+            per_channel_embedding=args.per_channel_embedding,
+            act_symmetric=args.act_symmetric,
             act_observer=act_observer,
             backend=get_backend_type(args.backend),
             soc_model=args.soc_model,
@@ -498,6 +500,16 @@ def main():
         "--per_row",
         action="store_true",
         help="Use per_row encoding for operator linear.",
+    )
+    sub_quantize.add_argument(
+        "--per_channel_embedding",
+        action="store_true",
+        help="Use per_channel encoding for operator embedding.",
+    )
+    sub_quantize.add_argument(
+        "--act_symmetric",
+        action="store_true",
+        help="Use symmetric quantization for activations.",
     )
     sub_quantize.add_argument(
         "--activation_observer",

@@ -20,6 +20,10 @@ on:
       - ciflow/binaries/*
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
 jobs:
   generate-matrix:
     uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
@@ -30,7 +34,7 @@ jobs:
       test-infra-ref: main
       with-cuda: disabled
       with-rocm: disabled
-      python-versions: '["3.10", "3.11", "3.12", "3.13"]'
+      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
 
   build:
     needs: generate-matrix

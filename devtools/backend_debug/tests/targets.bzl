@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+def define_common_targets(is_fbcode = False):
+    if not is_fbcode:
+        return
+
+    python_unittest(
+        name = "test_delegation_info",
+        srcs = [
+            "test_delegation_info.py",
+        ],
+        deps = [
+            "fbsource//third-party/pypi/pandas:pandas",
+            "//caffe2:torch",
+            "//executorch/devtools/backend_debug:delegation_info",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend/test:op_partitioner_demo",
+        ],
+    )

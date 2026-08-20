@@ -59,7 +59,7 @@ def _normalize_and_to_channel_last_dim(dim: list[int], rank: int) -> list[int]:
 
 
 def get_reduce_node_attrs(node: Node) -> tuple[list[int], bool]:
-    dim = node.args[1]
+    dim = node.args[1] if len(node.args) >= 2 else None
     keepdim = node.args[2] if len(node.args) >= 3 else False
     return dim, keepdim
 

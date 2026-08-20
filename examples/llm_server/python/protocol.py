@@ -38,6 +38,11 @@ class ChatMessage(BaseModel):
     role: str
     content: Optional[Union[str, list[dict[str, Any]]]] = None
     name: Optional[str] = None
+    # Optional prior-turn reasoning (chain-of-thought). Mirrors
+    # ResponseMessage.reasoning_content so a multi-turn client can echo an assistant
+    # turn's reasoning back into the request; a chat template that renders prior
+    # reasoning needs it here, and without the field it is dropped at parse.
+    reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
     tool_call_id: Optional[str] = None
 
@@ -58,9 +63,6 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, list[str]]] = None
     n: int = 1
     seed: Optional[int] = None
-    # Sampling knobs that change generation output. We don't plumb these, so they
-    # are modeled (not dropped) in order to be rejected with a clear error rather
-    # than silently ignored — see serving_chat's unsupported-parameter check.
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     top_k: Optional[int] = None
@@ -102,6 +104,7 @@ class Usage(BaseModel):
 class ResponseMessage(BaseModel):
     role: str = "assistant"
     content: Optional[str] = None
+    reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
 
 
@@ -123,6 +126,7 @@ class ChatCompletionResponse(BaseModel):
 class DeltaMessage(BaseModel):
     role: Optional[str] = None
     content: Optional[str] = None
+    reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ToolCall]] = None
 
 

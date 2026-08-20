@@ -24,6 +24,10 @@ on:
         required: false
         type: string
         default: '3.10'
+      linux-timeout:
+        required: false
+        type: number
+        default: 90
 
 jobs:
   linux:
@@ -36,7 +40,7 @@ jobs:
       docker-image: ${{ inputs.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: ${{ inputs.linux-timeout }}
       script: |
         set -eux
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"

@@ -6,6 +6,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# Developer setup helper. This command-line interface is not a public API and
+# may change without deprecation.
 
 set -u
 
@@ -20,6 +23,7 @@ root_dir="${script_dir}/arm-scratch"
 eula_acceptance=0
 enable_baremetal_toolchain=1
 target_toolchain=""
+target_toolchains=()
 enable_fvps=1
 enable_vela=1
 enable_model_converter=0   # model-converter tool for VGF output
@@ -45,7 +49,7 @@ OPTION_LIST=(
   "--i-agree-to-the-contained-eula (required) Agree to the EULA"
   "--root-dir Path to scratch directory"
   "--enable-baremetal-toolchain Enable baremetal toolchain setup"
-  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl"
+  "--target-toolchain Select toolchain: gnu (default), zephyr, or linux-musl. Repeat the option to install multiple toolchains."
   "--enable-fvps Enable FVP setup"
   "--enable-vela Enable VELA setup"
   "--enable-model-converter Enable MLSDK model converter setup"
@@ -67,6 +71,7 @@ OPTION_LIST=(
 
 function print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
+    echo "Note: this developer setup script is not a stable public API."
     echo
     echo "Available options:"
     for entry in "${OPTION_LIST[@]}"; do
@@ -103,17 +108,17 @@ function check_options() {
                 shift
                 ;;
             --target-toolchain)
-                # Only change default root dir if the script is being executed and not sourced.
-                if [[ $is_script_sourced -eq 0 ]]; then
-                    target_toolchain=${2:-"${target_toolchain}"}
-                fi
-
-                if [[ $# -ge 2 ]]; then
-                    shift 2
-                else
+                if [[ $# -lt 2 ]]; then
                     print_usage "$@"
                     exit 1
                 fi
+
+                # Only change target toolchains if the script is being executed and not sourced.
+                if [[ $is_script_sourced -eq 0 ]]; then
+                    add_target_toolchain "$2"
+                fi
+
+                shift 2
                 ;;
             --enable-fvps)
                 enable_fvps=1
@@ -194,6 +199,24 @@ function check_options() {
     done
 }
 
+function add_target_toolchain() {
+    local toolchain=$1
+    if [[ "${toolchain}" == "" ]]; then
+        toolchain="gnu"
+    elif [[ "${toolchain}" != "gnu" && "${toolchain}" != "zephyr" && "${toolchain}" != "linux-musl" ]]; then
+        echo "Error: Unsupported target toolchain '${toolchain}'. Valid options are gnu, zephyr, linux-musl." >&2
+        exit 1
+    fi
+
+    local selected_toolchain
+    for selected_toolchain in "${target_toolchains[@]}"; do
+        if [[ "${selected_toolchain}" == "${toolchain}" ]]; then
+            return
+        fi
+    done
+    target_toolchains+=("${toolchain}")
+}
+
 function setup_root_dir() {
     mkdir -p "${root_dir}"
     root_dir=$(realpath "${root_dir}")
@@ -260,7 +283,12 @@ function create_setup_path(){
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        setup_path_toolchain
+        local selected_toolchain
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_path_toolchain
+        done
     fi
 
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
@@ -285,6 +313,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     check_options "$@"
 
+    if [[ "${#target_toolchains[@]}" -eq 0 ]]; then
+        target_toolchains=("gnu")
+    fi
+    target_toolchains_display="$(IFS=,; echo "${target_toolchains[*]}")"
+
     # Import utils
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
@@ -302,7 +335,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     cd "${root_dir}"
 
     log_step "options" \
-             "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}"
+             "root=${root_dir}, target-toolchain=${target_toolchains_display}"
     log_step "options" \
              "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | " \
              "mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, " \
@@ -310,10 +343,12 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
-        # Select appropriate toolchain
-        select_toolchain
-        setup_toolchain
+        log_step "toolchain" "Configuring baremetal toolchain(s): ${target_toolchains_display}"
+        for selected_toolchain in "${target_toolchains[@]}"; do
+            target_toolchain="${selected_toolchain}"
+            select_toolchain
+            setup_toolchain
+        done
     fi
 
     # Setup FVP

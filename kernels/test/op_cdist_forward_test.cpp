@@ -17,7 +17,6 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;

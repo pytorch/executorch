@@ -90,7 +90,8 @@ test_pytest_models_no_target() {
     source backends/arm/scripts/install_models_for_test.sh
 
     # Run arm baremetal pytest tests without FVP
-    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}" -m "not xlarge"
+    # Exit code 5 means no tests were collected; preserve all other failures.
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k "${EXCLUDE_TARGET_EXPR}" -m "not xlarge" || [[ $? -eq 5 ]]
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -114,6 +115,18 @@ test_pytest_models_tosa() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_pytest_models_tosa_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest models for TOSA"
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k tosa -m xlarge
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 test_run_tosa() {
     echo "${TEST_SUITE_NAME}: Test TOSA delegate examples with run.sh"
 
@@ -130,7 +143,6 @@ test_run_tosa() {
 test_pytest_ops_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models -k "u55 or u65"
@@ -140,7 +152,6 @@ test_pytest_ops_ethos_u55() {
 test_pytest_models_ethos_u55() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U55"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -174,6 +185,7 @@ test_run_ethos_u55() {
     # Cortex-M op tests
     echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on Ethos-U55)"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/prim_ops.py --bundleio --no_delegate --no_quantize --select_ops_list="aten::add.out,aten::select_copy.int_out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
@@ -187,7 +199,6 @@ test_run_ethos_u55() {
 test_pytest_ops_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest ops for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Run arm baremetal pytest tests with FVP
@@ -198,7 +209,6 @@ test_pytest_ops_ethos_u85() {
 test_pytest_models_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Run pytest models for Arm Ethos-U85"
 
-    backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing.sh
 
     # Install model dependencies for pytest
@@ -252,6 +262,20 @@ test_pytest_models_vkml() {
     source backends/arm/scripts/install_models_for_test.sh
 
     pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_ -m "not xlarge"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_vkml_xlarge() {
+    echo "${TEST_SUITE_NAME}: Run xlarge pytest model tests with VKML runtime"
+
+    source backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest "${PYTEST_RETRY_ARGS[@]}" --verbose --color=yes \
+        --numprocesses=1 --durations=0 \
+        backends/arm/test/models -k _vgf_ -m xlarge
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -314,8 +338,6 @@ test_deit_e2e_ethos_u() {
 # ------------------------------------
 test_model_smollm2_135M_ethos_u85() {
     echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
-
-    backends/arm/scripts/build_executorch.sh
 
     # Build pte for smollm2
     python3 -m extension.llm.export.export_llm \
@@ -390,19 +412,19 @@ test_smaller_stories_llama_vkml() {
     _test_smaller_stories_llama vgf
 }
 
-test_memory_allocation() {
-    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
+test_runtime_ethos_u() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation"
 
-    mkdir -p arm_test/test_run
-    # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
-    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
-            --require "model_pte_program_size" "<= 3200 B" \
-            --require "method_allocator_planned" "<= 64 B" \
-            --require "method_allocator_loaded" "<= 1024 B" \
-            --require "method_allocator_input" "<= 16 B" \
-            --require "Total DRAM used" "<= 0.06 KiB"
+    local ctest_build_dir="${et_root_dir}/arm_test/ethosu_runtime_tests"
+    cmake \
+        -S "${et_root_dir}/backends/arm/runtime/tests/ethos-u" \
+        -B "${ctest_build_dir}" \
+        -DEXECUTORCH_ROOT="${et_root_dir}"
+
+    ctest --test-dir "${ctest_build_dir}" \
+        --output-on-failure \
+        --no-tests=error \
+        -L memory_allocation
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

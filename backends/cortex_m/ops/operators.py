@@ -265,6 +265,71 @@ def quantized_mul_impl(
 
 
 # ===================================================================
+# QUANTIZED DIV OPERATION DEFINITION
+# ===================================================================
+lib.define(
+    "quantized_div("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, float output_scale) -> Tensor"
+)
+lib.define(
+    "quantized_div.out("
+    "Tensor self, int self_zero_point, "
+    "Tensor other, int other_zero_point, "
+    "int output_zero_point, float output_scale, "
+    "*, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
+@register_fake("cortex_m::quantized_div")  # type: ignore[misc]
+def quantized_div_meta(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_scale: float,
+) -> torch.Tensor:
+    # Division is not commutative, so broadcasting (handled via operand swaps in
+    # quantized_mul) is not supported: require identical shapes.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    return torch.empty_like(self)
+
+
+@impl(lib, "quantized_div", "CompositeExplicitAutograd")  # type: ignore[misc]
+def quantized_div_impl(
+    self: torch.Tensor,
+    self_zero_point: int,
+    other: torch.Tensor,
+    other_zero_point: int,
+    output_zero_point: int,
+    output_scale: float,
+) -> torch.Tensor:
+    # Mirror the kernel: the quotient of the zero-point-corrected int8/int16
+    # operands is evaluated in float and rescaled by the effective scale
+    # (scale_in1 / (scale_in2 * scale_out)) that the AoT pass carries directly.
+    assert self.shape == other.shape, (
+        "Cortex-M quantized_div: broadcasting is not supported — "
+        f"got self.shape={self.shape}, other.shape={other.shape}"
+    )
+    if self.dtype not in (torch.int8, torch.int16):
+        raise TypeError(
+            f"cortex_m.quantized_div: expected int8 or int16 inputs, got {self.dtype}"
+        )
+    self_fp = (self.to(torch.int32) - self_zero_point).to(torch.float32)
+    other_fp = (other.to(torch.int32) - other_zero_point).to(torch.float32)
+
+    quotient = torch.where(other_fp != 0, self_fp / other_fp, torch.zeros_like(self_fp))
+    result = torch.round(quotient * output_scale) + output_zero_point
+    dtype_info = torch.iinfo(self.dtype)
+    return torch.clamp(result, dtype_info.min, dtype_info.max).to(self.dtype)
+
+
+# ===================================================================
 # QUANTIZED ACTIVATION (LUT) OPERATION DEFINITION
 # ===================================================================
 # Generic table-lookup activation. The 256-entry int8 LUT is precomputed AoT
@@ -1215,6 +1280,7 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
     "int shift, "
@@ -1227,6 +1293,7 @@ lib.define(
     "int[] kernel_size, "
     "int[] stride, "
     "int[] padding, "
+    "bool ceil_mode, "
     "int zero_point, "
     "int multiplier, "
     "int shift, "
@@ -1241,6 +1308,7 @@ def quantized_avg_pool2d_meta(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
@@ -1254,7 +1322,7 @@ def quantized_avg_pool2d_meta(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     return torch.empty(
@@ -1271,6 +1339,7 @@ def quantized_avg_pool2d_impl(
     kernel_size: Sequence[int],
     stride: Sequence[int],
     padding: Sequence[int],
+    ceil_mode: bool,
     zero_point: int,
     multiplier: int,
     shift: int,
@@ -1288,7 +1357,7 @@ def quantized_avg_pool2d_impl(
         kernel,
         stride=stride_vals,
         padding=padding_vals,
-        ceil_mode=False,
+        ceil_mode=ceil_mode,
         count_include_pad=False,
     )
     result = quantize_per_tensor_cmsis(result, zero_point, multiplier, shift)
@@ -1426,8 +1495,23 @@ def quantized_max_pool2d_impl(
     if ceil_mode:
         raise RuntimeError("quantized_max_pool2d does not support ceil_mode=True")
 
+    # aten's channels-last max_pool2d caps how large an image it will take, so
+    # pool a contiguous copy instead. Pooling is layout-invariant, and the
+    # return below puts the result back in channels-last either way.
+    #
+    # The cap: cpu_max_pool_channels_last buffers each window index in
+    # vec::int_same_size_t<opmath_t> and guards it with
+    # TORCH_CHECK(input_depth * input_height * input_width <= max), so int8
+    # rejects any image with more than 127 spatial elements -- H*W, with
+    # channels not counted. int16 hits the same wall at 32767, which a future
+    # quantized_max_pool2d_s16 will need to handle the same way.
+    #
+    # .to(memory_format=...) rather than .contiguous(): for C == 1 the
+    # channels-last strides also satisfy plain contiguity, so .contiguous()
+    # returns the same tensor while aten still dispatches on the memory-format
+    # hint and raises anyway.
     result = F.max_pool2d(
-        input,
+        input.to(memory_format=torch.contiguous_format),
         kernel,
         stride=stride_vals,
         padding=padding_vals,

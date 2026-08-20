@@ -7,7 +7,9 @@
 cmake_minimum_required(VERSION 3.24)
 project(dinov2_runner)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)

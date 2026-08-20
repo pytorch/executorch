@@ -131,15 +131,28 @@ def test_sum_u85_INT_1_0(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Sum.test_parameters | Sum.test_parameters_fp16)
+@common.parametrize(
+    "test_data",
+    Sum.test_parameters | Sum.test_parameters_bf16 | Sum.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_no_quant(test_data: input_t1):
+    data = test_data()
+    match data[0].dtype:
+        case torch.bfloat16:
+            atol = 1e-1
+            rtol = 1e-1
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Sum(),
-        test_data(),
+        data,
         aten_op,
         run_on_vulkan_runtime=True,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

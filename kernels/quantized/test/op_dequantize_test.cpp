@@ -18,8 +18,6 @@
 #include <limits>
 
 using namespace ::testing;
-using executorch::aten::ArrayRef;
-using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using std::optional;
@@ -318,4 +316,55 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
   et_pal_init();
   test_per_channel_dtype<ScalarType::Byte>();
   test_per_channel_dtype<ScalarType::Char>();
+}
+
+// Per-channel dequantize on a channels-last input. Each element's expected
+// value depends only on its channel, never on where it sits in memory, so this
+// only passes if the kernel honors the tensor's dim order. Before the
+// reduce_util.h carry-over fix this wrote past the end of the output. See
+// issue #16429.
+TEST(OpDequantizeOutTest, DequantizePerChannelChannelsLast) {
+  et_pal_init();
+  TensorFactory<ScalarType::Char> tf;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+  TensorFactory<ScalarType::Float> tfo;
+
+  std::vector<int8_t> logical = {
+      -20, -59,  -22, -40, 127, -108, -57, 117, 24,  -103, 48,  -110,
+      80,  15,   -10, -75, -77, -46,  -12, -66, 35,  -87,  -50, -80,
+      12,  -127, 107, 91,  115, -54,  -6,  -6,  -41, 46,   42,  -83};
+  const double s0 = 0.0016989057185128331;
+  const double s1 = 0.001776964869350195;
+
+  Tensor input = tf.channels_last_like(tf.make({2, 2, 3, 3}, logical));
+  Tensor scale = tf_double.make({2}, {s0, s1});
+  Tensor zero_point = tf_long.make({2}, {0, 0});
+
+  std::vector<float> expected_logical(36);
+  for (int n = 0; n < 2; ++n) {
+    for (int c = 0; c < 2; ++c) {
+      for (int hw = 0; hw < 9; ++hw) {
+        size_t i = n * 18 + c * 9 + hw;
+        expected_logical[i] = static_cast<float>(logical[i]) *
+            static_cast<float>(c == 0 ? s0 : s1);
+      }
+    }
+  }
+  Tensor expected =
+      tfo.channels_last_like(tfo.make({2, 2, 3, 3}, expected_logical));
+
+  Tensor out = tfo.zeros_channels_last({2, 2, 3, 3});
+  dequantize_per_channel_out(
+      input,
+      scale,
+      zero_point,
+      /*axis=*/1,
+      /*quant_min=*/-128,
+      /*quant_max=*/127,
+      ScalarType::Char,
+      optional<ScalarType>(),
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
 }

@@ -11,7 +11,12 @@ from executorch.backends.qualcomm._passes.utils import (
     insert_dequant_node,
     insert_quant_node,
 )
-from executorch.backends.qualcomm.builders.node_visitor import dq_ops, q_dq_map, q_ops
+from executorch.backends.qualcomm.builders.node_visitor import (
+    dq_ops,
+    q_ops,
+    to_dq_op,
+    to_q_op,
+)
 
 from executorch.backends.qualcomm.builders.utils import is_graph_input, is_graph_output
 
@@ -108,7 +113,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                         graph_module=graph_module,
                         input_node=n,
                         output_node=user,
-                        target=n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING],
+                        target=to_q_op(n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]),
                         pop_quant_attrs=False,
                     )
                     q_node.meta[QCOM_FALLBACK_NODE] = True
@@ -116,7 +121,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                         graph_module=graph_module,
                         input_node=q_node,
                         output_node=user,
-                        target=q_dq_map[q_node.target],
+                        target=to_dq_op(q_node.target),
                     )
                     dq_node.meta[QCOM_BYPASS_NODE] = True
             elif (
@@ -131,7 +136,9 @@ class LpaiPartitionFallbackSupport(ExportPass):
                         graph_module=graph_module,
                         input_node=output_node,
                         output_node=getitem_node,
-                        target=output_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING],
+                        target=to_q_op(
+                            output_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]
+                        ),
                         pop_quant_attrs=False,
                     )
                     q_node.meta[QCOM_BYPASS_NODE] = True
@@ -139,7 +146,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                         graph_module=graph_module,
                         input_node=q_node,
                         output_node=getitem_node,
-                        target=q_dq_map[q_node.target],
+                        target=to_dq_op(q_node.target),
                     )
                     dq_node.meta[QCOM_FALLBACK_NODE] = True
 
@@ -191,7 +198,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                 graph_module=graph_module,
                 input_node=input_node,
                 output_node=node,
-                target=input_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING],
+                target=to_q_op(input_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]),
                 pop_quant_attrs=False,
             )
             for input_node in input_nodes
@@ -203,7 +210,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                 graph_module=graph_module,
                 input_node=input_q_node,
                 output_node=node,
-                target=q_dq_map[input_q_node.target],
+                target=to_dq_op(input_q_node.target),
             )
             for input_q_node in input_q_nodes
         ]
@@ -232,7 +239,7 @@ class LpaiPartitionFallbackSupport(ExportPass):
                     graph_module=graph_module,
                     input_node=output_node,
                     output_node=output_user_node,
-                    target=output_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING],
+                    target=to_q_op(output_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]),
                     pop_quant_attrs=False,
                 )
                 output_q_node.meta[QCOM_FALLBACK_NODE] = True
@@ -240,9 +247,9 @@ class LpaiPartitionFallbackSupport(ExportPass):
                     graph_module=graph_module,
                     input_node=output_q_node,
                     output_node=output_user_node,
-                    target=q_dq_map[
+                    target=to_dq_op(
                         output_q_node.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]
-                    ],
+                    ),
                 )
                 output_dq_node.meta[QCOM_BYPASS_NODE] = True
         graph_module.graph.eliminate_dead_code()

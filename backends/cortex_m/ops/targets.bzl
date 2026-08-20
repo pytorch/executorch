@@ -58,6 +58,7 @@ OPERATORS = [
     "dequantize_per_tensor",
     "quantized_add",
     "quantized_mul",
+    "quantized_div",
     "minimum",
     "maximum",
     "quantized_linear",

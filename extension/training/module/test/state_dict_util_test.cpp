@@ -23,7 +23,6 @@ using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
-using executorch::runtime::TensorLayout;
 using torch::executor::util::FileDataLoader;
 
 class LoadStateDictTest : public ::testing::Test {

@@ -40,7 +40,7 @@ Tensor& sigmoid_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   compute_type = utils::get_compute_type(compute_type);
 
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "sigmoid.out";
+  ET_DEFINE_OPERATOR_NAME(op_name, "sigmoid.out");
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     utils::apply_unitensor_elementwise_fn<

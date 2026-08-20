@@ -25,4 +25,11 @@ inline constexpr auto kAudioEncoderMethod = "audio_encoder";
 inline constexpr auto kTokenEmbeddingMethod = "token_embedding";
 inline constexpr auto kTextModelMethod = "text_decoder";
 
+// Text method name conventions. A single-method PTE exports kForwardMethod; a
+// two-method PTE exports kPrefillMethod and kDecodeMethod instead, and is run
+// with a dedicated decoder runner per stage.
+inline constexpr auto kForwardMethod = "forward";
+inline constexpr auto kPrefillMethod = "prefill";
+inline constexpr auto kDecodeMethod = "decode";
+
 } // namespace executorch::extension::llm

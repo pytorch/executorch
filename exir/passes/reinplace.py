@@ -507,4 +507,26 @@ def reinplace_pass(  # noqa: C901
             continue
 
         seen_nodes.update(node.all_input_nodes)
+
+    # Reinplace rewrites may rename output nodes (e.g. aten_relu_default →
+    # aten_relu__default) but replace_all_uses_with does not update the
+    # graph signature. Fix output_specs to match the actual output node args.
+    output_node = next((n for n in ep.graph.nodes if n.op == "output"), None)
+    if output_node is not None:
+        out_args = output_node.args[0]
+        if not isinstance(out_args, (tuple, list)):
+            out_args = (out_args,)
+        output_specs = ep.graph_signature.output_specs
+        assert len(output_specs) == len(out_args), (
+            f"reinplace: output spec count changed: "
+            f"{len(output_specs)} specs vs {len(out_args)} output args"
+        )
+        for spec, arg in zip(output_specs, out_args):
+            if (
+                isinstance(arg, torch.fx.Node)
+                and getattr(spec.arg, "name", None) is not None
+                and spec.arg.name != arg.name
+            ):
+                spec.arg.name = arg.name
+
     return ep

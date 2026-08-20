@@ -11,7 +11,7 @@ For up-to-date status about running ExecuTorch on Neutron backend please visit t
 ## Features
 
 
-ExecuTorch v1.2 supports running machine learning models on selected NXP chips (for now only `i.MXRT700`).
+ExecuTorch v1.4 supports running machine learning models on selected NXP chips (for now only `i.MXRT700`).
 Among currently supported machine learning models are:
 - Convolution-based neutral networks
 - Full support for MobileNetV2 and CifarNet
@@ -24,10 +24,10 @@ Among currently supported machine learning models are:
 
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
 - [MCUXpresso SDK 26.06](https://mcuxpresso.nxp.com/mcuxsdk/26.06.00/html/index.html)
-- eIQ Neutron SDK version 3.1.3, what you can download from eIQ PyPI:
+- eIQ Neutron SDK version 3.2.0, what you can download from eIQ PyPI:
 
 ```commandline
-$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.1.3
+$ pip install --index-url https://eiq.nxp.com/repository eiq-neutron-sdk==3.2.0
 ```
 
 Instead of manually installing requirements, except MCUXpresso IDE and SDK, you can use the setup script: 

@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -150,6 +151,81 @@ function(gen_selected_max_kernel_num)
   )
 endfunction()
 
+# Generate a prim ops registration library. By default the library includes only
+# operators from SELECTED_OPS_YAML. INCLUDE_ALL_OPS disables prim-op selective
+# build and registers every prim op.
+function(gen_selected_prim_ops_lib)
+  # Parse arguments.
+  set(options INCLUDE_ALL_OPS)
+  set(one_value_args LIB_NAME SELECTED_OPS_YAML)
+  set(multi_value_args DEPS)
+  cmake_parse_arguments(
+    GEN "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN}
+  )
+
+  message(STATUS "Generating selected prim ops lib:")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
+  message(STATUS "  SELECTED_OPS_YAML: ${GEN_SELECTED_OPS_YAML}")
+  message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
+  message(STATUS "  DEPS: ${GEN_DEPS}")
+
+  if(NOT GEN_LIB_NAME)
+    message(FATAL_ERROR "gen_selected_prim_ops_lib: LIB_NAME is required")
+  endif()
+  if(NOT GEN_INCLUDE_ALL_OPS AND NOT GEN_SELECTED_OPS_YAML)
+    message(
+      FATAL_ERROR
+        "gen_selected_prim_ops_lib: SELECTED_OPS_YAML is required unless INCLUDE_ALL_OPS is set"
+    )
+  endif()
+
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  file(MAKE_DIRECTORY ${_out_dir})
+
+  # Generate selected operator list if needed.
+  set(_sources ${EXECUTORCH_ROOT}/kernels/prim_ops/register_prim_ops.cpp)
+  if(NOT GEN_INCLUDE_ALL_OPS)
+    set(_selected_prim_ops_header ${_out_dir}/selected_prim_ops.h)
+    set(_gen_selected_prim_ops_script
+        ${EXECUTORCH_ROOT}/codegen/tools/gen_selected_prim_ops.py
+    )
+    set(_gen_selected_prim_ops_command
+        "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_prim_ops
+        --op-selection-yaml-path=${GEN_SELECTED_OPS_YAML}
+        --output-dir=${_out_dir}
+    )
+    add_custom_command(
+      COMMENT "Generating selected_prim_ops.h for ${GEN_LIB_NAME}"
+      OUTPUT ${_selected_prim_ops_header}
+      COMMAND ${_gen_selected_prim_ops_command}
+      DEPENDS ${GEN_SELECTED_OPS_YAML} ${_gen_selected_prim_ops_script}
+      WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+    )
+    list(APPEND _sources ${_selected_prim_ops_header})
+  endif()
+
+  # Add prim ops registration library.
+  add_library(${GEN_LIB_NAME} ${_sources})
+  target_include_directories(
+    ${GEN_LIB_NAME} PRIVATE ${EXECUTORCH_ROOT}/kernels/prim_ops ${_out_dir}
+  )
+  if(NOT GEN_INCLUDE_ALL_OPS)
+    target_compile_definitions(
+      ${GEN_LIB_NAME} PRIVATE ET_PRIM_OPS_SELECTIVE_BUILD
+                              EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD
+    )
+  endif()
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
+  executorch_target_link_options_shared_lib(${GEN_LIB_NAME})
+
+  # Add prim ops kernel library.
+  add_library(
+    ${GEN_LIB_NAME}_impl ${EXECUTORCH_ROOT}/kernels/prim_ops/et_copy_index.cpp
+                         ${EXECUTORCH_ROOT}/kernels/prim_ops/et_view.cpp
+  )
+  target_link_libraries(${GEN_LIB_NAME}_impl PRIVATE ${GEN_DEPS})
+endfunction()
+
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
 # custom_ops_yaml.
 #
@@ -254,6 +330,8 @@ function(gen_custom_ops_aot_lib)
   find_package_torch()
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
+  # ATen headers require C++20.
+  set_target_properties(${GEN_LIB_NAME} PROPERTIES CXX_STANDARD 20)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)

@@ -23,18 +23,16 @@ import unittest
 import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
+from executorch.examples.models.gemma4_31b.cuda_packers import (
+    convert_quantized_tensors_for_cuda,
+)
 from executorch.examples.models.gemma4_31b.export import (
     export_and_lower,
+    load_gguf_model,
     load_prequantized_model,
 )
-from executorch.examples.models.gemma4_31b.gguf_loader import load_gguf_model
 from executorch.examples.models.gemma4_31b.inference import _move_to_cuda, generate
 from executorch.examples.models.gemma4_31b.model import Gemma4_31B
-from executorch.examples.models.gemma4_31b.quant import (
-    DEFAULT_CUDA_PACKERS,
-    pack_model,
-    quantize_model,
-)
 from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     build_gguf_checkpoint,
     build_hf_checkpoint,
@@ -44,6 +42,8 @@ from executorch.examples.models.gemma4_31b.tests.test_pipeline import (
     save_checkpoint,
     TINY_CONFIG,
 )
+from executorch.extension.llm.export.load import assign_state_dict
+from executorch.extension.llm.export.quant import quantize_model
 
 
 def _require_cuda(testcase: unittest.TestCase) -> None:
@@ -162,7 +162,8 @@ class TestCudaExport(unittest.TestCase):
 
             with torch.device("meta"):
                 model = Gemma4_31B(config)
-            pack_model(model, state_dict, DEFAULT_CUDA_PACKERS)
+            assign_state_dict(model, state_dict)
+            convert_quantized_tensors_for_cuda(model)
             model.eval()
 
             export_and_lower(model, config, out_dir)

@@ -107,14 +107,27 @@ def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_tensor", Rsqrt.test_parameters | Rsqrt.test_parameters_fp16)
+@common.parametrize(
+    "test_tensor",
+    Rsqrt.test_parameters | Rsqrt.test_parameters_bf16 | Rsqrt.test_parameters_fp16,
+)
 @common.SkipIfNoModelConverter
 def test_rsqrt_vgf_no_quant(test_tensor: torch.Tensor):
+    data = test_tensor()
+    match data[0].dtype:
+        case torch.bfloat16:
+            atol = 5e-2
+            rtol = 5e-2
+        case _:
+            atol = 1e-3
+            rtol = 1e-3
     pipeline = VgfPipeline[input_t1](
         Rsqrt(),
-        test_tensor(),
+        data,
         aten_op,
         quantize=False,
+        atol=atol,
+        rtol=rtol,
     )
     pipeline.run()
 

@@ -13,7 +13,6 @@
 #include <c10/core/ScalarType.h>
 #include <c10/macros/Macros.h>
 #include <c10/util/C++17.h>
-#include <c10/util/Optional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <torch/extension.h> // @manual=//caffe2:torch_extension

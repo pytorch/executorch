@@ -135,9 +135,7 @@ get_metal_backend_init_per_method_stats() {
 using namespace std;
 using namespace aoti;
 
-using executorch::aten::ScalarType;
 using executorch::runtime::ArrayRef;
-using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::CompileSpec;
@@ -145,11 +143,9 @@ using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
-using executorch::runtime::MemoryAllocator;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
-using executorch::runtime::etensor::Tensor;
 
 class ET_EXPERIMENTAL MetalBackend final
     : public ::executorch::runtime::BackendInterface {

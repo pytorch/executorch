@@ -10,10 +10,9 @@ import inspect
 import json
 import logging
 import re
-import types
 
 from functools import partial
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 
@@ -85,11 +84,15 @@ from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
     ModelArgs,
 )
-from executorch.examples.qualcomm.oss_scripts.llama.quantize import PTQStrategy
+from executorch.examples.qualcomm.oss_scripts.llama.quantize import (
+    PTQStrategy,
+    QATStrategy,
+)
 from executorch.examples.qualcomm.oss_scripts.llama.static_llm_quant_recipe import (
     StaticLLMQuantRecipe,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.tokenizer import TokenizerWrapper
+from executorch.examples.qualcomm.oss_scripts.llama.train.config import TrainingArgs
 from executorch.examples.qualcomm.oss_scripts.llama.wrappers.base_component import (
     Component,
     get_model_specific_kwargs,
@@ -106,9 +109,12 @@ from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.extension.llm.custom_ops import model_sharding
 from executorch.extension.llm.export.builder import DType
 from torch.utils.data import DataLoader
-from torchao.prototype.spinquant import apply_spinquant
-from torchao.quantization.pt2e import MinMaxObserver
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e import MinMaxObserver, move_exported_model_to_train
+from torchao.quantization.pt2e.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
+)
 from transformers import AutoModel, AutoModelForSpeechSeq2Seq
 
 
@@ -164,10 +170,13 @@ class TextDecoder(Component):
             self.pass_manager_cls.get_passes_dependency_for_capture_program()
         )
         self.meta = {}
+        recipe_cls = (
+            self.config.qat_recipe
+            if control_args.qat and self.config.qat_recipe
+            else self.config.quant_recipe
+        )
         self.quant_recipe: StaticLLMQuantRecipe = (
-            self.config.quant_recipe(mode == Mode.CALIBRATE)
-            if self.config.quant_recipe
-            else None
+            recipe_cls(mode == Mode.CALIBRATE) if recipe_cls else None
         )
 
         # For multimodal embedding
@@ -184,21 +193,49 @@ class TextDecoder(Component):
         )
 
         # load static llama model args
-        params_path = (
-            config.params_path if control_args.params is None else control_args.params
-        )
-        with open(params_path) as f:
-            self.model_args = process_model_args(
-                control_args, ModelArgs(**json.load(f)), self.quant_recipe, config, mode
+        if control_args.decoder_model == "gemma4-e2b":
+            from executorch.examples.models.gemma4.text_decoder.gemma4_config import (
+                Gemma4Config,
             )
+
+            params_path = config.params_path
+            self.gemma4_config = Gemma4Config.from_json(params_path)
+            self.gemma4_config.use_kv_cache = True
+            self.gemma4_config.max_batch_size = 1
+            self.gemma4_config.max_seq_len = control_args.max_seq_len
+            self.gemma4_config.max_context_len = control_args.max_context_len
+            self.model_args = None
+        else:
+            params_path = (
+                config.params_path
+                if control_args.params is None
+                else control_args.params
+            )
+            with open(params_path) as f:
+                self.model_args = process_model_args(
+                    control_args,
+                    ModelArgs(**json.load(f)),
+                    self.quant_recipe,
+                    config,
+                    mode,
+                )
         # prepare instance
         self.tok_embedding, self.decoder = self._prepare_model()
 
         # check if sharding required
         if self.decoder and self.config.num_sharding > 1:
+            layer_prefix_offsets = None
+            if self.control_args.decoder_model == "gemma4-e2b":
+                n_self = self.gemma4_config.num_self_decoder_layers
+                layer_prefix_offsets = {
+                    "model.self_decoder.layers": 0,
+                    "model.cross_decoder.layers": n_self,
+                }
             SplitGraph, setting = model_sharding.get_split_graph_pass(
                 self.meta["get_n_layers"],
                 shares=self.config.num_sharding,
+                pattern=self._get_sharding_get_pattern(),
+                layer_prefix_offsets=layer_prefix_offsets,
             )
             self.passes_job[SplitGraph] = setting
             self.dep_table[SplitGraph] = [FoldQDQ]
@@ -217,30 +254,63 @@ class TextDecoder(Component):
             else None
         )
 
+    def _get_sharding_get_pattern(self):
+        if self.control_args.decoder_model == "gemma4-e2b":
+            prefixes = [
+                "model.cross_decoder.layers",
+                "model.self_decoder.layers",
+            ]
+        else:
+            prefixes = [
+                "layers",
+            ]
+        prefix_alt = "|".join(re.escape(p) for p in prefixes)
+        return rf"^(?:{prefix_alt})\.(\d+)"
+
     def _prepare_model(self):  # noqa: C901
         if (instance := self._get_model_instance()) is None:
             return None, None
         tok_embedding, decoder = instance
         # load parameters for HF models
         if self.control_args.checkpoint is None:
-            checkpoint = download_and_convert_hf_checkpoint(
-                self.config.repo_id,
-                self.config.convert_weights.__func__,
-            )
-            state_dict = torch.load(
-                checkpoint, weights_only=True, map_location="cpu", mmap=True
-            )
-            if self.control_args.decoder_model in {
-                "gemma-2b",
-                "gemma2-2b",
-                "gemma3-1b",
-            }:
+            if self.control_args.decoder_model == "gemma4-e2b":
+                from executorch.examples.qualcomm.oss_scripts.gemma4.text_decoder.convert_weights import (
+                    remap_keys,
+                )
+                from huggingface_hub import snapshot_download
+
+                state_dict = self.config.convert_weights.__func__(
+                    snapshot_download(repo_id=self.config.repo_id),
+                    self.gemma4_config,
+                    torch.float32,
+                )
+                state_dict = remap_keys(state_dict)
+            else:
+                checkpoint = download_and_convert_hf_checkpoint(
+                    self.config.repo_id,
+                    self.config.convert_weights.__func__,
+                )
+                state_dict = torch.load(
+                    checkpoint, weights_only=True, map_location="cpu", mmap=True
+                )
+                if self.control_args.decoder_model in {
+                    "gemma-2b",
+                    "gemma2-2b",
+                    "gemma3-1b",
+                }:
+                    for k, v in state_dict.items():
+                        if "norm" not in k:
+                            continue
+                        # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
+                        # See https://github.com/huggingface/transformers/pull/29402
+                        state_dict[k] = v.float() + torch.ones(
+                            v.shape, dtype=torch.float32
+                        )
                 for k, v in state_dict.items():
-                    if "norm" not in k:
-                        continue
-                    # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
-                    # See https://github.com/huggingface/transformers/pull/29402
-                    state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
+                    if "tok_embeddings.weight" == k:
+                        state_dict[k] = (
+                            v.float() * self.model_args.embedding_scale_factor
+                        )
         else:
             state_dict = torch.load(
                 self.control_args.checkpoint,
@@ -287,29 +357,18 @@ class TextDecoder(Component):
 
         decoder.load_state_dict(state_dict, strict=True, assign=True)
 
-        # apply spin quant if required
         if any([self.config.r1, self.config.r2]):
-            decoder.config = types.SimpleNamespace(
-                dim=decoder.dim,
-                head_dim=decoder.dim // decoder.n_heads,
-                n_local_heads=decoder.n_heads,
-                intermediate_size=4 * decoder.dim,
-            )
-            apply_spinquant(
-                decoder,
-                use_r1=self.config.r1,
-                use_r2=self.config.r2,
-                use_r4=False,
-                pretrained_rotation_path=None,
-                qkv_split=True,
+            raise RuntimeError(
+                "SpinQuant (r1/r2) is no longer supported: the "
+                "torchao.prototype.spinquant module has been deleted."
             )
 
         # perform model transformation
         for layer in decoder.layers:
             if getattr(layer.attention, "prepare_attention_conv", None):
                 layer.attention.prepare_attention_conv()
-            if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
-                layer.feed_forward.prepare_feedfoward_conv()
+            if getattr(layer.feed_forward, "prepare_feedforward_conv", None):
+                layer.feed_forward.prepare_feedforward_conv()
 
         decoder = convert_linear_to_conv2d(decoder)
 
@@ -320,16 +379,10 @@ class TextDecoder(Component):
 
         # check embedding fallback
         if self.control_args.embedding_quantize:
-            decoder = get_quant_embedding_transform(
-                embedding_quantize=self.control_args.embedding_quantize
-            )(decoder)
             self.passes_job[I64toI32][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "skip_node"
             ] = {"tokens"}
             if self.apply_embedding:
-                tok_embedding = get_quant_embedding_transform(
-                    embedding_quantize=self.control_args.embedding_quantize
-                )(tok_embedding)
                 self.tok_embedding_passes_job[I64toI32][
                     QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
                 ]["skip_node"] = {"tokens"}
@@ -368,16 +421,47 @@ class TextDecoder(Component):
             # For gemma, we have preprocessed the weight of rmsnorm
             self.model_args.norm_type = "rmsnorm"
 
-        decoder: LlamaModel = LLM_VARIANT_ARCHS.get(
-            self.control_args.decoder_model, LlamaModel
-        )(
-            self.model_args,
-            ar_len=self.model_args.ar_len,
-            output_new_cache_only=True,
-            output_cache=True,
-            use_i64_token=use_i64_token,
-            **get_model_specific_kwargs(self.control_args, self.config),
-        )
+        if self.control_args.decoder_model == "gemma4-e2b":
+            from executorch.examples.qualcomm.oss_scripts.gemma4.model_wrapper import (
+                Gemma4TextModelWrapper,
+            )
+
+            ar_len = (
+                self.control_args.prefill_ar_len
+                if self.mode == Mode.PREFILL
+                else (
+                    self.control_args.max_context_len
+                    if self.mode == Mode.CALIBRATE
+                    else 1
+                )
+            )
+            extra_kwargs = {
+                # 32 is the sentinel for "unquantized KV IO"; get_kv_io_bit_width()
+                # returns it too when the recipe has no default_quant_dtype.
+                "kv_io_bit_width": (
+                    self.quant_recipe.get_kv_io_bit_width() if self.quant_recipe else 32
+                ),
+            }
+            decoder: Gemma4TextModelWrapper = Gemma4TextModelWrapper(
+                self.gemma4_config,
+                ar_len=ar_len,
+                output_new_cache_only=True,
+                output_cache=True,
+                use_i64_token=use_i64_token,
+                enable_masked_softmax=False,
+                **extra_kwargs,
+            )
+        else:
+            decoder: LlamaModel = LLM_VARIANT_ARCHS.get(
+                self.control_args.decoder_model, LlamaModel
+            )(
+                self.model_args,
+                ar_len=self.model_args.ar_len,
+                output_new_cache_only=True,
+                output_cache=True,
+                use_i64_token=use_i64_token,
+                **get_model_specific_kwargs(self.control_args, self.config),
+            )
 
         self.meta = decoder.get_metadata()
         # get example input
@@ -399,14 +483,27 @@ class TextDecoder(Component):
             ),
         }
         # shape of k caches and v caches
-        self.kv_cache_shape = {
-            # single head, kv input
-            (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
-            (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
-            # single head, kv output
-            (self.meta["get_head_dim"], self.meta["get_ar_len"]),
-            (self.meta["get_ar_len"], self.meta["get_head_dim"]),
-        }
+        if self.control_args.decoder_model == "gemma4-e2b":
+            # Gemma 4 has per-layer head_dim: sliding=256, full=512
+            kv_head_dims = {
+                self.meta["get_head_dim"],
+                self.meta["get_global_head_dim"],
+            }
+            self.kv_cache_shape = set()
+            for head_dim in kv_head_dims:
+                self.kv_cache_shape.add((head_dim, self.meta["get_max_context_len"]))
+                self.kv_cache_shape.add((self.meta["get_max_context_len"], head_dim))
+                self.kv_cache_shape.add((head_dim, self.meta["get_ar_len"]))
+                self.kv_cache_shape.add((self.meta["get_ar_len"], head_dim))
+        else:
+            self.kv_cache_shape = {
+                # single head, kv input
+                (self.meta["get_head_dim"], self.meta["get_max_context_len"]),
+                (self.meta["get_max_context_len"], self.meta["get_head_dim"]),
+                # single head, kv output
+                (self.meta["get_head_dim"], self.meta["get_ar_len"]),
+                (self.meta["get_ar_len"], self.meta["get_head_dim"]),
+            }
 
         if self.apply_embedding:
             self.tok_embedding_export_input = (
@@ -452,7 +549,7 @@ class TextDecoder(Component):
                 ]
                 kv_idx += 1
 
-    def _tag_ios(self, node, fixed_point_type):
+    def _tag_ios(self, node, fixed_point_type):  # noqa: C901
         atten_mask_shape = {
             (
                 self.meta["get_max_batch_size"],
@@ -465,15 +562,18 @@ class TextDecoder(Component):
         freq_shape = {
             (self.meta["get_ar_len"], self.meta["get_head_dim"] // 2),
         }
+        if self.control_args.decoder_model == "gemma4-e2b":
+            freq_shape.add(
+                (self.meta["get_ar_len"], self.meta["get_global_head_dim"] // 2)
+            )
 
-        freq_op = {
-            exir_ops.edge.aten.select.int,
-        }
+        freq_op = {exir_ops.edge.aten.select.int, exir_ops.edge.aten.select_copy.int}
         quant_io_type = None
 
         if node.op == "placeholder":
             if (
-                len(users := list(node.users)) == 1
+                len(users := list(node.users)) > 0
+                and "args_" in node.name
                 and users[0].meta["val"].size()[-2:] in self.kv_cache_shape
             ):
                 quant_io_type = fixed_point_type["kv_type"]
@@ -498,6 +598,28 @@ class TextDecoder(Component):
         if node.target in freq_op and node.meta["val"].size() in freq_shape:
             quant_io_type = fixed_point_type["io_type"]
 
+        # Matched against stack_trace source text, so this is coupled to the
+        # variable names in model forward: renaming per_layer_inputs or
+        # changing how it is sliced silently drops the tag.
+        if (
+            self.control_args.decoder_model == "gemma4-e2b"
+            and "stack_trace" in node.meta
+            and (
+                "per_layer_inputs[n_self:]" in node.meta["stack_trace"]
+                or "per_layer_inputs[i]" in node.meta["stack_trace"]
+            )
+        ):
+            quant_io_type = fixed_point_type["io_type"]
+
+        # Tag the donor K/V that YOCO shared layers consume.
+        #
+        # Matched on full_k/full_v are the local variable names in model forward.
+        # Renaming them drops the tag.
+        if self.control_args.decoder_model == "gemma4-e2b" and (
+            is_node_src_start_with_name(node, "full_k")
+            or is_node_src_start_with_name(node, "full_v")
+        ):
+            quant_io_type = fixed_point_type["io_type"]
         return quant_io_type
 
     def _quant_recipe_suggestion(
@@ -566,6 +688,16 @@ class TextDecoder(Component):
                     f"unknown logits io bit width {self.quant_recipe.get_logits_output_bit_width()}"
                 )
 
+        # embedding fallback and quantization
+        if self.control_args.embedding_quantize:
+            self.decoder = get_quant_embedding_transform(
+                embedding_quantize=self.control_args.embedding_quantize
+            )(self.decoder)
+            if self.apply_embedding:
+                self.tok_embedding = get_quant_embedding_transform(
+                    embedding_quantize=self.control_args.embedding_quantize
+                )(self.tok_embedding)
+
         data = request.method_data[TEXT_DECODER]
 
         quantizer = make_quantizer(backend=data.backend, soc_model=data.soc_model)
@@ -579,14 +711,14 @@ class TextDecoder(Component):
             soc_model=data.soc_model,
         )
 
+        use_qat = self.control_args.qat and self.mode == Mode.CALIBRATE
         with torch.no_grad():
             graph_module = None
             self.decoder = torch.export.export(
                 self.decoder, self.export_input, strict=True
             ).module()
-            if (
-                self.mode == Mode.CALIBRATE
-                and self.control_args.quant_recipe_suggestion
+            if self.mode == Mode.CALIBRATE and (
+                self.control_args.quant_recipe_suggestion or use_qat
             ):
                 graph_module = copy.deepcopy(self.decoder)
             if self.apply_embedding:
@@ -614,7 +746,11 @@ class TextDecoder(Component):
                     event_name="export_tasks",
                 )
 
-            self.decoder = prepare_pt2e(self.decoder, quantizer)
+            if use_qat:
+                self.decoder = prepare_qat_pt2e(self.decoder, quantizer)
+                move_exported_model_to_train(self.decoder)
+            else:
+                self.decoder = prepare_pt2e(self.decoder, quantizer)
             if self.apply_embedding:
                 self.tok_embedding = prepare_pt2e(
                     self.tok_embedding, tok_embedding_quantizer
@@ -624,19 +760,47 @@ class TextDecoder(Component):
                 calibration_dataloaders = {
                     AUDIO_ENCODER: request.method_data[
                         AUDIO_ENCODER
-                    ].calibration_data.intermediate_outputs,
+                    ].quantization_data.intermediate_outputs,
                     VISION_ENCODER: request.method_data[
                         VISION_ENCODER
-                    ].calibration_data.intermediate_outputs,
-                    TEXT_DECODER: data.calibration_data.datasets,
+                    ].quantization_data.intermediate_outputs,
+                    TEXT_DECODER: data.quantization_data.calib_loader,
                 }
-                PTQStrategy(
-                    inference=self._decoder_inference,
-                    module=self.decoder,
-                    seq_mse_candidates=self.config.seq_mse_candidates,
-                    tok_embedding=self.tok_embedding,
-                ).quantize(calib_loader=calibration_dataloaders)
-                logging.info("Calibration complete for prepare_pt2e")
+
+                if use_qat:
+                    training_args = TrainingArgs.from_yaml(
+                        self.control_args.train_config
+                    )
+                    training_args.lr_config = self.control_args.lr_config
+                    frozen = (
+                        [".*"]
+                        if self.control_args.freeze_all_params
+                        # freeze_all_params: CI-only flag to verify QAT vs PTQ accuracy difference
+                        # by disabling weight updates and only updating scale/zero_point.
+                        else getattr(self.quant_recipe, "frozen_param_patterns", None)
+                    )
+                    QATStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(
+                        calib_loader=calibration_dataloaders,
+                        training_args=training_args,
+                        teacher=graph_module,
+                        train_loader=data.quantization_data.train_loader,
+                        val_loader=data.quantization_data.val_loader,
+                        frozen_param_patterns=frozen,
+                    )
+                    logging.info("QAT training complete")
+                else:
+                    PTQStrategy(
+                        inference=self._decoder_inference,
+                        module=self.decoder,
+                        tok_embedding=self.tok_embedding,
+                        seq_mse_candidates=self.config.seq_mse_candidates,
+                    ).quantize(calib_loader=calibration_dataloaders)
+                    logging.info("Calibration complete")
             else:
                 # one dummy inference to remove affine observer
                 # error happened in convert_pt2e
@@ -655,7 +819,7 @@ class TextDecoder(Component):
                     self.quant_recipe.recipe,
                 )
 
-            # FP32 model used for quant-recipe-suggestion reference; release after use.
+            # FP32 model used as QAT teacher or quant-recipe-suggestion reference; release after use.
             del graph_module
             gc.collect()
 
@@ -786,10 +950,26 @@ class HybridTextDecoder(Component):
                     activation_override(quantized_user, unquantized_user)
 
         def parameter_override(quantized_node, unquantized_node):
-            setattr(
+            # Some parameters need to be iterated over to retrieve attributes such as static_llama.tok_embedding.weight
+            def _get_attr(graph_module: torch.fx.GraphModule, target: str) -> Any:
+                attr: Any = graph_module
+                for target_atom in target.split("."):
+                    attr = getattr(attr, target_atom)
+                return attr
+
+            def _set_attr(
+                graph_module: torch.fx.GraphModule, target: str, replacement: Any
+            ) -> Any:
+                attr: Any = graph_module
+                target_list = target.split(".")
+                for target_atom in target_list[:-1]:
+                    attr = getattr(attr, target_atom)
+                setattr(attr, target_list[-1], replacement)
+
+            _set_attr(
                 unquantized_model,
                 unquantized_node.target,
-                getattr(quantized_model, quantized_node.target),
+                _get_attr(quantized_model, quantized_node.target),
             )
             # scale / zero point are part of op's attributes
             if list(quantized_node.users)[0].target in ptq_target:
@@ -836,7 +1016,12 @@ class HybridTextDecoder(Component):
                 if "args_" in node.name:
                     args_idx = int(node.name.split("_")[-1])
 
-                    if args_idx >= self.decode.meta["get_n_layers"]:
+                    n_cache_layers = (
+                        self.decode.meta["get_n_self_layers"]
+                        if self.control_args.decoder_model == "gemma4-e2b"
+                        else self.decode.meta["get_n_layers"]
+                    )
+                    if args_idx >= n_cache_layers:
                         v_input_cache_nodes.append(node)
                     else:
                         k_input_cache_nodes.append(node)
@@ -933,7 +1118,7 @@ class HybridTextDecoder(Component):
             # For hybrid mode, override encoding of prefill model.
             if (
                 self.prefill.decoder is not None
-                and self.prefill.model_args.use_kv_cache
+                and self.prefill.meta["get_use_kv_cache"]
             ):
                 self._encoding_override(
                     quantized_model=self.decode.decoder,
@@ -1199,7 +1384,7 @@ class Modality(Component):
             return
 
         request_data = request.method_data[self.modality]
-        calibration_datasets = request_data.calibration_data.datasets
+        calibration_datasets = request_data.quantization_data.calib_loader
 
         with torch.no_grad():
             self.model = torch.export.export(self.model, self.example_input).module()
@@ -1207,7 +1392,7 @@ class Modality(Component):
             if request_data.skip_quantize:
                 logging.info(f"skipping encoder quantization for {self.modality}")
                 intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-                request_data.calibration_data.intermediate_outputs = (
+                request_data.quantization_data.intermediate_outputs = (
                     intermediate_outputs
                 )
                 return
@@ -1220,7 +1405,7 @@ class Modality(Component):
 
             # start calibration
             intermediate_outputs = self._calibrate(self.model, calibration_datasets)
-            request_data.calibration_data.intermediate_outputs = intermediate_outputs
+            request_data.quantization_data.intermediate_outputs = intermediate_outputs
 
             self.model = convert_pt2e(self.model)
 
@@ -1229,7 +1414,7 @@ class Modality(Component):
                 qdq_intermediate_outputs = self._calibrate(
                     self.model, calibration_datasets
                 )
-                request_data.calibration_data.qdq_intermediate_outputs = (
+                request_data.quantization_data.qdq_intermediate_outputs = (
                     qdq_intermediate_outputs
                 )
 
@@ -1308,14 +1493,23 @@ class MultiModalManager(Component):
             tokenizer_wrapper=tokenizer_wrapper,
             attn_mask=self.text_decoder.calibration_prefill.attn_mask,
         )
-        calibration_data = dataset_builder.build_calib_dataloaders()
+        if self.control_args.qat:
+            calib_loader, train_loader, val_loader = (
+                dataset_builder.build_qat_dataloaders()
+            )
+        else:
+            calib_loader = dataset_builder.build_calib_dataloaders()
+            train_loader = dict.fromkeys(calib_loader)
+            val_loader = dict.fromkeys(calib_loader)
 
         quantize_request = Request(
             inspect.currentframe().f_code.co_name,
             {
                 m: Request.Data(
-                    calibration_data=Request.CalibrationData(
-                        datasets=calibration_data[m]
+                    quantization_data=Request.QuantizationData(
+                        calib_loader=calib_loader[m],
+                        train_loader=train_loader[m],
+                        val_loader=val_loader[m],
                     ),
                     skip_quantize=skip_quantize.get(m, False),
                     tokenizer=tokenizer_wrapper.tokenizer,

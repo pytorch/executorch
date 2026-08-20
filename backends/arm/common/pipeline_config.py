@@ -14,6 +14,11 @@ class SoftmaxDecompositionConfig(Enum):
     STABLE = auto()  # Stable softmax, no masked fill decomposition
 
 
+class LeakyReLULoweringConfig(Enum):
+    TABLE = auto()  # Lower quantized leaky_relu with TOSA TABLE
+    DECOMPOSE = auto()  # Lower leaky_relu into clamp, mul, and add
+
+
 @dataclass
 class QuantizeInfConfig:
     """Replacement values for infinities before quantization.
@@ -37,6 +42,8 @@ class ArmPassPipelineConfig:
 
     Args:
         softmax (SoftmaxDecompositionConfig): Softmax decomposition mode.
+        leaky_relu (LeakyReLULoweringConfig): Quantized leaky_relu lowering
+            mode.
         quantize_inf (QuantizeInfConfig): Values used when replacing
             infinities before quantization.
 
@@ -44,6 +51,7 @@ class ArmPassPipelineConfig:
         compile_spec.set_pass_pipeline_config(
             ArmPassPipelineConfig(
                 softmax=SoftmaxDecompositionConfig.STABLE,
+                leaky_relu=LeakyReLULoweringConfig.DECOMPOSE,
                 quantize_inf=QuantizeInfConfig(
                     neg_inf=-100.0,
                     pos_inf=100.0,
@@ -54,11 +62,13 @@ class ArmPassPipelineConfig:
     """
 
     softmax: SoftmaxDecompositionConfig = SoftmaxDecompositionConfig.MASKED
+    leaky_relu: LeakyReLULoweringConfig = LeakyReLULoweringConfig.DECOMPOSE
     quantize_inf: QuantizeInfConfig = field(default_factory=QuantizeInfConfig)
 
     def is_default(self) -> bool:
         return (
             self.softmax is SoftmaxDecompositionConfig.MASKED
+            and self.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
             and self.quantize_inf == QuantizeInfConfig()
         )
 

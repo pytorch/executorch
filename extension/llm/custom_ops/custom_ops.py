@@ -27,6 +27,8 @@ try:
     assert op is not None
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
+    op3 = torch.ops.llama.quantized_moe_ffn.default
+    assert op3 is not None
 except:
     # This is needed to ensure that custom ops are registered
     from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
@@ -48,6 +50,8 @@ except:
     assert op is not None
     op2 = torch.ops.llama.fast_hadamard_transform.default
     assert op2 is not None
+    op3 = torch.ops.llama.quantized_moe_ffn.default
+    assert op3 is not None
 
 custom_ops_lib = torch.library.Library("llama", "IMPL")
 
@@ -75,13 +79,16 @@ def _validate_params(
         value.dim() == 4
     ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
 
+    supported_dtypes = (torch.float32, torch.bfloat16, torch.float16)
     assert (
-        query.dtype == torch.float32
-    ), f"Expected query to be float32 but got {query.dtype}"
-    assert key.dtype == torch.float32, f"Expected key to be float32 but got {key.dtype}"
+        query.dtype in supported_dtypes
+    ), f"Expected query to be float32, bfloat16, or float16 but got {query.dtype}"
     assert (
-        value.dtype == torch.float32
-    ), f"Expected value to be float32 but got {value.dtype}"
+        key.dtype == query.dtype
+    ), f"Expected key to have the same dtype as query but got {key.dtype}"
+    assert (
+        value.dtype == query.dtype
+    ), f"Expected value to have the same dtype as query but got {value.dtype}"
 
     assert (
         key_cache.dim() == 4
@@ -91,11 +98,11 @@ def _validate_params(
     ), f"Expected value_cache to be 4 dimensional but got {value_cache.dim()}"
 
     assert (
-        key_cache.dtype == torch.float32
-    ), f"Expected key_cache to be float32 but got {key_cache.dtype}"
+        key_cache.dtype == query.dtype
+    ), f"Expected key_cache to have the same dtype as query but got {key_cache.dtype}"
     assert (
-        value_cache.dtype == torch.float32
-    ), f"Expected value_cache to be float32 but got {value_cache.dtype}"
+        value_cache.dtype == query.dtype
+    ), f"Expected value_cache to have the same dtype as query but got {value_cache.dtype}"
 
     assert (
         key_cache.size() == value_cache.size()
@@ -155,6 +162,107 @@ def fast_hadamard_transform_meta(mat):
     # assert(mat.shape[-1] == 128 or mat.shape[-1] == 14336, "unexpected input size for llama3 demo!")
     # assert(mat.is_contiguous(), "input matrix must be contiguous currently!")
     return torch.empty_like(mat)
+
+
+def _validate_quantized_moe_ffn_params(
+    x,
+    gate_weight,
+    expert_bias,
+    packed_w13,
+    packed_w2,
+    num_activated_experts,
+    num_experts,
+    hidden_dim,
+    dim,
+    group_size,
+    weight_nbit,
+    score_func,
+    route_scale,
+):
+    assert x.dim() == 2, f"Expected x to be 2D [T, D], got {x.dim()}D"
+    assert x.size(1) == dim, f"x last dim ({x.size(1)}) must equal dim ({dim})"
+    assert x.dtype == torch.float32, f"Expected x to be float32, got {x.dtype}"
+
+    assert (
+        gate_weight.dim() == 2
+        and gate_weight.size(0) == num_experts
+        and gate_weight.size(1) == dim
+    ), f"gate_weight must be [E={num_experts}, D={dim}], got {list(gate_weight.size())}"
+    assert (
+        gate_weight.dtype == torch.float32
+    ), f"gate_weight must be float32, got {gate_weight.dtype}"
+
+    if expert_bias.numel() > 0:
+        assert (
+            expert_bias.dim() == 1 and expert_bias.size(0) == num_experts
+        ), f"expert_bias must be [E={num_experts}] when non-empty, got {list(expert_bias.size())}"
+        assert (
+            expert_bias.dtype == torch.float32
+        ), f"expert_bias must be float32, got {expert_bias.dtype}"
+
+    for name, t in (
+        ("packed_w13", packed_w13),
+        ("packed_w2", packed_w2),
+    ):
+        assert (
+            t.dim() == 2 and t.size(0) == num_experts
+        ), f"{name} must be [E={num_experts}, packed_bytes], got {list(t.size())}"
+        assert t.dtype == torch.uint8, f"{name} must be uint8, got {t.dtype}"
+
+    assert (
+        0 < num_activated_experts <= num_experts
+    ), f"num_activated_experts ({num_activated_experts}) out of range [1, {num_experts}]"
+    assert score_func in (
+        "sigmoid",
+        "softmax",
+    ), f"score_func must be 'sigmoid' or 'softmax', got {score_func!r}"
+    assert weight_nbit in (
+        4,
+        8,
+    ), f"weight_nbit must be 4 or 8 (v1), got {weight_nbit}"
+    assert group_size > 0, f"group_size must be positive, got {group_size}"
+    assert dim > 0, f"dim must be positive, got {dim}"
+    assert hidden_dim > 0, f"hidden_dim must be positive, got {hidden_dim}"
+    assert (
+        dim % group_size == 0
+    ), f"dim ({dim}) must be divisible by group_size ({group_size})"
+    assert (
+        hidden_dim % group_size == 0
+    ), f"hidden_dim ({hidden_dim}) must be divisible by group_size ({group_size})"
+
+
+@impl(custom_ops_lib, "quantized_moe_ffn", "Meta")
+def quantized_moe_ffn_meta(
+    x,
+    gate_weight,
+    expert_bias,
+    packed_w13,
+    packed_w2,
+    num_activated_experts,
+    num_experts,
+    hidden_dim,
+    dim,
+    group_size,
+    weight_nbit,
+    score_func,
+    route_scale,
+):
+    _validate_quantized_moe_ffn_params(
+        x,
+        gate_weight,
+        expert_bias,
+        packed_w13,
+        packed_w2,
+        num_activated_experts,
+        num_experts,
+        hidden_dim,
+        dim,
+        group_size,
+        weight_nbit,
+        score_func,
+        route_scale,
+    )
+    return torch.empty((x.size(0), dim), dtype=torch.float32, device=x.device)
 
 
 @impl(custom_ops_lib, "custom_sdpa", "Meta")
@@ -269,6 +377,84 @@ def update_cache_with_indices_meta(
     # workaround. Should we just return cache instead? But I am afraid that
     # will result in extra memory allocation
     return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+def _validate_channelwise_gated_delta_rule_params(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    assert (
+        query.dim() == 4
+    ), f"Expected query to be 4 dimensional but got {query.dim()} dimensions."
+    assert (
+        key.dim() == 4
+    ), f"Expected key to be 4 dimensional but got {key.dim()} dimensions."
+    assert (
+        value.dim() == 4
+    ), f"Expected value to be 4 dimensional but got {value.dim()} dimensions."
+    assert decay.dim() in (3, 4), (
+        "Expected decay to be 4 dimensional (channelwise) or 3 dimensional "
+        f"(scalar) but got {decay.dim()} dimensions."
+    )
+    assert (
+        beta.dim() == 3
+    ), f"Expected beta to be 3 dimensional but got {beta.dim()} dimensions."
+    assert (
+        initial_state.dim() == 4
+    ), f"Expected initial_state to be 4 dimensional but got {initial_state.dim()} dimensions."
+
+    for name, tensor in {
+        "query": query,
+        "key": key,
+        "value": value,
+        "decay": decay,
+        "beta": beta,
+        "initial_state": initial_state,
+    }.items():
+        assert (
+            tensor.dtype == torch.float32
+        ), f"Expected {name} to be float32 but got {tensor.dtype}"
+
+    assert query.size(0) == key.size(0) and query.shape[2:] == key.shape[2:]
+    assert decay.shape == (key.shape if decay.dim() == 4 else key.shape[:3])
+    assert key.shape[:3] == value.shape[:3]
+    assert beta.shape == key.shape[:3]
+    assert query.size(1) % key.size(1) == 0
+    assert initial_state.shape == (
+        key.size(0),
+        key.size(1),
+        query.size(3),
+        value.size(3),
+    ), (
+        "Expected initial_state to have shape "
+        f"{(key.size(0), key.size(1), query.size(3), value.size(3))} "
+        f"but got {initial_state.shape}"
+    )
+
+
+@impl(custom_ops_lib, "channelwise_gated_delta_rule", "Meta")
+def channelwise_gated_delta_rule_meta(
+    query,
+    key,
+    value,
+    decay,
+    beta,
+    initial_state,
+):
+    _validate_channelwise_gated_delta_rule_params(
+        query,
+        key,
+        value,
+        decay,
+        beta,
+        initial_state,
+    )
+    output_shape = (*query.shape[:3], value.size(3))
+    return query.new_empty(output_shape), torch.empty_like(initial_state)
 
 
 def _validate_quantized_sdpa_params(

@@ -106,7 +106,7 @@ class TestPartitioner(unittest.TestCase):
 
         with self.assertRaisesRegex(
             AttributeError,
-            "can't set attribute 'spec'",
+            r"(can't set attribute 'spec'|property 'spec' of .* object has no setter)",
         ):
             my_partitioner.spec = {"new_key": "new_value"}
 
@@ -591,7 +591,7 @@ class TestPartitioner(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        # Check the edge program inital buffers_to_mutate
+        # Check the edge program initial buffers_to_mutate
         mutate_op = "aten_add_tensor_1"
         self.assertEqual(
             edge.exported_program().graph_signature.buffers_to_mutate[mutate_op],

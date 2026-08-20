@@ -19,7 +19,6 @@
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::string_view;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 

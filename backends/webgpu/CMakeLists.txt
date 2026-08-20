@@ -27,32 +27,23 @@ endif()
 
 set(WEBGPU_SRCS
     runtime/WebGPUBackend.cpp
+    runtime/WebGPUExecutionOptions.cpp
     runtime/WebGPUGraph.cpp
+    runtime/passes/SwiGLU.cpp
+    runtime/passes/QkvBk64.cpp
     runtime/WebGPUDelegateHeader.cpp
     runtime/WebGPUDevice.cpp
     runtime/WebGPUQueryPool.cpp
+    runtime/WebGPUShaderRegistry.cpp
     runtime/ops/OperatorRegistry.cpp
-    runtime/ops/add/BinaryOp.cpp
-    runtime/ops/rms_norm/RmsNorm.cpp
-    runtime/ops/update_cache/UpdateCache.cpp
-    runtime/ops/sdpa/Sdpa.cpp
-    runtime/ops/select_as_symint/SelectAsSymint.cpp
-    runtime/ops/quantized_linear/QuantizedLinear.cpp
-    runtime/ops/mul/BinaryOp.cpp
-    runtime/ops/embedding_q4gsw/EmbeddingQ4gsw.cpp
-    runtime/ops/rope/RotaryEmbedding.cpp
-    runtime/ops/prepack/Prepack.cpp
-    runtime/ops/view_copy/ViewCopy.cpp
-    runtime/ops/select/Select.cpp
-    runtime/ops/sigmoid/UnaryOp.cpp
-    runtime/ops/squeeze/Squeeze.cpp
-    runtime/ops/unsqueeze/Unsqueeze.cpp
-    runtime/ops/slice/Slice.cpp
-    runtime/ops/permute/Permute.cpp
-    runtime/ops/cat/Cat.cpp
-    runtime/ops/index/Index.cpp
-    runtime/ops/sdpa_fd_decode/SdpaFdDecode.cpp
 )
+
+# Op handlers: glob so adding an op needs no CMakeLists edit. CONFIGURE_DEPENDS
+# re-globs at build time when op sources are added or removed.
+file(GLOB WEBGPU_OP_SRCS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/runtime/ops/*/*.cpp"
+)
+list(APPEND WEBGPU_SRCS ${WEBGPU_OP_SRCS})
 
 add_library(webgpu_backend ${WEBGPU_SRCS})
 
@@ -73,22 +64,27 @@ target_include_directories(
 
 target_link_libraries(webgpu_backend PRIVATE vulkan_schema executorch_core)
 
-# Native WebGPU backend: Dawn (Tint) + SwiftShader; deps script sets Dawn_DIR.
-# Native-only: browser/Emscripten builds use the system webgpu.h and never reach
-# this find_package (root CMake gates it via EXECUTORCH_BUILD_WEBGPU).
-# dawn::webgpu_dawn's link interface references Threads::Threads.
-find_package(Threads REQUIRED)
-find_package(Dawn REQUIRED)
-set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
-target_link_libraries(webgpu_backend PUBLIC ${WEBGPU_GPU_LIB})
-
-if(APPLE)
-  target_link_libraries(
-    webgpu_backend PRIVATE "-framework Metal" "-framework QuartzCore"
-                           "-framework CoreGraphics" "-framework Foundation"
-  )
+# WASM gets its WebGPU implementation from emdawnwebgpu at executable link time.
+# Native builds link Dawn (Tint) and the platform GPU libraries.
+if(EMSCRIPTEN)
+  target_compile_options(webgpu_backend PUBLIC "--use-port=emdawnwebgpu")
+  # --use-port is also required at link time: the link step pulls in the port's
+  # headers, JS glue, and libraries for consumers that link webgpu_backend.
+  target_link_options(webgpu_backend PUBLIC "--use-port=emdawnwebgpu")
 else()
-  target_link_libraries(webgpu_backend PRIVATE dl m pthread)
+  find_package(Threads REQUIRED)
+  find_package(Dawn REQUIRED)
+  set(WEBGPU_GPU_LIB dawn::webgpu_dawn)
+  target_link_libraries(webgpu_backend PUBLIC ${WEBGPU_GPU_LIB})
+
+  if(APPLE)
+    target_link_libraries(
+      webgpu_backend PRIVATE "-framework Metal" "-framework QuartzCore"
+                             "-framework CoreGraphics" "-framework Foundation"
+    )
+  else()
+    target_link_libraries(webgpu_backend PRIVATE dl m pthread)
+  endif()
 endif()
 
 target_compile_options(webgpu_backend PRIVATE -fexceptions)
@@ -125,6 +121,7 @@ function(add_webgpu_native_test test_name test_src)
   target_link_libraries(
     ${test_name}
     PRIVATE webgpu_backend
+            vulkan_schema
             ${WEBGPU_GPU_LIB}
             executorch_core
             extension_module_static
@@ -169,10 +166,11 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     )
 
     # Device-free util unit test: no backend/Dawn link (pure manifest/tolerance
-    # helpers), so it does NOT use the native-test helper.
+    # + dispatch-grid-math helpers), so it does NOT use the native-test helper.
     add_executable(
-      webgpu_op_test_util_test test/op_tests/test_driver_util.cpp
-                               test/op_tests/driver_util.cpp
+      webgpu_op_test_util_test
+      test/op_tests/test_driver_util.cpp test/op_tests/driver_util.cpp
+      test/native/test_webgpu_utils.cpp
     )
     target_include_directories(
       webgpu_op_test_util_test
@@ -215,5 +213,27 @@ if(EXECUTORCH_BUILD_WEBGPU_TEST)
     target_link_libraries(
       webgpu_dispatch_2d_test PRIVATE GTest::gtest GTest::gtest_main
     )
+    add_executable(
+      webgpu_execution_options_test test/native/test_execution_options.cpp
+                                    runtime/WebGPUExecutionOptions.cpp
+    )
+    target_include_directories(
+      webgpu_execution_options_test
+      PRIVATE $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    )
+    target_link_libraries(
+      webgpu_execution_options_test PRIVATE GTest::gtest GTest::gtest_main
+    )
+    target_compile_options(webgpu_execution_options_test PRIVATE -fexceptions)
+    set_property(TARGET webgpu_execution_options_test PROPERTY CXX_STANDARD 17)
+    add_webgpu_native_test(
+      webgpu_output_suppression_test test/native/test_output_suppression.cpp
+    )
+    target_link_libraries(webgpu_output_suppression_test PRIVATE GTest::gtest)
+
+    add_webgpu_native_test(
+      webgpu_compute_dispatch_test test/native/test_compute_dispatch.cpp
+    )
+    target_link_libraries(webgpu_compute_dispatch_test PRIVATE GTest::gtest)
   endif()
 endif()

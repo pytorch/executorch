@@ -5,9 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Part of this code is from pybind11 cmake_example:
-# https://github.com/pybind/cmake_example/blob/master/setup.py so attach the
-# license below.
+# Part of this code is from pybind11 cmake_example, so attach the license below.
+# That project has since dropped setup.py, so this points at the last revision
+# that still had it instead of at a branch.
+# https://github.com/pybind/cmake_example/blob/7a94877f581a14de4de1a096fb053a55fc2a66bf/setup.py
 
 # Copyright (c) 2016 The Pybind Development Team, All rights reserved.
 #
@@ -192,9 +193,9 @@ def _base_dependencies() -> List[str]:
         # See also third-party/TARGETS for buck's typing-extensions version.
         "typing-extensions>=4.10.0",
         # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-        "coremltools==9.0; platform_system == 'Darwin' or platform_system == 'Linux'",
+        "coremltools==9.0; (platform_system == 'Darwin' or platform_system == 'Linux') and python_version < '3.14'",
         # scikit-learn is used to support palettization in the coreml backend.
-        "scikit-learn==1.7.1",
+        "scikit-learn>=1.7.1",
         "hydra-core>=1.3.0",
         "omegaconf>=2.3.0",
     ]

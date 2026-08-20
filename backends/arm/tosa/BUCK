@@ -11,6 +11,17 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "cast_support",
+    srcs = [
+        "cast_support.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "mapping",
     srcs = [
         "mapping.py",

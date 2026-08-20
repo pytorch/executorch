@@ -28,7 +28,6 @@ namespace {
 
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
-using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
 // A simple 3x3 matrix struct.

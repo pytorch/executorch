@@ -22,7 +22,6 @@
 using namespace ::executorch::extension;
 using namespace ::executorch::runtime;
 using executorch::runtime::etensor::Device;
-using executorch::runtime::etensor::DeviceIndex;
 using executorch::runtime::etensor::DeviceType;
 using executorch::runtime::testing::MockCudaAllocator;
 

@@ -31,7 +31,6 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
 
-
 # ---------------------------------------------------------------------------
 # AOTI compile-time CPU clones for mutated buffers
 # ---------------------------------------------------------------------------
@@ -264,6 +263,13 @@ def _move_to_device_resize_kv(ep, location):
     return ep
 
 
+def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
+    value = spec.value.decode("utf-8").upper()
+    if value not in ["ON", "OFF"]:
+        raise ValueError(f"Invalid {spec.key}: {value}. Expected 'ON' or 'OFF'.")
+    return value == "ON"
+
+
 @final
 @experimental(
     "This API and all of cuda backend related functionality are experimental."
@@ -380,17 +386,58 @@ class CudaBackend(AotiBackend, BackendDetails):
 
     @classmethod
     def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
+        # ROCm does not build the CUDA-only .cu fallback shims.
+        if torch.version.hip is not None:
+            return {}
         return {
             "at::_ops::_weight_int4pack_mm::call": None,
             "at::_ops::sort_stable::call": None,
             "aoti_torch_cuda_randint_low_out": None,
             "executorch_cuda::int4_plain_mm": None,
             "aoti_torch_cuda_int4_plain_mm": None,
+            "executorch_cuda::int5_plain_mm": None,
+            "aoti_torch_cuda_int5_plain_mm": None,
             "executorch_cuda::int6_plain_mm": None,
             "aoti_torch_cuda_int6_plain_mm": None,
             "executorch_cuda::int8_plain_mm": None,
             "aoti_torch_cuda_int8_plain_mm": None,
         }
+
+    @staticmethod
+    def _get_custom_ops_to_c_shim_options() -> Dict[str, Any]:
+        if torch.version.hip is not None:
+            return {}
+        try:
+            return {
+                "aot_inductor.custom_ops_to_c_shims": {
+                    torch.ops.executorch_cuda.int4_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int4_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "int64_t, AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int5_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int5_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int6_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int6_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, AtenTensorHandle, int64_t, "
+                        "AtenTensorHandle*)"
+                    ],
+                    torch.ops.executorch_cuda.int8_plain_mm.default: [
+                        "AOTITorchError aoti_torch_cuda_int8_plain_mm("
+                        "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
+                        "AtenTensorHandle, int64_t, AtenTensorHandle*)"
+                    ],
+                }
+            }
+        except AttributeError:
+            # Custom ops may not be registered in this process.
+            return {}
 
     @classmethod
     def get_decomposition_table(cls) -> Dict[Any, Any]:
@@ -415,8 +462,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                 mode = spec.value.decode("utf-8").upper()
                 if mode not in ["ON", "OFF"]:
                     raise ValueError(
-                        f"Invalid triton_kernel_mode: {mode}. "
-                        f"Expected 'ON' or 'OFF'."
+                        f"Invalid triton_kernel_mode: {mode}. Expected 'ON' or 'OFF'."
                     )
                 triton_kernel_mode = mode
         passes = [MoveCondPredicateToCpuPass(), ReplaceInt64FloorDivWithFloatPass()]
@@ -462,39 +508,30 @@ class CudaBackend(AotiBackend, BackendDetails):
             "aot_inductor.emit_multi_arch_kernel": emit_multi_arch_kernel,
         }
 
-        try:
-            import torch
-
-            options["aot_inductor.custom_ops_to_c_shims"] = {
-                torch.ops.executorch_cuda.int4_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int4_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-                torch.ops.executorch_cuda.int6_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int6_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-                torch.ops.executorch_cuda.int8_plain_mm.default: [
-                    "AOTITorchError aoti_torch_cuda_int8_plain_mm("
-                    "AtenTensorHandle, AtenTensorHandle, AtenTensorHandle, "
-                    "AtenTensorHandle, int64_t, AtenTensorHandle*)"
-                ],
-            }
-        except AttributeError:
-            # quantize_op_dispatch not imported — op not registered, skip C shim mapping
-            pass
+        options.update(cls._get_custom_ops_to_c_shim_options())
 
         # Parse compile_specs to check for platform
 
         platform = "linux"
+        emulate_precision_casts = True
+        max_autotune = True
+        autotune_at_compile_time = None
         shim_library_path = None
         for spec in compile_specs:
             if spec.key == "platform":
                 platform = spec.value.decode("utf-8")
-            if spec.key == "shim_library_path":
+            elif spec.key == "emulate_precision_casts":
+                emulate_precision_casts = _on_off_compile_spec_value(spec)
+            elif spec.key == "max_autotune":
+                max_autotune = _on_off_compile_spec_value(spec)
+            elif spec.key == "autotune_at_compile_time":
+                autotune_at_compile_time = _on_off_compile_spec_value(spec)
+            elif spec.key == "shim_library_path":
                 shim_library_path = spec.value.decode("utf-8")
+        options["emulate_precision_casts"] = emulate_precision_casts
+        options["max_autotune"] = max_autotune
+        if autotune_at_compile_time is not None:
+            options["triton.autotune_at_compile_time"] = autotune_at_compile_time
         # Add platform-specific options
 
         if platform == "windows":

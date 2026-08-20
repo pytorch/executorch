@@ -1058,7 +1058,7 @@ TEST_F(VulkanComputeAPITest, vec_test) {
     ASSERT_TRUE(v[2] == 10);
   }
 
-  // Test initalization from temporary vec
+  // Test initialization from temporary vec
   {
     utils::uvec3 v = make_temp_ivec3(4, 5, 10);
     ASSERT_TRUE(v[0] == 4);
@@ -1698,6 +1698,87 @@ TEST_F(VulkanComputeAPITest, test_tensor_creation_from_vulkan_image) {
 
   const auto exp_numel = w * h * d * 4;
   EXPECT_TRUE(tensor.numel() == exp_numel);
+}
+
+// Sizes an image can carry but its extents cannot express: rank 4, and a
+// sequence dim that is not the packed one.
+static const std::vector<int64_t> kExternalSizes = {1, 37, 8, 64};
+
+static vTensor make_image_owner() {
+  return vTensor(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_keeps_logical_sizes) {
+  vTensor owner = make_image_owner();
+
+  vTensor view(
+      context(),
+      kExternalSizes,
+      vkapi::kFloat,
+      utils::kTexture3D,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false,
+      utils::kDefaultAxisMap,
+      &owner.image());
+
+  EXPECT_TRUE(view.sizes() == kExternalSizes);
+  EXPECT_TRUE(view.packed_dim() == 0);
+  EXPECT_TRUE(view.numel() == owner.numel());
+
+  // Reconstructing from the extents instead would collapse this to 3 sizes.
+  EXPECT_TRUE(vTensor(context(), owner.image()).sizes().size() == 3);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    test_tensor_over_external_image_rejects_size_mismatch) {
+  vTensor owner = make_image_owner();
+
+  std::vector<int64_t> mismatched = kExternalSizes;
+  mismatched.back() *= 2;
+
+  EXPECT_THROW(
+      vTensor(
+          context(),
+          mismatched,
+          vkapi::kFloat,
+          utils::kTexture3D,
+          utils::kWidthPacked,
+          /*allocate_memory = */ false,
+          utils::kDefaultAxisMap,
+          &owner.image()),
+      vkapi::Error);
+}
+
+TEST_F(VulkanComputeAPITest, test_tensor_over_external_image_does_not_own_it) {
+  vTensor owner = make_image_owner();
+
+  {
+    vTensor view(
+        context(),
+        kExternalSizes,
+        vkapi::kFloat,
+        utils::kTexture3D,
+        utils::kWidthPacked,
+        /*allocate_memory = */ false,
+        utils::kDefaultAxisMap,
+        &owner.image());
+
+    EXPECT_TRUE(view.image().is_copy_of(owner.image()));
+  }
+
+  // The view is gone and its deferred cleanup has run; the image it aliased
+  // belongs to `owner` and is still live.
+  context()->flush();
+  EXPECT_TRUE(owner.image());
+  EXPECT_FALSE(owner.image().is_copy());
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -3072,7 +3153,7 @@ void test_to_copy() {
         std::bitset<32>(*reinterpret_cast<uint32_t*>(&input)).to_string() +
         "), expected output = " + std::to_string(expected_output) + "(0b" +
         std::bitset<16>(*expected_bits).to_string() +
-        "), recieved output = " + std::to_string(output) + "(0b" +
+        "), received output = " + std::to_string(output) + "(0b" +
         std::bitset<16>(*output_bits).to_string() + ")";
 
     std::cout << msg << std::endl;

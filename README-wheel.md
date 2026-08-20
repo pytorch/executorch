@@ -5,7 +5,7 @@ ExecuTorch is to enable wider customization and deployment capabilities of the
 PyTorch programs.
 
 The `executorch` pip package is in beta.
-* Supported python versions: 3.10, 3.11, 3.12, 3.13
+* Supported python versions: 3.10, 3.11, 3.12, 3.13, 3.14
 * Compatible systems: Linux x86_64, Linux aarch64, macOS aarch64
 
 To build a minimal wheel from source, set

@@ -37,6 +37,7 @@ def define_common_targets():
         name = "vgf_backend",
         srcs = [
             "VGFBackend.cpp",
+            "VGFNeuralStatistics.cpp",
             "VGFSetup.cpp",
             # Volk must be compiled directly into this target so its global
             # function-pointer variables live in the same linkage unit.
@@ -44,7 +45,10 @@ def define_common_targets():
             # drop the symbols when building a shared library.
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
         ],
-        exported_headers = ["VGFSetup.h"],
+        exported_headers = [
+            "VGFNeuralStatistics.h",
+            "VGFSetup.h",
+        ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
         supports_python_dlopen = True,

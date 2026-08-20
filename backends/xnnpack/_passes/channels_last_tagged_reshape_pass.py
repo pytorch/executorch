@@ -74,6 +74,18 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         exir_ops.edge.aten.linear.default,
     }
 
+    # Broadcasting binary ops whose operands must share one memory format. A
+    # dynamic-quant input_to_nhwc may blanket-replace a shared activation
+    # (replace_all_uses_with), switching one operand of an already-processed
+    # binary op to NHWC while its other (e.g. per-channel constant) operand
+    # stays NCHW. These ops are re-converged after the main traversal.
+    broadcast_binary_ops = {
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.div.Tensor,
+    }
+
     # Tag which is added to a node's meta to indicate that it uses NHWC format.
     # A constant data tensor with this tag assigned for use in a particular
     # format in one place cannot be used in other places in the other format
@@ -566,5 +578,43 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
         # Since we are overriding "call", we need to call the parent's "call"
         # to retrace the graph and regenerate metadata
         graph_module = super().call(graph_module).graph_module
+
+        # The dynamic-quant path of input_to_nhwc can replace_all_uses_with a
+        # binary op's activation operand to NHWC after the op was processed,
+        # leaving its other operand (e.g. a per-channel constant) NCHW and failing
+        # at runtime. Re-converge such binary ops now that the graph has settled.
+        reconverged = False
+        for node in list(graph_module.graph.nodes):
+            if (
+                node.op != "call_function"
+                or node.target not in ChannelsLastTaggedReshapePass.broadcast_binary_ops
+            ):
+                continue
+            input_nodes = node.all_input_nodes
+            if len(input_nodes) != 2:
+                continue
+            layouts = [
+                ChannelsLastTaggedReshapePass.is_nhwc_node(input_node)
+                for input_node in input_nodes
+            ]
+            if layouts[0] == layouts[1]:
+                continue
+            if all(
+                self.can_be_converted_to_nhwc(input_node) for input_node in input_nodes
+            ):
+                for input_node in input_nodes:
+                    self.input_to_nhwc(graph_module, input_node, node)
+                self.mark_as_nhwc_node(node)
+            else:
+                for input_node in input_nodes:
+                    self.input_to_nchw(graph_module, input_node, node)
+            reconverged = True
+
+        if reconverged:
+            graph_module.recompile()
+            for node in graph_module.graph.nodes:
+                if ChannelsLastTaggedReshapePass.PARTNER_NODE in node.meta:
+                    node.meta.pop(ChannelsLastTaggedReshapePass.PARTNER_NODE)
+            graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)

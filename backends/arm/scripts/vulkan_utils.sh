@@ -26,21 +26,21 @@ vulkan_sdk_arch="${ARCH}"
 # macOS and Linux x86_64 use the official LunarG SDK tarballs. Linux ARM64
 # uses a separately repackaged mirror of the same SDK version.
 if [[ "${os_name}" == "Darwin" ]]; then
-    vulkan_sdk_version="1.4.341.1"
+    vulkan_sdk_version="1.4.350.0"
     vulkan_sdk_arch="macOS"
     vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/mac/vulkansdk-macos-${vulkan_sdk_version}.zip"
-    vulkan_sdk_sha256="632cbe96c8ed6ed00c6ce25e3a7738c466134f76586e1c51f1419410d7f9042e"
+    vulkan_sdk_sha256="7acc181b8fd9b4781bf51ed086222ec95d22004b85b3d0a6683a7e48ca5a1679"
 elif [[ "${os_name}" == "Linux" ]] && [[ "${ARCH}" == "x86_64" ]]; then
-    vulkan_sdk_version="1.4.341.1"
+    vulkan_sdk_version="1.4.350.0"
     vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="3bf0f762afb6c79bc6a9d9fb5998745ccff928800a29619b501ed9de7fd9789b"
+    vulkan_sdk_sha256="b65f068ab36263559da49d7cacd7e7b9df23824ca8b68ccc522a2b06f5725df2"
 elif [[ "${os_name}" == "Linux" ]] && ([[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]); then
-    vulkan_sdk_version="1.4.341.1"
+    vulkan_sdk_version="1.4.350.0"
     if [[ "${vulkan_sdk_arch}" == "arm64" ]]; then
         vulkan_sdk_arch="aarch64"
     fi
     vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/${vulkan_sdk_version}/vulkansdk-ubuntu-22.04-arm-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="345312aee2c835e128b30653278593f899a659a7ba287c571cafb22acb708b8f"
+    vulkan_sdk_sha256="9e403d444219bb7c17e9231b580d704453e2afa30a1c2fdd568d1776dc68790b"
 else
     log_step "vulkan" "Error: only macOS and Linux are supported (detected ${os_name}); architecture must be x86-64 or aarch64/arm64"
     exit 1

@@ -6,6 +6,7 @@
 import logging
 import operator
 from abc import ABC, abstractmethod
+from math import prod
 from typing import Callable
 
 import torch
@@ -225,7 +226,12 @@ class NodeConverter(ABC):
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
-        """Check if node has shared quantization parameters if it's quantized."""
+        """Check if node has shared quantization parameters for first input and output if it's quantized.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if first input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
         if len(node.users) < 1 or len(node.all_input_nodes) < 1:
             # Some exotic operator (only consumer or only produces)
             return True
@@ -235,17 +241,17 @@ class NodeConverter(ABC):
 
         if _is_dequant_node(pre_node) and _is_quant_node(post_node):
             # Node is quantized
-            pre_zp = pre_node.args[1]
-            pre_scale = pre_node.args[2]
+            pre_scale = pre_node.args[1]
+            pre_zp = pre_node.args[2]
             pre_type = pre_node.args[5]
 
-            post_zp = post_node.args[1]
-            post_scale = post_node.args[2]
+            post_scale = post_node.args[1]
+            post_zp = post_node.args[2]
             post_type = pre_node.args[5]
 
             # Q-params match?
             return (
-                pre_zp == post_zp and pre_scale == post_scale and pre_type == post_type
+                pre_scale == post_scale and pre_zp == post_zp and pre_type == post_type
             )
 
         # Node not quantized
@@ -465,29 +471,65 @@ class NodeConverter(ABC):
         )
 
     @staticmethod
-    def at_least_one_input_shape_matches_the_output_shape(node: Node) -> bool:
-        """Determine if given PyTorch fx Node uses at least one input shape broadcasting for it's input nodes or not.
+    def inputs_satisfy_broadcast_condition(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has inputs that satisfy broadcasting conditions for Neutron or not.
 
         :param node: PyTorch fx Node with 'all_input_nodes' initialized.
-        :return: True, if at least one input has the same shape as the output node.
+        :return: True, if at least one input has the same number of elements as the output node.
                  False otherwise.
         """
 
         if node.all_input_nodes is None:
             logger.e(
                 logger.Code.INTERNAL_ERROR,
-                "node_converter.at_least_one_input_shape_matches_the_output_shape(): 'all_input_nodes' are None!",
+                "node_converter.inputs_satisfy_broadcast_condition(): 'all_input_nodes' are None!",
             )
 
         if len(node.all_input_nodes) == 0:
             logger.e(
                 logger.Code.INTERNAL_ERROR,
-                "node_converter.at_least_one_input_shape_matches_the_output_shape(): Operator has no inputs!",
+                "node_converter.inputs_satisfy_broadcast_condition(): Operator has no inputs!",
             )
 
         output_shape = node.meta["val"].shape
+        num_elements = prod(output_shape)
 
         return any(
-            input_tensor.meta["val"].shape == output_shape
+            prod(input_tensor.meta["val"].shape) == num_elements
             for input_tensor in node.all_input_nodes
         )
+
+    @staticmethod
+    def _all_io_shares_quantization_parameters(node: Node) -> bool:
+        """Determine if given PyTorch fx Node has all inputs and output with same quantization parameters.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if all input and output parameters have the same quantization parameters.
+                 False otherwise.
+        """
+        post_node = list(node.users.keys())[0]
+        if not _is_quant_node(post_node):
+            return False
+        output_scale, output_zp, output_type = (
+            post_node.args[1],
+            post_node.args[2],
+            post_node.args[5],
+        )
+
+        for input_node in node.all_input_nodes:
+            if not _is_dequant_node(input_node):
+                return False
+
+            input_scale, input_zp, input_type = (
+                input_node.args[1],
+                input_node.args[2],
+                input_node.args[5],
+            )
+            if (input_scale, input_zp, input_type) != (
+                output_scale,
+                output_zp,
+                output_type,
+            ):
+                return False
+
+        return True

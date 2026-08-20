@@ -320,6 +320,19 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "tensor_parser_aten_test",
+            srcs = [
+                "tensor_parser_aten_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program_aten",
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/schema:program",
+            ],
+        )
+
+        runtime.cxx_test(
             name = "tensor_parser_device_test",
             srcs = [
                 "tensor_parser_device_test.cpp",

@@ -226,6 +226,7 @@ def register_copy_op():
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.log10.default,
     ]
 )
 def register_unaryop_cpp_ops():
@@ -455,6 +456,15 @@ def register_quantizedlinearqcsnw_cpp_ops():
     ]
 )
 def register_quantizedlinear_cpp_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_q4gsw_backward.default)
+def register_linear_q4gsw_backward():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         inputs_dtypes=utils.FP_T,
@@ -1263,6 +1273,21 @@ def register_alias_copy():
 
 
 # =============================================================================
+# Unfold.cpp
+# =============================================================================
+
+
+@update_features(exir_ops.edge.aten.unfold_copy.default)
+def register_unfold_copy():
+    return OpFeatures(
+        inputs_storage=utils.ANY_BUFFER,
+        inputs_dtypes=utils.FP_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+# =============================================================================
 # Gather.cpp
 # =============================================================================
 
@@ -1412,33 +1437,56 @@ def register_where():
 
 @update_features(exir_ops.edge.aten.index.Tensor)
 def register_index_tensor():
-    def check_index_tensor_node(node: torch.fx.Node) -> bool:
+    def _index_tensor_shapes(node: torch.fx.Node):
+        """(self_val, index_val) for the supported single-index form, else None."""
         self_arg = node.args[0]
         indices = node.args[1]
 
-        # Only support 1D self tensor
         if not isinstance(self_arg, torch.fx.Node):
-            return False
+            return None
         self_val = self_arg.meta.get("val", None)
         if self_val is None:
-            return False
-        if len(self_val.size()) != 1:
-            return False
+            return None
 
-        # Only support exactly one non-None index tensor
+        # Only support exactly one non-None index tensor, applied to dim 0.
         if not isinstance(indices, (list, tuple)):
-            return False
+            return None
         non_none = [idx for idx in indices if idx is not None]
-        if len(non_none) != 1:
-            return False
+        if len(non_none) != 1 or indices[0] is None:
+            return None
+        index_arg = non_none[0]
+        if not isinstance(index_arg, torch.fx.Node):
+            return None
+        index_val = index_arg.meta.get("val", None)
+        if index_val is None:
+            return None
 
-        return True
+        return self_val, index_val
+
+    def check_index_tensor_node(node: torch.fx.Node) -> bool:
+        shapes = _index_tensor_shapes(node)
+        if shapes is None:
+            return False
+        _, index_val = shapes
+        # The gather is expressed as "one index position per output slice", so
+        # the index must be 1-D. `self` may be any rank: the buffer shader
+        # copies self's trailing dims through unchanged.
+        return len(index_val.size()) == 1
+
+    def pick_index_tensor_storage(node: torch.fx.Node):
+        shapes = _index_tensor_shapes(node)
+        # Only the buffer shader handles a higher-rank `self`; the texture
+        # variant still assumes the 1-D form (it reads self[idx, 0, 0, 0]).
+        if shapes is not None and len(shapes[0].size()) > 1:
+            return utils.CONTIGUOUS_BUFFER, utils.CONTIGUOUS_BUFFER
+        return utils.ANY_STORAGE, utils.ANY_STORAGE
 
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         inputs_dtypes=utils.FP_INT_T,
         supports_resize=True,
         are_node_inputs_supported_fn=check_index_tensor_node,
+        pick_io_storage_fn=pick_index_tensor_storage,
     )
 
 
@@ -1743,6 +1791,74 @@ def register_rms_norm():
         inputs_dtypes=utils.FP_T,
         supports_prepacking=True,
         supports_resize=True,
+    )
+
+
+# =============================================================================
+# FusedCe.cpp (training)
+# =============================================================================
+
+
+@update_features(exir_ops.edge.et_vk.fused_ce.default)
+def register_fused_ce():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=[utils.FP_T, utils.INT_T, utils.NONE_T],
+        outputs_dtypes=[utils.FP_T, utils.FP_T],
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.ne.Scalar,
+        exir_ops.edge.aten.lt.Scalar,
+        exir_ops.edge.aten.le.Scalar,
+        exir_ops.edge.aten.ge.Scalar,
+        exir_ops.edge.aten.gt.Scalar,
+    ]
+)
+def register_compare_scalar_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.FP_INT_T,
+        outputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.logical_not.default)
+def register_logical_not():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        inputs_dtypes=utils.BOOL_T,
+        supports_resize=True,
+        supports_highdim=True,
+    )
+
+
+@update_features("et_vk::adamw_step")
+def register_adamw_step():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_dW.default)
+def register_linear_dW():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
+        supports_prepacking=True,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.q4gsw_requant.default)
+def register_q4gsw_requant():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        inputs_dtypes=utils.FP_T,
     )
 
 

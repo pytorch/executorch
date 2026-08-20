@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from rms_norm.wgsl - DO NOT EDIT.
-// wgsl-sha256: 340dcbf3c06dc311e70bef953c1e9cbbdf4121fe177eedd3253549e614b55069
+// wgsl-sha256: 55bc862d64451f5fe8f530114f0318dfbc724017314091418a1fe41b180be7c6
 inline constexpr const char* kRmsNormWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<f32>;
 @group(0) @binding(1) var<storage, read> t_in: array<f32>;
@@ -27,13 +27,14 @@ struct Params {
 }
 @group(0) @binding(3) var<uniform> params: Params;
 
-const WG_SIZE: u32 = 64u;
+// wg_size must be a power of two (the tree reduction halves the stride).
+override wg_size: u32 = 64u;
 
-var<workgroup> shared_sum: array<f32, WG_SIZE>;
+var<workgroup> shared_sum: array<f32, wg_size>;
 
 fn reduce_shared(worker_id: u32) {
   workgroupBarrier();
-  var stride: u32 = WG_SIZE / 2u;
+  var stride: u32 = wg_size / 2u;
   loop {
     if (stride == 0u) {
       break;
@@ -46,7 +47,7 @@ fn reduce_shared(worker_id: u32) {
   }
 }
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size(wg_size, 1, 1)
 fn main(
     @builtin(workgroup_id) wid: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>) {
@@ -67,7 +68,7 @@ fn main(
     }
     let v = t_in[base + x];
     local_sq_sum = local_sq_sum + v * v;
-    x = x + WG_SIZE;
+    x = x + wg_size;
   }
 
   shared_sum[worker_id] = local_sq_sum;
@@ -84,7 +85,7 @@ fn main(
     let v = t_in[base + x];
     let w = t_weight[x];
     t_out[base + x] = v * rstd * w;
-    x = x + WG_SIZE;
+    x = x + wg_size;
   }
 }
 )";

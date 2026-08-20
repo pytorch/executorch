@@ -19,10 +19,6 @@
 
 namespace example {
 
-using ::executorch::extension::Module;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::Result;
-
 namespace llm = ::executorch::extension::llm;
 
 std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(

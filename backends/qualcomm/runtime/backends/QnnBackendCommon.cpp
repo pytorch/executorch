@@ -94,7 +94,8 @@ Error QnnBackend::Configure(
     return Error::Internal;
   }
 
-  if (op_package_options->op_package_infos()->size() > 0) {
+  if (op_package_options && op_package_options->op_package_infos() &&
+      op_package_options->op_package_infos()->size() > 0) {
     BackendRegisterOpPackage(op_package_options->op_package_infos());
   }
 

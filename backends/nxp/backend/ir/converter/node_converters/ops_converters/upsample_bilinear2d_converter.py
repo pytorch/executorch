@@ -113,7 +113,7 @@ class UpsampleBilinear2DConverter(NodeConverter):
         x = t_op.tmp_inputs[0]
         y = t_op.tmp_outputs[0]
 
-        # ExecuTorch has 1 paramter (align_corners). NeutronIR has 2 parameters (align_corners, half_pixel_centers).
+        # ExecuTorch has 1 parameter (align_corners). NeutronIR has 2 parameters (align_corners, half_pixel_centers).
         # In ExecuTorch, the pixel compute scale is:
         #  `(input_size - 1) / (output_size - 1)` if align_corners else `input_size / output_size`
         # https://github.com/pytorch/executorch/blob/v1.1.0/kernels/portable/cpu/util/upsample_util.h#L65

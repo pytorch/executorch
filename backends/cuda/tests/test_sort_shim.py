@@ -18,10 +18,12 @@ Usage:
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
+# Register custom ops so the shim-map assertions exercise the ROCm gate.
+import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 import torch
 import torch.nn as nn
-
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.exir import (
@@ -31,6 +33,22 @@ from executorch.exir import (
 )
 from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
+
+_CUDA_FALLBACK_KERNELS = frozenset(
+    {
+        "at::_ops::_weight_int4pack_mm::call",
+        "at::_ops::sort_stable::call",
+        "aoti_torch_cuda_randint_low_out",
+        "executorch_cuda::int4_plain_mm",
+        "aoti_torch_cuda_int4_plain_mm",
+        "executorch_cuda::int5_plain_mm",
+        "aoti_torch_cuda_int5_plain_mm",
+        "executorch_cuda::int6_plain_mm",
+        "aoti_torch_cuda_int6_plain_mm",
+        "executorch_cuda::int8_plain_mm",
+        "aoti_torch_cuda_int8_plain_mm",
+    }
+)
 
 
 class SortModel(nn.Module):
@@ -119,9 +137,35 @@ class TestSortShim(unittest.TestCase):
             self.assertGreater(os.path.getsize(pte_path), 0)
 
     def test_sort_fallback_registered(self):
-        """sort_stable is registered as a supported fallback kernel."""
-        fallbacks = CudaBackend.get_supported_fallback_kernels()
+        """sort_stable is registered as a supported fallback kernel on CUDA."""
+        with patch.object(torch.version, "hip", None):
+            fallbacks = CudaBackend.get_supported_fallback_kernels()
         self.assertIn("at::_ops::sort_stable::call", fallbacks)
+
+    def test_cuda_fallbacks_unchanged_by_rocm_gate(self):
+        """The ROCm gate must not alter what CUDA advertises."""
+        with patch.object(torch.version, "hip", None):
+            fallbacks = CudaBackend.get_supported_fallback_kernels()
+
+        self.assertEqual(set(fallbacks), _CUDA_FALLBACK_KERNELS)
+
+    def test_cuda_shim_map_unchanged_by_rocm_gate(self):
+        """Same, for the C shim signatures."""
+        with patch.object(torch.version, "hip", None):
+            options = CudaBackend.get_aoti_compile_options([])
+
+        self.assertEqual(len(options["aot_inductor.custom_ops_to_c_shims"]), 4)
+        self.assertNotIn("aot_inductor.precompile_headers", options)
+
+    def test_rocm_advertises_no_unbuilt_shims(self):
+        """ROCm does not advertise CUDA-only shims."""
+        with patch.object(torch.version, "hip", "7.0"):
+            fallbacks = CudaBackend.get_supported_fallback_kernels()
+            options = CudaBackend.get_aoti_compile_options([])
+
+        self.assertEqual(fallbacks, {})
+        self.assertNotIn("aot_inductor.custom_ops_to_c_shims", options)
+        self.assertNotIn("aot_inductor.precompile_headers", options)
 
 
 if __name__ == "__main__":

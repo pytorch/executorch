@@ -230,7 +230,7 @@ def test_gather_u85_INT(test_data: input_params):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_fp | test_data_int)
+@common.parametrize("test_data", test_data_fp | test_data_fp_bf16 | test_data_int)
 @common.SkipIfNoModelConverter
 def test_gather_vgf_no_quant(test_data: input_params):
     pipeline = VgfPipeline[input_params](

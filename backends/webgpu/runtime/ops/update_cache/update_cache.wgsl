@@ -1,4 +1,6 @@
-@group(0) @binding(0) var<storage, read_write> t_cache: array<f32>;
+$if DTYPE == "half":
+  enable f16;
+@group(0) @binding(0) var<storage, read_write> t_cache: array<${buffer_scalar_type(DTYPE)}>;
 @group(0) @binding(1) var<storage, read> t_value: array<f32>;
 
 struct Params {
@@ -20,5 +22,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (params.dst_offset + i >= params.cache_numel) {
     return;
   }
-  t_cache[params.dst_offset + i] = t_value[i];
+  $if DTYPE == "half":
+    t_cache[params.dst_offset + i] = f16(t_value[i]);
+  $else:
+    t_cache[params.dst_offset + i] = t_value[i];
 }

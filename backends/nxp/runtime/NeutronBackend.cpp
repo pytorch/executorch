@@ -290,6 +290,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
     auto* cfg = allocator->allocateInstance<NeutronExecutorchConfig>();
 
+    // allocateInstance returns raw, uninitialized memory (no constructor runs),
+    // so set the driver-config timeout explicitly.
+    cfg->mcfg.timeoutSeconds = 60;
+
     // The following data is read from the "processed" data blob.
     //    cfg->numInputs
     //    cfg->numoutputs
@@ -523,6 +527,16 @@ class NeutronBackend final : public PyTorchBackendInterface {
       }
     }
 
+    // Resume (clock-ungate) the NPU immediately before inference and suspend it
+    // again immediately after, so its clock only runs during compute
+#ifdef NEUTRON_NPU_POWER_GATING
+    NeutronError resumeRC = neutronResume();
+    if (resumeRC != ENONE) {
+      ET_LOG(Error, "neutronResume failed with error code %ld", resumeRC);
+      return Error::InvalidProgram;
+    }
+#endif
+
 #ifdef ET_EVENT_TRACER_ENABLED
     // Save ticks before neutron compute to measure how much time profiling dump
     // takes
@@ -530,6 +544,21 @@ class NeutronBackend final : public PyTorchBackendInterface {
 #endif
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
+#ifdef ET_EVENT_TRACER_ENABLED
+    // Save ticks after neutron compute to measure how much time profiling dump
+    // takes
+    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
+#endif
+
+#ifdef NEUTRON_NPU_POWER_GATING
+    // Suspend (clock-gate) the NPU again regardless of the run result; a failed
+    // suspend only wastes power, so it must not fail the inference.
+    NeutronError suspendRC = neutronSuspend();
+    if (suspendRC != ENONE) {
+      ET_LOG(Error, "neutronSuspend failed with error code %ld", suspendRC);
+    }
+#endif
+
     if (neutronRC != ENONE) {
       ET_LOG(
           Error,
@@ -537,11 +566,6 @@ class NeutronBackend final : public PyTorchBackendInterface {
           neutronRC);
       return Error::InvalidProgram;
     }
-#ifdef ET_EVENT_TRACER_ENABLED
-    // Save ticks after neutron compute to measure how much time profiling dump
-    // takes
-    et_timestamp_t stop_ticks = ::executorch::runtime::pal_current_ticks();
-#endif
 
     // Transpose outputs.
     for (int i = 0; i < cfg->numOutputs; i++) {
@@ -586,7 +610,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
       char* profile_info =
           static_cast<char*>(cfg->dcfg.outputs[profiling_index]);
       NeutronFullProfilingEvent* neutron_events =
-          reinterpreter_cast<NeutronFullProfilingEvent*>(profile_info);
+          reinterpret_cast<NeutronFullProfilingEvent*>(profile_info);
       executorch::runtime::EventTracer* tracer = context.event_tracer();
       uint32_t start_time = 0;
       int index = 0;

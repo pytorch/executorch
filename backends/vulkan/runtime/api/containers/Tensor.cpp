@@ -810,10 +810,21 @@ void vTensorStorage::transition(
       dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     }
 
+    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
+
+    // WAR hazard: the read-only source access mask yields an execution-only
+    // dependency that some drivers may drop, so widen it to a full memory
+    // barrier to keep the write from racing the prior read.
+    const bool prev_read = (prev_access & vkapi::MemoryAccessType::READ) != 0;
+    if (prev_read && !prev_written && cur_written) {
+      src_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      dst_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+      src_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      dst_access = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+
     pipeline_barrier.stage.src |= src_stage;
     pipeline_barrier.stage.dst |= dst_stage;
-
-    VkAccessFlags dst_access = vkapi::vk_access(cur_stage, cur_access);
 
     if (image_) {
       pipeline_barrier.images.emplace_back(
@@ -840,7 +851,8 @@ vTensor::vTensor(
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
-    const utils::AxisMapLayout axis_map_layout)
+    const utils::AxisMapLayout axis_map_layout,
+    const vkapi::VulkanImage* external_image)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
@@ -868,15 +880,28 @@ vTensor::vTensor(
       uniforms_(),
       buffer_meta_(),
       // Construct Tensor storage
-      storage_(std::make_shared<vTensorStorage>(
-          context,
-          storage_type,
-          axis_map_,
-          packed_dim_info_,
-          padded_sizes_,
-          dtype_,
-          physical_numel_,
-          allocate_memory)) {
+      storage_(
+          external_image != nullptr
+              ? std::make_shared<vTensorStorage>(context, *external_image)
+              : std::make_shared<vTensorStorage>(
+                    context,
+                    storage_type,
+                    axis_map_,
+                    packed_dim_info_,
+                    padded_sizes_,
+                    dtype_,
+                    physical_numel_,
+                    allocate_memory)) {
+  // An external image was sized by its creator, so nothing guarantees it
+  // matches the metadata derived from `sizes`. The extents feed the
+  // shader-visible logical limits below, so they have to agree.
+  if (external_image != nullptr) {
+    VK_CHECK_COND(
+        storage_->image_extents_ ==
+            calculate_image_extents(
+                dtype_, packed_dim_info_, padded_sizes_, axis_map_),
+        "external image extents do not match the requested tensor sizes");
+  }
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {
     uniform_data_ = std::make_shared<UniformData>(UniformData{

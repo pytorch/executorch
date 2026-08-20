@@ -29,9 +29,7 @@
 using executorch::backends::xnnpack::delegate::XNNWeightsCache;
 using executorch::extension::FileDataLoader;
 using executorch::extension::testing::TempFile;
-using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
 using executorch::runtime::internal::PteDataMap;

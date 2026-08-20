@@ -5,12 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
-from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
-from .utils import copy_meta, create_const_node
+from .utils import copy_meta
 
 
 class DecomposeVar(ExportPass):
@@ -29,17 +26,12 @@ class DecomposeVar(ExportPass):
         self.var_targets = {
             torch.ops.aten.var.correction,
             torch.ops.aten.var.dim,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
         }
 
     def _get_correction(self, node):
         """Extract the correction factor from node args based on op variant."""
         target = node.target
-        if target in (
-            torch.ops.aten.var.correction,
-            exir_ops.edge.aten.var.correction,
-        ):
+        if target in {torch.ops.aten.var.correction}:
             # var.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False)
             # correction is a kwarg, but in the graph it may appear in kwargs
             correction = node.kwargs.get("correction", None)
@@ -54,10 +46,7 @@ class DecomposeVar(ExportPass):
     def _get_dim_and_keepdim(self, node):
         """Extract dim and keepdim from node args based on op variant."""
         target = node.target
-        if target in (
-            torch.ops.aten.var.correction,
-            exir_ops.edge.aten.var.correction,
-        ):
+        if target in {torch.ops.aten.var.correction}:
             # var.correction(Tensor self, int[1]? dim=None, *, Scalar? correction=None, bool keepdim=False)
             dim = node.args[1] if len(node.args) > 1 else None
             keepdim = node.kwargs.get("keepdim", False)
@@ -70,31 +59,18 @@ class DecomposeVar(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        const_cache = {}
 
         for node in list(graph.nodes):
             if node.op == "call_function" and node.target in self.var_targets:
                 x_node = node.args[0]
-                is_edge = isinstance(node.target, EdgeOpOverload)
                 meta = node.meta
 
                 correction = self._get_correction(node)
                 dim, keepdim = self._get_dim_and_keepdim(node)
 
-                mean_op = (
-                    exir_ops.edge.aten.mean.dim if is_edge else torch.ops.aten.mean.dim
-                )
-                sub_op = (
-                    exir_ops.edge.aten.sub.Tensor
-                    if is_edge
-                    else torch.ops.aten.sub.Tensor
-                )
-                mul_op = (
-                    exir_ops.edge.aten.mul.Tensor
-                    if is_edge
-                    else torch.ops.aten.mul.Tensor
-                )
-
+                mean_op = torch.ops.aten.mean.dim
+                sub_op = torch.ops.aten.sub.Tensor
+                mul_op = torch.ops.aten.mul.Tensor
                 # Handle dim=None: reduce over all dimensions
                 input_shape = node.args[0].meta["val"].shape
                 if dim is None:
@@ -148,22 +124,8 @@ class DecomposeVar(ExportPass):
                         # Guard against division by zero (e.g. single-element dim with correction=1).
                         # Using inf matches the native PyTorch behavior where 0 * inf → nan.
                         scale = float("inf") if denom == 0 else float(n) / denom
-
-                        if is_edge:
-                            cache_key = ("_var_scale_", scale)
-                            if cache_key not in const_cache:
-                                attr_name = get_new_attr_name_with_prefix(
-                                    "_var_scale_const_"
-                                )(graph_module)
-                                const_cache[cache_key] = create_const_node(
-                                    graph, graph_module, attr_name, scale, node
-                                )
-                            scale_node = const_cache[cache_key]
-                        else:
-                            scale_node = scale
-
                         result_node = graph.create_node(
-                            "call_function", mul_op, (var_node, scale_node)
+                            "call_function", mul_op, (var_node, scale)
                         )
                         result_node.meta = copy_meta(meta)
                     else:

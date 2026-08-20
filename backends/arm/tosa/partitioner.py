@@ -18,12 +18,18 @@ import operator
 from collections import deque
 from itertools import count
 from pathlib import Path
-from typing import Callable, cast, List, Optional, Sequence, Tuple
+from typing import Callable, cast, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
+)
+from executorch.backends.arm._passes.decompose_large_stride_maxpool2d_pass import (
+    can_decompose_large_stride_maxpool2d,
+)
+from executorch.backends.arm._passes.decompose_unsupported_bilinear_resize_pass import (
+    is_exact_tosa_boundary_bilinear_downscale,
 )
 
 from executorch.backends.arm.common.type import ensure_type
@@ -33,6 +39,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -47,6 +54,70 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partit
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 logger = logging.getLogger(__name__)
+
+
+class DecomposableLargeStrideMaxPool2dForU55Supported(OperatorSupportBase):
+    """Accept U55 max-pool nodes that backend preprocessing can legalize.
+
+    Non-U55 profiles, including U85, use the standard max-pool support path.
+    This positive check is only for the U55 stride > 3 workaround.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when backend preprocessing can legalize the max pool."""
+        del submodules
+        # The with_indices form is accepted because RemoveGetItemPass runs
+        # before backend preprocessing and canonicalizes value-only users to
+        # max_pool2d.default. If indices are used, RemoveGetItemPass rejects
+        # the node, matching the existing MaxPool2dSupported contract.
+        if not self.tosa_spec.is_U55_subset or node.target not in {
+            exir_ops.edge.aten.max_pool2d.default,
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
+        }:
+            return False
+
+        input_shape = get_first_fake_tensor(node.all_input_nodes[0]).shape
+        return can_decompose_large_stride_maxpool2d(
+            node.args[1],
+            node.args[2] if len(node.args) >= 3 else node.args[1],
+            node.args[3] if len(node.args) >= 4 else (0, 0),
+            node.args[4] if len(node.args) >= 5 else (1, 1),
+            node.args[5] if len(node.args) >= 6 else False,
+            input_shape,
+        )
+
+
+class DecomposableResizeSupported(OperatorSupportBase):
+    """Accept exact boundary bilinear downscales.
+
+    These are decomposed later.
+
+    """
+
+    def __init__(self, tosa_spec: TosaSpecification) -> None:
+        """Initialize the check with the active TOSA specification."""
+        self.tosa_spec = tosa_spec
+
+    def is_node_supported(
+        self,
+        submodules: Mapping[str, torch.nn.Module],
+        node: torch.fx.Node,
+    ) -> bool:
+        """Return True when the resize matches the decomposable boundary case.
+
+        This keeps the node delegatable so a later pass can rewrite it.
+
+        """
+        del submodules
+        return is_exact_tosa_boundary_bilinear_downscale(node, self.tosa_spec)
 
 
 def _is_custom_partition_op(
@@ -263,6 +334,7 @@ class TOSAPartitioner(Partitioner):
         )
         self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self._decomposable_resize_support = DecomposableResizeSupported(self.tosa_spec)
         self._custom_partition_ops: set[torch._ops.OpOverload] = set()
         self.intermediate_path = compile_spec._get_intermediate_path()
 
@@ -419,9 +491,7 @@ class TOSAPartitioner(Partitioner):
                     "Got overlapping tags in two different modules, this shouldn't happen."
                 )
             tags = tags | submodule_tags
-        operator_support = tosa_support_factory(
-            self.tosa_spec, containing_program, reporter, self.additional_checks
-        )
+        operator_support = self._create_operator_support(containing_program, reporter)
         if self._custom_partition_ops:
             custom_ops = set(self._custom_partition_ops)
 
@@ -533,6 +603,22 @@ class TOSAPartitioner(Partitioner):
                     if active_tag in tags:
                         tags.remove(active_tag)
         return tags
+
+    def _create_operator_support(
+        self,
+        containing_program: ExportedProgram,
+        reporter: WhyNoPartitionReporter,
+    ) -> OperatorSupportBase:
+        return tosa_support_factory(
+            self.tosa_spec,
+            containing_program,
+            reporter,
+            self.additional_checks,
+            additional_positive_checks=[
+                self._decomposable_resize_support,
+                DecomposableLargeStrideMaxPool2dForU55Supported(self.tosa_spec),
+            ],
+        )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """Partition the program and tag TOSA-compatible subgraphs.
