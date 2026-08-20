@@ -6,6 +6,10 @@
 
 # pyre-unsafe
 
+from collections.abc import Callable
+
+import torch
+
 from executorch.backends.transforms.channels_last_layout import (
     composed_permute_target,
     is_channels_last_input_normalization_pair,
@@ -38,6 +42,13 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.view.default,
     }
+
+    def __init__(
+        self,
+        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
+    ) -> None:
+        super().__init__()
+        self.can_propagate = can_propagate
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -111,6 +122,8 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
 
     def _fuse_across_view(self, node: Node, view_node: Node) -> bool:  # noqa: C901
         """Fuse permute -> view(squeeze/unsqueeze) -> permute into a view_copy."""
+        if self.can_propagate is not None and not self.can_propagate(view_node):
+            return False
         # view_node must have exactly one user (this permute node)
         if len(view_node.users) != 1:
             return False

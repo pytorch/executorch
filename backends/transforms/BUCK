@@ -1,6 +1,22 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target", "non_fbcode_target")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
 fbcode_target(_kind = define_common_targets,)
+
+fbcode_target(
+    _kind = python_pytest,
+    name = "test_to_contiguous_channels_last_pipeline",
+    srcs = ["test/test_to_contiguous_channels_last_pipeline.py"],
+    compile = "with-source",
+    typing = False,
+    deps = [
+        "//caffe2:torch",
+        ":to_contiguous_channels_last_pass",
+        "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
+        "fbsource//third-party/pypi/pytest:pytest",
+    ],
+)

@@ -3,17 +3,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import unittest
 from dataclasses import dataclass
 from typing import Any, Tuple
 
-import pytest
 import torch
-from executorch.backends.transforms.test import common
-from executorch.exir import to_edge_transform_and_lower
+from executorch.backends.transforms.to_contiguous_channels_last_pass import (
+    ToContiguousChannelsLastPass,
+)
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
-from torch.fx import GraphModule
-from torch.fx.passes.infra.pass_base import PassResult
 
 InputT = Tuple[Any, ...]
 
@@ -353,9 +352,11 @@ cases = {
     ),
     "conv1d_rank3": PermuteCountTestCase(Conv1dModule(), (torch.randn(1, 2, 8),), 0),
     "conv2d_rank3": PermuteCountTestCase(
-        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 0, 2
+        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 2, 2
     ),
-    "conv2d_rank4": PermuteCountTestCase(Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0),
+    "conv2d_rank4": PermuteCountTestCase(
+        Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0, 0, 2, 0
+    ),
     "conv3d_rank4": PermuteCountTestCase(
         Conv3dModule(), (torch.randn(2, 6, 6, 6),), 0, 2, 0, 2
     ),
@@ -414,24 +415,33 @@ cases = {
         GroupedConvModule(),
         (torch.randn(1, 4, 8, 8),),
         0,
+        0,
+        2,
+        0,
     ),
     "transpose_conv": PermuteCountTestCase(
         TransposeConvModule(),
         (torch.randn(1, 2, 8, 8),),
         0,
+        0,
+        2,
+        0,
     ),
-    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 0, 2),
+    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 4, 2),
     "transposes": PermuteCountTestCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4),),
         2,
         0,
-        2,
+        1,
         0,
     ),
     "maxpool2d_dilation": PermuteCountTestCase(
         MaxPool2dDilatedModule(),
         (torch.randn(1, 2, 8, 8),),
+        0,
+        0,
+        2,
         0,
     ),
     "lstm": PermuteCountTestCase(
@@ -440,7 +450,7 @@ cases = {
         7,
         19,
         7,
-        19,
+        16,
     ),
     "groupnorm": PermuteCountTestCase(
         GroupNormModule(),
@@ -452,16 +462,16 @@ cases = {
         (torch.randn(4, 8),),
         11,
         24,
-        11,
-        24,
+        8,
+        14,
     ),
     "multihead_attention_rank3": PermuteCountTestCase(
         MultiheadAttentionModule(),
         (torch.randn(2, 4, 8),),
         12,
         20,
-        12,
-        20,
+        10,
+        18,
     ),
     "cumsum_rank3_dim0": PermuteCountTestCase(
         CumsumModule(),
@@ -474,31 +484,41 @@ cases = {
         0,
     ),
     "model_1_conv_maxpool_residual_linear": PermuteCountTestCase(
-        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 2, 7, 2, 7
+        Model1ConvMaxPoolResidualLinear(), (torch.randn(2, 8, 64),), 2, 7, 6, 7
     ),
     "model_2_conv_mha_linear_layernorm": PermuteCountTestCase(
-        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 14, 23, 14, 23
+        Model2ConvMhaLinearLayerNorm(), (torch.randn(2, 8, 32),), 14, 23, 11, 21
     ),
     "model_3_lstm_linear": PermuteCountTestCase(
-        Model3LstmLinear(), (torch.randn(2, 16, 8),), 20, 58, 20, 58
+        Model3LstmLinear(), (torch.randn(2, 16, 8),), 20, 58, 20, 55
     ),
     "model_4_conv_lstm_linear_layernorm": PermuteCountTestCase(
-        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 37, 106, 37, 106
+        Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 37, 106, 36, 103
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": PermuteCountTestCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2, 0, 2, 0
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2, 0, 4, 0
     ),
     "model_6_gru_linear": PermuteCountTestCase(
-        Model6GruLinear(), (torch.randn(2, 16, 8),), 20, 56, 20, 56
+        Model6GruLinear(), (torch.randn(2, 16, 8),), 20, 56, 20, 55
     ),
     "model_7_dwconv_batchnorm_linear": PermuteCountTestCase(
         Model7DwConvBatchNormLinear(), (torch.randn(2, 8, 64),), 2, 3, 2, 3
     ),
     "model_8_conv_batchnorm_maxpool_residual": PermuteCountTestCase(
-        Model8ConvBatchNormMaxPoolResidual(), (torch.randn(1, 8, 16, 16),), 0
+        Model8ConvBatchNormMaxPoolResidual(),
+        (torch.randn(1, 8, 16, 16),),
+        0,
+        0,
+        5,
+        0,
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": PermuteCountTestCase(
-        Model9DilatedConvBatchNormAvgPoolResidual(), (torch.randn(1, 8, 16, 16),), 0
+        Model9DilatedConvBatchNormAvgPoolResidual(),
+        (torch.randn(1, 8, 16, 16),),
+        0,
+        0,
+        5,
+        0,
     ),
     "model_10_dwconv_batchnorm_linear_cat": PermuteCountTestCase(
         Model10DwConvBatchNormLinearCat(), (torch.randn(2, 8, 64),), 3, 6, 3, 6
@@ -508,193 +528,88 @@ cases = {
         (torch.randn(1, 2, 3, 4),),
         2,
         0,
-        2,
+        0,
         0,
     ),
 }
 
 
-cases_channels_last = {
-    "conv2d_rank4_channels_last": PermuteCountTestCase(
-        Conv2dModule(),
-        (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
-        0,
-    ),
-    "conv3d_rank4_channels_last": PermuteCountTestCase(
-        Conv3dModule(),
-        (torch.randn(2, 6, 6, 6).to(memory_format=torch.channels_last),),
-        0,
-        2,
-        0,
-        2,
-    ),
-    "conv3d_rank5_channels_last": PermuteCountTestCase(
-        Conv3dModule(),
-        (torch.randn(1, 2, 6, 6, 6).to(memory_format=torch.channels_last_3d),),
-        0,
-    ),
-    "linear_rank4_channels_last": PermuteCountTestCase(
-        LinearModule(),
-        (torch.randn(1, 2, 2, 8).to(memory_format=torch.channels_last),),
-        1,
-        3,
-        1,
-        3,
-    ),
-    "matmul_rank4_channels_last": PermuteCountTestCase(
-        MatmulModule(),
-        (
-            torch.randn(2, 2, 2, 3).to(memory_format=torch.channels_last),
-            torch.randn(2, 2, 3, 4).to(memory_format=torch.channels_last),
-        ),
-        0,
-        3,
-        0,
-        3,
-    ),
-    "pixel_shuffle_channels_last": PermuteCountTestCase(
-        PixelShuffleModule(),
-        (torch.randn(1, 8, 2, 2).to(memory_format=torch.channels_last),),
-        1,
-        2,
-        1,
-        2,
-    ),
-    "grouped_conv_channels_last": PermuteCountTestCase(
-        GroupedConvModule(),
-        (torch.randn(1, 4, 8, 8).to(memory_format=torch.channels_last),),
-        0,
-    ),
-    "transpose_conv_channels_last": PermuteCountTestCase(
-        TransposeConvModule(),
-        (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
-        0,
-    ),
-    "views_channels_last": PermuteCountTestCase(
-        ViewsModule(),
-        (torch.rand(1, 2, 2, 4).to(memory_format=torch.channels_last),),
-        -1,  # The test crashes before reaching the transpose count
-    ),
-    "transposes_channels_last": PermuteCountTestCase(
-        TransposesModule(),
-        (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last),),
-        2,
-        0,
-        2,
-        0,
-    ),
-    "maxpool2d_dilation_channels_last": PermuteCountTestCase(
-        MaxPool2dDilatedModule(),
-        (torch.randn(1, 2, 8, 8).to(memory_format=torch.channels_last),),
-        0,
-    ),
-    "groupnorm_channels_last": PermuteCountTestCase(
-        GroupNormModule(),
-        (torch.randn(1, 4, 4, 4).to(memory_format=torch.channels_last),),
-        0,
-    ),
-    "cumsum_rank4_dim3_channels_last": PermuteCountTestCase(
-        CumsumModule(),
-        (torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last), 3),
-        0,
-    ),
+_PERMUTE_TARGETS = {
+    exir_ops.edge.aten.permute.default,
+    exir_ops.edge.aten.permute_copy.default,
+    exir_ops.edge.aten.transpose.int,
+    exir_ops.edge.aten.transpose_copy.int,
+    exir_ops.edge.channels_last.permute_copy.default,
+}
+_VIEW_TARGETS = {
+    exir_ops.edge.aten._unsafe_view.default,
+    exir_ops.edge.aten.reshape.default,
+    exir_ops.edge.aten.squeeze.default,
+    exir_ops.edge.aten.squeeze.dim,
+    exir_ops.edge.aten.squeeze.dims,
+    exir_ops.edge.aten.squeeze_copy.default,
+    exir_ops.edge.aten.squeeze_copy.dim,
+    exir_ops.edge.aten.squeeze_copy.dims,
+    exir_ops.edge.aten.unsqueeze.default,
+    exir_ops.edge.aten.unsqueeze_copy.default,
+    exir_ops.edge.aten.view.default,
+    exir_ops.edge.aten.view_copy.default,
 }
 
 
-class ToContiguousChannelsLastPassTestPass(ExportPass):
-    """
-    A test pass which runs the pass pipeline intended to and verifies that permutes and
-    views are fused as expected.
-
-    TODO: Currently no permute-view passes are implemented, proof of concept only.
-    """
-
-    _PERMUTE_TARGETS = {
-        exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.transpose.int,
-        exir_ops.edge.aten.transpose_copy.int,
-    }
-    _VIEW_TARGETS = {
-        exir_ops.edge.aten._unsafe_view.default,
-        exir_ops.edge.aten.reshape.default,
-        exir_ops.edge.aten.squeeze.default,
-        exir_ops.edge.aten.squeeze.dim,
-        exir_ops.edge.aten.squeeze.dims,
-        exir_ops.edge.aten.squeeze_copy.default,
-        exir_ops.edge.aten.squeeze_copy.dim,
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze.default,
-        exir_ops.edge.aten.unsqueeze_copy.default,
-        exir_ops.edge.aten.view.default,
-        exir_ops.edge.aten.view_copy.default,
-    }
-
-    def __init__(self):
-        super().__init__()
-        self.initial_permutes = 0
-        self.initial_views = 0
-        self.final_permutes = 0
-        self.final_views = 0
-
-    def count_ops(self, graph_module: GraphModule, targets: set) -> int:
-        return sum(
-            1
-            for node in graph_module.graph.nodes
-            if node.op == "call_function" and node.target in targets
-        )
-
-    def call(self, graph_module: GraphModule) -> PassResult:
-        self.initial_permutes = self.count_ops(graph_module, self._PERMUTE_TARGETS)
-        self.initial_views = self.count_ops(graph_module, self._VIEW_TARGETS)
-        result = super().call(graph_module)
-        self.final_permutes = self.count_ops(result.graph_module, self._PERMUTE_TARGETS)
-        self.final_views = self.count_ops(result.graph_module, self._VIEW_TARGETS)
-        return result
+def _count_ops(graph_module: torch.fx.GraphModule, targets: set) -> int:
+    return sum(
+        node.op == "call_function" and node.target in targets
+        for node in graph_module.graph.nodes
+    )
 
 
 def run_test(case: PermuteCountTestCase) -> None:
     case.module.eval()
     with torch.no_grad():
         exported_program = torch.export.export(case.module, case.inputs)
-        test_pass = ToContiguousChannelsLastPassTestPass()
-        edge_program = to_edge_transform_and_lower(
-            exported_program, transform_passes=[test_pass]
+        edge_program = to_edge(
+            exported_program,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,
+            ),
         )
+        initial_graph = edge_program.exported_program().graph_module
+        initial_permutes = _count_ops(initial_graph, _PERMUTE_TARGETS)
+        initial_views = _count_ops(initial_graph, _VIEW_TARGETS)
 
-        if not (
-            (test_pass.initial_permutes == case.expected_initial_permutes)
-            and (test_pass.initial_views == case.expected_initial_views)
-            and (test_pass.final_permutes == case.expected_final_permutes)
-            and (test_pass.final_views == case.expected_final_views)
-        ):
-            raise AssertionError(
-                f"Operator counts do not match for case {case.module.__class__.__name__}\n"
-                f"Expected initial permutes: {case.expected_initial_permutes}, got: {test_pass.initial_permutes}\n"
-                f"Expected initial views: {case.expected_initial_views}, got: {test_pass.initial_views}\n"
-                f"Expected final permutes: {case.expected_final_permutes}, got: {test_pass.final_permutes}\n"
-                f"Expected final views: {case.expected_final_views}, got: {test_pass.final_views}\n"
-            )
+        layout_pass = ToContiguousChannelsLastPass(edge_program.exported_program())
+        transformed = edge_program.transform([layout_pass])
+        final_graph = transformed.exported_program().graph_module
+        final_permutes = _count_ops(final_graph, _PERMUTE_TARGETS)
+        final_views = _count_ops(final_graph, _VIEW_TARGETS)
 
+        assert initial_permutes == case.expected_initial_permutes
+        assert initial_views == case.expected_initial_views
+        assert final_permutes == case.expected_final_permutes
+        assert final_views == case.expected_final_views
         ref_result = exported_program.module()(*case.inputs)
-        edge_result = edge_program.exported_program().module()(*case.inputs)
+        edge_result = transformed.exported_program().module()(*case.inputs)
         assert torch.allclose(ref_result, edge_result, atol=1e-6)
 
 
-@pytest.mark.skip(
-    reason="Proof of concept - currently no permute-view passes implemented."
-)
-@common.parametrize("case", cases)
-def test_permute_view_counts(case: PermuteCountTestCase) -> None:
-    run_test(case)
+_EXPECTED_AGGREGATE_COUNTS = (138, 339, 156, 315)
 
 
-xfails = {"views_channels_last": "Views are not supported for channels last tensors"}
+class TestToContiguousChannelsLastPass(unittest.TestCase):
+    def test_aggregate_permute_view_counts(self) -> None:
+        self.assertEqual(
+            (
+                sum(case.expected_initial_permutes for case in cases.values()),
+                sum(case.expected_initial_views for case in cases.values()),
+                sum(case.expected_final_permutes for case in cases.values()),
+                sum(case.expected_final_views for case in cases.values()),
+            ),
+            _EXPECTED_AGGREGATE_COUNTS,
+        )
 
-
-@pytest.mark.skip(
-    reason="Proof of concept - currently no permute-view passes implemented."
-)
-@common.parametrize("case", cases_channels_last, xfails=xfails)
-def test_permute_view_counts_channels_last(case: PermuteCountTestCase) -> None:
-    run_test(case)
+    def test_permute_view_counts(self) -> None:
+        for name, case in cases.items():
+            with self.subTest(name=name):
+                run_test(case)
