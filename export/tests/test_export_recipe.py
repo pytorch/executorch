@@ -7,9 +7,16 @@
 # pyre-strict
 
 import unittest
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
+from unittest.mock import Mock
 
-from executorch.export.recipe import ExportRecipe, RecipeType
+from executorch.export.recipe import (
+    ExportRecipe,
+    LoweringRecipe,
+    Mode,
+    QuantizationRecipe,
+    RecipeType,
+)
 from executorch.export.recipe_provider import BackendRecipeProvider
 from executorch.export.recipe_registry import recipe_registry
 
@@ -129,3 +136,436 @@ class TestExportRecipeGetRecipe(unittest.TestCase):
         # Verify that the kwargs were passed to the backend provider's create_recipe method
         self.assertIsNotNone(self.provider.last_kwargs)
         self.assertEqual(self.provider.last_kwargs, kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by combine-recipe tests
+# ---------------------------------------------------------------------------
+
+
+def _make_pass(name: str, call_log: List[str]):
+    """Return a graph-module pass that appends *name* to *call_log*."""
+
+    def pass_fn(m):
+        call_log.append(name)
+        return m
+
+    return pass_fn
+
+
+class TestCombineRecipesEmpty(unittest.TestCase):
+    def test_empty_recipes_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            ExportRecipe.combine([])
+
+
+class TestCombineRecipesSingleRecipe(unittest.TestCase):
+    def test_single_recipe_returned_unchanged(self) -> None:
+        recipe = ExportRecipe(name="solo")
+        result = ExportRecipe.combine([recipe])
+        self.assertIs(result, recipe)
+
+
+class TestCombineRecipesScalarFields(unittest.TestCase):
+    """Fields that must be identical across all combined recipes."""
+
+    def test_conflicting_strict_raises(self) -> None:
+        r1 = ExportRecipe(name="a", strict=True)
+        r2 = ExportRecipe(name="b", strict=False)
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("strict", str(cm.exception))
+
+    def test_conflicting_mode_raises(self) -> None:
+        r1 = ExportRecipe(name="a", mode=Mode.DEBUG)
+        r2 = ExportRecipe(name="b", mode=Mode.RELEASE)
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("mode", str(cm.exception))
+
+    def test_conflicting_source_transform_in_place_raises(self) -> None:
+        r1 = ExportRecipe(name="a", source_transform_in_place=True)
+        r2 = ExportRecipe(name="b", source_transform_in_place=False)
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("source_transform_in_place", str(cm.exception))
+
+    def test_agreeing_scalar_fields_are_preserved(self) -> None:
+        r1 = ExportRecipe(
+            name="a", strict=False, mode=Mode.DEBUG, source_transform_in_place=True
+        )
+        r2 = ExportRecipe(
+            name="b", strict=False, mode=Mode.DEBUG, source_transform_in_place=True
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertFalse(result.strict)
+        self.assertEqual(result.mode, Mode.DEBUG)
+        self.assertTrue(result.source_transform_in_place)
+
+    def test_name_is_joined_from_input_recipe_names(self) -> None:
+        r1 = ExportRecipe(name="backend_a")
+        r2 = ExportRecipe(name="backend_b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.name, "backend_a_backend_b")
+
+    def test_custom_recipe_name_is_used(self) -> None:
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2], recipe_name="custom_name")
+        self.assertEqual(result.name, "custom_name")
+
+
+class TestCombineRecipesAtenTransformPasses(unittest.TestCase):
+    def test_aten_transform_passes_merged(self) -> None:
+        pass1 = Mock()
+        pass2 = Mock()
+        r1 = ExportRecipe(name="a", aten_transform_passes=[pass1])
+        r2 = ExportRecipe(name="b", aten_transform_passes=[pass2])
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.aten_transform_passes, [pass1, pass2])
+
+    def test_aten_transform_passes_none_when_both_empty(self) -> None:
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNone(result.aten_transform_passes)
+
+    def test_aten_transform_passes_one_side_none(self) -> None:
+        pass1 = Mock()
+        r1 = ExportRecipe(name="a", aten_transform_passes=[pass1])
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.aten_transform_passes, [pass1])
+
+
+class TestCombineRecipesLowering(unittest.TestCase):
+    def test_partitioners_merged(self) -> None:
+        p1 = Mock()
+        p2 = Mock()
+        r1 = ExportRecipe(name="a", lowering_recipe=LoweringRecipe(partitioners=[p1]))
+        r2 = ExportRecipe(name="b", lowering_recipe=LoweringRecipe(partitioners=[p2]))
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNotNone(result.lowering_recipe)
+        self.assertEqual(result.lowering_recipe.partitioners, [p1, p2])
+
+    def test_edge_transform_passes_merged(self) -> None:
+        pass1 = Mock()
+        pass2 = Mock()
+        r1 = ExportRecipe(
+            name="a", lowering_recipe=LoweringRecipe(edge_transform_passes=[pass1])
+        )
+        r2 = ExportRecipe(
+            name="b", lowering_recipe=LoweringRecipe(edge_transform_passes=[pass2])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.lowering_recipe.edge_transform_passes, [pass1, pass2])
+
+    def test_edge_manager_transform_passes_merged(self) -> None:
+        pass1 = Mock()
+        pass2 = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            lowering_recipe=LoweringRecipe(edge_manager_transform_passes=[pass1]),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            lowering_recipe=LoweringRecipe(edge_manager_transform_passes=[pass2]),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(
+            result.lowering_recipe.edge_manager_transform_passes, [pass1, pass2]
+        )
+
+    def test_lowering_recipe_none_when_nothing_contributed(self) -> None:
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNone(result.lowering_recipe)
+
+    def test_edge_compile_config_taken_from_first_recipe_with_one(self) -> None:
+        from executorch.exir.capture import EdgeCompileConfig
+
+        config = EdgeCompileConfig()
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(
+            name="b",
+            lowering_recipe=LoweringRecipe(
+                partitioners=[Mock()], edge_compile_config=config
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIs(result.lowering_recipe.edge_compile_config, config)
+
+
+class TestCombineRecipesQuantization(unittest.TestCase):
+    def test_quantizers_merged(self) -> None:
+        q1 = Mock()
+        q2 = Mock()
+        r1 = ExportRecipe(
+            name="a", quantization_recipe=QuantizationRecipe(quantizers=[q1])
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[q2])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNotNone(result.quantization_recipe)
+        self.assertEqual(result.quantization_recipe.quantizers, [q1, q2])
+
+    def test_ao_quantization_configs_merged(self) -> None:
+        from executorch.export.recipe import AOQuantizationConfig
+        from torchao.core.config import AOBaseConfig
+
+        cfg1 = AOQuantizationConfig(ao_base_config=Mock(spec=AOBaseConfig))
+        cfg2 = AOQuantizationConfig(ao_base_config=Mock(spec=AOBaseConfig))
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(ao_quantization_configs=[cfg1]),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(ao_quantization_configs=[cfg2]),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(
+            result.quantization_recipe.ao_quantization_configs, [cfg1, cfg2]
+        )
+
+    def test_quantization_recipe_none_when_nothing_contributed(self) -> None:
+        r1 = ExportRecipe(name="a")
+        r2 = ExportRecipe(name="b")
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNone(result.quantization_recipe)
+
+    def test_conflicting_is_qat_raises(self) -> None:
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(quantizers=[Mock()], is_qat=True),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(quantizers=[Mock()], is_qat=False),
+        )
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("is_qat", str(cm.exception))
+
+    def test_agreeing_is_qat_preserved(self) -> None:
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(quantizers=[Mock()], is_qat=True),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(quantizers=[Mock()], is_qat=True),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertTrue(result.quantization_recipe.is_qat)
+
+    def test_two_train_fns_raises(self) -> None:
+        fn1 = Mock()
+        fn2 = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], is_qat=True, train_fn=fn1
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], is_qat=True, train_fn=fn2
+            ),
+        )
+        with self.assertRaises(ValueError) as cm:
+            ExportRecipe.combine([r1, r2])
+        self.assertIn("train_fn", str(cm.exception))
+
+    def test_single_train_fn_preserved(self) -> None:
+        fn = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], is_qat=True, train_fn=fn
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(quantizers=[Mock()], is_qat=True),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIs(result.quantization_recipe.train_fn, fn)
+
+    def test_single_calibration_inputs_fn_preserved(self) -> None:
+        fn = Mock(return_value=[(1,), (2,)])
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIs(result.quantization_recipe.calibration_inputs_fn, fn)
+
+    def test_two_calibration_inputs_fns_chained(self) -> None:
+        fn1 = Mock(return_value=[(1,), (2,)])
+        fn2 = Mock(return_value=[(3,), (4,)])
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn1
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn2
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        combined_fn = result.quantization_recipe.calibration_inputs_fn
+        self.assertIsNotNone(combined_fn)
+        # Each factory must be called exactly once when the combined factory is consumed.
+        all_inputs = list(combined_fn())
+        fn1.assert_called_once_with()
+        fn2.assert_called_once_with()
+        self.assertEqual(all_inputs, [(1,), (2,), (3,), (4,)])
+
+    def test_three_calibration_inputs_fns_chained_in_order(self) -> None:
+        fn1 = Mock(return_value=[(1,)])
+        fn2 = Mock(return_value=[(2,)])
+        fn3 = Mock(return_value=[(3,)])
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn1
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn2
+            ),
+        )
+        r3 = ExportRecipe(
+            name="c",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], calibration_inputs_fn=fn3
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2, r3])
+        combined_fn = result.quantization_recipe.calibration_inputs_fn
+        self.assertEqual(list(combined_fn()), [(1,), (2,), (3,)])
+
+    def test_no_calibration_inputs_fn_stays_none(self) -> None:
+        r1 = ExportRecipe(
+            name="a", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertIsNone(result.quantization_recipe.calibration_inputs_fn)
+
+    def test_pre_prepare_passes_merged(self) -> None:
+        log: List[str] = []
+        p1 = _make_pass("pre_a", log)
+        p2 = _make_pass("pre_b", log)
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], pre_prepare_passes=[p1]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], pre_prepare_passes=[p2]
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.pre_prepare_passes, [p1, p2])
+
+    def test_post_prepare_passes_merged(self) -> None:
+        p1 = Mock()
+        p2 = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], post_prepare_passes=[p1]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], post_prepare_passes=[p2]
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.post_prepare_passes, [p1, p2])
+
+    def test_pre_convert_passes_merged(self) -> None:
+        p1 = Mock()
+        p2 = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], pre_convert_passes=[p1]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], pre_convert_passes=[p2]
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.pre_convert_passes, [p1, p2])
+
+    def test_post_convert_passes_merged(self) -> None:
+        p1 = Mock()
+        p2 = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], post_convert_passes=[p1]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], post_convert_passes=[p2]
+            ),
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.post_convert_passes, [p1, p2])
+
+    def test_all_pass_lists_none_when_nothing_contributed(self) -> None:
+        r1 = ExportRecipe(
+            name="a", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        qr = result.quantization_recipe
+        self.assertIsNone(qr.pre_prepare_passes)
+        self.assertIsNone(qr.post_prepare_passes)
+        self.assertIsNone(qr.pre_convert_passes)
+        self.assertIsNone(qr.post_convert_passes)
+
+    def test_pass_lists_preserved_when_only_one_recipe_contributes(self) -> None:
+        p = Mock()
+        r1 = ExportRecipe(
+            name="a",
+            quantization_recipe=QuantizationRecipe(
+                quantizers=[Mock()], pre_prepare_passes=[p]
+            ),
+        )
+        r2 = ExportRecipe(
+            name="b", quantization_recipe=QuantizationRecipe(quantizers=[Mock()])
+        )
+        result = ExportRecipe.combine([r1, r2])
+        self.assertEqual(result.quantization_recipe.pre_prepare_passes, [p])
