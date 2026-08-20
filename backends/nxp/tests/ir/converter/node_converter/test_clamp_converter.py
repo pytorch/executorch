@@ -222,3 +222,24 @@ class TestClamp:
             assert not all(
                 q == dq for q, dq in zip(quant_node.args[1:], dequant_node.args[1:])
             )
+
+    @pytest.mark.parametrize(
+        "bounds",
+        [
+            # The calibration data is in the range [-2, 2), and the quantization will allow the range ~ [-2.9, 3.4].
+            (-3, 3.5),
+            (-3, None),
+            (float("-inf"), 3.5),
+            (None, float("inf")),
+        ],
+    )
+    def test__bounds_looser_than_quantized_range(self, bounds: tuple[int, int]):
+        model = ClampModule(*bounds)
+
+        delegated_ep = to_quantized_edge_program(
+            model,
+            (123,),
+        ).exported_program()
+
+        # Make sure the `hardtanh` was NOT delegated.
+        assert graph_contains_any_of_ops(delegated_ep.graph, [Clamp])
