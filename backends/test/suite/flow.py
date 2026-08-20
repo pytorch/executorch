@@ -165,6 +165,12 @@ def _load_qnn() -> list[TestFlow]:
     ]
 
 
+def _load_nxp() -> list[TestFlow]:
+    from executorch.backends.test.suite.flows.nxp import NEUTRON_IMXRT700_INT8_PTQ_FLOW
+
+    return [NEUTRON_IMXRT700_INT8_PTQ_FLOW]
+
+
 def _load_arm() -> list[TestFlow]:
     from executorch.backends.test.suite.flows.arm import (
         ARM_ETHOS_U55_FLOW,
@@ -209,6 +215,7 @@ def all_flows() -> dict[str, TestFlow]:
         + _register_flow(_load_qnn, "QNN")
         + _register_flow(_load_arm, "ARM")
         + _register_flow(_load_cortex_m, "Cortex-M")
+        + _register_flow(_load_nxp, "NXP")
     )
 
     try:

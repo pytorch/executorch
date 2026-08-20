@@ -837,11 +837,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 self.update_mean_dim(node, node_start_perm)
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
-            elif node.target in (
-                exir_ops.edge.aten._softmax.default,
-                exir_ops.edge.aten.softmax.int,
-            ):
-                self.update_dim(node, node_start_perm)
             elif node.target in self._PAD_OPS:
                 self.update_pad(node, node_start_perm, subgraph.layout_region)
             elif node.target in self._VIEW_OPS:
@@ -1128,10 +1123,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     def update_slice_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         dim = get_arg(node, "dim", int)
-        set_arg(node, "dim", start_permute[dim])
-
-    def update_dim(self, node: torch.fx.Node, start_permute: list[int]) -> None:
-        dim = get_arg(node, "dim", int) % len(start_permute)
         set_arg(node, "dim", start_permute[dim])
 
     def update_pad(

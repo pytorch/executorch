@@ -16,6 +16,7 @@ from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetCon
 from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -55,6 +56,9 @@ class CortexMPassManager(PassManager):
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
+        # Must follow folding: removing clones first changes the q/dq topology
+        # the fold matches, which splits the layout region in two.
+        RemoveCloneOpsTransform,
         ReplaceScalarWithTensorArgPass,
         ActivationFusionPass,
         QuantizedClampActivationPass,
