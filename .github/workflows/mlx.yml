@@ -14,6 +14,7 @@ on:
       - extension/llm/export/**
       - extension/audio/**
       - examples/models/gemma4_31b/**
+      - examples/models/muse-glimmer/**
       - examples/models/parakeet/**
       - examples/models/voxtral_realtime/**
       - examples/models/qwen3_5_moe/**
@@ -90,6 +91,7 @@ jobs:
           backends/mlx/test/test_slot_recycling.py \
           backends/mlx/test/test_sample.py \
           examples/models/gemma4_31b/tests/test_mlx_pipeline.py \
+          examples/models/muse-glimmer/tests/test_mlx_pipeline.py \
           -v
         echo "::endgroup::"
 
@@ -190,6 +192,52 @@ jobs:
           exit 1
         fi
         echo "Success: built $RUNNER"
+        echo "::endgroup::"
+
+  # Build-only: the Muse Glimmer GGUF checkpoints are far too large to export in
+  # CI, so this covers the compile / link / metallib wiring of the runners --
+  # which is what MLX backend changes are most likely to break.
+  test-mlx-muse-glimmer-build:
+    needs: run-decision
+    if: |
+      github.event_name == 'pull_request' ||
+      needs.run-decision.outputs.is-full-run == 'true'
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      default-packages: ""
+      job-name: test-mlx-muse-glimmer-build
+      runner: macos-14-xlarge
+      python-version: "3.12"
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Install ExecuTorch"
+        ${CONDA_RUN} python install_executorch.py > /dev/null
+        echo "::endgroup::"
+
+        ${CONDA_RUN} pip list
+
+        echo "::group::Build Muse Glimmer runners and worker with MLX"
+        ${CONDA_RUN} make muse-glimmer-mlx
+        BIN_DIR=cmake-out/examples/models/muse-glimmer
+        for bin in solo_runner dflash_runner muse_glimmer_worker; do
+          if [ ! -x "${BIN_DIR}/${bin}" ]; then
+            echo "Failed: ${bin} not found at ${BIN_DIR}/${bin}"
+            exit 1
+          fi
+        done
+        # Runtime kernel load falls back to an absolute build-tree path, so a
+        # missing colocated metallib only breaks a relocated binary. Assert the
+        # copy so the runners stay self-contained (needs EXECUTORCH_BUILD_MLX=ON
+        # in the preset, which drives executorch_target_copy_mlx_metallib).
+        if [ ! -f "${BIN_DIR}/mlx.metallib" ]; then
+          echo "Failed: mlx.metallib not copied next to the runners"
+          exit 1
+        fi
+        echo "Success: built solo_runner, dflash_runner and muse_glimmer_worker"
         echo "::endgroup::"
 
   backend-tester:

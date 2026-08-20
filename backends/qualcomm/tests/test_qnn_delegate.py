@@ -547,8 +547,20 @@ class TestQNNFloatingPointOperator(TestQNN):
             ConvTranspose1dSingle(),  # noqa: F405
             ConvTranspose1dSingle(bias=False),  # noqa: F405
             ConvTranspose1dSingle(dilation=2),  # noqa: F405
+            ConvTranspose1dSingle(  # noqa: F405
+                bias=False,
+                kernel_size=2,
+                stride=1,
+                padding=2,
+                dilation=2,
+            ),
+            ConvTranspose1dSingle(  # noqa: F405
+                kernel_size=2,
+                stride=1,
+                padding=2,
+            ),
         ]
-        sample_input = (torch.randn([1, 1, 33]),)
+        sample_input = (torch.randn([1, 1, 16]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -1741,14 +1753,97 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        modules = [
-            Linear(),  # noqa: F405
-            LinearNonConstantWeight(),  # noqa: F405
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Linear(),  # noqa: F405
+                    Linear(use_bias=False),  # noqa: F405
+                    LinearNonConstantWeight(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn([3, 512]),),
+                    (torch.randn([3, 3, 512]),),
+                    (torch.randn([3, 3, 3, 512]),),
+                ],
+            },
         ]
-        sample_input = (torch.randn([3, 512]),)
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear_to_conv2d(self):
+        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
+
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Linear(),  # noqa: F405
+                    Linear(use_bias=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn([3, 512]),),
+                    (torch.randn([3, 3, 512]),),
+                    (torch.randn([3, 3, 3, 512]),),
+                ],
+            },
+        ]
+
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "edge_program"
+        ] = None
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(
+                            module, sample_input, passes_job=passes_job
+                        )
+
+    def test_qnn_backend_linear_shared_weights(self):
+        modules = [
+            LinearSharedWeight(512, 32),  # noqa: F405
+        ]
+
+        sample_input = (
+            torch.randn([3, 512]),
+            torch.randn([3, 512]),
+        )
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear_to_conv2d_shared_weights(self):
+        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
+
+        modules = [
+            LinearSharedWeight(512, 32),  # noqa: F405
+        ]
+
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "edge_program"
+        ] = None
+
+        sample_input = (
+            torch.randn([3, 512]),
+            torch.randn([3, 512]),
+        )
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(
+                    module, sample_input, passes_job=passes_job
+                )
 
     def test_qnn_backend_log(self):
         module = Log()  # noqa: F405
@@ -3571,8 +3666,20 @@ class TestQNNQuantizedOperator(TestQNN):
             ConvTranspose1dSingle(),  # noqa: F405
             ConvTranspose1dSingle(bias=False),  # noqa: F405
             ConvTranspose1dSingle(dilation=2),  # noqa: F405
+            ConvTranspose1dSingle(  # noqa: F405
+                bias=False,
+                kernel_size=2,
+                stride=1,
+                padding=2,
+                dilation=2,
+            ),
+            ConvTranspose1dSingle(  # noqa: F405
+                kernel_size=2,
+                stride=1,
+                padding=2,
+            ),
         ]
-        sample_input = (torch.randn([1, 1, 3]),)
+        sample_input = (torch.randn([1, 1, 16]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
@@ -4898,15 +5005,101 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
-        modules = [
-            Linear(),  # noqa: F405
-            LinearNonConstantWeight(),  # noqa: F405
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Linear(),  # noqa: F405
+                    Linear(use_bias=False),  # noqa: F405
+                    LinearNonConstantWeight(),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn([3, 512]),),
+                    (torch.randn([3, 3, 512]),),
+                    (torch.randn([3, 3, 3, 512]),),
+                ],
+            },
         ]
-        sample_input = (torch.randn([3, 512]),)
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_linear_to_conv2d(self):
+        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
+
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    Linear(),  # noqa: F405
+                    Linear(use_bias=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn([3, 512]),),
+                    (torch.randn([3, 3, 512]),),
+                    (torch.randn([3, 3, 3, 512]),),
+                ],
+            },
+        ]
+
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "edge_program"
+        ] = None
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(
+                            qdq_module, sample_input, passes_job=passes_job
+                        )
+
+    def test_qnn_backend_linear_shared_weights(self):
+        modules = [
+            LinearSharedWeight(512, 32),  # noqa: F405
+        ]
+
+        sample_input = (
+            torch.randn([3, 512]),
+            torch.randn([3, 512]),
+        )
         for i, module in enumerate(modules):
             with self.subTest(i=i):
-                module = self.get_qdq_module(module, sample_input)
-                self.lower_module_and_test_output(module, sample_input)
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
+
+    def test_qnn_backend_linear_to_conv2d_shared_weights(self):
+        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
+
+        modules = [
+            LinearSharedWeight(512, 32),  # noqa: F405
+        ]
+
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "edge_program"
+        ] = None
+
+        sample_input = (
+            torch.randn([3, 512]),
+            torch.randn([3, 512]),
+        )
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(
+                    qdq_module, sample_input, passes_job=passes_job
+                )
 
     @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
     def test_qnn_backend_linear_block(self):
@@ -4928,6 +5121,37 @@ class TestQNNQuantizedOperator(TestQNN):
                     block_size_map={"linear": (1, 32)},
                 )
                 self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skipIf(is_qnn_sdk_version_less_than("2.30"), "UT pass after QNN 2.30")
+    def test_qnn_backend_linear_to_conv2d_block(self):
+        from executorch.backends.qualcomm._passes import ConvertLinearToConv2d
+
+        modules = [
+            Linear(use_bias=False),  # noqa: F405
+            Linear(use_bias=True),  # noqa: F405
+        ]
+
+        passes_job = get_qnn_pass_manager_cls().get_capture_program_passes()
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        passes_job[ConvertLinearToConv2d][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
+            "edge_program"
+        ] = None
+
+        sample_input = (torch.randn([3, 512]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                # update block size for linear weight (OI)
+                # channel dimension(O) is defaultly sliced in QNN
+                # divide dimension(I) into 16 groups
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_16a4w_block,
+                    block_size_map={"linear": (1, 32)},
+                )
+                self.lower_module_and_test_output(
+                    module, sample_input, passes_job=passes_job
+                )
 
     def test_qnn_backend_linear_qat(self):
         """
@@ -9148,6 +9372,78 @@ class TestExampleLLMScript(TestQNN):
                         model_out.startswith(golden_start_with),
                         f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
                     )
+
+    def test_static_llm_qat(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+        if self.compile_only:
+            self.skipTest("tasks_eval requires on-device inference")
+
+        def run_eval(
+            calib_limit: int, train_limit: int, extra_args: List[str] = None
+        ) -> float:
+            prompt = "I would like to learn python, could you teach me with a simple example?"
+            cmds = [
+                "python",
+                f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+                "--artifact",
+                self.artifact_dir,
+                "--build_folder",
+                self.build_folder,
+                "--prompt",
+                prompt,
+                "--temperature",
+                "0",
+                "--decoder_model",
+                "smollm2_135m",
+                "--model_mode",
+                "kv",
+                "--max_seq_len",
+                "1024",
+                "--max_context_len",
+                "1024",
+                "--eval_methods",
+                "tasks_eval",
+                "--eval_tasks",
+                "wikitext",
+                "--eval_limit",
+                "1",
+                "--qat",
+                "--calib_tasks",
+                "wikitext",
+                "--calib_limit",
+                str(calib_limit),
+                "--train_tasks",
+                "wikitext",
+                "--train_limit",
+                str(train_limit),
+            ]
+            if extra_args:
+                cmds.extend(extra_args)
+            self.add_default_cmds(cmds)
+
+            p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+            with Listener((self.ip, self.port)) as listener:
+                conn = listener.accept()
+                p.communicate()
+                msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(
+                    f"smollm2_135m QAT (limit={train_limit}) failed: {msg['Error']}"
+                )
+            return msg["wiki_ppl"]
+
+        ptq_ppl = run_eval(
+            calib_limit=1, train_limit=1, extra_args=["--freeze_all_params"]
+        )
+        qat_ppl = run_eval(calib_limit=1, train_limit=1)
+        logging.info(f"QAT PPL={qat_ppl:.2f}")
+        logging.info(f"PTQ PPL={ptq_ppl:.2f}")
+        self.assertLess(
+            qat_ppl,
+            ptq_ppl,
+            f"Expected QAT PPL ({qat_ppl:.2f}) < PTQ PPL({ptq_ppl:.2f})",
+        )
 
 
 class TestExampleMultimodalityScript(TestQNN):

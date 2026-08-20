@@ -150,10 +150,12 @@ def main(args):
     ]
 
     # Quantization
-    quant_dtype = QuantDtype.use_8a8w
+    # quant_dtype must be None for fp16, otherwise build_executorch_binary
+    # still lowers as a quantized graph and applies a default quantizer.
     if args.use_fp16:
-        quantizer = None
+        quant_dtype, quantizer = None, None
     else:
+        quant_dtype = QuantDtype.use_8a8w
         quant_cfg = get_ptq_per_channel_quant_config()
         custom_quant_annotator = CustomOpsQuantAnnotator()
         custom_quant_annotator.register_annotation(

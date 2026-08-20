@@ -72,12 +72,12 @@ if sys.platform == "win32":
             e,
         )
 
-# Let users import everything from the C++ _portable_lib extension as if this
+# Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
 # wouldn't preserve the static type annotations.
 #
 # Note that all of these are experimental, and subject to change without notice.
-from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+from executorch.extension.pybindings._C import (  # noqa: F401
     # Disable "imported but unused" (F401) checks.
     _create_profile_block,  # noqa: F401
     _dump_profile_results,  # noqa: F401
@@ -101,7 +101,7 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     Verification,  # noqa: F401
 )
 
-# Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
+# Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
 del _torch
 del _exir_warnings

@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import os
 from operator import attrgetter
 
 import torch
@@ -115,6 +116,7 @@ class RecomposeHadamard(ExportPass):
                 "call_function", self.hadamard_target, (pre, scale)
             )
             hadamard_node.meta = copy_meta(node.meta)
+            hadamard_node.meta["val"] = pre.meta["val"]
             post = graph.create_node(
                 "call_function",
                 torch.ops.aten.permute.default,
@@ -154,9 +156,12 @@ class RecomposeHadamard(ExportPass):
         return True
 
     def call(self, graph_module: torch.fx.GraphModule):
-        # HadamardTransform is only supported by QNN 2.47+. On older SDKs skip the
-        # rewrite so the op keeps its normal lowering path.
-        if is_qnn_sdk_version_less_than("2.47"):
+        try:
+            if not os.environ.get("QNN_SDK_ROOT") or is_qnn_sdk_version_less_than(
+                "2.47"
+            ):
+                return PassResult(graph_module, False)
+        except Exception:
             return PassResult(graph_module, False)
 
         graph = graph_module.graph

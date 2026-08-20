@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast, Iterable, Mapping, Protocol, Sequence
 
+import torch
+
 
 DEFAULT_OUTPUT = Path("docs/source/backends/arm-vgf/VGF_op_support.md")
 TEST_ROOT = Path("backends/arm/test")
@@ -237,6 +239,18 @@ EXPLICIT_VGF_COVERAGE: dict[tuple[str, str], dict[str, set[str]]] = {
 # higher-level PyTorch APIs. These are what should appear in the published page.
 # Unknown operators fall back to a conservative ``torch.<aten-name>`` spelling.
 PYTORCH_API_ALIASES: dict[str, tuple[str, ...]] = {
+    # Internal / higher-order operators with explicit public API spellings.
+    "torch.ops.aten._assert_scalar.default": ("torch._assert_scalar",),
+    "torch.ops.aten.t_copy.default": (
+        "torch.t",
+        "torch.Tensor.t",
+    ),
+    "torch.ops.aten.transpose_copy.int": (
+        "torch.transpose",
+        "torch.Tensor.transpose",
+    ),
+    "torch.ops.higher_order.cond": ("torch.cond",),
+    "torch.ops.higher_order.while_loop": ("torch.while_loop",),
     # Arithmetic and comparisons.
     "torch.ops.aten.add.Tensor": ("torch.add", "+"),
     "torch.ops.aten.add.Scalar": ("torch.add", "+"),
@@ -777,6 +791,12 @@ def _normalize_pytorch_op_name(  # noqa: C901
         return None
 
     original = text
+
+    # Higher-order operators are not ATen operators. Preserve their namespace
+    # instead of rewriting torch.ops.higher_order.* as torch.ops.aten.*.
+    if text.startswith("torch.ops.higher_order."):
+        return text
+
     if text.startswith(generated_prefix):
         text = _edge_generated_name_to_aten(text.removeprefix(generated_prefix))
 
@@ -847,14 +867,29 @@ def _split_exported_op(exported_op: str) -> tuple[str, str] | None:
     return name, overload
 
 
+def _torch_api_exists(api: str) -> bool:
+    """Return whether a dotted torch API exists and is callable."""
+
+    if not api.startswith("torch."):
+        return False
+
+    obj: object = torch
+    for part in api.split(".")[1:]:
+        if not hasattr(obj, part):
+            return False
+        obj = getattr(obj, part)
+
+    return callable(obj)
+
+
 def _fallback_pytorch_api_aliases(exported_op: str) -> tuple[str, ...]:
     split = _split_exported_op(exported_op)
     if split is None:
-        return (exported_op,)
+        return ()
 
     name, _overload = split
-    public_name = name.removeprefix("_").removesuffix("_")
-    return (f"torch.{public_name}",)
+    candidate = f"torch.{name}"
+    return (candidate,) if _torch_api_exists(candidate) else ()
 
 
 def _pytorch_api_aliases(exported_op: str) -> tuple[str, ...]:
@@ -2033,6 +2068,9 @@ def _public_rows_from_exact_rows(
 ) -> list[PublicCoverage]:
     public_rows: dict[str, PublicCoverage] = {}
     for exact in exact_rows.values():
+        if not exact.pytorch_apis:
+            continue
+
         key = _api_key(exact.pytorch_apis)
         row = public_rows.setdefault(
             key,
@@ -2158,6 +2196,15 @@ def _collect_backend_supported_ops(  # noqa: C901
     return expected
 
 
+def _format_markdown_table_row(cells: Sequence[str]) -> str:
+    # Serializes a list of cell values into a Markdown table row.
+    # It escapes literal | characters inside cells so they aren’t
+    # interpreted as column separators,
+    # then joins the cells using Markdown’s | delimiter.
+    escaped_cells = (cell.replace("|", r"\|") for cell in cells)
+    return "| " + " | ".join(escaped_cells) + " |"
+
+
 def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
     exact_rows, _unresolved, _diagnostics = _scan_vgf_pipeline_tests(repo_root)
     command = "python backends/arm/scripts/docgen/generate_vgf_op_support.py"
@@ -2206,7 +2253,7 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
                 _format_items(exact_row.quantization_modes, QUANTIZATION_MODE_ORDER),
                 _format_test_items(exact_row.tests),
             ]
-            lines.append("| " + " | ".join(cells) + " |")
+            lines.append(_format_markdown_table_row(cells))
     else:
         public_rows = _public_rows_from_exact_rows(exact_rows)
         lines.extend(
@@ -2224,8 +2271,7 @@ def generate_markdown(repo_root: Path, *, debug: bool = False) -> str:
                 _format_backtick_items(public_row.dtypes, DTYPE_ORDER),
                 _format_items(public_row.quantization_modes, QUANTIZATION_MODE_ORDER),
             ]
-            lines.append("| " + " | ".join(cells) + " |")
-
+            lines.append(_format_markdown_table_row(cells))
     return "\n".join(lines).rstrip() + "\n"
 
 

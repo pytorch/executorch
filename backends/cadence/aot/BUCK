@@ -128,7 +128,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "ref_implementations.py",
     ],
-    typing = True,
     deps = [
         "fbcode//caffe2:torch",
         "fbcode//executorch/backends/cadence/aot:utils",
@@ -175,7 +174,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_pass_utils.py",
     ],
-    typing = True,
     deps = [
         ":pass_utils",
         "//caffe2:torch",
@@ -187,7 +185,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "compiler_utils.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/exir/dialects:lib",
@@ -199,7 +196,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "to_out_var_pass.py",
     ],
-    typing = True,
     deps = [
         ":ops_registrations",
         "//caffe2:torch",
@@ -213,7 +209,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "graph_builder.py",
     ],
-    typing = True,
     deps = [
         "//executorch/backends/test:graph_builder",
     ],
@@ -224,7 +219,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "program_builder.py",
     ],
-    typing = True,
     deps = [
         "//executorch/backends/test:program_builder",
     ],
@@ -235,7 +229,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_program_builder.py",
     ],
-    typing = True,
     deps = [
         "//executorch/backends/test:program_builder",
         "//caffe2:torch",
@@ -248,7 +241,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "fuse_ops.py",
     ],
-    typing = True,
     deps = [
         ":compiler_utils",
         ":ops_registrations",
@@ -273,7 +265,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "simplify_ops.py",
     ],
-    typing = True,
     deps = [
         ":pass_utils",
         ":utils",
@@ -288,7 +279,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "remove_ops.py",
     ],
-    typing = True,
     deps = [
         ":fuse_ops",
         ":ops_registrations",
@@ -310,7 +300,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "reorder_ops.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:compiler_utils",
@@ -329,7 +318,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "replace_ops.py",
     ],
-    typing = True,
     deps = [
         ":pass_utils",
         "//caffe2:torch",
@@ -351,7 +339,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "decompose_ops.py",
     ],
-    typing = True,
     deps = [
         ":pass_utils",
         "//caffe2:torch",
@@ -368,7 +355,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "type_dispatch.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:pass_utils",
@@ -383,7 +369,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_type_dispatch_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":ops_registrations",
         ":typing_stubs",
@@ -401,7 +386,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "typing_stubs.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
     ],
@@ -412,7 +396,6 @@ fbcode_target(_kind = runtime.python_library,
     srcs = [
         "compiler_funcs.py",
     ],
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/transforms:permute_pass_utils",
@@ -426,7 +409,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_graph_builder.py",
     ],
-    typing = True,
     deps = [
         ":ops_registrations",
         "//caffe2:torch",
@@ -444,7 +426,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_replace_ops_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":compiler",
         ":typing_stubs",
@@ -465,7 +446,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_decompose_ops_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":compiler",
         ":decompose_ops",
@@ -486,7 +466,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_fusion_ops_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":compiler",
         ":typing_stubs",
@@ -507,7 +486,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_remove_ops_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":typing_stubs",
@@ -529,7 +507,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_remove_bn_tracking_pass.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:remove_ops",
@@ -545,7 +522,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_simplify_ops_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":typing_stubs",
         "//caffe2:torch",
@@ -563,7 +539,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_reorder_ops_passes.py",
     ],
-    typing = True,
     deps = [
         ":compiler",
         ":pass_utils",
@@ -633,7 +608,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_memory_passes.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":compiler",
         ":memory_planning",
@@ -654,7 +628,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_idma_ops.py",
     ],
-    typing = True,
     deps = [
         "//executorch/backends/test:graph_builder",
         "//executorch/backends/cadence/aot:ops_registrations",
@@ -669,7 +642,6 @@ fbcode_target(_kind = python_unittest,
         "tests/test_ref_implementations.py",
     ],
     supports_static_listing = False,
-    typing = True,
     deps = [
         ":typing_stubs",
         "//executorch/backends/cadence/aot:ops_registrations",
@@ -682,7 +654,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_quantizer_ops.py",
     ],
-    typing = True,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
@@ -698,7 +669,6 @@ fbcode_target(_kind = python_unittest,
     srcs = [
         "tests/test_to_out_var_pass.py",
     ],
-    typing = True,
     deps = [
         ":ops_registrations",
         "//executorch/backends/test:program_builder",

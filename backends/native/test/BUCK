@@ -13,3 +13,36 @@ fbcode_target(
         "//executorch/exir:lib",
     ],
 )
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_preprocess",
+    srcs = ["test_preprocess.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_passes",
+    srcs = ["test_passes.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(
+    _kind = runtime.python_test,
+    name = "test_partitioner",
+    srcs = ["test_partitioner.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+    ],
+)
