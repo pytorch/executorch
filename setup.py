@@ -333,15 +333,22 @@ def _cuda_train() -> str:
     # row spelled with an unsupported minor (say cu125) was classified CPU by the shell and
     # CUDA 12 here, and the wheel then declared CUDA runtime packages for a CPU build.
     digits = re.sub(r"[^0-9]", "", raw)
+    # The same rows as `trains` below, keeping both numbers rather than reducing to the
+    # major, so the guard can tell two rows of one major apart.
+    _CUDA_ROW_MINORS = {
+        f"{major}{minor}": (major, minor)
+        for major, minor in install_utils.SUPPORTED_CUDA_VERSIONS
+    }
     trains = {
         f"{major}{minor}": str(major)
         for major, minor in install_utils.SUPPORTED_CUDA_VERSIONS
     }
     requested = trains.get(digits, "")
 
-    # Read the toolkit major directly, without the (major, minor) validator, so the guard
+    # Read the toolkit version directly, without the (major, minor) validator, so the guard
     # below fires on any mismatch rather than only on the three listed pairs.
-    detected_major = install_utils._detected_cuda_major()
+    detected_version = install_utils._detected_cuda_version()
+    detected_major = detected_version[0] if detected_version is not None else None
     detected = (
         str(detected_major)
         if detected_major is not None and str(detected_major) in _CUDA_RUNTIME_PACKAGES
@@ -363,6 +370,26 @@ def _cuda_train() -> str:
                 "wheel would install and then fail to load. Install a matching toolkit "
                 "or build the row that matches this one."
             )
+        # The check above compares majors, which two rows of the same major share. A row
+        # names its train down to the minor, so cu130 and cu132 both reduce to 13 and a
+        # cu132 row built against a 13.0 toolkit passed. The device code and the version
+        # in the wheel's local label both come from the row, so that wheel claims a
+        # toolkit it was not compiled by. Compared here rather than folded above so the
+        # message can name both numbers.
+        if detected_version is not None and digits in _CUDA_ROW_MINORS:
+            requested_pair = _CUDA_ROW_MINORS[digits]
+            if detected_version != requested_pair:
+                requested_text = f"{requested_pair[0]}.{requested_pair[1]}"
+                detected_text = f"{detected_version[0]}.{detected_version[1]}"
+                raise RuntimeError(
+                    f"this build targets CUDA {requested_text} (from "
+                    f"{'CU_VERSION' if os.environ.get('CU_VERSION') else 'DESIRED_CUDA'}="
+                    f"{raw!r}) but the installed toolkit is CUDA {detected_text}. Those "
+                    "share a major version, so the runtime dependency this wheel declares "
+                    "is correct while the device code and the version recorded in its "
+                    "local label are not. Install a matching toolkit or build the row "
+                    "that matches this one."
+                )
         return requested
 
     if raw and not requested:
