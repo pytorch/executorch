@@ -756,6 +756,7 @@ jobs:
         PREFILL_CHUNK_SIZE=128
         N_DRAFT=3
         DRAFT_MODEL=z-lab/Qwen3-4B-DFlash-b16
+        TOKENIZER_MODEL=Qwen/Qwen3-4B
         PTE=/tmp/qwen3_4b_dflash.pte
 
         echo "::group::Install ExecuTorch"
@@ -774,8 +775,17 @@ jobs:
         ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.export \
           --output ${PTE} \
           --draft-model ${DRAFT_MODEL} \
+          --target-model ${TOKENIZER_MODEL} \
           --max-ctx-len ${MAX_CTX_LEN} \
           --prefill-chunk-size ${PREFILL_CHUNK_SIZE}
+        echo "::endgroup::"
+
+        echo "::group::Cache the tokenizer"
+        # The runner loads the tokenizer with local_files_only, so fetch it here
+        # rather than letting an unauthenticated request happen mid-run. Also
+        # confirms the chat template is present -- a template that fails to load
+        # renders to nothing and the prompt tokenizes to zero tokens.
+        TOKENIZER_MODEL=${TOKENIZER_MODEL} ${CONDA_RUN} python -c "import os; from transformers import AutoTokenizer; m = os.environ['TOKENIZER_MODEL']; t = AutoTokenizer.from_pretrained(m); assert t.chat_template, f'{m} has no chat_template'; ids = t.apply_chat_template([{'role': 'user', 'content': 'hi'}], add_generation_prompt=True, tokenize=True, return_tensors='pt'); ids = getattr(ids, 'input_ids', ids); assert ids.numel() > 0, 'chat template rendered no tokens'; print(f'tokenizer cached, chat template renders {ids.numel()} tokens')"
         echo "::endgroup::"
 
         echo "::group::Check published constant methods"
@@ -789,10 +799,11 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run DFlash speculative decoding"
-        # --n-draft 4 exercises a block smaller than the exported maximum, so a
-        # regression that silently pins the block to BLOCK_SIZE gets caught.
+        # --n-draft below the exported maximum, so a regression that silently
+        # pins the block to BLOCK_SIZE gets caught.
         OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
           --pte ${PTE} \
+          --tokenizer ${TOKENIZER_MODEL} \
           --n-draft ${N_DRAFT} \
           --prompt "What is the capital of France?" \
           --max-new-tokens 32 \
@@ -829,6 +840,7 @@ jobs:
         # so BLOCK_SIZE itself must be refused before reaching the runtime.
         if ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
           --pte ${PTE} \
+          --tokenizer ${TOKENIZER_MODEL} \
           --n-draft ${BLOCK_SIZE} \
           --max-new-tokens 1 > /tmp/n_draft_err.txt 2>&1; then
           echo "Failed: --n-draft ${BLOCK_SIZE} should have been rejected"

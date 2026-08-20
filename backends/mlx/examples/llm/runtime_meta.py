@@ -123,11 +123,11 @@ def load_text_processor(
     if processor is None:
         raise RuntimeError(f"Could not load tokenizer or processor for {model_id}")
 
-    _repair_chat_template(processor, model_id)
+    _repair_chat_template(processor, model_id, local_files_only)
     return processor
 
 
-def _repair_chat_template(processor, model_id: str) -> None:
+def _repair_chat_template(processor, model_id: str, local_files_only: bool) -> None:
     """Backfill chat_template from tokenizer_config.json when it did not load.
 
     Some transformers versions expect a standalone chat_template.jinja and do
@@ -140,13 +140,24 @@ def _repair_chat_template(processor, model_id: str) -> None:
 
         from huggingface_hub import hf_hub_download
 
-        cfg_path = hf_hub_download(model_id, "tokenizer_config.json")
+        cfg_path = hf_hub_download(
+            model_id, "tokenizer_config.json", local_files_only=local_files_only
+        )
         cfg = json.loads(Path(cfg_path).read_text())
     except Exception as exc:
         logger.info(f"Could not backfill chat_template for {model_id}: {exc}")
         return
-    if "chat_template" in cfg:
-        processor.chat_template = cfg["chat_template"]
+    template = cfg.get("chat_template")
+    # Only a non-empty string is usable; the multi-template list form would
+    # render to nothing and surface much later as an empty prompt.
+    if isinstance(template, str) and template.strip():
+        processor.chat_template = template
+        logger.info(f"Backfilled chat_template for {model_id} from tokenizer_config")
+    else:
+        logger.info(
+            f"{model_id} tokenizer_config has no usable chat_template "
+            f"(got {type(template).__name__})"
+        )
 
 
 def apply_chat_template(
@@ -166,7 +177,23 @@ def apply_chat_template(
     except TypeError:
         out = processor.apply_chat_template(messages, **kwargs)
     # Different transformers versions return either a BatchEncoding or a tensor.
-    return out.input_ids if hasattr(out, "input_ids") else out
+    input_ids = out.input_ids if hasattr(out, "input_ids") else out
+    # A template that renders to nothing tokenizes to shape (1, 0) instead of
+    # raising, which would otherwise surface far downstream as an empty prefill.
+    if input_ids.numel() == 0:
+        try:
+            rendered = processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            detail = f"the template rendered {len(rendered)} characters"
+        except Exception as exc:
+            detail = f"re-rendering it also failed ({exc})"
+        raise ValueError(
+            f"Chat template produced no tokens for prompt {prompt!r}: {detail}. "
+            "The tokenizer likely loaded without a usable chat_template. "
+            "Re-run with --no-chat-template to bypass it."
+        )
+    return input_ids
 
 
 def get_eos_token_ids(processor, model_id=None, local_files_only=False):
