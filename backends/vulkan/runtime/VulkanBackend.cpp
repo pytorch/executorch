@@ -487,7 +487,7 @@ class GraphBuilder {
 
 #ifdef ET_EVENT_TRACER_ENABLED
       std::string operator_json =
-          make_operator_json(compute_graph_, op_name, args);
+          make_operator_json(compute_graph_, op_name, args, op_call->node_id());
       set_and_get_current_operator_json(operator_json);
       get_current_operator_count(true);
 #endif // ET_EVENT_TRACER_ENABLED
