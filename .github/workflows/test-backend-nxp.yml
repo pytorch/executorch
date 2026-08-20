@@ -1,0 +1,51 @@
+name: Test NXP Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
+  test-nxp:
+    needs: changed-files
+    # Every case in this flow runs the NSYS Neutron simulator, so the full
+    # eIQ Toolkit install and nxp_executor_runner build are always required.
+    # Path-gate on pull_request to avoid running on unrelated changes, while
+    # still running in full on the nightly schedule and on pushes to main.
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'examples/nxp') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/harness') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-nxp.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: nxp
+      flows: '["nxp_neutron_imxrt700_int8_ptq"]'
+      # The models suite (torchvision/torchaudio) is excluded until a curated
+      # list of models known to pass on the Neutron backend is established.
+      exclude: '[{"flow": "nxp_neutron_imxrt700_int8_ptq", "suite": "models"}]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 150
+      run-linux: true
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12

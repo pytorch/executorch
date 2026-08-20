@@ -25,7 +25,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from executorch.backends.cuda.cuda_backend import CudaBackend
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 from executorch.backends.cuda.triton.kernels.fused_moe import (
@@ -43,7 +42,10 @@ from executorch.exir.passes import MemoryPlanningPass
 from torch.export import export
 
 EXECUTORCH_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "../../.."))
-RUNNER_PATH = os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner")
+RUNNER_PATH = os.environ.get(
+    "EXECUTORCH_EXECUTOR_RUNNER",
+    os.path.join(EXECUTORCH_ROOT, "cmake-out", "executor_runner"),
+)
 
 # Test configurations: (seed, M, hidden, intermediate, num_experts, top_k, group_size)
 TEST_CONFIGS = [
