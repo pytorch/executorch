@@ -46,6 +46,10 @@ if __name__ == "__main__":
 
         test_base.test_cmsis_nn_install()
 
+        # Registration above proves the delegate loaded, not that it computes. This runs a
+        # model through it where the OpenVINO runtime is available and says why when it is not.
+        test_base.test_a_model_runs_through_the_openvino_delegate()
+
         # The wheel ships the runtime, the kernels, the delegate, the thread
         # pool and the profiler as separate shared libraries now, so check that
         # each has exactly one owner and that all of them are loadable.
