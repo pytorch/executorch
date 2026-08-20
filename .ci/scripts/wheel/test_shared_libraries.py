@@ -2299,6 +2299,7 @@ def test_shipped_library_names_are_expected() -> None:
         "libextension_cuda",
         "libexecutorch_backend_xnnpack",
         "libexecutorch_backend_openvino",
+        "libexecutorch_backend_qnn",
         "libexecutorch_threadpool",
         "libexecutorch_etdump",
     )
