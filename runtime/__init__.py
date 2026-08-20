@@ -289,6 +289,7 @@ class Runtime:
         verification: Verification = Verification.InternalConsistency,
         enable_etdump: bool = False,
         debug_buffer_size: int = 0,
+        data_path: Optional[Union[Path, str]] = None,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
@@ -301,6 +302,8 @@ class Runtime:
                 Default is False.
             debug_buffer_size: Size of the debug buffer in bytes for ETDump data.
                 Only used when enable_etdump=True. Default is 0.
+            data_path: Path to a .ptd file holding data the program keeps outside the PTE,
+                such as the weights a CUDA export writes to a separate file.
 
         Returns:
             The loaded Program instance.
@@ -311,6 +314,7 @@ class Runtime:
                 enable_etdump=enable_etdump,
                 debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
+                data_path=str(data_path) if data_path is not None else None,
             )
             return Program(p, data=None)
         elif isinstance(data, bytes):
@@ -329,6 +333,7 @@ class Runtime:
             enable_etdump=enable_etdump,
             debug_buffer_size=debug_buffer_size,
             program_verification=verification,
+            data_path=str(data_path) if data_path is not None else None,
         )
 
         return Program(p, data=data_bytes)
