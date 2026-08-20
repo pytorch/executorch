@@ -193,7 +193,7 @@ class ImageProcessor(val config: ImageProcessorConfig) : Closeable {
    * camera HAL trimmed short is rejected rather than read past its end. The chroma bound stops one
    * byte short of the last pair, because that is where a CameraX plane ends: `planes[1]` and
    * `planes[2]` are views one byte apart into the same allocation, so whichever one is passed is
-   * missing an end byte, and the decode clamps its last chroma pair to match.
+   * missing an end byte, and the decode fills that one sample in from the neighboring pair.
    *
    * @param yPlane Direct buffer holding the luma plane.
    * @param yStride Row stride of the luma plane, in bytes.
