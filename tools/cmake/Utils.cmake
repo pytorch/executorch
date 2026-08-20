@@ -366,8 +366,13 @@ function(executorch_target_retain_shared_library target_name library_target)
   # extracted. Mach-O keeps a named library regardless, so the path alone is
   # enough there and the --as-needed dance does not apply.
   if(APPLE)
+    # Plain rather than SHELL:. This file already states the reason at the
+    # --no-as-needed helper above: a SHELL: string splits on spaces and breaks a
+    # path containing one. That helper needs SHELL: anyway because LINKER: joins
+    # its arguments with commas; there is no LINKER: prefix here, so SHELL: buys
+    # nothing and only takes on the space hazard.
     target_link_options(
-      ${target_name} PRIVATE "SHELL:$<TARGET_FILE:${library_target}>"
+      ${target_name} PRIVATE "$<TARGET_FILE:${library_target}>"
     )
   else()
     target_link_options(

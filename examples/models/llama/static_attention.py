@@ -205,10 +205,9 @@ class StaticAttentionMask:
             self.tensor[
                 :,
                 :,
-                max(
-                    0, self.cache_len - self.unmasked_len - new_unmasked_len
-                ) : self.cache_len
-                - self.unmasked_len,
+                max(0, self.cache_len - self.unmasked_len - new_unmasked_len) : max(
+                    0, self.cache_len - self.unmasked_len
+                ),
             ] = 0
 
         if self.style == "smart_mask":
@@ -274,6 +273,12 @@ class StaticAttentionIOManager:
             )
             for cl in set(cache_lens)
         }
+        # Global (full-attention) layers use the largest cache; local
+        # (sliding-window) layers use a strictly smaller cache. In a global-only
+        # model every layer shares the same cache, so this stays equal to it.
+        self._global_cache_len = max(
+            (mask.cache_len for mask in self._masks.values()), default=0
+        )
 
         if isinstance(config_or_model, ModelArgs):
             self._from_config(config_or_model, cache_lens_dict, batch_size, dtype)
@@ -421,6 +426,40 @@ class StaticAttentionIOManager:
         for mask in self._masks.values():
             mask.reset()
 
+    def _is_windowed_mask(self, mask: StaticAttentionMask) -> bool:
+        """
+        A mask belongs to a local (sliding-window) layer iff its cache is strictly
+        smaller than the global cache. A pure sliding-window model is
+        indistinguishable from a global one by cache_len alone and counts as global.
+        """
+        return 0 < mask.cache_len < self._global_cache_len
+
+    def _mask_cache_outside_window(self):
+        """
+        Rewrite the cache region of every windowed mask so each query row only sees
+        its own window. `unmask` fills the cache region identically for all rows,
+        which lets query row k attend to cache_len + k + 1 keys instead of cache_len.
+
+        With shift_pointer the valid cache entries are right aligned and ordered
+        oldest to newest, so with W = cache_len and v = min(pos, W) valid entries,
+        cache column c is visible to query row k iff c >= max(W - v, k + 1). This
+        holds for both prefill chunks and decode steps, and composes with the
+        in-chunk causal/window mask set by the caller.
+        """
+        for mask in self._masks.values():
+            if not self._is_windowed_mask(mask):
+                continue
+            w = mask.cache_len
+            first_valid = w - min(self.pos, w)
+            rows = torch.arange(self.input_len).unsqueeze(1)
+            cols = torch.arange(w).unsqueeze(0)
+            visible = cols >= torch.clamp(rows + 1, min=first_valid)
+            cache_mask = torch.full(
+                (self.input_len, w), mask.mask_val, dtype=mask.tensor.dtype
+            )
+            cache_mask[visible] = 0
+            mask.tensor[:, :, :w] = cache_mask
+
     def prefill(
         self,
         model: Callable[..., Any],
@@ -429,12 +468,6 @@ class StaticAttentionIOManager:
         if self.cache_full:
             raise RuntimeError("KV cache is full.")
 
-        # Global (full-attention) layers use the largest cache; local
-        # (sliding-window) layers use a strictly smaller cache. In a global-only
-        # model every layer shares the same cache, so this stays equal to it.
-        global_cache_len = max(
-            (mask.cache_len for mask in self._masks.values()), default=0
-        )
         for mask in self._masks.values():
             input_mask = torch.triu(
                 torch.full((1, self.input_len, self.input_len), self.mask_val),
@@ -448,10 +481,7 @@ class StaticAttentionIOManager:
             # windowed; a global layer is left full-causal even when its (nominal)
             # cache is smaller than the prompt. No-op for chunked prefill
             # (input_len <= cache_len).
-            if (
-                0 < mask.cache_len < self.input_len
-                and mask.cache_len < global_cache_len
-            ):
+            if self._is_windowed_mask(mask) and mask.cache_len < self.input_len:
                 input_mask = input_mask + torch.tril(
                     torch.full((1, self.input_len, self.input_len), self.mask_val),
                     diagonal=-mask.cache_len,
@@ -464,6 +494,7 @@ class StaticAttentionIOManager:
         logits = None
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
+            self._mask_cache_outside_window()
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.generate_full_logits:
                 if all_logits is None:
@@ -497,6 +528,7 @@ class StaticAttentionIOManager:
         stop_tokens = stop_tokens or []
         new_tokens = [init_token]
         for _ in range(n):
+            self._mask_cache_outside_window()
             y = self._run_once(model, new_tokens[-1:])[0]
             if self.generate_full_logits:
                 new_tokens.append(y[:, :1, ...].argmax().item())

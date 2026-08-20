@@ -217,9 +217,15 @@ def _minimal_packages() -> List[str]:
 # its device-side header API, which compiles into the object rather than linking a
 # library, and the generated model library embeds its kernels rather than compiling them
 # at run time, so there is no runtime compiler to satisfy either.
+# Bounded to the train the binaries were built against. The shipped libraries record
+# NEEDED libcudart.so.<major> and a runtime path into that train's own directory, so a
+# resolution to a different major installs a different layout and a different soname and the
+# wheel is unimportable. Nothing catches that at install time; it surfaces as an unresolved
+# libcudart on first import. The 12 package is already major-specific by name, but the 13 one
+# is not, so it needs the specifier to say what the name does not.
 _CUDA_RUNTIME_PACKAGES = {
-    "12": ("nvidia-cuda-runtime-cu12",),
-    "13": ("nvidia-cuda-runtime",),
+    "12": ("nvidia-cuda-runtime-cu12>=12,<13",),
+    "13": ("nvidia-cuda-runtime>=13,<14",),
 }
 
 # Where each train installs its libraries under site-packages. CUDA 13 collects them in
