@@ -8,6 +8,7 @@
 # pyre-strict
 
 import unittest
+from typing import Any
 
 import executorch.exir as exir
 import torch
@@ -226,6 +227,92 @@ class TestProxyValueSymbolicCoercions(unittest.TestCase):
 
         with self.assertRaisesRegex(ExportPassBaseError, "converted to float"):
             float(ProxyValue(sym_float, torch.fx.Graph().placeholder("x")))
+
+
+class TestExportPassFastCopy(unittest.TestCase):
+    def test_empty_targeted_ops_does_not_fall_back_to_target_ops(self) -> None:
+        class AddModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x
+
+        class EmptyTargetedOpsPass(ExportPass):
+            targeted_ops: set[object] = set()
+            target_ops = {exir_ops.edge.aten.add.Tensor}
+
+            def __init__(self) -> None:
+                super().__init__()
+                self.operator_calls = 0
+
+            def call_operator(
+                self,
+                op: Any,
+                args: tuple[Any, ...],
+                kwargs: dict[str, Any],
+                meta: NodeMetadata,
+            ) -> ProxyValue:
+                self.operator_calls += 1
+                return super().call_operator(op, args, kwargs, meta)
+
+        graph_module = (
+            to_edge(export(AddModule(), (torch.randn(2),), strict=True))
+            .exported_program()
+            .graph_module
+        )
+        pass_ = EmptyTargetedOpsPass()
+
+        pass_(graph_module)
+
+        self.assertEqual(pass_.operator_calls, 0)
+
+    def test_fast_copy_fallback_is_side_effect_free(self) -> None:
+        class RootModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.branch = torch.nn.Module()
+                self.branch.register_buffer("weight", torch.ones(2))
+
+        root = RootModule()
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        weight = graph.get_attr("branch.weight")
+        unresolved = graph.call_function(torch.ops.aten.neg.default, (x,))
+        cold_node = graph.call_function(torch.ops.aten.add.Tensor, (weight, unresolved))
+        graph.output(cold_node)
+        graph_module = torch.fx.GraphModule(root, graph)
+
+        class TargetedPass(ExportPass):
+            targeted_ops = {torch.ops.aten.mul.Tensor}
+
+        pass_ = TargetedPass()
+        pass_.tracer = pass_.ExportTracer(pass_, graph_module.graph._codegen)
+        interpreter = pass_.ExportInterpreter(pass_, graph_module)
+
+        with self.assertRaises(RuntimeError):
+            interpreter._fast_copy_node(cold_node)
+
+        self.assertEqual(list(pass_.tracer.graph.nodes), [])
+        self.assertFalse(hasattr(pass_.tracer.root, "branch"))
+        self.assertEqual(interpreter._node_remap, {})
+
+    def test_fast_copy_falls_back_for_unmapped_placeholder(self) -> None:
+        graph = torch.fx.Graph()
+        x = graph.placeholder("x")
+        cold_node = graph.call_function(torch.ops.aten.add.Tensor, (x, x))
+        graph.output(cold_node)
+        graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+        class TargetedPass(ExportPass):
+            targeted_ops = {torch.ops.aten.mul.Tensor}
+
+        pass_ = TargetedPass()
+        pass_.tracer = pass_.ExportTracer(pass_, graph_module.graph._codegen)
+        interpreter = pass_.ExportInterpreter(pass_, graph_module)
+
+        with self.assertRaises(RuntimeError):
+            interpreter._fast_copy_node(cold_node)
+
+        self.assertEqual(list(pass_.tracer.graph.nodes), [])
+        self.assertEqual(interpreter._node_remap, {})
 
 
 class TestExportedProgramPassManager(unittest.TestCase):
