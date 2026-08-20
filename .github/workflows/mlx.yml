@@ -743,7 +743,6 @@ jobs:
         # regression that silently pins the block to BLOCK_SIZE gets caught.
         OUTPUT=$(${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
           --pte ${PTE} \
-          --cached \
           --n-draft ${N_DRAFT} \
           --prompt "What is the capital of France?" \
           --max-new-tokens 32 \
@@ -780,7 +779,6 @@ jobs:
         # so BLOCK_SIZE itself must be refused before reaching the runtime.
         if ${CONDA_RUN} python -m executorch.backends.mlx.examples.llm.dflash.run \
           --pte ${PTE} \
-          --cached \
           --n-draft ${BLOCK_SIZE} \
           --max-new-tokens 1 > /tmp/n_draft_err.txt 2>&1; then
           echo "Failed: --n-draft ${BLOCK_SIZE} should have been rejected"

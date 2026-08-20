@@ -881,7 +881,11 @@ def _operator_neg_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), set(), "operator.neg")
     (a,) = args
     out = P.make_or_get_slot(n)
-    P.emit(MultiplyIntNode(a=P.to_int_or_vid(a), b=P.to_int_or_vid(-1), out=P.slot_to_vid(out)))
+    P.emit(
+        MultiplyIntNode(
+            a=P.to_int_or_vid(a), b=P.to_int_or_vid(-1), out=P.slot_to_vid(out)
+        )
+    )
     return out
 
 

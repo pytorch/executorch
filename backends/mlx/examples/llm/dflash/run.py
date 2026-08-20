@@ -16,8 +16,8 @@ target) gets emitted. Each round:
        the first mismatch with the target's own prediction
     4. Advance to the newly accepted position and repeat
 
-With --cached, the draft only ever sees newly-confirmed context each round
-(via a persistent KV cache) instead of reprojecting the full history.
+The draft keeps a persistent KV cache, so each round it only sees the context
+confirmed since the last time it ran rather than reprojecting the full history.
 """
 
 import argparse
@@ -51,7 +51,7 @@ def compute_block_len(
     block_len, max_new_tokens, num_generated, max_ctx_len, position, draft_room=None
 ):
     """Compute the maximum proposal length allowed by the block, token and context limits.
-    In cached mode, also limit it to the remaining draft KV-cache capacity.
+    Also limit it to the remaining draft KV-cache capacity.
     """
     bs = min(block_len, max_new_tokens - num_generated, max_ctx_len - position)
     if draft_room is not None:
@@ -101,12 +101,6 @@ def parse_args():
         help="Tokens to speculate per round. The draft is fed n_draft + 1 tokens "
         "(the last confirmed token plus n_draft masks) and predicts the masks. "
         "Defaults to the largest block the .pte was exported for, minus one.",
-    )
-    p.add_argument(
-        "--cached",
-        action="store_true",
-        help="Use the persistent draft KV cache -- the program must have been "
-        "exported with dflash/export.py.",
     )
     return p.parse_args()
 
@@ -207,15 +201,14 @@ def main():
     logits, hidden = chunked_prefill(
         target, prompt_ids, prefill_chunk_size, concat_outputs=(1,)
     )
-    hidden = hidden.float()
     pos = prompt_len
     last_token = int(logits[0, -1].argmax())
 
-    if args.cached:
-        # pending_ctx stores confirmed hidden states that have not yet been written to the draft cache.
-        # It only flushes when the draft runs, since bs==1 rounds skip speculation entirely.
-        pending_ctx = hidden
-        prev_ctx_len = 0
+    # pending_ctx stores confirmed hidden states that have not yet been written
+    # to the draft cache. It only flushes when the draft runs, since bs==1 rounds
+    # skip speculation entirely.
+    pending_ctx = hidden.float()
+    prev_ctx_len = 0
 
     generated = [last_token]
     rounds = 0
@@ -225,9 +218,7 @@ def main():
 
     while len(generated) < args.max_new_tokens:
         rounds += 1
-        draft_room = None
-        if args.cached:
-            draft_room = max_ctx_len - (prev_ctx_len + pending_ctx.shape[1])
+        draft_room = max_ctx_len - (prev_ctx_len + pending_ctx.shape[1])
         bs = compute_block_len(
             block_len,
             args.max_new_tokens,
@@ -252,23 +243,20 @@ def main():
                 dim=1,
             )
             _t0 = time.time()
-            if args.cached:
-                cache_position = torch.arange(
-                    prev_ctx_len, prev_ctx_len + pending_ctx.shape[1], dtype=torch.long
-                )
-                assert prev_ctx_len + pending_ctx.shape[1] <= max_ctx_len, (
-                    f"draft cache overrun: writing up to "
-                    f"{prev_ctx_len + pending_ctx.shape[1]} but capacity is "
-                    f"{max_ctx_len}. Re-export with a larger "
-                    f"dflash/export.py --max-ctx-len."
-                )
-                (draft_logits,) = draft.execute(
-                    [draft_input, pending_ctx.contiguous(), cache_position.contiguous()]
-                )
-                prev_ctx_len += pending_ctx.shape[1]
-                pending_ctx = pending_ctx.new_zeros((1, 0, pending_ctx.shape[-1]))
-            else:
-                (draft_logits,) = draft.execute([draft_input, hidden])
+            cache_position = torch.arange(
+                prev_ctx_len, prev_ctx_len + pending_ctx.shape[1], dtype=torch.long
+            )
+            assert prev_ctx_len + pending_ctx.shape[1] <= max_ctx_len, (
+                f"draft cache overrun: writing up to "
+                f"{prev_ctx_len + pending_ctx.shape[1]} but capacity is "
+                f"{max_ctx_len}. Re-export with a larger "
+                f"dflash/export.py --max-ctx-len."
+            )
+            (draft_logits,) = draft.execute(
+                [draft_input, pending_ctx.contiguous(), cache_position.contiguous()]
+            )
+            prev_ctx_len += pending_ctx.shape[1]
+            pending_ctx = pending_ctx.new_zeros((1, 0, pending_ctx.shape[-1]))
             _draft_exec_time = time.time() - _t0
             draft_ids = draft_logits[0].argmax(-1).tolist()  # bs - 1 tokens
 
@@ -289,9 +277,8 @@ def main():
 
         accepted = first_mismatch(draft_ids, target_ids)
         if args.verbose:
-            ctx_len = prev_ctx_len if args.cached else hidden.shape[1]
             print(
-                f"round {rounds}: pos={pos} ctx_len={ctx_len} "
+                f"round {rounds}: pos={pos} ctx_len={prev_ctx_len} "
                 f"draft_exec={_draft_exec_time*1000:.1f}ms target_exec={_target_exec_time*1000:.1f}ms "
                 f"draft_ids[:5]={draft_ids[:5]} target_ids[:5]={target_ids[:5]} accepted={accepted}"
             )
@@ -306,14 +293,9 @@ def main():
 
         pos += len(new_tokens)
         last_token = new_tokens[-1]
-        if args.cached:
-            pending_ctx = torch.cat(
-                [pending_ctx, new_hidden[:, : len(new_tokens), :].float()], dim=1
-            )
-        else:
-            hidden = torch.cat(
-                [hidden, new_hidden[:, : len(new_tokens), :].float()], dim=1
-            )
+        pending_ctx = torch.cat(
+            [pending_ctx, new_hidden[:, : len(new_tokens), :].float()], dim=1
+        )
 
         if eos_id in new_tokens:
             break
