@@ -336,16 +336,20 @@ def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]
     return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 
 
-def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
+def is_channel_broadcast(
+    tensor1: torch.Tensor,
+    tensor2: torch.Tensor,
+    require_channels_last: bool = True,
+) -> bool:
     """
     Check if tensor1 is broadcasted to tensor2 along channel dimension.
     Assumes tensor2 has shape [N, C, ...] and tensor1 has shape [N, 1, ...] or [1, C, ...].
     """
     if tensor1.dim() != tensor2.dim():
         return False
-    if not is_channels_last(tensor1):
-        return False
-    if not is_channels_last(tensor2):
+    if require_channels_last and (
+        not is_channels_last(tensor1) or not is_channels_last(tensor2)
+    ):
         return False
 
     channel_match = tensor1.size(1) == tensor2.size(1)

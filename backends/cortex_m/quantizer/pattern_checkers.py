@@ -7,6 +7,10 @@ import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.quantizer.arm_quantizer_utils import PatternCheck
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
+from executorch.backends.cortex_m.passes.explicit_layout_pass import (
+    CORTEX_M_EXPLICIT_LAYOUT_SOURCE_ANCHORS,
+    CORTEX_M_EXPLICIT_LAYOUT_TRANSPARENT_OPS,
+)
 from executorch.backends.cortex_m.passes.passes_utils import (
     coerce_int_pair,
     is_channel_broadcast,
@@ -54,6 +58,50 @@ class CortexMAddMulCheck(PatternCheck):
         ) and PatternCheck.is_per_tensor(quantization_config.get_output_act_qspec())
         is_int8 = cls.is_int8_activations(quantization_config)
         return is_per_tensor and is_int8
+
+
+class CortexMExplicitAddMulCheck(CortexMAddMulCheck):
+    @classmethod
+    def _reaches_layout_anchor(cls, starts: list[Node], traverse_inputs: bool) -> bool:
+        pending = list(starts)
+        visited: set[Node] = set()
+        while pending:
+            node = pending.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+            if node.target in CORTEX_M_EXPLICIT_LAYOUT_SOURCE_ANCHORS:
+                return True
+            if node.target not in CORTEX_M_EXPLICIT_LAYOUT_TRANSPARENT_OPS:
+                continue
+            pending.extend(node.all_input_nodes if traverse_inputs else node.users)
+        return False
+
+    @classmethod
+    def check_pattern(cls, pattern):
+        pattern_nodes = set(pattern)
+        for node in pattern:
+            if len(node.all_input_nodes) != 2:
+                continue
+            tensor1 = get_first_fake_tensor(node.all_input_nodes[0])
+            tensor2 = get_first_fake_tensor(node.all_input_nodes[1])
+            if tensor1.shape == tensor2.shape:
+                continue
+            if not is_channel_broadcast(tensor1, tensor2, require_channels_last=False):
+                return False
+
+            external_users = [
+                user
+                for pattern_node in pattern
+                for user in pattern_node.users
+                if user not in pattern_nodes
+            ]
+            if not cls._reaches_layout_anchor(
+                list(node.all_input_nodes), traverse_inputs=True
+            ) or not cls._reaches_layout_anchor(external_users, traverse_inputs=False):
+                return False
+
+        return True
 
 
 class CortexMDivCheck(PatternCheck):

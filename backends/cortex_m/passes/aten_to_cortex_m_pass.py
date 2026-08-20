@@ -61,9 +61,11 @@ class AtenToCortexMPass(AtenToDialectPass):
         self,
         exported_program: ExportedProgram,
         target_config: CortexMTargetConfig,
+        use_explicit_layout: bool = False,
     ) -> None:
         super().__init__(exported_program=exported_program)
         self.target_config = target_config
+        self.use_explicit_layout = use_explicit_layout
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
@@ -943,7 +945,6 @@ def _get_dequantize_per_tensor_replacement(
 def _get_add_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del dialect_pass
     if not _has_qparams(node):
         return None
 
@@ -979,14 +980,20 @@ def _get_add_replacement(
         activation_min,
         activation_max,
     )
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_add.default, args)
+    target = exir_ops.edge.cortex_m.quantized_add.default
+    if (
+        cast(AtenToCortexMPass, dialect_pass).use_explicit_layout
+        and _get_input_tensor_data(node, 0).shape
+        != _get_input_tensor_data(node, 1).shape
+    ):
+        target = exir_ops.edge.cortex_m.quantized_add_nhwc.default
+    return DialectNodeSpec(target, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.mul.Tensor)
 def _get_mul_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del dialect_pass
     if not _has_qparams(node):
         return None
 
@@ -1009,7 +1016,14 @@ def _get_mul_replacement(
         output_mult,
         output_shift,
     )
-    return DialectNodeSpec(exir_ops.edge.cortex_m.quantized_mul.default, args)
+    target = exir_ops.edge.cortex_m.quantized_mul.default
+    if (
+        cast(AtenToCortexMPass, dialect_pass).use_explicit_layout
+        and _get_input_tensor_data(node, 0).shape
+        != _get_input_tensor_data(node, 1).shape
+    ):
+        target = exir_ops.edge.cortex_m.quantized_mul_nhwc.default
+    return DialectNodeSpec(target, args)
 
 
 @AtenToCortexMPass.register_dialect_substitution(exir_ops.edge.aten.div.Tensor)

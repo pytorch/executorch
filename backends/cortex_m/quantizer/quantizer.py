@@ -19,6 +19,8 @@ from executorch.backends.cortex_m.quantizer.node_finders import (
     NodeTargetNodeFinder,
 )
 from executorch.backends.cortex_m.quantizer.pattern_checkers import (
+    CortexMAddMulCheck,
+    CortexMExplicitAddMulCheck,
     CortexMExplicitConv1DCheck,
     CortexMExplicitConv2DCheck,
     CortexMExplicitConvTranspose2DCheck,
@@ -85,6 +87,9 @@ class CortexMQuantizer(ComposableQuantizer):
         )
         support_dict = dict(CORTEX_M_QUANTIZER_SUPPORT_DICT)
         if use_explicit_layout:
+            for pattern, checker in support_dict.items():
+                if checker is CortexMAddMulCheck:
+                    support_dict[pattern] = CortexMExplicitAddMulCheck
             for pattern in CONV1D_OP_PATTERNS:
                 support_dict[pattern] = CortexMExplicitConv1DCheck
             for pattern in CONV_OP_PATTERNS:
