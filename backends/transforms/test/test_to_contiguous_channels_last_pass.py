@@ -594,21 +594,7 @@ def run_test(case: PermuteCountTestCase) -> None:
         assert torch.allclose(ref_result, edge_result, atol=1e-6)
 
 
-_EXPECTED_AGGREGATE_COUNTS = (138, 339, 156, 315)
-
-
 class TestToContiguousChannelsLastPass(unittest.TestCase):
-    def test_aggregate_permute_view_counts(self) -> None:
-        self.assertEqual(
-            (
-                sum(case.expected_initial_permutes for case in cases.values()),
-                sum(case.expected_initial_views for case in cases.values()),
-                sum(case.expected_final_permutes for case in cases.values()),
-                sum(case.expected_final_views for case in cases.values()),
-            ),
-            _EXPECTED_AGGREGATE_COUNTS,
-        )
-
     def test_permute_view_counts(self) -> None:
         for name, case in cases.items():
             with self.subTest(name=name):

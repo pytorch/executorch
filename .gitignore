@@ -81,6 +81,7 @@ xcuserdata/
 /share/
 /version.py
 /src/executorch/include/
+/src/executorch/lib/
 /src/executorch/share/
 /src/executorch/version.py
 *_etdump

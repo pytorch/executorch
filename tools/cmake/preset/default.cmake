@@ -232,8 +232,8 @@ define_overridable_option(
   ${_default_executorch_build_cpuinfo}
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_SHARED "Build a consolidated ExecuTorch shared library" BOOL
-  OFF
+  EXECUTORCH_BUILD_SHARED
+  "Build a consolidated ExecuTorch shared library (Linux and macOS)" BOOL OFF
 )
 
 # Threadpool size options. At most one can be specified. Note that the default
@@ -352,9 +352,15 @@ define_overridable_option(
 # At this point all the options should be configured with their final value.
 # ------------------------------------------------------------------------------
 
-check_required_options_on(
-  IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
-)
+# The tracer needs the etdump target, not the whole devtools umbrella. A pybind
+# or shared build adds that target on its own, so accept either route rather
+# than forcing an option that also pulls in submodules a wheel does not check
+# out.
+if(NOT EXECUTORCH_BUILD_PYBIND AND NOT EXECUTORCH_BUILD_SHARED)
+  check_required_options_on(
+    IF_ON EXECUTORCH_ENABLE_EVENT_TRACER REQUIRES EXECUTORCH_BUILD_DEVTOOLS
+  )
+endif()
 
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_QNN REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR

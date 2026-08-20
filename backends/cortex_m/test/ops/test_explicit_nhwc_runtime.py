@@ -97,6 +97,36 @@ class Conv2dNhwc(torch.nn.Module):
         )
 
 
+class GroupedConv2dNhwc(torch.nn.Module):
+    # OHWI weight with C_in / groups in the last dimension, so the kernel sees
+    # an input channel count that differs from the filter's.
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("weight", _int8_values((4, 2, 3, 2)))
+        self.register_buffer("bias", torch.arange(4, dtype=torch.int32) - 2)
+        self.register_buffer(
+            "multipliers", torch.full((4,), 1 << 30, dtype=torch.int32)
+        )
+        self.register_buffer("shifts", torch.full((4,), -1, dtype=torch.int32))
+
+    def forward(self, x, scratch):
+        return torch.ops.cortex_m.quantized_conv2d_nhwc.default(
+            x,
+            self.weight,
+            self.bias,
+            [2, 1],
+            [1, 0],
+            [1, 1],
+            0,
+            0,
+            self.multipliers,
+            self.shifts,
+            -128,
+            127,
+            scratch,
+        )
+
+
 class DepthwiseConv2dNhwc(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -201,6 +231,16 @@ def test_conv2d_nhwc_runs_on_fvp(cortex_m_target):
     _run_on_fvp(
         Conv2dNhwc(),
         _int8_values((1, 7, 10, 3)),
+        exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
+        cortex_m_target,
+        scratch_count=1,
+    )
+
+
+def test_grouped_conv2d_nhwc_runs_on_fvp(cortex_m_target):
+    _run_on_fvp(
+        GroupedConv2dNhwc(),
+        _int8_values((1, 7, 10, 4)),
         exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default,
         cortex_m_target,
         scratch_count=1,
