@@ -659,13 +659,15 @@ def test_qat_produces_same_graph_as_ptq():
 
 @pytest.mark.parametrize("input_shape", [(1, 3, 32), (1, 3, 32, 32)])
 @pytest.mark.parametrize("transposed_conv", [True, False])
-@pytest.mark.parametrize("conv_bias", [True, False])
+@pytest.mark.parametrize(
+    "conv_bias",
+    [True],
+    ids=["with_bias"],
+)  # conv_bias=False is not supported by NXP.
 @pytest.mark.parametrize("bn_affine", [True, False])
 def test_torchao_native_conv_bn_qat_fusing(
     input_shape, transposed_conv, conv_bias, bn_affine
 ):
-    if not conv_bias:
-        pytest.skip("Conv without bias is not supported.")
 
     model = models.ConvBatchNormModule(
         bias=conv_bias,
