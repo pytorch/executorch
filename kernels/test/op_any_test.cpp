@@ -21,7 +21,6 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 class OpAnyOutTest : public OperatorTest {
@@ -32,7 +31,7 @@ class OpAnyOutTest : public OperatorTest {
 
   Tensor& op_any_dims_out(
       const Tensor& input,
-      optional<ArrayRef<int64_t>> dim,
+      std::optional<ArrayRef<int64_t>> dim,
       bool keepdim,
       Tensor& out) {
     return torch::executor::aten::any_outf(context_, input, dim, keepdim, out);
@@ -130,7 +129,7 @@ TEST_F(OpAnyOutTest, SmokeTestDims) {
 
   Tensor self = tfBool.make({2, 3, 1}, {true, false, true, true, false, false});
   int64_t dims[3] = {0, 2};
-  optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, 2}};
+  std::optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, 2}};
   bool keepdim = true;
   Tensor out = tfBool.zeros({1, 3, 1});
   Tensor out_expected = tfBool.make({1, 3, 1}, {true, false, true});
@@ -155,7 +154,7 @@ TEST_F(OpAnyOutTest, EmptyInput) {
   TensorFactory<ScalarType::Bool> tfBool;
 
   Tensor x = tf.make({2, 0, 3}, {});
-  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  std::optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
   Tensor out = tfBool.make({2, 0, 3}, {});
 
   op_any_dims_out(x, dim_list, /*keepdim=*/true, out);
@@ -183,7 +182,7 @@ TEST_F(OpAnyOutTest, TestAnyDimsOutNullDimList) {
   TensorFactory<ScalarType::Bool> tfBool;
 
   Tensor self = tfInt.make({2, 6}, {0, 2, 0, 3, 0, 1, 5, 0, 2, 0, 4, 0});
-  optional<ArrayRef<int64_t>> opt_dim_list = std::nullopt;
+  std::optional<ArrayRef<int64_t>> opt_dim_list = std::nullopt;
   bool keepdim = false;
   Tensor out = tfBool.zeros({});
   Tensor out_expected = tfBool.make({}, {true});
@@ -199,7 +198,8 @@ TEST_F(OpAnyOutTest, TestAnyDimsOutEmptyDimList) {
   Tensor self = tfInt.make({2, 3}, {0, 2, 0, 0, 1, 5});
   int64_t dims[0] = {};
   size_t dims_size = 0;
-  optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, dims_size}};
+  std::optional<ArrayRef<int64_t>> opt_dim_list{
+      ArrayRef<int64_t>{dims, dims_size}};
   bool keepdim = false;
   Tensor out = tfBool.zeros({2, 3});
   Tensor out_expected =

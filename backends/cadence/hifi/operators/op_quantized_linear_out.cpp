@@ -23,7 +23,6 @@ namespace impl::HiFi::native {
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 // The nnlib kernel to compute quantized linear via matmul.
 
@@ -36,7 +35,7 @@ void _quantized_linear_asym8u(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   const int64_t leading_dims = getLeadingDims(in, in.dim() - 1);
   const int64_t out_dim = weight.size(0); // = out_dim
@@ -74,7 +73,7 @@ void inline _quantized_linear_asym8s(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]
@@ -119,7 +118,7 @@ void inline _quantized_linear_per_tensor_asym8u(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]
@@ -167,7 +166,7 @@ void inline _quantized_linear_per_tensor_asym8s(
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]
@@ -216,7 +215,7 @@ void quantized_linear_out(
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
-    __ET_UNUSED const optional<Tensor>& offset,
+    __ET_UNUSED const std::optional<Tensor>& offset,
     Tensor& out) {
   if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
       in.scalar_type() == ::executorch::aten::ScalarType::Short &&
@@ -273,7 +272,7 @@ void quantized_linear_per_tensor_out(
     const int64_t out_multiplier,
     const int64_t out_shift,
     const int64_t out_zero_point,
-    const optional<Tensor>& offset,
+    const std::optional<Tensor>& offset,
     Tensor& out) {
   if (out.scalar_type() == ::executorch::aten::ScalarType::Short &&
       in.scalar_type() == ::executorch::aten::ScalarType::Short &&

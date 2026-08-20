@@ -23,7 +23,6 @@ using executorch::aten::ArrayRef;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 namespace {
@@ -43,8 +42,8 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
  protected:
   std::tuple<Tensor&, Tensor&> op_var_mean_correction_out(
       const Tensor& self,
-      optional<ArrayRef<int64_t>> dim,
-      optional<Scalar>& correction,
+      std::optional<ArrayRef<int64_t>> dim,
+      std::optional<Scalar>& correction,
       bool keepdim,
       Tensor& out0,
       Tensor& out1) {
@@ -59,7 +58,7 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     Tensor x = tf.make({2, 3}, {4.9, 4.0, 5.6, 3.8, 4.9, 5.6});
     Tensor expected_var = tf.make({2}, {0.72693, 0.93032});
     Tensor expected_mean = tf.make({2}, {4.833333, 4.766667});
-    optional<Scalar> correction(1.23);
+    std::optional<Scalar> correction(1.23);
     Tensor var_out = tf.zeros({2});
     Tensor mean_out = tf.zeros({2});
 
@@ -97,8 +96,9 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     Tensor var_out = tf_out.zeros({2, 3, 1});
     Tensor mean_out = tf_out.zeros({2, 3, 1});
     int64_t dims_1[1] = {2};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
-    optional<Scalar> correction(1);
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<Scalar> correction(1);
     op_var_mean_correction_out(
         self,
         optional_dim_list,
@@ -179,8 +179,9 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     Tensor var_out = tf_out.zeros({1, 1, 4});
     Tensor mean_out = tf_out.zeros({1, 1, 4});
     int64_t dims[2] = {0, 1};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 2}};
-    optional<Scalar> correction(1);
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims, 2}};
+    std::optional<Scalar> correction(1);
     op_var_mean_correction_out(
         self,
         optional_dim_list,
@@ -230,8 +231,9 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     Tensor var_out = tf_out.zeros({2, 1, 4});
     Tensor mean_out = tf_out.zeros({2, 1, 4});
     int64_t dims[1] = {-2};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
-    optional<Scalar> correction(0);
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims, 1}};
+    std::optional<Scalar> correction(0);
     op_var_mean_correction_out(
         self,
         optional_dim_list,
@@ -279,8 +281,8 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     // null dim list, correction=1 (unbiased), keepdim=true
     Tensor var_out = tf_out.zeros({1, 1, 1});
     Tensor mean_out = tf_out.zeros({1, 1, 1});
-    optional<ArrayRef<int64_t>> null_dim_list;
-    optional<Scalar> correction(1);
+    std::optional<ArrayRef<int64_t>> null_dim_list;
+    std::optional<Scalar> correction(1);
     op_var_mean_correction_out(
         self, null_dim_list, correction, /*keepdim=*/true, var_out, mean_out);
     expect_tensor_close_with_increased_tol(
@@ -289,8 +291,8 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
         mean_out, tf_out.make({1, 1, 1}, {11.5}));
 
     // empty dim list, correction=0 (population), keepdim=true
-    optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
-    optional<Scalar> correction_zero(0);
+    std::optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
+    std::optional<Scalar> correction_zero(0);
     op_var_mean_correction_out(
         self,
         empty_dim_list,
@@ -349,11 +351,12 @@ class OpVarMeanCorrectionOutTest : public OperatorTest {
     // clang-format on
     Tensor var_out = tf_out.zeros({2, 3, 1});
     Tensor mean_out = tf_out.zeros({2, 3, 1});
-    optional<Scalar> correction(1);
+    std::optional<Scalar> correction(1);
 
     // out-of-bound dim
     int64_t dims_1[1] = {3};
-    optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
+    std::optional<ArrayRef<int64_t>> optional_dim_list{
+        ArrayRef<int64_t>{dims_1, 1}};
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         op_var_mean_correction_out(
@@ -530,8 +533,9 @@ TEST_F(OpVarMeanCorrectionOutTest, InvalidDTypeDies) {
   Tensor var_out = tf_float.zeros({2, 3, 1});
   Tensor mean_out = tf_float.zeros({2, 3, 1});
   int64_t dims_1[1] = {2};
-  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
-  optional<Scalar> correction(1);
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims_1, 1}};
+  std::optional<Scalar> correction(1);
 
   ET_EXPECT_KERNEL_FAILURE(
       context_,
@@ -548,11 +552,11 @@ TEST_F(OpVarMeanCorrectionOutTest, EmptyInput) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({2, 0, 3}, {});
-  optional<Scalar> correction(1);
-  optional<Scalar> correction_zero(0);
+  std::optional<Scalar> correction(1);
+  std::optional<Scalar> correction_zero(0);
 
   // empty dim list, correction=1, keepdim=true
-  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  std::optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
   Tensor var_out = tf.zeros({1, 1, 1});
   Tensor mean_out = tf.zeros({1, 1, 1});
   op_var_mean_correction_out(
@@ -596,7 +600,7 @@ TEST_F(OpVarMeanCorrectionOutTest, DynamicShapeUpperBoundSameAsExpected) {
   Tensor x = tf.make({3, 2}, {0.49, 0.40, 0.56, 0.38, 0.49, 0.56});
   Tensor expected_var = tf.make({3}, {0.004050, 0.016200, 0.002450});
   Tensor expected_mean = tf.make({3}, {0.445, 0.47, 0.525});
-  optional<Scalar> correction(1);
+  std::optional<Scalar> correction(1);
 
   Tensor var_out =
       tf.zeros({3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -619,7 +623,7 @@ TEST_F(OpVarMeanCorrectionOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   Tensor x = tf.make({3, 2}, {0.49, 0.40, 0.56, 0.38, 0.49, 0.56});
   Tensor expected_var = tf.make({3}, {0.004050, 0.016200, 0.002450});
   Tensor expected_mean = tf.make({3}, {0.445, 0.47, 0.525});
-  optional<Scalar> correction(1);
+  std::optional<Scalar> correction(1);
 
   Tensor var_out =
       tf.zeros({10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
@@ -643,7 +647,7 @@ TEST_F(OpVarMeanCorrectionOutTest, DISABLED_DynamicShapeUnbound) {
   Tensor x = tf.make({3, 2}, {0.49, 0.40, 0.56, 0.38, 0.49, 0.56});
   Tensor expected_var = tf.make({3}, {0.004050, 0.016200, 0.002450});
   Tensor expected_mean = tf.make({3}, {0.445, 0.47, 0.525});
-  optional<Scalar> correction(1);
+  std::optional<Scalar> correction(1);
 
   Tensor var_out =
       tf.zeros({1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
@@ -679,8 +683,9 @@ TEST_F(OpVarMeanCorrectionOutTest, InfinityAndNANTest) {
   Tensor var_out = tf.zeros({2, 3, 1});
   Tensor mean_out = tf.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
-  optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
-  optional<Scalar> correction(1);
+  std::optional<ArrayRef<int64_t>> optional_dim_list{
+      ArrayRef<int64_t>{dims, 1}};
+  std::optional<Scalar> correction(1);
   op_var_mean_correction_out(
       self,
       optional_dim_list,

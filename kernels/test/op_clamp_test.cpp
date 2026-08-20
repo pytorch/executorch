@@ -26,7 +26,6 @@ using executorch::aten::nullopt;
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 using OptScalar = std::optional<Scalar>;
@@ -44,8 +43,8 @@ class OpClampOutTest : public OperatorTest {
  protected:
   Tensor& op_clamp_out(
       const Tensor& self,
-      const optional<Scalar>& min,
-      const optional<Scalar>& max,
+      const std::optional<Scalar>& min,
+      const std::optional<Scalar>& max,
       Tensor& out) {
     return torch::executor::aten::clamp_outf(context_, self, min, max, out);
   }
@@ -103,14 +102,14 @@ class OpClampOutTest : public OperatorTest {
             {2, 2}, // sizes
             {0, 1, 10, 100}, // input_data
             OptScalar(1), // min
-            nullopt, // max
+            std::nullopt, // max
             {1, 1, 10, 100}, // expected_data
         },
         {
             std::string(__func__) + ": No min",
             {2, 2}, // sizes
             {0, 1, 10, 100}, // input_data
-            nullopt, // min
+            std::nullopt, // min
             OptScalar(6), // max
             {0, 1, 6, 6}, // expected_data
         },
@@ -269,9 +268,11 @@ class OpClampOutTest : public OperatorTest {
     Tensor out = tf.zeros({2, 2});
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, op_clamp_out(in, /*min=*/bad_value, /*max=*/nullopt, out));
+        context_,
+        op_clamp_out(in, /*min=*/bad_value, /*max=*/std::nullopt, out));
     ET_EXPECT_KERNEL_FAILURE(
-        context_, op_clamp_out(in, /*min=*/nullopt, /*max=*/bad_value, out));
+        context_,
+        op_clamp_out(in, /*min=*/std::nullopt, /*max=*/bad_value, out));
     ET_EXPECT_KERNEL_FAILURE(
         context_, op_clamp_out(in, /*min=*/bad_value, /*max=*/bad_value, out));
   }
@@ -283,7 +284,8 @@ class OpClampOutTest : public OperatorTest {
     Tensor out = tf.zeros({2, 2});
 
     ET_EXPECT_KERNEL_FAILURE(
-        context_, op_clamp_out(in, /*min=*/nullopt, /*max=*/nullopt, out));
+        context_,
+        op_clamp_out(in, /*min=*/std::nullopt, /*max=*/std::nullopt, out));
   }
 };
 
@@ -291,8 +293,8 @@ class OpClampTensorOutTest : public OperatorTest {
  protected:
   Tensor& op_clamp_tensor_out(
       const Tensor& self,
-      const optional<Tensor>& min,
-      const optional<Tensor>& max,
+      const std::optional<Tensor>& min,
+      const std::optional<Tensor>& max,
       Tensor& out) {
     executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext context{};
     return torch::executor::aten::clamp_outf(context, self, min, max, out);

@@ -25,7 +25,6 @@ using namespace ::testing;
 using executorch::aten::ArrayRef;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
-using std::optional;
 using torch::executor::testing::TensorFactory;
 
 // To further emphasize the accuracy of our op_to, we TEST_F the conversion
@@ -203,7 +202,7 @@ class OpToDimOrderCopyTest : public OperatorTest {
   op = "op__to_dim_order_copy_out"
   opt_setup_params = """
     bool non_blocking = false;
-    optional<MemoryFormat> memory_format;
+    std::optional<MemoryFormat> memory_format;
   """
   opt_extra_params = "non_blocking, memory_format,"
   out_args = "out_shape, dynamism"

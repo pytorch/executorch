@@ -22,7 +22,6 @@ using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::ET_RUNTIME_NAMESPACE::KernelRuntimeContext;
-using std::optional;
 using torch::executor::native::add_out;
 using torch::executor::native::dequantize_per_tensor_out;
 using torch::executor::native::quantize_per_tensor_out;
@@ -189,7 +188,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
   Tensor qinput2 = tfo.zeros({3, 5});
   Tensor qoutput = tfo.zeros({3, 5});
 
-  optional<ScalarType> out_dtype = optional<ScalarType>();
+  std::optional<ScalarType> out_dtype = std::optional<ScalarType>();
 
   KernelRuntimeContext context{};
   // q -> qadd -> dq

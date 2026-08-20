@@ -18,12 +18,11 @@ namespace native {
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
-using std::optional;
 
 void linear(
     const Tensor& input,
     const Tensor& weight,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     Tensor& output) {
   const float* __restrict__ input_data = input.const_data_ptr<float>();
   const float* __restrict__ weight_data = weight.const_data_ptr<float>();
@@ -57,7 +56,7 @@ Tensor& fully_connected_out(
     ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
-    const optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     Tensor& output) {
   linear(input, weight, bias, output);
   return output;
