@@ -177,12 +177,13 @@ These are the components the Linux package provides:
 | `backend_xnnpack` | The XNNPACK backend, for models exported with it. | Linux |
 | `threadpool` | Multi-threaded execution. | Linux |
 | `etdump` | Profiling, to record what ran and how long it took. | Linux |
+| `kernels_quantized` | The quantized operator kernels | Linux |
 
 To see what your own install offers, ask CMake:
 
 ```cmake
 find_package(executorch REQUIRED)
-foreach(_component runtime kernels_optimized backend_xnnpack threadpool etdump)
+foreach(_component runtime kernels_optimized kernels_quantized backend_xnnpack threadpool etdump)
   if(TARGET executorch::${_component})
     message(STATUS "have ${_component}")
   endif()
@@ -203,6 +204,10 @@ If you would rather not choose, one variable links the common set:
 find_package(executorch REQUIRED)
 target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
 ```
+
+The quantized kernels are deliberately left out of that variable, because loading
+`executorch.kernels.quantized` in Python registers the same operators and a duplicate registration
+stops the runtime.
 
 #### When something does not work
 
@@ -240,6 +245,12 @@ target_link_libraries(app PRIVATE ${EXECUTORCH_LIBRARIES})
   `INSTALL_RPATH` matters once you run `cmake --install`. CMake gives your program a search path while
   it sits in the build directory and removes that path when installing, so an installed program cannot
   find the libraries unless you record where they live.
+
+  Quantized kernels are not part of `EXECUTORCH_LIBRARIES`, so add them when your model needs them:
+
+  ```cmake
+  target_link_libraries(app PRIVATE ${EXECUTORCH_QUANTIZED_KERNELS_LIBRARY})
+  ```
 
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.

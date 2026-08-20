@@ -57,6 +57,25 @@ example = (torch.randn(2, 8), torch.randn(2, 1, 6, 6))
 with torch.no_grad():
     expected = model(*example)
 
+if mode == "quantized":
+    # Quantize with the same flow the documentation shows, so the exported program
+    # references the quantized operator set rather than the plain one.
+    # Importing this loads the ahead-of-time library, which is what registers the out
+    # variants of the quantized operators with torch. Without it the export fails with
+    # "Missing out variants: quantized_decomposed::quantize_per_tensor", because the
+    # lowering step has no out variant to select.
+    import executorch.kernels.quantized  # noqa: F401
+    from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+        get_symmetric_quantization_config,
+        XNNPACKQuantizer,
+    )
+    from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+    quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+    prepared = prepare_pt2e(torch.export.export(model, example).module(), quantizer)
+    prepared(*example)
+    model = convert_pt2e(prepared)
+
 partitioners = []
 if mode == "delegate":
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -85,6 +104,11 @@ print(
             "expected": expected.flatten().tolist(),
             "delegated": mode == "delegate",
             "has_xnnpack": b"XnnpackBackend" in bytes(buffer),
+            # Whether the program actually carries quantized operators. The numeric comparison alone
+            # cannot tell: an unquantized export of the same model produces a closer match than the
+            # tolerance a quantized one needs, so it would pass while proving nothing about the
+            # quantized kernels.
+            "has_quantized": b"quantized_decomposed" in bytes(buffer),
         }
     )
 )
@@ -102,6 +126,7 @@ _CONSUMER_SOURCE = r"""
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -196,8 +221,14 @@ int main(int argc, char** argv) {
     }
     worst = std::fmax(worst, diff);
   }
-  if (worst > 1e-4) {
-    std::printf("output differs from eager PyTorch by %g\n", worst);
+  // Passed in rather than fixed, because the acceptable difference depends on the
+  // model. A float32 model should match to within rounding, while an int8 quantized one
+  // legitimately differs by about one quantization step, and using the looser number
+  // for both would stop the float path catching a real regression.
+  const double tolerance = argc > 7 ? std::atof(argv[7]) : 1e-4;
+  if (worst > tolerance) {
+    std::printf(
+        "output differs from eager PyTorch by %g, tolerance %g\n", worst, tolerance);
     return 1;
   }
 
@@ -335,8 +366,16 @@ def _build_consumer(work_dir: Path, name: str, components) -> Path:
     return consumer
 
 
-def _run_consumer(consumer: Path, model: Path, reference, work_dir: Path) -> str:
-    """Run the application and require it to match eager PyTorch."""
+def _run_consumer(
+    consumer: Path, model: Path, reference, work_dir: Path, tolerance: float = 1e-4
+) -> str:
+    """Run the application and require it to match eager PyTorch within `tolerance`.
+
+    The tolerance is a parameter because the acceptable difference depends on the model.
+    A float32 model should match to within rounding, while an int8 quantized one
+    legitimately differs by about one quantization step, and using the looser number for
+    both would stop the float path catching a real regression.
+    """
     inputs = reference["inputs"]
     shape_a, data_a = _write_tensor(work_dir, "a", inputs[0])
     shape_b, data_b = _write_tensor(work_dir, "b", inputs[1])
@@ -358,6 +397,7 @@ def _run_consumer(consumer: Path, model: Path, reference, work_dir: Path) -> str
             str(shape_b),
             str(data_b),
             str(expected),
+            str(tolerance),
         ],
         capture_output=True,
         text=True,
@@ -1236,6 +1276,125 @@ def test_pre_3_28_route_builds_a_consumer_through_variables(work_dir: Path) -> N
     )
 
 
+def test_quantized_kernels_component_runs_a_model(work_dir: Path) -> None:
+    """A C++ application can run a quantized model using the shipped quantized kernels.
+
+    Before the quantized kernels became their own library they existed only inside the
+    ahead-of-time extension beside the Python bindings, so a C++ application loading a
+    quantized program had nothing to link and failed at run time with the operators
+    reported missing.
+
+    A missing library is a failure rather than a skip. The preset that builds the wheel
+    always enables the quantized kernels, so their absence is a regression in packaging
+    or in the build, not a configuration this suite has to tolerate. Skipping there
+    reported the whole check as coverage while running none of it.
+    """
+    package_dir = _installed_package_dir()
+    # Globbed for the same reason the profiler check is: the library carries a version suffix outside a
+    # wheel build, and an exact name would skip this silently there rather than running it.
+    shipped = sorted((package_dir / "lib").glob("libexecutorch_kernels_quantized.so*"))
+    assert shipped, (
+        "the wheel ships no quantized kernels library. The preset that builds it enables "
+        "them unconditionally, so this is a packaging or build regression rather than an "
+        "unsupported configuration."
+    )
+
+    model, reference = _export(work_dir, "quantized")
+    # The export has to have produced a quantized program, or the rest of this proves nothing about the
+    # quantized kernels. The numeric comparison cannot tell the difference: an unquantized export of the
+    # same model lands well inside the tolerance a quantized one needs, so it would pass while linking a
+    # library it never exercised.
+    assert reference["has_quantized"], (
+        "the quantized export produced a program with no quantized operators, so this check would "
+        "prove nothing about the quantized kernels"
+    )
+    consumer = _build_consumer(
+        work_dir,
+        "with-quantized",
+        ["runtime", "kernels_optimized", "kernels_quantized"],
+    )
+    # One int8 quantization step over this model's output range is about 5e-3, so a
+    # float32 tolerance cannot be met by a correct quantized run.
+    output = _run_consumer(consumer, model, reference, work_dir, tolerance=2e-2)
+    print(
+        f"✓ a C++ app linking executorch::kernels_quantized runs a quantized model "
+        f"({output})"
+    )
+
+
+def test_aggregate_variable_excludes_the_quantized_kernels(work_dir: Path) -> None:
+    """`${EXECUTORCH_LIBRARIES}` must not drag in the quantized kernels.
+
+    The export-time plugin that `executorch.kernels.quantized` loads carries its own
+    copy of those kernels rather than depending on the shipped library, so a process
+    holding both registers the same operators twice and the runtime stops on the
+    second one. An application that links whatever the package offers by default
+    would inherit that, so the component is defined but held out of the aggregate and
+    a consumer that wants it names it.
+
+    Checked by reading the link line rather than by running, because the failure is a
+    process-wide abort that needs a Python interpreter in the same process to trigger.
+    What this owns is the packaging decision: is the library on the link line at all.
+    """
+    package_dir = _installed_package_dir()
+    # Fatal for the same reason the check above is: the preset that builds the wheel
+    # always enables these kernels, so their absence is a regression rather than a
+    # configuration to tolerate, and skipping would report this as coverage.
+    assert sorted(
+        (package_dir / "lib").glob("libexecutorch_kernels_quantized.so*")
+    ), "the wheel ships no quantized kernels library, so this check cannot run"
+
+    source_dir = work_dir / "aggregate-only"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "consumer.cpp").write_text(_CONSUMER_SOURCE)
+    # No COMPONENTS and no named target, which is the shape the older-CMake route
+    # forces and the documentation offers as the general case.
+    (source_dir / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.28)\n"
+        "project(consumer CXX)\n"
+        "find_package(executorch REQUIRED)\n"
+        "add_executable(consumer consumer.cpp)\n"
+        "target_link_libraries(consumer PRIVATE ${EXECUTORCH_LIBRARIES})\n"
+    )
+    build_dir = work_dir / "aggregate-only-build"
+    config = package_dir / "share" / "cmake" / "executorch-config.cmake"
+    for command in (
+        [
+            _tool("cmake"),
+            "-S",
+            str(source_dir),
+            "-B",
+            str(build_dir),
+            f"-DCMAKE_PREFIX_PATH={config.parent}",
+        ],
+        [_tool("cmake"), "--build", str(build_dir)],
+    ):
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        assert result.returncode == 0, (
+            "an application linking only ${EXECUTORCH_LIBRARIES} could not be built:\n"
+            f"{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+
+    consumer = build_dir / "consumer"
+    dependencies = subprocess.run(
+        ["readelf", "-d", str(consumer)], capture_output=True, text=True, check=False
+    ).stdout
+    assert "libexecutorch_kernels_quantized" not in dependencies, (
+        "an application that linked only ${EXECUTORCH_LIBRARIES} depends on the "
+        "quantized kernels. That library collides with the export-time plugin, so it "
+        "has to be opted into by name rather than handed to every consumer."
+    )
+    # The rest of the aggregate still has to be there, or this would pass by shipping
+    # nothing at all.
+    assert "libexecutorch_kernels_optimized" in dependencies, (
+        "the aggregate no longer carries the CPU kernels, so an application linking it "
+        "would fail at run time with the operators reported missing"
+    )
+    print(
+        "✓ ${EXECUTORCH_LIBRARIES} carries the CPU kernels and not the quantized ones"
+    )
+
+
 def run_tests(work_dir: Path) -> None:
     test_find_package_honours_a_version_request(work_dir)
     test_profiler_component_is_usable(work_dir)
@@ -1245,6 +1404,8 @@ def run_tests(work_dir: Path) -> None:
     test_runtime_alone_links_but_cannot_compute(work_dir)
     test_kernels_component_runs_a_model(work_dir)
     test_pre_3_28_route_builds_a_consumer_through_variables(work_dir)
+    test_quantized_kernels_component_runs_a_model(work_dir)
+    test_aggregate_variable_excludes_the_quantized_kernels(work_dir)
     test_delegated_model_needs_the_delegate_component(work_dir)
     test_consumer_is_relocatable(work_dir)
     test_one_registry_in_the_cpp_process(work_dir)
