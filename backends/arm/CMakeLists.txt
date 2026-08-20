@@ -13,11 +13,8 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-
-if(POLICY CMP0169)
-  # Allow FetchContent_Populate to be used for source-only fetch
-  cmake_policy(SET CMP0169 OLD)
-endif()
+include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUSDK.cmake)
 
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
@@ -43,7 +40,13 @@ set(ETHOS_SDK_PATH
     "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
-option(FETCH_ETHOS_U_CONTENT "Fetch ethos_u dependencies" ON)
+# Set default value of FETCH_ETHOS_U_CONTENT depending on whether ethos sdk is
+# available in $ETHOS_SDK_PATH.
+arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
+option(FETCH_ETHOS_U_CONTENT
+       "Fetch ethos_u dependencies instead of relying on pre-downloads"
+       ${_fetch_ethos_u_default}
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
   message(
@@ -75,10 +78,9 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
       executorch_delegate_ethos_u
       PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
     )
-    include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
-    if(FETCH_ETHOS_U_CONTENT)
-      fetch_ethos_u_content(${ETHOS_SDK_PATH} ${EXECUTORCH_ROOT})
-    endif()
+    arm_ensure_ethos_u_content(
+      "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+    )
     set(DRIVER_ETHOSU_INCLUDE_DIR
         "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
@@ -108,11 +110,11 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
         GIT_REPOSITORY ${ETHOSU_LINUX_DRIVER_GIT_REPO}
         GIT_TAG ${ETHOSU_LINUX_DRIVER_GIT_TAG}
         GIT_SHALLOW TRUE
+        # Point FetchContent at a nonexistent source subdirectory, tricking it
+        # into downloading the sources without adding the project to the build.
+        SOURCE_SUBDIR none
       )
-      FetchContent_GetProperties(ethosu_linux_driver_src)
-      if(NOT ethosu_linux_driver_src_POPULATED)
-        FetchContent_Populate(ethosu_linux_driver_src)
-      endif()
+      FetchContent_MakeAvailable(ethosu_linux_driver_src)
       set(ETHOSU_LINUX_DRIVER_SOURCE_DIR ${ethosu_linux_driver_src_SOURCE_DIR})
     endif()
 
