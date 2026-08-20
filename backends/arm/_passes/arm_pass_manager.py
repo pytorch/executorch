@@ -79,6 +79,7 @@ from executorch.backends.arm._passes import (
     DecomposeLstmPass,
     DecomposeMaskedFillPass,
     DecomposeMatmulPass,
+    DecomposeMaxPool1dPass,
     DecomposeMaxPool2dPass,
     DecomposeMeanDimPass,
     DecomposeNotEqualPass,
@@ -618,6 +619,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 UnsqueezeBeforeRepeatPass(),
                 DecomposeCumsumPass(exported_program),
                 DecomposeAsStridedCopyPass(),
+                DecomposeMaxPool1dPass(),
                 DecomposeMaxPool2dPass(),
                 DecomposeLargeStrideMaxPool2dForU55Pass(),
                 SizeAdjustInputPass(),
@@ -782,6 +784,7 @@ class ArmPassManager(ExportedProgramPassManager):
                     DecomposeDivPass(tfa_pass=True),
                     DecomposeLinalgVectorNormPass(tfa_pass=True),
                     DecomposeSqrtPass(tfa_pass=True),
+                    DecomposeMaxPool1dPass(tfa_pass=True),
                     DecomposeSoftmaxPass(
                         tfa_pass=True,
                     ),
