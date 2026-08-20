@@ -168,6 +168,10 @@ class TestMeanDim:
         model = MeanDimModule(dim, keep_dim)
         assert_delegated(model, input_shape, mocker, request)
 
+    def test__default_dims(self, mocker, request, keep_dim):
+        model = MeanDimModule(dim=None, keepdim=keep_dim)
+        assert_delegated(model, (2, 4, 6, 8), mocker, request)
+
     @pytest.mark.parametrize(
         "input_shape, dim",
         [
