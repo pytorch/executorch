@@ -234,6 +234,20 @@ def _declared_requirements() -> set:
     return names
 
 
+def _cmake_version() -> tuple[int, ...] | None:
+    """The running cmake's version, or None when it cannot be determined."""
+    cmake = _tool("cmake")
+    if cmake is None:
+        return None
+    probe = subprocess.run([cmake, "--version"], capture_output=True, text=True)
+    if probe.returncode != 0:
+        return None
+    match = re.search(r"cmake version (\d+)\.(\d+)", probe.stdout)
+    # Unparseable output reads as unknown rather than as old, so a future format change
+    # runs the real check instead of silently skipping it.
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
 def _installed_package_dir() -> Path:
     """The installed executorch package, never the source checkout.
 
@@ -675,7 +689,20 @@ def _defines_symbol(library: Path, symbol: str) -> bool:
         # "defines nothing" would let a duplicate pass. The ELF magic bytes tell them apart
         # without depending on the reader's wording.
         with library.open("rb") as handle:
-            is_object_file = handle.read(4) == b"\x7fELF"
+            magic = handle.read(4)
+        # Mach-O too, not only ELF. Testing for the ELF magic alone made every macOS
+        # library read as "not an object file", so the assert below never fired there and
+        # an unreadable dylib was scored as defining nothing, which is the case it exists
+        # to catch. 64 and 32 bit, thin and fat, both byte orders.
+        is_object_file = magic in (
+            b"\x7fELF",
+            b"\xcf\xfa\xed\xfe",
+            b"\xce\xfa\xed\xfe",
+            b"\xfe\xed\xfa\xcf",
+            b"\xfe\xed\xfa\xce",
+            b"\xca\xfe\xba\xbe",
+            b"\xbe\xba\xfe\xca",
+        )
         assert not is_object_file, (
             f"nm could not read {library.name}, which is a shipped object file, so the symbol "
             f"checks cannot be trusted: {result.stderr.strip()[:200]}"
@@ -1116,15 +1143,26 @@ EXECUTORCH_LIBRARY(wheel_check, "custom_double.out", custom_double_out);
 
 
 _CUSTOM_OP_CMAKE = """\
-cmake_minimum_required(VERSION 3.24)
+# 3.28, not the 3.24 floor this package supports, because the imported targets this
+# project links are deliberately not created before that version.
+cmake_minimum_required(VERSION 3.28)
 project(custom_op_check CXX)
 
 find_package(executorch REQUIRED)
 
+# An unknown name here would be passed to the linker as a plain library rather
+# than reported, so the include directories would silently not arrive and the
+# build would fail later on a missing header.
+if(NOT TARGET executorch::runtime)
+  message(FATAL_ERROR "cannot link a target that does not exist: executorch::runtime")
+endif()
+
 add_library(custom_op_check SHARED custom_op.cpp)
-# The legacy contract: a custom-op library links the shipped Python extension,
-# which owns the operator registry it registers into.
-target_link_libraries(custom_op_check PRIVATE _portable_lib)
+# The runtime owns the operator registry. It used to live in the Python extension, so a
+# custom-op library linked that; since the split it is in libexecutorch, and linking the
+# extension from C++ cannot work because its CPython symbols only resolve inside an
+# interpreter. Linking the runtime reaches the same registry singleton.
+target_link_libraries(custom_op_check PRIVATE executorch::runtime)
 # The runtime headers include c10 headers, which belong to torch rather than to
 # this wheel, so an out-of-tree operator project supplies them the same way it
 # supplies torch itself. The package config does not and should not ship them.
@@ -1191,7 +1229,13 @@ def _dyld_load_failure(library: Path, *, with_torch: bool) -> str:
     )
     if result.returncode == 0:
         return ""
-    return (result.stdout + result.stderr).strip()
+    message = (result.stdout + result.stderr).strip()
+    # A signal leaves the message empty, and an empty return here reads as a clean load.
+    # The kernel killing the process during loading is the case an invalid signature
+    # produces, so it has to be named rather than dropped.
+    if not message and result.returncode < 0:
+        return f"the loader was killed by signal {-result.returncode}"
+    return message
 
 
 def _dyld_missing_names(message: str) -> list[str]:
@@ -1582,9 +1626,19 @@ def test_custom_op_compiles(work_dir: Path) -> None:
     if _tool("cmake") is None:
         print("- cmake unavailable, skipping the custom op check")
         return
+    # The project below requires 3.28, where the imported targets it links start existing.
+    # An older cmake refuses to configure at all, which would read as the wheel being at
+    # fault, so it is reported as the version skip it is.
+    cmake_version = _cmake_version()
+    if cmake_version is not None and cmake_version < (3, 28):
+        print(
+            f"- cmake {'.'.join(str(p) for p in cmake_version)} is older than the 3.28 "
+            "these targets need, skipping the custom op check"
+        )
+        return
 
     package_dir = _installed_package_dir()
-    if not list(package_dir.glob("extension/pybindings/_portable_lib*")):
+    if not list(package_dir.glob("extension/pybindings/_C*")):
         print("- the wheel ships no Python extension, skipping the custom op check")
         return
 
@@ -2046,10 +2100,8 @@ def test_extension_contains_no_component() -> None:
     assert _tool("nm") is not None, "nm is required to inspect the wheel"
 
     package_dir = _installed_package_dir()
-    extensions = sorted(
-        (package_dir / "extension" / "pybindings").glob("_portable_lib.*.so")
-    )
-    assert len(extensions) == 1, f"expected one _portable_lib, found {extensions}"
+    extensions = sorted((package_dir / "extension" / "pybindings").glob("_C.*.so"))
+    assert len(extensions) == 1, f"expected one _C, found {extensions}"
     extension = extensions[0]
 
     lib_dir = package_dir / "lib"
