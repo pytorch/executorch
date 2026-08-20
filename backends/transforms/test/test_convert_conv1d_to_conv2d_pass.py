@@ -107,6 +107,22 @@ class WeightUsedAsConvInput(torch.nn.Module):
         )
 
 
+class CondConv1d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.true_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+        self.false_conv = torch.nn.Conv1d(2, 4, 3, padding=1)
+
+    def forward(self, x):
+        def true_branch(arg):
+            return self.true_conv(arg)
+
+        def false_branch(arg):
+            return self.false_conv(arg)
+
+        return torch.cond(x.sum() > 0, true_branch, false_branch, [x])
+
+
 def _edge(model: torch.nn.Module, inputs: tuple[torch.Tensor, ...]):
     return to_edge(torch.export.export(model.eval(), inputs)).exported_program()
 
@@ -166,6 +182,22 @@ def test_convert_dynamic_activation_shapes():
     runtime_input = torch.randn(3, 2, 17)
 
     torch.testing.assert_close(converted.module()(runtime_input), model(runtime_input))
+
+
+def test_convert_control_flow_subgraphs():
+    model = CondConv1d().eval()
+    example_input = torch.randn(1, 2, 8)
+    edge = _edge(model, (example_input,))
+
+    converted = _transform(edge, ConvertConv1dToConv2dPass(edge))
+
+    for runtime_input in (example_input.abs(), -example_input.abs()):
+        torch.testing.assert_close(
+            converted.module()(runtime_input), model(runtime_input)
+        )
+
+    assert edge.state_dict["true_conv.weight"].dim() == 3
+    assert edge.state_dict["false_conv.weight"].dim() == 3
 
 
 def test_convert_transposed_conv1d():
