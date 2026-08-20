@@ -34,7 +34,7 @@ executorch::aten::Tensor op_scaled_dot_product_attention(
 }
 
 std::tuple<executorch::aten::Tensor&, executorch::aten::Tensor&>
-op_channelwise_gated_delta_rule(
+op_gated_delta_rule(
     executorch::runtime::KernelRuntimeContext& context,
     const executorch::aten::Tensor& query,
     const executorch::aten::Tensor& key,
@@ -44,7 +44,7 @@ op_channelwise_gated_delta_rule(
     const executorch::aten::Tensor& initial_state,
     executorch::aten::Tensor& out,
     executorch::aten::Tensor& final_state_out) {
-  return torch::executor::native::channelwise_gated_delta_rule_out(
+  return torch::executor::native::gated_delta_rule_out(
       context,
       query,
       key,
@@ -143,7 +143,7 @@ void test_scalar_decay_matches_broadcast_channelwise(
       tfFloat.zeros({batch_size, num_kv_heads, k_head_dim, v_head_dim});
 
   executorch::runtime::KernelRuntimeContext scalar_context{};
-  op_channelwise_gated_delta_rule(
+  op_gated_delta_rule(
       scalar_context,
       query,
       key,
@@ -156,7 +156,7 @@ void test_scalar_decay_matches_broadcast_channelwise(
   ASSERT_EQ(scalar_context.failure_state(), torch::executor::Error::Ok);
 
   executorch::runtime::KernelRuntimeContext channelwise_context{};
-  op_channelwise_gated_delta_rule(
+  op_gated_delta_rule(
       channelwise_context,
       query,
       key,
@@ -174,27 +174,27 @@ void test_scalar_decay_matches_broadcast_channelwise(
 
 } // namespace
 
-TEST(ChannelwiseGatedDeltaRuleTest, ScalarDecayDecodeMatchesBroadcast) {
+TEST(GatedDeltaRuleTest, ScalarDecayDecodeMatchesBroadcast) {
   test_scalar_decay_matches_broadcast_channelwise(
       /*sequence_length=*/1, /*query_heads_per_kv=*/1);
 }
 
-TEST(ChannelwiseGatedDeltaRuleTest, ScalarDecayPrefillMatchesBroadcast) {
+TEST(GatedDeltaRuleTest, ScalarDecayPrefillMatchesBroadcast) {
   test_scalar_decay_matches_broadcast_channelwise(
       /*sequence_length=*/40, /*query_heads_per_kv=*/1);
 }
 
-TEST(ChannelwiseGatedDeltaRuleTest, ScalarDecayGroupedMatchesBroadcast) {
+TEST(GatedDeltaRuleTest, ScalarDecayGroupedMatchesBroadcast) {
   test_scalar_decay_matches_broadcast_channelwise(
       /*sequence_length=*/40, /*query_heads_per_kv=*/3);
 }
 
-TEST(ChannelwiseGatedDeltaRuleTest, ScalarDecayGroupedDecodeMatchesBroadcast) {
+TEST(GatedDeltaRuleTest, ScalarDecayGroupedDecodeMatchesBroadcast) {
   test_scalar_decay_matches_broadcast_channelwise(
       /*sequence_length=*/1, /*query_heads_per_kv=*/3);
 }
 
-TEST(ChannelwiseGatedDeltaRuleTest, RejectsMismatchedScalarDecay) {
+TEST(GatedDeltaRuleTest, RejectsMismatchedScalarDecay) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
   executorch::aten::Tensor query = tfFloat.ones({1, 1, 3, 2});
@@ -207,7 +207,7 @@ TEST(ChannelwiseGatedDeltaRuleTest, RejectsMismatchedScalarDecay) {
   executorch::aten::Tensor final_state_out = tfFloat.zeros({1, 1, 2, 2});
 
   executorch::runtime::KernelRuntimeContext context{};
-  op_channelwise_gated_delta_rule(
+  op_gated_delta_rule(
       context,
       query,
       key,
@@ -221,7 +221,7 @@ TEST(ChannelwiseGatedDeltaRuleTest, RejectsMismatchedScalarDecay) {
   EXPECT_NE(context.failure_state(), torch::executor::Error::Ok);
 }
 
-TEST(ChannelwiseGatedDeltaRuleTest, RejectsPartiallyOverlappingFinalStateOut) {
+TEST(GatedDeltaRuleTest, RejectsPartiallyOverlappingFinalStateOut) {
   TensorFactory<executorch::aten::ScalarType::Float> tfFloat;
 
   executorch::aten::Tensor query = tfFloat.ones({1, 1, 1, 2});
@@ -236,7 +236,7 @@ TEST(ChannelwiseGatedDeltaRuleTest, RejectsPartiallyOverlappingFinalStateOut) {
       initial_state.mutable_data_ptr<float>() + 1);
 
   executorch::runtime::KernelRuntimeContext context{};
-  op_channelwise_gated_delta_rule(
+  op_gated_delta_rule(
       context,
       query,
       key,

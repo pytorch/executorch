@@ -71,6 +71,27 @@ def _trim_host_memory() -> None:
         ctypes.CDLL(None).malloc_trim(0)
     except AttributeError:
         pass
+      
+@contextlib.contextmanager
+def _keep_triton_reduction_loads_loop_scoped():
+    """Conservatively treating loads as reduction-masked keeps each definition in its
+    own loop to bypass the undefined variable bug in pytorch/pytorch.
+    (https://github.com/pytorch/pytorch/issues/193988)
+
+    TODO(gasoonjia): remove this setting once bug fixed in upstream
+    """
+    from torch._inductor.codegen.triton import IndexingOptions
+
+    orig_has_rmask = IndexingOptions.has_rmask
+
+    def _has_rmask(_self) -> bool:
+        return True
+
+    IndexingOptions.has_rmask = _has_rmask
+    try:
+        yield
+    finally:
+        IndexingOptions.has_rmask = orig_has_rmask
 
 
 def _full_zeros_preserving_strides(x: torch.Tensor, device) -> torch.Tensor:
@@ -99,6 +120,56 @@ def _tensor_properties_for_low_memory(tensor, original):
     if _is_cpu_clone_active() and _is_emptied(tensor):
         return None
     return original(tensor)
+  
+def _required_storage_nbytes(x: torch.Tensor) -> int:
+    """Return the backing storage required by ``x``'s logical view."""
+    if x.numel() == 0:
+        return 0
+    last_element = x.storage_offset()
+    for size, stride in zip(x.size(), x.stride()):
+        last_element += (size - 1) * stride
+    return int(last_element + 1) * x.element_size()
+
+
+@contextlib.contextmanager
+def _rehydrate_emptied_tensors(tensors):
+    """Temporarily restore zero storage while preserving tensor aliases.
+
+    Low-memory CUDA export keeps KV tensors' sizes and strides but releases
+    their backing storage. Inductor autotuning needs those original tensor
+    objects throughout cloning, reset-to-zero, and kernel launch. Restoring the
+    shared storages in place preserves views/aliases that replacing individual
+    arguments with fresh tensors would break.
+    """
+    emptied = [tensor for tensor in tensors if _is_emptied(tensor)]
+    storages = {}
+    for tensor in emptied:
+        storage = tensor.untyped_storage()
+        key = storage._cdata
+        required = _required_storage_nbytes(tensor)
+        if key not in storages or required > storages[key][1]:
+            storages[key] = (storage, required)
+
+    restored = []
+    try:
+        for storage, required in storages.values():
+            storage.resize_(required)
+            restored.append(storage)
+        for tensor in emptied:
+            tensor.zero_()
+        yield
+    finally:
+        # The autotuner finishes with reset_to_zero_args(), whose CUDA zero_
+        # launches asynchronously.  Releasing the storage before that work has
+        # completed leaves the kernel writing through a freed pointer; the
+        # resulting illegal access is then reported by some later CUDA API
+        # (often preserve_rng_state's set_rng_state).  All users of storage that
+        # is about to be resized away must be complete first.
+        cuda_devices = {tensor.device for tensor in emptied if tensor.is_cuda}
+        for device in cuda_devices:
+            torch.cuda.synchronize(device)
+        for storage in reversed(restored):
+            storage.resize_(0)
 
 
 @contextlib.contextmanager
@@ -112,6 +183,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
     )
     from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu as _Cpp
     from torch._inductor.graph import GraphLowering as _GL
+    from torch._inductor.runtime.triton_heuristics import CachingAutotuner as _Autotuner
 
     orig_clone = _cfx.clone_preserve_strides
     orig_codegen_device = _Cpp.codegen_device
@@ -127,6 +199,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         if _is_cpu_clone_active():
             return True, False
         return orig_determine_aoti_mmap_flags(consts_size)
+    orig_autotuner_run = _Autotuner.run
 
     def _is_same_skip_emptied(data, value):
         # KV buffers freed via resize_(0) all have data_ptr 0, so the stock
@@ -156,6 +229,20 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
                 return _full_zeros_preserving_strides(x, "cpu")
             return orig_clone(x).cpu()
         return orig_clone(x)
+
+    def _autotuner_run_with_rehydrated_emptied_args(self, *args, **kwargs):
+        # CachingAutotuner.run first benchmarks configurations (where cloning and
+        # reset_to_zero_args touch the inputs), then launches the winning kernel
+        # once more on the original arguments. Keep their storage valid through
+        # both phases and the final launch; wrapping benchmark_all_configs alone
+        # would release it too early for that last call.
+        tensors = (
+            value
+            for value in (*args, *kwargs.values())
+            if isinstance(value, torch.Tensor)
+        )
+        with _rehydrate_emptied_tensors(tensors):
+            return orig_autotuner_run(self, *args, **kwargs)
 
     def _get_const_synthesize_zeros(self, name):
         # AOTI serializes each constant via get_original_value_of_constant ->
@@ -189,6 +276,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         _tensor_properties_for_low_memory, original=orig_tensor_properties
     )
     _codecache.determine_aoti_mmap_flags = _force_external_weights_for_streaming
+    _Autotuner.run = _autotuner_run_with_rehydrated_emptied_args
     prev_active = getattr(_CPU_CLONE_GUARD, "active", False)
     _CPU_CLONE_GUARD.active = True
     try:
@@ -201,6 +289,7 @@ def _compile_time_cpu_clones(target_device: torch.device):  # noqa: C901
         _graph.is_same_tensor = orig_is_same
         _codecache.TensorProperties = orig_tensor_properties
         _codecache.determine_aoti_mmap_flags = orig_determine_aoti_mmap_flags
+        _Autotuner.run = orig_autotuner_run
 
 
 def _is_kv_buffer(name, v) -> bool:
@@ -755,6 +844,7 @@ class CudaBackend(AotiBackend, BackendDetails):
                     # `low_memory_mode="ON"` compile spec, since the
                     # monkey-patch can interact poorly with other models'
                     # AOTI compile pipelines.
+                    stack.enter_context(_keep_triton_reduction_loads_loop_scoped())
                     stack.enter_context(
                         _compile_time_cpu_clones(torch.device(cls.get_device_name()))
                     )

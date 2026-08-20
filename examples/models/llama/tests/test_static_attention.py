@@ -258,6 +258,53 @@ class StaticAttentionTest(unittest.TestCase):
         ):
             test(*args)
 
+    def test_sliding_window_chunked_prefill(self):
+        prompt_len = 24
+        global_cache_len = 32
+
+        def sliding_window_mask(window):
+            causal = torch.tril(torch.ones(prompt_len, prompt_len, dtype=torch.bool))
+            return causal & torch.triu(
+                torch.ones(prompt_len, prompt_len, dtype=torch.bool),
+                diagonal=-(window - 1),
+            )
+
+        def test(window, chunk_len):
+            config = ModelArgs(
+                dim=64,
+                n_heads=4,
+                n_kv_heads=2,
+                max_seq_len=prompt_len,
+                max_context_len=global_cache_len + prompt_len,
+                n_layers=2,
+                vocab_size=128,
+                generate_full_logits=True,
+            )
+            mha_transformer, static_transformer, static_config = (
+                self._get_test_transformers(config)
+            )
+            # Layer 0 is the local (sliding-window) layer, layer 1 is global.
+            mha_transformer.layers[0].attention.mask[:prompt_len, :prompt_len] = (
+                sliding_window_mask(window)
+            )
+            x = torch.randint(config.vocab_size, (1, prompt_len))
+            expected = mha_transformer(x)
+
+            cache_lens = [window, global_cache_len]
+            single_chunk = StaticAttentionIOManager(
+                static_config, prompt_len, cache_lens
+            ).prefill(static_transformer, x)
+            chunked = StaticAttentionIOManager(
+                static_config, chunk_len, cache_lens
+            ).prefill(static_transformer, x)
+
+            msg = f"window={window}, chunk_len={chunk_len}"
+            self.assertTrue(torch.isclose(chunked, single_chunk, rtol=1e-3).all(), msg)
+            self.assertTrue(torch.isclose(chunked, expected, rtol=1e-3).all(), msg)
+
+        test(window=4, chunk_len=8)  # chunk longer than the window
+        test(window=12, chunk_len=6)  # chunk shorter than the window
+
     def test_lookahead_decode(self):
         config = ModelArgs(
             dim=64,

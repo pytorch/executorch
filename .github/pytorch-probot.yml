@@ -7,6 +7,7 @@ ciflow_push_tags:
 - ciflow/cuda-perf
 - ciflow/metal
 - ciflow/mlx
+- ciflow/rocm
 - ciflow/nightly
 - ciflow/trunk
 - ciflow/binaries

@@ -6,7 +6,7 @@
 
 # pyre-unsafe
 
-"""Microbenchmark for the ``channelwise_gated_delta_rule`` custom op.
+"""Microbenchmark for the ``gated_delta_rule`` custom op.
 
 Times the fused recurrent kernel in isolation (no model) at representative
 GatedDeltaNet sizes, for both the decode (T=1) and prefill (T>1) regimes. Use it
@@ -14,7 +14,7 @@ to compare kernel variants (e.g. naive vs. fused) — rebuild the custom op, run
 this, and diff the numbers.
 
 Run (in an env where the custom op is built):
-    python -m executorch.extension.llm.custom_ops.bench_channelwise_gated_delta_rule
+    python -m executorch.extension.llm.custom_ops.bench_gated_delta_rule
 """
 
 import itertools
@@ -24,7 +24,7 @@ import torch
 
 from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
 
-_OP = torch.ops.llama.channelwise_gated_delta_rule.default
+_OP = torch.ops.llama.gated_delta_rule.default
 
 
 def _make_inputs(b: int, h: int, t: int, k: int, v: int, scalar_decay: bool = False):
@@ -74,7 +74,7 @@ def main() -> None:
     ]
 
     print(
-        f"channelwise_gated_delta_rule microbenchmark "
+        f"gated_delta_rule microbenchmark "
         f"(K=V={k}, fp32, 1 thread, state={32 * k * v * 4 // 1024}KB)"
     )
     print(

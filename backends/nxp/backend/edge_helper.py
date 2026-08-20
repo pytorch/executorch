@@ -8,7 +8,7 @@ import operator
 
 import torch
 
-from executorch.backends.nxp.ops_aliases import (
+from executorch.backends.nxp.tests.ops_aliases import (
     AddTensor,
     Amax,
     Amin,
@@ -413,18 +413,18 @@ def try_get_arg(node: Node, idx: int) -> Argument | None:
     return node.args[idx] if idx < len(node.args) else None
 
 
-def input_quantization_type(
+def input_quantization_parameters(
     node: Node, input_index: int | tuple[int, int]
-) -> torch.dtype | None:
-    """Return the quantization input datatype of the QDQ quantized `node`.
+) -> tuple[Scale, ZeroPoint, torch.dtype] | None:
+    """Return the input quantization parameters of the QDQ quantized `node`.
 
     :param node: The compute node.
     :param input_index: The index into the `node.args`. If a tuple of 2 ints is provided,
                          `args[input_index[0]][input_index[1]]` is used instead.
-    :return: The input quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+    :return: The input quantization parameters of the QDQ quantized `node`, or `None` if the graph does not follow the
               QDQ pattern or some metadata is incomplete or an invalid input index is given.
 
-          │ <returned type>
+          │ <returned parameters>
     ┌─────▼──────┐
     │ Dequantize │
     └─────┬──────┘
@@ -455,17 +455,24 @@ def input_quantization_type(
     if (dequantize_input_val := dequantize_node.args[0].meta.get("val")) is None:
         return None  # Invalid metadata.
 
-    return dequantize_input_val.dtype
+    params = get_quantization_parameters_for(dequantize_node)
+    dtype = dequantize_input_val.dtype
+    if params is None or dtype is None:
+        return None
+
+    return *params, dtype
 
 
-def output_quantization_type(node: Node, output_index: int) -> torch.dtype | None:
-    """Return the quantization output datatype of the QDQ quantized `node`.
+def output_quantization_parameters(
+    node: Node, output_index: int
+) -> tuple[Scale, ZeroPoint, torch.dtype] | None:
+    """Return the output quantization parameters of the QDQ quantized `node`.
 
     :param node: The compute node.
     :param output_index: If the `node` has multiple outputs and therefore multiple `getitem` nodes follow it, the
                           index selects the output. If no `getitem` nodes follow it, the operator
                           produces only 1 output (most common case), and the value `0` must be used.
-    :return: The output quantization datatype of the QDQ quantized `node`, or `None` if the graph does not follow the
+    :return: The output quantization parameters of the QDQ quantized `node`, or `None` if the graph does not follow the
               QDQ pattern or some metadata is incomplete or an invalid input index is given.
 
                                            ┌───▼────┐
@@ -477,10 +484,10 @@ def output_quantization_type(node: Node, output_index: int) -> torch.dtype | Non
     ┌────▼─────┐         or       │ getitem(output_index) │    ...
     │ Quantize │                  └─────────┬─────────────┘
     └────┬─────┘                            │ float
-         │ <returned type>             ┌────▼─────┐
+         │ <returned parameters>       ┌────▼─────┐
                                        │ Quantize │
                                        └────┬─────┘
-                                            │ <returned type>
+                                            │ <returned parameters>
     """
     users = list(node.users)
     if len(users) == 1 and _is_quantize(quantize_node := users[0]):
@@ -512,4 +519,9 @@ def output_quantization_type(node: Node, output_index: int) -> torch.dtype | Non
     if (quantize_val := quantize_node.meta.get("val")) is None:
         return None  # Invalid metadata.
 
-    return quantize_val.dtype
+    params = get_quantization_parameters_for(quantize_node)
+    dtype = quantize_val.dtype
+    if params is None or dtype is None:
+        return None
+
+    return *params, dtype

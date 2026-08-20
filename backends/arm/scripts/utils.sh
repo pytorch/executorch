@@ -93,7 +93,7 @@ function download_with_retry() {
     for attempt in $(seq 1 ${max_attempts}); do
         rm -f "${output}"
         if curl --fail --retry 3 --retry-delay 5 --retry-connrefused --retry-all-errors \
-             -L --output "${output}" "${url}" \
+             "${ARM_SETUP_CURL_PROGRESS_ARGS[@]}" -L --output "${output}" "${url}" \
            && verify_md5 "${expected_md5}" "${output}"; then
             return 0
         fi
