@@ -6,7 +6,7 @@
 
 import copy
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -19,6 +19,44 @@ from torch.export.exported_program import ExportedProgram
 def enforcedmethod(func):
     func.__enforcedmethod__ = True
     return func
+
+
+@dataclass
+class DelegateScratchSpec:
+    """A scratch buffer the delegate needs for the duration of one execute() call.
+
+    The memory planner allocates it in the arena and may reuse the bytes for
+    anything whose lifetime does not overlap the delegate call, so nothing may
+    be carried across calls in it, and the pointer may not be retained or
+    registered with a driver. The backend is responsible for knowing how many
+    buffers it declared, the same way it already knows how many inputs and
+    outputs it has; the runtime attaches no roles to delegate arguments.
+
+    The buffer gets the memory planner's alignment, 16 bytes by default, so a
+    backend with a stricter hardware requirement should check the pointer it
+    receives.
+
+    ``mem_id`` pins the buffer to one of the planned memory buffers, which is
+    how a delegate asks for a specific pool such as SRAM. Which id means which
+    pool is a property of the target, not of the backend, so take it from a
+    compile spec rather than hardcoding one: pinning to a pool the integrator
+    does not supply fails at load time, and a non-default ``mem_id`` is also
+    rejected by ``share_mutable_buffers`` and by
+    ``enable_non_cpu_memory_planning``. Leaving it None uses the default pool.
+    """
+
+    nbytes: int
+    mem_id: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.nbytes <= 0:
+            raise ValueError(
+                f"Scratch buffer size must be positive, got {self.nbytes} bytes."
+            )
+        if self.mem_id is not None and self.mem_id < 1:
+            raise ValueError(
+                f"Scratch buffer mem_id must be at least 1, got {self.mem_id}."
+            )
 
 
 @dataclass
@@ -37,6 +75,12 @@ class PreprocessResult:
     # lowered_module.meta field in the graph, but not directly serialized
     # into the PTE file.
     _delegate_info_meta: Optional[Any] = None
+
+    # Scratch buffers the delegate needs at execute() time. They are memory
+    # planned into the arena and passed to the backend as the trailing
+    # arguments of the delegate call, after its inputs and outputs, so the
+    # backend reads them at args[args.size() - len(scratch_specs) + i].
+    scratch_specs: List[DelegateScratchSpec] = field(default_factory=list)
 
 
 """

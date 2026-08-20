@@ -29,6 +29,7 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
+using executorch::aten::Tensor;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
 using executorch::runtime::BackendInterface;
@@ -39,6 +40,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
@@ -905,3 +907,79 @@ INSTANTIATE_TEST_SUITE_P(
     VariedAlignment,
     DelegateDataAlignmentTest,
     testing::Values(false, true));
+
+/**
+ * Loads a program whose delegate declared memory-planned scratch, so the
+ * backend receives it as trailing arguments after the inputs and outputs.
+ */
+class DelegateScratchTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+    ASSERT_EQ(StubBackend::register_singleton(), Error::Ok);
+    program_path_ = std::getenv("ET_MODULE_ADD_MUL_DELEGATED_SCRATCH_PATH");
+    ASSERT_FALSE(program_path_.empty());
+  }
+
+  void TearDown() override {
+    StubBackend::singleton().reset();
+  }
+
+  std::string program_path_;
+};
+
+TEST_F(DelegateScratchTest, ScratchArrivesAfterTheInputsAndOutputs) {
+  // Must match --scratch_bytes in the genrule that produced the program.
+  constexpr size_t kScratchBytes = 1024;
+  // ModuleAddMul takes three inputs and returns one output.
+  constexpr size_t kNumIoArgs = 4;
+
+  bool executed = false;
+  StubBackend::singleton().install_execute(
+      [&](ET_UNUSED BackendExecutionContext& backend_execution_context,
+          ET_UNUSED DelegateHandle* handle,
+          Span<EValue*> args) -> Error {
+        executed = true;
+        EXPECT_EQ(args.size(), kNumIoArgs + 1);
+
+        EXPECT_TRUE(args[kNumIoArgs]->isTensor());
+        Tensor scratch = args[kNumIoArgs]->toTensor();
+        EXPECT_EQ(scratch.scalar_type(), executorch::aten::ScalarType::Byte);
+        EXPECT_EQ(scratch.dim(), 1);
+        EXPECT_EQ(scratch.nbytes(), kScratchBytes);
+
+        // The planner owns these bytes, so they must be real memory that no
+        // input or output also points at.
+        void* scratch_ptr = scratch.mutable_data_ptr();
+        EXPECT_NE(scratch_ptr, nullptr);
+        for (size_t i = 0; i < kNumIoArgs; ++i) {
+          EXPECT_NE(args[i]->toTensor().mutable_data_ptr(), scratch_ptr);
+        }
+        std::memset(scratch_ptr, 0xAB, scratch.nbytes());
+        return Error::Ok;
+      });
+
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path_.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  Result<Program> program = Program::load(&loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // The scratch is planned, so it must be accounted for in the arena rather
+  // than allocated behind the runtime's back.
+  Result<MethodMeta> method_meta = program->method_meta("forward");
+  ASSERT_EQ(method_meta.error(), Error::Ok);
+  size_t planned_bytes = 0;
+  for (size_t i = 0; i < method_meta->num_memory_planned_buffers(); ++i) {
+    planned_bytes += method_meta->memory_planned_buffer_size(i).get();
+  }
+  EXPECT_GE(planned_bytes, kScratchBytes);
+
+  auto inputs = executorch::extension::prepare_input_tensors(*method);
+  ASSERT_EQ(inputs.error(), Error::Ok);
+  ASSERT_EQ(method->execute(), Error::Ok);
+  EXPECT_TRUE(executed);
+}

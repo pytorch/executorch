@@ -100,6 +100,21 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_library,
+    name = "insert_delegate_scratch_pass",
+    srcs = [
+        "insert_delegate_scratch_pass.py",
+    ],
+    deps = [
+        ":propagate_device_pass",
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:memory",
+        "//executorch/exir:tensor",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
     name = "insert_write_back_for_buffers_pass",
     srcs = [
         "insert_write_back_for_buffers_pass.py",

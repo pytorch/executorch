@@ -23,6 +23,7 @@ import torch
 import torch.export.exported_program as ep
 from executorch.exir import delegate
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
@@ -35,6 +36,7 @@ from executorch.exir.lowered_backend_module import (
 from executorch.exir.serde.export_serialize import SerializeError
 from executorch.exir.serde.schema import (
     CompileSpec,
+    DelegateScratchSpec as SerdeDelegateScratchSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
     SCHEMA_VERSION,
     SchemaVersion,
@@ -299,6 +301,10 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             compile_specs=serialized_compile_spec,
             backend_id=lowered_module.backend_id,
             named_data_store=named_data_store,
+            scratch_specs=[
+                SerdeDelegateScratchSpec(nbytes=spec.nbytes, mem_id=spec.mem_id)
+                for spec in lowered_module.scratch_specs
+            ],
         )
 
         json_lowered_module = json.dumps(
@@ -616,7 +622,11 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             backend_id,
             processed_bytes,
             compile_specs,
-            named_data_store
+            named_data_store,
+            [
+                DelegateScratchSpec(nbytes=spec.nbytes, mem_id=spec.mem_id)
+                for spec in (serialized_lowered_module.scratch_specs or [])
+            ],
         )
         self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
         return self.graph.get_attr(serialized_lowered_module_arg.name)

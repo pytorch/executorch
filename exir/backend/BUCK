@@ -77,6 +77,7 @@ fbcode_target(_kind = runtime.python_library,
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
+        "//executorch/exir:tensor",
     ],
 )
 

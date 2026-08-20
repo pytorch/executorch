@@ -54,6 +54,10 @@ from executorch.exir.passes.external_constants_pass import (
     external_constants_pass,
     external_mutable_weights_pass,
 )
+from executorch.exir.passes.insert_delegate_scratch_pass import (
+    InsertDelegateScratchPass,
+    strip_delegate_scratch_pass,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
@@ -743,6 +747,8 @@ def pre_memory_planning_passes(
         raise RuntimeError(
             f"sym_shape_eval_pass must be a dict or a PassBase, got {config.sym_shape_eval_pass}"
         )
+    # InsertDelegateScratchPass must stay last: it adds arguments to delegate
+    # calls, which no interpreter-based pass can retrace afterwards.
     if config.remove_view_copy:
         return [
             NormalizeViewCopyBasePass(),
@@ -750,11 +756,13 @@ def pre_memory_planning_passes(
             ReplaceViewCopyWithViewPass(),
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            InsertDelegateScratchPass(),
         ]
     else:
         return [
             sym_shape_eval_pass,
             config.to_out_var_pass,
+            InsertDelegateScratchPass(),
         ]
 
 
@@ -775,25 +783,34 @@ def edge_to_executorch_passes(
         device_cfg = propagate_device_config
 
     edge_compile_config = edge_compile_config or EdgeCompileConfig()
-    passes: List[PassType] = [
-        # ExecuTorch backend ops are unable to handle unbacked symints. So after
-        # this pass, passes cannot be Interpreter-based, because it will fail if
-        # there exists an unbacked symint operation.
-        *config.passes,
-        SpecPropPass(),
-        PropagateDevicePass(
-            skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
-            skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
-            enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
-        ),
-        EdgeToBackendOpsPass(),
-        RemoveGraphAssertsPass(),
-    ] + pre_memory_planning_passes(config, name)
-
-    if not edge_compile_config._skip_dim_order:
-        passes.insert(len(config.passes), LegalizePortableDimOrderPass())
-
-    return passes
+    return (
+        [
+            # to_executorch() writes its lowered graph back into the edge
+            # program, so clear any delegate scratch a previous call left
+            # behind before anything retraces the graph.
+            strip_delegate_scratch_pass,
+            # ExecuTorch backend ops are unable to handle unbacked symints. So
+            # after this pass, passes cannot be Interpreter-based, because it
+            # will fail if there exists an unbacked symint operation.
+            *config.passes,
+        ]
+        + (
+            []
+            if edge_compile_config._skip_dim_order
+            else [LegalizePortableDimOrderPass()]
+        )
+        + [
+            SpecPropPass(),
+            PropagateDevicePass(
+                skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
+                skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
+                enable_non_cpu_memory_planning=config.enable_non_cpu_memory_planning,
+            ),
+            EdgeToBackendOpsPass(),
+            RemoveGraphAssertsPass(),
+        ]
+        + pre_memory_planning_passes(config, name)
+    )
 
 
 def _generate_edge_program(

@@ -17,7 +17,7 @@ import executorch.exir.serde.schema as export_schema
 from executorch.exir.serde.union import _Union
 
 # NOTE: Please update this value if any modifications are made to the schema
-SCHEMA_VERSION = (5, 4)
+SCHEMA_VERSION = (5, 5)
 TREESPEC_VERSION = 1
 
 
@@ -399,6 +399,12 @@ class CompileSpec:
 
 
 @dataclass
+class DelegateScratchSpec:
+    nbytes: int
+    mem_id: Optional[int] = None
+
+
+@dataclass
 class LoweredBackendModule:
     backend_id: str
     processed_bytes: str
@@ -407,3 +413,4 @@ class LoweredBackendModule:
     original_state_dict: str
     original_constants: str
     named_data_store: Optional[bytes] = None
+    scratch_specs: Optional[List[DelegateScratchSpec]] = None
