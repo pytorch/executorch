@@ -14,7 +14,6 @@ can run every test from the model file alone; manifest.json only maps ops to
 
 Coverage is reconciled up front: every discovered component must have either a
 recipe or an explicit skip reason, otherwise the run fails (no silent gaps).
-
 """
 
 from __future__ import annotations
@@ -44,7 +43,8 @@ from op_guards import (  # type: ignore[import-not-found]  # noqa: E402
 
 
 def _assert_executorch_from_source(source_dir: Path) -> None:
-    """Fail fast if the imported ``executorch`` is not the one under source_dir.
+    """Fail fast if the imported ``executorch`` is not the one under
+    source_dir.
 
     The pack ships C++ kernels copied straight from the repo tree, but the test
     models are exported by importing ``executorch`` as a Python package. If that
@@ -54,7 +54,6 @@ def _assert_executorch_from_source(source_dir: Path) -> None:
     tensor) while the pack registers the CURRENT arity -- so the op links but
     fails at runtime with a KernelCall arity mismatch. Catch that skew here
     instead of on the FVP.
-
     """
     import executorch  # noqa: PLC0415
 
@@ -169,7 +168,6 @@ def _compute_test_threshold(actual, expected):
     the other multi-output recipes return tuples, and the comparison and
     logical recipes return bool tensors, which cannot be subtracted. Both are
     compared leaf-wise in float space, so an exact match yields 0.0/0.0.
-
     """
     a_leaves = actual if isinstance(actual, (tuple, list)) else (actual,)
     e_leaves = expected if isinstance(expected, (tuple, list)) else (expected,)
@@ -197,12 +195,15 @@ def _export_cortex_m(
     display_metadata: bool = False,
     target_core: str = "m55",
 ) -> ExecutorchProgramManager:
+    from executorch.backends.cortex_m.edge_compile_config import (
+        cortex_m_edge_compile_config,
+    )
     from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
         CortexMPassManager,
     )
     from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
     from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-    from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+    from executorch.exir import to_edge_transform_and_lower
     from torchao.quantization.pt2e import move_exported_model_to_eval
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -235,17 +236,7 @@ def _export_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported,
-        compile_config=EdgeCompileConfig(
-            preserve_ops=[
-                torch.ops.aten.linear.default,
-                torch.ops.aten.hardsigmoid.default,
-                torch.ops.aten.hardsigmoid_.default,
-                torch.ops.aten.hardswish.default,
-                torch.ops.aten.hardswish_.default,
-            ],
-            _check_ir_validity=False,
-            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
-        ),
+        compile_config=cortex_m_edge_compile_config(),
         constant_methods=metadata,
     )
     edge._edge_programs["forward"] = CortexMPassManager(
@@ -272,7 +263,6 @@ def _export_ethos_u(
     all, so they cannot be exported for any target -- as are the few in
     op_recipes.ETHOS_U_SKIPS, which this flow cannot lower for the documented
     backend reasons but which still run on the CPU variants.
-
     """
     from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
     from executorch.backends.arm.quantizer import (
@@ -341,7 +331,6 @@ def _strip_guards_fn(gm) -> None:
     The Arm annotation/decomposition passes iterate over the graph and reject
     unexpected ``call_module`` nodes (``DecomposeSelectScatterPass: call_module
     is not supported``), so remove it before lowering to the Ethos-U delegate.
-
     """
     changed = False
     for node in list(gm.graph.nodes):
@@ -355,9 +344,8 @@ def _strip_guards_fn(gm) -> None:
 
 def _is_delegated(program: ExecutorchProgramManager) -> bool:
     """True if the forward graph contains an Ethos-U delegate call, i.e. Vela
-    took at least part of the graph onto the NPU (the rest, if any, stays on the
-    host core).
-    """
+    took at least part of the graph onto the NPU (the rest, if any, stays on
+    the host core)."""
     return any(
         node.op == "call_function" and "executorch_call_delegate" in str(node.target)
         for node in program.exported_program("forward").graph_module.graph.nodes
@@ -374,7 +362,6 @@ def _assert_kernel_present(
     quantize/dequantize (this happened for the conv recipes when their inputs
     were channel-first). Require the op's own cortex_m:: kernel in the final
     forward graph so such fallbacks fail loudly at export time.
-
     """
     if category != "Cortex-M":
         return
@@ -423,9 +410,8 @@ def _assert_arity_matches_schema(
     shipped schema -- the signature-skew symptom of exporting with a stale
     executorch (see _assert_executorch_from_source).
 
-    Such a .pte links against the pack but fails at runtime with a KernelCall
-    arity mismatch.
-
+    Such a .pte links against the pack but fails at runtime with a
+    KernelCall arity mismatch.
     """
     if category != "Cortex-M":
         return

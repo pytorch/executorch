@@ -6,6 +6,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import pytest
+from executorch.backends.cortex_m.edge_compile_config import (
+    cortex_m_edge_compile_config,
+)
 
 from executorch.backends.cortex_m.library import cmsis_nn
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
@@ -115,3 +118,13 @@ class TestPassManagerTargetConfigWiring:
         pm = CortexMPassManager(exported_program=None, target_config=target_config)
         assert pm.target_config.cpu == CortexM.M33
         assert pm.target_config.backend == cmsis_nn.Backend.DSP
+
+    def test_explicit_layout_is_opt_in(self):
+        from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
+            CortexMPassManager,
+        )
+
+        assert not cortex_m_edge_compile_config()._skip_dim_order
+        assert cortex_m_edge_compile_config(use_explicit_layout=True)._skip_dim_order
+        assert not CortexMPassManager(None).use_explicit_layout
+        assert CortexMPassManager(None, use_explicit_layout=True).use_explicit_layout
