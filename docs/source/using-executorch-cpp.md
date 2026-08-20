@@ -275,8 +275,8 @@ they find each other once the program links against the installed package.
 
 ### Running on a GPU with the CUDA package
 
-The CUDA build is a separate package. Install it with the index for your CUDA version, for example
-CUDA 12.6:
+The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
+matching the CUDA version you have (`cu126`, `cu130` or `cu132`). For CUDA 12.6:
 
 ```
 pip install executorch torch \
@@ -301,11 +301,10 @@ target_link_libraries(app PRIVATE executorch::runtime
                                   executorch::backend_cuda)
 ```
 
-The model has to be exported for CUDA as well, which needs a machine with a GPU:
-
-Exporting for CUDA needs the CUDA compiler (`nvcc`) on your `PATH`, because the backend compiles
-the model into GPU code ahead of time. `pip install` does not provide it, so install the CUDA
-Toolkit for this step. Check it with `nvcc --version`.
+The model has to be exported for CUDA as well, on a machine with a GPU. That step also needs the
+CUDA compiler (`nvcc`) on your `PATH`, because the backend compiles the model into GPU code ahead
+of time. `pip install` does not provide it, so install the CUDA Toolkit for this step and check it
+with `nvcc --version`.
 
 ```python
 # export_cuda.py, the same model as before with one line added
