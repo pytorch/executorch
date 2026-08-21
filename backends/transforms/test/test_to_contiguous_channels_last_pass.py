@@ -10,6 +10,9 @@ from typing import Any, Tuple
 import pytest
 
 import torch
+from executorch.backends.transforms.absorb_boundary_layout_copies import (
+    AbsorbBoundaryLayoutCopies,
+)
 from executorch.backends.transforms.to_contiguous_channels_last_pass import (
     ToContiguousChannelsLastPass,
 )
@@ -354,10 +357,10 @@ cases = {
     ),
     "conv1d_rank3": PermuteCountTestCase(Conv1dModule(), (torch.randn(1, 2, 8),), 0),
     "conv2d_rank3": PermuteCountTestCase(
-        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 2, 2
+        Conv2dModule(), (torch.randn(2, 8, 8),), 0, 2, 1, 2
     ),
     "conv2d_rank4": PermuteCountTestCase(
-        Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0, 0, 2, 0
+        Conv2dModule(), (torch.randn(1, 2, 8, 8),), 0, 0, 0, 0
     ),
     "conv3d_rank4": PermuteCountTestCase(
         Conv3dModule(), (torch.randn(2, 6, 6, 6),), 0, 2, 0, 2
@@ -418,7 +421,7 @@ cases = {
         (torch.randn(1, 4, 8, 8),),
         0,
         0,
-        2,
+        0,
         0,
     ),
     "transpose_conv": PermuteCountTestCase(
@@ -426,10 +429,10 @@ cases = {
         (torch.randn(1, 2, 8, 8),),
         0,
         0,
-        2,
+        0,
         0,
     ),
-    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 4, 2),
+    "views": PermuteCountTestCase(ViewsModule(), (torch.rand(1, 2, 2, 4),), 0, 2, 2, 2),
     "transposes": PermuteCountTestCase(
         TransposesModule(),
         (torch.randn(1, 2, 3, 4),),
@@ -443,7 +446,7 @@ cases = {
         (torch.randn(1, 2, 8, 8),),
         0,
         0,
-        2,
+        0,
         0,
     ),
     "lstm": PermuteCountTestCase(
@@ -498,7 +501,7 @@ cases = {
         Model4ConvLstmLinearLayerNorm(), (torch.randn(2, 8, 32),), 37, 106, 36, 103
     ),
     "model_5_dwconv_gelu_layernorm_avgpool": PermuteCountTestCase(
-        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2, 0, 4, 0
+        Model5DwConvGeluLayerNormAvgPool(), (torch.randn(1, 8, 16, 16),), 2, 0, 2, 0
     ),
     "model_6_gru_linear": PermuteCountTestCase(
         Model6GruLinear(), (torch.randn(2, 16, 8),), 20, 56, 20, 55
@@ -511,7 +514,7 @@ cases = {
         (torch.randn(1, 8, 16, 16),),
         0,
         0,
-        5,
+        2,
         0,
     ),
     "model_9_dilated_conv_batchnorm_avgpool_residual": PermuteCountTestCase(
@@ -519,7 +522,7 @@ cases = {
         (torch.randn(1, 8, 16, 16),),
         0,
         0,
-        5,
+        2,
         0,
     ),
     "model_10_dwconv_batchnorm_linear_cat": PermuteCountTestCase(
@@ -658,6 +661,18 @@ def _count_ops(graph_module: torch.fx.GraphModule, targets: set) -> int:
     )
 
 
+def _run_under_contract(exported_program, contract, inputs):
+    """Call the method the way its (possibly rewritten) layout contract asks."""
+    args = list(inputs)
+    for index, dims in contract.inputs.items():
+        args[index] = args[index].permute(list(dims)).contiguous()
+    result = exported_program.module()(*args)
+    results = list(result) if isinstance(result, (tuple, list)) else [result]
+    for index, dims in contract.outputs.items():
+        results[index] = results[index].permute(list(dims))
+    return results[0] if len(results) == 1 else results
+
+
 def run_test(case: PermuteCountTestCase) -> None:
     case.module.eval()
     with torch.no_grad():
@@ -675,6 +690,14 @@ def run_test(case: PermuteCountTestCase) -> None:
 
         layout_pass = ToContiguousChannelsLastPass(edge_program.exported_program())
         transformed = edge_program.transform([layout_pass])
+
+        # Region formation leaves the copies that bracket the method boundary;
+        # absorbing them is the other half of the pipeline, so the counts below
+        # are measured after both.
+        absorb_pass = AbsorbBoundaryLayoutCopies(transformed.exported_program())
+        transformed = transformed.transform([absorb_pass])
+        contract = absorb_pass.contract
+
         final_graph = transformed.exported_program().graph_module
         final_permutes = _count_ops(final_graph, _PERMUTE_TARGETS)
         final_views = _count_ops(final_graph, _VIEW_TARGETS)
@@ -683,8 +706,11 @@ def run_test(case: PermuteCountTestCase) -> None:
         assert initial_views == case.expected_initial_views
         assert final_permutes == case.expected_final_permutes
         assert final_views == case.expected_final_views
+
         ref_result = exported_program.module()(*case.inputs)
-        edge_result = transformed.exported_program().module()(*case.inputs)
+        edge_result = _run_under_contract(
+            transformed.exported_program(), contract, case.inputs
+        )
         assert torch.allclose(ref_result, edge_result, atol=1e-6)
 
 
