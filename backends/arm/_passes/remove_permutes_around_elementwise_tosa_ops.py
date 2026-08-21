@@ -15,6 +15,9 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps):
+    # The base takes an optional program; this pass always has one.
+    exported_program: ExportedProgram
+
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__(
             extra_permutable_ops={
@@ -28,9 +31,7 @@ class RemovePermutesAroundElementwiseTosaOps(RemovePermutesAroundElementwiseOps)
 
     def _is_constant(self, node: torch.fx.Node) -> bool:
         # Override fragile string match check with exported program check
-        exported_program = self.exported_program
-        assert exported_program is not None
-        return super()._is_constant(node) or is_param_node(exported_program, node)
+        return super()._is_constant(node) or is_param_node(self.exported_program, node)
 
     def permute_subgraph(self, subgraph) -> bool:
         # TABLE lookup inputs are already tied to the table layout.
