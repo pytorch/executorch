@@ -28,6 +28,16 @@ from executorch.backends.test.harness.stages import (
     ToEdgeTransformAndLower,
     ToExecutorch,
 )
+from executorch.backends.transforms.absorb_boundary_layout_copies import (
+    BoundaryLayoutContract,
+)
+
+
+def _inverse_permutation(dims: tuple[int, ...]) -> list[int]:
+    inverse = [0] * len(dims)
+    for position, dim in enumerate(dims):
+        inverse[dim] = position
+    return inverse
 
 
 class CortexMQuantize(Quantize):
@@ -48,23 +58,39 @@ class CortexMRunPasses(RunPasses):
         self,
         target_config: Optional[CortexMTargetConfig] = None,
         use_explicit_layout: bool = False,
+        use_nhwc_io: bool = False,
     ):
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
-        # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`.
-        # Pre-bind the target_config so it flows through that 2-arg call.
-        pass_list = (
-            CortexMPassManager.explicit_layout_pass_list
-            if use_explicit_layout
-            else CortexMPassManager.legacy_pass_list
+        if use_nhwc_io:
+            pass_list = CortexMPassManager.nhwc_io_pass_list
+        elif use_explicit_layout:
+            pass_list = CortexMPassManager.explicit_layout_pass_list
+        else:
+            pass_list = CortexMPassManager.legacy_pass_list
+        # The base RunPasses constructs the pass manager as `cls(ep, pass_list)`
+        # and then discards it, so keep a handle: the NHWC I/O contract is only
+        # readable from the manager.
+        self.pass_manager: Optional[CortexMPassManager] = None
+        self._new_pass_manager = partial(
+            CortexMPassManager,
+            target_config=target_config,
+            use_explicit_layout=use_explicit_layout,
+            use_nhwc_io=use_nhwc_io,
         )
         super().__init__(
-            partial(
-                CortexMPassManager,
-                target_config=target_config,
-                use_explicit_layout=use_explicit_layout,
-            ),  # type: ignore[arg-type]
+            self._build_pass_manager,  # type: ignore[arg-type]
             pass_list,  # type: ignore[arg-type]
         )
+
+    def _build_pass_manager(self, exported_program, pass_list) -> CortexMPassManager:
+        self.pass_manager = self._new_pass_manager(exported_program, pass_list)
+        return self.pass_manager
+
+    @property
+    def boundary_layout_contract(self) -> BoundaryLayoutContract:
+        if self.pass_manager is None:
+            return BoundaryLayoutContract()
+        return self.pass_manager.boundary_layout_contract
 
 
 class CortexMToEdgeTransformAndLower(ToEdgeTransformAndLower):
@@ -131,6 +157,7 @@ class CortexMTester(TesterBase):
         target_config: Optional[CortexMTargetConfig] = None,
         timeout: int = 120,
         use_explicit_layout: bool = False,
+        use_nhwc_io: bool = False,
     ):
         if callable(example_inputs):
             resolved_example_inputs = example_inputs()
@@ -138,6 +165,7 @@ class CortexMTester(TesterBase):
             resolved_example_inputs = example_inputs
         target_config = target_config or CortexMTargetConfig(cpu=CortexM.M55)
         self.use_explicit_layout = use_explicit_layout
+        self.use_nhwc_io = use_nhwc_io
         stage_classes: dict[StageType, Callable[..., Any]] = dict(
             cortex_m_stage_classes
         )
@@ -150,6 +178,7 @@ class CortexMTester(TesterBase):
         stage_classes[StageType.RUN_PASSES] = lambda: CortexMRunPasses(
             target_config=target_config,
             use_explicit_layout=use_explicit_layout,
+            use_nhwc_io=use_nhwc_io,
         )
         stage_classes[StageType.TO_EDGE_TRANSFORM_AND_LOWER] = (
             lambda: CortexMToEdgeTransformAndLower(
@@ -161,6 +190,59 @@ class CortexMTester(TesterBase):
             target_config=target_config, timeout=timeout
         )
         super().__init__(module, resolved_example_inputs, stage_classes)
+
+    @property
+    def boundary_layout_contract(self) -> BoundaryLayoutContract:
+        stage = self.stages[StageType.RUN_PASSES]
+        if not isinstance(stage, CortexMRunPasses):
+            return BoundaryLayoutContract()
+        return stage.boundary_layout_contract
+
+    def run_method_and_compare_outputs(self, *args, inputs=None, **kwargs):
+        """Keep tests in NCHW terms even when the method contract is NHWC."""
+        contract = self.boundary_layout_contract
+        if contract:
+            if inputs is None:
+                raise ValueError(
+                    "An NHWC I/O contract needs explicit inputs to permute; "
+                    "randomly generated ones would be fed to the method in the "
+                    "wrong layout."
+                )
+            inputs = tuple(
+                (
+                    value.permute(contract.inputs[index]).contiguous()
+                    if index in contract.inputs
+                    else value
+                )
+                for index, value in enumerate(inputs)
+            )
+        return super().run_method_and_compare_outputs(*args, inputs=inputs, **kwargs)
+
+    def _calculate_reference_output(self, program, inputs):
+        """Restate the NCHW reference in the lowered method's NHWC terms.
+
+        ``run_method_and_compare_outputs`` has already flipped the inputs for
+        the method under test; the reference program is still NCHW, so undo the
+        flip going in and apply the output flip coming out.
+        """
+        contract = self.boundary_layout_contract
+        if not contract:
+            return TesterBase._calculate_reference_output(program, inputs)
+
+        inputs = tuple(
+            (
+                value.permute(_inverse_permutation(contract.inputs[index])).contiguous()
+                if index in contract.inputs
+                else value
+            )
+            for index, value in enumerate(inputs)
+        )
+        output, scale = TesterBase._calculate_reference_output(program, inputs)
+        was_tensor = isinstance(output, torch.Tensor)
+        outputs = [output] if was_tensor else list(output)
+        for index, dims in contract.outputs.items():
+            outputs[index] = outputs[index].permute(_inverse_permutation(dims))
+        return (outputs[0] if was_tensor else tuple(outputs)), scale
 
     def test_dialect(
         self,
