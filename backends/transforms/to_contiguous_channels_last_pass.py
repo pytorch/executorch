@@ -141,21 +141,33 @@ class ToContiguousChannelsLastPass(ExportPass):
             inserted_copy_count,
             preoptimization_copy_count,
         )
+        # A copy the pass cannot classify as boundary or internal means it no
+        # longer knows what it did to the graph. That is the one genuinely
+        # unsound outcome, so it raises unconditionally rather than behind a
+        # flag: there is no configuration in which it is acceptable.
+        if self.report.unknown_copy_count:
+            raise RuntimeError(
+                "Channels-last layout optimization produced "
+                f"{self.report.unknown_copy_count} copies it cannot account for. "
+                f"Unknown nodes: {self.report.unknown_copy_nodes}."
+            )
+
+        # The rest are not soundness failures. Leftover anchors and internal
+        # copies are missed optimizations, and an unreadable size is a
+        # reporting limit under dynamic shapes -- the graph still computes the
+        # right thing in both cases. Backends wanting a guarantee opt in.
         if self.strict and (
             self.report.candidate_anchor_count != self.report.converted_anchor_count
             or self.report.internal_copy_count
-            or self.report.unknown_copy_count
             or self.report.copies_with_unknown_size
         ):
             raise RuntimeError(
                 "Channels-last layout optimization left "
                 f"{self.report.converted_anchor_count} converted of "
                 f"{self.report.candidate_anchor_count} candidate anchors, "
-                f"{self.report.internal_copy_count} internal and "
-                f"{self.report.unknown_copy_count} unknown copies, with "
+                f"{self.report.internal_copy_count} internal copies, and "
                 f"{self.report.copies_with_unknown_size} unknown sizes. "
-                f"Internal nodes: {self.report.internal_copy_nodes}; "
-                f"unknown nodes: {self.report.unknown_copy_nodes}."
+                f"Internal nodes: {self.report.internal_copy_nodes}."
             )
 
         return PassResult(graph_module, modified)
@@ -171,7 +183,6 @@ class ToContiguousChannelsLastPass(ExportPass):
             FuseCascadedTransposeOrPermuteOps(can_propagate=self.can_propagate),
             RemovePermutesAroundElementwiseOps(
                 exported_program=self.exported_program,
-                allow_layout_boundary_propagation=True,
                 can_propagate=self.can_propagate,
             ),
             FuseTransposeOrPermuteOpPairsPass(can_propagate=self.can_propagate),
