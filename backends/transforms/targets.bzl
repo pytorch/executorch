@@ -562,6 +562,40 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "absorb_boundary_layout_copies",
+        srcs = [
+            "absorb_boundary_layout_copies.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_layout",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_absorb_boundary_layout_copies",
+        srcs = [
+            "test/test_absorb_boundary_layout_copies.py",
+            # The permute-count matrix the absorption totals are measured on.
+            "test/test_to_contiguous_channels_last_pass.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":absorb_boundary_layout_copies",
+            ":to_contiguous_channels_last_pass",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
+        ],
+    )
+
     runtime.python_test(
         name = "test_replace_ops_with_channels_last_variants",
         srcs = [

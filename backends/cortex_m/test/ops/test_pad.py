@@ -77,6 +77,19 @@ test_cases = {
         CortexMPad((1, 2, 3, 4)),
         (ramp_tensor(-1.0, 1.0, (1, 3, 4, 5)).to(memory_format=torch.channels_last),),
     ),
+    # A channels-last tensor with one channel serializes its dim order as
+    # (0, 2, 1, 3), which names no channel axis. Deriving the physical sizes
+    # from it instead of from the shape sizes the pad write wrongly.
+    "pad_rank4_single_channel_channels_last": McuTestCase(
+        CortexMPad((1, 1, 2, 2)),
+        (ramp_tensor(-0.5, 0.5, (1, 1, 3, 4)).to(memory_format=torch.channels_last),),
+    ),
+    # With one channel and unit width the dim order collapses all the way to
+    # (0, 1, 2, 3), making the tensor indistinguishable from a contiguous one.
+    "pad_rank4_single_channel_unit_width_channels_last": McuTestCase(
+        CortexMPad((0, 0, 2, 2)),
+        (ramp_tensor(-0.5, 0.5, (1, 1, 8, 1)).to(memory_format=torch.channels_last),),
+    ),
 }
 
 

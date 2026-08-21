@@ -150,21 +150,12 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
-// The axis whose elements are adjacent in memory, read from the dim order
-// rather than inferred from the shape. Channels are innermost under both
-// supported activation contracts: dim 1 for an NCHW-logical channels-last
-// tensor, dim 3 for an NHWC-logical contiguous one.
-inline int64_t innermost_axis(const Tensor& tensor) {
-  return static_cast<int64_t>(tensor.dim_order()[tensor.dim() - 1]);
-}
-
 // A channel broadcast the elementwise kernels can serve as a flat repeat: one
-// operand holds a single value per channel, and channels are contiguous, so
-// the larger operand is a whole number of copies of it. Both activation
-// contracts place channels innermost, so this needs no layout argument. Only
-// the larger operand's dim order is consulted: the broadcast operand is
-// all-ones apart from channels, which makes its strides degenerate and its
-// reported dim order arbitrary.
+// operand holds a single value per channel, and channels are contiguous under
+// both activation contracts, so the broadcast operand's element count is the
+// repeat length. Deliberately layout-free -- deriving the channel axis from the
+// dim order would be unsound, because a serialized dim order does not identify
+// it when the channel count is one.
 inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
   if (tensor1.dim() != tensor2.dim() || tensor1.dim() != 4) {
     return false;
@@ -176,7 +167,13 @@ inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
   const bool first_is_larger = tensor1.numel() > tensor2.numel();
   const Tensor& larger = first_is_larger ? tensor1 : tensor2;
   const Tensor& smaller = first_is_larger ? tensor2 : tensor1;
-  return smaller.numel() == larger.size(innermost_axis(larger));
+  int64_t non_unit = 0;
+  for (int64_t i = 0; i < smaller.dim(); ++i) {
+    if (smaller.size(i) != 1) {
+      ++non_unit;
+    }
+  }
+  return non_unit <= 1 && larger.numel() % smaller.numel() == 0;
 }
 
 inline bool check_int32_within_range(

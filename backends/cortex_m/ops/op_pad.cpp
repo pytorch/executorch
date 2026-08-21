@@ -13,15 +13,17 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+namespace {
+
 constexpr size_t kMaxSupportedDims = 4;
 
-// cppcheck-suppress unusedFunction
-Tensor& pad_out(
+Tensor& pad_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Int64ArrayRef pre_pad,
     const Int64ArrayRef post_pad,
     int64_t pad_value,
+    bool require_contiguous,
     Tensor& out) {
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {
@@ -51,16 +53,36 @@ Tensor& pad_out(
     return out;
   }
 
-  // Read the sizes in physical memory order. The dim order says which logical
-  // axis sits where, so this covers an NCHW-logical channels-last tensor and an
-  // NHWC-logical contiguous one without asking which contract is in force.
+  if (require_contiguous) {
+    // This entry point infers nothing: it requires the dim order to say the
+    // tensor is contiguous, and then indexes the padding by logical axis.
+    if (!executorch::runtime::is_contiguous_dim_order(
+            input.dim_order().data(), input.dim_order().size()) ||
+        !executorch::runtime::is_contiguous_dim_order(
+            out.dim_order().data(), out.dim_order().size())) {
+      ET_LOG(
+          Error,
+          "cortex_m::pad_contiguous: input and output must use contiguous dim order");
+      context.fail(Error::InvalidArgument);
+      return out;
+    }
+  }
+
+  // Permute logical sizes to physical memory order.
   // Padding is already in physical order from the AOT pass.
+  constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
-  const auto dim_order = input.dim_order();
+  // Only the legacy entry point infers the layout. Its predicate is tolerant on
+  // purpose: the tolerance short-circuits before the dim order is consulted,
+  // which is what keeps it agreeing with the AOT pass for shapes whose
+  // serialized dim order cannot name the channel axis.
+  const bool legacy_channels_last =
+      !require_contiguous && is_channels_last_tensor(input);
 
   int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    dims[offset + i] = static_cast<int32_t>(input.size(dim_order[i]));
+    const size_t src = legacy_channels_last ? kNhwcDimOrder[offset + i] : i;
+    dims[offset + i] = static_cast<int32_t>(input.size(src));
   }
 
   cmsis_nn_dims input_dims = {dims[0], dims[1], dims[2], dims[3]};
@@ -96,6 +118,44 @@ Tensor& pad_out(
   }
 
   return out;
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+Tensor& pad_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef pre_pad,
+    const Int64ArrayRef post_pad,
+    int64_t pad_value,
+    Tensor& out) {
+  return pad_out_impl(
+      context,
+      input,
+      pre_pad,
+      post_pad,
+      pad_value,
+      /*require_contiguous=*/false,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& pad_contiguous_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Int64ArrayRef pre_pad,
+    const Int64ArrayRef post_pad,
+    int64_t pad_value,
+    Tensor& out) {
+  return pad_out_impl(
+      context,
+      input,
+      pre_pad,
+      post_pad,
+      pad_value,
+      /*require_contiguous=*/true,
+      out);
 }
 
 } // namespace native

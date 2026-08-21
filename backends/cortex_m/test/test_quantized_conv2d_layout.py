@@ -271,21 +271,43 @@ def test_nhwc_conv2d_fake_shape_is_logical_nhwc():
     assert output.dim_order() == (0, 1, 2, 3)
 
 
-def test_pad_preserves_singleton_height_layout():
+def test_pad_contiguous_preserves_singleton_height_layout():
     x = torch.arange(1 * 1 * 5 * 3, dtype=torch.int8).reshape(1, 1, 5, 3)
     pre_pad = [0, 0, 1, 0]
     post_pad = [0, 0, 2, 0]
 
-    actual = torch.ops.cortex_m.pad(x, pre_pad, post_pad, -7)
+    actual = torch.ops.cortex_m.pad_contiguous(x, pre_pad, post_pad, -7)
     expected = torch.nn.functional.pad(x, (0, 0, 1, 2, 0, 0, 0, 0), value=-7)
 
     assert actual.shape == torch.Size([1, 1, 8, 3])
     torch.testing.assert_close(actual, expected)
 
 
-def test_pad_rejects_invalid_padding_length():
+def test_pad_contiguous_handles_every_supported_rank():
+    """Ranks below four are contiguous by construction, so this entry point
+    covers them too. That is what lets it eventually replace ``cortex_m::pad``
+    outright rather than sitting beside it forever."""
+    for shape, pad in (
+        ((2, 3, 4, 5), [0, 0, 1, 2]),
+        ((2, 3, 4), [0, 0, 1, 2]),
+        ((3, 5), [0, 0, 1, 2]),
+        ((6,), [0, 0, 0, 2]),
+    ):
+        x = torch.randint(-8, 8, shape, dtype=torch.int8)
+        rank = len(shape)
+        offset = 4 - rank
+        actual = torch.ops.cortex_m.pad_contiguous(x, pad, pad, -7)
+        flat = []
+        for dim in reversed(range(rank)):
+            flat.extend([pad[offset + dim], pad[offset + dim]])
+        expected = torch.nn.functional.pad(x, flat, value=-7)
+        assert actual.shape == expected.shape, shape
+        torch.testing.assert_close(actual, expected)
+
+
+def test_pad_contiguous_rejects_invalid_padding_length():
     with pytest.raises(RuntimeError, match="expects four padding values per side"):
-        torch.ops.cortex_m.pad(
+        torch.ops.cortex_m.pad_contiguous(
             torch.zeros((1, 1, 5, 3), dtype=torch.int8),
             [0, 0, 0],
             [0, 0, 0, 0],
@@ -294,7 +316,7 @@ def test_pad_rejects_invalid_padding_length():
 
     with FakeTensorMode():
         with pytest.raises(RuntimeError, match="expects four padding values per side"):
-            torch.ops.cortex_m.pad(
+            torch.ops.cortex_m.pad_contiguous(
                 torch.zeros((1, 1, 5, 3), dtype=torch.int8),
                 [0, 0, 0],
                 [0, 0, 0, 0],
@@ -418,3 +440,27 @@ def test_nhwc_and_legacy_scratch_sizes_match():
             assert required_cmsis_nn_buffer_sizes(
                 legacy, backend
             ) == required_cmsis_nn_buffer_sizes(explicit, backend)
+
+
+def test_single_channel_broadcast_add_matches_legacy_layout():
+    """A single-channel broadcast is the case a dim-order derivation gets wrong.
+
+    A channels-last tensor with one channel serializes its dim order as
+    (0, 2, 1, 3), which names no channel axis at all, so the repeat length has
+    to come from the broadcast operand's element count instead.
+    """
+    x = torch.randint(-8, 8, (1, 1, 5, 7), dtype=torch.int8)
+    bias = torch.randint(-4, 4, (1, 1, 1, 1), dtype=torch.int8)
+
+    legacy = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.to(memory_format=torch.channels_last),
+        bias.to(memory_format=torch.channels_last),
+    )
+    explicit = _run_add(
+        torch.ops.cortex_m.quantized_add,
+        x.permute(0, 2, 3, 1).contiguous(),
+        bias.permute(0, 2, 3, 1).contiguous(),
+    )
+
+    torch.testing.assert_close(explicit, legacy.permute(0, 2, 3, 1))
