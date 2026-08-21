@@ -87,7 +87,13 @@ def mlx_sdpa_with_start_pos_forward(
         torch._check(start_pos + seq_len <= key.shape[2])
         attn_mask = None
     else:
-        start_pos = 0
+        # start_pos=0 would make stop_pos = start_pos + seq_len = seq_len,
+        # truncating key/value down to just the query's own length --
+        # silently discarding everything before it (e.g. DFlash's target
+        # context). Same fix pattern already used below in
+        # get_mlx_sliding_window_sdpa for the same underlying reason: set
+        # start_pos so stop_pos reaches the *full* key/value length instead.
+        start_pos = key.shape[2] - query.shape[2]
         attn_mask = attention_mask
 
     output = torch.ops.mlx.custom_sdpa(
