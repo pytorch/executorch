@@ -8,10 +8,11 @@
 
 """Prepares the process so the pybindings extension module can be imported.
 
-The extension links libtorch and dlopens backend libraries, so a few things have to happen
-before the import: torch has to be resident, the OpenVINO backend needs a path to its C
-library, and Windows needs the extension's directory on the DLL search path. Importing the
-extension without these fails to resolve symbols at load time.
+Two of these have to happen before the extension is imported: torch is made resident so the
+extension resolves libtorch symbols at load time, and on Windows the extension's directory is
+added to the DLL search path. The third, pointing the OpenVINO backend at its C library, is
+only read when that backend is first used, but it is set here so a single import prepares
+everything.
 
 Private. Import the extension through `executorch.runtime` instead.
 """
@@ -22,9 +23,11 @@ import logging
 import os
 import sys
 
-# Importing torch loads libtorch and its dependencies, so the extension can resolve them
-# when it is imported next. A pip-installed wheel has no other way to find them. Kept out of
-# the sorted block because the order is load-bearing.
+# Importing torch first loads libtorch, so the extension resolves against the same copy the
+# rest of the process uses. The wheel also records an rpath to torch/lib (see
+# _python_extension_rpath in CMakeLists.txt), so this is not the only way libtorch is found,
+# but it keeps the resident copy authoritative. Kept out of the sorted block because the
+# order is load-bearing.
 import torch as _torch  # noqa: F401  # usort: skip
 
 logger = logging.getLogger(__name__)

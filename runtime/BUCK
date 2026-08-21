@@ -8,6 +8,7 @@ fbcode_target(
     name = "runtime",
     srcs = ["__init__.py"],
     deps = [
+        "//executorch/extension/pybindings:_C",
         "//executorch/extension/pybindings:_bootstrap",
     ],
     visibility = ["PUBLIC"],

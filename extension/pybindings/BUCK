@@ -68,6 +68,7 @@ fbcode_target(_kind = runtime.python_library,
     visibility = ["PUBLIC"],
     deps = [
         ":_C",
+        "//caffe2:torch",
     ],
 )
 
