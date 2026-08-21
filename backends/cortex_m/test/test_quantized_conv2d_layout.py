@@ -213,40 +213,21 @@ def test_nhwc_conv2d_fake_shape_is_logical_nhwc():
     assert output.dim_order() == (0, 1, 2, 3)
 
 
-def test_nhwc_pad_preserves_singleton_height_layout():
+def test_pad_preserves_singleton_height_layout():
     x = torch.arange(1 * 1 * 5 * 3, dtype=torch.int8).reshape(1, 1, 5, 3)
     pre_pad = [0, 0, 1, 0]
     post_pad = [0, 0, 2, 0]
 
-    actual = torch.ops.cortex_m.pad_nhwc(x, pre_pad, post_pad, -7)
+    actual = torch.ops.cortex_m.pad(x, pre_pad, post_pad, -7)
     expected = torch.nn.functional.pad(x, (0, 0, 1, 2, 0, 0, 0, 0), value=-7)
 
     assert actual.shape == torch.Size([1, 1, 8, 3])
     torch.testing.assert_close(actual, expected)
 
 
-def test_nhwc_pad_rejects_non_4d_input():
-    with pytest.raises(RuntimeError, match="expects a 4D input tensor"):
-        torch.ops.cortex_m.pad_nhwc(
-            torch.zeros((1, 5, 3), dtype=torch.int8),
-            [0, 0, 0, 0],
-            [0, 0, 0, 0],
-            0,
-        )
-
-    with FakeTensorMode():
-        with pytest.raises(RuntimeError, match="expects a 4D input tensor"):
-            torch.ops.cortex_m.pad_nhwc(
-                torch.zeros((1, 5, 3), dtype=torch.int8),
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-                0,
-            )
-
-
-def test_nhwc_pad_rejects_invalid_padding_length():
+def test_pad_rejects_invalid_padding_length():
     with pytest.raises(RuntimeError, match="expects four padding values per side"):
-        torch.ops.cortex_m.pad_nhwc(
+        torch.ops.cortex_m.pad(
             torch.zeros((1, 1, 5, 3), dtype=torch.int8),
             [0, 0, 0],
             [0, 0, 0, 0],
@@ -255,7 +236,7 @@ def test_nhwc_pad_rejects_invalid_padding_length():
 
     with FakeTensorMode():
         with pytest.raises(RuntimeError, match="expects four padding values per side"):
-            torch.ops.cortex_m.pad_nhwc(
+            torch.ops.cortex_m.pad(
                 torch.zeros((1, 1, 5, 3), dtype=torch.int8),
                 [0, 0, 0],
                 [0, 0, 0, 0],

@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
     is_channel_broadcast,
+    has_channels_last_dim_order,
     is_channels_last,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
@@ -669,21 +670,9 @@ lib.define(
     "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
-lib.define(
-    "pad_nhwc(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor"
-)
-lib.define(
-    "pad_nhwc.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
-)
-
-
-_NHWC_INV_ORDER = [0, 3, 1, 2]
-
-
 def _pad_to_logical_order(physical_pad: list[int], input: torch.Tensor) -> list[int]:
     """Inverse of _to_physical_order: map physical-order padding back to logical."""
-    if not is_channels_last(input):
+    if not has_channels_last_dim_order(input):
         return list(physical_pad)
     return [physical_pad[_NHWC_INV_ORDER[i]] for i in range(4)]
 
@@ -696,6 +685,10 @@ def pad_meta(
     pad_value: int,
 ) -> torch.Tensor:
     rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(f"cortex_m.pad expects a rank in [1, 4], got {rank}")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad expects four padding values per side")
     offset = 4 - rank
     logical_pre = _pad_to_logical_order(pre_pad, input)
     logical_post = _pad_to_logical_order(post_pad, input)
@@ -704,7 +697,7 @@ def pad_meta(
     for i in range(rank):
         output_shape[i] += logical_pre[offset + i] + logical_post[offset + i]
     result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
-    if is_channels_last(input):
+    if has_channels_last_dim_order(input):
         result = result.to(memory_format=torch.channels_last)
     return result
 
@@ -717,6 +710,10 @@ def pad_impl(
     pad_value: int,
 ) -> torch.Tensor:
     rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(f"cortex_m.pad expects a rank in [1, 4], got {rank}")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad expects four padding values per side")
     offset = 4 - rank
     logical_pre = _pad_to_logical_order(pre_pad, input)
     logical_post = _pad_to_logical_order(post_pad, input)
@@ -726,43 +723,6 @@ def pad_impl(
         padding.extend([logical_pre[offset + i], logical_post[offset + i]])
     return F.pad(input, padding, mode="constant", value=pad_value)
 
-
-@register_fake("cortex_m::pad_nhwc")  # type: ignore[misc]
-def pad_nhwc_meta(
-    input: torch.Tensor,
-    pre_pad: list[int],
-    post_pad: list[int],
-    pad_value: int,
-) -> torch.Tensor:
-    del pad_value
-    if input.dim() != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
-    if len(pre_pad) != 4 or len(post_pad) != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
-    output_shape = [input.shape[dim] + pre_pad[dim] + post_pad[dim] for dim in range(4)]
-    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
-
-
-@impl(lib, "pad_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
-def pad_nhwc_impl(
-    input: torch.Tensor,
-    pre_pad: list[int],
-    post_pad: list[int],
-    pad_value: int,
-) -> torch.Tensor:
-    if input.dim() != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
-    if len(pre_pad) != 4 or len(post_pad) != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
-    padding = []
-    for dim in reversed(range(4)):
-        padding.extend([pre_pad[dim], post_pad[dim]])
-    return F.pad(input, padding, mode="constant", value=pad_value)
-
-
-# ===================================================================
-# QUANTIZED CONV2D OPERATION DEFINITION
-# ===================================================================
 
 lib.define(
     "quantized_conv2d("

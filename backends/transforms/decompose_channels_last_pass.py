@@ -28,7 +28,6 @@ _DECOMPOSITIONS = {
 }
 
 _DIRECT_DECOMPOSITIONS = {
-    exir_ops.edge.channels_last.constant_pad_nd.default: exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.channels_last.permute_copy.default: exir_ops.edge.aten.permute_copy.default,
 }
 

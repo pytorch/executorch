@@ -65,7 +65,6 @@ ops_list=(
     cortex_m::softmax.out
     cortex_m::transpose.out
     cortex_m::pad.out
-    cortex_m::pad_nhwc.out
     cortex_m::quantized_conv2d.out
     cortex_m::quantized_conv2d_nhwc.out
     cortex_m::quantized_depthwise_conv2d.out
