@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <limits>
 #include <optional>
@@ -149,23 +150,30 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
+// A channel broadcast the elementwise kernels can serve as a flat repeat: one
+// operand holds a single value per channel, and channels are contiguous under
+// both activation contracts, so the broadcast operand's element count is the
+// repeat length. Deliberately layout-free -- deriving the channel axis from the
+// dim order would be unsound, because a serialized dim order does not identify
+// it when the channel count is one.
 inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
-  if (tensor1.dim() != tensor2.dim()) {
+  if (tensor1.dim() != tensor2.dim() || tensor1.dim() != 4) {
+    return false;
+  }
+  if (tensor1.numel() == tensor2.numel()) {
     return false;
   }
 
-  if (tensor1.dim() != 4) {
-    return false;
+  const bool first_is_larger = tensor1.numel() > tensor2.numel();
+  const Tensor& larger = first_is_larger ? tensor1 : tensor2;
+  const Tensor& smaller = first_is_larger ? tensor2 : tensor1;
+  int64_t non_unit = 0;
+  for (int64_t i = 0; i < smaller.dim(); ++i) {
+    if (smaller.size(i) != 1) {
+      ++non_unit;
+    }
   }
-
-  if (tensor1.size(1) != tensor2.size(1)) {
-    return false;
-  }
-
-  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
-  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
-
-  return tensor1_channels_only || tensor2_channels_only;
+  return non_unit <= 1 && larger.numel() % smaller.numel() == 0;
 }
 
 inline bool check_int32_within_range(

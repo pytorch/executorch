@@ -227,6 +227,46 @@ class PadNhwc(torch.nn.Module):
         )
 
 
+class AddNhwc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("bias", _int8_values((1, 1, 1, 3)))
+
+    def forward(self, x):
+        return torch.ops.cortex_m.quantized_add.default(
+            x,
+            0,
+            1 << 30,
+            -1,
+            self.bias,
+            0,
+            1 << 30,
+            -1,
+            0,
+            1 << 30,
+            -1,
+            -128,
+            127,
+        )
+
+
+class MulNhwc(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("bias", _int8_values((1, 1, 1, 3)))
+
+    def forward(self, x):
+        return torch.ops.cortex_m.quantized_mul.default(
+            x,
+            0,
+            self.bias,
+            0,
+            0,
+            1 << 30,
+            -1,
+        )
+
+
 def test_conv2d_nhwc_runs_on_fvp(cortex_m_target):
     _run_on_fvp(
         Conv2dNhwc(),
@@ -293,4 +333,24 @@ def test_pad_contiguous_runs_on_fvp_with_singleton_height(cortex_m_target):
         _int8_values((1, 1, 7, 3)),
         exir_ops.edge.cortex_m.pad_contiguous.default,
         cortex_m_target,
+    )
+
+
+def test_channel_broadcast_add_nhwc_runs_on_fvp(cortex_m_target):
+    _run_on_fvp(
+        AddNhwc(),
+        _int8_values((1, 5, 7, 3)),
+        exir_ops.edge.cortex_m.quantized_add.default,
+        cortex_m_target,
+        atol=1,
+    )
+
+
+def test_channel_broadcast_mul_nhwc_runs_on_fvp(cortex_m_target):
+    _run_on_fvp(
+        MulNhwc(),
+        _int8_values((1, 5, 7, 3)),
+        exir_ops.edge.cortex_m.quantized_mul.default,
+        cortex_m_target,
+        atol=1,
     )
