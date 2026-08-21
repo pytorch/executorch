@@ -8,8 +8,10 @@
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 from typing import List
 
 
@@ -39,6 +41,70 @@ from examples.models import Backend, Model
 class ModelTest:
     model: Model
     backend: Backend
+
+
+def test_a_model_runs_through_the_openvino_delegate() -> None:
+    """Export a model to the OpenVINO delegate and run it, comparing against eager.
+
+    The checks elsewhere prove the delegate library ships, owns its symbols and registers
+    itself. None of that proves it computes: a delegate can register and then produce wrong
+    numbers or refuse the graph, and a registration check reports success either way.
+
+    The OpenVINO runtime is not part of the wheel. It comes from the openvino extra, so a
+    default install cannot run this and says so rather than passing quietly. Where the runtime
+    is present the export and the comparison are the point of the check, and a failure there
+    is a real one.
+    """
+    import torch
+    from executorch.exir import to_edge_transform_and_lower
+    from executorch.exir.backend.compile_spec_schema import CompileSpec
+    from executorch.runtime import Runtime
+
+    # One guard around the whole chain rather than around openvino alone. Importing the
+    # partitioner reaches the quantizer, which requires nncf, so a check that only looked for
+    # openvino would still fail on the import it cannot satisfy. Measured on a default install
+    # with openvino present and nncf absent.
+    try:
+        from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+    except ImportError as error:
+        print(
+            f"SKIP: the OpenVINO export stack is not installed, so the delegate cannot "
+            f"execute here ({error}). The wheel ships the adapter only; the runtime and the "
+            f"quantizer dependencies come from backends/openvino/requirements.txt. This row "
+            f"still verifies the shipped library, its owner and its registration."
+        )
+        return
+
+    class Add(torch.nn.Module):
+        def forward(self, x, y):
+            return x + y
+
+    example = (torch.ones(2, 2), torch.ones(2, 2) * 2)
+    eager = Add()(*example)
+
+    exported = torch.export.export(Add(), example)
+    lowered = to_edge_transform_and_lower(
+        exported,
+        partitioner=[OpenvinoPartitioner([CompileSpec("device", b"CPU")])],
+    )
+    program = lowered.to_executorch()
+
+    with tempfile.TemporaryDirectory() as work_dir:
+        pte = Path(work_dir) / "add_openvino.pte"
+        pte.write_bytes(program.buffer)
+
+        method = Runtime.get().load_program(pte).load_method("forward")
+        actual = method.execute(list(example))[0]
+
+    difference = (actual - eager).abs().max().item()
+    assert difference == 0.0, (
+        f"the OpenVINO delegate ran but its output does not match eager: maximum absolute "
+        f"difference {difference:.3e}. The delegate computed something other than the model."
+    )
+    print(
+        f"\u2713 a model runs through the OpenVINO delegate and matches eager "
+        f"\u2014 max abs diff {difference:.3e}"
+    )
 
 
 def test_cmsis_nn_install():

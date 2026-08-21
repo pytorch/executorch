@@ -5,19 +5,31 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 import torch.nn as nn
 
 from executorch.backends.native import get_default_compile_config
-from executorch.backends.native.partitioner import NativePartitioner
+from executorch.backends.native.partitioner import (
+    EXTERNAL_CONSTANTS_TAG_KEY,
+    NativePartitioner,
+    PTN_SERIALIZATION_KEY,
+)
 from executorch.backends.native.passes import get_default_passes
+from executorch.backends.native.preprocess import (
+    _parse_compile_specs,
+    NativeBackend,
+    NativeDelegateInfo,
+)
 from executorch.backends.native.serialization import (
     deserialize_graph,
     deserialize_program,
 )
 from executorch.backends.native.serialization.schema import OpKind, OutputKind
 from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 def _lower(model, example_inputs):
@@ -40,6 +52,66 @@ def _get_delegate_blob(edge):
 
 def _call_function_targets(graph):
     return [n.target for n in graph.nodes if n.op_kind == OpKind.CALL_FUNCTION]
+
+
+class CompileSpecParsingTest(unittest.TestCase):
+    def test_ptn_flag_is_parsed(self):
+        self.assertEqual(
+            _parse_compile_specs([CompileSpec(PTN_SERIALIZATION_KEY, b"1")]),
+            (None, True),
+        )
+
+    def test_ptn_flag_requires_canonical_value(self):
+        with self.assertRaisesRegex(ValueError, "must have value"):
+            _parse_compile_specs([CompileSpec(PTN_SERIALIZATION_KEY, b"0")])
+
+    def test_conflicting_constant_channels_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            _parse_compile_specs(
+                [
+                    CompileSpec(EXTERNAL_CONSTANTS_TAG_KEY, b"weights"),
+                    CompileSpec(PTN_SERIALIZATION_KEY, b"1"),
+                ]
+            )
+
+    def test_duplicate_recognized_spec_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate compile spec"):
+            _parse_compile_specs(
+                [
+                    CompileSpec(EXTERNAL_CONSTANTS_TAG_KEY, b"first"),
+                    CompileSpec(EXTERNAL_CONSTANTS_TAG_KEY, b"second"),
+                ]
+            )
+
+
+class PtnConstantHandoffTest(unittest.TestCase):
+    def test_preserves_layout_and_storage_for_package_validation(self):
+        base = torch.arange(6).view(2, 3)
+        view = base.t()
+        edge_program = SimpleNamespace(
+            graph_module=object(),
+            graph_signature=object(),
+            state_dict={},
+            constants={},
+        )
+
+        with patch(
+            "executorch.backends.native.preprocess.serialize_graph",
+            return_value=(b"NPTG", {"view": view}),
+        ):
+            result = NativeBackend.preprocess(
+                edge_program,
+                [CompileSpec(PTN_SERIALIZATION_KEY, b"1")],
+            )
+
+        info = result._delegate_info_meta
+        self.assertIsInstance(info, NativeDelegateInfo)
+        captured = info.constants["view"]
+        self.assertFalse(captured.is_contiguous())
+        self.assertEqual(captured.stride(), view.stride())
+        self.assertEqual(
+            captured.untyped_storage().data_ptr(), view.untyped_storage().data_ptr()
+        )
 
 
 class PreprocessSerializationTest(unittest.TestCase):
