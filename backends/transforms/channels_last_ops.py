@@ -175,6 +175,7 @@ lib.define(
 lib.impl("max_pool2d", _max_pool2d, "CompositeExplicitAutograd")
 register_fake("channels_last::max_pool2d", _max_pool2d, lib=lib)
 
+
 lib.define(
     "grid_sampler_2d(Tensor input, Tensor grid, int interpolation_mode, "
     "int padding_mode, bool align_corners) -> Tensor"
