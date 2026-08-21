@@ -13,6 +13,10 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
+    ConvertConv1dToConv2dPass,
+)
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.transforms.replace_scalar_with_tensor import (
     ReplaceScalarWithTensorArgPass,
@@ -27,6 +31,7 @@ from .aten_to_cortex_m_pass import AtenToCortexMPass
 from .clamp_hardswish_pass import ClampHardswishPass
 from .decompose_hardswish_pass import DecomposeHardswishPass
 from .decompose_mean_pass import DecomposeMeanPass
+from .explicit_layout_pass import CortexMExplicitLayoutPass
 from .matmul_to_bmm_pass import MatmulToBmmPass
 from .quantized_clamp_activation_pass import QuantizedClampActivationPass
 from .replace_quant_nodes_pass import ReplaceQuantNodesPass
@@ -35,7 +40,7 @@ PassClass = Type[ExportPass]
 
 
 class CortexMPassManager(PassManager):
-    pass_list: list[PassClass] = [
+    legacy_pass_list: list[PassClass] = [
         # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
         RemoveGetItemPass,
         FoldAndAnnotateQParamsPass,
@@ -46,6 +51,25 @@ class CortexMPassManager(PassManager):
         DecomposeHardswishPass,
         AtenToCortexMPass,
     ]
+
+    explicit_layout_pass_list: list[PassClass] = [
+        # Run before folding so qparams attach to max_pool2d values, not tuple + getitem.
+        RemoveGetItemPass,
+        FoldAndAnnotateQParamsPass,
+        # Must follow folding: removing clones first changes the q/dq topology
+        # the fold matches, which splits the layout region in two.
+        RemoveCloneOpsTransform,
+        ReplaceScalarWithTensorArgPass,
+        ActivationFusionPass,
+        QuantizedClampActivationPass,
+        DecomposeHardswishPass,
+        ConvertConv1dToConv2dPass,
+        CortexMExplicitLayoutPass,
+        ReplaceQuantNodesPass,
+        AtenToCortexMPass,
+    ]
+
+    pass_list = legacy_pass_list
 
     pass_list_transform_for_annotation: list[PassClass] = [
         ScalarsToAttributePass,
@@ -61,6 +85,7 @@ class CortexMPassManager(PassManager):
         exported_program: ExportedProgram | None,
         passes: Optional[list[PassClass]] = None,
         target_config: Optional[CortexMTargetConfig] = None,
+        use_explicit_layout: bool = False,
     ) -> None:
         """Initialize the Cortex-M pass manager.
 
@@ -68,22 +93,30 @@ class CortexMPassManager(PassManager):
             exported_program: The exported program to transform. Required
                 before calling ``transform()``; may be ``None`` for callers
                 that only use ``transform_for_annotation()``.
-            passes: Optional override of the pass list. Defaults to
-                ``CortexMPassManager.pass_list``.
+            passes: Optional override of the pass list. Defaults to the legacy
+                or explicit-layout pass list selected by ``use_explicit_layout``.
             target_config: Compilation target for passes that need it.
                 Defaults to ``CortexMTargetConfig(cpu=CortexM.M55)``, which
                 resolves through cmsis_nn to the MVE backend — matching the
                 pre-config historical behaviour.
+            use_explicit_layout: Run channels-last dialect region formation.
+                Legacy dim-order lowering remains the default.
         """
         super().__init__(passes=[])
         self.exported_program = exported_program
         # PassManager.passes is typed as callables; this manager stores pass classes which are initialized at transform time with the exported_program.
+        default_passes = (
+            self.explicit_layout_pass_list
+            if use_explicit_layout
+            else self.legacy_pass_list
+        )
         self.passes: list[PassClass] = (  # type: ignore[assignment]
-            passes if passes is not None else self.pass_list  # type: ignore[assignment]
+            passes if passes is not None else default_passes  # type: ignore[assignment]
         )
         self.target_config: CortexMTargetConfig = target_config or CortexMTargetConfig(
             cpu=CortexM.M55
         )
+        self.use_explicit_layout = use_explicit_layout
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation
@@ -112,6 +145,8 @@ class CortexMPassManager(PassManager):
                 kwargs["exported_program"] = exported_program
             if "target_config" in signature.parameters:
                 kwargs["target_config"] = self.target_config
+            if "use_explicit_layout" in signature.parameters:
+                kwargs["use_explicit_layout"] = self.use_explicit_layout
 
             transform_pass = pass_cls(**kwargs)
             exported_program = _transform(exported_program, transform_pass)

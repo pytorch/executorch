@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
@@ -37,6 +38,22 @@ def define_common_targets(is_fbcode = False):
         define_operator_test_target(op)
 
     if is_fbcode:
+        python_library(
+            name = "tester",
+            srcs = ["tester.py"],
+            deps = [
+                "//caffe2:torch",
+                "//executorch/backends/arm/test:arm_tester",
+                "//executorch/backends/arm/test:common",
+                "//executorch/backends/cortex_m:edge_compile_config",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
+                "//executorch/backends/cortex_m/quantizer:quantizer",
+                "//executorch/backends/test/harness:tester",
+                "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
+            ],
+        )
+
         python_unittest(
             name = "test_replace_quant_nodes",
             srcs = [
@@ -64,6 +81,21 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/ops:ops",
                 "//executorch/backends/cortex_m/passes:scratch_buffer_sizes",
                 "//executorch/exir:lib",
+                "fbsource//third-party/pypi/pytest:pytest",
+            ],
+        )
+
+        python_pytest(
+            name = "test_explicit_layout_host",
+            srcs = ["test_explicit_layout.py"],
+            compile = "with-source",
+            pytest_cmd_args = ["-k", "not runs_on_fvp"],
+            typing = False,
+            deps = [
+                "//caffe2:torch",
+                ":tester",
+                "//executorch/backends/cortex_m:target_config",
+                "//executorch/exir/dialects:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
             ],
         )
