@@ -151,6 +151,8 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
         self.op_map: dict[Target, ChannelsLastOpSpec] = (
             op_map if op_map is not None else dict(_DEFAULT_OP_MAP)
         )
+        self.candidate_count = 0
+        self.replacement_count = 0
 
     @staticmethod
     def _permute_node_input(
@@ -200,6 +202,8 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
         original_node_output.replace_all_uses_with(output)
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.candidate_count = 0
+        self.replacement_count = 0
         modified = False
         graph = graph_module.graph
 
@@ -208,12 +212,13 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
                 continue
             if (spec := self.op_map.get(node.target)) is None:
                 continue
+            if spec.filter_fn is not None and not spec.filter_fn(node):
+                continue
+            self.candidate_count += 1
             val = node.meta["val"]
             val = val[0] if isinstance(val, (list, tuple)) else val
             contiguous_dim_order = tuple(range(val.dim()))
             if val.dim_order() != contiguous_dim_order:
-                continue
-            if spec.filter_fn is not None and not spec.filter_fn(node):
                 continue
 
             # In case of implicit batch size, insert also `unsqueeze_copy.default` and `squeeze_copy.dims` operators.
@@ -274,6 +279,7 @@ class ReplaceOpsWithChannelsLastVariants(ExportPass):
 
             graph.erase_node(node)
             modified = True
+            self.replacement_count += 1
 
         if modified:
             graph.eliminate_dead_code()
