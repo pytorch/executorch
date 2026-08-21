@@ -10,6 +10,7 @@ import copy
 import ctypes
 import functools
 import gc
+import hashlib
 import logging
 import os
 import shutil
@@ -401,12 +402,17 @@ def _on_off_compile_spec_value(spec: CompileSpec) -> bool:
     return value == "ON"
 
 
-def _write_aoti_weights_blob(weights, blob_path: str) -> None:
-    """Stream AOTI tensor storages without creating a model-sized bytes object."""
+def _write_aoti_weights_blob(weights, blob_path: str) -> bytes:
+    """Stream AOTI tensor storages to disk and return their SHA-256 digest."""
     _trim_host_memory()
     tensors = [tensor for tensor, _ in weights.values()]
     all_cuda = all(tensor.is_cuda for tensor in tensors)
     chunk_size = 8 * 1024 * 1024
+    digest = hashlib.sha256()
+
+    def write_chunk(output, chunk) -> None:
+        digest.update(chunk)
+        output.write(chunk)
 
     with open(blob_path, "wb") as output:
         for tensor in tensors:
@@ -420,20 +426,21 @@ def _write_aoti_weights_blob(weights, blob_path: str) -> None:
                 ).set_(storage, 0, (nbytes,), (1,))
                 for offset in range(0, nbytes, chunk_size):
                     cpu_chunk = byte_tensor[offset : offset + chunk_size].cpu()
-                    output.write(memoryview(cpu_chunk.numpy()))
+                    write_chunk(output, memoryview(cpu_chunk.numpy()))
                 del byte_tensor, cpu_chunk
             elif nbytes:
                 raw_array = (ctypes.c_ubyte * nbytes).from_address(storage.data_ptr())
                 raw_view = memoryview(raw_array).cast("B")
                 for offset in range(0, nbytes, chunk_size):
-                    output.write(raw_view[offset : offset + chunk_size])
+                    write_chunk(output, raw_view[offset : offset + chunk_size])
                 del raw_view, raw_array
             # Match AOTInductor's binary_blob layout: CUDA-only constants are
             # packed, while CPU/mixed constants are aligned to 64 bytes.
             if not all_cuda and (padding := (-nbytes) % 64):
-                output.write(bytes(padding))
+                write_chunk(output, bytes(padding))
             del storage
     _trim_host_memory()
+    return digest.digest()
 
 
 @final
@@ -446,6 +453,11 @@ class CudaBackend(AotiBackend, BackendDetails):
     optimized CUDA kernels for the model's operators with libtorch-free. The compiled model can be executed on CUDA devices
     using the Executorch runtime.
     """
+
+    # AOTI calls materialize_weights_blob immediately before load_weights_blob
+    # for a given output path. A new materialization overwrites any digest left
+    # behind by an export that aborted before the consumer ran.
+    _materialized_blob_hashes: Dict[str, bytes] = {}
 
     @classmethod
     def get_device_name(cls) -> str:
@@ -562,8 +574,10 @@ class CudaBackend(AotiBackend, BackendDetails):
         """
         if not cls._is_low_memory_mode(compile_specs):
             return super().load_weights_blob(blob_path, compile_specs)
-        blob_data = FileBackedData.move_from(blob_path)
-        return blob_data, blob_data.sha256().hex()
+        known_hash = cls._materialized_blob_hashes.pop(blob_path, None)
+        blob_data = FileBackedData.move_from(blob_path, sha256=known_hash)
+        weights_blob_hash = known_hash or blob_data.sha256()
+        return blob_data, weights_blob_hash.hex()
 
     @classmethod
     def materialize_weights_blob(
@@ -593,7 +607,9 @@ class CudaBackend(AotiBackend, BackendDetails):
         if so_path is None:
             raise RuntimeError(f"Expected a CUDA AOTI .wrapper.so output, got {paths}")
         blob_path = os.path.splitext(so_path)[0] + "_weights.blob"
-        _write_aoti_weights_blob(weights[0], blob_path)
+        cls._materialized_blob_hashes[blob_path] = _write_aoti_weights_blob(
+            weights[0], blob_path
+        )
 
         # Forcing the external-weights ABI makes Inductor emit an empty blob
         # path alongside the Weights object. Replace that file in place and do
