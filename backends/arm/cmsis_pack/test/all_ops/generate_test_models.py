@@ -197,15 +197,12 @@ def _export_cortex_m(
     display_metadata: bool = False,
     target_core: str = "m55",
 ) -> ExecutorchProgramManager:
-    from executorch.backends.cortex_m.edge_compile_config import (
-        cortex_m_edge_compile_config,
-    )
     from executorch.backends.cortex_m.passes.cortex_m_pass_manager import (
         CortexMPassManager,
     )
     from executorch.backends.cortex_m.quantizer.quantizer import CortexMQuantizer
     from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
-    from executorch.exir import to_edge_transform_and_lower
+    from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
     from torchao.quantization.pt2e import move_exported_model_to_eval
     from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -238,7 +235,17 @@ def _export_cortex_m(
 
     edge = to_edge_transform_and_lower(
         exported,
-        compile_config=cortex_m_edge_compile_config(),
+        compile_config=EdgeCompileConfig(
+            preserve_ops=[
+                torch.ops.aten.linear.default,
+                torch.ops.aten.hardsigmoid.default,
+                torch.ops.aten.hardsigmoid_.default,
+                torch.ops.aten.hardswish.default,
+                torch.ops.aten.hardswish_.default,
+            ],
+            _check_ir_validity=False,
+            _core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
+        ),
         constant_methods=metadata,
     )
     edge._edge_programs["forward"] = CortexMPassManager(

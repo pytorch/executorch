@@ -13,8 +13,8 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
-    is_channel_broadcast,
-    is_channels_last,
+    has_channels_last_dim_order,
+    is_flat_channel_broadcast,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
@@ -137,23 +137,6 @@ lib.define(
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
 
-lib.define(
-    "quantized_add_nhwc("
-    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
-    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
-    "int output_zero_point, int output_multiplier, int output_shift, "
-    "int activation_min, int activation_max) -> Tensor"
-)
-
-lib.define(
-    "quantized_add_nhwc.out("
-    "Tensor self, int self_zero_point, int self_multiplier, int self_shift, "
-    "Tensor other, int other_zero_point, int other_multiplier, int other_shift, "
-    "int output_zero_point, int output_multiplier, int output_shift, "
-    "int activation_min, int activation_max, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
-)
-
 
 @register_fake("cortex_m::quantized_add")  # type: ignore[misc]
 def quantized_add_meta(
@@ -171,7 +154,7 @@ def quantized_add_meta(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -198,7 +181,7 @@ def quantized_add_impl(
     activation_min: int,
     activation_max: int,
 ) -> torch.Tensor:
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_add: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -216,81 +199,6 @@ def quantized_add_impl(
     return result
 
 
-@register_fake("cortex_m::quantized_add_nhwc")  # type: ignore[misc]
-def quantized_add_nhwc_meta(
-    self: torch.Tensor,
-    self_zero_point: int,
-    self_multiplier: int,
-    self_shift: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    other_multiplier: int,
-    other_shift: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-    activation_min: int,
-    activation_max: int,
-) -> torch.Tensor:
-    if self.dim() != 4 or other.dim() != 4:
-        raise RuntimeError("cortex_m.quantized_add_nhwc expects 4D inputs")
-    result = quantized_add_meta(
-        self.permute(0, 3, 1, 2),
-        self_zero_point,
-        self_multiplier,
-        self_shift,
-        other.permute(0, 3, 1, 2),
-        other_zero_point,
-        other_multiplier,
-        other_shift,
-        output_zero_point,
-        output_multiplier,
-        output_shift,
-        activation_min,
-        activation_max,
-    )
-    return result.permute(0, 2, 3, 1).contiguous()
-
-
-@impl(lib, "quantized_add_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
-def quantized_add_nhwc_impl(
-    self: torch.Tensor,
-    self_zero_point: int,
-    self_multiplier: int,
-    self_shift: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    other_multiplier: int,
-    other_shift: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-    activation_min: int,
-    activation_max: int,
-) -> torch.Tensor:
-    if self.dim() != 4 or other.dim() != 4:
-        raise RuntimeError("cortex_m.quantized_add_nhwc expects 4D inputs")
-    result = quantized_add_impl(
-        self.permute(0, 3, 1, 2),
-        self_zero_point,
-        self_multiplier,
-        self_shift,
-        other.permute(0, 3, 1, 2),
-        other_zero_point,
-        other_multiplier,
-        other_shift,
-        output_zero_point,
-        output_multiplier,
-        output_shift,
-        activation_min,
-        activation_max,
-    )
-    return result.permute(0, 2, 3, 1).contiguous()
-
-
-# ===================================================================
-# QUANTIZED MUL OPERATION DEFINITION
-# ===================================================================
 lib.define(
     "quantized_mul("
     "Tensor self, int self_zero_point, "
@@ -299,20 +207,6 @@ lib.define(
 )
 lib.define(
     "quantized_mul.out("
-    "Tensor self, int self_zero_point, "
-    "Tensor other, int other_zero_point, "
-    "int output_zero_point, int output_multiplier, int output_shift, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
-)
-
-lib.define(
-    "quantized_mul_nhwc("
-    "Tensor self, int self_zero_point, "
-    "Tensor other, int other_zero_point, "
-    "int output_zero_point, int output_multiplier, int output_shift) -> Tensor"
-)
-lib.define(
-    "quantized_mul_nhwc.out("
     "Tensor self, int self_zero_point, "
     "Tensor other, int other_zero_point, "
     "int output_zero_point, int output_multiplier, int output_shift, "
@@ -331,7 +225,7 @@ def quantized_mul_meta(
     output_shift: int,
 ) -> torch.Tensor:
     # Broadcast to output shape
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -355,7 +249,7 @@ def quantized_mul_impl(
     # CMSIS-NN kernel multiplies raw int8 tensors (after zero-point offset) and
     # only uses the output multiplier/shift for rescaling. Mirror that here to
     # keep the composite implementation numerically aligned with the backend.
-    assert self.shape == other.shape or is_channel_broadcast(self, other), (
+    assert self.shape == other.shape or is_flat_channel_broadcast(self, other), (
         "Cortex-M quantized_mul: broadcasting is not yet supported except for channel dim — "
         f"got self.shape={self.shape}, other.shape={other.shape}"
     )
@@ -367,57 +261,6 @@ def quantized_mul_impl(
     return result
 
 
-@register_fake("cortex_m::quantized_mul_nhwc")  # type: ignore[misc]
-def quantized_mul_nhwc_meta(
-    self: torch.Tensor,
-    self_zero_point: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-) -> torch.Tensor:
-    if self.dim() != 4 or other.dim() != 4:
-        raise RuntimeError("cortex_m.quantized_mul_nhwc expects 4D inputs")
-    result = quantized_mul_meta(
-        self.permute(0, 3, 1, 2),
-        self_zero_point,
-        other.permute(0, 3, 1, 2),
-        other_zero_point,
-        output_zero_point,
-        output_multiplier,
-        output_shift,
-    )
-    return result.permute(0, 2, 3, 1).contiguous()
-
-
-@impl(lib, "quantized_mul_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
-def quantized_mul_nhwc_impl(
-    self: torch.Tensor,
-    self_zero_point: int,
-    other: torch.Tensor,
-    other_zero_point: int,
-    output_zero_point: int,
-    output_multiplier: int,
-    output_shift: int,
-) -> torch.Tensor:
-    if self.dim() != 4 or other.dim() != 4:
-        raise RuntimeError("cortex_m.quantized_mul_nhwc expects 4D inputs")
-    result = quantized_mul_impl(
-        self.permute(0, 3, 1, 2),
-        self_zero_point,
-        other.permute(0, 3, 1, 2),
-        other_zero_point,
-        output_zero_point,
-        output_multiplier,
-        output_shift,
-    )
-    return result.permute(0, 2, 3, 1).contiguous()
-
-
-# ===================================================================
-# QUANTIZED DIV OPERATION DEFINITION
-# ===================================================================
 lib.define(
     "quantized_div("
     "Tensor self, int self_zero_point, "
@@ -820,21 +663,12 @@ lib.define(
     "pad.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
     "*, Tensor(a!) out) -> Tensor(a!)"
 )
-lib.define(
-    "pad_nhwc(Tensor input, int[] pre_pad, int[] post_pad, int pad_value) -> Tensor"
-)
-lib.define(
-    "pad_nhwc.out(Tensor input, int[] pre_pad, int[] post_pad, int pad_value, "
-    "*, Tensor(a!) out) -> Tensor(a!)"
-)
-
-
 _NHWC_INV_ORDER = [0, 3, 1, 2]
 
 
 def _pad_to_logical_order(physical_pad: list[int], input: torch.Tensor) -> list[int]:
     """Inverse of _to_physical_order: map physical-order padding back to logical."""
-    if not is_channels_last(input):
+    if not has_channels_last_dim_order(input):
         return list(physical_pad)
     return [physical_pad[_NHWC_INV_ORDER[i]] for i in range(4)]
 
@@ -847,6 +681,10 @@ def pad_meta(
     pad_value: int,
 ) -> torch.Tensor:
     rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(f"cortex_m.pad expects a rank in [1, 4], got {rank}")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad expects four padding values per side")
     offset = 4 - rank
     logical_pre = _pad_to_logical_order(pre_pad, input)
     logical_post = _pad_to_logical_order(post_pad, input)
@@ -855,7 +693,7 @@ def pad_meta(
     for i in range(rank):
         output_shape[i] += logical_pre[offset + i] + logical_post[offset + i]
     result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
-    if is_channels_last(input):
+    if has_channels_last_dim_order(input):
         result = result.to(memory_format=torch.channels_last)
     return result
 
@@ -868,6 +706,10 @@ def pad_impl(
     pad_value: int,
 ) -> torch.Tensor:
     rank = input.dim()
+    if rank == 0 or rank > 4:
+        raise RuntimeError(f"cortex_m.pad expects a rank in [1, 4], got {rank}")
+    if len(pre_pad) != 4 or len(post_pad) != 4:
+        raise RuntimeError("cortex_m.pad expects four padding values per side")
     offset = 4 - rank
     logical_pre = _pad_to_logical_order(pre_pad, input)
     logical_post = _pad_to_logical_order(post_pad, input)
@@ -877,43 +719,6 @@ def pad_impl(
         padding.extend([logical_pre[offset + i], logical_post[offset + i]])
     return F.pad(input, padding, mode="constant", value=pad_value)
 
-
-@register_fake("cortex_m::pad_nhwc")  # type: ignore[misc]
-def pad_nhwc_meta(
-    input: torch.Tensor,
-    pre_pad: list[int],
-    post_pad: list[int],
-    pad_value: int,
-) -> torch.Tensor:
-    del pad_value
-    if input.dim() != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
-    if len(pre_pad) != 4 or len(post_pad) != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
-    output_shape = [input.shape[dim] + pre_pad[dim] + post_pad[dim] for dim in range(4)]
-    return torch.empty(output_shape, dtype=input.dtype, device=input.device)
-
-
-@impl(lib, "pad_nhwc", "CompositeExplicitAutograd")  # type: ignore[misc]
-def pad_nhwc_impl(
-    input: torch.Tensor,
-    pre_pad: list[int],
-    post_pad: list[int],
-    pad_value: int,
-) -> torch.Tensor:
-    if input.dim() != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects a 4D input tensor")
-    if len(pre_pad) != 4 or len(post_pad) != 4:
-        raise RuntimeError("cortex_m.pad_nhwc expects four padding values per side")
-    padding = []
-    for dim in reversed(range(4)):
-        padding.extend([pre_pad[dim], post_pad[dim]])
-    return F.pad(input, padding, mode="constant", value=pad_value)
-
-
-# ===================================================================
-# QUANTIZED CONV2D OPERATION DEFINITION
-# ===================================================================
 
 lib.define(
     "quantized_conv2d("

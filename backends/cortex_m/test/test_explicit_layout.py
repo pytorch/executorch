@@ -372,7 +372,7 @@ def test_pad_is_remapped_inside_explicit_layout_region():
     [pad] = [
         node
         for node in program.graph.nodes
-        if node.target == exir_ops.edge.cortex_m.pad_nhwc.default
+        if node.target == exir_ops.edge.cortex_m.pad.default
     ]
 
     assert pad.args[1:3] == ([0, 1, 1, 0], [0, 1, 1, 0])
@@ -398,12 +398,12 @@ def test_channel_bias_is_quantized_inside_explicit_layout_region():
     [add] = [
         node
         for node in program.graph.nodes
-        if node.target == exir_ops.edge.cortex_m.quantized_add_nhwc.default
+        if node.target == exir_ops.edge.cortex_m.quantized_add.default
     ]
 
     assert add.args[4].meta["val"].shape == torch.Size([1, 1, 1, 4])
     assert _count(program, exir_ops.edge.aten.add.Tensor) == 0
-    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 1
     assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
 
 
@@ -411,7 +411,7 @@ def test_branched_channel_bias_stays_quantized():
     x = torch.randn(1, 3, 8, 8)
     program = _lower(ConvBiasBranched(), (x,))
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_add_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 1
     assert _count(program, exir_ops.edge.aten.add.Tensor) == 0
     assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 3
 
@@ -420,7 +420,7 @@ def test_unanchored_channel_bias_falls_back_without_failing():
     x = torch.randn(1, 3, 8, 8)
     program = _lower(ConvBiasOutput(), (x,))
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_add_nhwc.default) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 0
     assert _count(program, exir_ops.edge.aten.add.Tensor) == 1
 
 
@@ -430,12 +430,12 @@ def test_channel_mul_is_quantized_inside_explicit_layout_region():
     [mul] = [
         node
         for node in program.graph.nodes
-        if node.target == exir_ops.edge.cortex_m.quantized_mul_nhwc.default
+        if node.target == exir_ops.edge.cortex_m.quantized_mul.default
     ]
 
     assert mul.args[2].meta["val"].shape == torch.Size([1, 1, 1, 4])
     assert _count(program, exir_ops.edge.aten.mul.Tensor) == 0
-    assert _count(program, exir_ops.edge.cortex_m.quantized_mul.default) == 0
+    assert _count(program, exir_ops.edge.cortex_m.quantized_mul.default) == 1
     assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 2
 
 
@@ -443,7 +443,7 @@ def test_pool_anchor_allows_quantized_channel_broadcast():
     x = torch.randn(1, 3, 8, 8)
     program = _lower(ConvPoolBiasConv(), (x,))
 
-    assert _count(program, exir_ops.edge.cortex_m.quantized_add_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.quantized_add.default) == 1
     assert (
         _count(program, exir_ops.edge.cortex_m.quantized_avg_pool2d_nhwc.default) == 1
     )
@@ -526,7 +526,7 @@ def test_explicit_layout_does_not_increase_planned_memory_for_float_qdq():
             },
             {
                 exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: 2,
-                exir_ops.edge.cortex_m.quantized_add_nhwc.default: 1,
+                exir_ops.edge.cortex_m.quantized_add.default: 1,
             },
         ),
         (
@@ -539,7 +539,7 @@ def test_explicit_layout_does_not_increase_planned_memory_for_float_qdq():
             },
             {
                 exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: 2,
-                exir_ops.edge.cortex_m.quantized_add_nhwc.default: 1,
+                exir_ops.edge.cortex_m.quantized_add.default: 1,
             },
         ),
         (
@@ -552,7 +552,7 @@ def test_explicit_layout_does_not_increase_planned_memory_for_float_qdq():
             },
             {
                 exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: 2,
-                exir_ops.edge.cortex_m.quantized_mul_nhwc.default: 1,
+                exir_ops.edge.cortex_m.quantized_mul.default: 1,
             },
         ),
         (
@@ -565,7 +565,7 @@ def test_explicit_layout_does_not_increase_planned_memory_for_float_qdq():
             },
             {
                 exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: 2,
-                exir_ops.edge.cortex_m.pad_nhwc.default: 1,
+                exir_ops.edge.cortex_m.pad.default: 1,
             },
         ),
         (
@@ -585,7 +585,7 @@ def test_explicit_layout_does_not_increase_planned_memory_for_float_qdq():
             },
             {
                 exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default: 2,
-                exir_ops.edge.cortex_m.quantized_add_nhwc.default: 1,
+                exir_ops.edge.cortex_m.quantized_add.default: 1,
             },
         ),
     )
@@ -675,7 +675,7 @@ def test_explicit_nhwc_pad_runs_on_fvp_with_singleton_height():
     _run_explicit_layout_on_fvp(
         ConvPadConv(),
         (x,),
-        exir_ops.edge.cortex_m.pad_nhwc.default,
+        exir_ops.edge.cortex_m.pad.default,
     )
 
 
@@ -684,7 +684,7 @@ def test_explicit_nhwc_channel_broadcast_add_runs_on_fvp():
     _run_explicit_layout_on_fvp(
         ConvBiasConv(),
         (x,),
-        exir_ops.edge.cortex_m.quantized_add_nhwc.default,
+        exir_ops.edge.cortex_m.quantized_add.default,
     )
 
 
@@ -693,7 +693,7 @@ def test_explicit_nhwc_branched_channel_broadcast_runs_on_fvp():
     _run_explicit_layout_on_fvp(
         ConvBiasBranched(),
         (x,),
-        exir_ops.edge.cortex_m.quantized_add_nhwc.default,
+        exir_ops.edge.cortex_m.quantized_add.default,
     )
 
 
@@ -702,7 +702,7 @@ def test_explicit_nhwc_channel_broadcast_mul_runs_on_fvp():
     _run_explicit_layout_on_fvp(
         ConvMulConv(),
         (x,),
-        exir_ops.edge.cortex_m.quantized_mul_nhwc.default,
+        exir_ops.edge.cortex_m.quantized_mul.default,
     )
 
 

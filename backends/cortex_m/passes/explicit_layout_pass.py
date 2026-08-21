@@ -9,6 +9,7 @@ import operator
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 
 import torch
+from executorch.backends.cortex_m.passes.passes_utils import is_flat_channel_broadcast
 
 from executorch.backends.transforms.replace_ops_with_channels_last_variants import (
     ChannelsLastOpSpec,
@@ -169,19 +170,6 @@ def _can_propagate(node: torch.fx.Node) -> bool:
     return tensor1.shape == tensor2.shape or _has_input_and_output_qparams(node)
 
 
-def _is_nhwc_channel_broadcast(node: torch.fx.Node) -> bool:
-    input1, input2 = node.args[:2]
-    if not isinstance(input1, torch.fx.Node) or not isinstance(input2, torch.fx.Node):
-        return False
-    tensor1 = input1.meta.get("val")
-    tensor2 = input2.meta.get("val")
-    if tensor1 is None or tensor2 is None or tensor1.dim() != 4 or tensor2.dim() != 4:
-        return False
-    return tensor1.size(3) == tensor2.size(3) and (
-        tensor1.numel() == tensor1.size(3) or tensor2.numel() == tensor2.size(3)
-    )
-
-
 class CortexMExplicitLayoutPass(ToContiguousChannelsLastPass):
     """Configure the common explicit-layout pipeline for Cortex-M kernels."""
 
@@ -194,7 +182,6 @@ class CortexMExplicitLayoutPass(ToContiguousChannelsLastPass):
             exported_program,
             op_map=dict(_CORTEX_M_EXPLICIT_LAYOUT_OP_MAP),
             can_propagate=_can_propagate,
-            layout_pad_target=exir_ops.edge.channels_last.constant_pad_nd.default,
             strict=strict,
         )
 
@@ -213,7 +200,7 @@ class CortexMExplicitLayoutPass(ToContiguousChannelsLastPass):
                 continue
             if input1.meta["val"].shape == input2.meta["val"].shape:
                 continue
-            if not _is_nhwc_channel_broadcast(node):
+            if not is_flat_channel_broadcast(input1.meta["val"], input2.meta["val"]):
                 raise RuntimeError(
                     f"Quantized channel-broadcast node {node.name} did not join "
                     "an explicit NHWC layout region."

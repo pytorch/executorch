@@ -87,7 +87,7 @@ class CortexMExplicitAddMulCheck(CortexMAddMulCheck):
             tensor2 = get_first_fake_tensor(node.all_input_nodes[1])
             if tensor1.shape == tensor2.shape:
                 continue
-            if not is_channel_broadcast(tensor1, tensor2, require_channels_last=False):
+            if not is_channel_broadcast(tensor1, tensor2):
                 return False
 
             external_users = [
