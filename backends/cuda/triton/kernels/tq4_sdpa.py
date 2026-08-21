@@ -27,6 +27,7 @@ into the M dimension, loading K/V only once per KV head group. This gives
 up to NUM_GROUPS x reduction in K/V HBM traffic for decode.
 """
 
+import functools
 import math
 from typing import Optional
 
@@ -34,6 +35,52 @@ import torch
 import triton
 import triton.language as tl
 from torch.library import triton_op, wrap_triton
+
+
+# Decode split-K occupancy target: how many waves of the SM array the launched
+# split grid (num_splits * B * H_grid CTAs) should aim to fill. The split cap is
+# derived from the real device SM count so the flash-decoding split adapts to the
+# hardware instead of the old hard-coded 128. Two waves keep every SM busy while
+# leaving a little slack for the tail/reduce without over-splitting (which only
+# adds reduction overhead). This is a host-side constant chosen before cuda-graph
+# capture, so num_splits (grid.x) stays static for the captured decode graph.
+_SPLITK_TARGET_WAVES = 2
+
+
+@functools.lru_cache(maxsize=None)
+def _device_sm_count(device_index: int) -> int:
+    """SM (multiprocessor) count of a CUDA device.
+
+    Read once per device from torch device properties. This is a fixed
+    hardware property, so it is safe to bake into the split count at
+    export/init and reuse under cuda-graph capture. Works for any GPU
+    (A100=108, H100=132, RTX 5090~170, ...) with no per-arch special casing.
+    """
+    return torch.cuda.get_device_properties(device_index).multi_processor_count
+
+
+def _decode_num_splits(L_kv: int, grid_y: int, device: torch.device) -> int:
+    """Hardware-derived split count for the flash-decoding decode path.
+
+    The split kernel launches a (num_splits, grid_y) grid where
+    grid_y = B * H_grid. We size num_splits so the total launched CTAs
+    (num_splits * grid_y) target ~_SPLITK_TARGET_WAVES waves of this device's
+    SM array, floored by the buffer-derived minimum cdiv(L_kv, 256) so short
+    KV buffers are not over-split and clamped to >= 1.
+
+    num_splits depends only on host-side constants (L_kv buffer size, the
+    static grid_y, and the device SM count), so it is fixed before cuda-graph
+    capture and identical on every replay.
+    """
+    device_index = (
+        device.index if device.index is not None else torch.cuda.current_device()
+    )
+    n_sm = _device_sm_count(device_index)
+    # Cap so num_splits * grid_y ~= target_waves * n_sm (>= 1).
+    sm_cap = max(triton.cdiv(_SPLITK_TARGET_WAVES * n_sm, max(grid_y, 1)), 1)
+    # Floor from the KV buffer: at least one split per 256 KV elements.
+    buffer_floor = max(triton.cdiv(L_kv, 256), 1)
+    return min(buffer_floor, sm_cap)
 
 
 # ---------------------------------------------------------------------------
@@ -575,7 +622,6 @@ def tq4_sdpa(
     is_causal: bool = False,
     scale: Optional[float] = None,
     kv_len: Optional[torch.Tensor] = None,
-    mask_is_causal: bool = False,
 ) -> torch.Tensor:
     """Fused TQ4 SDPA over nibble-packed compressed K/V cache.
 
@@ -595,7 +641,11 @@ def tq4_sdpa(
         centroids: [16] fp32 Lloyd-Max codebook
         rotation: [D, D] orthogonal rotation matrix
         attn_mask: Optional [B, 1, L_Q, L_KV] bool mask
-        is_causal: apply causal masking (requires L_Q == L_KV)
+        is_causal: apply causal masking. When ``kv_len`` is also provided,
+            enables a per-tile causal upper bound that skips KV blocks past
+            the tile's last query position — the prefill analogue of the
+            ``kv_len`` clamp, ~halving prefill (causal-triangle) work.
+            Without ``kv_len``, requires L_Q == L_KV (top-left aligned).
         scale: softmax scale applied to ``Q @ K^T``. Defaults to
             ``1/sqrt(HEAD_DIM)`` when ``None``. Models that handle their
             own normalization (e.g. QK-norm models that fold the
@@ -608,15 +658,9 @@ def tq4_sdpa(
             the device (no host sync) so the bound updates correctly under
             CUDA-graph replay (decode). For decode pass ``input_pos + 1``;
             for a prefill chunk pass ``chunk_end``. When ``None`` the loop
-            runs over the full ``L_KV`` (original behavior).
-        mask_is_causal: Set True only when ``attn_mask`` is a standard
-            causal mask (row at absolute position p attends to [0, p]).
-            Enables a per-tile causal upper bound that skips KV blocks past
-            the tile's last query position — the prefill analogue of the
-            ``kv_len`` clamp, ~halving prefill (causal-triangle) work. It is
-            a no-op for decode (L_Q=1) and byte-identical there. Leave False
-            (default) for any non-causal mask; the kernel keeps the full
-            ``kv_len`` bound, which is correct for an arbitrary mask.
+            runs over the full ``L_KV`` (original behavior). When combined
+            with ``is_causal=True``, enables bottom-right aligned in-kernel
+            causal reconstruction.
 
     Returns:
         [B, H_Q, L_Q, D] bf16 attention output
@@ -644,7 +688,7 @@ def tq4_sdpa(
 
     # The per-tile causal upper bound needs kv_len to convert query-row indices
     # to absolute KV positions, so it is only meaningful when kv_len is supplied.
-    MASK_IS_CAUSAL = bool(mask_is_causal) and HAS_KV_LEN
+    MASK_IS_CAUSAL = is_causal and HAS_KV_LEN
 
     # Build [256] bf16 lookup tables from [16] centroids.
     # In the export path, inductor fuses this into the compiled graph.
@@ -662,10 +706,11 @@ def tq4_sdpa(
     out_rot = torch.empty_like(query)
 
     HAS_MASK = attn_mask is not None
-    if is_causal and N_Q != N_KV:
+    if is_causal and N_Q != N_KV and kv_len is None:
         raise RuntimeError(
             f"is_causal requires L_Q == L_KV, got L_Q={N_Q}, L_KV={N_KV}. "
-            "For decode (L_Q < L_KV), use an explicit bool mask instead."
+            "For decode (L_Q < L_KV), pass kv_len to enable bottom-right "
+            "aligned in-kernel causal reconstruction."
         )
     if HAS_MASK:
         mask_ptr = attn_mask
@@ -841,7 +886,7 @@ def _tq4_sdpa_decode_splitk_kernel(
     stride_mq,
     stride_mk,
     sm_scale: tl.float32,
-    chunk_size,
+    num_splits,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -856,13 +901,21 @@ def _tq4_sdpa_decode_splitk_kernel(
     b = pid_bh // H_grid
     h_grid = pid_bh % H_grid
 
-    # Compute KV chunk bounds for this split
-    start_n = split_id * chunk_size
+    # Persistent / grid-stride split-K. grid.x (num_splits) is a fixed,
+    # hardware-sized number of split-CTAs, constant at cuda-graph capture. Each
+    # split sweeps a grid-strided set of BLOCK_N KV tiles up to the on-device
+    # kv_len, so the KV actually processed adapts to the real context length
+    # while the launch geometry stays static. kv_len is read on-device
+    # (CUDA-graph safe); falls back to Lk when not provided. Each split keeps its
+    # own online-softmax running max over the tiles it owns; the reduce rescales
+    # every split by the global max, so any round-robin partition of the KV
+    # positions across splits is numerically exact. Splits that own no in-range
+    # tile store the -inf/zero partials they were initialized with.
     if HAS_KV_LEN:
         kv_len = tl.load(KV_LEN_ptr)
     else:
         kv_len = Lk
-    end_n = tl.minimum(start_n + chunk_size, kv_len)
+    stride_n = num_splits * BLOCK_N
 
     offs_d = tl.arange(0, HEAD_DIM)
     offs_d_half = tl.arange(0, HALF_D)
@@ -910,9 +963,9 @@ def _tq4_sdpa_decode_splitk_kernel(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for tile_start in tl.range(start_n, end_n, BLOCK_N):
+    for tile_start in tl.range(split_id * BLOCK_N, kv_len, stride_n):
         offs_n = tile_start + offs_n_init
-        kv_valid = offs_n < end_n
+        kv_valid = offs_n < kv_len
 
         # -- K decompression (LUT, no norm multiply on [N,D] tile) --
         kp_ptrs = (
@@ -1108,9 +1161,8 @@ def _launch_tq4_decode_splitk(
         BLOCK_M = 32
 
     # Static num_splits for CUDA-graph compatibility
-    # Derive from buffer size, not runtime kv_len value
-    num_splits = min(max(triton.cdiv(L_KV, 256), 1), 128)
-    chunk_size = triton.cdiv(L_KV, num_splits)
+    # Derive from buffer size and device SM count, not runtime kv_len value
+    num_splits = _decode_num_splits(L_KV, B * H_grid, q_rot.device)
 
     # Allocate partial result buffers
     O_partial = torch.empty(
@@ -1163,7 +1215,7 @@ def _launch_tq4_decode_splitk(
         stride_mq,
         stride_mk,
         sm_scale,
-        chunk_size,
+        num_splits,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
@@ -1211,6 +1263,5 @@ def _tq4_sdpa_fake(
     is_causal: bool = False,
     scale: Optional[float] = None,
     kv_len: Optional[torch.Tensor] = None,
-    mask_is_causal: bool = False,
 ) -> torch.Tensor:
     return torch.empty_like(query)

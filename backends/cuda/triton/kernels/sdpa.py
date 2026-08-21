@@ -31,6 +31,7 @@ into the M (sequence) dimension of a single tile. This avoids redundant K/V read
 and improves tile utilization, especially during decode (seqlen_q=1).
 """
 
+import functools
 import math
 from typing import Optional
 
@@ -52,6 +53,63 @@ _SPLITK_LKV_THRESHOLD = 256
 
 # FlashDecoding++ unified-max constant used by the split-K decode path.
 _DEFAULT_SPLITK_PHI = 5.0
+
+# Decode split-K occupancy target. A sweep across both production attention
+# families showed that targeting 16/9 waves gives a better balance between split
+# kernel occupancy and reduction/empty-CTA overhead than the previous two-wave
+# target. Keep the ratio integral so the launch policy is deterministic and does
+# not depend on floating-point rounding.
+_SPLITK_TARGET_WAVES_NUMERATOR = 16
+_SPLITK_TARGET_WAVES_DENOMINATOR = 9
+
+# Do not create more static split CTAs than one per 128 elements in the KV
+# buffer. This permits 16 splits for the 2048-element sliding-window family.
+# A 40-state, >L2 working-set A/B showed gains at the production prompt lengths;
+# single-state measurements are cache-hot and are not representative here.
+# The occupancy cap independently lowers the 128K global family from 85 to 76
+# splits on a 170-SM device.
+_SPLITK_BUFFER_ELEMENTS_PER_SPLIT = 128
+
+@functools.lru_cache(maxsize=None)
+def _device_sm_count(device_index: int) -> int:
+    """SM (multiprocessor) count of a CUDA device.
+
+    Read once per device from torch device properties. This is a fixed
+    hardware property, so it is safe to bake into the split count at
+    export/init and reuse under cuda-graph capture. Works for any GPU
+    (A100=108, H100=132, RTX 5090~170, ...) with no per-arch special casing.
+    """
+    return torch.cuda.get_device_properties(device_index).multi_processor_count
+
+
+def _decode_num_splits(L_kv: int, grid_y: int, device: torch.device) -> int:
+    """Hardware-derived split count for the flash-decoding decode path.
+
+    The split kernel launches a (num_splits, grid_y) grid where
+    grid_y = B * H_kv. We size num_splits so the total launched CTAs
+    (num_splits * grid_y) target 16/9 waves of this device's SM array, capped by
+    cdiv(L_kv, 128) so a short KV buffer is not needlessly over-split and
+    clamped to >= 1.
+
+    num_splits depends only on host-side constants (L_kv buffer size, the
+    static grid_y, and the device SM count), so it is fixed before cuda-graph
+    capture and identical on every replay.
+    """
+    device_index = (
+        device.index if device.index is not None else torch.cuda.current_device()
+    )
+    n_sm = _device_sm_count(device_index)
+    # Cap so num_splits * grid_y ~= 16/9 * n_sm (>= 1). Use ceil division: a
+    # partial final wave is preferable to leaving an SM idle.
+    sm_cap = max(
+        triton.cdiv(
+            _SPLITK_TARGET_WAVES_NUMERATOR * n_sm,
+            _SPLITK_TARGET_WAVES_DENOMINATOR * max(grid_y, 1),
+        ),
+        1,
+    )
+    buffer_cap = max(triton.cdiv(L_kv, _SPLITK_BUFFER_ELEMENTS_PER_SPLIT), 1)
+    return min(buffer_cap, sm_cap)
 
 
 def _next_power_of_2(x: int) -> int:
@@ -204,6 +262,7 @@ def _sdpa_fwd_kernel_non_pow2(
     HAS_KV_LEN: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
     PACK_GQA: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr = False,
 ):
     """
     SDPA forward kernel for non-power-of-2 HEAD_DIM.
@@ -283,6 +342,16 @@ def _sdpa_fwd_kernel_non_pow2(
 
         if IS_CAUSAL:
             causal_mask = offs_n[None, :] > seq_pos[:, None]
+            qk = tl.where(causal_mask, tl.full(qk.shape, NEG_INF, dtype=tl.float32), qk)
+
+        if MASK_IS_CAUSAL:
+            # Bottom-right causal alignment (see pow2 body): row seq_pos sits at
+            # absolute KV position (kv_len - LQ) + seq_pos and attends to keys
+            # [0, (kv_len - LQ) + seq_pos]. The (kv_len - LQ) offset makes this
+            # correct for chunked prefill / decode where the LQ queries are the
+            # last LQ positions of a kv_len-long context, reconstructing a
+            # standard causal mask without a dense tensor.
+            causal_mask = offs_n[None, :] > (kv_len - LQ) + seq_pos[:, None]
             qk = tl.where(causal_mask, tl.full(qk.shape, NEG_INF, dtype=tl.float32), qk)
 
         if HAS_MASK:
@@ -382,6 +451,7 @@ def _sdpa_fwd_kernel_body(
     HEAD_DIM: tl.constexpr,
     NUM_GROUPS: tl.constexpr,
     PACK_GQA: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr = False,
 ):
     """
     Shared kernel body for SDPA forward pass.
@@ -464,6 +534,12 @@ def _sdpa_fwd_kernel_body(
     # the branch is uniform and turns into a real skip (not predication).
     if IS_CAUSAL:
         max_seq_pos = tl.max(seq_pos)
+    if MASK_IS_CAUSAL:
+        # Bottom-right causal: query row seq_pos sits at absolute KV position
+        # (kv_len - Lq) + seq_pos. The largest such position bounds the loop;
+        # blocks starting past it are fully masked. (kv_len is the loaded bound,
+        # required by the host when MASK_IS_CAUSAL is set.)
+        max_kv_pos = (kv_len - Lq) + tl.max(seq_pos)
 
     for start_n in tl.range(0, kv_len, BLOCK_N):
         offs_n = start_n + offs_n_init
@@ -481,6 +557,9 @@ def _sdpa_fwd_kernel_body(
         elif IS_CAUSAL:
             # Block is entirely in the future for every row -> skip.
             block_active = start_n <= max_seq_pos
+        elif MASK_IS_CAUSAL:
+            # Bottom-right causal: skip blocks past the last query's KV position.
+            block_active = start_n <= max_kv_pos
         else:
             block_active = True
 
@@ -504,6 +583,19 @@ def _sdpa_fwd_kernel_body(
 
             if IS_CAUSAL:
                 causal = offs_n[None, :] > seq_pos[:, None]
+                qk = tl.where(
+                    causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
+                )
+
+            if MASK_IS_CAUSAL:
+                # Bottom-right causal alignment: query row seq_pos sits at
+                # absolute KV position (kv_len - Lq) + seq_pos and attends to
+                # keys [0, (kv_len - Lq) + seq_pos]. The (kv_len - Lq) offset
+                # makes this correct for chunked prefill / decode where the Lq
+                # queries are the last Lq positions of a kv_len-long context.
+                # This reconstructs a standard causal mask without a dense
+                # tensor. For the square case (kv_len == Lq) it matches IS_CAUSAL.
+                causal = offs_n[None, :] > (kv_len - Lq) + seq_pos[:, None]
                 qk = tl.where(
                     causal, tl.full(qk.shape, -float("inf"), dtype=tl.float32), qk
                 )
@@ -601,7 +693,16 @@ def _sdpa_prefill_prune(configs, nargs, **kwargs):
 
 @triton.autotune(
     configs=_SDPA_PREFILL_CONFIGS,
-    key=["Lq", "Lk", "HEAD_DIM", "HAS_MASK", "IS_CAUSAL", "NUM_GROUPS", "PACK_GQA"],
+    key=[
+        "Lq",
+        "Lk",
+        "HEAD_DIM",
+        "HAS_MASK",
+        "IS_CAUSAL",
+        "MASK_IS_CAUSAL",
+        "NUM_GROUPS",
+        "PACK_GQA",
+    ],
     prune_configs_by={"early_config_prune": _sdpa_prefill_prune},
 )
 @triton.jit
@@ -644,6 +745,7 @@ def _sdpa_fwd_kernel(
     PACK_GQA: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    MASK_IS_CAUSAL: tl.constexpr = False,
 ):
     _sdpa_fwd_kernel_body(
         Q_ptr,
@@ -684,6 +786,7 @@ def _sdpa_fwd_kernel(
         HEAD_DIM=HEAD_DIM,
         NUM_GROUPS=NUM_GROUPS,
         PACK_GQA=PACK_GQA,
+        MASK_IS_CAUSAL=MASK_IS_CAUSAL,
     )
 
 
@@ -774,6 +877,7 @@ def _launch_pow2_kernel(
     pack_gqa: bool,
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
+    mask_is_causal: bool = False,
 ) -> None:
     """Launch power-of-2 optimized SDPA kernel."""
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
@@ -833,6 +937,7 @@ def _launch_pow2_kernel(
         HEAD_DIM=D,
         NUM_GROUPS=num_groups,
         PACK_GQA=pack_gqa,
+        MASK_IS_CAUSAL=mask_is_causal,
     )
 
 
@@ -855,6 +960,7 @@ def _launch_non_pow2_kernel(
     pack_gqa: bool,
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
+    mask_is_causal: bool = False,
 ) -> None:
     """Launch non-power-of-2 SDPA kernel with dynamic HEAD_DIM masking."""
     stride_qb, stride_qh, stride_qm, stride_qd = query.stride()
@@ -929,6 +1035,7 @@ def _launch_non_pow2_kernel(
         HAS_KV_LEN=HAS_KV_LEN,
         NUM_GROUPS=num_groups,
         PACK_GQA=pack_gqa,
+        MASK_IS_CAUSAL=mask_is_causal,
         num_warps=num_warps,
         num_stages=num_stages,
     )
@@ -959,7 +1066,12 @@ def sdpa(
         value: Value tensor [B, H_kv, L_kv, D], dtype torch.bfloat16
         attn_mask: Optional bool mask [B, 1, L_q, L_kv] (broadcast over heads)
         dropout_p: must be 0.0
-        is_causal: apply causal masking
+        is_causal: apply causal masking. When ``kv_len`` is also provided, the
+            causal mask is reconstructed analytically in-kernel with bottom-right
+            alignment (row i at absolute position ``(kv_len - L_q) + i``),
+            avoiding a dense ``[B, 1, L_q, L_kv]`` bool mask — the caller can
+            pass ``attn_mask=None``. Without ``kv_len``, requires L_q == L_kv
+            (top-left aligned square causal).
         scale: attention scale (default: 1/sqrt(D))
         enable_gqa: allow H_q != H_kv (GQA/MQA)
         kv_len: Optional GPU int scalar = number of valid (filled) KV positions.
@@ -970,7 +1082,9 @@ def sdpa(
             ``input_pos + 1``; for a prefill chunk pass ``chunk_end``. When None
             the loop runs over the full ``L_kv`` (original behavior). Supplying
             it for an L_q==1 decode with a large buffer also routes through the
-            split-K flash-decoding kernel for occupancy.
+            split-K flash-decoding kernel for occupancy. When combined with
+            ``is_causal=True``, enables bottom-right aligned in-kernel causal
+            reconstruction (no dense mask needed).
     Returns:
         Output tensor [B, H_q, L_q, D], dtype torch.bfloat16
     """
@@ -982,10 +1096,11 @@ def sdpa(
     D = D_q
     num_groups = H_q // H_kv
 
-    if is_causal and L_q != L_kv:
+    if is_causal and L_q != L_kv and kv_len is None:
         raise RuntimeError(
             f"Causal masking requires L_q == L_kv; got L_q={L_q}, L_kv={L_kv}. "
-            "For decode (L_q < L_kv), use an explicit bool mask instead."
+            "For decode (L_q < L_kv), pass kv_len to enable bottom-right "
+            "aligned in-kernel causal reconstruction."
         )
 
     out = torch.empty((B, H_q, L_q, D), device=query.device, dtype=query.dtype)
@@ -1004,6 +1119,18 @@ def sdpa(
         ).contiguous()
     else:
         kv_len_t = None
+
+    # In-kernel causal reconstruction: when is_causal=True and kv_len is
+    # provided, reconstruct the causal mask analytically in the kernel
+    # (bottom-right aligned: query row i sits at absolute position
+    # (kv_len - L_q) + i) instead of reading a materialized dense
+    # [B, 1, L_q, L_kv] bool mask. This drops the dense mask tensor entirely.
+    mask_is_causal = is_causal and HAS_KV_LEN
+    if mask_is_causal:
+        HAS_MASK = False
+        Mask_ptr = 0
+        stride_mb = stride_mq = stride_mk = 0
+    kernel_is_causal = is_causal and not mask_is_causal
 
     # Split-K dispatch with a kv_len bound, power-of-2 head dimension, and a
     # large KV buffer. The legacy decode launcher remains isolated at L_q == 1;
@@ -1086,11 +1213,12 @@ def sdpa(
             stride_mb,
             stride_mq,
             stride_mk,
-            is_causal,
+            kernel_is_causal,
             num_groups,
             pack_gqa,
             kv_len_t,
             HAS_KV_LEN,
+            mask_is_causal,
         )
     else:
         _launch_non_pow2_kernel(
@@ -1107,11 +1235,12 @@ def sdpa(
             D,
             sm_scale,
             HAS_MASK,
-            is_causal,
+            kernel_is_causal,
             num_groups,
             pack_gqa,
             kv_len_t,
             HAS_KV_LEN,
+            mask_is_causal,
         )
 
     return out
@@ -1204,7 +1333,7 @@ def _sdpa_decode_splitk_kernel(
     stride_mk,
     sm_scale: tl.float32,
     phi: tl.float32,
-    chunk_size,
+    num_splits,
     HAS_MASK: tl.constexpr,
     HAS_KV_LEN: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -1217,16 +1346,20 @@ def _sdpa_decode_splitk_kernel(
     b = pid_bh // H_kv
     h_kv = pid_bh % H_kv
 
-    start_n = split_id * chunk_size
-    # Bound the decode KV sweep to the valid (filled) positions. Splits whose
-    # chunk starts past kv_len do no work (end_n <= start_n) and store the zero
-    # partials they were initialized with, so the reduce is unaffected. kv_len is
-    # read on-device (CUDA-graph safe); falls back to Lk when not provided.
+    # Persistent / grid-stride split-K. grid.x (num_splits) is a fixed,
+    # hardware-sized number of split-CTAs, constant at cuda-graph capture. Each
+    # split sweeps a grid-strided set of BLOCK_N KV tiles up to the on-device
+    # kv_len, so the KV actually processed adapts to the real context length
+    # while the launch geometry stays static. kv_len is read on-device
+    # (CUDA-graph safe); falls back to Lk when not provided. Splits with no tiles
+    # in range do no work and store zero partials,
+    # so the reduce is unaffected. phi is a global constant, so partitioning the
+    # KV positions across splits in any order leaves the summed partials exact.
     if HAS_KV_LEN:
-        kv_len = tl.load(KV_LEN_ptr)
+        kv_len = tl.minimum(tl.load(KV_LEN_ptr), Lk)
     else:
         kv_len = Lk
-    end_n = tl.minimum(start_n + chunk_size, kv_len)
+    stride_n = num_splits * BLOCK_N
 
     offs_d = tl.arange(0, HEAD_DIM)
     offs_g = tl.arange(0, BLOCK_G)
@@ -1248,9 +1381,9 @@ def _sdpa_decode_splitk_kernel(
 
     offs_n_init = tl.arange(0, BLOCK_N)
 
-    for tile_start in tl.range(start_n, end_n, BLOCK_N):
+    for tile_start in tl.range(split_id * BLOCK_N, kv_len, stride_n):
         offs_n = tile_start + offs_n_init
-        n_valid = offs_n < end_n
+        n_valid = offs_n < kv_len
 
         k_ptrs = K_ptr + (
             b * stride_kb
@@ -1378,13 +1511,14 @@ def _launch_decode_splitk(
     kv_len_ptr: Optional[torch.Tensor] = None,
     HAS_KV_LEN: bool = False,
 ) -> None:
-    num_splits = min(max(triton.cdiv(L_kv, 256), 1), 128)
-    chunk_size = triton.cdiv(L_kv, num_splits)
+    num_splits = _decode_num_splits(L_kv, B * H_kv, query.device)
 
     O_partial = torch.empty(
         (num_splits, B, H_q, D), device=query.device, dtype=torch.float32
     )
-    L_partial = torch.zeros(
+    # Every valid (split, query-head) entry is written by the split kernel,
+    # including zero-work splits, so initialization is redundant.
+    L_partial = torch.empty(
         (num_splits, B, H_q), device=query.device, dtype=torch.float32
     )
 
@@ -1431,7 +1565,7 @@ def _launch_decode_splitk(
         stride_mk,
         sm_scale,
         phi,
-        chunk_size,
+        num_splits,
         HAS_MASK=HAS_MASK,
         HAS_KV_LEN=HAS_KV_LEN,
         HEAD_DIM=D,
@@ -1457,7 +1591,10 @@ def _launch_decode_splitk(
         stride_om,
         stride_od,
         HEAD_DIM=D,
-        num_warps=4,
+        # The D=512 global family benefits from the wider reduction, while
+        # D=256 sliding attention regresses with eight warps. D is static at
+        # export/capture time, so this remains a single graph-safe method.
+        num_warps=8 if D >= 512 else 4,
         num_stages=1,
     )
 
@@ -1524,9 +1661,9 @@ def sdpa_decode_splitk(
 
     HAS_KV_LEN = kv_len is not None
     if HAS_KV_LEN:
-        kv_len_t = torch.clamp(
-            kv_len.reshape(1).to(torch.int32), max=int(L_kv)
-        ).contiguous()
+        # Keep the caller's device scalar as-is. The split kernel clamps it to
+        # L_kv on device, avoiding a captured elementwise preprocessing node.
+        kv_len_t = kv_len
     else:
         kv_len_t = None
 

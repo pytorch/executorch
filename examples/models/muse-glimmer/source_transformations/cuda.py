@@ -424,7 +424,8 @@ def _turboquant_attention_forward(
     a ``TurboQuantKVCache``.
 
     NOTE: ``attn_mask`` is unused — the global mask is standard causal, so it is
-    reconstructed in the kernel (``mask_is_causal=True``) to save data transfer.
+    reconstructed in the kernel (``is_causal=True`` with ``kv_len``) to save data
+    transfer.
     """
     B, T, _ = x.shape
 
@@ -470,10 +471,9 @@ def _turboquant_attention_forward(
         self.kv_cache.centroids,
         self.kv_cache.rotation,
         None,  # reconstruct the causal mask in the kernel to save data transfer
-        False,  # is_causal: needs L_q==L_kv; causal comes from mask_is_causal
+        True,  # is_causal: with kv_len, uses bottom-right aligned in-kernel causal
         self.attn_scale,
         kv_len,
-        True,  # mask_is_causal: muse_glimmer global-attention mask is standard causal
     )
 
     y = y.transpose(1, 2).contiguous()
@@ -504,6 +504,10 @@ def _lenaware_attention_forward(
     routes L_q==1 decode through the length-aware split-K flash-decoding kernel.
     Sliding-window layers are not patched (they already use a bounded ring
     buffer).
+
+    NOTE: ``attn_mask`` is unused — the global mask is standard causal, so it is
+    reconstructed in the kernel (``is_causal=True`` with ``kv_len``) to save data
+    transfer, exactly as on the TurboQuant path.
     """
     B, T, _ = x.shape
 
@@ -536,14 +540,17 @@ def _lenaware_attention_forward(
 
     # scale=self.attn_scale absorbs the muP query scaling and 1/sqrt(D).
     # enable_gqa=True lets the kernel handle the 16:1 head ratio without
-    # materializing expanded K/V.
+    # materializing expanded K/V. In-kernel causal: pass no dense mask; the
+    # kernel reconstructs the standard causal mask analytically (bottom-right
+    # aligned via kv_len), so the dense [1, 1, T, max_seq_len] bool mask is dead
+    # code and dropped by DCE -- exactly as on the TurboQuant path.
     y = torch.ops.triton.sdpa(
         xq,
         k,
         v,
-        attn_mask,
+        None,  # attn_mask: reconstruct the causal mask in-kernel
         0.0,  # dropout_p
-        False,  # is_causal: attn_mask already encodes causal masking
+        True,  # is_causal: with kv_len, uses bottom-right aligned causal
         self.attn_scale,
         True,  # enable_gqa
         kv_len,
@@ -595,7 +602,8 @@ def cuda_source_transformations(
             n_bounded += 1
         print(
             f"[muse_glimmer cuda] length-aware SDPA: bounded {n_bounded} global-attention "
-            f"layers to runtime kv_len (O(context) attention)"
+            "layers to runtime kv_len (O(context) attention); "
+            "in-kernel causal mask (dense mask dropped)"
         )
         return
 
