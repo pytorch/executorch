@@ -55,7 +55,7 @@
 namespace executorch {
 namespace extension {
 namespace llm {
-namespace scheduler {
+namespace batching {
 
 using Token = std::int64_t;
 using RequestId = std::int64_t;
@@ -492,7 +492,7 @@ class Scheduler {
   std::atomic<RequestId> next_request_id_{1};
 };
 
-} // namespace scheduler
+} // namespace batching
 } // namespace llm
 } // namespace extension
 } // namespace executorch

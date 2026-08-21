@@ -13,6 +13,6 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 set(_test_srcs scheduler_test.cpp)
 
 et_cxx_test(
-  extension_llm_scheduler_test SOURCES ${_test_srcs} EXTRA_LIBS
-  extension_llm_scheduler
+  extension_llm_batching_test SOURCES ${_test_srcs} EXTRA_LIBS
+  extension_llm_batching
 )

@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/llm/scheduler/scheduler.h>
+#include <executorch/extension/llm/batching/scheduler.h>
 
 #include <algorithm>
 #include <chrono>
@@ -21,20 +21,20 @@
 
 #include <gtest/gtest.h>
 
-using executorch::extension::llm::scheduler::Batch;
-using executorch::extension::llm::scheduler::LogitsBlock;
-using executorch::extension::llm::scheduler::LogitsPtr;
-using executorch::extension::llm::scheduler::OutputRows;
-using executorch::extension::llm::scheduler::Position;
-using executorch::extension::llm::scheduler::Request;
-using executorch::extension::llm::scheduler::RequestId;
-using executorch::extension::llm::scheduler::RequestParams;
-using executorch::extension::llm::scheduler::Response;
-using executorch::extension::llm::scheduler::SamplingParams;
-using executorch::extension::llm::scheduler::Scheduler;
-using executorch::extension::llm::scheduler::SchedulerParams;
-using executorch::extension::llm::scheduler::SessionId;
-using executorch::extension::llm::scheduler::Token;
+using executorch::extension::llm::batching::Batch;
+using executorch::extension::llm::batching::LogitsBlock;
+using executorch::extension::llm::batching::LogitsPtr;
+using executorch::extension::llm::batching::OutputRows;
+using executorch::extension::llm::batching::Position;
+using executorch::extension::llm::batching::Request;
+using executorch::extension::llm::batching::RequestId;
+using executorch::extension::llm::batching::RequestParams;
+using executorch::extension::llm::batching::Response;
+using executorch::extension::llm::batching::SamplingParams;
+using executorch::extension::llm::batching::Scheduler;
+using executorch::extension::llm::batching::SchedulerParams;
+using executorch::extension::llm::batching::SessionId;
+using executorch::extension::llm::batching::Token;
 
 namespace {
 
