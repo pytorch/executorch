@@ -39,14 +39,17 @@ class DefaultDeviceRunnerAdapter:
 
     def push_artifacts(
         self,
-        artifact_paths: List[Path],
+        artifact_paths: Dict[str, Path],
         input_data: Optional[List[Any]] = None,
         extra_files: Optional[List[str]] = None,
     ) -> None:
         """Push compiled artifacts and inputs to the device via ADB.
 
         Args:
-            artifact_paths: Paths to compiled .pte artifacts.
+            artifact_paths: Compiled .pte artifacts keyed by artifact name.
+                Every artifact is pushed; the keys select which on-device runner
+                argument each path is passed to, which is the runner's concern
+                rather than this adapter's.
             input_data: Optional input data to push to device.
             extra_files: Optional additional files to push.
         """
@@ -58,7 +61,7 @@ class DefaultDeviceRunnerAdapter:
                 "replaced on device."
             )
 
-        pte_paths = [str(p) for p in artifact_paths]
+        pte_paths = [str(p) for p in artifact_paths.values()]
 
         logger.info("Pushing artifacts to device: %s", pte_paths)
         self._adb = SimpleADB(

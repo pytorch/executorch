@@ -45,12 +45,12 @@ from executorch.backends.qualcomm.genai_pipeline.strategies.quantization.quantiz
 )
 from executorch.backends.qualcomm.genai_pipeline.tests.test_utils import (
     make_test_context,
-    TEST_PTE_PATH,
+    TEST_ARTIFACT_PATHS,
+    TEST_BACKEND_TYPE,
 )
 
 TEST_MOCK_GENERATED_TEXT = "Mock generated text"
 TEST_MOCK_TOKENS_PER_SEC = 42.0
-TEST_MOCK_BACKEND_TYPE = MagicMock(name="kHtpBackend")
 
 
 class _MockQuantizationStrategy(QuantizationStrategy):
@@ -60,7 +60,7 @@ class _MockQuantizationStrategy(QuantizationStrategy):
 
 class _MockCompilationStrategy(CompilationStrategy):
     def invoke(self, context, input_config):
-        return CompilationOutputConfig(artifact_paths=[TEST_PTE_PATH])
+        return CompilationOutputConfig(artifact_paths=TEST_ARTIFACT_PATHS)
 
 
 class _MockInferenceStrategy(InferenceStrategy):
@@ -81,7 +81,7 @@ class TestGenAIPipelineFromProxy(unittest.TestCase):
                 STAGE_COMPILATION: EngineType.EXECUTORCH,
                 STAGE_INFERENCE: EngineType.EXECUTORCH,
             },
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline.from_proxy(proxy)
         self.assertIsNotNone(pipeline._model_preparation_stage)
@@ -92,7 +92,7 @@ class TestGenAIPipelineFromProxy(unittest.TestCase):
     def test_skip_stages(self):
         proxy = EngineProxy(
             {STAGE_INFERENCE: EngineType.EXECUTORCH},
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline.from_proxy(
             proxy,
@@ -109,7 +109,7 @@ class TestGenAIPipelineFromProxy(unittest.TestCase):
         self.assertIsNone(pipeline._inference_stage)
 
     def test_default_engines_all_executorch(self):
-        proxy = EngineProxy({}, backend_type=TEST_MOCK_BACKEND_TYPE)
+        proxy = EngineProxy({}, backend_type=TEST_BACKEND_TYPE)
         pipeline = GenAIPipeline.from_proxy(proxy)
         self.assertIsNotNone(pipeline._model_preparation_stage)
         self.assertIsNotNone(pipeline._quantization_stage)
@@ -164,7 +164,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
                 STAGE_COMPILATION: EngineType.EXECUTORCH,
                 STAGE_INFERENCE: EngineType.EXECUTORCH,
             },
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=None,
@@ -187,7 +187,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
                 STAGE_QUANTIZATION: EngineType.EXECUTORCH,
                 STAGE_COMPILATION: EngineType.EXECUTORCH,
             },
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=None,
@@ -201,7 +201,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         self.assertIsInstance(result, InferenceOutputConfig)
 
     def test_invoke_no_stages(self):
-        proxy = EngineProxy({}, backend_type=TEST_MOCK_BACKEND_TYPE)
+        proxy = EngineProxy({}, backend_type=TEST_BACKEND_TYPE)
         pipeline = GenAIPipeline(
             model_preparation_stage=None,
             quantization_stage=None,
@@ -222,7 +222,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         test_soc = "SM8650"
         proxy = EngineProxy(
             {STAGE_QUANTIZATION: EngineType.EXECUTORCH},
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=None,
@@ -240,7 +240,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
     def test_compilation_receives_backend_type(self):
         mock_compile = MagicMock(spec=CompilationStrategy)
         mock_compile.invoke.return_value = CompilationOutputConfig(
-            artifact_paths=[TEST_PTE_PATH]
+            artifact_paths=TEST_ARTIFACT_PATHS
         )
 
         mock_backend_type = MagicMock()
@@ -270,7 +270,7 @@ class TestGenAIPipelineInvoke(unittest.TestCase):
         test_prompt = ["What is AI?"]
         proxy = EngineProxy(
             {STAGE_INFERENCE: EngineType.EXECUTORCH},
-            backend_type=TEST_MOCK_BACKEND_TYPE,
+            backend_type=TEST_BACKEND_TYPE,
         )
         pipeline = GenAIPipeline(
             model_preparation_stage=None,
