@@ -538,6 +538,23 @@ def define_common_targets():
     )
 
     runtime.python_library(
+        name = "absorb_boundary_layout_copies",
+        srcs = [
+            "absorb_boundary_layout_copies.py",
+        ],
+        visibility = [
+            "//executorch/backends/...",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":channels_last_layout",
+            "//executorch/exir:lib",
+            "//executorch/exir:pass_base",
+            "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_library(
         name = "to_contiguous_channels_last_pass",
         srcs = [
             "to_contiguous_channels_last_pass.py",
@@ -559,6 +576,20 @@ def define_common_targets():
             "//executorch/exir:lib",
             "//executorch/exir:pass_base",
             "//executorch/exir/dialects:lib",
+        ],
+    )
+
+    runtime.python_test(
+        name = "test_absorb_boundary_layout_copies",
+        srcs = [
+            "test/test_absorb_boundary_layout_copies.py",
+        ],
+        deps = [
+            "//caffe2:torch",
+            ":absorb_boundary_layout_copies",
+            "//executorch/exir:lib",
+            "//executorch/exir/dialects:lib",
+            "fbsource//third-party/pypi/pytest:pytest",
         ],
     )
 
