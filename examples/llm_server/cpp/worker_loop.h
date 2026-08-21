@@ -47,7 +47,8 @@
 //                (new|exact_prefix|mismatch|dirty|equal),
 //                "prefill_ms": float, "decode_ms": float, "total_ms": float,
 //                "prefill_tok_s": float, "decode_tok_s": float,
-//                "generated_token_ids"?: [int,...]}  // omitted if stop-trimmed
+//                "generated_token_ids"?: [int,...],  // omitted if stop-trimmed
+//                ...optional model-specific terminal stats}
 //     open/close/reset: {"opened"|"closed"|"reset": true, "session_id": str}
 //     error:    {"error": str, "code"?: str}  // capacity_exhausted |
 //                                              // unsupported_session
@@ -112,7 +113,36 @@ inline void worker_handle_request(
     ::tokenizers::Tokenizer& tokenizer,
     const std::unordered_map<std::string, int64_t>& metadata,
     const nlohmann::json& req,
-    const std::vector<uint64_t>& prompt_prefix_ids = {}) {
+    const std::vector<uint64_t>& prompt_prefix_ids = {},
+    const nlohmann::json& additional_terminal_stats =
+        nlohmann::json::object()) {
+  if (!additional_terminal_stats.is_object()) {
+    throw std::runtime_error("additional terminal stats must be a JSON object");
+  }
+  static const std::vector<std::string> kReservedTerminalKeys = {
+      "done",
+      "prompt_tokens",
+      "completion_tokens",
+      "finish_reason",
+      "reused_prompt_tokens",
+      "prefilled_prompt_tokens",
+      "session_reset_reason",
+      "generated_token_ids",
+      "prefill_ms",
+      "decode_ms",
+      "total_ms",
+      "prefill_tok_s",
+      "decode_tok_s"};
+  for (const auto& [key, value] : additional_terminal_stats.items()) {
+    (void)value;
+    if (std::find(
+            kReservedTerminalKeys.begin(), kReservedTerminalKeys.end(), key) !=
+        kReservedTerminalKeys.end()) {
+      throw std::runtime_error(
+          "additional terminal stat collides with reserved key: " + key);
+    }
+  }
+
   const auto request_start = std::chrono::steady_clock::now();
   LLMSession& session = *st.session;
   int64_t max_new = req.value("max_new_tokens", static_cast<int64_t>(-1));
@@ -346,6 +376,7 @@ inline void worker_handle_request(
   done["decode_tok_s"] = decode_ms > 0.0
       ? (static_cast<double>(num_generated) * 1000.0 / decode_ms)
       : 0.0;
+  done.update(additional_terminal_stats);
   worker_emit(done);
 }
 

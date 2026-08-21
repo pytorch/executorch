@@ -149,7 +149,7 @@ We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands t
 ```bash
 cd $EXECUTORCH_ROOT
 
-python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --compile_only --download
+python -m examples.qualcomm.scripts.deeplab_v3 --build_folder build-android --soc_model SM8550 --compile_only --download
 ```
 
 You might see something like below:
@@ -287,9 +287,9 @@ The model is merely executed. If we want to feed real inputs and get model outpu
 ```bash
 cd $EXECUTORCH_ROOT
 # android
-python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 --build_folder build-android --soc_model SM8550 --download --device <device_serial>
 # (optional) linux embedded
-python -m examples.qualcomm.scripts.deeplab_v3 -b build-oe-linux -m SXR1230P --download -s <device_serial> -t aarch64-oe-linux-gcc-9.3
+python -m examples.qualcomm.scripts.deeplab_v3 --build_folder build-oe-linux --soc_model SXR1230P --download --device <device_serial> --target aarch64-oe-linux-gcc9.3
 ```
 The `<device_serial>` can be found by `adb devices` command.
 

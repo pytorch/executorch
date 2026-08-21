@@ -29,7 +29,7 @@ endif()
 
 target_link_libraries(
   op_test_runner PRIVATE extension_module extension_tensor executorch
-                         mlxdelegate
+                         mlxdelegate extension_llm_cache
 )
 
 # --------------------------------------------------------------------------

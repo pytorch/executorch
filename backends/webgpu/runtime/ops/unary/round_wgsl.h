@@ -12,7 +12,7 @@
 
 namespace executorch::backends::webgpu {
 
-// @generated from round.wgsl - DO NOT EDIT.
+// @generated from unary.wgsl - DO NOT EDIT.
 // wgsl-sha256: 8f3e0edbeb81aa50f35e691c78554e8057fa8d78fe8a86454f4f42e5e8871452
 inline constexpr const char* kRoundWGSL = R"(
 @group(0) @binding(0) var<storage, read> input: array<f32>;

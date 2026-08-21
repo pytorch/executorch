@@ -311,13 +311,25 @@ inline void exec_update_and_attend(
   // the query side (q, scale) and calls SDPA.
   const array& q = st.const_tensor_ref(n.q);
   // The run's start is position[0], read host-side so the cache stays pure
-  // graph + integer bookkeeping. This is a device->host sync per node, i.e.
-  // n_layers stalls per step -- not one -- even though every layer of a step
-  // sees the same position. The fix is for position to arrive as a host-side
-  // constant instead of a graph tensor; this is the single spot to change.
-  array pos = astype(st.const_tensor_ref(n.position), int32, s);
+  // graph + integer bookkeeping. Every layer of a step reads the same position
+  // tensor, so evaluating it in place costs one sync for the first layer and
+  // nothing for the rest -- casting first would instead build a fresh array per
+  // layer and sync on each one.
+  auto pos = st.const_tensor_ref(n.position);
   eval(pos);
-  const int position = pos.data<int32_t>()[0];
+  int position;
+  switch (pos.dtype()) {
+    case ::mlx::core::int32:
+      position = pos.data<int32_t>()[0];
+      break;
+    case ::mlx::core::int64:
+      position = static_cast<int>(pos.data<int64_t>()[0]);
+      break;
+    default:
+      throw std::runtime_error(
+          std::string("update_and_attend: position must be int32 or int64, ") +
+          "got " + ExecutionState::dtype_str(pos.dtype()));
+  }
   AttendSpec spec = st.cache->update_and_fetch(
       *n.layer_id,
       position,

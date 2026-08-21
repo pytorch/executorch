@@ -359,6 +359,73 @@ class TestReorderPasses(unittest.TestCase):
             < get_node_pos(converted_graph, exir_ops.edge.aten.permute_copy.default)
         )
 
+    def test_advance_quantize_above_extra_quantizable_op(self) -> None:
+        builder = GraphBuilder()
+        cache_data = torch.randint(-128, 127, (4, 8), dtype=torch.int8)
+        update_data = torch.randint(-128, 127, (2, 8), dtype=torch.int8)
+        cache = builder.placeholder("cache", cache_data)
+        update = builder.placeholder("update", update_data)
+        qparams = (0.25, 3, -128, 127, torch.int8)
+        cache_float = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(cache, *qparams),
+        )
+        update_float = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(update, *qparams),
+        )
+        slice_scatter = builder.call_operator(
+            op=exir_ops.edge.aten.slice_scatter.default,
+            args=(cache_float, update_float, 0, 1, 3, 1),
+        )
+        quantized = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(slice_scatter, *qparams),
+        )
+        builder.output([quantized])
+
+        result = transform_and_check_numerics(
+            builder.get_graph_module(),
+            (cache_data, update_data),
+            AdvanceQuantizeOpAboveDefChainPass(
+                extra_quantizable_ops={exir_ops.edge.aten.slice_scatter.default: (0, 1)}
+            ),
+        )
+
+        self.assertTrue(result.modified)
+        self.assertEqual(
+            2,
+            count_node(
+                result.graph_module,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            ),
+        )
+        scatter_nodes = result.graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_scatter.default
+        )
+        self.assertEqual(1, len(scatter_nodes))
+        scatter_node = scatter_nodes[0]
+        self.assertEqual((0, 1, 3, 1), scatter_node.args[2:])
+        self.assertEqual(torch.int8, scatter_node.meta["val"].dtype)
+
+        for scatter_input in scatter_node.args[:2]:
+            self.assertIsInstance(scatter_input, torch.fx.Node)
+            scatter_input = cast(torch.fx.Node, scatter_input)
+            self.assertEqual(
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                scatter_input.target,
+            )
+            self.assertEqual(torch.int8, scatter_input.meta["val"].dtype)
+
+            quant_input = scatter_input.args[0]
+            self.assertIsInstance(quant_input, torch.fx.Node)
+            quant_input = cast(torch.fx.Node, quant_input)
+            self.assertEqual(torch.float32, quant_input.meta["val"].dtype)
+            dequant_input = quant_input.args[0]
+            self.assertIsInstance(dequant_input, torch.fx.Node)
+            dequant_input = cast(torch.fx.Node, dequant_input)
+            self.assertEqual(torch.int8, dequant_input.meta["val"].dtype)
+
     def test_postpone_dequantize1(self) -> None:
         builder = GraphBuilder()
         x_data = torch.randn(1, 16, 32, 6, dtype=torch.float32)
@@ -681,6 +748,32 @@ class TestMovePermuteAfterConcat(unittest.TestCase):
         self.assertEqual(cat_nodes[0].args[1], 0)
         placeholder_nodes = converted.graph.find_nodes(op="placeholder")
         self.assertEqual(cat_nodes[0].args[0], placeholder_nodes)
+
+    def test_repeated_permute_input_not_moved(self) -> None:
+        x_data = torch.randn(1, 16, 32)
+        builder = GraphBuilder()
+        x = builder.placeholder("x", x_data)
+        permuted_x = builder.call_operator(
+            exir_ops.edge.aten.permute_copy.default,
+            args=(x, [1, 2, 0]),
+        )
+        cat = builder.call_operator(
+            exir_ops.edge.aten.cat.default,
+            args=([permuted_x, permuted_x], 2),
+        )
+        builder.output([cat])
+
+        result = transform_and_check_numerics(
+            builder.get_graph_module(),
+            (x_data,),
+            MovePermuteAfterConcat(),
+        )
+
+        self.assertFalse(result.modified)
+        self.assertEqual(
+            get_compute_nodes_in_gm(result.graph_module),
+            [exir_ops.edge.aten.permute_copy, exir_ops.edge.aten.cat],
+        )
 
     def test_different_permutations_not_moved(self) -> None:
         builder = GraphBuilder()

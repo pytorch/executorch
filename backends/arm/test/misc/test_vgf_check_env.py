@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import stat
 from pathlib import Path
+from typing import Any
 
 import executorch.backends.arm.vgf.check_env as check_env
 import executorch.backends.arm.vgf.model_converter as model_converter
 
 import pytest
+from executorch.backends.arm.test import conftest as arm_conftest
 from executorch.backends.arm.vgf import backend as vgf_backend
 from executorch.backends.arm.vgf.compile_spec import VgfCompileSpec
 
@@ -149,6 +151,137 @@ def test_model_converter_check_reports_version(monkeypatch, tmp_path):
     assert result.status == check_env.STATUS_OK
     assert str(converter) in result.detail
     assert "0.9.0" in result.detail
+
+
+def test_get_model_converter_version_text(monkeypatch, tmp_path):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter d8c1b8e')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    monkeypatch.setattr(
+        model_converter, "find_model_converter_binary", lambda: str(converter)
+    )
+
+    assert model_converter.get_model_converter_version_text() == (
+        "model-converter d8c1b8e"
+    )
+
+
+def test_parse_model_converter_version_uses_known_build_alias(monkeypatch, tmp_path):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter d8c1b8e')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    monkeypatch.setattr(
+        model_converter, "find_model_converter_binary", lambda: str(converter)
+    )
+
+    version_text = model_converter.get_model_converter_version_text()
+
+    assert version_text is not None
+    assert model_converter.parse_model_converter_version(version_text) == (
+        model_converter.Version("0.9.0")
+    )
+
+
+def test_below_minimum_model_converter_reason(monkeypatch, tmp_path):
+    converter = _make_executable(
+        tmp_path / "model-converter",
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "if '--version' in sys.argv:\n"
+        "    print('model-converter d8c1b8e')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    monkeypatch.setattr(
+        model_converter, "find_model_converter_binary", lambda: str(converter)
+    )
+
+    version_text = model_converter.get_model_converter_version_text()
+
+    assert version_text is not None
+    assert model_converter.get_model_converter_minimum_version_failure_reason(
+        version_text,
+        model_converter.MIN_MODEL_CONVERTER_VERSION_FOR_VGF_TESTS,
+        requirement_name="the copied RIFE VGF quant tests",
+    ) == (
+        "model-converter d8c1b8e is below the minimum supported version "
+        "0.10.0 required for the copied RIFE VGF quant tests"
+    )
+
+
+def test_mark_rife_vgf_xfails_marks_only_rife_vgf_quant():
+    class DummyItem:
+        def __init__(self, nodeid: str):
+            self.nodeid = nodeid
+            self.markers: list[Any] = []
+
+        def add_marker(self, marker: Any) -> None:
+            self.markers.append(marker)
+
+    matching = DummyItem("backends/arm/test/models/test_RIFE.py::test_vgf_quant")
+    non_matching = DummyItem("backends/arm/test/models/test_RIFE.py::test_tosa")
+
+    arm_conftest._mark_rife_vgf_xfails_for_model_converter_below_minimum_version(
+        [matching, non_matching], "below minimum version"
+    )
+
+    assert len(matching.markers) == 1
+    assert matching.markers[0].name == "xfail"
+    assert not non_matching.markers
+
+
+def test_has_rife_vgf_quant_tests_matches_only_rife_vgf_quant():
+    class DummyItem:
+        __slots__ = ("nodeid",)
+
+        def __init__(self, nodeid: str):
+            self.nodeid = nodeid
+
+    assert arm_conftest._has_rife_vgf_quant_tests(
+        [
+            DummyItem("backends/arm/test/models/test_RIFE.py::test_tosa"),
+            DummyItem("backends/arm/test/models/test_RIFE.py::test_vgf_quant"),
+        ]
+    )
+    assert not arm_conftest._has_rife_vgf_quant_tests(
+        [
+            DummyItem("backends/arm/test/models/test_RIFE.py::test_tosa"),
+            DummyItem("backends/arm/test/ops/test_add.py::test_basic"),
+        ]
+    )
+
+
+def test_collection_hook_skips_converter_probe_when_no_rife_vgf_quant(monkeypatch):
+    class DummyItem:
+        __slots__ = ("nodeid",)
+
+        def __init__(self, nodeid: str):
+            self.nodeid = nodeid
+
+    def fail_probe():
+        raise AssertionError("converter probe should not run")
+
+    monkeypatch.setattr(model_converter, "get_model_converter_version_text", fail_probe)
+
+    arm_conftest.pytest_collection_modifyitems(
+        None,
+        [
+            DummyItem("backends/arm/test/models/test_RIFE.py::test_tosa"),
+            DummyItem("backends/arm/test/ops/test_add.py::test_basic"),
+        ],
+    )
 
 
 def test_model_converter_lib_dir_fails_when_invalid(monkeypatch, tmp_path):

@@ -163,6 +163,7 @@ def replace_hf_cache_with_mlx_ring_buffer(
     config,
     max_batch_size: int = 1,
     window_size: int = 512,
+    max_cache_len: int | None = None,
     dtype: torch.dtype = torch.float32,
 ) -> nn.Module:
     """
@@ -176,7 +177,10 @@ def replace_hf_cache_with_mlx_ring_buffer(
         module: HF exportable module with static_cache or cache attribute
         config: HF model config
         max_batch_size: Maximum batch size (default: 1)
-        window_size: Sliding window size (cache capacity per layer)
+        window_size: Sliding window size (capacity of the sliding-layer rings)
+        max_cache_len: Capacity of the full-attention layers; defaults to
+            ``window_size``, which is only correct for models with no
+            full-attention layers
         dtype: Cache tensor dtype
 
     Raises:
@@ -184,11 +188,15 @@ def replace_hf_cache_with_mlx_ring_buffer(
     """
     from transformers.cache_utils import StaticCache
 
+    # Full-attention layers retain every position, so they are sized to the whole
+    # context; only the sliding layers are bounded by the window.
+    full_cache_len = max_cache_len if max_cache_len is not None else window_size
+
     # Create HFStaticCache with ring buffer layers
     mlx_cache = HFStaticCache(
         config=config,
         max_batch_size=max_batch_size,
-        max_cache_len=window_size,
+        max_cache_len=full_cache_len,
         dtype=dtype,
     )
 
@@ -242,8 +250,9 @@ def replace_hf_cache_with_mlx_ring_buffer(
         raise ValueError("Module must have 'static_cache' or 'cache' attribute")
 
     logger.info(
-        f"Installed hybrid MLX cache: {num_ring_layers} ring-buffer layers / "
-        f"{num_cache_layers} total cache layers, window_size={window_size}"
+        f"Installed hybrid MLX cache: {num_ring_layers} ring-buffer layers "
+        f"(window_size={window_size}) / {num_cache_layers} total cache layers "
+        f"(full-attention length {full_cache_len})"
     )
 
     return module

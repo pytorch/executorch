@@ -66,7 +66,7 @@ PrivateMind delivers a fully private AI assistant using ExecuTorch's .pte format
 
 NimbleEdge successfully integrated ExecuTorch with its open-source DeliteAI platform to enable agentic workflows orchestrated in Python on mobile devices. The extensible ExecuTorch ecosystem allowed implementation of on-device optimization techniques leveraging contextual sparsity. ExecuTorch significantly accelerated the release of "NimbleEdge AI" for iOS, enabling models like Qwen 2.5 with tool calling support and achieving up to 30% higher transactions per second.
 
-[Visit →](https://nimbleedge.com) • [Blog →](https://www.nimbleedge.com/blog/meet-nimbleedge-ai-the-first-truly-private-on-device-assistant) • [iOS App →](https://apps.apple.com/in/app/nimbleedge-ai/id6746237456)
+[Visit →](https://nimbleedge.com) • [Blog →](https://www.nimbleedge.com/blog/meet-nimbleedge-ai-the-first-truly-private-on-device-assistant)
 :::
 
 ::::

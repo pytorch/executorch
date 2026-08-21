@@ -13,7 +13,7 @@
 namespace executorch::backends::webgpu {
 
 // @generated from compare.wgsl - DO NOT EDIT.
-// wgsl-sha256: 241e7e6762b1eded07d28a3767936c970f509f6591e7cbf599d0b1eb61efb181
+// wgsl-sha256: 8f330b5a1e29a1fb8135e64600dadb1dc64c98f8f5371357f8de73a1808b76d6
 inline constexpr const char* kCompareWGSL = R"(
 @group(0) @binding(0) var<storage, read_write> t_out: array<u32>;
 @group(0) @binding(1) var<storage, read> input1: array<f32>;
@@ -33,27 +33,29 @@ override wg_size: u32 = 64u;
 fn main(
     @builtin(global_invocation_id) gid: vec3<u32>,
     @builtin(num_workgroups) num_workgroups: vec3<u32>) {
-  // One thread per output word = 4 bool bytes; num_elements%4==0 (host).
+  // One thread per output word = up to 4 bool bytes.
   let widx = gid.x + gid.y * (num_workgroups.x * wg_size);
-  let words = (params.num_elements + 3u) / 4u;
+  let words = (params.num_elements - 1u) / 4u + 1u;
   if (widx >= words) {
     return;
   }
   var packed: u32 = 0u;
   for (var j: u32 = 0u; j < 4u; j = j + 1u) {
     let i = widx * 4u + j;
-    let a = input1[i];
-    let b = input2[i];
-    var r: bool;
-    switch params.op {
-      case 0u: { r = a == b; }  // eq
-      case 1u: { r = a < b; }   // lt
-      case 2u: { r = a <= b; }  // le
-      case 3u: { r = a > b; }   // gt
-      default: { r = a >= b; }  // ge
-    }
-    if (r) {
-      packed = packed | (1u << (j * 8u));
+    if (i < params.num_elements) {
+      let a = input1[i];
+      let b = input2[i];
+      var r: bool;
+      switch params.op {
+        case 0u: { r = a == b; }  // eq
+        case 1u: { r = a < b; }   // lt
+        case 2u: { r = a <= b; }  // le
+        case 3u: { r = a > b; }   // gt
+        default: { r = a >= b; }  // ge
+      }
+      if (r) {
+        packed = packed | (1u << (j * 8u));
+      }
     }
   }
   t_out[widx] = packed;

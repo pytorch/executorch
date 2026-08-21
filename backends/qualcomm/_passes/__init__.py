@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from .annotate_avg_pool1d import AnnotateAvgPool1D
+from .annotate_get_attr import AnnotateGetAttr
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
@@ -60,6 +61,7 @@ from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .lpai_partition_fallback_support import LpaiPartitionFallbackSupport
+from .recompose_hadamard import RecomposeHadamard
 from .recompose_pad_maxpool2d import RecomposePadMaxPool2d
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
 from .recompose_rms_norm import RecomposeRmsNorm
@@ -72,6 +74,7 @@ from .tag_quant_io import TagQuantIO
 
 __all__ = [
     AnnotateAvgPool1D,
+    AnnotateGetAttr,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
@@ -127,6 +130,7 @@ __all__ = [
     LayoutTransform,
     LiftConstantScalarOperands,
     LpaiPartitionFallbackSupport,
+    RecomposeHadamard,
     RecomposePadMaxPool2d,
     RecomposePixelUnshuffle,
     RecomposeRmsNorm,

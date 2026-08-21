@@ -10,6 +10,9 @@ import operator
 from functools import partial
 from typing import Dict, List, Optional, Sequence, Tuple
 
+# Registers torch.ops.qnn_custom.hadamard_transform used by the annotator below.
+import executorch.backends.qualcomm.builders.custom_ops  # noqa: F401
+
 import executorch.backends.qualcomm.builders.qnn_constants as QnnConstants
 import torch
 
@@ -842,15 +845,18 @@ class IndexPut(GeneralOpDef):
         input_qspec_map = {}
         input_qspec = quantization_config.input_activation
         output_qspec = None
-        if input_qspec is not None:
+        if input_qspec is not None and _is_float_tensor(value):
             input_qspec_map[value] = input_qspec
             output_qspec = SharedQuantizationSpec((value, node))
 
-        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=output_qspec,
-            _annotated=True,
-        )
+        # A non-float value leaves nothing to quantize; leave the node unannotated
+        # rather than marking it annotated with an empty spec (its output stays non-float).
+        if len(input_qspec_map) > 0 or output_qspec is not None:
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=output_qspec,
+                _annotated=True,
+            )
 
 
 @register_annotator(
@@ -1143,6 +1149,14 @@ class MatMul(GeneralOpDef):
                 )
         valid &= validate_against_backend_constraints(node, constraints_list)
         return valid
+
+
+@register_annotator(
+    [torch.ops.qnn_custom.hadamard_transform.default],
+    QnnConstants.OpHadamardTransform.op_name,
+)
+class HadamardTransform(GeneralOpDef):
+    pass
 
 
 @register_annotator(

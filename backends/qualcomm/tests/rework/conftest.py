@@ -476,10 +476,11 @@ def export_and_verify(
     quantizer: QnnQuantizer,
     compile_specs: List[Any],
     metrics: Metrics,
+    expected_targets: set = None,
 ):
     with calibrate(module, [inputs], quantizer) as exported_module:
+        nodes = {node.target for node in exported_module.graph.nodes}
         if quantizer is not None:
-            nodes = {node.target for node in exported_module.graph.nodes}
             q_and_dq = {
                 torch.ops.quantized_decomposed.quantize_per_tensor.default,
                 torch.ops.quantized_decomposed.dequantize_per_tensor.default,
@@ -489,6 +490,10 @@ def export_and_verify(
                 torch.ops.torchao.dequantize_affine.default,
             }
             assert nodes.intersection(q_and_dq), EXPECT_NOT_ANNOTATED
+        if expected_targets is not None:
+            assert (
+                expected_targets <= nodes
+            ), f"expected {expected_targets - nodes} in exported graph"
 
     delegated_prog = to_edge_transform_and_lower_to_qnn(
         module=exported_module,

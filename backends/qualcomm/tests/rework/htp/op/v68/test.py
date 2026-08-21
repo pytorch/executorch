@@ -731,6 +731,21 @@ def test_group_norm(request, kwargs):
     GroupNorm.test(request, kwargs)  # noqa: F405
 
 
+# HadamardTransform is activation-16 only in QNN, so test 16a8w only.
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": False, "expected": Tolerance()},
+            id="16a8w",
+        ),
+    ],
+)
+@with_htp_context
+def test_hadamard(request, kwargs):
+    Hadamard.test(request, kwargs)  # noqa: F405
+
+
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])
 @with_htp_context
 def test_hardsigmoid(request, kwargs):
@@ -941,6 +956,37 @@ def test_linear_general(request, kwargs):
 @with_htp_context
 def test_linear_non_constant_weight(request, kwargs):
     LinearNonConstantWeight.test(request, kwargs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param(
+            {"act": 8, "param": 8, "pcq": True, "expected": CosineSimilarity(0.95)},
+            id="8a8w_pcq",
+        ),
+        pytest.param(
+            {"act": 16, "param": 4, "pcq": True, "expected": CosineSimilarity(0.95)},
+            id="16a4w_pcq",
+        ),
+        pytest.param(
+            {"act": 16, "param": 8, "pcq": True, "expected": Tolerance()},
+            id="16a8w_pcq",
+        ),
+        pytest.param(
+            {
+                "act": "fp16",
+                "param": 8,
+                "pcq": True,
+                "expected": CosineSimilarity(0.95),
+            },
+            id="fp16a8w_pcq",
+        ),
+    ],
+)
+@with_htp_context
+def test_linear_shared_weights(request, kwargs):
+    LinearSharedWeight.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_activation_dtype([Tolerance(), Tolerance(), Tolerance(rtol=1e-1)])

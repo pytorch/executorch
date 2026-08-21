@@ -126,13 +126,15 @@ target_link_libraries(
   mobilesam_prompt_segmentation_example PUBLIC executorch_delegate_ethos_u
 )
 
-if(MEMORY_MODE MATCHES "Dedicated_Sram")
+if(MEMORY_MODE MATCHES "^Dedicated_Sram($|_)")
   set(ETHOSU_ARENA "1")
   if(NOT DEFINED ET_SEGMENTATION_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     set(ET_SEGMENTATION_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x1000000)
   endif()
   if(NOT DEFINED ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
-    set(ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE 0x60000)
+    set_ethosu_dedicated_sram_fast_scratch_size(
+      ET_SEGMENTATION_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE "${MEMORY_MODE}"
+    )
   endif()
 else()
   set(ETHOSU_ARENA "0")

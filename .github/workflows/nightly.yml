@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +32,8 @@ jobs:
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
   link-check:
+    # Whole tree scans only. Pull requests get the same check from lint.yml.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: update-pytorch-commit-hash
     uses: ./.github/workflows/_link_check.yml
     with:
