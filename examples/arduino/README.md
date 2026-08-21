@@ -505,9 +505,9 @@ against 786,432 bytes of flash and 262,144 bytes of RAM:
 
 | Build | Flash | RAM | On hardware |
 |-------|-------|-----|-------------|
-| HelloExecuTorch | 472,952 (60%) | 3,052 (1%) | `Model loaded OK!`, 1 method |
-| AddModel | 507,876 (64%) | 12,268 (4%) | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
-| KeywordSpotting (CMSIS-NN) | 563,672 (71%) | 47,084 (17%) | detects `yes`, logit 8.95 |
+| HelloExecuTorch | 473,368 (60%) | 3,060 (1%) | `Model loaded OK!`, 1 method |
+| AddModel | 509,456 (64%) | 12,276 (4%) | `[1,2,3] + 1 = [2.00, 3.00, 4.00]` |
+| KeywordSpotting (CMSIS-NN) | 564,664 (71%) | 45,044 (17%) | detects `yes`, logit 8.95 |
 
 Core 0.55.2 reported a 131,072-byte RAM ceiling; 0.90.0 reports 262,144. Figures
 from before that change are not comparable.
@@ -521,14 +521,26 @@ comes out of what remains. KeywordSpotting's DS-CNN plans 16 KB of buffers but
 needs considerably more for the method's own structures, which leaves a usable
 band rather than a floor to clear.
 
-Measured on core **0.55.2**, where Zephyr took a 32 KB stack and a 32 KB heap out
-of 128 KB:
+The numbers move with the board core, so both are recorded. On **0.90.0**,
+which is what Library Manager installs today:
 
 | Arena | Result |
 |-------|--------|
 | 28 KB | `load_method` fails, `MemoryAllocationFailed` (0x21), 180 B short |
 | 40 KB | Works. What the sketch ships |
+| 48 KB | Works, with more margin. Globals reach 47 KB of the 256 KB the core reports |
+
+On **0.55.2**, where Zephyr took a 32 KB stack and a 32 KB heap out of 128 KB:
+
+| Arena | Result |
+|-------|--------|
+| 28 KB | Worked. This is what the example shipped with |
 | 64 KB | Globals reach 70,644, past Zephyr's reservation. It ran and printed the right answer, which is what makes it dangerous rather than safe |
+
+That 28 KB row is the whole point of recording both. It was the shipped value
+and it was correct, until the core changed underneath it. 64 KB has not been
+retried on 0.90.0, so whether the same reservation cliff exists there is
+unknown.
 
 The sketch ships 40 KB for that reason, and growing it is not automatically
 safer: `arduino-cli` reports RAM against the whole region and knows nothing about
