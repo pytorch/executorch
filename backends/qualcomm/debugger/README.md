@@ -1,31 +1,48 @@
 # ExecuTorch QNN Debugger & Profiler
 
-This directory bundles three independent debugging and profiling flows for the ExecuTorch QNN backend. They share no code and address different failure modes — jump directly to the section you need.
+This directory bundles three independent debugging and profiling flows for the ExecuTorch QNN backend. They are independent and address different failure modes — jump directly to the section you need.
 
 **Table of contents**
 
-- [HTP Profiling](#htp-profiling)
+- [Executorch QNN HTP Profiling](#executorch-qnn-htp-profiling)
 - [ExecuTorch QNN Intermediate Output Debugger](#executorch-qnn-intermediate-output-debugger)
 - [ExecuTorch QNN HTP Heap Profiling](#executorch-qnn-htp-heap-profiling)
 
 
 ---
+# Executorch QNN HTP Profiling
 
-# HTP Profiling
+This section shows how to produce HTP profiling results and inspect the output reports.
 
-This section shows how to produce HTP profiling results from an ExecuTorch `.pte` and inspect the output reports. The main user-facing controls are:
+- The most accurate profiling mode is **on device profiling** with `generate_htp_profile_result()`, this requires a connected android device through ADB, see details in section 2.1.
 
+- Another profiling mode is **on host estimiation** with `estimate_htp_profile_result()` this doesn't require a device and can be run on host machine. However the accuracy and soc support might be limited, see details in section 2.2. 
+
+
+Different HTP profiling feature support different set of prepare mode, prepare mode is set in AOT config, and decides which format of QNN internal graph is packed in `.pte` file, 
+  * On device profiling support both `online_prepare` and `offline_prepare` 
+  * On host profiling reqruires `online_prepare`
+
+**Host Estimation vs On-Device Generation**
+| Mode          | Source of measurements                 | Requires device? | Requires `QnnConfig.online_prepare=True` for `.pte` generation ? |
+|:--------------|:---------------------------------------|:-----------------|:-----------------|
+| `generate_htp_profile_result` (`"optrace"`)   | On-device hardware counters (real run) | Yes              | No — support both mode (`.dlc` or `.bin`) |
+| `estimate_htp_profile_result` (`"hextimate"`) | Compile-time performance-model estimate | No (host only) | Yes              |
+
+
+The rest of the guide is arranged here:
 1. **`.pte` generation prepare mode:** 
-- 1.1 `online_prepare`: controlled by `QnnConfig.online_prepare=True`.
-- 1.2 `offline_prepare`: controlled by `QnnConfig.online_prepare=False`.
+We introduce how to trigger each preparation mode in section 1.1 and 1.2:
+    - 1.1 `online_prepare`: controlled by `QnnConfig.online_prepare=True`.
+    - 1.2 `offline_prepare`: controlled by `QnnConfig.online_prepare=False`.
 
-2. **Public Functions:** 
-- 2.1 `generate_htp_profile_result()`: generates device-based profiling results.
-- 2.2 `estimate_htp_profile_result()`: estimates host-based profiling results.
+3. **Public Functions for Generating Profiling Results** 
+    + 2.1 `generate_htp_profile_result()`: generates device-based profiling results (Optrace in QNN SDK).
+    + 2.2 `estimate_htp_profile_result()`: estimates host-based profiling results (Hextimate in QNN SDK).
 
-3. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated html , json and chrometrace files.
+4. **HTP Profile Output Format:**  `QnnHtpProfileArtifacts` contains genrated HTML, JSON and chrometrace files.
 
-4. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
+5. **Qairt-Visualizer:** QAIRT Visualizer can open the QHAS result from `qhas_json` and `chrometrace_json`. Use `QnnHtpProfileArtifacts.visualizer_reports()` to pass related reports.
 
 ## 1. Select AOT Prepare modes for `.pte` Generation
 Users choose one prepare mode before exporting the `.pte`:
@@ -68,7 +85,7 @@ build_executorch_binary(
 **Demo script**: 
 ```bash
 python -m examples.qualcomm.util_scripts.htp_profiling_on_device_op_trace_offline \
-    --host ${host} --device ${device} --soc_model ${SOC_MODEL} -build_folder build-android \
+    --host ${host} --device ${device} --soc_model ${SOC_MODEL} --build_folder build-android \
     -a ${path_to_output_folder} --profile_level 3
 ```
 
@@ -134,7 +151,7 @@ Both public functions `estimate_htp_profile_result()` and `generate_htp_profile_
 
 Important fields:
 
-- `qhas_html`: QHAS HTML report. This is the easiest artifact to open when you want the QNN HTP Analysis Summary.
+- `qhas_html`: QHAS HTML report. This is the most convenient artifact for viewing the QNN HTP Analysis Summary. 
 - `qhas_json`: QHAS JSON report.
 - `chrometrace_json`: Chrome trace JSON. Open it with `chrome://tracing` or Perfetto.
 - `htp_graph_json`: HTP graph JSON after optimization.
@@ -184,18 +201,12 @@ For the viewer package, see [QAIRT Visualizer](https://pypi.org/project/qairt-vi
 
 ## Technical Details
 
-### Host Estimation vs On-Device Generation
-| Mode          | Source of measurements                 | Requires device? | Requires `QnnConfig.online_prepare=True` for `.pte` generation (`.dlc`)? |
-|:--------------|:---------------------------------------|:-----------------|:-----------------|
-| `generate_htp_profile_result` (`"optrace"`)   | On-device hardware counters (real run) | Yes              | No — support both mode (`.dlc` or `.bin`) |
-| `estimate_htp_profile_result` (`"hextimate"`) | Compile-time performance-model estimate | No (host only) | Yes              |
-
 ### SDK compatibility
 
-| QAIRT SDK version | Optrace | Hextimate | QHAS JSON (optrace) |
-|:------------------|:--------|:----------|:--------------------|
-| 2.37 – 2.40       | Supported | **Not supported**  | Valid | 
-| 2.41 – 2.50       | Supported | Supported | Valid | 
+| QAIRT SDK version | Optrace | Hextimate |
+|:------------------|:--------|:----------|
+| 2.37 – 2.40       | Supported | **Not supported**  |
+| 2.41 – 2.50       | Supported | Supported |
 
 `estimate_htp_profile_result()` hard-errors on SDKs below 2.41 and on unsupported SoCs.
 
