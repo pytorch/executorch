@@ -185,6 +185,10 @@ jobs:
         export LD_LIBRARY_PATH="/opt/conda/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         # A10G (sm_86) supports 99 KiB of opt-in shared memory per block.
         export ET_CUDA_TARGET_SMEM_BYTES=101376
+        # The A100 exporter has an AVX-512 host CPU while the A10G runner has
+        # AVX2. Keep the generated AOTI host wrapper compatible with both.
+        export ATEN_CPU_CAPABILITY=avx2
+        export TORCHINDUCTOR_CPP_MARCH=x86-64-v3
 
         python - <<'PY'
         import torch

@@ -7,8 +7,8 @@
 import contextlib
 import unittest
 from typing import Tuple
-from unittest.mock import patch
 from unittest import mock
+from unittest.mock import patch
 
 import torch
 from executorch.backends.cuda.cuda_backend import CudaBackend
