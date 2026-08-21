@@ -160,10 +160,11 @@ python export_voxtral_rt.py \
 
 #### ROCm export examples
 
-ROCm support is experimental and currently validated only on MI300X (`gfx942`).
-It is never enabled automatically. Use a ROCm PyTorch build with its matching
-Triton AMD backend; do not run `install_executorch.sh`, because its dependency
-setup can replace ROCm PyTorch with a CPU build.
+ROCm support is experimental. Manual validation currently covers MI300X
+(`gfx942`); CI canaries exercise `gfx950` and `gfx1100`. ROCm is never enabled
+automatically. Use a ROCm PyTorch build with its matching Triton AMD backend;
+do not run `install_executorch.sh`, because its dependency setup can replace
+ROCm PyTorch with a CPU build.
 
 The validated ROCm configurations use BF16 and optionally packed `4w` linear
 weights with an `8w` embedding. The exporter rejects other ROCm dtype and
