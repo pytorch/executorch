@@ -587,19 +587,6 @@ def define_common_targets():
             ":to_contiguous_channels_last_pass",
             "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_to_contiguous_channels_last_pipeline",
-        srcs = [
-            "test/test_to_contiguous_channels_last_pipeline.py",
-        ],
-        deps = [
-            "//caffe2:torch",
-            ":to_contiguous_channels_last_pass",
-            "//executorch/exir:lib",
-            "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

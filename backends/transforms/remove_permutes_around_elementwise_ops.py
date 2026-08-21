@@ -24,7 +24,6 @@ from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch.fx.node import Target
 
 
 class RemovePermutesAroundElementwiseOps(ExportPass):
@@ -38,8 +37,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
 
     ``extra_permutable_ops`` must be layout-equivariant without argument remapping.
     Layout-boundary propagation applies only to layout-owned dialect copies.
-    ``layout_pad_target`` opts into retargeting rank-4 constant pads after their
-    layout-dependent pad argument has been remapped.
     """
 
     @dataclass()
@@ -81,13 +78,11 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         *,
         exported_program: ExportedProgram | None = None,
         allow_layout_boundary_propagation: bool = False,
-        layout_pad_target: Target | None = None,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         super().__init__()
         self.exported_program = exported_program
         self.allow_layout_boundary_propagation = allow_layout_boundary_propagation
-        self.layout_pad_target = layout_pad_target
         self.can_propagate = can_propagate
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
@@ -149,7 +144,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return in_shape, out_shape
 
     _PAD_OPS = (
-        exir_ops.edge.channels_last.constant_pad_nd.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.pad.default,
     )
@@ -838,7 +832,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             elif node.target == exir_ops.edge.aten.slice_copy.Tensor:
                 self.update_slice_copy(node, node_start_perm)
             elif node.target in self._PAD_OPS:
-                self.update_pad(node, node_start_perm, subgraph.layout_region)
+                self.update_pad(node, node_start_perm)
             elif node.target in self._VIEW_OPS:
                 self.update_view_copy(node, node_start_perm)
 
@@ -1125,12 +1119,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         dim = get_arg(node, "dim", int)
         set_arg(node, "dim", start_permute[dim])
 
-    def update_pad(
-        self,
-        node: torch.fx.Node,
-        start_permute: list[int],
-        layout_region: bool,
-    ) -> None:
+    def update_pad(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         pad = list(cast(list[int], node.args[1]))
         rank = len(start_permute)
         pad_pairs = [[0, 0] for _ in range(rank)]
@@ -1147,13 +1136,6 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             remapped_pad = remapped_pad[:-2]
 
         node.update_arg(1, remapped_pad)
-        if (
-            layout_region
-            and len(start_permute) == 4
-            and node.target == exir_ops.edge.aten.constant_pad_nd.default
-            and self.layout_pad_target is not None
-        ):
-            node.target = self.layout_pad_target
 
     def update_view_copy(self, node: torch.fx.Node, start_permute: list[int]) -> None:
         """Adjust view_copy shape arg after permute removal.

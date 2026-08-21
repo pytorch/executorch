@@ -13,7 +13,6 @@ import torch
 import torch.fx
 from executorch.backends.transforms.channels_last_layout import (
     ATEN_PERMUTE_COPY,
-    is_channels_last_input_normalization_pair,
     LAYOUT_PERMUTE_COPY,
 )
 from executorch.backends.transforms.permute_pass_utils import (
@@ -86,8 +85,6 @@ class FuseTransposeOrPermuteOpPairsPass(FuseOpPairsAcrossBranchesPass):
         consumer_op_packets: set[EdgeOpOverloadPacket],
     ) -> bool:
         if not super().can_fuse_for_chain(producer, consumer, consumer_op_packets):
-            return False
-        if is_channels_last_input_normalization_pair(producer, consumer):
             return False
 
         # checking that permut2(permut1(identity)) == identity, modulo unitary dimensions

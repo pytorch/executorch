@@ -219,7 +219,7 @@ class MaxPool2dNhwc(torch.nn.Module):
 
 class PadNhwc(torch.nn.Module):
     def forward(self, x):
-        return torch.ops.cortex_m.pad_nhwc.default(
+        return torch.ops.cortex_m.pad.default(
             x,
             [0, 1, 2, 0],
             [0, 2, 1, 0],
@@ -233,7 +233,7 @@ class AddNhwc(torch.nn.Module):
         self.register_buffer("bias", _int8_values((1, 1, 1, 3)))
 
     def forward(self, x):
-        return torch.ops.cortex_m.quantized_add_nhwc.default(
+        return torch.ops.cortex_m.quantized_add.default(
             x,
             0,
             1 << 30,
@@ -256,7 +256,7 @@ class MulNhwc(torch.nn.Module):
         self.register_buffer("bias", _int8_values((1, 1, 1, 3)))
 
     def forward(self, x):
-        return torch.ops.cortex_m.quantized_mul_nhwc.default(
+        return torch.ops.cortex_m.quantized_mul.default(
             x,
             0,
             self.bias,
@@ -327,11 +327,11 @@ def test_max_pool2d_nhwc_runs_on_fvp(cortex_m_target):
     )
 
 
-def test_pad_nhwc_runs_on_fvp_with_singleton_height(cortex_m_target):
+def test_pad_runs_on_fvp_with_singleton_nhwc_height(cortex_m_target):
     _run_on_fvp(
         PadNhwc(),
         _int8_values((1, 1, 7, 3)),
-        exir_ops.edge.cortex_m.pad_nhwc.default,
+        exir_ops.edge.cortex_m.pad.default,
         cortex_m_target,
     )
 
@@ -340,7 +340,7 @@ def test_channel_broadcast_add_nhwc_runs_on_fvp(cortex_m_target):
     _run_on_fvp(
         AddNhwc(),
         _int8_values((1, 5, 7, 3)),
-        exir_ops.edge.cortex_m.quantized_add_nhwc.default,
+        exir_ops.edge.cortex_m.quantized_add.default,
         cortex_m_target,
         atol=1,
     )
@@ -350,7 +350,7 @@ def test_channel_broadcast_mul_nhwc_runs_on_fvp(cortex_m_target):
     _run_on_fvp(
         MulNhwc(),
         _int8_values((1, 5, 7, 3)),
-        exir_ops.edge.cortex_m.quantized_mul_nhwc.default,
+        exir_ops.edge.cortex_m.quantized_mul.default,
         cortex_m_target,
         atol=1,
     )
