@@ -117,8 +117,9 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
   // step fuses; the mask keys off pos/owners, never the index.
   int lowest_free(int from) const;
 
+  // Drop the step's placement and the per-window steps built from it, after
+  // the table moves underneath them.
   void invalidate_steps();
-  void invalidate_step();
 
   // Recompute a sequence's summary after the verbs move cells under it.
   void rescan(int32_t seq_id);

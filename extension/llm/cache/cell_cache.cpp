@@ -50,7 +50,11 @@ void CellCache::clear() {
   used_end_ = 0;
   used_count_ = 0;
   reserved_ = 0;
-  invalidate_step();
+  declared_ = false;
+  step_seq_ids_.clear();
+  step_pos_.clear();
+  std::fill(served_.begin(), served_.end(), false);
+  invalidate_steps();
 }
 
 // -- BatchControl ------------------------------------------------------------
@@ -210,14 +214,6 @@ int CellCache::lowest_free(int from) const {
 void CellCache::invalidate_steps() {
   placed_ = false;
   steps_.clear();
-}
-
-void CellCache::invalidate_step() {
-  invalidate_steps();
-  declared_ = false;
-  std::fill(served_.begin(), served_.end(), false);
-  step_seq_ids_.clear();
-  step_pos_.clear();
 }
 
 void CellCache::rescan(int32_t seq_id) {
