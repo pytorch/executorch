@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from typing import cast, Sequence, Set, Type
 
 import torch
@@ -82,7 +83,7 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            graph_module.recompile()
+            graph_module.graph.lint()
             graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, modified)
@@ -91,20 +92,25 @@ class CanonicalizeViewCopyPermutePass(ArmPass):
         """Returns a list of linear chains of view/permutes in the graph."""
         chains: list[list[Node]] = []
 
-        view_permute_nodes = [
+        view_permute_nodes = deque(
             node for node in graph_module.graph.nodes if node.target in self._TARGETS
-        ]
+        )
+        remaining = set(view_permute_nodes)
 
         while view_permute_nodes:
-            node = view_permute_nodes.pop(0)
+            node = view_permute_nodes.popleft()
+            if node not in remaining:
+                continue
+            remaining.remove(node)
+
             chain = [node]
             current = node
 
             while len(current.users) == 1:
                 user = next(iter(current.users))
-                if user.target not in self._TARGETS:
+                if user.target not in self._TARGETS or user not in remaining:
                     break
-                view_permute_nodes.remove(user)
+                remaining.remove(user)
                 chain.append(user)
                 current = user
 
