@@ -13,7 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
@@ -209,14 +209,16 @@ def _cmake_args_from_env() -> List[str]:
 
 
 @functools.lru_cache(maxsize=1)
-def _detected_cuda_major() -> Optional[int]:
-    """The CUDA major version of the installed toolkit, or None if none is installed.
+def _detected_cuda_version() -> Optional[Tuple[int, int]]:
+    """The CUDA version of the installed toolkit, or None if none is installed.
 
     Kept separate from `_get_cuda_version` because the mismatch guard in the wheel build
-    needs the major regardless of whether the exact (major, minor) is listed in
+    needs whatever the toolkit reports regardless of whether that exact pair is listed in
     SUPPORTED_CUDA_VERSIONS. Reading through the validator caused the guard to see an
     empty detection for any unlisted minor (say 12.8), so a cu130 row built on a CUDA 12
-    toolkit produced a wheel with no error.
+    toolkit produced a wheel with no error. Both numbers are returned for the same
+    reason: a row names a train down to the minor, so comparing only majors let a cu132
+    row build against a 13.0 toolkit and declare a train it was not compiled for.
     """
     try:
         result = subprocess.run(
@@ -224,8 +226,14 @@ def _detected_cuda_major() -> Optional[int]:
         )
     except (subprocess.CalledProcessError, OSError):
         return None
-    match = re.search(r"release (\d+)\.\d+", result.stdout)
-    return int(match.group(1)) if match else None
+    match = re.search(r"release (\d+)\.(\d+)", result.stdout)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def _detected_cuda_major() -> Optional[int]:
+    """The CUDA major version of the installed toolkit, or None if none is installed."""
+    version = _detected_cuda_version()
+    return version[0] if version is not None else None
 
 
 def _extract_cmake_define(args: List[str], name: str) -> Optional[str]:
