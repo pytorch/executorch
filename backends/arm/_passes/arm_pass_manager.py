@@ -578,7 +578,7 @@ class ArmPassManager(ExportedProgramPassManager):
                 DecomposeAdaptiveAvgPool2dPass(),
                 DecomposeDynamicAdaptiveAvgPool2dPass(),
                 DecomposeAvgPool2dPass(),
-                Conv1dUnsqueezePass(),
+                Conv1dUnsqueezePass(exported_program),
             ]
         )
 

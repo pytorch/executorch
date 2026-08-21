@@ -32,13 +32,12 @@ from typing import Any, Dict, List
 
 # Python versions that are deliberately NOT published, with the reason, so a row naming one
 # is rejected for a stated cause rather than for merely being absent from the supported list.
-# 3.14 is excluded because the current CPU wheel rows already fail on it for an unrelated
-# reason in the example requirements, so a GPU row would inherit a known-broken build. The
-# free-threaded builds are excluded because the CUDA dependencies are not published for them.
+# The free-threaded builds are excluded because the CUDA dependencies are not published for
+# them.
 #
 # This is documentation, not the gate. The gate is SUPPORTED_PYTHON_VERSIONS below: anything
 # not on that list is rejected whether or not it appears here.
-DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14", "3.14t", "3.15", "3.15t"]
+DISABLED_PYTHON_VERSIONS: List[str] = ["3.13t", "3.14t", "3.15", "3.15t"]
 
 # CUDA versions to publish.
 #
@@ -62,7 +61,7 @@ SUPPORTED_CUDA_VERSIONS: List[str] = ["cu126", "cu130", "cu132"]
 # guard below unable to notice a python that disappeared from every supported train: with
 # nothing left to compare, a release quietly published nine wheels instead of twelve.
 # Keep in step with the python-versions list in the CUDA wheel workflows.
-SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13"]
+SUPPORTED_PYTHON_VERSIONS: List[str] = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 # The single row built for a pull request. A full matrix on every push would cost hours for
 # little signal, and cu130 is the version with a machine on hand that can run a model on it.

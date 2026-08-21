@@ -137,13 +137,13 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
   const bool switch_device = index >= 0 && prev_device_err == cudaSuccess &&
       static_cast<int>(index) != prev_device;
   if (switch_device) {
-    cudaSetDevice(index);
+    (void)cudaSetDevice(index);
   }
 
   cudaError_t err = cudaMalloc(&ptr, nbytes);
 
   if (switch_device) {
-    cudaSetDevice(prev_device);
+    (void)cudaSetDevice(prev_device);
   }
 
   if (err != cudaSuccess) {
@@ -165,7 +165,7 @@ CudaAllocator::allocate(size_t nbytes, DeviceIndex index, size_t alignment) {
         "cudaMalloc returned pointer %p not aligned to %zu bytes",
         ptr,
         alignment);
-    cudaFree(ptr);
+    (void)cudaFree(ptr);
     return Error::MemoryAllocationFailed;
   }
 
@@ -183,14 +183,14 @@ void CudaAllocator::deallocate(void* ptr, DeviceIndex index) {
   if (index >= 0) {
     prev_device_err = cudaGetDevice(&prev_device);
     if (prev_device_err == cudaSuccess) {
-      cudaSetDevice(index);
+      (void)cudaSetDevice(index);
     }
   }
 
   cudaError_t err = cudaFree(ptr);
 
   if (index >= 0 && prev_device_err == cudaSuccess) {
-    cudaSetDevice(prev_device);
+    (void)cudaSetDevice(prev_device);
   }
 
   if (err != cudaSuccess) {

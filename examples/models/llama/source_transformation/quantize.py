@@ -791,13 +791,14 @@ def get_quant_embedding_transform(
             is_asymmetric = True
         else:
             bitwidth, group_size, is_asymmetric = quant_args
+            # bool("false") is True, so the third field has to be parsed as text.
+            is_asymmetric = is_asymmetric.strip().lower() not in ("false", "0", "no")
 
         if group_size in ["none", "None", "0"]:
             group_size = 0
 
         group_size = int(group_size)
         bitwidth = int(bitwidth)
-        is_asymmetric = bool(is_asymmetric)
         weight_dtype = getattr(torch, f"int{bitwidth}")
         granularity = PerAxis(0) if group_size == 0 else PerGroup(group_size)
         mapping_type = (

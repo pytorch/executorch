@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -146,6 +147,25 @@ def test_convert_stride_and_dilation():
     ]
 
     assert conv.args[3:6] == ([1, 3], [0, 2], [1, 2])
+
+
+def test_convert_dynamic_activation_shapes():
+    model = Conv1d().eval()
+    example_input = torch.randn(2, 2, 8)
+    batch = torch.export.Dim("batch", min=1, max=4)
+    length = torch.export.Dim("length", min=4, max=32)
+    edge = to_edge(
+        torch.export.export(
+            model,
+            (example_input,),
+            dynamic_shapes={"x": {0: batch, 2: length}},
+        )
+    ).exported_program()
+
+    converted = _transform(edge, ConvertConv1dToConv2dPass(edge))
+    runtime_input = torch.randn(3, 2, 17)
+
+    torch.testing.assert_close(converted.module()(runtime_input), model(runtime_input))
 
 
 def test_convert_transposed_conv1d():

@@ -650,6 +650,12 @@ _executorch_define_component(backend_openvino executorch_backend_openvino)
 # while configuring.
 _executorch_define_component(backend_cuda executorch_backend_cuda)
 _executorch_define_component(extension_cuda executorch_extension_cuda)
+# The Qualcomm delegate, present only in a wheel whose build found the QNN SDK,
+# which today means Linux x86_64. Like the OpenVINO delegate it carries no
+# undefined vendor symbols, so it links without the SDK present and resolves the
+# SDK by name at run time. A consumer still needs the SDK installed to run a
+# model through it.
+_executorch_define_component(backend_qnn executorch_backend_qnn)
 
 # Find prebuilt _C.<EXT_SUFFIX>.so, the extension a custom-op project builds
 # against. Reported for that purpose only, not published as a target: see the
