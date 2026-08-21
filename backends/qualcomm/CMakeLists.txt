@@ -262,9 +262,15 @@ target_link_libraries(
 if(EXECUTORCH_BUILD_SHARED)
   target_link_libraries(qnn_executorch_backend PRIVATE executorch_shared)
   executorch_target_link_shared_runtime(qnn_executorch_backend)
+  # Named like the other shipped delegates, so a consumer of the wheel finds it
+  # where it finds them and the package config needs no special case. Only the
+  # shared build renames: the device and direct-mode builds keep the original
+  # name, which their own tooling and the signing step expect.
+  set_target_properties(
+    qnn_executorch_backend PROPERTIES OUTPUT_NAME executorch_backend_qnn
+  )
   executorch_target_shared_runtime_path(
-    qnn_executorch_backend "backends/qualcomm"
-    "${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm"
+    qnn_executorch_backend "lib" "${CMAKE_INSTALL_LIBDIR}"
   )
 else()
   target_link_libraries(qnn_executorch_backend PRIVATE executorch_core)
@@ -336,12 +342,20 @@ add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
+# The shared build installs beside the other delegates; every other build keeps
+# the original location, which the device tooling and the exporter's push list
+# expect.
+if(EXECUTORCH_BUILD_SHARED)
+  set(_qnn_install_dir ${CMAKE_INSTALL_LIBDIR})
+else()
+  set(_qnn_install_dir ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm)
+endif()
 install(
   TARGETS qnn_executorch_backend
   EXPORT ExecuTorchTargets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
-  RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/executorch/backends/qualcomm
+  LIBRARY DESTINATION ${_qnn_install_dir}
+  ARCHIVE DESTINATION ${_qnn_install_dir}
+  RUNTIME DESTINATION ${_qnn_install_dir}
 )
 
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES Hexagon)
