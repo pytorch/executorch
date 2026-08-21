@@ -697,11 +697,7 @@ class Smollm2QuantRecipe(StaticLLMQuantRecipe):
 
 
 class Smollm2QATQuantRecipe(StaticLLMQATRecipe):
-    default_quant_dtype = QuantDtype.use_16a8w
-    frozen_param_patterns: List[str] = [
-        r"tok_embedding",  # Freeze token embeddings to prevent drift in the token space.
-        r"output\.conv",  # Freeze lm head to prevent drift in the token space.
-    ]
+    default_quant_dtype = QuantDtype.use_16a4w
 
     def __init__(self, verbose: bool = False):
         super().__init__()
@@ -725,14 +721,7 @@ class Smollm2QATQuantRecipe(StaticLLMQATRecipe):
             )
             .add_regex(
                 {r"tok_embeddings"},
-                QuantDtype.use_16a8w,
-                True,
-                act_observer=MovingAverageMinMaxObserver,
-                granularity=QuantGranularity.PER_TENSOR,
-            )
-            .add_regex(
-                {r"output\.conv"},
-                QuantDtype.use_16a8w,
+                QuantDtype.use_16a4w,
                 True,
                 act_observer=MovingAverageMinMaxObserver,
                 granularity=QuantGranularity.PER_CHANNEL,
