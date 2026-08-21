@@ -61,9 +61,11 @@ class AtenToCortexMPass(AtenToDialectPass):
         self,
         exported_program: ExportedProgram,
         target_config: CortexMTargetConfig,
+        use_explicit_layout: bool = False,
     ) -> None:
         super().__init__(exported_program=exported_program)
         self.target_config = target_config
+        self.use_explicit_layout = use_explicit_layout
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         result = super().call(graph_module)
@@ -879,7 +881,11 @@ def _get_avg_pool2d_replacement(
         with node.graph.inserting_before(node):
             input_node = node.graph.create_node(
                 "call_function",
-                target=exir_ops.edge.cortex_m.pad.default,
+                target=(
+                    exir_ops.edge.cortex_m.pad_contiguous.default
+                    if explicit_nhwc
+                    else exir_ops.edge.cortex_m.pad.default
+                ),
                 args=(input_node, pre_pad, post_pad, int(input_zp)),
             )
         avg_padding = [0, 0]
@@ -1212,7 +1218,7 @@ def _get_permute_replacement(
 def _get_pad_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
-    del dialect_pass
+    contiguous = cast(AtenToCortexMPass, dialect_pass).use_explicit_layout
     input_qparams = node.meta.get("input_qparams", {})
     if not input_qparams:
         return None
@@ -1242,10 +1248,17 @@ def _get_pad_replacement(
         pre_pad[dim_4d] = int(padding[2 * i])
         post_pad[dim_4d] = int(padding[2 * i + 1])
 
-    # A layout region has already remapped the pad into NHWC-logical order, and
-    # such tensors are contiguous, so this is a no-op there.
-    pre_pad = to_physical_order(pre_pad, input_tensor)
-    post_pad = to_physical_order(post_pad, input_tensor)
+    if not contiguous:
+        # The legacy entry point infers the layout, so hand it physical order.
+        pre_pad = to_physical_order(pre_pad, input_tensor)
+        post_pad = to_physical_order(post_pad, input_tensor)
 
     args = (node.args[0], pre_pad, post_pad, int(quantized_pad_value))
-    return DialectNodeSpec(exir_ops.edge.cortex_m.pad.default, args)
+    return DialectNodeSpec(
+        (
+            exir_ops.edge.cortex_m.pad_contiguous.default
+            if contiguous
+            else exir_ops.edge.cortex_m.pad.default
+        ),
+        args,
+    )

@@ -325,37 +325,15 @@ def is_channels_last(tensor: torch.Tensor) -> bool:
     return dim_order[0:2] == [0, 2]
 
 
-def has_channels_last_dim_order(tensor: torch.Tensor) -> bool:
-    """Exact channels-last test, read from the dim order.
-
-    Unlike ``is_channels_last`` this does not treat unit-sized dimensions as
-    ambiguously channels-last, so a contiguous tensor with a singleton channel
-    or spatial extent is correctly reported as contiguous.
-    """
-    return tensor.ndim == 4 and tuple(tensor.dim_order()) == (0, 2, 3, 1)
-
-
 _NHWC_DIM_ORDER = [0, 2, 3, 1]
 
 
 def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]:
     """Permute a 4-element NCHW-ordered list to NHWC physical memory order
     when ``tensor`` is in channels_last format, otherwise return unchanged."""
-    if not has_channels_last_dim_order(tensor):
+    if not is_channels_last(tensor):
         return logical_pad
     return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
-
-
-def innermost_axis(tensor: torch.Tensor) -> int:
-    """The axis whose elements are adjacent in memory.
-
-    Read from the dim order rather than inferred from the shape, which stays
-    correct for unit-sized dimensions where ``is_channels_last`` is ambiguous.
-    Channels are innermost under both supported activation contracts: dim 1 for
-    an NCHW-logical channels-last tensor, dim 3 for an NHWC-logical contiguous
-    one.
-    """
-    return int(tensor.dim_order()[-1])
 
 
 def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
@@ -382,11 +360,11 @@ def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
 def is_flat_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
     """Check that a broadcast is a flat repeat in memory, as the kernels need.
 
-    Channels are innermost under both activation contracts, so the larger
-    operand is a whole number of copies of the smaller one. Only the larger
-    operand's dim order is consulted: the broadcast operand is all-ones apart
-    from channels, which makes its strides degenerate and its reported dim
-    order arbitrary.
+    Deliberately layout-free. Channels are innermost under both activation
+    contracts, so the broadcast operand's element count is the repeat length and
+    the larger operand is a whole number of copies of it. Deriving the channel
+    axis instead would be unsound: a serialized dim order does not identify it
+    when the channel count is one.
     """
     if tensor1.dim() != tensor2.dim() or tensor1.dim() != 4:
         return False
@@ -396,4 +374,6 @@ def is_flat_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> b
     larger, smaller = (
         (tensor1, tensor2) if tensor1.numel() > tensor2.numel() else (tensor2, tensor1)
     )
-    return smaller.numel() == larger.size(innermost_axis(larger))
+    if sum(1 for size in smaller.shape if size != 1) > 1:
+        return False
+    return larger.numel() % smaller.numel() == 0
