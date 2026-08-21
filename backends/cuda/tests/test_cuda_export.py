@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
+import os
 import unittest
 from typing import Tuple
 from unittest import mock
@@ -112,6 +113,25 @@ class TestCudaBackendCompileOptions(unittest.TestCase):
                 pass
 
         target_smem_context.assert_called_once_with()
+
+    def test_target_smem_context_only_patches_exact_triton_limit(self):
+        from executorch.backends.cuda.target_smem import target_smem_context
+        from torch._inductor.template_heuristics.triton import BaseConfigHeuristic
+        from triton.compiler import compiler as triton_compiler
+
+        original_checker = BaseConfigHeuristic._get_exceeding_shared_memory_checker
+        with mock.patch.dict(os.environ, {"ET_CUDA_TARGET_SMEM_BYTES": "4096"}):
+            with mock.patch.object(
+                triton_compiler, "max_shared_mem", return_value=8192
+            ) as local_max_shared_mem:
+                with target_smem_context():
+                    self.assertIs(
+                        BaseConfigHeuristic._get_exceeding_shared_memory_checker,
+                        original_checker,
+                    )
+                    self.assertEqual(triton_compiler.max_shared_mem(0), 4096)
+
+                self.assertIs(triton_compiler.max_shared_mem, local_max_shared_mem)
 
 
 class TestCudaExport(unittest.TestCase):
