@@ -873,6 +873,22 @@ for _target, _node_cls, _op_name in _SCALAR_INT_OPS:
     REGISTRY.register(target=[_target])(_make_scalar_int_handler(_node_cls, _op_name))
 
 
+@REGISTRY.register(target=[operator.neg])
+def _operator_neg_handler(P: MLXProgramBuilder, n: Node) -> Slot:
+    # operator.neg -> multiply by -1, reusing MultiplyIntNode.
+    args = P.args(n)
+    require_args(args, 1, 1, "operator.neg")
+    require_kwargs(P.kwargs(n), set(), "operator.neg")
+    (a,) = args
+    out = P.make_or_get_slot(n)
+    P.emit(
+        MultiplyIntNode(
+            a=P.to_int_or_vid(a), b=P.to_int_or_vid(-1), out=P.slot_to_vid(out)
+        )
+    )
+    return out
+
+
 _REDUCTION_OPS: List[Tuple[List[Any], Any, str, int]] = [
     (
         [torch.ops.aten.sum.dim_IntList, torch.ops.aten.sum.default],

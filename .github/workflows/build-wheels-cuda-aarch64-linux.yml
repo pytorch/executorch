@@ -48,7 +48,7 @@ jobs:
       with-cuda: enable
       with-cpu: disable
       with-rocm: disable
-      python-versions: '["3.10", "3.11", "3.12", "3.13"]'
+      python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
 
   # The generator emits every CUDA version it knows about. Publishing all of them would ship
   # wheels for combinations nothing can verify, so this keeps only the rows a device exists for

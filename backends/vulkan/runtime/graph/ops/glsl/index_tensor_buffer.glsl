@@ -43,25 +43,22 @@ void main() {
   // Convert output buffer index to tensor index
   TensorIndex out_tidx = linear_idx_to_tensor_idx(outp, out_bufi);
 
-  // aten.index.Tensor with a single index tensor gathers along dim 0. This
-  // index space is WHCN-ordered -- axis 0 is the LAST pytorch dim -- so
-  // pytorch dim 0 is the highest axis, and self's trailing dims map 1:1 onto
-  // out's. With a 1-D index, rank(out) == rank(self).
-  const uint gather_axis = ndim(outp) - 1;
-  const uint gather_pos = idx_at(out_tidx, gather_axis);
+  const uint self_rank = ndim(inp);
+  const uint index_rank = ndim(index);
+  // WHCN order places self's trailing axes before the index axes.
+  const uint index_axis_offset = self_rank - 1;
 
-  // The index tensor is 1-D, so only its axis 0 (W) is populated. Indexing it
-  // with out's full coordinate is equivalent only when out is itself 1-D.
-  TensorIndex index_tidx;
-  initialize(index_tidx);
-  index_tidx.data[0][0] = gather_pos;
-  const uint index_bufi = tensor_idx_to_linear_idx(index, index_tidx);
+  uint index_bufi = 0;
+  for (uint d = 0; d < index_rank; ++d) {
+    index_bufi +=
+        stride_at(index, d) * idx_at(out_tidx, index_axis_offset + d);
+  }
   const int idx = t_index[index_bufi];
 
-  // self shares out's trailing coordinates; only the gathered axis differs.
-  TensorIndex self_tidx = out_tidx;
-  self_tidx.data[div_4(gather_axis)][mod_4(gather_axis)] = uint(idx);
-  const uint self_bufi = tensor_idx_to_linear_idx(inp, self_tidx);
+  uint self_bufi = stride_at(inp, self_rank - 1) * uint(idx);
+  for (uint d = 0; d + 1 < self_rank; ++d) {
+    self_bufi += stride_at(inp, d) * idx_at(out_tidx, d);
+  }
 
   t_out[out_bufi] = t_self[self_bufi];
 }
