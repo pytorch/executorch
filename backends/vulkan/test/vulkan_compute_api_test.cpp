@@ -108,6 +108,39 @@ TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(context()->adapter_ptr()) << std::endl;
 }
 
+TEST_F(VulkanComputeAPITest, device_to_host_staging_prefers_cached_memory) {
+  vkapi::VulkanBuffer staging_buffer =
+      context()->adapter_ptr()->vma().create_staging_buffer(
+          4096, vkapi::CopyDirection::DEVICE_TO_HOST);
+  const VmaAllocator allocator = staging_buffer.vma_allocator();
+  ASSERT_NE(allocator, VK_NULL_HANDLE);
+
+  const VkPhysicalDeviceMemoryProperties* memory_properties = nullptr;
+  vmaGetMemoryProperties(allocator, &memory_properties);
+  ASSERT_NE(memory_properties, nullptr);
+
+  bool has_host_cached_memory = false;
+  for (uint32_t i = 0; i < memory_properties->memoryTypeCount; ++i) {
+    const VkMemoryPropertyFlags flags =
+        memory_properties->memoryTypes[i].propertyFlags;
+    has_host_cached_memory = has_host_cached_memory ||
+        ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+         (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
+  }
+  if (!has_host_cached_memory) {
+    GTEST_SKIP() << "Device does not expose host-cached visible memory";
+  }
+
+  const VmaAllocation allocation = staging_buffer.allocation();
+  ASSERT_NE(allocation, VK_NULL_HANDLE);
+
+  VkMemoryPropertyFlags selected_flags = 0;
+  vmaGetAllocationMemoryProperties(allocator, allocation, &selected_flags);
+
+  EXPECT_TRUE(selected_flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+      << "Selected memory with flags " << selected_flags;
+}
+
 #if defined(VK_KHR_pipeline_executable_properties) && \
     defined(ETVK_INSPECT_PIPELINES)
 
