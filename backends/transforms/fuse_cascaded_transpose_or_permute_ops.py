@@ -8,7 +8,6 @@
 
 from executorch.backends.transforms.channels_last_layout import (
     composed_permute_target,
-    is_channels_last_input_normalization_pair,
     PERMUTE_COPY_TARGETS,
 )
 from executorch.backends.transforms.permute_pass_utils import (
@@ -72,8 +71,6 @@ class FuseCascadedTransposeOrPermuteOps(RemoveOrReplacePassInterface):
             dims = get_permuted_dims(node, dims)
 
         if dims == sorted(dims):
-            if is_channels_last_input_normalization_pair(parent_node, node):
-                return False
             node.replace_all_uses_with(input_of_parent)
         else:
             with node.graph.inserting_before(node):
