@@ -6,8 +6,8 @@ GPUs as device type `cuda`, so names such as `CudaBackend` and
 
 `EXECUTORCH_BUILD_ROCM` is off by default, is never auto-enabled, and is
 mutually exclusive with `EXECUTORCH_BUILD_CUDA`. It requires
-`EXECUTORCH_BUILD_EXTENSION_TENSOR`. Execution has been validated only on
-MI300X (`gfx942`); CI is configured to exercise `gfx950`.
+`EXECUTORCH_BUILD_EXTENSION_TENSOR`. Execution has been validated manually on
+MI300X (`gfx942`); CI canaries exercise gfx950 and gfx1100.
 
 ## Requirements and limitations
 
@@ -18,8 +18,10 @@ MI300X (`gfx942`); CI is configured to exercise `gfx950`.
 - Python pybindings cannot allocate ROCm device memory; use a native runner such
   as `executor_runner`.
 - Installed CMake consumers must be able to find the HIP package.
-- Model runners do not yet claim ROCm support. The gfx950 CI job covers the
-  backend build, native runtime, AOTI export and execution, and Triton W4 tests.
+- Voxtral Realtime has an explicit ROCm workflow. Other model runners do not
+  claim ROCm support. gfx950 provides routine coverage, while the scarce
+  gfx1100 runner is limited to direct Voxtral/ROCm changes and manual runs.
+  Both run streaming packed-W4/BF16; offline validation remains manual.
 
 ## Build
 
@@ -37,3 +39,7 @@ A `libcudart` dependency is a configuration error.
 
 For an end-to-end export that proves Inductor emitted a Triton kernel, see
 [../../examples/cuda/README.md](../../examples/cuda/README.md).
+
+Voxtral Realtime additionally covers BF16 and packed W4/BF16 execution. See
+[../../examples/models/voxtral_realtime/README.md](../../examples/models/voxtral_realtime/README.md)
+and its `run_rocm_e2e.sh` example.
