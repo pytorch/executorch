@@ -882,9 +882,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
                 result = cast(
                     PassResult,
-                    RemovePermutesAroundElementwiseOps(
-                        allow_layout_boundary_propagation=True,
-                    )(graph_module),
+                    RemovePermutesAroundElementwiseOps()(graph_module),
                 )
 
                 self.assertTrue(result.modified)
@@ -1052,9 +1050,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertTrue(result.modified)
@@ -1100,7 +1096,6 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
         result = cast(
             PassResult,
             RemovePermutesAroundElementwiseOps(
-                allow_layout_boundary_propagation=True,
                 can_propagate=lambda node: node.target
                 != exir_ops.edge.aten.relu.default,
             )(graph_module),
@@ -1141,9 +1136,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1175,9 +1168,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1207,9 +1198,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1242,9 +1231,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1282,7 +1269,6 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
             PassResult,
             RemovePermutesAroundElementwiseOps(
                 exported_program=edge.exported_program(),
-                allow_layout_boundary_propagation=True,
             )(graph_module),
         )
 
@@ -1305,9 +1291,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1332,9 +1316,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertFalse(result.modified)
@@ -1359,9 +1341,7 @@ class StructuralLayoutBoundaryPropagationTest(unittest.TestCase):
 
         result = cast(
             PassResult,
-            RemovePermutesAroundElementwiseOps(allow_layout_boundary_propagation=True)(
-                graph_module
-            ),
+            RemovePermutesAroundElementwiseOps()(graph_module),
         )
 
         self.assertTrue(result.modified)

@@ -77,12 +77,10 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         extra_permutable_ops: set | None = None,
         *,
         exported_program: ExportedProgram | None = None,
-        allow_layout_boundary_propagation: bool = False,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
     ) -> None:
         super().__init__()
         self.exported_program = exported_program
-        self.allow_layout_boundary_propagation = allow_layout_boundary_propagation
         self.can_propagate = can_propagate
         self._permutable_ops = {
             exir_ops.edge.aten.add.Tensor,
@@ -362,9 +360,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
             start_permute = self.get_permutation(node)
             if start_permute is None:
                 continue
-            layout_region = self.allow_layout_boundary_propagation and is_layout_copy(
-                node
-            )
+            layout_region = is_layout_copy(node)
             # Expected end permutation for the subgraph.
             end_permute = [start_permute.index(i) for i in range(len(start_permute))]
 
@@ -453,30 +449,29 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                             for n in subgraph.nodes:
                                 processed_nodes.add(n)
 
-        if self.allow_layout_boundary_propagation:
-            for node in permute_nodes:
-                end_permute = self.get_permutation(node)
-                if end_permute is None:
-                    continue
-                if not is_layout_copy(node):
-                    continue
-                producer = node.args[0] if node.args else None
-                if not isinstance(producer, torch.fx.Node):
-                    continue
-                if (
-                    not self.is_node_permutable(producer)
-                    and self._interleave_triple(producer) is None
-                ):
-                    continue
-                start_permute = [end_permute.index(i) for i in range(len(end_permute))]
-                subgraph = self.Subgraph(
-                    start_permute,
-                    end_permute,
-                    layout_region=True,
-                )
-                if self.visit(producer, subgraph, processed_nodes):
-                    subgraphs_found.append(subgraph)
-                    processed_nodes.update(subgraph.nodes)
+        for node in permute_nodes:
+            end_permute = self.get_permutation(node)
+            if end_permute is None:
+                continue
+            if not is_layout_copy(node):
+                continue
+            producer = node.args[0] if node.args else None
+            if not isinstance(producer, torch.fx.Node):
+                continue
+            if (
+                not self.is_node_permutable(producer)
+                and self._interleave_triple(producer) is None
+            ):
+                continue
+            start_permute = [end_permute.index(i) for i in range(len(end_permute))]
+            subgraph = self.Subgraph(
+                start_permute,
+                end_permute,
+                layout_region=True,
+            )
+            if self.visit(producer, subgraph, processed_nodes):
+                subgraphs_found.append(subgraph)
+                processed_nodes.update(subgraph.nodes)
 
         modified = False
         for subgraph in subgraphs_found:
@@ -599,10 +594,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                                 continue
                     return False
             elif user.op == "output":
-                if (
-                    not self.allow_layout_boundary_propagation
-                    or not subgraph.layout_region
-                ):
+                if not subgraph.layout_region:
                     return False
                 subgraph.output_boundaries.add(
                     (users_source, user, tuple(downstream_start))
@@ -616,8 +608,7 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                 # hunting for an end permute that layout-invariance made moot.
                 continue
             elif (
-                self.allow_layout_boundary_propagation
-                and subgraph.layout_region
+                subgraph.layout_region
                 and self.can_propagate is not None
                 and not self.can_propagate(user)
             ):
@@ -653,16 +644,13 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
                     return False
                 subgraph.constant_edges_in.add((inp, node))
             elif self._is_user_input(inp):
-                if (
-                    not self.allow_layout_boundary_propagation
-                    or not subgraph.layout_region
-                    or self._get_node_rank(inp) != len(current_end_permute)
+                if not subgraph.layout_region or self._get_node_rank(inp) != len(
+                    current_end_permute
                 ):
                     return False
                 subgraph.input_boundaries.add((inp, node, tuple(current_end_permute)))
             elif (
-                self.allow_layout_boundary_propagation
-                and subgraph.layout_region
+                subgraph.layout_region
                 and self.can_propagate is not None
                 and not self.can_propagate(inp)
                 and self._get_node_rank(inp) == len(current_end_permute)
