@@ -49,15 +49,12 @@ _BOUNDARY_TRANSPARENT_TARGETS = {
     exir_ops.edge.aten.view.default,
     exir_ops.edge.aten.view_copy.default,
 }
-try:
-    _BOUNDARY_TRANSPARENT_TARGETS.update(
-        {
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        }
-    )
-except AttributeError:
-    pass
+_BOUNDARY_TRANSPARENT_TARGETS.update(
+    {
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -90,21 +87,22 @@ class ToContiguousChannelsLastPass(ExportPass):
     across a graph node.
     """
 
-    _MAX_OPTIMIZATION_ITERATIONS = 8
+    # The matrix in test_to_contiguous_channels_last_pass reaches its fixed
+    # point in at most two rounds; this only catches a pass that reports
+    # progress it did not make.
+    _MAX_OPTIMIZATION_ITERATIONS = 4
 
     def __init__(
         self,
         exported_program: ExportedProgram,
         op_map: dict[Target, ChannelsLastOpSpec] | None = None,
         can_propagate: Callable[[torch.fx.Node], bool] | None = None,
-        layout_pad_target: Target | None = None,
         strict: bool = False,
     ) -> None:
         super().__init__()
         self.exported_program = exported_program
         self.op_map = op_map
         self.can_propagate = can_propagate
-        self.layout_pad_target = layout_pad_target
         self.strict = strict
         self.report = ChannelsLastLayoutReport()
 
@@ -174,7 +172,6 @@ class ToContiguousChannelsLastPass(ExportPass):
             RemovePermutesAroundElementwiseOps(
                 exported_program=self.exported_program,
                 allow_layout_boundary_propagation=True,
-                layout_pad_target=self.layout_pad_target,
                 can_propagate=self.can_propagate,
             ),
             FuseTransposeOrPermuteOpPairsPass(can_propagate=self.can_propagate),
