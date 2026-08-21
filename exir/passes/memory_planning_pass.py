@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from __future__ import annotations
+
 import itertools
 import logging
 import warnings
@@ -30,6 +32,7 @@ from executorch.exir.tensor import ALIGNMENT, TensorSpec
 from torch import fx
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Node
+from torch.utils import _pytree as pytree
 
 
 # copied from https://stackoverflow.com/questions/75582932/python-how-can-i-print-the-function-name-of-a-partial-function
@@ -136,6 +139,119 @@ def _check_default_mem_ids(gm: torch.fx.GraphModule):
                 )
 
 
+def _align_up(value: int, alignment: int) -> int:
+    return (value + alignment - 1) // alignment * alignment
+
+
+def _iter_unique_specs(graph_module: torch.fx.GraphModule) -> list[TensorSpec]:
+    """Every TensorSpec reachable from graph node metas, deduplicated by identity.
+
+    A spec can be referenced by several nodes; shifting one twice would corrupt
+    the layout, so dedupe on id() rather than equality.
+    """
+    seen: set[int] = set()
+    specs: list[TensorSpec] = []
+    for node in graph_module.graph.nodes:
+        # meta["spec"] may be a nested pytree (SpecPropPass), so flatten to leaves
+        for spec in pytree.tree_leaves(node.meta.get("spec")):
+            if not isinstance(spec, TensorSpec) or id(spec) in seen:
+                continue
+            seen.add(id(spec))
+            specs.append(spec)
+    return specs
+
+
+def _resolve_inplace_root(spec: TensorSpec) -> TensorSpec:
+    """Follow ``spec.inplace_base`` to the terminal spec it aliases.
+
+    In-place ops produce a distinct result spec that aliases an input's spec
+    (greedy gives it the same mem_id/mem_offset). The chain can be several links
+    long; a ``seen`` set guards against a pathological cycle.
+    """
+    seen: set[int] = set()
+    cur = spec
+    while getattr(cur, "inplace_base", None) is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        cur = cur.inplace_base
+    return cur
+
+
+def _collect_declared_shared_specs(
+    graph_module: torch.fx.GraphModule,
+    graph_signature: ExportGraphSignature,
+    declared: frozenset[str],
+) -> dict[str, TensorSpec]:
+    specs_by_fqn: dict[str, TensorSpec] = {}
+    for node in graph_module.graph.nodes:
+        # A declared shared buffer may be read-only in one method while mutated in
+        # another; collect it whenever it is a buffer so it front-packs to the same
+        # slot in every method.
+        is_buffer, fqn = _is_buffer(node, graph_signature)
+        if is_buffer and fqn in declared:
+            assert fqn is not None
+            specs_by_fqn[fqn] = _get_spec_from_node(node)
+    return specs_by_fqn
+
+
+def _relocate_around_front_region(
+    graph_module: torch.fx.GraphModule,
+    declared_front: dict[int, int],
+    reserved: dict[int, int],
+    vacated: dict[int, list[tuple[int, int]]],
+) -> None:
+    """Move each non-declared spec up by its arena's reserved front region, less
+    the declared columns vacated below it (so the arena does not grow). A spec that
+    aliases a declared buffer in place follows that buffer to the front -- both
+    ``mem_id`` and ``mem_offset`` -- so the aliased write lands on the shared
+    buffer rather than a shifted copy, even if the alias were given a different
+    arena.
+    """
+    for spec in _iter_unique_specs(graph_module):
+        if id(spec) in declared_front:
+            continue
+        root = _resolve_inplace_root(spec)
+        root_front = declared_front.get(id(root))
+        if root_front is not None:
+            spec.mem_id = root.mem_id
+            spec.mem_offset = root_front
+            continue
+        mem_id = spec.mem_id
+        mem_offset = spec.mem_offset
+        if mem_id is None or mem_offset is None:
+            continue
+        below = sum(size for off, size in vacated.get(mem_id, []) if off < mem_offset)
+        spec.mem_offset = reserved.get(mem_id, 0) + mem_offset - below
+
+
+def _grow_arena_sizes(
+    graph_module: torch.fx.GraphModule,
+    reserved: dict[int, int],
+    vacated: dict[int, list[tuple[int, int]]],
+) -> None:
+    """Update each front-packed arena's size. The scalar ``front - reclaimed`` term
+    preserves any non-spec size the algorithm folded into ``non_const_buffer_sizes``
+    (submodule / XNNPACK padding); the ``max`` against the real high-water mark of
+    the final placements keeps the arena from being recorded smaller than actual
+    usage if an algorithm ever leaves an unaligned slot.
+    """
+    sizes = list(graph_module.meta.get("non_const_buffer_sizes", []))
+    high_water: dict[int, int] = {}
+    for spec in _iter_unique_specs(graph_module):
+        if spec.mem_id is None or spec.mem_offset is None:
+            continue
+        end = spec.mem_offset + spec.allocated_memory
+        if end > high_water.get(spec.mem_id, 0):
+            high_water[spec.mem_id] = end
+    for mem_id, front in reserved.items():
+        while len(sizes) <= mem_id:
+            sizes.append(0)
+        reclaimed = sum(size for _, size in vacated.get(mem_id, []))
+        sizes[mem_id] = max(
+            sizes[mem_id] + front - reclaimed, high_water.get(mem_id, 0)
+        )
+    graph_module.meta["non_const_buffer_sizes"] = sizes
+
+
 @dataclass
 class _MemoryPlanningState:
     mutable_buffers: Dict[str, Set[TensorSpec]] = field(default_factory=dict)
@@ -153,12 +269,20 @@ class MemoryPlanningPass(PassBase):
         alloc_mutable_buffers: bool = True,
         share_mutable_buffers: bool = False,
         alignment: int = ALIGNMENT,
+        shared_buffer_fqns: frozenset[str] | None = None,
     ) -> None:
         r"""
         alloc_graph_input/alloc_graph_output will have 4 different combinations
         to control if the memory planning algorithm need allocate memory for
         the graph input/output. The default behavior is the algorithm will allocate
         memory for both graph input and output.
+
+        shared_buffer_fqns opts into the arena-aware sharing path. When set (and
+        share_mutable_buffers is True), the named mutable buffers keep the real
+        arena each is planned onto and are front-packed to an identical offset in
+        every method, instead of being forced onto the legacy dedicated mem_id 2
+        arena. This lifts the single-default-arena requirement so programs with a
+        device/accelerator arena can still share a mutable buffer.
         """
         if memory_planning_algo is None:
             memory_planning_algo = MemoryPlanningAlgorithmSuite()
@@ -166,14 +290,26 @@ class MemoryPlanningPass(PassBase):
             raise ValueError(
                 "share_mutable_buffers is only meaningful when alloc_mutable_buffers is True"
             )
+        if shared_buffer_fqns is not None and not share_mutable_buffers:
+            raise ValueError("shared_buffer_fqns requires share_mutable_buffers=True")
+        if shared_buffer_fqns is not None and not shared_buffer_fqns:
+            raise ValueError(
+                "shared_buffer_fqns is empty; pass None for legacy sharing of all "
+                "mutable buffers, or a non-empty set to front-pack named buffers"
+            )
         self.memory_planning_algo: Callable[..., List[int]] = memory_planning_algo
         self.allow_lifetime_and_storage_overlap = allow_lifetime_and_storage_overlap
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
         self.alloc_mutable_buffers = alloc_mutable_buffers
         self.share_mutable_buffers = share_mutable_buffers
+        self.shared_buffer_fqns: frozenset[str] | None = shared_buffer_fqns
         self.alignment = alignment
         self.state = _MemoryPlanningState()
+        # Resulting (mem_id, mem_offset, allocated_memory) of each declared
+        # shared buffer from the first method it appears in. Later methods must
+        # agree; a mismatch would alias two different tensors in one arena.
+        self._shared_placement: dict[str, tuple[int | None, int | None, int]] = {}
         # Set by EdgeProgramManager.to_executorch() from the top-level
         # ExecutorchBackendConfig. When True, apply_algo partitions specs by
         # device so non-CPU buffers get their own memory arenas.
@@ -251,6 +387,14 @@ class MemoryPlanningPass(PassBase):
         # passes/stages is quite natural and avoid yet another 'context' data structure
         # to do the job.
 
+        # Shared mutable buffers are excluded from the main algo (and placed on
+        # the dedicated mem_id 2 arena later in run_multimethod) ONLY on the legacy
+        # path. The arena-aware path (shared_buffer_fqns set) keeps them in the
+        # algo so each lands on its real arena, then front-packs them below.
+        plan_mutable_buffers_in_algo = self.alloc_mutable_buffers and (
+            not self.share_mutable_buffers or self.shared_buffer_fqns is not None
+        )
+
         _ = apply_algo(
             self.memory_planning_algo,
             graph_module,
@@ -258,16 +402,17 @@ class MemoryPlanningPass(PassBase):
             graph_signature,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            # If mutable buffers are shared, then do not allocate them in the
-            # main memory planning algo; they are allocated in run_multimethod.
-            self.alloc_mutable_buffers and not self.share_mutable_buffers,
+            plan_mutable_buffers_in_algo,
             self.enable_non_cpu_memory_planning,
         )
 
         if self.share_mutable_buffers and graph_signature is not None:
-            self.state.graph_modules.append(graph_module)
-            _check_default_mem_ids(graph_module)
-            _insert_mutable_buffer_specs(self.state, graph_module, graph_signature)
+            if self.shared_buffer_fqns is None:
+                self.state.graph_modules.append(graph_module)
+                _check_default_mem_ids(graph_module)
+                _insert_mutable_buffer_specs(self.state, graph_module, graph_signature)
+            else:
+                self._front_pack_shared_buffers(graph_module, graph_signature)
 
         # TODO: make the verifier do the work recursively to handle
         # control flow
@@ -275,10 +420,7 @@ class MemoryPlanningPass(PassBase):
             graph_module,
             self.alloc_graph_input,
             self.alloc_graph_output,
-            # If mutable buffers are shared, they are allocated after the
-            # main memory planning algo in run_multimethod, and should be
-            # skipped in the Verifier.
-            self.alloc_mutable_buffers and not self.share_mutable_buffers,
+            plan_mutable_buffers_in_algo,
             graph_signature,
         )
 
@@ -299,6 +441,87 @@ class MemoryPlanningPass(PassBase):
             # I dont know if that is a valid thing but if it is we should adjust verify_storage_reuse function
             verifier.verify_storage_reuse()
         return PassResult(graph_module, True)
+
+    def _front_pack_shared_buffers(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: ExportGraphSignature,
+    ) -> None:
+        """Pin the declared shared buffers to a deterministic front region.
+
+        Each declared buffer keeps its own arena (``mem_id``) and is packed, in
+        sorted-FQN order, into a region reserved at the front of that arena.
+        Every other spec in the arena is relocated up by that region, less the
+        size of the declared columns that sat below it. A shared buffer has an
+        infinite lifetime, so the algorithm gave it an exclusive slot that no
+        other spec reuses; reclaiming that vacated slot in the same pass leaves no
+        dead space, so the arena does not grow. A buffer has the same ``mem_id``
+        and size in every method, so its resulting front offset is identical
+        across methods by construction.
+        """
+        declared = self.shared_buffer_fqns
+        assert declared is not None
+        specs_by_fqn = _collect_declared_shared_specs(
+            graph_module, graph_signature, declared
+        )
+        missing = declared - specs_by_fqn.keys()
+        if missing:
+            raise ValueError(
+                "shared_buffer_fqns declares buffer(s) not present as buffers in "
+                f"this method: {sorted(missing)}"
+            )
+
+        reserved: dict[int, int] = {}
+        placement: dict[str, int] = {}
+        # id() of each declared buffer's placeholder spec -> its front offset, so
+        # specs that alias a declared buffer in place land on the same offset.
+        declared_front: dict[int, int] = {}
+        # Per arena, the (algo offset, size) each declared buffer was assigned.
+        # Those slots are vacated by the move to the front and reclaimed so the
+        # arena grows by nothing rather than by the whole front region.
+        vacated: dict[int, list[tuple[int, int]]] = {}
+        for fqn in sorted(specs_by_fqn):
+            spec = specs_by_fqn[fqn]
+            mem_id = spec.mem_id
+            if mem_id is None:
+                raise ValueError(
+                    f"Declared shared buffer '{fqn}' was not assigned a memory arena"
+                )
+            if spec.mem_offset is None:
+                raise ValueError(
+                    f"Declared shared buffer '{fqn}' was not assigned an offset"
+                )
+            vacated.setdefault(mem_id, []).append(
+                (spec.mem_offset, spec.allocated_memory)
+            )
+            offset = reserved.get(mem_id, 0)
+            placement[fqn] = offset
+            declared_front[id(spec)] = offset
+            reserved[mem_id] = _align_up(offset + spec.allocated_memory, self.alignment)
+
+        # Relocate the other specs around the reserved front region (declared
+        # buffers are shifted first so nothing lands back on the region), then
+        # place the declared buffers at the front and grow each arena to fit.
+        _relocate_around_front_region(graph_module, declared_front, reserved, vacated)
+        for fqn, offset in placement.items():
+            specs_by_fqn[fqn].mem_offset = offset
+        _grow_arena_sizes(graph_module, reserved, vacated)
+
+        self._validate_shared_placement(specs_by_fqn)
+
+    def _validate_shared_placement(self, specs_by_fqn: dict[str, TensorSpec]) -> None:
+        for fqn, spec in specs_by_fqn.items():
+            placement = (spec.mem_id, spec.mem_offset, spec.allocated_memory)
+            prior = self._shared_placement.get(fqn)
+            if prior is None:
+                self._shared_placement[fqn] = placement
+            elif prior != placement:
+                raise ValueError(
+                    f"Shared buffer '{fqn}' has inconsistent placement across "
+                    f"methods: {prior} (first method) != {placement} (this "
+                    "method); a declared shared buffer must have identical size "
+                    "and resulting placement in every method"
+                )
 
     def run_multimethod(self):
         """Resolve any memory planning done across entry points, called after run is called on all entry points."""
