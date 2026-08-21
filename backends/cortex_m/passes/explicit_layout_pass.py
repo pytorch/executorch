@@ -4,9 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
+
 import executorch.backends.transforms.channels_last_ops  # noqa: F401
 
 import torch
+from executorch.backends.cortex_m.passes.passes_utils import is_flat_channel_broadcast
 
 from executorch.backends.transforms.replace_ops_with_channels_last_variants import (
     ChannelsLastOpSpec,
@@ -16,6 +19,7 @@ from executorch.backends.transforms.to_contiguous_channels_last_pass import (
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import PassResult
 
 
 def _is_rank4(node: torch.fx.Node) -> bool:
@@ -84,6 +88,68 @@ def _supports_max_pool2d(node: torch.fx.Node) -> bool:
     )
 
 
+_CORTEX_M_EXPLICIT_LAYOUT_OP_MAP = {
+    exir_ops.edge.aten.convolution.default: ChannelsLastOpSpec(
+        target=exir_ops.edge.channels_last.convolution.default,
+        input_indices=[0],
+        output_indices=[0],
+        filter_fn=lambda node: (
+            _is_rank4(node) and _has_input_and_output_qparams(node)
+        ),
+    ),
+    exir_ops.edge.aten.avg_pool2d.default: ChannelsLastOpSpec(
+        target=exir_ops.edge.channels_last.avg_pool2d.default,
+        input_indices=[0],
+        output_indices=[0],
+        filter_fn=_supports_avg_pool2d,
+    ),
+    exir_ops.edge.aten.max_pool2d.default: ChannelsLastOpSpec(
+        target=exir_ops.edge.channels_last.max_pool2d.default,
+        input_indices=[0],
+        output_indices=[0],
+        filter_fn=_supports_max_pool2d,
+    ),
+}
+
+_SOURCE_ANCHORS_BY_EDGE_TARGET = {
+    exir_ops.edge.aten.convolution.default: frozenset(
+        {
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+            torch.ops.aten.conv_transpose2d.input,
+        }
+    ),
+    exir_ops.edge.aten.avg_pool2d.default: frozenset(
+        {torch.ops.aten.avg_pool2d.default}
+    ),
+    exir_ops.edge.aten.max_pool2d.default: frozenset(
+        {
+            torch.ops.aten.max_pool2d.default,
+            torch.ops.aten.max_pool2d_with_indices.default,
+        }
+    ),
+}
+assert _SOURCE_ANCHORS_BY_EDGE_TARGET.keys() == _CORTEX_M_EXPLICIT_LAYOUT_OP_MAP.keys()
+
+CORTEX_M_EXPLICIT_LAYOUT_SOURCE_ANCHORS = frozenset(
+    target for targets in _SOURCE_ANCHORS_BY_EDGE_TARGET.values() for target in targets
+)
+
+CORTEX_M_EXPLICIT_LAYOUT_TRANSPARENT_OPS = frozenset(
+    {
+        operator.getitem,
+        torch.ops.aten.relu.default,
+        torch.ops.aten.relu_.default,
+        torch.ops.aten.hardtanh.default,
+        torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.clamp.default,
+        torch.ops.aten.clamp_.default,
+        torch.ops.aten.hardsigmoid.default,
+        torch.ops.aten.hardsigmoid_.default,
+    }
+)
+
+
 def _can_propagate(node: torch.fx.Node) -> bool:
     if node.target == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default:
         return False
@@ -114,28 +180,29 @@ class CortexMExplicitLayoutPass(ToContiguousChannelsLastPass):
     ) -> None:
         super().__init__(
             exported_program,
-            op_map={
-                exir_ops.edge.aten.convolution.default: ChannelsLastOpSpec(
-                    target=exir_ops.edge.channels_last.convolution.default,
-                    input_indices=[0],
-                    output_indices=[0],
-                    filter_fn=lambda node: (
-                        _is_rank4(node) and _has_input_and_output_qparams(node)
-                    ),
-                ),
-                exir_ops.edge.aten.avg_pool2d.default: ChannelsLastOpSpec(
-                    target=exir_ops.edge.channels_last.avg_pool2d.default,
-                    input_indices=[0],
-                    output_indices=[0],
-                    filter_fn=_supports_avg_pool2d,
-                ),
-                exir_ops.edge.aten.max_pool2d.default: ChannelsLastOpSpec(
-                    target=exir_ops.edge.channels_last.max_pool2d.default,
-                    input_indices=[0],
-                    output_indices=[0],
-                    filter_fn=_supports_max_pool2d,
-                ),
-            },
+            op_map=dict(_CORTEX_M_EXPLICIT_LAYOUT_OP_MAP),
             can_propagate=_can_propagate,
             strict=strict,
         )
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        result = super().call(graph_module)
+        for node in result.graph_module.graph.nodes:
+            if node.target not in {
+                exir_ops.edge.aten.add.Tensor,
+                exir_ops.edge.aten.mul.Tensor,
+            } or not _has_input_and_output_qparams(node):
+                continue
+            input1, input2 = node.args[:2]
+            if not isinstance(input1, torch.fx.Node) or not isinstance(
+                input2, torch.fx.Node
+            ):
+                continue
+            if input1.meta["val"].shape == input2.meta["val"].shape:
+                continue
+            if not is_flat_channel_broadcast(input1.meta["val"], input2.meta["val"]):
+                raise RuntimeError(
+                    f"Quantized channel-broadcast node {node.name} did not join "
+                    "an explicit NHWC layout region."
+                )
+        return result

@@ -345,10 +345,6 @@ def is_channel_broadcast(tensor1: torch.Tensor, tensor2: torch.Tensor) -> bool:
     """
     if tensor1.dim() != tensor2.dim():
         return False
-    if not is_channels_last(tensor1):
-        return False
-    if not is_channels_last(tensor2):
-        return False
 
     channel_match = tensor1.size(1) == tensor2.size(1)
     tensor1_channels_only = tensor1.numel() == tensor1.size(1)
