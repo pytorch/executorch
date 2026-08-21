@@ -219,18 +219,11 @@ void CellCache::invalidate_steps() {
 void CellCache::rescan(int32_t seq_id) {
   const uint64_t b = bit(seq_id);
   SeqInfo info;
-  info.min_cell = capacity_;
   for (int i = 0; i < used_end_; ++i) {
-    if (!(owners_[i] & b)) {
-      continue;
+    if (owners_[i] & b) {
+      info.max_pos = std::max(info.max_pos, pos_[i]);
+      ++info.count;
     }
-    info.min_cell = std::min(info.min_cell, i);
-    info.max_cell = i;
-    info.max_pos = std::max(info.max_pos, pos_[i]);
-    ++info.count;
-  }
-  if (info.count == 0) {
-    info = SeqInfo{};
   }
   info_[seq_id] = info;
 }
@@ -241,8 +234,6 @@ void CellCache::claim(int cell, int32_t pos, int32_t seq_id) {
   used_end_ = std::max(used_end_, cell + 1);
   ++used_count_;
   SeqInfo& info = info_[seq_id];
-  info.min_cell = info.count == 0 ? cell : std::min(info.min_cell, cell);
-  info.max_cell = std::max(info.max_cell, cell);
   info.max_pos = std::max(info.max_pos, pos);
   ++info.count;
 }
@@ -291,11 +282,11 @@ std::vector<uint8_t> CellCache::build_mask(int window) const {
     const int32_t oldest = window > 0 ? tok_pos - window + 1 : 0;
     uint8_t* row = bits.data() + static_cast<size_t>(i) * used_end_;
     for (int j = 0; j < used_end_; ++j) {
-      row[j] =
-          (pos_[j] >= 0 && // occupied: a freed cell holds nothing
-           (owners_[j] & tok_bit) && // one of this query's sequences
-           pos_[j] <= tok_pos && // not the future; <= so a query sees itself
-           pos_[j] >= oldest); // within the window
+      row[j] = static_cast<uint8_t>(
+          pos_[j] >= 0 && // occupied: a freed cell holds nothing
+          (owners_[j] & tok_bit) && // one of this query's sequences
+          pos_[j] <= tok_pos && // not the future; <= so a query sees itself
+          pos_[j] >= oldest); // within the window
     }
   }
   return bits;

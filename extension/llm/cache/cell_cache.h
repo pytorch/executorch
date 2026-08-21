@@ -95,8 +95,6 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
  private:
   struct SeqInfo {
     int count = 0;
-    int min_cell = 0;
-    int max_cell = -1;
     int max_pos = -1;
   };
 
