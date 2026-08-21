@@ -166,8 +166,11 @@ class AbsorbBoundaryLayoutCopies(ExportPass):
                 continue
             interior, copies, dims = found
 
+            # .contiguous() is load-bearing: a bare permute leaves the old
+            # strides, which serialize as a permuted dim order, and the kernels
+            # reading these tensors require plain contiguous NHWC.
             for member in (node, *interior):
-                member.meta["val"] = member.meta["val"].permute(dims)
+                member.meta["val"] = member.meta["val"].permute(dims).contiguous()
             for copy in copies:
                 copy.replace_all_uses_with(copy.args[0])
                 graph_module.graph.erase_node(copy)
@@ -190,7 +193,9 @@ class AbsorbBoundaryLayoutCopies(ExportPass):
             interior, copy, source, dims = found
 
             for member in interior:
-                member.meta["val"] = member.meta["val"].permute(_inverse(dims))
+                member.meta["val"] = (
+                    member.meta["val"].permute(_inverse(dims)).contiguous()
+                )
             if interior:
                 interior[-1].replace_input_with(copy, source)
             else:

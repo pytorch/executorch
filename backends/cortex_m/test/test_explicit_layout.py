@@ -6,7 +6,10 @@
 
 import copy
 
+import pytest
+
 import torch
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
 
 from executorch.backends.cortex_m.test.tester import CortexMTester
@@ -743,3 +746,121 @@ def test_aot_explicit_layout_conv1d_runs_on_fvp():
     [actual] = serialized.run_artifact(runtime_inputs)
     expected = model_quant(*runtime_inputs)
     torch.testing.assert_close(actual, expected, atol=0.05, rtol=1e-3)
+
+
+def _lower_nhwc_io(module, inputs, target_config=None):
+    tester = CortexMTester(
+        module,
+        inputs,
+        target_config=target_config,
+        use_explicit_layout=True,
+        use_nhwc_io=True,
+    )
+    tester.quantize().export().to_edge().run_passes()
+    return tester
+
+
+def test_nhwc_io_removes_the_boundary_transposes():
+    x = torch.randn(1, 3, 8, 8)
+    tester = _lower_nhwc_io(Conv2d(), (x,))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert _count(program, exir_ops.edge.cortex_m.quantized_conv2d_nhwc.default) == 1
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+    assert program.module()(x.permute(0, 2, 3, 1).contiguous()).shape == torch.Size(
+        [1, 8, 8, 4]
+    )
+
+
+def test_nhwc_io_reports_the_contract():
+    tester = _lower_nhwc_io(Conv2d(), (torch.randn(1, 3, 8, 8),))
+    contract = tester.boundary_layout_contract
+
+    assert contract.inputs == {0: (0, 2, 3, 1)}
+    assert contract.outputs == {0: (0, 3, 1, 2)}
+
+
+def test_nhwc_io_leaves_layout_free_models_alone():
+    class Linear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 4)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    tester = _lower_nhwc_io(Linear(), (torch.randn(2, 8),))
+
+    assert not tester.boundary_layout_contract
+
+
+def test_nhwc_io_keeps_a_shared_input_on_one_contract_entry():
+    x = torch.randn(1, 3, 8, 8)
+    tester = _lower_nhwc_io(ConvForkAdd(), (x,))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+
+    assert tester.boundary_layout_contract.inputs == {0: (0, 2, 3, 1)}
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+
+
+def test_nhwc_io_requires_explicit_layout():
+    with pytest.raises(ValueError, match="use_explicit_layout"):
+        CortexMPassManager(None, use_nhwc_io=True)
+
+
+def test_nhwc_io_does_not_increase_planned_memory():
+    # Measured against legacy rather than plain explicit layout. Absorption
+    # removes two tensors, which reshuffles what the greedy planner packs
+    # where; on Conv2d that happens to cost 128 bytes against explicit even
+    # though there is strictly less to place. Legacy is the bar that matters.
+    torch.manual_seed(0)
+    m55 = CortexMTargetConfig(cpu=CortexM.M55)
+    for module, inputs in (
+        (Conv2d(), (torch.randn(1, 3, 8, 8),)),
+        (TwoConv2d(), (torch.randn(1, 3, 8, 8),)),
+        (ConvPoolConv(torch.nn.AvgPool2d(2, 2)), (torch.randn(1, 3, 8, 8),)),
+        (ConvPoolConv(torch.nn.MaxPool2d(2, 2)), (torch.randn(1, 3, 8, 8),)),
+        (ConvForkAdd(), (torch.randn(1, 3, 8, 8),)),
+    ):
+        legacy = _planned_buffer_sizes(
+            module,
+            inputs,
+            use_explicit_layout=False,
+            target_config=m55,
+            expected_ops={},
+        )
+        tester = _lower_nhwc_io(
+            copy.deepcopy(module).eval(),
+            tuple(value.clone() for value in inputs),
+            target_config=m55,
+        )
+        tester.to_executorch()
+        program = tester.get_artifact(StageType.TO_EXECUTORCH).executorch_program
+        nhwc_io = tuple(program.execution_plan[0].non_const_buffer_sizes)
+
+        assert len(nhwc_io) == len(legacy), type(module).__name__
+        assert all(
+            nhwc_size <= legacy_size for nhwc_size, legacy_size in zip(nhwc_io, legacy)
+        ), type(module).__name__
+
+
+def test_nhwc_io_conv2d_runs_on_fvp():
+    x = torch.linspace(-5, 5, steps=1 * 3 * 7 * 10).reshape(1, 3, 7, 10)
+    tester = _lower_nhwc_io(
+        Conv2d(kernel_size=(3, 2), stride=(2, 1), padding=(1, 0)), (x,)
+    )
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=(x,), qtol=2)
+
+
+def test_nhwc_io_conv_pool_conv_runs_on_fvp():
+    x = torch.linspace(-5, 5, steps=1 * 3 * 8 * 8).reshape(1, 3, 8, 8)
+    tester = _lower_nhwc_io(ConvPoolConv(torch.nn.MaxPool2d(2, 2)), (x,))
+    program = tester.get_artifact(StageType.RUN_PASSES).exported_program()
+    assert _count(program, exir_ops.edge.cortex_m.transpose.default) == 0
+
+    tester.to_executorch().serialize()
+    tester.run_method_and_compare_outputs(inputs=(x,), qtol=2)

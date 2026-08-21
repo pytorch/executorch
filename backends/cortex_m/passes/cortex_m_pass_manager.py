@@ -13,6 +13,10 @@ from executorch.backends.arm._passes import (
     ScalarsToAttributePass,
 )
 from executorch.backends.cortex_m.target_config import CortexM, CortexMTargetConfig
+from executorch.backends.transforms.absorb_boundary_layout_copies import (
+    AbsorbBoundaryLayoutCopies,
+    BoundaryLayoutContract,
+)
 from executorch.backends.transforms.convert_conv1d_to_conv2d_pass import (
     ConvertConv1dToConv2dPass,
 )
@@ -69,6 +73,14 @@ class CortexMPassManager(PassManager):
         AtenToCortexMPass,
     ]
 
+    # Absorption has to see the layout copies while they are still dialect
+    # nodes, so it goes directly after region formation.
+    nhwc_io_pass_list: list[PassClass] = list(explicit_layout_pass_list)
+    nhwc_io_pass_list.insert(
+        nhwc_io_pass_list.index(CortexMExplicitLayoutPass) + 1,
+        AbsorbBoundaryLayoutCopies,
+    )
+
     pass_list = legacy_pass_list
 
     pass_list_transform_for_annotation: list[PassClass] = [
@@ -86,6 +98,7 @@ class CortexMPassManager(PassManager):
         passes: Optional[list[PassClass]] = None,
         target_config: Optional[CortexMTargetConfig] = None,
         use_explicit_layout: bool = False,
+        use_nhwc_io: bool = False,
     ) -> None:
         """Initialize the Cortex-M pass manager.
 
@@ -101,15 +114,25 @@ class CortexMPassManager(PassManager):
                 pre-config historical behaviour.
             use_explicit_layout: Run channels-last dialect region formation.
                 Legacy dim-order lowering remains the default.
+            use_nhwc_io: Give the method an NHWC input and output contract
+                instead of transposing at the boundary. Requires
+                ``use_explicit_layout``; see ``boundary_layout_contract``.
         """
+        if use_nhwc_io and not use_explicit_layout:
+            raise ValueError(
+                "use_nhwc_io absorbs channels-last dialect copies and so needs "
+                "use_explicit_layout; the legacy path carries layout in dim "
+                "order, where there are no copies to absorb."
+            )
         super().__init__(passes=[])
         self.exported_program = exported_program
         # PassManager.passes is typed as callables; this manager stores pass classes which are initialized at transform time with the exported_program.
-        default_passes = (
-            self.explicit_layout_pass_list
-            if use_explicit_layout
-            else self.legacy_pass_list
-        )
+        if use_nhwc_io:
+            default_passes = self.nhwc_io_pass_list
+        elif use_explicit_layout:
+            default_passes = self.explicit_layout_pass_list
+        else:
+            default_passes = self.legacy_pass_list
         self.passes: list[PassClass] = (  # type: ignore[assignment]
             passes if passes is not None else default_passes  # type: ignore[assignment]
         )
@@ -117,6 +140,10 @@ class CortexMPassManager(PassManager):
             cpu=CortexM.M55
         )
         self.use_explicit_layout = use_explicit_layout
+        self.use_nhwc_io = use_nhwc_io
+        # Populated by transform(); tells callers which method inputs and
+        # outputs changed layout, since that is not inferable from the graph.
+        self.boundary_layout_contract = BoundaryLayoutContract()
 
     def transform_for_annotation(self, model):
         passes = self.pass_list_transform_for_annotation
@@ -150,6 +177,8 @@ class CortexMPassManager(PassManager):
 
             transform_pass = pass_cls(**kwargs)
             exported_program = _transform(exported_program, transform_pass)
+            if isinstance(transform_pass, AbsorbBoundaryLayoutCopies):
+                self.boundary_layout_contract = transform_pass.contract
 
         # All constant tensors should be lifted to buffers at this point, re-run
         # lift_constant_tensor_pass in case new ones have been introduced.
