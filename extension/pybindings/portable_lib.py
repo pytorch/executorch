@@ -99,6 +99,7 @@ from executorch.extension.pybindings._C import (  # noqa: F401
     ExecuTorchModule,  # noqa: F401
     ExecuTorchProgram,  # noqa: F401
     MethodMeta,  # noqa: F401
+    TensorInfo,  # noqa: F401
     Verification,  # noqa: F401
 )
 
