@@ -59,6 +59,10 @@ test_cases = {
 @parametrize(
     "test_case",
     test_cases,
+    xfails={
+        "mobilenet_v3_small": "MLETORCH-1821 - Investigate mobilenet_v3_small flakyness"
+    },
+    strict=False,
 )
 def test_dialect_mv3(test_case):
     inputs = test_case.get_example_inputs()

@@ -137,6 +137,5 @@ class CortexMExplicitLayoutPass(ToContiguousChannelsLastPass):
                 ),
             },
             can_propagate=_can_propagate,
-            layout_pad_target=exir_ops.edge.channels_last.constant_pad_nd.default,
             strict=strict,
         )

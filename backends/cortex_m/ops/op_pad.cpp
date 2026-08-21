@@ -13,25 +13,21 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
-namespace {
-
 constexpr size_t kMaxSupportedDims = 4;
 
-Tensor& pad_out_impl(
+// cppcheck-suppress unusedFunction
+Tensor& pad_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Int64ArrayRef pre_pad,
     const Int64ArrayRef post_pad,
     int64_t pad_value,
-    ActivationLayout layout,
-    const char* op_name,
     Tensor& out) {
   if (input.scalar_type() != ScalarType::Char ||
       out.scalar_type() != ScalarType::Char) {
     ET_LOG(
         Error,
-        "%s: only int8 tensors are supported (input=%d, out=%d)",
-        op_name,
+        "cortex_m::pad: only int8 tensors are supported (input=%d, out=%d)",
         static_cast<int>(input.scalar_type()),
         static_cast<int>(out.scalar_type()));
     context.fail(Error::InvalidArgument);
@@ -42,8 +38,7 @@ Tensor& pad_out_impl(
   if (rank == 0 || rank > kMaxSupportedDims) {
     ET_LOG(
         Error,
-        "%s: expected tensor rank in [1, %zu], got %zu",
-        op_name,
+        "cortex_m::pad: expected tensor rank in [1, %zu], got %zu",
         kMaxSupportedDims,
         rank);
     context.fail(Error::InvalidArgument);
@@ -51,37 +46,21 @@ Tensor& pad_out_impl(
   }
   if (pre_pad.size() != kMaxSupportedDims ||
       post_pad.size() != kMaxSupportedDims) {
-    ET_LOG(Error, "%s: pre_pad and post_pad must have length 4", op_name);
+    ET_LOG(Error, "cortex_m::pad: pre_pad and post_pad must have length 4");
     context.fail(Error::InvalidArgument);
     return out;
   }
 
-  if (layout == ActivationLayout::NHWCLogical) {
-    if (rank != kMaxSupportedDims ||
-        !executorch::runtime::is_contiguous_dim_order(
-            input.dim_order().data(), input.dim_order().size()) ||
-        !executorch::runtime::is_contiguous_dim_order(
-            out.dim_order().data(), out.dim_order().size())) {
-      ET_LOG(
-          Error,
-          "%s: input and output must be contiguous 4-D tensors",
-          op_name);
-      context.fail(Error::InvalidArgument);
-      return out;
-    }
-  }
-
-  // Permute logical sizes to physical memory order.
+  // Read the sizes in physical memory order. The dim order says which logical
+  // axis sits where, so this covers an NCHW-logical channels-last tensor and an
+  // NHWC-logical contiguous one without asking which contract is in force.
   // Padding is already in physical order from the AOT pass.
-  constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
-  const bool legacy_channels_last =
-      layout == ActivationLayout::NCHWLogical && is_channels_last_tensor(input);
+  const auto dim_order = input.dim_order();
 
   int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    const size_t src = legacy_channels_last ? kNhwcDimOrder[offset + i] : i;
-    dims[offset + i] = static_cast<int32_t>(input.size(src));
+    dims[offset + i] = static_cast<int32_t>(input.size(dim_order[i]));
   }
 
   cmsis_nn_dims input_dims = {dims[0], dims[1], dims[2], dims[3]};
@@ -110,54 +89,13 @@ Tensor& pad_out_impl(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "%s: arm_pad_s8 failed with status [%d]",
-        op_name,
+        "cortex_m::pad: arm_pad_s8 failed with status [%d]",
         static_cast<int>(status));
     context.fail(Error::Internal);
     return out;
   }
 
   return out;
-}
-
-} // namespace
-
-// cppcheck-suppress unusedFunction
-Tensor& pad_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Int64ArrayRef pre_pad,
-    const Int64ArrayRef post_pad,
-    int64_t pad_value,
-    Tensor& out) {
-  return pad_out_impl(
-      context,
-      input,
-      pre_pad,
-      post_pad,
-      pad_value,
-      ActivationLayout::NCHWLogical,
-      "pad_out",
-      out);
-}
-
-// cppcheck-suppress unusedFunction
-Tensor& pad_nhwc_out(
-    KernelRuntimeContext& context,
-    const Tensor& input,
-    const Int64ArrayRef pre_pad,
-    const Int64ArrayRef post_pad,
-    int64_t pad_value,
-    Tensor& out) {
-  return pad_out_impl(
-      context,
-      input,
-      pre_pad,
-      post_pad,
-      pad_value,
-      ActivationLayout::NHWCLogical,
-      "pad_nhwc_out",
-      out);
 }
 
 } // namespace native

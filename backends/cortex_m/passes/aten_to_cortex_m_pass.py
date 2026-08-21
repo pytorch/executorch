@@ -879,11 +879,7 @@ def _get_avg_pool2d_replacement(
         with node.graph.inserting_before(node):
             input_node = node.graph.create_node(
                 "call_function",
-                target=(
-                    exir_ops.edge.cortex_m.pad_nhwc.default
-                    if explicit_nhwc
-                    else exir_ops.edge.cortex_m.pad.default
-                ),
+                target=exir_ops.edge.cortex_m.pad.default,
                 args=(input_node, pre_pad, post_pad, int(input_zp)),
             )
         avg_padding = [0, 0]
@@ -1213,14 +1209,10 @@ def _get_permute_replacement(
 @AtenToCortexMPass.register_dialect_substitution(
     exir_ops.edge.aten.constant_pad_nd.default
 )
-@AtenToCortexMPass.register_dialect_substitution(
-    exir_ops.edge.channels_last.constant_pad_nd.default
-)
 def _get_pad_replacement(
     node: Node, dialect_pass: AtenToDialectPass
 ) -> DialectNodeSpec | None:
     del dialect_pass
-    explicit_nhwc = node.target == exir_ops.edge.channels_last.constant_pad_nd.default
     input_qparams = node.meta.get("input_qparams", {})
     if not input_qparams:
         return None
@@ -1237,8 +1229,6 @@ def _get_pad_replacement(
 
     input_tensor = _get_input_tensor_data(node)
     rank = len(input_tensor.shape)
-    if explicit_nhwc and rank != 4:
-        return None
     assert 1 <= rank <= 4, f"cortex_m pad: expected rank in [1, 4], got {rank}"
     n_pairs = len(padding) // 2
     assert (
@@ -1252,16 +1242,10 @@ def _get_pad_replacement(
         pre_pad[dim_4d] = int(padding[2 * i])
         post_pad[dim_4d] = int(padding[2 * i + 1])
 
-    if not explicit_nhwc:
-        pre_pad = to_physical_order(pre_pad, input_tensor)
-        post_pad = to_physical_order(post_pad, input_tensor)
+    # A layout region has already remapped the pad into NHWC-logical order, and
+    # such tensors are contiguous, so this is a no-op there.
+    pre_pad = to_physical_order(pre_pad, input_tensor)
+    post_pad = to_physical_order(post_pad, input_tensor)
 
     args = (node.args[0], pre_pad, post_pad, int(quantized_pad_value))
-    return DialectNodeSpec(
-        (
-            exir_ops.edge.cortex_m.pad_nhwc.default
-            if explicit_nhwc
-            else exir_ops.edge.cortex_m.pad.default
-        ),
-        args,
-    )
+    return DialectNodeSpec(exir_ops.edge.cortex_m.pad.default, args)

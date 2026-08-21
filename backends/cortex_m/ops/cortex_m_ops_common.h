@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <algorithm>
 #include <cinttypes>
 #include <limits>
 #include <optional>
@@ -149,32 +150,33 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
-inline bool is_channel_broadcast(
-    const Tensor& tensor1,
-    const Tensor& tensor2,
-    int64_t channel_dim) {
-  if (tensor1.dim() != tensor2.dim()) {
-    return false;
-  }
-
-  if (tensor1.dim() != 4) {
-    return false;
-  }
-
-  if (tensor1.size(channel_dim) != tensor2.size(channel_dim)) {
-    return false;
-  }
-
-  const bool tensor1_channels_only =
-      tensor1.numel() == tensor1.size(channel_dim);
-  const bool tensor2_channels_only =
-      tensor2.numel() == tensor2.size(channel_dim);
-
-  return tensor1_channels_only || tensor2_channels_only;
+// The axis whose elements are adjacent in memory, read from the dim order
+// rather than inferred from the shape. Channels are innermost under both
+// supported activation contracts: dim 1 for an NCHW-logical channels-last
+// tensor, dim 3 for an NHWC-logical contiguous one.
+inline int64_t innermost_axis(const Tensor& tensor) {
+  return static_cast<int64_t>(tensor.dim_order()[tensor.dim() - 1]);
 }
 
+// A channel broadcast the elementwise kernels can serve as a flat repeat: one
+// operand holds a single value per channel, and channels are contiguous, so
+// the larger operand is a whole number of copies of it. Both activation
+// contracts place channels innermost, so this needs no layout argument. Only
+// the larger operand's dim order is consulted: the broadcast operand is
+// all-ones apart from channels, which makes its strides degenerate and its
+// reported dim order arbitrary.
 inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
-  return is_channel_broadcast(tensor1, tensor2, 1);
+  if (tensor1.dim() != tensor2.dim() || tensor1.dim() != 4) {
+    return false;
+  }
+  if (tensor1.numel() == tensor2.numel()) {
+    return false;
+  }
+
+  const bool first_is_larger = tensor1.numel() > tensor2.numel();
+  const Tensor& larger = first_is_larger ? tensor1 : tensor2;
+  const Tensor& smaller = first_is_larger ? tensor2 : tensor1;
+  return smaller.numel() == larger.size(innermost_axis(larger));
 }
 
 inline bool check_int32_within_range(
