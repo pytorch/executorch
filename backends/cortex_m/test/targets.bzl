@@ -50,6 +50,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/backends/cortex_m/quantizer:quantizer",
                 "//executorch/backends/test/harness:tester",
+                "//executorch/backends/transforms:absorb_boundary_layout_copies",
                 "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
             ],
         )
@@ -95,6 +96,7 @@ def define_common_targets(is_fbcode = False):
                 "//caffe2:torch",
                 ":tester",
                 "//executorch/backends/cortex_m:target_config",
+                "//executorch/backends/cortex_m/passes:cortex_passes",
                 "//executorch/exir/dialects:lib",
                 "fbsource//third-party/pypi/pytest:pytest",
             ],
