@@ -291,6 +291,36 @@ TEST_F(OpMeanOutTest, BFloat16LargeDimAccumulatesInFloat) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
+TEST_F(OpMeanOutTest, HalfInnermostDimDoesNotSaturate) {
+  TensorFactory<ScalarType::Half> tf;
+  // Innermost-dim reduction, so the vectorized fast path is taken. The row
+  // sums to 4096 * 20 = 81920, which is past Half's 65504 max. Rounding the
+  // running sum to Half before the divide yields inf/4096 = inf; accumulating
+  // and dividing in fp32 yields 20.
+  constexpr int N = 4096;
+  Tensor x = tf.full({1, N}, 20.0f);
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 20.0f);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpMeanOutTest, DoubleInnermostDimAccumulatesInDouble) {
+  TensorFactory<ScalarType::Double> tf;
+  // Innermost-dim reduction on Double. Every element is representable in
+  // double but overflows float, so an fp32 accumulator returns inf.
+  constexpr int N = 8;
+  Tensor x = tf.full({1, N}, 1e300);
+  Tensor out = tf.zeros({1});
+  int64_t dim = 1;
+  op_mean_out(
+      x, ArrayRef<int64_t>{&dim, 1}, /*keepdim=*/false, /*dtype=*/{}, out);
+  Tensor expected = tf.full({1}, 1e300);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
   ET_SKIP_IF(
       torch::executor::testing::SupportedFeatures::get()->is_aten,
