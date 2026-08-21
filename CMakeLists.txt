@@ -1001,6 +1001,8 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/cache)
   list(APPEND _executorch_extensions extension_llm_cache)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/scheduler)
+  list(APPEND _executorch_extensions extension_llm_scheduler)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
