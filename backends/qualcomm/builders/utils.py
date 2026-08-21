@@ -91,19 +91,27 @@ def is_mutable_buffer_input(
         return fqn in edge_program.graph_signature.buffers_to_mutate.values()
 
 
-def is_graph_output(node: torch.fx.Node) -> bool:
+def is_graph_output(node: torch.fx.Node, output_index: Optional[int] = None) -> bool:
     """
     Check if the given tensor is used as a graph output
 
     Args:
-        tensor: EdgeIR Tensor that is being checked for graph input
+        node: EdgeIR Tensor that is being checked for graph output
+        output_index: for a multi-output node, restrict the check to this
+            output. Without it a single escaping output would mark every
+            output of the node as a graph output, publishing values that
+            nothing consumes.
     """
     for user in node.users.keys():
-        # getitem node is skipped, check the op_skip_ops.py
-        if user.op == "output" or (
-            user.target.__name__ == "getitem" and is_graph_output(user)
-        ):
+        if user.op == "output":
             return True
+        # getitem node is skipped, check the op_skip_ops.py
+        # call_module targets are plain strings and have no __name__
+        if getattr(user.target, "__name__", "") == "getitem":
+            if output_index is not None and user.args[1] != output_index:
+                continue
+            if is_graph_output(user):
+                return True
     return False
 
 
