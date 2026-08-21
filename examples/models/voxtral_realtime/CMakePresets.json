@@ -52,6 +52,25 @@
             }
         },
         {
+            "name": "voxtral-realtime-rocm",
+            "displayName": "Voxtral Realtime runner (ROCm)",
+            "inherits": [
+                "voxtral-realtime-base"
+            ],
+            "binaryDir": "${sourceDir}/../../../cmake-out-rocm-llm/examples/models/voxtral_realtime",
+            "cacheVariables": {
+                "CMAKE_FIND_ROOT_PATH": "${sourceDir}/../../../cmake-out-rocm-llm",
+                "CMAKE_PREFIX_PATH": "${sourceDir}/../../../cmake-out-rocm-llm;$penv{ROCM_PATH};/opt/rocm;$penv{CMAKE_PREFIX_PATH}",
+                "EXECUTORCH_BUILD_CUDA": "OFF",
+                "EXECUTORCH_BUILD_ROCM": "ON"
+            },
+            "condition": {
+                "lhs": "${hostSystemName}",
+                "type": "equals",
+                "rhs": "Linux"
+            }
+        },
+        {
             "name": "voxtral-realtime-mlx",
             "displayName": "Voxtral Realtime runner (MLX)",
             "inherits": ["voxtral-realtime-base"],
@@ -89,6 +108,15 @@
             "displayName": "Build Voxtral Realtime runner (CUDA)",
             "configuration": "Release",
             "configurePreset": "voxtral-realtime-cuda",
+            "targets": [
+                "voxtral_realtime_runner"
+            ]
+        },
+        {
+            "name": "voxtral-realtime-rocm",
+            "displayName": "Build Voxtral Realtime runner (ROCm)",
+            "configuration": "Release",
+            "configurePreset": "voxtral-realtime-rocm",
             "targets": [
                 "voxtral_realtime_runner"
             ]
@@ -143,6 +171,20 @@
                 {
                     "type": "build",
                     "name": "voxtral-realtime-cuda"
+                }
+            ]
+        },
+        {
+            "name": "voxtral-realtime-rocm",
+            "displayName": "Configure and build Voxtral Realtime runner (ROCm)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "voxtral-realtime-rocm"
+                },
+                {
+                    "type": "build",
+                    "name": "voxtral-realtime-rocm"
                 }
             ]
         },
