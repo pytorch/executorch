@@ -21,7 +21,9 @@ _PRESERVE_OPS = (
 )
 
 
-def cortex_m_edge_compile_config() -> EdgeCompileConfig:
+def cortex_m_edge_compile_config(
+    use_explicit_layout: bool = False,
+) -> EdgeCompileConfig:
     """The to_edge configuration the Cortex-M backend requires.
 
     Shared by the AOT compiler and the test harness so the two cannot drift: an
@@ -37,4 +39,5 @@ def cortex_m_edge_compile_config() -> EdgeCompileConfig:
     return EdgeCompileConfig(
         preserve_ops=list(_PRESERVE_OPS),
         _check_ir_validity=False,
+        _skip_dim_order=use_explicit_layout,
     )

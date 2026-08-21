@@ -101,15 +101,11 @@ class CortexMDivCheck(PatternCheck):
 class CortexMConv2DCheck(PatternCheck):
     @classmethod
     def check_pattern(cls, pattern):
-        """
-        Checks that all nodes of the pattern use channels_last memory format.
-        """
-        for node in pattern:
-            tensor = get_first_fake_tensor(node)
-            if not is_channels_last(tensor):
-                return False
-
-        return True
+        return all(
+            get_first_fake_tensor(node).dim() == 4
+            and is_channels_last(get_first_fake_tensor(node))
+            for node in pattern
+        )
 
     @classmethod
     def check_quantization_config(
@@ -125,6 +121,18 @@ class CortexMConv2DCheck(PatternCheck):
             return False
         is_ch_axis_0 = weight_qspec.ch_axis == 0 or weight_qspec.ch_axis is None
         return is_int8 and is_ch_axis_0
+
+
+class CortexMExplicitConv2DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 4 for node in pattern)
+
+
+class CortexMExplicitConv1DCheck(CortexMConv2DCheck):
+    @classmethod
+    def check_pattern(cls, pattern):
+        return all(get_first_fake_tensor(node).dim() == 3 for node in pattern)
 
 
 class CortexMLinearCheck(PatternCheck):
@@ -215,8 +223,10 @@ class CortexMSoftmaxCheck(PatternCheck):
 
 class CortexMConvTranspose2DCheck(PatternCheck):
 
+    require_channels_last = True
+
     @classmethod
-    def _check_node(cls, node: Node) -> bool:
+    def _check_node(cls, node: Node) -> bool:  # noqa: C901
         if node is None:
             return False  # Reject if node is None
 
@@ -224,9 +234,10 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         if tensor is None:
             return False  # Reject if no tensor found
 
-        # REJECT if using NCHW format (we need channels_last/NHWC)
-        if not is_channels_last(tensor):
-            return False  # Reject NCHW
+        if tensor.dim() != 4:
+            return False
+        if cls.require_channels_last and not is_channels_last(tensor):
+            return False
 
         # For aten.conv_transpose2d.input:
         #   (input, weight, bias, stride, padding, output_padding, groups, dilation)
@@ -253,10 +264,9 @@ class CortexMConvTranspose2DCheck(PatternCheck):
     def check_pattern(cls, pattern):
         """
         Positive filter function for transpose conv to REJECT:
-        1. NCHW memory format (we only support channels_last/NHWC)
-        2. Grouped convolutions (groups > 1) - not supported by CMSIS-NN
-        3. Non-zero output_padding - not supported by CMSIS-NN
-        4. Dilation != 1 - produces incorrect results with CMSIS-NN
+        1. Grouped convolutions (groups > 1) - not supported by CMSIS-NN
+        2. Non-zero output_padding - not supported by CMSIS-NN
+        3. Dilation != 1 - produces incorrect results with CMSIS-NN
 
         Returns True to ACCEPT the node, False to REJECT.
         """
@@ -264,7 +274,7 @@ class CortexMConvTranspose2DCheck(PatternCheck):
             if not cls._check_node(node):
                 return False  # REJECT invalid transpose conv
 
-        return True  # ACCEPT channels_last transpose conv
+        return True
 
     @classmethod
     def check_quantization_config(
@@ -282,6 +292,10 @@ class CortexMConvTranspose2DCheck(PatternCheck):
         is_ch_axis_1 = weight_qspec.ch_axis == 1 or weight_qspec.ch_axis is None
 
         return is_int8 and is_ch_axis_1
+
+
+class CortexMExplicitConvTranspose2DCheck(CortexMConvTranspose2DCheck):
+    require_channels_last = False
 
 
 class CortexMAvgPool2DCheck(PatternCheck):
