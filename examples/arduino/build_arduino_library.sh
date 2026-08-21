@@ -67,7 +67,7 @@ mkdir -p "$OUT_DIR/src" "$OUT_DIR/examples"
 # 1. Copy library metadata, wrapper header, and stubs
 # ─────────────────────────────────────────────────────────
 cp "$SCRIPT_DIR/library.properties" "$OUT_DIR/"
-cp "$SCRIPT_DIR/ExecuTorch.h" "$OUT_DIR/src/"
+cp "$SCRIPT_DIR/ExecuTorch.h" "$SCRIPT_DIR/ETModel.h" "$OUT_DIR/src/"
 cp "$SCRIPT_DIR/platform_stubs.c" "$OUT_DIR/src/"
 cp -r "$SCRIPT_DIR/examples/"* "$OUT_DIR/examples/"
 # Training checkpoints are how a model is regenerated, not something the
