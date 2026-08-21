@@ -448,4 +448,10 @@ if(BUILD_TESTING)
     EXTRA_LIBS aoti_cuda_backend
   )
   target_compile_definitions(test_cuda_mutable_state PRIVATE CUDA_AVAILABLE=1)
+
+  et_cxx_test(
+    test_cuda_weight_manifest SOURCES
+    runtime/test/test_cuda_weight_manifest.cpp EXTRA_LIBS aoti_cuda_backend
+  )
+  target_compile_definitions(test_cuda_weight_manifest PRIVATE CUDA_AVAILABLE=1)
 endif()

@@ -128,6 +128,7 @@ def define_common_targets(is_fbcode = False):
         headers = [
             "cuda_delegate_handle.h",
             "cuda_mutable_state.h",
+            "cuda_weight_manifest.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
@@ -169,6 +170,25 @@ def define_common_targets(is_fbcode = False):
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/platform:platform",
+        ],
+        external_deps = [
+            ("cuda", None, "cuda-lazy"),
+        ],
+        preprocessor_flags = ["-DCUDA_AVAILABLE=1"],
+        keep_gpu_sections = True,
+        remote_execution = re_test_utils.remote_execution(
+            platform = "gpu-remote-execution",
+        ),
+    )
+
+    cpp_unittest(
+        name = "test_cuda_weight_manifest",
+        srcs = [
+            "test/test_cuda_weight_manifest.cpp",
+        ],
+        deps = [
+            ":cuda_backend",
+            "//executorch/runtime/core:core",
         ],
         external_deps = [
             ("cuda", None, "cuda-lazy"),
