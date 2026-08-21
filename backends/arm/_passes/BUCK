@@ -59,6 +59,7 @@ fbcode_target(
         "//executorch/backends/transforms:aten_to_dialect_pass",
         "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
+        "//executorch/backends/transforms:convert_conv1d_to_conv2d_pass",
         "//executorch/backends/transforms:fuse_view_copy",
         "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/transforms:replace_scalar_with_tensor",
