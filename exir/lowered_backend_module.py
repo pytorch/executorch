@@ -15,6 +15,7 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir._serialize import _PTEFile, _serialize_pte_binary
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+from executorch.exir.backend.backend_details import DelegateScratchSpec
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -66,6 +67,9 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    _scratch_specs: List[
+        DelegateScratchSpec
+    ]  # Scratch buffers the backend needs at execute() time
     meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
@@ -75,6 +79,7 @@ class LoweredBackendModule(torch.nn.Module):
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
         named_data_store_output: Optional[NamedDataStoreOutput] = None,
+        scratch_specs: Optional[List[DelegateScratchSpec]] = None,
     ) -> None:
         super().__init__()
         self._original_exported_program = edge_program
@@ -82,6 +87,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self._scratch_specs = scratch_specs or []
         self.meta = None
 
     # pyre-ignore
@@ -110,6 +116,7 @@ class LoweredBackendModule(torch.nn.Module):
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
+            scratch_specs=copy.deepcopy(self._scratch_specs, memo),
         )
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
@@ -148,6 +155,13 @@ class LoweredBackendModule(torch.nn.Module):
         Returns the Named Data Store Output
         """
         return self._named_data_store_output
+
+    @property
+    def scratch_specs(self) -> List[DelegateScratchSpec]:
+        """
+        Returns the scratch buffers the backend asked for in preprocess
+        """
+        return self._scratch_specs
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(

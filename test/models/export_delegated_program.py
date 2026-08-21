@@ -18,7 +18,11 @@ import executorch.exir as exir
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    DelegateScratchSpec,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
@@ -115,13 +119,24 @@ class ModuleLinear(torch.nn.Module):
 #
 
 
+# Bytes of memory-planned scratch StubBackend declares, set by main().
+_stub_scratch_bytes: int = 0
+
+
 @final
 class StubBackend(BackendDetails):
     """No-op backend to test serialization/init."""
 
     @staticmethod
     def preprocess(*args, **kwargs) -> PreprocessResult:
-        return PreprocessResult(processed_bytes=b"StubBackend:data")
+        return PreprocessResult(
+            processed_bytes=b"StubBackend:data",
+            scratch_specs=(
+                [DelegateScratchSpec(nbytes=_stub_scratch_bytes)]
+                if _stub_scratch_bytes > 0
+                else []
+            ),
+        )
 
 
 #
@@ -251,6 +266,12 @@ def main() -> None:
         help="Export the model with all constants saved to an external file.",
     )
     parser.add_argument(
+        "--scratch_bytes",
+        type=int,
+        default=0,
+        help="Bytes of memory-planned scratch for StubBackend to declare.",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         required=True,
@@ -268,6 +289,9 @@ def main() -> None:
             raise NameError(f"Could not find nn.Module class named '{module}'")
         module_names_to_classes[module] = module_class
 
+    global _stub_scratch_bytes
+    _stub_scratch_bytes = args.scratch_bytes
+
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     suffix = ""
@@ -278,6 +302,8 @@ def main() -> None:
             suffix += f"-da{args.delegate_alignment}"
         if args.external_constants:
             suffix += "-e"
+        if args.scratch_bytes:
+            suffix += "-scratch"
         outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
         executorch_program = export_module_to_program(
             module_class,

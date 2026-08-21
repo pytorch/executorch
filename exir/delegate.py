@@ -8,6 +8,11 @@
 
 from __future__ import annotations
 
+# Set by InsertDelegateScratchPass on an executorch_call_delegate node to record
+# how many of its trailing arguments are memory-planned scratch buffers. The
+# emitter reads it to place them after the delegate's outputs.
+NUM_DELEGATE_SCRATCH_ARGS_KEY = "num_delegate_scratch_args"
+
 try:  # noqa: C901
     from torch._higher_order_ops.executorch_call_delegate import (
         executorch_call_delegate as executorch_call_delegate,

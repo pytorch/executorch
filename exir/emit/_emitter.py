@@ -40,7 +40,11 @@ import executorch.exir.memory as memory
 import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
+from executorch.exir.delegate import (
+    executorch_call_delegate,
+    is_lowered_module,
+    NUM_DELEGATE_SCRATCH_ARGS_KEY,
+)
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
@@ -1444,6 +1448,24 @@ class _Emitter(torch.fx.Interpreter):
                 BackendDelegateInlineData(data=processed_bytes)
             )
 
+        # InsertDelegateScratchPass appends the scratch allocations to the end of
+        # the node's arguments; they are emitted after the outputs so that a
+        # runtime unaware of them still reads the inputs and outputs correctly.
+        # The count comes from the graph, not from the lowered module, so that
+        # an emit path the pass never ran on cannot mistake a real input for
+        # scratch.
+        num_scratch_args = self.node.meta.get(NUM_DELEGATE_SCRATCH_ARGS_KEY, 0)
+        if num_scratch_args != len(lowered_module.scratch_specs):
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Backend {lowered_module.backend_id} declared "
+                    f"{len(lowered_module.scratch_specs)} scratch buffer(s) but the graph "
+                    f"carries {num_scratch_args}. InsertDelegateScratchPass must run "
+                    "before emission for a backend that declares scratch.",
+                )
+            )
+
         backend_delegate = BackendDelegate(
             id=lowered_module.backend_id,
             processed=BackendDelegateDataReference(
@@ -1455,13 +1477,17 @@ class _Emitter(torch.fx.Interpreter):
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
-        delegate_args = [
-            self._emit_argument(arg, None).id
-            for arg in typing.cast(List[_Argument], args)
-        ]
+        all_args = typing.cast(List[_Argument], list(args))
+        input_args = all_args[: len(all_args) - num_scratch_args]
+        scratch_args = all_args[len(all_args) - num_scratch_args :]
+
+        delegate_args = [self._emit_argument(arg, None).id for arg in input_args]
 
         for elem in pytree.tree_flatten(delegate_ret)[0]:
             delegate_args.append(elem.id)
+
+        for arg in scratch_args:
+            delegate_args.append(self._emit_argument(arg, None).id)
 
         self.chain.instructions.append(
             Instruction(
