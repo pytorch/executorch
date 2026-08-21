@@ -21,13 +21,6 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.mean_op
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import (
     Transpose,
 )
-from executorch.backends.nxp.ops_aliases import (
-    AddTensor,
-    ExecutorchDelegateCall,
-    GetItem,
-    MaxPool2DWithIndices,
-    MeanDim,
-)
 from executorch.backends.nxp.tests.dataset_creator import RandomDatasetCreator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -36,6 +29,13 @@ from executorch.backends.nxp.tests.model_output_comparator import (
     AllCloseOutputComparator,
 )
 from executorch.backends.nxp.tests.nsys_testing import lower_run_compare
+from executorch.backends.nxp.tests.ops_aliases import (
+    AddTensor,
+    ExecutorchDelegateCall,
+    GetItem,
+    MaxPool2DWithIndices,
+    MeanDim,
+)
 from executorch.backends.nxp.tests.use_qat import *  # noqa F403
 
 
@@ -167,6 +167,10 @@ class TestMeanDim:
     def test__tuple_dims(self, mocker, request, input_shape, dim, keep_dim):
         model = MeanDimModule(dim, keep_dim)
         assert_delegated(model, input_shape, mocker, request)
+
+    def test__default_dims(self, mocker, request, keep_dim):
+        model = MeanDimModule(dim=None, keepdim=keep_dim)
+        assert_delegated(model, (2, 4, 6, 8), mocker, request)
 
     @pytest.mark.parametrize(
         "input_shape, dim",

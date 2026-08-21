@@ -851,7 +851,8 @@ vTensor::vTensor(
     const utils::StorageType storage_type,
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
-    const utils::AxisMapLayout axis_map_layout)
+    const utils::AxisMapLayout axis_map_layout,
+    const vkapi::VulkanImage* external_image)
     : dtype_(get_effective_scalar_type(context, dtype, memory_layout)),
       packed_dim_info_(calculate_packed_dim_info(memory_layout, storage_type)),
       // Calculate tensor metadata
@@ -879,15 +880,28 @@ vTensor::vTensor(
       uniforms_(),
       buffer_meta_(),
       // Construct Tensor storage
-      storage_(std::make_shared<vTensorStorage>(
-          context,
-          storage_type,
-          axis_map_,
-          packed_dim_info_,
-          padded_sizes_,
-          dtype_,
-          physical_numel_,
-          allocate_memory)) {
+      storage_(
+          external_image != nullptr
+              ? std::make_shared<vTensorStorage>(context, *external_image)
+              : std::make_shared<vTensorStorage>(
+                    context,
+                    storage_type,
+                    axis_map_,
+                    packed_dim_info_,
+                    padded_sizes_,
+                    dtype_,
+                    physical_numel_,
+                    allocate_memory)) {
+  // An external image was sized by its creator, so nothing guarantees it
+  // matches the metadata derived from `sizes`. The extents feed the
+  // shader-visible logical limits below, so they have to agree.
+  if (external_image != nullptr) {
+    VK_CHECK_COND(
+        storage_->image_extents_ ==
+            calculate_image_extents(
+                dtype_, packed_dim_info_, padded_sizes_, axis_map_),
+        "external image extents do not match the requested tensor sizes");
+  }
   // uniform_data_ only valid for low dim tensors
   if (sizes.size() <= 4) {
     uniform_data_ = std::make_shared<UniformData>(UniformData{

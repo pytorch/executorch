@@ -7,7 +7,7 @@ GPUs as device type `cuda`, so names such as `CudaBackend` and
 `EXECUTORCH_BUILD_ROCM` is off by default, is never auto-enabled, and is
 mutually exclusive with `EXECUTORCH_BUILD_CUDA`. It requires
 `EXECUTORCH_BUILD_EXTENSION_TENSOR`. Execution has been validated only on
-MI300X (`gfx942`).
+MI300X (`gfx942`); CI is configured to exercise `gfx950`.
 
 ## Requirements and limitations
 
@@ -18,26 +18,29 @@ MI300X (`gfx942`).
 - Python pybindings cannot allocate ROCm device memory; use a native runner such
   as `executor_runner`.
 - Installed CMake consumers must be able to find the HIP package.
-- Model runners do not yet link the ROCm backend, and there is no ROCm CI.
+- Voxtral Realtime has an explicit ROCm workflow. Other model runners do not
+  claim ROCm support. The gfx950 CI job covers the backend build, native
+  runtime, AOTI export and execution, and Triton W4 tests. Sampled CI is
+  configured to run the streaming packed-W4/BF16 Voxtral path; offline and
+  performance validation remain manual.
 
 ## Build
 
 ```bash
-cmake -S . -B cmake-out-rocm \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)');/opt/rocm" \
-  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-  -DEXECUTORCH_BUILD_ROCM=ON
-cmake --build cmake-out-rocm --target aoti_cuda_backend aoti_cuda_shims -j
+cmake --workflow --preset llm-release-rocm
 ```
 
 Verify that the build uses HIP and not the NVIDIA runtime:
 
 ```bash
-ldd cmake-out-rocm/backends/cuda/libaoti_cuda_shims.so | grep -E 'amdhip64|cudart'
+ldd cmake-out-rocm-llm/lib/libaoti_cuda_shims.so | grep -E 'amdhip64|cudart'
 ```
 
 A `libcudart` dependency is a configuration error.
 
 For an end-to-end export that proves Inductor emitted a Triton kernel, see
 [../../examples/cuda/README.md](../../examples/cuda/README.md).
+
+Voxtral Realtime additionally covers BF16 and packed W4/BF16 execution. See
+[../../examples/models/voxtral_realtime/README.md](../../examples/models/voxtral_realtime/README.md)
+and its `run_rocm_e2e.sh` example.
