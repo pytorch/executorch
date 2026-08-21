@@ -331,5 +331,43 @@ Tensor& quantized_depthwise_conv2d_out(
       out);
 }
 
+// cppcheck-suppress unusedFunction
+Tensor& quantized_depthwise_conv2d_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& bias,
+    const Int64ArrayRef stride,
+    const Int64ArrayRef padding,
+    const Int64ArrayRef dilation,
+    const int64_t depth_multiplier,
+    const int64_t input_offset,
+    const int64_t output_offset,
+    const Tensor& requantize_multipliers,
+    const Tensor& requantize_shifts,
+    const int64_t activation_min,
+    const int64_t activation_max,
+    const Tensor& scratch,
+    Tensor& out) {
+  return quantized_depthwise_conv2d_out_impl(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      depth_multiplier,
+      input_offset,
+      output_offset,
+      requantize_multipliers,
+      requantize_shifts,
+      activation_min,
+      activation_max,
+      scratch,
+      ActivationLayout::NHWCLogical,
+      out);
+}
+
 } // namespace native
 } // namespace cortex_m
