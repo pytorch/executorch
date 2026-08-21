@@ -175,6 +175,31 @@ class TestTargetMemoryMap(unittest.TestCase):
                 ]
             )
 
+    def test_duplicate_mem_ids_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            TargetMemoryMap(
+                [
+                    Bank(name="tcm", size=16, mem_id=1),
+                    Bank(name="sram", size=16, mem_id=1),
+                ]
+            )
+
+    def test_declaration_order_beats_mem_id_order(self) -> None:
+        """List order is preference, Bank.mem_id is identity; sorting would fuse them."""
+        target = TargetMemoryMap(
+            [
+                Bank(name="slow", size=4 * KiB, mem_id=2),
+                Bank(name="fast", size=4 * KiB, mem_id=1),
+            ]
+        )
+        self.assertEqual(target.mem_ids(), [2, 1])
+
+        spec = make_spec(256, (0, 4))
+        bufsizes, alloc = plan(BankedGreedy(target), [spec])
+        self.assertEqual(alloc[id(spec)][0], 2)  # first declared, not lowest id
+        self.assertEqual(bufsizes[1], 0)
+        self.assertEqual(bufsizes[2], 256)
+
     def test_empty_map_rejected(self) -> None:
         with self.assertRaises(ValueError):
             TargetMemoryMap([])
@@ -825,6 +850,15 @@ class TestUnsupportedConfigurations(unittest.TestCase):
         with self.assertRaises(BankPlacementError) as caught:
             plan(BankedGreedy(two_banks(4 * KiB, 64 * KiB)), [spec])
         self.assertIn("CUDA", str(caught.exception))
+
+    def test_non_cpu_in_place_specs_are_rejected(self) -> None:
+        """In-place specs are excluded from placement but still carry a device."""
+        base = make_spec(256, (0, 4))
+        aliased = make_spec(256, (0, 4))
+        aliased.inplace_base = base
+        aliased.device = DeviceType.CUDA
+        with self.assertRaises(BankPlacementError):
+            plan(BankedGreedy(two_banks(4 * KiB, 64 * KiB)), [base, aliased])
 
     def test_allow_overlapping_allocations_reaches_the_planner(self) -> None:
         """Vulkan-style configs disable overlapping; the factory must forward it."""

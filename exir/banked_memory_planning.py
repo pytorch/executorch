@@ -188,7 +188,7 @@ class BankedGreedy:
         for spec in deferred_inplace:
             spec.realign(alignment)
 
-        self._reject_non_cpu(planned)
+        self._reject_non_cpu(all_specs)
 
         objects: Dict[int, List[SharedObject]] = {}
         used: Dict[int, int] = {}
@@ -267,15 +267,26 @@ class BankedGreedy:
         return self.target.bank(mem_id).alignment or default
 
     def _reject_non_cpu(self, specs: Sequence[TensorSpec]) -> None:
-        """``apply_algo`` plans per device, which would apply one map to each."""
+        """One map describes one address space, so plan only the CPU's.
+
+        Two ways a graph can violate that. With ``enable_non_cpu_memory_planning``
+        on, ``apply_algo`` calls the algorithm once per device partition, and the
+        same bank sizes would then be granted to each -- a 1 MiB bank handed out
+        twice for one physical region. With it off, ``_partition_specs_by_device``
+        puts every spec in a single bucket regardless of device, so a mixed batch
+        arrives here and non-CPU tensors would be planned into CPU budgets.
+
+        Checking that the batch is *homogeneous* would catch neither: per-device
+        partitioning already makes every batch homogeneous.
+        """
         offenders = {spec.device for spec in specs if spec.device != DeviceType.CPU}
         if offenders:
             names = ", ".join(sorted(d.name for d in offenders))
             raise BankPlacementError(
-                f"Banked memory planning supports CPU specs only, but this graph has "
-                f"specs on {names}. A target memory map describes one address space, "
-                f"and apply_algo plans each device separately, so one map cannot "
-                f"describe them all."
+                f"Banked memory planning supports CPU specs only, but this graph "
+                f"has specs on {names}. A target memory map describes one address "
+                f"space and its bank sizes are host memory budgets, so it cannot "
+                f"stand in for another device's arenas."
             )
 
     def _place_free(
