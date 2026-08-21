@@ -30,6 +30,10 @@ class NativeProgramManager:
     deliberately, so the two pipelines read alike. The surface is intentionally
     small, we will expand this later.
 
+    The graph blob is the only source of truth: method names and package-wide
+    mutability are read back out of it on demand rather than carried alongside,
+    so a manager cannot describe a package it does not hold.
+
     Constants are held as tensor references returned by lowering. ``save`` may
     normalize device or layout before writing them.
     """
@@ -38,7 +42,6 @@ class NativeProgramManager:
         self,
         ptg: bytes,
         constants: dict[str, torch.Tensor],
-        methods: set[str],
     ) -> None:
         # TODO add args help
         raise NotImplementedError
