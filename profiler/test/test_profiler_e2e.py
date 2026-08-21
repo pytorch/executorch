@@ -15,7 +15,7 @@ import torch
 
 from executorch.exir import to_edge
 
-from executorch.extension.pybindings.portable_lib import (
+from executorch.extension.pybindings._C import (
     _create_profile_block,
     _dump_profile_results,
     _load_for_executorch_from_buffer,

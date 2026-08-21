@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.extension.llm.custom_ops import custom_ops  # noqa
-from executorch.extension.pybindings.portable_lib import _unsafe_reset_threadpool
+from executorch.extension.pybindings._C import _unsafe_reset_threadpool
 
 
 def is_fbcode():

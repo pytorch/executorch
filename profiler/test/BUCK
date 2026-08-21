@@ -18,7 +18,7 @@ fbcode_target(_kind = python_binary,
     deps = [
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",
-        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/extension/pybindings:_C",
         "//executorch/profiler/fb:parse_profiler_library",
     ],
 )
