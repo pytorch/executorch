@@ -63,10 +63,22 @@ fbcode_target(_kind = executorch_pybindings,
 )
 
 fbcode_target(_kind = runtime.python_library,
-    name = "portable_lib",
-    srcs = ["portable_lib.py"],
+    name = "_bootstrap",
+    srcs = ["_bootstrap.py"],
     visibility = ["PUBLIC"],
     deps = [
+        ":_C",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "portable_lib",
+    srcs = [
+        "portable_lib.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        ":_bootstrap",
         ":_C",
         "//executorch/exir:_warnings",
     ],

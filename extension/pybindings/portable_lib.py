@@ -13,9 +13,6 @@
     This API is experimental and subject to change without notice.
 """
 
-import logging
-import os
-import sys
 import warnings as _warnings
 
 import executorch.exir._warnings as _exir_warnings
@@ -25,52 +22,10 @@ _warnings.warn(
     _exir_warnings.ExperimentalWarning,
 )
 
-# When installed as a pip wheel, we must import `torch` before trying to import
-# the pybindings shared library extension. This will load libtorch.so and
-# related libs, ensuring that the pybindings lib can resolve those runtime
-# dependencies.
-import torch as _torch
-
-logger = logging.getLogger(__name__)
-
-# Auto-discover the OpenVINO C library path from the pip-installed openvino
-# package so the C++ backend's dlopen("libopenvino_c.so") works without the
-# user having to set LD_LIBRARY_PATH or OPENVINO_LIB_PATH manually.
-if not os.environ.get("OPENVINO_LIB_PATH"):
-    try:
-        import glob
-        import importlib.util
-
-        spec = importlib.util.find_spec("openvino")
-        if spec is not None and spec.submodule_search_locations:
-            _ov_dir = spec.submodule_search_locations[0]
-            _ov_libs = sorted(
-                glob.glob(os.path.join(_ov_dir, "libs", "libopenvino_c.so*"))
-            )
-            if _ov_libs:
-                os.environ["OPENVINO_LIB_PATH"] = _ov_libs[0]
-            else:
-                logger.warning(
-                    "OpenVINO package found but libopenvino_c.so not in %s; "
-                    "set OPENVINO_LIB_PATH manually if needed",
-                    os.path.join(_ov_dir, "libs"),
-                )
-            del _ov_libs, _ov_dir, spec
-    except Exception as e:
-        logger.debug("OpenVINO auto-discovery failed: %s", e)
-
-# Update the DLL search path on Windows. This is the recommended way to handle native
-# extensions.
-if sys.platform == "win32":
-    try:
-        # The extension DLL should be in the same directory as this file.
-        pybindings_dir = os.path.dirname(os.path.abspath(__file__))
-        os.add_dll_directory(pybindings_dir)
-    except Exception as e:
-        logger.error(
-            "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
-            e,
-        )
+# Prepares the process for the extension import below: torch resident, OpenVINO library
+# located, Windows DLL path set. Must precede the _C import, so it is kept out of the sorted
+# block.
+import executorch.extension.pybindings._bootstrap  # noqa: F401  # usort: skip
 
 # Let users import everything from the C++ _C extension as if this
 # python file defined them. Although we could import these dynamically, it
@@ -103,6 +58,5 @@ from executorch.extension.pybindings._C import (  # noqa: F401
 
 # Clean up so that `dir(portable_lib)` is the same as `dir(_C)`
 # (apart from some __dunder__ names).
-del _torch
 del _exir_warnings
 del _warnings

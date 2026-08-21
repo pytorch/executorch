@@ -114,7 +114,9 @@ from types import ModuleType
 from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union
 
 try:
-    from executorch.extension.pybindings.portable_lib import (  # type: ignore[import-not-found]
+    import executorch.extension.pybindings._bootstrap  # noqa: F401  # usort: skip
+
+    from executorch.extension.pybindings._C import (  # type: ignore[import-not-found]
         ExecuTorchMethod,
         ExecuTorchProgram,
         MethodMeta,
@@ -271,7 +273,7 @@ class Runtime:
     @functools.lru_cache(maxsize=1)
     def get() -> "Runtime":
         """Gets the Runtime singleton."""
-        import executorch.extension.pybindings.portable_lib as legacy_module  # type: ignore[import-not-found]
+        import executorch.extension.pybindings._C as legacy_module  # type: ignore[import-not-found]
 
         return Runtime(legacy_module=legacy_module)
 
