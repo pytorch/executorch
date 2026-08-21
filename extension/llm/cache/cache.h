@@ -106,32 +106,34 @@ class LayoutPolicy {
   virtual int retained_from(int length) const = 0;
 };
 
-// How a step's queries may attend the window the cache hands back.
-enum class MaskKind : int {
-  None = 0, // one query over a window it may attend entirely
-  Causal = 1, // queries at the tail of the window, each seeing up to itself
-  Explicit = 2 // anything else: mask_bits says which cells are visible
-};
-
 // Application face of any multi-sequence cache: the sequence verbs. They run
 // between forwards, never during one.
 class BatchControl : public CacheControl {
  public:
   // Which sequence each of the next forward's tokens belongs to, one entry per
-  // token. Also the admission gate: false = rejected and nothing changed, and a
-  // step that passes has room for its tokens. Whether its positions are
-  // well-formed is checked when the step is placed.
-  virtual bool begin_step(const std::vector<int32_t>& seq_ids) = 0;
-  // Give dst a claim on src's slots below `upto`, all of them when unset. A
-  // shared slot keeps one position, so only a prefix can be shared. False =
-  // an unknown sequence, or a dst that already holds slots: a sequence owns at
-  // most one slot per position.
-  virtual bool seq_cp(int32_t src, int32_t dst, std::optional<int> upto) = 0;
-  // Drop seq's claim on positions [p0, p1). A slot frees only once no sequence
-  // owns it. False = an unknown sequence; a range owning nothing is a no-op.
-  virtual bool seq_rm(int32_t seq, int p0, std::optional<int> p1) = 0;
-  virtual int seq_len(int32_t seq) const = 0; // slots the sequence owns
-  virtual int next_pos(int32_t seq) const = 0; // one past its newest position
+  // token; every id must be one seq_new handed out. Also the admission gate:
+  // false = rejected and nothing changed, and a step that passes has room for
+  // its tokens. Whether its positions are well-formed is checked when the step
+  // is placed.
+  virtual bool declare_step(const std::vector<int32_t>& seq_ids) = 0;
+  // An id no live sequence is using, held until that sequence's last slot is
+  // freed. nullopt = every id is in use. Ids may also be chosen by the caller;
+  // this only guarantees the one it returns is not already taken.
+  virtual std::optional<int32_t> seq_new() = 0;
+  // A new sequence claiming src's slots below `upto`, all of them when unset.
+  // A shared slot keeps one position, so only a prefix can be shared, and the
+  // fork is a snapshot: slots src gains afterwards are its own. Nothing is
+  // copied. nullopt = an unknown or empty src, or no free sequence id.
+  virtual std::optional<int32_t> seq_clone(
+      int32_t src,
+      std::optional<int> upto) = 0;
+  // Drop the sequence's claim on positions [p0, p1). A slot frees only once
+  // no sequence owns it. False = an unknown sequence; a range owning nothing
+  // is a no-op.
+  virtual bool seq_rm(int32_t seq_id, int p0, std::optional<int> p1) = 0;
+  virtual int seq_len(int32_t seq_id) const = 0; // slots the sequence owns
+  // one past its newest position
+  virtual int next_pos(int32_t seq_id) const = 0;
 };
 
 // Per-layer cache kind and its parameters.

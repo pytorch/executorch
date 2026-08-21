@@ -11,7 +11,7 @@
 // The cell layout: many sequences over one pool of per-token cells. A cell
 // holds one token's position and the sequences owning it, so a sequence needs
 // no contiguous range and a fork sets a second owner bit. The step's tokens sit
-// on one flat axis, sequence identity supplied out-of-band by begin_step.
+// on one flat axis, sequence identity supplied out-of-band by declare_step.
 // Tensor-free; the byte layer holds the pools and applies what it is given.
 
 #include <array>
@@ -28,18 +28,12 @@ namespace llm {
 namespace cache {
 
 // Integer-only handoff to the byte layer, covering the whole forward: a cell
-// means the same token in every layer's pool. A fused kind means the step's
-// cells are a contiguous run at the tail of a window its sequence owns
-// outright, so the write is one run and no mask is needed. Explicit gives each
-// token's cell and the bits it may attend.
+// means the same token in every layer's pool.
 struct CellStep {
-  MaskKind kind;
-  int n_tok;
+  int length;
   int read_len; // the window is cells [0, read_len)
-  int write_start; // fused only: first cell of the run
-  std::vector<int32_t> cells; // Explicit only: cell per query token
-  std::vector<uint8_t>
-      mask_bits; // Explicit only: [n_tok, read_len], 1 = attend
+  std::vector<int32_t> cells; // cell per query token
+  std::vector<uint8_t> mask_bits; // [length, read_len], 1 = attend
 };
 
 // Backend face of the cell layout. The step's first layer places its tokens and
@@ -52,7 +46,7 @@ class CellStepper {
  public:
   virtual ~CellStepper() = default;
   virtual const CellStep*
-  place_step(int layer, const int32_t* positions, int n_tok) = 0;
+  place_step(int layer, const int32_t* positions, int length) = 0;
 };
 
 class CellCache : public CacheBase, public BatchControl, public CellStepper {
@@ -82,18 +76,20 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
 
   // -- BatchControl ------------------------------------------------------
 
-  bool begin_step(const std::vector<int32_t>& seq_ids) override;
-  bool seq_cp(int32_t src, int32_t dst, std::optional<int> upto) override;
-  bool seq_rm(int32_t seq, int p0, std::optional<int> p1) override;
-  int seq_len(int32_t seq) const override;
-  int next_pos(int32_t seq) const override;
+  bool declare_step(const std::vector<int32_t>& seq_ids) override;
+  std::optional<int32_t> seq_new() override;
+  std::optional<int32_t> seq_clone(int32_t src, std::optional<int> upto)
+      override;
+  bool seq_rm(int32_t seq_id, int p0, std::optional<int> p1) override;
+  int seq_len(int32_t seq_id) const override;
+  int next_pos(int32_t seq_id) const override;
 
   int free_cells() const;
   int used_end() const;
 
   // -- CellStepper -------------------------------------------------------
 
-  const CellStep* place_step(int layer, const int32_t* positions, int n_tok)
+  const CellStep* place_step(int layer, const int32_t* positions, int length)
       override;
 
  private:
@@ -104,13 +100,17 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
     int max_pos = -1;
   };
 
-  static uint64_t bit(int32_t seq);
-  static bool valid_seq(int32_t seq);
+  static uint64_t bit(int32_t seq_id);
+  // Live from the moment seq_new hands the id out until its last slot goes.
+  // The bit alone answers this because a sequence can only take slots under an
+  // id declare_step accepted, and only a live id is accepted.
+  bool live(int32_t seq_id) const;
+  static bool valid_seq(int32_t seq_id);
 
   // Every position must be newer than what that sequence already holds, or it
   // would own two cells for one token. Two cells with the same pos and owner
   // are indistinguishable, so a branch is its own sequence.
-  bool extends(const int32_t* positions, int n_tok) const;
+  bool extends(const int32_t* positions, int length) const;
 
   // Placement policy: the lowest free cell, so freed cells refill before the
   // extent grows. The choice moves only the read window's width and how often a
@@ -121,9 +121,9 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
   void invalidate_step();
 
   // Recompute a sequence's summary after the verbs move cells under it.
-  void rescan(int32_t seq);
+  void rescan(int32_t seq_id);
 
-  void claim(int cell, int32_t pos, int32_t seq);
+  void claim(int cell, int32_t pos, int32_t seq_id);
 
   // Claim a cell per token, shared by every layer of the forward. False = the
   // pool cannot supply them; no cell is claimed until every one is found, so a
@@ -133,11 +133,6 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
   // One window's step, built the first time a layer with this window asks and
   // kept for the rest of the step.
   const CellStep& step_for(int window);
-
-  // Fused needs one sequence owning the whole read window, with this step's
-  // cells the run at its tail. A sliding window bounds queries from below,
-  // which no fused kind expresses.
-  bool fused(int window) const;
 
   // Query i attends cell j iff j is occupied, shares a sequence with i, is no
   // newer than i, and on a windowed layer no older than its window. The step's
@@ -150,8 +145,9 @@ class CellCache : public CacheBase, public BatchControl, public CellStepper {
   int used_count_ = 0; // occupied cells, so admission stays O(1)
   int used_end_ = 0; // every occupied cell is in [0, used_end)
   std::array<SeqInfo, kMaxSeqs> info_{};
+  uint64_t reserved_ = 0; // ids handed out by seq_new
 
-  std::vector<int32_t> step_seq_ids_; // set by begin_step
+  std::vector<int32_t> step_seq_ids_; // set by declare_step
   std::vector<int32_t> step_pos_; // set when the step is placed
   std::vector<int32_t> cells_; // the step's placement, shared by every layer
   std::vector<bool> served_; // layers this step has already answered
