@@ -538,31 +538,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "to_contiguous_channels_last_pass",
-        srcs = [
-            "to_contiguous_channels_last_pass.py",
-        ],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            "//caffe2:torch",
-            ":channels_last_layout",
-            ":fuse_cascaded_transpose_or_permute_ops",
-            ":fuse_cascaded_view_ops",
-            ":fuse_transpose_or_permute_op_pairs_pass",
-            ":postpone_permute_below_squeeze_view",
-            ":remove_permutes_around_elementwise_ops",
-            ":replace_nop_transpose_or_permute_with_view",
-            ":replace_ops_with_channels_last_variants",
-            ":replace_squeeze_unsqueeze_with_view",
-            "//executorch/exir:lib",
-            "//executorch/exir:pass_base",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "absorb_boundary_layout_copies",
         srcs = [
             "absorb_boundary_layout_copies.py",
@@ -583,13 +558,10 @@ def define_common_targets():
         name = "test_absorb_boundary_layout_copies",
         srcs = [
             "test/test_absorb_boundary_layout_copies.py",
-            # The permute-count matrix the absorption totals are measured on.
-            "test/test_to_contiguous_channels_last_pass.py",
         ],
         deps = [
             "//caffe2:torch",
             ":absorb_boundary_layout_copies",
-            ":to_contiguous_channels_last_pass",
             "//executorch/exir:lib",
             "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
@@ -607,20 +579,6 @@ def define_common_targets():
             ":remove_getitem_op",
             ":replace_ops_with_channels_last_variants",
             "//executorch/exir:lib",
-            "fbsource//third-party/pypi/pytest:pytest",
-        ],
-    )
-
-    runtime.python_test(
-        name = "test_to_contiguous_channels_last_pass",
-        srcs = [
-            "test/test_to_contiguous_channels_last_pass.py",
-        ],
-        deps = [
-            "//caffe2:torch",
-            ":to_contiguous_channels_last_pass",
-            "//executorch/exir:lib",
-            "//executorch/exir/dialects:lib",
             "fbsource//third-party/pypi/pytest:pytest",
         ],
     )

@@ -7,7 +7,6 @@
 
 # pyre-unsafe
 
-from collections.abc import Callable
 from typing import cast, List
 
 import torch
@@ -35,13 +34,6 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
     functionally the same as a squeeze or unsqueeze. It does not necessarily
     mean the view_copy is normalized from squeeze or unsqueeze.
     """
-
-    def __init__(
-        self,
-        can_propagate: Callable[[torch.fx.Node], bool] | None = None,
-    ) -> None:
-        super().__init__()
-        self.can_propagate = can_propagate
 
     @property
     def targets(self) -> list[EdgeOpOverload]:
@@ -77,9 +69,6 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
             exir_ops.edge.aten.view.default,
         ):
             return False
-        view_node = users[0]
-        if self.can_propagate is not None and not self.can_propagate(view_node):
-            return False
 
         # If the permute_node/view_node was newly added to the
         # graph, it may not have the meta["val"] FakeTensor.
@@ -90,6 +79,8 @@ class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(RemoveOrReplacePassInterf
         permute_node_shape = [*cast(list, get_shape(node.graph.owning_module, node))]
 
         permute_dims = cast(list, node.args[1])
+        view_node = users[0]
+
         if view_node.meta.get("val") is None:
             return False
 
