@@ -879,19 +879,13 @@ class ET_EXPERIMENTAL CudaBackend final
     // NOTE: AOTInductorModelContainerDelete does not work correctly with
     // multiple .so files. Deleting one container frees shared resources,
     // which causes segmentation faults when attempting to delete other
-    // containers. As a workaround, we skip explicit container deletion
-    // and defer cleanup to the OS.
+    // containers. As a workaround, we skip explicit container deletion and
+    // defer cleanup to the OS. The corresponding shared library must remain
+    // loaded as well: the leaked container still owns objects whose code and
+    // process-wide state live in that library, so dlclose/FreeLibrary can
+    // invalidate them and crash during multi-method teardown.
     // TODO(gasoonjia): Find a proper solution for safe container deletion.
     // AOTInductorModelContainerDelete(handle->container_handle);
-
-    // Now close the shared library
-    if (handle->so_handle != nullptr) {
-      Error err = close_library(handle->so_handle);
-      ET_CHECK_OR_LOG_ERROR(
-          err == Error::Ok,
-          "Failed to close shared library for %s",
-          handle->so_path.c_str());
-    }
 
     // Remove the temporary shared library file
     if (!handle->so_path.empty()) {
