@@ -30,15 +30,21 @@ Tensor& quantized_add_out(
     const int64_t activation_min,
     const int64_t activation_max,
     Tensor& out) {
-  // Validate tensor types and dim order
   bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
       out,
       ScalarType::Char,
-      /*require_channels_last=*/channel_broadcast,
+      /*require_channels_last=*/false,
       /*require_same_sizes=*/!channel_broadcast);
+  if (channel_broadcast) {
+    const Tensor& full_input =
+        input1_int8.numel() > input2_int8.numel() ? input1_int8 : input2_int8;
+    ET_CHECK_MSG(
+        out.sizes() == full_input.sizes(),
+        "quantized_add_out: output must have the broadcast result shape");
+  }
 
   // Validate quantization parameters
   validate_quantization_params(
@@ -101,7 +107,10 @@ Tensor& quantized_add_out(
       std::swap<int>(input1_shift_val, input2_shift_val);
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
-    adds_per_loop = input1_int8.size(1);
+    // The broadcast operand holds one value per channel and channels are
+    // contiguous, so its element count is the repeat length.
+    adds_per_loop = static_cast<int32_t>(
+        std::min(input1_int8.numel(), input2_int8.numel()));
   } else {
     adds_per_loop = out.numel();
   }
