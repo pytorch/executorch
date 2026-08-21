@@ -325,23 +325,13 @@ def is_channels_last(tensor: torch.Tensor) -> bool:
     return dim_order[0:2] == [0, 2]
 
 
-def has_channels_last_dim_order(tensor: torch.Tensor) -> bool:
-    """Exact channels-last test, read from the dim order.
-
-    Unlike ``is_channels_last`` this does not treat unit-sized dimensions as
-    ambiguously channels-last, so a contiguous tensor with a singleton channel
-    or spatial extent is correctly reported as contiguous.
-    """
-    return tensor.ndim == 4 and tuple(tensor.dim_order()) == (0, 2, 3, 1)
-
-
 _NHWC_DIM_ORDER = [0, 2, 3, 1]
 
 
 def to_physical_order(logical_pad: list[int], tensor: torch.Tensor) -> list[int]:
     """Permute a 4-element NCHW-ordered list to NHWC physical memory order
     when ``tensor`` is in channels_last format, otherwise return unchanged."""
-    if not has_channels_last_dim_order(tensor):
+    if not is_channels_last(tensor):
         return logical_pad
     return [logical_pad[_NHWC_DIM_ORDER[i]] for i in range(4)]
 

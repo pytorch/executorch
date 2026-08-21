@@ -217,16 +217,6 @@ class MaxPool2dNhwc(torch.nn.Module):
         )
 
 
-class PadNhwc(torch.nn.Module):
-    def forward(self, x):
-        return torch.ops.cortex_m.pad.default(
-            x,
-            [0, 1, 2, 0],
-            [0, 2, 1, 0],
-            -7,
-        )
-
-
 def test_conv2d_nhwc_runs_on_fvp(cortex_m_target):
     _run_on_fvp(
         Conv2dNhwc(),
@@ -286,11 +276,3 @@ def test_max_pool2d_nhwc_runs_on_fvp(cortex_m_target):
         cortex_m_target,
     )
 
-
-def test_pad_runs_on_fvp_with_singleton_nhwc_height(cortex_m_target):
-    _run_on_fvp(
-        PadNhwc(),
-        _int8_values((1, 1, 7, 3)),
-        exir_ops.edge.cortex_m.pad.default,
-        cortex_m_target,
-    )

@@ -13,7 +13,11 @@ namespace native {
 
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
+namespace {
+
 constexpr size_t kMaxSupportedDims = 4;
+
+} // namespace
 
 // cppcheck-suppress unusedFunction
 Tensor& pad_out(
@@ -27,7 +31,7 @@ Tensor& pad_out(
       out.scalar_type() != ScalarType::Char) {
     ET_LOG(
         Error,
-        "cortex_m::pad: only int8 tensors are supported (input=%d, out=%d)",
+        "pad_out: only int8 tensors are supported (input=%d, out=%d)",
         static_cast<int>(input.scalar_type()),
         static_cast<int>(out.scalar_type()));
     context.fail(Error::InvalidArgument);
@@ -38,29 +42,23 @@ Tensor& pad_out(
   if (rank == 0 || rank > kMaxSupportedDims) {
     ET_LOG(
         Error,
-        "cortex_m::pad: expected tensor rank in [1, %zu], got %zu",
+        "pad_out: expected tensor rank in [1, %zu], got %zu",
         kMaxSupportedDims,
         rank);
     context.fail(Error::InvalidArgument);
     return out;
   }
-  if (pre_pad.size() != kMaxSupportedDims ||
-      post_pad.size() != kMaxSupportedDims) {
-    ET_LOG(Error, "cortex_m::pad: pre_pad and post_pad must have length 4");
-    context.fail(Error::InvalidArgument);
-    return out;
-  }
 
-  // Read the sizes in physical memory order. The dim order says which logical
-  // axis sits where, so this covers an NCHW-logical channels-last tensor and an
-  // NHWC-logical contiguous one without asking which contract is in force.
+  // Permute logical sizes to physical memory order.
   // Padding is already in physical order from the AOT pass.
+  constexpr size_t kNhwcDimOrder[] = {0, 2, 3, 1};
   const size_t offset = kMaxSupportedDims - rank;
-  const auto dim_order = input.dim_order();
+  const bool nhwc = is_channels_last_tensor(input);
 
   int32_t dims[kMaxSupportedDims] = {1, 1, 1, 1};
   for (size_t i = 0; i < rank; ++i) {
-    dims[offset + i] = static_cast<int32_t>(input.size(dim_order[i]));
+    const size_t src = nhwc ? kNhwcDimOrder[offset + i] : i;
+    dims[offset + i] = static_cast<int32_t>(input.size(src));
   }
 
   cmsis_nn_dims input_dims = {dims[0], dims[1], dims[2], dims[3]};
@@ -89,7 +87,7 @@ Tensor& pad_out(
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
         Error,
-        "cortex_m::pad: arm_pad_s8 failed with status [%d]",
+        "pad_out: arm_pad_s8 failed with status [%d]",
         static_cast<int>(status));
     context.fail(Error::Internal);
     return out;

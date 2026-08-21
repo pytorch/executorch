@@ -13,9 +13,8 @@ import torch
 import torch.nn.functional as F
 from executorch.backends.cortex_m.passes.passes_utils import (
     dequantize_per_tensor_cmsis,
-    is_channel_broadcast,
-    has_channels_last_dim_order,
     is_channels_last,
+    is_channel_broadcast,
     quantize_per_tensor_cmsis,
     requantize_cmsis,
     SHIFT_INT8,
@@ -200,9 +199,6 @@ def quantized_add_impl(
     return result
 
 
-# ===================================================================
-# QUANTIZED MUL OPERATION DEFINITION
-# ===================================================================
 lib.define(
     "quantized_mul("
     "Tensor self, int self_zero_point, "
@@ -265,9 +261,6 @@ def quantized_mul_impl(
     return result
 
 
-# ===================================================================
-# QUANTIZED DIV OPERATION DEFINITION
-# ===================================================================
 lib.define(
     "quantized_div("
     "Tensor self, int self_zero_point, "
@@ -672,7 +665,7 @@ lib.define(
 )
 def _pad_to_logical_order(physical_pad: list[int], input: torch.Tensor) -> list[int]:
     """Inverse of _to_physical_order: map physical-order padding back to logical."""
-    if not has_channels_last_dim_order(input):
+    if not is_channels_last(input):
         return list(physical_pad)
     return [physical_pad[_NHWC_INV_ORDER[i]] for i in range(4)]
 
@@ -697,7 +690,7 @@ def pad_meta(
     for i in range(rank):
         output_shape[i] += logical_pre[offset + i] + logical_post[offset + i]
     result = torch.empty(output_shape, dtype=input.dtype, device=input.device)
-    if has_channels_last_dim_order(input):
+    if is_channels_last(input):
         result = result.to(memory_format=torch.channels_last)
     return result
 
