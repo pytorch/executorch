@@ -1001,7 +1001,6 @@ def test_one_sided_propagation_reaches_graph_boundary(
     assert torch.allclose(actual, expected, atol=1e-6)
 
     if isinstance(module, PadConv):
-        # The pad stays on the aten operator; only its argument is remapped.
         assert (
             _count(
                 transformed.exported_program().graph_module,
