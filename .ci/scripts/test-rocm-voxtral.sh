@@ -9,15 +9,22 @@ set -euo pipefail
 
 ROCM_VERSION="${ROCM_VERSION:-7.1}"
 ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
+EXPECTED_ROCM_ARCH="${EXPECTED_ROCM_ARCH:-gfx950}"
+EXPECTED_WARP_SIZE="${EXPECTED_WARP_SIZE:-64}"
 PYTORCH_ROCM_INDEX="${PYTORCH_ROCM_INDEX:-https://download.pytorch.org/whl/test/rocm${ROCM_VERSION}}"
 TORCHAO_ROCM_WHEEL_BASE="${TORCHAO_ROCM_WHEEL_BASE:-https://download.pytorch.org/whl/nightly/rocm${ROCM_VERSION}}"
 VOXTRAL_CI_TMP_ROOT="${RUNNER_TEMP:-/tmp}"
-mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null || VOXTRAL_CI_TMP_ROOT=/tmp
+if ! mkdir -p "${VOXTRAL_CI_TMP_ROOT}" 2>/dev/null ||
+  [[ ! -w "${VOXTRAL_CI_TMP_ROOT}" ]]; then
+  VOXTRAL_CI_TMP_ROOT=/tmp
+fi
 VOXTRAL_CI_TMPDIR="$(mktemp -d "${VOXTRAL_CI_TMP_ROOT}/executorch-rocm-voxtral.XXXXXX")"
 trap 'rm -rf "${VOXTRAL_CI_TMPDIR}"' EXIT
 VOXTRAL_START_SECONDS="${SECONDS}"
 
 export ROCM_PATH
+export EXPECTED_ROCM_ARCH
+export EXPECTED_WARP_SIZE
 export HIP_VISIBLE_DEVICES=0
 export CUDA_VISIBLE_DEVICES=0
 export HF_HOME="${VOXTRAL_CI_TMP_ROOT}/hf-cache"
@@ -55,6 +62,8 @@ python -m pip install torchcodec==0.11.0 \
   --extra-index-url https://download.pytorch.org/whl/test/cpu
 
 python - <<'PY'
+import os
+
 import torch
 import torchao
 
@@ -65,8 +74,12 @@ assert "+rocm" in torchao.__version__, "TorchAO is not a ROCm build"
 
 device = torch.cuda.get_device_properties(0)
 arch = device.gcnArchName.split(":", 1)[0]
-assert arch == "gfx950", f"Expected gfx950, got {device.gcnArchName}"
-assert device.warp_size == 64, f"Expected wave64, got {device.warp_size}"
+expected_arch = os.environ["EXPECTED_ROCM_ARCH"]
+expected_warp_size = int(os.environ["EXPECTED_WARP_SIZE"])
+assert arch == expected_arch, f"Expected {expected_arch}, got {device.gcnArchName}"
+assert device.warp_size == expected_warp_size, (
+    f"Expected wave{expected_warp_size}, got {device.warp_size}"
+)
 print(
     torch.__version__,
     torchao.__version__,
