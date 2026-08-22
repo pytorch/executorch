@@ -14,7 +14,6 @@ from typing import Any, cast, Set, Type
 import torch
 from executorch.backends.arm._passes.dim_maps import PermuteMap, ViewMap
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
-from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -97,10 +96,7 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         if result.modified:
             graph_module = self._retrace(graph_module)
 
-        # Do not run for Ethos-U85 since this exposes a numerical issue
-        # There is no target meta-data at this stage so use INT+cf as proxy
-        # To be removed after MLBEDSW-11805
-        while not self._is_u85_like_tosa_int_cf():
+        while True:
             iteration_modified = False
             for node in list(graph_module.graph.nodes):
                 if node.target in self._TARGETS:
@@ -129,21 +125,6 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
 
         return PassResult(graph_module, modified)
 
-    def _is_u85_like_tosa_int_cf(self) -> bool:
-        if self.compile_spec is not None:
-            tosa_spec = self.compile_spec.tosa_spec
-        else:
-            try:
-                tosa_spec = get_context_spec()
-            except RuntimeError:
-                return False
-
-        return (
-            tosa_spec.support_integer()
-            and not tosa_spec.support_float()
-            and tosa_spec.support_extension("cf")
-        )
-
     def _retrace(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph_module.graph.eliminate_dead_code()
         graph_module.graph.lint()
@@ -166,6 +147,14 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
                 break
 
             if not self._can_cross_next_nodes(frontier, next_nodes):
+                break
+
+            # INT48 storage is not laid out like the int32 fake tensor used
+            # for metadata, so permuting it would address the packed data incorrectly.
+            if node.target == self._PERMUTE_TARGET and any(
+                self._node_or_inputs_are_int48(candidate)
+                for candidate in (frontier, *next_nodes)
+            ):
                 break
 
             if len(next_nodes) > 1:
@@ -208,6 +197,14 @@ class PropagateViewCopyPermutePass(ArmPass, ABC):
         assert previous_frontier is not None
         self._move_node(node, frontier, previous_frontier)
         return True
+
+    @staticmethod
+    def _node_or_inputs_are_int48(node: torch.fx.Node) -> bool:
+        special_dtype_key = TosaSpecialDtype.meta_key()
+        return node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48 or any(
+            input_node.meta.get(special_dtype_key) == TosaSpecialDtype.INT48
+            for input_node in node.all_input_nodes
+        )
 
     def fuse_vertical(self, graph_module: torch.fx.GraphModule) -> PassResult:
         """Fuse consecutive permute/view nodes."""
