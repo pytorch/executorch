@@ -60,3 +60,35 @@ TEST_F(OpRollOutTest, SmokeTest) {
   ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
+
+class OpRollOutDimOrderTest : public OperatorTest {
+ protected:
+  Tensor& op_roll_out(
+      const Tensor& input,
+      ArrayRef<int64_t> shifts,
+      ArrayRef<int64_t> dims,
+      Tensor& out) {
+    return torch::executor::aten::roll_outf(context_, input, shifts, dims, out);
+  }
+};
+
+TEST_F(OpRollOutDimOrderTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor contiguous_input =
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected =
+      tf.make({1, 3, 2, 2}, {9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8});
+  const std::vector<int64_t> shifts = {1};
+  const std::vector<int64_t> dims = {1};
+
+  Tensor input = tf.channels_last_like(contiguous_input);
+  Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
+  op_roll_out(
+      input,
+      ArrayRef<int64_t>(shifts.data(), shifts.size()),
+      ArrayRef<int64_t>(dims.data(), dims.size()),
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, tf.channels_last_like(expected));
+}

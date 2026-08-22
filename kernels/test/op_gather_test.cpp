@@ -377,3 +377,19 @@ TEST_F(OpGatherOutTest, InvalidOneDimInputAndZeroDimIndex) {
   ET_EXPECT_KERNEL_FAILURE(
       context_, op_gather_out(self, 0, index, sparse_grad, out));
 }
+
+TEST_F(OpGatherOutTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Long> tf_index;
+  TensorFactory<ScalarType::Float> tf_data;
+
+  Tensor contiguous_self =
+      tf_data.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected = tf_data.make({1, 1, 2, 2}, {5, 6, 7, 8});
+
+  Tensor self = tf_data.channels_last_like(contiguous_self);
+  Tensor index = tf_index.channels_last_like(tf_index.full({1, 1, 2, 2}, 1));
+  Tensor out = tf_data.zeros_channels_last({1, 1, 2, 2});
+  op_gather_out(self, 1, index, false, out);
+
+  EXPECT_TENSOR_CLOSE(out, tf_data.channels_last_like(expected));
+}

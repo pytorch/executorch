@@ -68,3 +68,27 @@ TEST_F(OpFlipOutTest, SmokeTest2Dims) {
   op_flip_out(input, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+class OpFlipOutDimOrderTest : public OperatorTest {
+ protected:
+  Tensor& op_flip_out(const Tensor& input, IntArrayRef dims, Tensor& out) {
+    return torch::executor::aten::flip_outf(context_, input, dims, out);
+  }
+};
+
+TEST_F(OpFlipOutDimOrderTest, ChannelsLastMatchesContiguous) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor contiguous_input =
+      tf.make({1, 3, 2, 2}, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+  Tensor expected =
+      tf.make({1, 3, 2, 2}, {9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4});
+  int64_t dims_data[1] = {1};
+  IntArrayRef dims = IntArrayRef(dims_data, 1);
+
+  Tensor input = tf.channels_last_like(contiguous_input);
+  Tensor out = tf.zeros_channels_last({1, 3, 2, 2});
+  op_flip_out(input, dims, out);
+
+  EXPECT_TENSOR_CLOSE(out, tf.channels_last_like(expected));
+}

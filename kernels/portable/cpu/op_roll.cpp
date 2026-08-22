@@ -32,19 +32,6 @@ bool check_roll_args(
   return true;
 }
 
-size_t unshift_flat_ix(size_t ix, const Tensor& in, IntArrayRef dim_shifts) {
-  size_t ix_coord[kTensorDimensionLimit];
-  indexToCoordinate(in, ix, ix_coord);
-
-  size_t shifted_coord[kTensorDimensionLimit];
-  for (const auto d : c10::irange(in.dim())) {
-    shifted_coord[d] =
-        (ix_coord[d] + in.size(d) - dim_shifts[d] % in.size(d)) % in.size(d);
-  }
-
-  return coordinateToIndex(in, shifted_coord);
-}
-
 } // namespace
 
 Tensor& roll_out(
@@ -86,8 +73,23 @@ Tensor& roll_out(
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
+    const bool out_is_default = executorch::runtime::is_contiguous_dim_order(
+        out.dim_order().data(), out.dim_order().size());
+
     for (const auto ix : c10::irange(out.numel())) {
-      out_data[ix] = in_data[unshift_flat_ix(ix, in, dim_shifts)];
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      size_t coord[kTensorDimensionLimit];
+      indexToCoordinate(in, ix, coord);
+
+      // @lint-ignore CLANGTIDY facebook-hte-CArray
+      size_t shifted_coord[kTensorDimensionLimit];
+      for (const auto d : c10::irange(in.dim())) {
+        shifted_coord[d] =
+            (coord[d] + in.size(d) - dim_shifts[d] % in.size(d)) % in.size(d);
+      }
+
+      out_data[out_is_default ? ix : coordinateToIndex(out, coord)] =
+          in_data[coordinateToIndex(in, shifted_coord)];
     }
   });
 
