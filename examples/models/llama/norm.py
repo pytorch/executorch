@@ -87,7 +87,7 @@ class RMSNormCoreML(torch.nn.Module):
         # standard RMSNorm's eps semantics (`rsqrt(mean(x²) + eps)`) and is
         # large enough to survive fp16 (1e-6 alone underflows in fp16).
         floor_val = torch.sqrt(torch.tensor(self.dim * self.eps, dtype=x.dtype))
-        norm_val = torch.clamp_min(
+        norm_val = torch.maximum(
             torch.linalg.vector_norm(x, dim=-1, keepdim=True), floor_val
         )
         rms_norm_eps0 = (
