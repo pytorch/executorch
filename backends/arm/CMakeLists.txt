@@ -1,0 +1,321 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2023, 2025-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+cmake_minimum_required(VERSION 3.19)
+project(arm_backend)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Source root directory for executorch.
+if(NOT EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+endif()
+
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake)
+include(${EXECUTORCH_ROOT}/backends/arm/cmake/ArmEthosUSDK.cmake)
+
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
+add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
+
+set(ETHOSU_LINUX_DRIVER_GIT_REPO
+    "https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-linux-driver-stack.git"
+    CACHE STRING "Git repository that hosts the Ethos-U Linux driver stack"
+)
+set(ETHOSU_LINUX_DRIVER_GIT_TAG
+    "26.05"
+    CACHE STRING
+          "Git tag/branch/commit used to fetch the Ethos-U Linux driver stack"
+)
+set(ETHOSU_LINUX_DRIVER_SOURCE_DIR
+    ""
+    CACHE
+      PATH
+      "Optional local path to an existing ethos-u-linux-driver stack checkout"
+)
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+# Set default value of FETCH_ETHOS_U_CONTENT depending on whether ethos sdk is
+# available in $ETHOS_SDK_PATH.
+arm_ethos_u_default_fetch("${ETHOS_SDK_PATH}" _fetch_ethos_u_default)
+option(FETCH_ETHOS_U_CONTENT
+       "Fetch ethos_u dependencies instead of relying on pre-downloads"
+       ${_fetch_ethos_u_default}
+)
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL AND EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+  message(
+    FATAL_ERROR
+      "EXECUTORCH_BUILD_ARM_BAREMETAL and EXECUTORCH_BUILD_ARM_ETHOSU_LINUX cannot be enabled at the same time."
+  )
+endif()
+
+# Ethos-U backend builds (bare metal or Linux driver stack)
+if(EXECUTORCH_BUILD_ARM_BAREMETAL OR EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+
+  add_compile_options("-Wall" "-Werror")
+
+  set(_arm_backend_sources
+      backends/arm/runtime/EthosUBackend.cpp
+      backends/arm/runtime/EthosUBackend_IoMemcpy.cpp
+      backends/arm/runtime/VelaBinStream.cpp
+  )
+  list(TRANSFORM _arm_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
+
+  add_library(executorch_delegate_ethos_u STATIC ${_arm_backend_sources})
+  target_link_libraries(executorch_delegate_ethos_u PUBLIC executorch_core)
+  target_include_directories(
+    executorch_delegate_ethos_u PRIVATE ${_common_include_directories}
+  )
+
+  if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_M.cpp
+    )
+    arm_ensure_ethos_u_content(
+      "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT}
+    )
+    set(DRIVER_ETHOSU_INCLUDE_DIR
+        "${ETHOS_SDK_PATH}/core_software/core_driver/include"
+    )
+    if(NOT EXISTS "${DRIVER_ETHOSU_INCLUDE_DIR}/ethosu_driver.h")
+      message(
+        FATAL_ERROR
+          "Ethos-U core driver headers were not found in ${DRIVER_ETHOSU_INCLUDE_DIR}."
+          " Run examples/arm/setup.sh or enable FETCH_ETHOS_U_CONTENT."
+      )
+    endif()
+    target_include_directories(
+      executorch_delegate_ethos_u PRIVATE ${DRIVER_ETHOSU_INCLUDE_DIR}
+    )
+    target_link_libraries(executorch_delegate_ethos_u PUBLIC ethosu_core_driver)
+  elseif(EXECUTORCH_BUILD_ARM_ETHOSU_LINUX)
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_Cortex_A.cpp
+    )
+    if(NOT ETHOSU_LINUX_DRIVER_SOURCE_DIR
+       OR NOT EXISTS
+          "${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/src/ethosu.cpp"
+    )
+      include(FetchContent)
+      FetchContent_Declare(
+        ethosu_linux_driver_src
+        GIT_REPOSITORY ${ETHOSU_LINUX_DRIVER_GIT_REPO}
+        GIT_TAG ${ETHOSU_LINUX_DRIVER_GIT_TAG}
+        GIT_SHALLOW TRUE
+        # Point FetchContent at a nonexistent source subdirectory, tricking it
+        # into downloading the sources without adding the project to the build.
+        SOURCE_SUBDIR none
+      )
+      FetchContent_MakeAvailable(ethosu_linux_driver_src)
+      set(ETHOSU_LINUX_DRIVER_SOURCE_DIR ${ethosu_linux_driver_src_SOURCE_DIR})
+    endif()
+
+    target_include_directories(
+      executorch_delegate_ethos_u
+      PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/include
+              ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/kernel/include
+    )
+    target_sources(
+      executorch_delegate_ethos_u
+      PRIVATE ${ETHOSU_LINUX_DRIVER_SOURCE_DIR}/driver_library/src/ethosu.cpp
+    )
+  endif()
+
+  if(NOT CMAKE_SKIP_INSTALL_RULES)
+    install(TARGETS executorch_delegate_ethos_u EXPORT ExecuTorchTargets)
+
+    if(TARGET ethosu_core_driver)
+      get_property(
+        _et_ethosu_core_driver_exported GLOBAL
+        PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED
+      )
+      if(NOT _et_ethosu_core_driver_exported)
+        install(
+          TARGETS ethosu_core_driver
+          EXPORT ExecuTorchTargets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+          LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+        set_property(GLOBAL PROPERTY ET_ETHOSU_CORE_DRIVER_EXPORTED TRUE)
+      endif()
+    endif()
+  endif()
+
+endif()
+
+# VGF backend builds
+if(EXECUTORCH_BUILD_VGF)
+  set(VULKAN_THIRD_PARTY_PATH ${EXECUTORCH_ROOT}/backends/vulkan/third-party)
+  set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
+  set(VOLK_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
+
+  set(_vgf_missing_vulkan_deps "")
+
+  if(NOT EXISTS "${VULKAN_HEADERS_PATH}/vulkan/vulkan.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/Vulkan-Headers/include/vulkan/vulkan.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.h")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.h"
+    )
+  endif()
+
+  if(NOT EXISTS "${VOLK_HEADERS_PATH}/volk.c")
+    list(APPEND _vgf_missing_vulkan_deps
+         "backends/vulkan/third-party/volk/volk.c"
+    )
+  endif()
+
+  if(_vgf_missing_vulkan_deps)
+    string(REPLACE ";" "\n  - " _vgf_missing_vulkan_deps_text
+                   "${_vgf_missing_vulkan_deps}"
+    )
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_VGF=ON requires Vulkan-Headers and volk from "
+        "backends/vulkan/third-party, even when EXECUTORCH_BUILD_VULKAN=OFF. "
+        "Missing:\n"
+        "  - ${_vgf_missing_vulkan_deps_text}\n"
+        "Run from the repository root:\n"
+        "  git submodule update --init "
+        "backends/vulkan/third-party/Vulkan-Headers "
+        "backends/vulkan/third-party/volk"
+    )
+  endif()
+
+  set(EXECUTORCH_VGF_ROOT
+      ""
+      CACHE PATH
+            "Path to a VGF installation containing include/ and lib/libvgf.a"
+  )
+
+  if(EXECUTORCH_VGF_ROOT)
+    message(STATUS "libvgf sourced from ${EXECUTORCH_VGF_ROOT}")
+    set(LIBVGF_PATH "${EXECUTORCH_VGF_ROOT}")
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
+    if(NOT EXISTS "${LIBVGF_STATIC}")
+      message(FATAL_ERROR "EXECUTORCH_VGF_ROOT does not contain lib/libvgf.a: "
+                          "${EXECUTORCH_VGF_ROOT}"
+      )
+    endif()
+    if(NOT EXISTS "${LIBVGF_PATH}/include/vgf/decoder.hpp")
+      message(
+        FATAL_ERROR "EXECUTORCH_VGF_ROOT does not contain the VGF headers: "
+                    "${EXECUTORCH_VGF_ROOT}"
+      )
+    endif()
+  elseif(
+    EXISTS
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/"
+  )
+    message(STATUS "libvgf sourced from local scratch tree")
+
+    # Legacy layout: libvgf sourced from local scratch tree
+    set(LIBVGF_PATH
+        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ml-sdk-for-vulkan-manifest/sw/vgf-lib/"
+    )
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/build/src/libvgf.a")
+  else()
+    message(STATUS "libvgf installed from pip package")
+
+    set(Python3_FIND_VIRTUALENV FIRST)
+    if(EXECUTORCH_ROOT AND EXISTS "${EXECUTORCH_ROOT}/env")
+      set(Python3_EXECUTABLE "${EXECUTORCH_ROOT}/env/bin/python3")
+    endif()
+
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    # Prefer arch-specific site-packages if present, else pure
+    set(_vgf_site_arch "${Python3_SITEARCH}/vgf_lib/binaries")
+    set(_vgf_site_pure "${Python3_SITELIB}/vgf_lib/binaries")
+    if(EXISTS "${_vgf_site_arch}")
+      set(LIBVGF_PATH "${_vgf_site_arch}")
+    else()
+      set(LIBVGF_PATH "${_vgf_site_pure}")
+    endif()
+
+    if(EXECUTORCH_BUILD_TESTS)
+      add_executable(
+        vgf_neural_statistics_test
+        ${EXECUTORCH_ROOT}/backends/arm/test/vgf_neural_statistics_test.cpp
+        ${EXECUTORCH_ROOT}/backends/arm/runtime/VGFNeuralStatistics.cpp
+      )
+      target_include_directories(
+        vgf_neural_statistics_test
+        PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+                ${VOLK_HEADERS_PATH}
+      )
+      target_compile_options(
+        vgf_neural_statistics_test PRIVATE -DUSE_VULKAN_WRAPPER
+                                           -DUSE_VULKAN_VOLK
+      )
+      target_link_libraries(vgf_neural_statistics_test PRIVATE executorch_core)
+      if(TARGET GTest::gtest_main)
+        target_link_libraries(
+          vgf_neural_statistics_test PRIVATE GTest::gtest_main
+        )
+      else()
+        target_link_libraries(
+          vgf_neural_statistics_test PRIVATE gtest gtest_main
+        )
+      endif()
+      add_test(NAME vgf_neural_statistics_test
+               COMMAND vgf_neural_statistics_test
+      )
+    endif()
+
+    set(LIBVGF_STATIC "${LIBVGF_PATH}/lib/libvgf.a")
+  endif()
+
+  set(LIBVGF_INCLUDE "${LIBVGF_PATH}/include/")
+
+  add_library(vgf STATIC IMPORTED)
+  set_property(TARGET vgf PROPERTY IMPORTED_LOCATION "${LIBVGF_STATIC}")
+  target_include_directories(vgf INTERFACE "${LIBVGF_INCLUDE}")
+
+  # Add backend delegate for VGF
+  set(_vgf_backend_sources
+      backends/arm/runtime/VGFBackend.cpp backends/arm/runtime/VGFSetup.cpp
+      backends/arm/runtime/VGFNeuralStatistics.cpp
+  )
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    list(APPEND _vgf_backend_sources backends/vulkan/third-party/volk/volk.c)
+  endif()
+
+  # vgf backend
+  list(TRANSFORM _vgf_backend_sources PREPEND "${EXECUTORCH_ROOT}/")
+  add_library(vgf_backend ${_vgf_backend_sources})
+  install(TARGETS vgf_backend EXPORT ExecuTorchTargets)
+  target_include_directories(
+    vgf_backend PRIVATE ${_common_include_directories} ${VULKAN_HEADERS_PATH}
+                        ${VOLK_HEADERS_PATH}
+  )
+  target_compile_options(
+    vgf_backend PRIVATE -DUSE_VULKAN_WRAPPER -DUSE_VULKAN_VOLK
+  )
+
+  target_link_libraries(vgf_backend PRIVATE executorch_core)
+  target_link_libraries(vgf_backend PRIVATE vgf)
+
+  # When VGF compiles volk.c itself, link libdl for dlopen/dlsym
+  if(NOT EXECUTORCH_BUILD_VULKAN)
+    target_link_libraries(vgf_backend PRIVATE ${CMAKE_DL_LIBS})
+  endif()
+
+  executorch_target_link_options_shared_lib(vgf_backend)
+
+  # end config for VGF builds
+endif()

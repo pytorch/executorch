@@ -1,0 +1,17 @@
+[
+  {
+    "files": [
+      "https://huggingface.co/ibm-granite/granite-speech-3.3-2b/resolve/main/10226_10111_000000.wav?download=true"
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "<|audio|>can you transcribe the speech into a written format?"
+      },
+      {
+        "role": "assistant",
+        "content": "after his nap timothy leisurely stretched first one gray velvet foot then another strolled indolently to his plate turning over the food carefully selecting choice bits nosing out that which he scorned upon the clean hearth"
+      }
+    ]
+  }
+]

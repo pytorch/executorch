@@ -1,0 +1,109 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Utility functions for working with int8x4 blocks.
+ *
+ * An int8x4 block is a 4x4 tile of int8 values stored as an ivec4,
+ * where each ivec4 element contains 4 packed int8 values (one row of the
+ * block).
+ */
+
+#ifndef BLOCK_INT8X4_UTILS_GLSLH
+#define BLOCK_INT8X4_UTILS_GLSLH
+
+/*
+ * Write a single int8 value to a specific position in an int8x4 block.
+ *
+ * Parameters:
+ *   block: The block to modify (ivec4 where each element has 4 packed int8)
+ *   y: Row index (0-3)
+ *   x: Column index (0-3)
+ *   val: The int8 value to write
+ */
+void write_int8x4_block_element(
+    inout ivec4 block,
+    const int y,
+    const int x,
+    const int val) {
+  int texel = block[y];
+  // Create a mask to clear the byte at position x, then insert val
+  int shift = x * 8;
+  int mask = ~(0xFF << shift);
+  block[y] = (texel & mask) | ((val & 0xFF) << shift);
+}
+
+/*
+ * Transpose a 4x4 int8 block.
+ *
+ * Given block[y][x], produces result[x][y].
+ * Each ivec4 element contains 4 packed int8 values.
+ */
+ivec4 transpose_int8x4_block(const ivec4 block) {
+  ivec4 result;
+  [[unroll]] for (int y = 0; y < 4; ++y) {
+    int packed = 0;
+    [[unroll]] for (int x = 0; x < 4; ++x) {
+      // Extract byte y from block[x]
+      int val = (block[x] >> (8 * y)) & 0xFF;
+      // Pack into position x
+      packed |= (val << (8 * x));
+    }
+    result[y] = packed;
+  }
+  return result;
+}
+
+//
+// Debug print functions
+//
+
+#ifdef DEBUG_MODE
+/*
+ * Debug print function for Int8x4Block.
+ *
+ * Prints all 16 int8 values as a 4x4 matrix.
+ */
+void printInt8x4Block(const ivec4 block) {
+  // Unpack all 16 int8 values into an array
+  int v[16];
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    int packed = block[i];
+    v[i * 4 + 0] = (packed >> 0) & 0xFF;
+    v[i * 4 + 1] = (packed >> 8) & 0xFF;
+    v[i * 4 + 2] = (packed >> 16) & 0xFF;
+    v[i * 4 + 3] = (packed >> 24) & 0xFF;
+  }
+  // Sign extend from 8-bit to print as signed
+  [[unroll]] for (int i = 0; i < 16; ++i) {
+    if (v[i] > 127)
+      v[i] -= 256;
+  }
+  // Print as a 4x4 square in a single call to avoid interleaving
+  debugPrintfEXT(
+      "Int8x4Block:\\n  [%d, %d, %d, %d]\\n  [%d, %d, %d, %d]\\n  [%d, %d, %d, %d]\\n  [%d, %d, %d, %d]\\n",
+      v[0],
+      v[1],
+      v[2],
+      v[3],
+      v[4],
+      v[5],
+      v[6],
+      v[7],
+      v[8],
+      v[9],
+      v[10],
+      v[11],
+      v[12],
+      v[13],
+      v[14],
+      v[15]);
+}
+#endif // DEBUG_MODE
+
+#endif // BLOCK_INT8X4_UTILS_GLSLH

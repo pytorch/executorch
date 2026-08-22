@@ -1,0 +1,123 @@
+# Copyright 2025-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import torch
+
+from executorch.backends.nxp.backend.custom_delegation_options import (
+    CustomDelegationOptions,
+)
+from executorch.backends.nxp.backend.ir.converter.conversion import translator
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    _is_dequant_node,
+    _is_quant_node,
+    NodeConverter,
+)
+from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concatenation_options import (
+    Concatenation,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from torch.fx import Node
+from torch.nn import Parameter
+
+
+def _get_shape(node: torch.fx.Node) -> list[int]:
+    return node.meta["val"].shape
+
+
+class CatConverter(NodeConverter):
+
+    @staticmethod
+    def _get_normalized_dim(node: torch.fx.Node) -> int:
+        dim = node.args[1] if len(node.args) >= 2 else 0  # Default `dim` value.
+        rank = len(_get_shape(node))
+        if dim < 0:
+            dim += rank
+
+        if not (0 <= dim < rank):
+            raise RuntimeError("`Cat` operator has invalid `dim`.")
+
+        return dim
+
+    @staticmethod
+    def _all_io_shares_quantization_parameters(node: Node) -> bool:
+        post_node = list(node.users.keys())[0]
+        if not _is_quant_node(post_node):
+            return False
+        output_scale, output_zp, output_type = (
+            post_node.args[1],
+            post_node.args[2],
+            post_node.args[5],
+        )
+
+        for input_node in node.args[0]:
+            if not _is_dequant_node(input_node):
+                return False
+
+            input_scale, input_zp, input_type = (
+                input_node.args[1],
+                input_node.args[2],
+                input_node.args[5],
+            )
+            if (input_scale, input_zp, input_type) != (
+                output_scale,
+                output_zp,
+                output_type,
+            ):
+                return False
+
+        return True
+
+    @classmethod
+    def _is_supported_on_target(
+        cls,
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        # `cat` uses a list of inputs as its first argument, so the indices are tuples of (0, i).
+        input_indices = [(0, i) for i in range(len(node.args[0]))]
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, input_indices=input_indices, output_indices=[0]
+        ):
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if not CatConverter._all_io_shares_quantization_parameters(node):
+            # The IR requires all inputs to have the same quantization parameters as the output.
+            # The quantizer should quantize the operator so that this case does not happen.
+            return False
+
+        return True
+
+    def convert(self, node: Node):
+        """Convert the 'aten.cat' operator to NeutronIR 'Concatenation'.
+        The ExecuTorch schema is:
+            cat(
+                Tensor[] tensors,
+                int dim=0
+            ) -> Tensor
+        """
+        self.assert_convertible(node)
+
+        t_op = self._create_tflite_op_with_io_tensors(node)
+
+        dim = self._get_normalized_dim(node)  # Also checks the validity of `dim`.
+
+        if t_op.tmp_inputs[0].tensor_format.is_channels_last():
+            dim = translator.create_channels_last_to_channels_first_permutation(
+                t_op.tmp_inputs[0].rank
+            )[dim]
+
+        t_op.builtin_options = Concatenation(int(dim))
+        self.builder.append_operators([t_op])

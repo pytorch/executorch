@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) Qualcomm Innovation Center, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+
+#include "AEEStdDef.idl"
+#include "remote.idl"
+
+const string IDL_VERSION = "0.0.0";
+
+// qaic couldn't understand sequence<sequence<octet>>. It needs typedef for nested structure.
+typedef sequence<octet> tensor;
+
+interface qnn_executorch : remote_handle64 {
+   // Basic features
+
+   //TODO: Support loading multiple methods since qnn_executorch_imp.cpp only use pte_path as key
+   long load(in string pte_path, in long method_index);
+   long execute_all(in string pte_path, in string input_list_path, in string output_folder_path, rout long num_inferences_performed, rout double total_execute_interval, rout double total_read_file_interval, rout double total_save_file_interval);
+   long unload(in string pte_path);
+
+   // For profiling and debugging.
+   long enable_intermediate_tensor_dump(in string pte_path, in long debug_buffer_size);
+   long dump_etdp(in string pte_path, in string etdump_path);
+   long dump_intermediate_tensor(in string pte_path, in string debug_output_path);
+};

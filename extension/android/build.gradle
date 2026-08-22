@@ -1,0 +1,24 @@
+allprojects {
+    buildscript {
+        ext {
+            fbjniJavaOnlyVersion = "0.7.0"
+            soLoaderNativeLoaderVersion = "0.10.5"
+        }
+
+        repositories {
+            google()
+            mavenCentral()
+        }
+
+        dependencies {
+            classpath 'com.android.tools.build:gradle:8.9.0'
+            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.34.0'
+        }
+
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

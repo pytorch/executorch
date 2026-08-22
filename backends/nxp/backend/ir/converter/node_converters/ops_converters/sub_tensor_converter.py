@@ -1,0 +1,72 @@
+# Copyright 2025-2026 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import torch
+
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
+from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
+    sub_options,
+)
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+from torch.fx import Node
+from torch.nn import Parameter
+
+
+class SubTensorConverter(NodeConverter):
+    @classmethod
+    def _is_supported_on_target(
+        cls,
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if not NodeConverter.inputs_satisfy_broadcast_condition(node):
+            return False
+
+        supported_types = [torch.int8, torch.uint8]
+        if not NodeConverter.uses_quantization_type_for_io(
+            node, supported_types, [0, 1], [0]
+        ):
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if len(node.args) != 2:
+            return False
+
+        # The `alpha` attribute can be represented by adding an extra `Mul` operator.
+        #  However, this is not implemented as `alpha` is rarely used.
+        if node.kwargs.get("alpha", 1) != 1:
+            return False
+
+        return True
+
+    def convert(self, node: Node):
+        """Convert 'sub_tensor' operator to NeutronIR 'Sub'.
+        The ExecuTorch schema is:
+            sub.Tensor(Tensor self, Tensor other, *, Scalar alpha=1)
+        """
+
+        self.assert_convertible(node)
+
+        t_op = self._create_tflite_op_with_io_tensors(node)
+
+        t_op.builtin_options = sub_options.Sub()
+
+        ops = OpsList(middle_op=t_op)
+        # Create additional ops in case of shape broadcasting
+        ops.add_pre(self.builder.ensure_correct_broadcasting(t_op, t_op.tmp_outputs[0]))
+        self.builder.append_operators(ops.flatten())

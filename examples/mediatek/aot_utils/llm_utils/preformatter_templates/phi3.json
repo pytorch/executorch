@@ -1,0 +1,6 @@
+{
+    "description": "Template used by Phi-3.",
+    "prompt_input": "<|system|>\nYou are a helpful AI assistant. Please provide safe, ethical and accurate information to the user.\n<|user|>\n {instruction} \n <|assistant|>",
+    "prompt_no_input": "<|system|>\nYou are a helpful AI assistant. Please provide safe, ethical and accurate information to the user.\n<|user|>\n {instruction} \n <|assistant|>",
+    "response_split": "<|assistant|>"
+}

@@ -1,0 +1,105 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_COMMON_GLSLH
+#define CONV2D_COMMON_GLSLH
+
+#include "common.glslh"
+
+struct Conv2DParams {
+  ivec2 kernel_size;
+  ivec2 stride;
+  ivec2 padding;
+  ivec2 dilation;
+  int groups;
+  int out_channels_per_group;
+  int in_channels_per_group;
+  int logical_K_per_group;
+  int K_per_group;
+  int K4_per_group;
+  int logical_K;
+  int K;
+  int K4;
+};
+
+struct Conv2dTensorIndex {
+  ivec3 data;
+  int texel_i;
+};
+
+struct Conv2dBlockIndex {
+  ivec3 data;
+};
+
+Conv2dTensorIndex block_idx_to_tensor_idx(const Conv2dBlockIndex block_idx) {
+  Conv2dTensorIndex tensor_idx;
+  tensor_idx.data.x = mul_4(block_idx.data.x);
+  tensor_idx.data.y = block_idx.data.y;
+  tensor_idx.data.z = block_idx.data.z;
+  tensor_idx.texel_i = 0;
+  return tensor_idx;
+}
+
+struct Conv2dBlockExtents {
+  ivec3 data;
+  int data_xz;
+};
+
+Conv2dBlockExtents make_block_extents(const ivec4 tensor_sizes) {
+  Conv2dBlockExtents block_sizes;
+  block_sizes.data.x = div_up_4(tensor_sizes.x);
+  block_sizes.data.y = tensor_sizes.y;
+  block_sizes.data.z = div_up_4(tensor_sizes.z);
+
+  block_sizes.data_xz = block_sizes.data.x * block_sizes.data.z;
+
+  return block_sizes;
+}
+
+Conv2dBlockIndex linear_idx_to_block_idx(
+    const int idx, const Conv2dBlockExtents block_extents) {
+  Conv2dBlockIndex block_idx;
+  block_idx.data.z = idx % block_extents.data.z;
+
+  const int row = idx / block_extents.data.z;
+  block_idx.data.x = row % block_extents.data.x;
+  block_idx.data.y = row / block_extents.data.x;
+
+  return block_idx;
+}
+
+bool block_idx_out_of_bounds(
+    const Conv2dBlockIndex block_idx,
+    const Conv2dBlockExtents block_extents) {
+  return block_idx.data.x >= block_extents.data.x ||
+      block_idx.data.y >= block_extents.data.y ||
+      block_idx.data.z >= block_extents.data.z;
+}
+
+#ifdef DEBUG_MODE
+
+void printConv2DParams(const Conv2DParams params) {
+  debugPrintfEXT("Conv2DParams: \\n");
+  debugPrintfEXT(
+      "  kernel_size: %d, %d\\n", params.kernel_size.x, params.kernel_size.y);
+  debugPrintfEXT("  stride: %d, %d\\n", params.stride.x, params.stride.y);
+  debugPrintfEXT("  padding: %d, %d\\n", params.padding.x, params.padding.y);
+  debugPrintfEXT("  dilation: %d, %d\\n", params.dilation.x, params.dilation.y);
+  debugPrintfEXT("  groups: %d\\n", params.groups);
+  debugPrintfEXT(
+      "  out_channels_per_group: %d\\n", params.out_channels_per_group);
+  debugPrintfEXT(
+      "  in_channels_per_group: %d\\n", params.in_channels_per_group);
+  debugPrintfEXT("  logical_K_per_group: %d\\n", params.logical_K_per_group);
+  debugPrintfEXT("  K_per_group: %d\\n", params.K_per_group);
+  debugPrintfEXT("  K4_per_group: %d\\n", params.K4_per_group);
+}
+
+#endif // DEBUG_MODE
+
+#endif // CONV2D_COMMON_GLSLH

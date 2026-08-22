@@ -1,0 +1,353 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <cuda_runtime.h>
+#include <executorch/backends/aoti/slim/cuda/guard.h>
+#include <executorch/extension/cuda/caller_stream.h>
+#include <executorch/runtime/platform/platform.h>
+#include <gtest/gtest.h>
+
+#include <thread>
+#include <type_traits>
+
+using namespace executorch::backends::cuda;
+using namespace executorch::extension::cuda;
+using namespace executorch::runtime;
+
+// TODO(gasoonjia): Multiple device tests were not included due to test
+// environment limitations. These tests should be added in the future when
+// multi-GPU test environments are available,
+
+class CUDAStreamGuardTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    et_pal_init();
+
+    int device_count = 0;
+    cudaError_t error = cudaGetDeviceCount(&device_count);
+    if (error != cudaSuccess || device_count == 0) {
+      GTEST_SKIP() << "CUDA not available or no CUDA devices found";
+    }
+    device_count_ = device_count;
+
+    ASSERT_EQ(cudaGetDevice(&original_device_), cudaSuccess);
+
+    ASSERT_EQ(cudaStreamCreate(&test_stream1_), cudaSuccess);
+    ASSERT_EQ(cudaStreamCreate(&test_stream2_), cudaSuccess);
+  }
+
+  void TearDown() override {
+    if (test_stream1_) {
+      ASSERT_EQ(cudaStreamDestroy(test_stream1_), cudaSuccess);
+    }
+    if (test_stream2_) {
+      ASSERT_EQ(cudaStreamDestroy(test_stream2_), cudaSuccess);
+    }
+
+    if (device_count_ > 0) {
+      ASSERT_EQ(cudaSetDevice(original_device_), cudaSuccess);
+    }
+  }
+
+  int device_count_ = 0;
+  int original_device_ = 0;
+  cudaStream_t test_stream1_ = nullptr;
+  cudaStream_t test_stream2_ = nullptr;
+};
+
+TEST_F(CUDAStreamGuardTest, BasicStreamSwitching) {
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, 0);
+  ASSERT_TRUE(guard_result.ok());
+  CUDAStreamGuard guard = std::move(guard_result.get());
+
+  EXPECT_EQ(guard.stream(), test_stream1_);
+  EXPECT_EQ(guard.device_index(), 0);
+
+  auto current_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(current_stream_result.ok());
+  EXPECT_EQ(current_stream_result.get(), test_stream1_);
+
+  int current_device;
+  ASSERT_EQ(cudaGetDevice(&current_device), cudaSuccess);
+  EXPECT_EQ(current_device, 0);
+}
+
+TEST_F(CUDAStreamGuardTest, StreamSwitchingOnSameDevice) {
+  Error err = setCurrentCUDAStream(test_stream1_, 0);
+  ASSERT_EQ(err, Error::Ok);
+
+  auto current_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(current_stream_result.ok());
+  EXPECT_EQ(current_stream_result.get(), test_stream1_);
+
+  {
+    auto guard_result = CUDAStreamGuard::create(test_stream2_, 0);
+    ASSERT_TRUE(guard_result.ok());
+    CUDAStreamGuard guard = std::move(guard_result.get());
+
+    auto new_stream_result = getCurrentCUDAStream(0);
+    ASSERT_TRUE(new_stream_result.ok());
+    EXPECT_EQ(new_stream_result.get(), test_stream2_);
+    EXPECT_EQ(guard.stream(), test_stream2_);
+  }
+
+  auto restored_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(restored_stream_result.ok());
+  EXPECT_EQ(restored_stream_result.get(), test_stream1_);
+}
+
+TEST_F(CUDAStreamGuardTest, NestedStreamGuards) {
+  cudaStream_t initial_stream;
+  ASSERT_EQ(cudaStreamCreate(&initial_stream), cudaSuccess);
+
+  Error err = setCurrentCUDAStream(initial_stream, 0);
+  ASSERT_EQ(err, Error::Ok);
+
+  {
+    auto guard1_result = CUDAStreamGuard::create(test_stream1_, 0);
+    ASSERT_TRUE(guard1_result.ok());
+    CUDAStreamGuard guard1 = std::move(guard1_result.get());
+
+    auto stream_result = getCurrentCUDAStream(0);
+    ASSERT_TRUE(stream_result.ok());
+    EXPECT_EQ(stream_result.get(), test_stream1_);
+
+    {
+      auto guard2_result = CUDAStreamGuard::create(test_stream2_, 0);
+      ASSERT_TRUE(guard2_result.ok());
+      CUDAStreamGuard guard2 = std::move(guard2_result.get());
+
+      auto stream_result2 = getCurrentCUDAStream(0);
+      ASSERT_TRUE(stream_result2.ok());
+      EXPECT_EQ(stream_result2.get(), test_stream2_);
+    }
+
+    auto stream_result3 = getCurrentCUDAStream(0);
+    ASSERT_TRUE(stream_result3.ok());
+    EXPECT_EQ(stream_result3.get(), test_stream1_);
+  }
+
+  auto final_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(final_stream_result.ok());
+  EXPECT_EQ(final_stream_result.get(), initial_stream);
+
+  ASSERT_EQ(cudaStreamDestroy(initial_stream), cudaSuccess);
+}
+
+TEST_F(CUDAStreamGuardTest, SameStreamNoChange) {
+  Error err = setCurrentCUDAStream(test_stream1_, 0);
+  ASSERT_EQ(err, Error::Ok);
+
+  {
+    auto guard_result = CUDAStreamGuard::create(test_stream1_, 0);
+    ASSERT_TRUE(guard_result.ok());
+    CUDAStreamGuard guard = std::move(guard_result.get());
+
+    auto stream_result = getCurrentCUDAStream(0);
+    ASSERT_TRUE(stream_result.ok());
+    EXPECT_EQ(stream_result.get(), test_stream1_);
+    EXPECT_EQ(guard.stream(), test_stream1_);
+  }
+
+  auto final_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(final_stream_result.ok());
+  EXPECT_EQ(final_stream_result.get(), test_stream1_);
+}
+
+TEST_F(CUDAStreamGuardTest, StreamAccessor) {
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, 0);
+  ASSERT_TRUE(guard_result.ok());
+  CUDAStreamGuard guard = std::move(guard_result.get());
+
+  EXPECT_EQ(guard.stream(), test_stream1_);
+  EXPECT_EQ(guard.device_index(), 0);
+}
+
+TEST_F(CUDAStreamGuardTest, SetStreamMethod) {
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, 0);
+  ASSERT_TRUE(guard_result.ok());
+  CUDAStreamGuard guard = std::move(guard_result.get());
+
+  EXPECT_EQ(guard.stream(), test_stream1_);
+
+  Error err = guard.set_stream(test_stream2_, 0);
+  EXPECT_EQ(err, Error::Ok);
+
+  EXPECT_EQ(guard.stream(), test_stream2_);
+
+  auto current_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(current_stream_result.ok());
+  EXPECT_EQ(current_stream_result.get(), test_stream2_);
+}
+
+TEST_F(CUDAStreamGuardTest, MoveConstructor) {
+  auto guard1_result = CUDAStreamGuard::create(test_stream1_, 0);
+  ASSERT_TRUE(guard1_result.ok());
+  CUDAStreamGuard guard1 = std::move(guard1_result.get());
+
+  EXPECT_EQ(guard1.stream(), test_stream1_);
+  EXPECT_EQ(guard1.device_index(), 0);
+
+  CUDAStreamGuard guard2 = std::move(guard1);
+
+  EXPECT_EQ(guard2.stream(), test_stream1_);
+  EXPECT_EQ(guard2.device_index(), 0);
+
+  auto current_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(current_stream_result.ok());
+  EXPECT_EQ(current_stream_result.get(), test_stream1_);
+}
+
+TEST_F(CUDAStreamGuardTest, MoveConstructorRestoresOnlyOnce) {
+  cudaStream_t initial_stream;
+  ASSERT_EQ(cudaStreamCreate(&initial_stream), cudaSuccess);
+
+  Error err = setCurrentCUDAStream(initial_stream, 0);
+  ASSERT_EQ(err, Error::Ok);
+
+  {
+    auto guard1_result = CUDAStreamGuard::create(test_stream1_, 0);
+    ASSERT_TRUE(guard1_result.ok());
+    CUDAStreamGuard guard1 = std::move(guard1_result.get());
+
+    { CUDAStreamGuard guard2 = std::move(guard1); }
+
+    auto stream_result = getCurrentCUDAStream(0);
+    ASSERT_TRUE(stream_result.ok());
+    EXPECT_EQ(stream_result.get(), initial_stream);
+  }
+
+  auto final_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(final_stream_result.ok());
+  EXPECT_EQ(final_stream_result.get(), initial_stream);
+
+  ASSERT_EQ(cudaStreamDestroy(initial_stream), cudaSuccess);
+}
+
+TEST_F(CUDAStreamGuardTest, InvalidDeviceIndex) {
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, 999);
+  EXPECT_FALSE(guard_result.ok());
+}
+
+TEST_F(CUDAStreamGuardTest, NegativeDeviceIndex) {
+  auto guard_result = CUDAStreamGuard::create(test_stream1_, -2);
+  EXPECT_FALSE(guard_result.ok());
+}
+
+// Compile-time type-trait checks. These do not need a CUDA device, so they
+// live outside the CUDAStreamGuardTest fixture (whose SetUp() calls
+// GTEST_SKIP when no CUDA device is available).
+TEST(CUDAStreamGuardCompileTimeTest, CopyConstructorDeleted) {
+  static_assert(
+      !std::is_copy_constructible_v<CUDAStreamGuard>,
+      "CUDAStreamGuard should not be copy constructible");
+}
+
+TEST(CUDAStreamGuardCompileTimeTest, CopyAssignmentDeleted) {
+  static_assert(
+      !std::is_copy_assignable_v<CUDAStreamGuard>,
+      "CUDAStreamGuard should not be copy assignable");
+}
+
+TEST(CUDAStreamGuardCompileTimeTest, MoveAssignmentDeleted) {
+  static_assert(
+      !std::is_move_assignable_v<CUDAStreamGuard>,
+      "CUDAStreamGuard should not be move assignable");
+}
+
+TEST_F(CUDAStreamGuardTest, NullStreamPointer) {
+  auto guard_result = CUDAStreamGuard::create(nullptr, 0);
+  ASSERT_TRUE(guard_result.ok());
+  CUDAStreamGuard guard = std::move(guard_result.get());
+
+  EXPECT_EQ(guard.stream(), nullptr);
+
+  auto current_stream_result = getCurrentCUDAStream(0);
+  ASSERT_TRUE(current_stream_result.ok());
+}
+
+// CallerStreamGuard / getCallerStream select the backend's stream through pure
+// thread-local state and never touch a device. They still need the CUDA headers
+// to build, but no CUDA device at runtime, so they run outside the device-gated
+// fixture above using opaque (fake) stream values.
+namespace {
+// Opaque, distinct, never-dereferenced stream handles; using object addresses
+// avoids an int-to-pointer cast.
+cudaStream_t fake_stream(int index) {
+  static char storage[3];
+  return reinterpret_cast<cudaStream_t>(&storage[index]);
+}
+} // namespace
+
+TEST(CallerStreamGuardTest, NoGuardReportsNullopt) {
+  EXPECT_FALSE(getCallerStream().has_value());
+}
+
+TEST(CallerStreamGuardTest, GuardSelectsThenRestores) {
+  const cudaStream_t selected = fake_stream(0);
+  {
+    CallerStreamGuard guard(selected);
+    EXPECT_EQ(getCallerStream(), selected);
+  }
+  EXPECT_FALSE(getCallerStream().has_value());
+}
+
+TEST(CallerStreamGuardTest, ExplicitNullStreamIsStillSelected) {
+  CallerStreamGuard guard(nullptr);
+  ASSERT_TRUE(getCallerStream().has_value());
+  EXPECT_EQ(*getCallerStream(), nullptr);
+}
+
+TEST(CallerStreamGuardTest, SelectionIsThreadLocal) {
+  const cudaStream_t selected = fake_stream(0);
+  CallerStreamGuard guard(selected);
+
+  bool child_started_without_stream = false;
+  bool child_selected_own_stream = false;
+  std::thread child([&]() {
+    child_started_without_stream = !getCallerStream().has_value();
+    CallerStreamGuard child_guard(fake_stream(1));
+    child_selected_own_stream = getCallerStream() == fake_stream(1);
+  });
+  child.join();
+
+  EXPECT_TRUE(child_started_without_stream);
+  EXPECT_TRUE(child_selected_own_stream);
+  EXPECT_EQ(getCallerStream(), selected);
+}
+
+TEST(CallerStreamGuardTest, NestedGuardsRestoreOuter) {
+  const cudaStream_t outer = fake_stream(1);
+  const cudaStream_t inner = fake_stream(2);
+  CallerStreamGuard outer_guard(outer);
+  {
+    CallerStreamGuard inner_guard(inner);
+    EXPECT_EQ(getCallerStream(), inner);
+  }
+  EXPECT_EQ(getCallerStream(), outer);
+}
+
+TEST(CallerStreamGuardCompileTimeTest, NotCopyable) {
+  static_assert(
+      !std::is_copy_constructible_v<CallerStreamGuard>,
+      "CallerStreamGuard should not be copy constructible");
+  static_assert(
+      !std::is_copy_assignable_v<CallerStreamGuard>,
+      "CallerStreamGuard should not be copy assignable");
+}
+
+TEST(CUDAStreamRegistryTest, PeekDoesNotCreateAndClearResets) {
+  // An explicit index skips the cudaGetDevice path, so this needs no device;
+  // use an index no other test touches.
+  constexpr DeviceIndex kIdx = 5;
+  EXPECT_FALSE(peekCurrentCUDAStream(kIdx).has_value());
+  ASSERT_EQ(setCurrentCUDAStream(fake_stream(0), kIdx), Error::Ok);
+  EXPECT_EQ(peekCurrentCUDAStream(kIdx), fake_stream(0));
+  clearCurrentCUDAStream(kIdx);
+  EXPECT_FALSE(peekCurrentCUDAStream(kIdx).has_value());
+}

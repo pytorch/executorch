@@ -1,0 +1,76 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Shared output tile store for both LLM SDPA and fused SDPA.
+ *
+ * Layout selection (caller must #define OUT_LAYOUT before including):
+ *   DSHB (0) — fused SDPA: [B, H, S, D] → WHCN {D, S, H, B}
+ *              index = (head * S + s) * D4 + d4
+ *   DHSB (1) — LLM SDPA:  [B, S, H, D] → WHCN {D, H, S, B}
+ *              index = (s * H + head) * D4 + d4
+ *
+ * Required macros/variables:
+ *   t_output      — output tensor binding
+ *   OUTPUT_BUFFER  — buffer mode (otherwise texture)
+ */
+
+#ifndef SDPA_FP_OUT_TILE_STORE_GLSLH
+#define SDPA_FP_OUT_TILE_STORE_GLSLH
+
+#ifndef DSHB
+#define DSHB 0
+#define DHSB 1
+#endif
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+
+void store_out_d4(
+    const LINEAR_FP_OUTPUT_TILE_VEC4_T out_texel,
+    const int d4,
+    const int q_h,
+    const int s,
+    const int D4,
+    const int Q_H,
+    const int S) {
+#ifdef OUTPUT_BUFFER
+  #if OUT_LAYOUT == DSHB
+    t_output[(q_h * S * D4) + (s * D4) + d4] = VEC4_T(out_texel);
+  #elif OUT_LAYOUT == DHSB
+    t_output[(s * Q_H * D4) + (q_h * D4) + d4] = VEC4_T(out_texel);
+  #endif
+#else // texture
+  #if OUT_LAYOUT == DSHB
+    imageStore(t_output, ivec3(d4, s, q_h), VEC4_T(out_texel));
+  #elif OUT_LAYOUT == DHSB
+    imageStore(t_output, ivec3(d4, q_h, s), VEC4_T(out_texel));
+  #endif
+#endif
+}
+
+void store_sdpa_out_tile_with_checks(
+    const FPOutTile tile,
+    const int d4_start,
+    const int s_start,
+    const int q_h,
+    const int D4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
+      if (d4_start + d4 < D4 && s_start + s < S) {
+        store_out_d4(
+            tile.data[s][d4], d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_OUT_TILE_STORE_GLSLH

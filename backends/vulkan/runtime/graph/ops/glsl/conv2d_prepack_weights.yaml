@@ -1,0 +1,19 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv2d_prepack_weights:
+  parameter_names_with_default_values:
+    DTYPE: float
+    BUF_DTYPE: float
+  generate_variant_forall:
+    combination:
+      parameter_names: [DTYPE, BUF_DTYPE]
+      combos:
+        - parameter_values: [float, float]
+        - parameter_values: [half, float]
+        - parameter_values: [half, half]
+  shader_variants:
+    - NAME: conv2d_prepack_weights

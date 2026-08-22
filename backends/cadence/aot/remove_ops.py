@@ -1,0 +1,976 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-strict
+
+from typing import cast, List, Optional, Sequence, Set, Type
+
+# Import these for the cadence function signatures.
+import executorch.backends.cadence.aot.ops_registrations  # noqa: F401
+import torch
+import torch.fx
+from executorch.backends.cadence.aot.fuse_ops import FuseTransposeOrPermuteOpPairsPass
+from executorch.backends.cadence.aot.pass_utils import (
+    get_arg,
+    RemoveOrReplacePassInterface,
+    set_arg,
+)
+from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
+from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps as _SharedRemovePermutesAroundElementwiseOps,
+)
+from executorch.backends.transforms.replace_squeeze_unsqueeze_with_view import (
+    ReplaceSqueezeAndUnsqueezeWithViewPass as _SharedReplaceSqueezeAndUnsqueezeWithViewPass,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
+from executorch.exir.pass_base import (
+    ExportedProgramPassBase,
+    ExportedProgramPassResult,
+    ExportPass,
+    PassResult,
+)
+from executorch.exir.pass_manager import PassManager, PassType
+from executorch.exir.passes import dead_code_elimination_pass
+from torch.export import ExportedProgram
+from torch.export.graph_signature import InputKind, OutputKind
+from torch.fx.node import Node
+from torch.utils import _pytree as pytree
+
+
+class RemoveCloneOpsTransformImported(ExportPass):
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        finalize_passes: List[PassType] = [
+            RemoveCloneOpsTransform(eliminate_quant_dequant_pairs=False),
+        ]
+        result = PassManager(passes=finalize_passes)(graph_module)
+        dead_code_elimination_pass(result.graph_module)
+        return result
+
+
+class RemoveDetachCopyPass(RemoveOrReplacePassInterface):
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.detach_copy.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+# The following class consolidates passes to remove ops that are redundant:
+# either by the virtue of the operation they perform, or redundant in the
+# context of inference.
+class RemoveRedundantOps:
+    passes = [
+        RemoveDetachCopyPass,
+    ]
+
+
+class RemoveZeroSizedCatArgsPass(RemoveOrReplacePassInterface):
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        # Get the cat inputs (first argument is a list of tensors)
+        cat_inputs_arg = node.args[0]
+
+        # Assert that cat_inputs_arg is iterable
+        assert isinstance(
+            cat_inputs_arg, (list, tuple)
+        ), "cat_inputs_arg must be a sequence type"
+
+        # Filter out zero-sized tensors
+        cat_inputs: list[Node] = []
+        for arg in cat_inputs_arg:
+            if isinstance(arg, Node) and arg.meta.get("val") is not None:
+                if arg.meta["val"].numel() > 0:
+                    cat_inputs.append(arg)
+
+        # If all tensors were empty, create a full op with the right shape
+        if not cat_inputs:
+            empty_shape = node.meta["val"].shape
+            dtype = node.meta["val"].dtype
+            # Create a new full node
+            with node.graph.inserting_before(node):
+                full_node = node.graph.call_function(
+                    exir_ops.edge.aten.full.default,
+                    args=(tuple(empty_shape), 0),
+                    kwargs={"dtype": dtype},
+                )
+                full_node.meta = node.meta.copy()
+            node.replace_all_uses_with(full_node)
+            return True
+
+        # If only one tensor remains, replace with it
+        if len(cat_inputs) == 1:
+            node.replace_all_uses_with(cat_inputs[0])
+            return True
+
+        # If the number of inputs changed, update the cat args
+        if len(cat_inputs) < len(cat_inputs_arg):
+            # Update the first argument with filtered inputs
+            new_args = list(node.args)
+            new_args[0] = cat_inputs
+            node.args = tuple(new_args)
+            return True
+
+        # No changes needed
+        return False
+
+
+class RemoveNopExpandOpPass(RemoveOrReplacePassInterface):
+    """
+    For an expand op, if the operator shape matches the expand shape, then the
+    expand is a nop.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.expand_copy.default,
+            exir_ops.edge.aten.expand.default,
+        ]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        if input_node.meta["val"].shape == node.meta["val"].shape:
+            node.replace_all_uses_with(input_node)
+            return True
+        return False
+
+
+class RemoveToOpsPass(RemoveOrReplacePassInterface):
+    # aten.to.* as of now are all nops
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.to.dtype,
+            exir_ops.edge.aten.to.dtype_layout,
+        ]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+class RemoveZeroSizedConstantPadNd(RemoveOrReplacePassInterface):
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.constant_pad_nd.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        # Get padding argument (second argument)
+        if len(node.args) < 2:
+            return False
+
+        padding = node.args[1]
+        if not isinstance(padding, (list, tuple)):
+            return False
+
+        # If any padding value is non-zero, keep the node
+        if any(x != 0 for x in padding):
+            return False
+
+        # All padding is zero, replace with input
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+class RemoveNopSliceOrViewOpPass(RemoveOrReplacePassInterface):
+    """
+    Remove slice ops that are more like views, and view ops that do not change the shape
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.slice_copy.Tensor,
+            exir_ops.edge.aten.view_copy.default,
+        ]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        changed = False
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        if input_node.meta["val"].shape == node.meta["val"].shape:
+            node.replace_all_uses_with(input_node)
+            changed = True
+
+        return changed
+
+
+class RemoveNopLinalgVectorNormOpPass(RemoveOrReplacePassInterface):
+    """
+    If the norm is applied over a dimension that is size 1, it can be eliminated.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.linalg_vector_norm.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        # If the op has three args or less, it can't be a nop
+        if len(node.args) <= 3:
+            return False
+        # If dim is None, or keepdim is False, it is not a nop
+        dim = cast(Optional[tuple[int, ...]], node.args[2])
+        keepdim = cast(bool, node.args[3])
+        if dim is None or not keepdim:
+            return False
+
+        # If the norm has 4 args and keepdim is True, check if dim is not None
+        # and if the dimensions in dim are size 1. If not, the norm is not a nop.
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        shape = input_node.meta["val"].shape
+        if len(node.args) < 4:
+            for d in dim:
+                if shape[d] != 1:
+                    return False
+
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+class RemoveContiguousOpPass(RemoveOrReplacePassInterface):
+    """
+    This is based on the assumption that all tensors are contiguous in ExecuTorch
+    and after cadence passes, and we should revisit this if that assumption is no longer true.
+    This causes the model to not be runnable with the arguments given to the
+    original graph module.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.contiguous.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+class RemoveAliasCopyOpPass(RemoveOrReplacePassInterface):
+    """
+
+    alias_copy is a no-op and can be removed.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.alias_copy.default]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        node.replace_all_uses_with(input_node)
+        return True
+
+
+class RemoveNopRequantizeOpPass(RemoveOrReplacePassInterface):
+    """
+    For a requantize op, if the following three conditions are satisfied:
+    1. the in_scale matches the out_scale
+    2. the in_zero_point matches the out_zero_point
+    3. the dtypes of the input and output tensors are the same
+    then the requantize op is redundant, and can be eliminated
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.cadence.requantize.per_tensor]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input_node = node.args[0]
+        assert isinstance(input_node, Node)
+        in_scale = node.args[1]
+        in_zero_point = node.args[2]
+        out_scale = node.args[3]
+        out_zero_point = node.args[4]
+        out_dtype = node.args[5]
+        in_dtype = input_node.meta["val"].dtype
+        # Check the three conditions
+        if (
+            in_scale == out_scale
+            and in_zero_point == out_zero_point
+            and in_dtype == out_dtype
+        ):
+            node.replace_all_uses_with(input_node)
+            return True
+        return False
+
+
+class RemoveNopMulOpPass(RemoveOrReplacePassInterface):
+    """
+    If a mul op is multiplying two tensors with the same shape and one
+    of those tensors is all zeros, return the zero tensor instead.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mul.Tensor]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input1 = node.args[0]
+        input2 = node.args[1]
+        assert isinstance(input1, Node)
+        assert isinstance(input2, Node)
+
+        # Check if both inputs have the same shape
+        if input1.meta["val"].shape != input2.meta["val"].shape:
+            return False
+
+        # Check if one of the inputs is a zero tensor
+        if input1.target == exir_ops.edge.aten.full.default:
+            if input1.args[1] == 0:
+                node.replace_all_uses_with(input1)
+                return True
+        elif input2.target == exir_ops.edge.aten.full.default:
+            if input2.args[1] == 0:
+                node.replace_all_uses_with(input2)
+                return True
+
+        return False
+
+
+class RemoveNopAddOpPass(RemoveOrReplacePassInterface):
+    """
+    If an add op is adding two tensors with the same shape and one
+    of those tensors is all zeros, return the other tensor instead.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.add.Tensor]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        input1 = node.args[0]
+        input2 = node.args[1]
+        assert isinstance(input1, Node)
+        assert isinstance(input2, Node)
+
+        # Check if both inputs have the same shape
+        if input1.meta["val"].shape != input2.meta["val"].shape:
+            return False
+
+        # Check if one of the inputs is a zero tensor
+        if input1.target == exir_ops.edge.aten.full.default:
+            if input1.args[1] == 0:
+                node.replace_all_uses_with(input2)
+                return True
+        elif input2.target == exir_ops.edge.aten.full.default:
+            if input2.args[1] == 0:
+                node.replace_all_uses_with(input1)
+                return True
+
+        return False
+
+
+class RemovePermuteBeforeMeanPass(RemoveOrReplacePassInterface):
+    """Remove or sink permute ops that precede mean reductions through unary chains.
+
+    When a permute feeds into a mean (possibly through unary ops like
+    dequantize/quantize), two optimizations apply:
+
+    1. If non-reduced dims maintain their relative order and positions, the
+       permute is fully removed and the mean's reduction dims are remapped.
+    2. Otherwise, the permute is moved after the mean so it operates on
+       smaller data.
+
+    Cost model
+    ----------
+    Let S_in = input size in bytes, S_out = output size in bytes,
+    R = S_in / S_out (reduction ratio), C_c = contiguous mean compute
+    cost, C_s = strided mean compute cost, and Delta = C_s - C_c.
+
+    Original graph (permute -> mean):
+        Cost_orig = 3*S_in + S_out + C_c
+        Breakdown: permute reads and writes S_in (2*S_in), mean reads
+        S_in and writes S_out.
+
+    Case 1 -- full removal (mean with remapped dims, no permute):
+        Cost_remove = S_in + S_out + C_s
+        Profitable when: Delta < 2*S_in
+        The strided access penalty must be less than twice the full
+        input tensor I/O (the eliminated permute cost).
+
+    Case 2 -- reorder (mean with remapped dims -> small permute):
+        Cost_reorder = S_in + 3*S_out + C_s
+        Profitable when: Delta < 2*(S_in - S_out) = 2*S_in*(R-1)/R
+        At R = 4 the threshold is 1.5*S_in; at R = 16 it approaches
+        2*S_in, converging to the full-removal bound as S_out becomes
+        negligible.
+
+    Full removal always dominates reorder when both are structurally
+    possible (Cost_remove < Cost_reorder since S_out < 3*S_out), so
+    removal is applied without a cost gate.
+
+    Additionally, if the original permute does not place the reduction
+    dims as the trailing (innermost) dimensions, the mean is already
+    strided in the original graph. Removing or sinking the permute
+    saves the permute I/O (2*S_in) while the mean performance can only
+    improve or stay the same. This makes the transformation
+    unconditionally profitable without needing the cost model.
+    """
+
+    _UNARY_TARGETS: frozenset[EdgeOpOverload] = frozenset(
+        {
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.neg.default,
+            exir_ops.edge.aten.abs.default,
+        }
+    )
+
+    _MIN_REDUCTION_RATIO_FOR_REORDER: int = 4
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.mean.dim]
+
+    def _find_permute_through_unary_chain(self, mean_node: Node) -> Optional[Node]:
+        """Walk backward from mean through single-user unary ops to find a permute."""
+        current = mean_node.args[0]
+        if not isinstance(current, Node):
+            return None
+        while True:
+            if current.target == exir_ops.edge.aten.permute_copy.default:
+                return current
+            if current.target not in self._UNARY_TARGETS:
+                return None
+            if len(current.users) != 1:
+                return None
+            parent = current.args[0]
+            if not isinstance(parent, Node):
+                return None
+            current = parent
+
+    @staticmethod
+    def _reduction_dims_are_trailing(reduction_dims: list[int], ndim: int) -> bool:
+        """Check whether all reduction dims are the trailing (innermost) dims."""
+        canonical = sorted(d % ndim for d in reduction_dims)
+        return canonical == list(range(ndim - len(canonical), ndim))
+
+    def _is_reorder_profitable(
+        self,
+        reduction_dims: list[int],
+        new_reduction_dims: list[int],
+        ndim: int,
+        input_shape: torch.Size,
+    ) -> bool:
+        """Determine whether sinking the permute past the mean is profitable.
+
+        Three cases, in order of evaluation:
+
+        1. The original permute does not place the reduction dims as trailing
+           (innermost) dimensions. The mean is already strided, so removing
+           the permute saves 2*S_in with no mean degradation. Always
+           profitable.
+
+        2. The new (remapped) reduction dims are trailing in the original
+           layout. The mean stays contiguous after the transformation
+           (Delta ~ 0). Always profitable.
+
+        3. The mean becomes strided. The reorder is profitable when
+           Delta < 2*S_in*(R-1)/R. We approximate this by requiring
+           R >= _MIN_REDUCTION_RATIO_FOR_REORDER, ensuring the I/O savings
+           from operating on a smaller tensor outweigh the strided access
+           penalty.
+        """
+        if not self._reduction_dims_are_trailing(reduction_dims, ndim):
+            return True
+
+        if self._reduction_dims_are_trailing(new_reduction_dims, ndim):
+            return True
+
+        reduction_ratio = 1
+        canonical_reduction = set(new_reduction_dims)
+        for d in canonical_reduction:
+            reduction_ratio *= input_shape[d]
+
+        return reduction_ratio >= self._MIN_REDUCTION_RATIO_FOR_REORDER
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        reduction_dims = get_arg(node, "dim", list[int])
+
+        permute_node = self._find_permute_through_unary_chain(node)
+        if permute_node is None:
+            return False
+
+        perm = get_arg(permute_node, "dims", list[int])
+        ndim = len(perm)
+
+        if len(permute_node.users) != 1:
+            return False
+
+        permute_input = permute_node.args[0]
+        assert isinstance(permute_input, Node)
+
+        new_reduction_dims = [perm[d] for d in reduction_dims]
+        keepdim = get_arg(node, "keepdim", bool)
+
+        # Determine if the permute can be fully removed (post-mean permute
+        # would be a no-op) vs needing to be sunk after the mean.
+        canonical_reduction = set(new_reduction_dims)
+        if keepdim:
+            can_remove = all(
+                perm[d] == d for d in range(ndim) if d not in canonical_reduction
+            )
+        else:
+            non_reduced_in_perm_order = [
+                d for d in perm if d not in canonical_reduction
+            ]
+            can_remove = non_reduced_in_perm_order == sorted(non_reduced_in_perm_order)
+
+        # Full removal is almost always profitable. Reorder requires a
+        # tighter cost bound; verify via the cost model before proceeding.
+        if not can_remove:
+            input_shape = permute_input.meta["val"].shape
+            if not self._is_reorder_profitable(
+                reduction_dims, new_reduction_dims, ndim, input_shape
+            ):
+                return False
+
+        # Rewire: the permute's single user (either the mean itself or the
+        # first unary op in the chain) should read from the permute's input.
+        permute_user = next(iter(permute_node.users))
+        permute_user.replace_input_with(permute_node, permute_input)
+        node.args = (node.args[0], new_reduction_dims) + node.args[2:]
+
+        # Re-derive the mean's meta since its reduction dims changed.
+        fake_args = pytree.tree_map(
+            lambda x: x.meta["val"] if isinstance(x, Node) else x,
+            node.args,
+        )
+        node.meta["val"] = node.target(*fake_args)  # pyre-ignore[29]
+
+        if not can_remove:
+            # Compute the post-mean permute on the reduced output.
+            if keepdim:
+                post_perm = list(perm)
+            else:
+                non_reduced_original = sorted(
+                    d for d in range(ndim) if d not in canonical_reduction
+                )
+                non_reduced_permuted = [d for d in perm if d not in canonical_reduction]
+                post_perm = [
+                    non_reduced_original.index(d) for d in non_reduced_permuted
+                ]
+
+            graph = node.graph
+            with graph.inserting_after(node):
+                new_permute = graph.create_node(
+                    "call_function",
+                    exir_ops.edge.aten.permute_copy.default,
+                    args=(node, post_perm),
+                )
+                new_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                    node.meta["val"], post_perm
+                )
+            for user in list(node.users):
+                if user is not new_permute:
+                    user.replace_input_with(node, new_permute)
+
+        return True
+
+
+class ReplaceSqueezeAndUnsqueezeWithViewPassImported(
+    _SharedReplaceSqueezeAndUnsqueezeWithViewPass
+):
+    pass
+
+
+class RemovePermutesAroundElementwiseOps(_SharedRemovePermutesAroundElementwiseOps):
+    def __init__(self) -> None:
+        super().__init__(
+            extra_permutable_ops={
+                exir_ops.edge.cadence.quantize_per_tensor.default,
+                exir_ops.edge.cadence.dequantize_per_tensor.default,
+                exir_ops.edge.cadence.quantized_relu.per_tensor,
+                exir_ops.edge.cadence.requantize.per_tensor,
+                exir_ops.edge.cadence.quantized_add.per_tensor,
+            }
+        )
+
+
+class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
+    """
+    Looks for subgraphs of the form:
+    squeeze -> [elementwise ops] -> view
+    and removes the squeeze node by reshaping the intermediate ops. If the final view
+    is a corresponding unsqueeze it should also get eliminated by noop view elimination
+    later. Only handles simple chain of intermediates now.
+
+    The pass works on view ops instead of squeeze directly, thus it should be run after
+    the squeeze/unsqueeze->view lowering.
+    """
+
+    intermediate_ops: set[EdgeOpOverload] = {
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
+        # Ops that require special handling:
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
+    def get_squeeze_indices(self, view_node: Node) -> List[int]:
+        """
+        Returns the indices of the input dimensions that are squeezed in the output if
+        view node is a squeeze. Returns an empty list otherwise.
+        """
+        input_node = get_arg(view_node, "input", Node)
+        input_shape = input_node.meta["val"].shape
+        output_shape = view_node.meta["val"].shape
+
+        if len(input_shape) <= len(output_shape):
+            return []
+
+        squeeze_indices = []
+        out_idx = 0
+        for idx, dim in enumerate(input_shape):
+            if out_idx >= len(output_shape):
+                return []
+            if dim == output_shape[out_idx]:
+                out_idx += 1
+            else:
+                # If there's a mismatch between the input and output dimensions, input
+                # dimension has to be 1.
+                if dim == 1:
+                    squeeze_indices.append(idx)
+                else:
+                    return []
+
+        # Check if all the output dimensions are consumed.
+        if out_idx != len(output_shape):
+            return []
+
+        return squeeze_indices
+
+    def handle_squeeze(self, view_node: Node, visited_view_nodes: Set[Node]) -> bool:
+        if view_node in visited_view_nodes:
+            return False
+
+        squeeze_indices = self.get_squeeze_indices(view_node)
+        if not squeeze_indices:
+            return False
+
+        # Only handle simple chains for now.
+        if len(view_node.users) != 1:
+            return False
+        node = next(iter(view_node.users))
+
+        # Traverse down from the node until finding another view op.
+        intermediate_slices = []
+        while node.target != exir_ops.edge.aten.view_copy.default:
+            # Only handle simple chains for now
+            if len(node.users) != 1:
+                return False
+            if node.target not in self.intermediate_ops:
+                return False
+            if node.target == exir_ops.edge.aten.slice_copy.Tensor:
+                intermediate_slices.append(node)
+            node = next(iter(node.users))
+
+        # View node found. We can't optimize this view_node again since the
+        # input shape is invalid now so add it to the visited set.
+        visited_view_nodes.add(node)
+
+        # Update the intermediate slices.
+        for slice_node in intermediate_slices:
+            slice_rank = len(slice_node.meta["val"].shape)
+            slice_dim = get_arg(slice_node, "dim", int)
+            if slice_dim < 0:
+                slice_dim += slice_rank
+            for squeeze_dim in squeeze_indices:
+                if slice_dim >= squeeze_dim:
+                    slice_dim += 1
+            set_arg(slice_node, "dim", slice_dim)
+
+        # Skip the initial view node.
+        input_node = get_arg(view_node, "input", Node)
+        view_node.replace_all_uses_with(input_node)
+        return True
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        visited_view_nodes = set()
+        modified = False
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default, sort=True
+        ):
+            modified |= self.handle_squeeze(view_node, visited_view_nodes)
+
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            graph_module.recompile()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
+
+
+class RemoveBranchedQuantDequant(ExportPass):
+    """
+    This pass looks for adjacent quant and dequant nodes with identical
+    parameters, where the quant node has other users in addition to the
+    dequant. The quant and dequant pair would be removed by the
+    FuseQuantDequantToRequantizePass if not for the multiple users. This pass
+    removes just the dequant node by connecting it to the quant's parent node
+    """
+
+    quantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.quantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    }
+    dequantize_op_packets: set[EdgeOpOverloadPacket] = {
+        exir_ops.edge.cadence.dequantize_per_tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    }
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        modified = self.remove_branched(
+            graph_module, self.quantize_op_packets, self.dequantize_op_packets
+        )
+        modified |= self.remove_branched(
+            graph_module, self.dequantize_op_packets, self.quantize_op_packets
+        )
+
+        if modified:
+            graph_module.graph.eliminate_dead_code()
+            result = super().call(graph_module)
+            return result
+
+        return PassResult(graph_module, False)
+
+    def remove_branched(
+        self,
+        graph_module: torch.fx.GraphModule,
+        producer_pkts: set[EdgeOpOverloadPacket],
+        consumer_pkts: set[EdgeOpOverloadPacket],
+    ) -> bool:
+        modified = False
+        for node in graph_module.graph.nodes:
+            if (
+                node.op != "call_function"
+                or not isinstance(node.target, EdgeOpOverload)
+                or get_edge_overload_packet(node.target) not in producer_pkts
+            ):
+                continue
+
+            if len(node.users) < 2:
+                continue
+
+            for user in node.users:
+                if (
+                    not isinstance(user.target, EdgeOpOverload)
+                    or get_edge_overload_packet(user.target) not in consumer_pkts
+                ):
+                    continue
+
+                # check qparams match
+                if node.args[1:] != user.args[1:]:
+                    continue
+
+                user.replace_all_uses_with(node.args[0])
+                modified = True
+
+        return modified
+
+
+class RemoveCatFromSliceCopyPass(RemoveOrReplacePassInterface):
+    """
+    Simplifies cat->slice_copy chains where one of the cat inputs can be directly passed
+    to the slice_copy.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: Node) -> bool:
+        cat_node = get_arg(node, "input", Node)
+        slice_dim = get_arg(node, "dim", int)
+        start_idx = get_arg(node, "start", Optional[int])
+        end_idx = get_arg(node, "end", Optional[int])
+        step = get_arg(node, "step", int)
+
+        if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
+            return False
+
+        # Make sure cat and slice happens on the same dimension.
+        cat_dim = get_arg(cat_node, "dim", int)
+        if cat_dim != slice_dim:
+            return False
+
+        # Canonicalize slice indices.
+        cat_output_shape = cat_node.meta["val"].shape
+        if start_idx is None:
+            start_idx = 0
+        elif start_idx < 0:
+            start_idx += cat_output_shape[cat_dim]
+        if end_idx is None or end_idx > cat_output_shape[cat_dim]:
+            end_idx = cat_output_shape[cat_dim]
+        elif end_idx < 0:
+            end_idx += cat_output_shape[cat_dim]
+
+        offset = 0
+        for cat_input_node in get_arg(cat_node, "tensors", Sequence[Node]):
+            cat_input_shape = cat_input_node.meta["val"].shape
+
+            # Check if the slice range overlaps with the cat input range.
+            if offset <= start_idx and end_idx <= offset + cat_input_shape[cat_dim]:
+                node.replace_input_with(cat_node, cat_input_node)
+                set_arg(node, "start", start_idx - offset)
+                set_arg(node, "end", end_idx - offset)
+                return True
+
+            offset += cat_input_shape[cat_dim]
+
+        return False
+
+
+class CommonRemovePasses:
+    passes: List[Type[ExportPass]] = [
+        # Canonicalise squeeze/unsqueeze to view_copy first: the nop-view and
+        # permute passes below both reason about view_copy only.
+        ReplaceSqueezeAndUnsqueezeWithViewPassImported,
+        RemoveAliasCopyOpPass,
+        RemoveNopExpandOpPass,
+        RemoveNopSliceOrViewOpPass,
+        RemoveToOpsPass,
+        RemoveZeroSizedCatArgsPass,
+        RemovePermuteBeforeMeanPass,
+        RemovePermutesAroundElementwiseOps,
+        FuseTransposeOrPermuteOpPairsPass,
+        RemoveSqueezeViewBeforeElementwiseOps,
+        RemoveCatFromSliceCopyPass,
+        RemoveCloneOpsTransformImported,
+    ]
+
+
+class RemoveBNTrackingMutationsPass(ExportedProgramPassBase):
+    """Remove num_batches_tracked buffer mutations from an ExportedProgram.
+
+    run_decompositions() re-introduces num_batches_tracked mutable buffer
+    outputs even when batch_norm uses training=False. These mutations are
+    dead (the counter is never read in eval mode) but inflate the PTE.
+
+    Removes both the mutation outputs AND the dead input placeholders,
+    along with their corresponding graph signature entries and state dict
+    tensors.
+    """
+
+    def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
+        ep = exported_program
+        nbt_fqns = {
+            fqn
+            for fqn in ep.graph_signature.buffers_to_mutate.values()
+            if "num_batches_tracked" in fqn
+        }
+        if not nbt_fqns:
+            return ExportedProgramPassResult(ep, False)
+
+        nbt_output_names = {
+            name
+            for name, fqn in ep.graph_signature.buffers_to_mutate.items()
+            if fqn in nbt_fqns
+        }
+        # buffers_to_mutate / inputs_to_buffers are keyed by the FX node name
+        # (arg.name), which can differ from node.target when export
+        # uniquifies or sanitizes placeholder names. Match on node.name.
+        nbt_input_names = {
+            name
+            for name, fqn in ep.graph_signature.inputs_to_buffers.items()
+            if fqn in nbt_fqns
+        }
+
+        gm = ep.graph_module
+
+        # Remove mutation outputs
+        output_node = gm.graph.output_node()
+        output_args = list(output_node.args[0])
+        for idx in sorted(
+            (
+                i
+                for i, n in enumerate(output_args)
+                if isinstance(n, torch.fx.Node) and n.name in nbt_output_names
+            ),
+            reverse=True,
+        ):
+            output_args.pop(idx)
+        output_node.args = (tuple(output_args),)
+
+        gm.graph.eliminate_dead_code()
+
+        removed_nbt_fqns: Set[str] = set()
+
+        # Remove dead input placeholders
+        for node in list(gm.graph.nodes):
+            if (
+                node.op == "placeholder"
+                and node.name in nbt_input_names
+                and len(node.users) == 0
+            ):
+                removed_nbt_fqns.add(ep.graph_signature.inputs_to_buffers[node.name])
+                gm.graph.erase_node(node)
+
+        gm.recompile()
+
+        # Update output specs
+        ep.graph_signature.output_specs = [
+            s
+            for s in ep.graph_signature.output_specs
+            if not (
+                s.kind == OutputKind.BUFFER_MUTATION
+                and s.target is not None
+                and s.target in nbt_fqns
+            )
+        ]
+
+        ep.graph_signature.input_specs = [
+            s
+            for s in ep.graph_signature.input_specs
+            if not (
+                s.kind == InputKind.BUFFER
+                and s.target is not None
+                and s.target in removed_nbt_fqns
+            )
+        ]
+
+        # Remove state for buffers whose placeholders were removed.
+        for fqn in removed_nbt_fqns:
+            ep.state_dict.pop(fqn, None)
+            ep.constants.pop(fqn, None)
+
+        return ExportedProgramPassResult(ep, True)
+
+
+class CadenceRemoveNops:
+    passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
+        SimplifySliceOpPass,
+        RemoveNopRequantizeOpPass,
+        RemoveZeroSizedConstantPadNd,
+        RemoveContiguousOpPass,
+        RemoveNopMulOpPass,
+        RemoveNopAddOpPass,
+        RemoveNopLinalgVectorNormOpPass,
+        RemoveBranchedQuantDequant,
+    ]

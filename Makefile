@@ -1,0 +1,525 @@
+# ==============================================================================
+# ExecuTorch Targets Makefile
+# ==============================================================================
+#
+# This Makefile provides convenient targets for building ExecuTorch model runners
+# with different backend configurations (CPU, CUDA, Metal), as well as other
+# binary targets.
+#
+# WHAT THIS BUILDS:
+# -----------------
+# Each target builds:
+# 1. ExecuTorch core libraries with the specified backend (CPU, CUDA, or Metal)
+# 2. The model-specific runner executable in cmake-out/examples/models/<model>/
+#
+# SUPPORTED MODELS:
+# -----------------
+# - voxtral:  Multimodal voice + text model (CPU, CUDA, Metal, MLX)
+# - voxtral_realtime: Realtime speech-to-text model (CPU, CUDA, Metal, MLX)
+# - whisper:  Speech recognition model (CPU, CUDA, Metal)
+# - parakeet: Speech recognition model (CPU, CUDA, Metal, MLX)
+# - sortformer: Speaker diarization model (CPU, CUDA)
+# - silero_vad: Voice activity detection model (CPU)
+# - llama:    Text generation model (CPU)
+# - llava:    Vision + language model (CPU)
+# - gemma3:   Text generation model (CPU, CUDA)
+#
+# USAGE:
+# ------
+# make <model>-<backend>    # Build a specific model with a backend
+# make help                  # Show all available targets
+# make clean                 # Remove all build artifacts
+#
+# Examples:
+#   make voxtral-cuda        # Build Voxtral with CUDA backend
+#   make llama-cpu           # Build Llama with CPU backend
+#   make whisper-metal       # Build Whisper with Metal backend (macOS)
+#
+# HOW TO ADD A NEW MODEL:
+# -----------------------
+# To add a new model (e.g., "mymodel"), follow these steps:
+#
+# 1. Create a CMakePresets.json in examples/models/mymodel/:
+#    - Define configurePresets for each backend (base, cpu, cuda, metal)
+#    - Define buildPresets with the target name from CMakeLists.txt
+#    - Define workflowPresets that combine configure + build steps
+#    - See examples/models/voxtral/CMakePresets.json for multi-backend reference
+#    - Or see examples/models/llama/CMakePresets.json for simple single-preset reference
+#
+# 2. Add targets to this Makefile:
+#    a) Add to .PHONY declaration: mymodel-cuda mymodel-cpu mymodel-metal
+#    b) Add help text in the help target
+#    c) Add target implementations following this pattern:
+#
+#       mymodel-cuda:
+#           @echo "==> Building and installing ExecuTorch with CUDA..."
+#           cmake --workflow --preset llm-release-cuda
+#           @echo "==> Building MyModel runner with CUDA..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-cuda
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+#       mymodel-cpu:
+#           @echo "==> Building and installing ExecuTorch..."
+#           cmake --workflow --preset llm-release
+#           @echo "==> Building MyModel runner (CPU)..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-cpu
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+#       mymodel-metal:
+#           @echo "==> Building and installing ExecuTorch with Metal..."
+#           cmake --workflow --preset llm-release-metal
+#           @echo "==> Building MyModel runner with Metal..."
+#           cd examples/models/mymodel && cmake --workflow --preset mymodel-metal
+#           @echo ""
+#           @echo "✓ Build complete!"
+#           @echo "  Binary: cmake-out/examples/models/mymodel/mymodel_runner"
+#
+# 3. Test your new targets:
+#    make mymodel-cpu     # or mymodel-cuda, mymodel-metal
+#
+# NOTES:
+# ------
+# - CUDA backend is only available on Linux systems
+# - Metal backend is only available on macOS (Darwin) systems
+# - Some models may not support all backends (check model documentation)
+# - Binary outputs are located in cmake-out/examples/models/<model>/
+# - The preset names in CMakePresets.json must match the names used in Makefile
+#
+# ==============================================================================
+
+.PHONY: voxtral-cuda voxtral-cpu voxtral-metal voxtral-mlx voxtral_realtime-cuda voxtral_realtime-rocm voxtral_realtime-cpu voxtral_realtime-metal voxtral_realtime-mlx voxtral_tts-cpu voxtral_tts-cuda whisper-cuda whisper-cuda-debug whisper-cpu whisper-metal parakeet-cuda parakeet-cuda-debug parakeet-cpu parakeet-metal parakeet-mlx parakeet-vulkan dinov2-cuda dinov2-cuda-debug sortformer-cuda sortformer-cpu silero-vad-cpu llama-cuda llama-cuda-debug llama-cpu lfm_2_5-mlx llava-cpu gemma3-cuda gemma3-cpu gemma4_31b-cuda gemma4_31b-mlx muse-glimmer-cuda muse-glimmer-mlx qwen3_5_moe-cuda qwen3_5_moe-metal qwen3_5_moe-mlx clean help
+
+help:
+	@echo "This Makefile adds targets to build runners for various models on various backends. Run using \`make <target>\`. Available targets:"
+	@echo "  voxtral-cuda        - Build Voxtral runner with CUDA backend"
+	@echo "  voxtral-cpu         - Build Voxtral runner with CPU backend"
+	@echo "  voxtral-metal       - Build Voxtral runner with Metal backend (macOS only)"
+	@echo "  voxtral-mlx         - Build Voxtral runner with MLX backend"
+	@echo "  voxtral_realtime-cuda - Build Voxtral Realtime runner with CUDA backend"
+	@echo "  voxtral_realtime-rocm - Build Voxtral Realtime runner with ROCm backend"
+	@echo "  voxtral_realtime-cpu - Build Voxtral Realtime runner with CPU backend"
+	@echo "  voxtral_realtime-metal - Build Voxtral Realtime runner with Metal backend (macOS only)"
+	@echo "  voxtral_realtime-mlx - Build Voxtral Realtime runner with MLX backend"
+	@echo "  voxtral_tts-cpu     - Build Voxtral TTS runner (CPU)"
+	@echo "  voxtral_tts-cuda    - Build Voxtral TTS runner with CUDA backend"
+	@echo "  whisper-cuda        - Build Whisper runner with CUDA backend"
+	@echo "  whisper-cuda-debug  - Build Whisper runner with CUDA backend (debug mode)"
+	@echo "  whisper-cpu         - Build Whisper runner with CPU backend"
+	@echo "  whisper-metal       - Build Whisper runner with Metal backend (macOS only)"
+	@echo "  parakeet-cuda       - Build Parakeet runner with CUDA backend"
+	@echo "  parakeet-cuda-debug - Build Parakeet runner with CUDA backend (debug mode)"
+	@echo "  parakeet-cpu        - Build Parakeet runner with CPU backend"
+	@echo "  parakeet-metal      - Build Parakeet runner with Metal backend (macOS only)"
+	@echo "  parakeet-mlx        - Build Parakeet runner with MLX backend"
+	@echo "  parakeet-vulkan     - Build Parakeet runner with Vulkan backend"
+	@echo "  dinov2-cuda         - Build DINOv2 runner with CUDA backend"
+	@echo "  dinov2-cuda-debug   - Build DINOv2 runner with CUDA backend (debug mode)"
+	@echo "  sortformer-cuda     - Build Sortformer runner with CUDA backend"
+	@echo "  sortformer-cpu      - Build Sortformer runner with CPU backend"
+	@echo "  silero-vad-cpu      - Build Silero VAD runner with CPU backend"
+	@echo "  llama-cuda          - Build Llama runner with CUDA backend"
+	@echo "  llama-cuda-debug    - Build Llama runner with CUDA backend (debug mode)"
+	@echo "  llama-cpu           - Build Llama runner with CPU backend"
+	@echo "  lfm_2_5-mlx         - Build LFM2.5 runner with MLX backend"
+	@echo "  llava-cpu           - Build Llava runner with CPU backend"
+	@echo "  gemma3-cuda         - Build Gemma3 runner with CUDA backend"
+	@echo "  gemma3-cpu          - Build Gemma3 runner with CPU backend"
+	@echo "  gemma4_31b-cuda     - Build Gemma 4 31B runner and worker with CUDA backend"
+	@echo "  gemma4_31b-mlx      - Build Gemma 4 31B runner and worker with MLX backend"
+	@echo "  muse-glimmer-cuda   - Build Muse Glimmer runners and worker with CUDA backend"
+	@echo "  muse-glimmer-mlx    - Build Muse Glimmer runners and worker with MLX backend"
+	@echo "  qwen3_5_moe-cuda    - Build Qwen3.5 MoE runner with CUDA backend"
+	@echo "  qwen3_5_moe-metal   - Build Qwen3.5 MoE runner with Metal backend"
+	@echo "  qwen3_5_moe-mlx     - Build Qwen3.5 MoE runner with MLX backend"
+	@echo "  clean               - Clean build artifacts"
+
+voxtral-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Voxtral runner with CUDA..."
+	cd examples/models/voxtral && cmake --workflow --preset voxtral-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral/voxtral_runner"
+
+voxtral-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral runner (CPU)..."
+	cd examples/models/voxtral && cmake --workflow --preset voxtral-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral/voxtral_runner"
+
+voxtral-metal:
+	@echo "==> Building and installing ExecuTorch with Metal..."
+	cmake --workflow --preset llm-release-metal
+	@echo "==> Building Voxtral runner with Metal..."
+	cd examples/models/voxtral && cmake --workflow --preset voxtral-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral/voxtral_runner"
+
+voxtral-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Voxtral runner with MLX..."
+	cd examples/models/voxtral && cmake --workflow --preset voxtral-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral/voxtral_runner"
+
+whisper-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Whisper runner with CUDA..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+whisper-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Whisper runner with CUDA (debug mode)..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+whisper-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Whisper runner (CPU)..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+whisper-metal:
+	@echo "==> Building and installing ExecuTorch with Metal..."
+	cmake --workflow --preset llm-release-metal
+	@echo "==> Building Whisper runner with Metal..."
+	cd examples/models/whisper && cmake --workflow --preset whisper-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/whisper/whisper_runner"
+
+parakeet-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Parakeet runner with CUDA..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Parakeet runner with CUDA (debug mode)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Parakeet runner (CPU)..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-metal:
+	@echo "==> Building and installing ExecuTorch with Metal (stats enabled)..."
+	cmake --workflow --preset llm-metal-stats
+	@echo "==> Building Parakeet runner with Metal..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Parakeet runner with MLX..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+parakeet-vulkan:
+	@echo "==> Building and installing ExecuTorch with Vulkan..."
+	cmake --workflow --preset llm-debug-vulkan
+	@echo "==> Building Parakeet runner with Vulkan..."
+	cd examples/models/parakeet && cmake --workflow --preset parakeet-vulkan
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/parakeet/parakeet_runner"
+
+dinov2-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --preset llm-release-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-release-cuda-install
+	@echo "==> Building DINOv2 runner with CUDA..."
+	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
+
+dinov2-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --preset llm-debug-cuda -DEXECUTORCH_BUILD_EXTENSION_IMAGE=ON
+	cmake --build --preset llm-debug-cuda-install
+	@echo "==> Building DINOv2 runner with CUDA (debug mode)..."
+	cd examples/models/dinov2 && cmake --workflow --preset dinov2-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/dinov2/dinov2_runner"
+
+sortformer-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Sortformer runner with CUDA..."
+	cd examples/models/sortformer && cmake --workflow --preset sortformer-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+sortformer-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Sortformer runner (CPU)..."
+	cd examples/models/sortformer && cmake --workflow --preset sortformer-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/sortformer/sortformer_runner"
+
+voxtral_realtime-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral Realtime runner (CPU)..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-metal:
+	@echo "==> Building and installing ExecuTorch with Metal (stats enabled)..."
+	cmake --workflow --preset llm-metal-stats
+	@echo "==> Building Voxtral Realtime runner with Metal..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Voxtral Realtime runner with CUDA..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-rocm:
+	@echo "==> Building and installing ExecuTorch with ROCm..."
+	cmake --workflow --preset llm-release-rocm
+	@echo "==> Building Voxtral Realtime runner with ROCm..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-rocm
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out-rocm-llm/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+voxtral_realtime-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Voxtral Realtime runner with MLX..."
+	cd examples/models/voxtral_realtime && cmake --workflow --preset voxtral-realtime-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_realtime/voxtral_realtime_runner"
+
+silero-vad-cpu:
+	@echo "==> Configuring and installing ExecuTorch (without LLM runner)..."
+	cmake --preset llm-release -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=OFF
+	cmake --build cmake-out --parallel "$$(sysctl -n hw.ncpu)"
+	cmake --install cmake-out
+	@echo "==> Building Silero VAD runners (CPU)..."
+	cmake -DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_FIND_ROOT_PATH=$(CURDIR)/cmake-out \
+		-DCMAKE_PREFIX_PATH=$(CURDIR)/cmake-out \
+		-S examples/models/silero_vad \
+		-B cmake-out/examples/models/silero_vad
+	cmake --build cmake-out/examples/models/silero_vad --target silero_vad_runner silero_vad_stream_runner
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/silero_vad/silero_vad_runner"
+	@echo "  Binary: cmake-out/examples/models/silero_vad/silero_vad_stream_runner"
+
+llama-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Llama runner (CPU)..."
+	cd examples/models/llama && cmake --workflow --preset llama-release
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
+llama-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Llama runner with CUDA..."
+	cd examples/models/llama && cmake --workflow --preset llama-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
+llama-cuda-debug:
+	@echo "==> Building and installing ExecuTorch with CUDA (debug mode)..."
+	cmake --workflow --preset llm-debug-cuda
+	@echo "==> Building Llama runner with CUDA (debug mode)..."
+	cd examples/models/llama && cmake --workflow --preset llama-cuda-debug
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
+lfm_2_5-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building LFM2.5 runner with MLX..."
+	cd examples/models/llama && cmake --workflow --preset llama-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llama/llama_main"
+
+llava-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Llava runner (CPU)..."
+	cd examples/models/llava && cmake --workflow --preset llava
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/llava/llava_main"
+
+gemma3-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Gemma3 runner with CUDA..."
+	cd examples/models/gemma3 && cmake --workflow --preset gemma3-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
+
+gemma3-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Gemma3 runner (CPU)..."
+	cd examples/models/gemma3 && cmake --workflow --preset gemma3-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/gemma3/gemma3_e2e_runner"
+
+voxtral_tts-cpu:
+	@echo "==> Building and installing ExecuTorch..."
+	cmake --workflow --preset llm-release
+	@echo "==> Building Voxtral TTS runner (CPU)..."
+	cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-cpu
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_tts/voxtral_tts_runner"
+
+voxtral_tts-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Voxtral TTS runner with CUDA..."
+	cd examples/models/voxtral_tts && cmake --workflow --preset voxtral-tts-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/voxtral_tts/voxtral_tts_runner"
+
+qwen3_5_moe-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Qwen3.5 MoE runner and no-bleed test with CUDA..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+	@echo "  Test:   cmake-out/examples/models/qwen3_5_moe/test_qwen35_moe_nobleed"
+
+muse-glimmer-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Muse Glimmer runners and worker with CUDA..."
+	cd examples/models/muse-glimmer && cmake --workflow --preset muse-glimmer-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
+	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
+	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
+
+muse-glimmer-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Muse Glimmer runners and worker with MLX..."
+	cd examples/models/muse-glimmer && cmake --workflow --preset muse-glimmer-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Solo runner:   cmake-out/examples/models/muse-glimmer/solo_runner"
+	@echo "  DFlash runner: cmake-out/examples/models/muse-glimmer/dflash_runner"
+	@echo "  Worker:        cmake-out/examples/models/muse-glimmer/muse_glimmer_worker"
+
+gemma4_31b-cuda:
+	@echo "==> Building and installing ExecuTorch with CUDA..."
+	cmake --workflow --preset llm-release-cuda
+	@echo "==> Building Gemma 4 31B runner, worker, and no-bleed test with CUDA..."
+	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-cuda
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+	@echo "  Test:   cmake-out/examples/models/gemma4_31b/test_gemma4_31b_nobleed"
+
+gemma4_31b-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Gemma 4 31B runner and worker with MLX..."
+	cd examples/models/gemma4_31b && cmake --workflow --preset gemma4-31b-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Runner: cmake-out/examples/models/gemma4_31b/gemma4_31b_runner"
+	@echo "  Worker: cmake-out/examples/models/gemma4_31b/gemma4_31b_worker"
+
+qwen3_5_moe-metal:
+	@echo "==> Building and installing ExecuTorch with Metal..."
+	cmake --workflow --preset llm-release-metal
+	@echo "==> Building Qwen3.5 MoE runner with Metal..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-metal
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+
+qwen3_5_moe-mlx:
+	@echo "==> Building and installing ExecuTorch with MLX..."
+	cmake --workflow --preset mlx-release
+	@echo "==> Building Qwen3.5 MoE runner with MLX..."
+	cd examples/models/qwen3_5_moe && cmake --workflow --preset qwen3-5-moe-mlx
+	@echo ""
+	@echo "✓ Build complete!"
+	@echo "  Binary: cmake-out/examples/models/qwen3_5_moe/qwen3_5_moe_runner"
+
+clean:
+	rm -rf cmake-out \
+	       extension/llm/tokenizers/build \
+	       extension/llm/tokenizers/pytorch_tokenizers.egg-info
+
+# qwen3_dflash-mlx target removed: it depended on the C++ engine sources
+# (CMakeLists.txt, CMakePresets.json, qwen3_dflash_engine.*), which are
+# gitignored/not yet landed. Restore this target in the follow-up PR that
+# actually lands the C++ engine.

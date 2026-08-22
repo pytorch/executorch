@@ -1,0 +1,54 @@
+name: Test CoreML Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  # Emits PR diff file list; non-PR events emit '*' so the per-job
+  # `if:` short-circuits via `event_name != 'pull_request'`. This
+  # workflow always shows on HUD; only the heavy test-coreml job is
+  # path-gated.
+  changed-files:
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
+  test-coreml:
+    needs: changed-files
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/apple/coreml') ||
+      contains(needs.changed-files.outputs.changed-files, 'backends/test/suite') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/test_backend.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.ci/scripts/setup-macos.sh') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/test-backend-coreml.yml') ||
+      contains(needs.changed-files.outputs.changed-files, '.github/workflows/_test_backend.yml')
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: coreml
+      # The heavier coreml_static_int8 macOS matrix saturates the shared
+      # macOS runner pool, so run it only on the nightly schedule. Every-commit
+      # events (push, pull_request) run the lighter coreml flow only.
+      flows: >-
+        ${{ github.event_name == 'schedule'
+            && '["coreml", "coreml_static_int8"]'
+            || '["coreml"]' }}
+      # The operators suite under coreml_static_int8 has never finished inside the
+      # 180 minute limit, so it is cancelled every night after burning about three
+      # macOS runner hours for no result. See issue #21623.
+      exclude: '[{"flow": "coreml_static_int8", "suite": "operators"}]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      run-macos: true

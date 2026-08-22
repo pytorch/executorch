@@ -1,0 +1,525 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import functools
+import inspect
+from collections import OrderedDict
+from typing import Dict
+
+from executorch.backends.qualcomm._passes import (
+    AnnotateAvgPool1D,
+    AnnotateGetAttr,
+    AnnotateQuantAttrs,
+    AnnotateStack,
+    AnnotateUnbind,
+    CanonicalizeConv,
+    ConvertBmmToMatmul,
+    ConvertLinearToConv2d,
+    ConvertMhaToSha,
+    ConvertSquareToPow,
+    DecomposeAcos,
+    DecomposeAddmm,
+    DecomposeAny,
+    DecomposeAtan2,
+    DecomposeBinaryAlpha,
+    DecomposeCDist,
+    DecomposeColIm,
+    DecomposeDiagonal,
+    DecomposeDivMode,
+    DecomposeEinsum,
+    DecomposeExpM1,
+    DecomposeFill,
+    DecomposeFloorDivide,
+    DecomposeGlu,
+    DecomposeHyperbolicVariants,
+    DecomposeLinalgVectorNorm,
+    DecomposeLogVariants,
+    DecomposeMaxPool3d,
+    DecomposeMinMaxDim,
+    DecomposePad,
+    DecomposePDist,
+    DecomposeRemainder,
+    DecomposeRoll,
+    DecomposeSelectScatter,
+    DecomposeSilu,
+    DecomposeTan,
+    DecomposeThreshold,
+    DecomposeTriu,
+    DecomposeTrunc,
+    DecomposeVar,
+    DecomposeWrapWithAutocast,
+    ExpandBroadcastTensorShape,
+    FixedLinearKeepDim,
+    FoldQDQ,
+    FuseConsecutiveCast,
+    FuseConsecutiveTranspose,
+    I64toI32,
+    InsertCastForFpActQuantizedWeight,
+    InsertIOQDQ,
+    InsertRequantize,
+    InsertReshapeForReduceOps,
+    LayoutTransform,
+    LiftConstantScalarOperands,
+    RecomposePadMaxPool2d,
+    RecomposePixelUnshuffle,
+    RecomposeRmsNorm,
+    Remove0DTensor,
+    RemoveRedundancy,
+    ReplaceArangeArgs,
+    ResolveDebugHandle,
+    TagQuantIO,
+)
+from executorch.backends.qualcomm.serialization.qc_schema import (
+    QnnExecuTorchBackendType,
+)
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
+)
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
+from executorch.exir import ExportedProgram
+from executorch.exir.pass_manager import PassManager
+from executorch.exir.program._program import (
+    _get_updated_graph_signature,
+    lift_constant_tensor_pass,
+)
+from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_manager import this_before_that_pass_constraint
+
+
+class QnnPassManager(PassManager):
+
+    def _transform(self, graph_module: GraphModule):
+        return self(graph_module).graph_module
+
+    def _reset(self):
+        """Reset to avoid accumulation when the same pass manager instance is reused."""
+        self.passes = []
+        self.constraints = []
+
+    @classmethod
+    def get_default_pass_activations(cls):
+        """Return default pass classes and their activation status.
+
+        This is a classmethod that can be invoked without instantiating the
+        pass manager, e.g. ``QnnHtpPassManager.get_default_pass_activations()``.
+
+        Returns:
+            list[tuple[type[ExportPass], bool]]: Each tuple is
+                ``(PassClass, is_active)``. Active passes run by default in
+                :meth:`get_capture_program_passes`; inactive ones (e.g.
+                ``ConvertBmmToMatmul``, ``TagQuantIO``) are registered but
+                skipped unless explicitly enabled via a *passes_job* override.
+
+        Note:
+            Subclasses should override this method to add backend-specific
+            passes via ``super().get_default_pass_activations()`` + extend.
+        """
+        return [
+            (AnnotateAvgPool1D, True),
+            (AnnotateGetAttr, True),
+            (AnnotateQuantAttrs, True),
+            (AnnotateStack, True),
+            (AnnotateUnbind, True),
+            (CanonicalizeConv, True),
+            (ConvertBmmToMatmul, False),
+            (ConvertLinearToConv2d, False),
+            (DecomposeAcos, True),
+            (DecomposeAddmm, True),
+            (DecomposeAny, True),
+            (DecomposeAtan2, True),
+            (DecomposeColIm, True),
+            (DecomposePDist, True),
+            (DecomposeDiagonal, True),
+            (DecomposeDivMode, True),
+            (DecomposeHyperbolicVariants, True),
+            (DecomposeLogVariants, True),
+            (DecomposeMaxPool3d, True),
+            (DecomposeMinMaxDim, True),
+            (DecomposePad, True),
+            (DecomposeRemainder, True),
+            (DecomposeTan, True),
+            (DecomposeTrunc, True),
+            (ExpandBroadcastTensorShape, True),
+            (FixedLinearKeepDim, True),
+            (FoldQDQ, True),
+            (I64toI32, True),
+            (InsertCastForFpActQuantizedWeight, True),
+            (LayoutTransform, True),
+            (RecomposePadMaxPool2d, True),
+            (RecomposePixelUnshuffle, True),
+            (RecomposeRmsNorm, True),
+            (Remove0DTensor, True),
+            (RemoveRedundancy, True),
+            (TagQuantIO, False),
+            (ResolveDebugHandle, True),
+        ]
+
+    @classmethod
+    def get_annotation_passes(cls):
+        """Return annotation pipeline pass classes. Override in subclasses to add backend-specific passes."""
+        return [
+            RemoveRedundancy,
+            RecomposePixelUnshuffle,
+            RecomposeRmsNorm,
+            ReplaceArangeArgs,
+            DecomposeAcos,
+            DecomposeAddmm,
+            DecomposeAtan2,
+            DecomposeBinaryAlpha,
+            DecomposeCDist,
+            DecomposePDist,
+            DecomposeDiagonal,
+            DecomposeDivMode,
+            DecomposeMaxPool3d,
+            DecomposePad,
+            DecomposeScaledDotProductAttention,
+            DecomposeRoll,
+            DecomposeSilu,
+            DecomposeTan,
+            DecomposeThreshold,
+            DecomposeTriu,
+            DecomposeTrunc,
+            DecomposeVar,
+            DecomposeWrapWithAutocast,
+            DecomposeEinsum,
+            DecomposeExpM1,
+            DecomposeFill,
+            DecomposeGlu,
+            DecomposeHyperbolicVariants,
+            DecomposeRemainder,
+            DecomposeSelectScatter,
+            DecomposeLinalgVectorNorm,
+            DecomposeLogVariants,
+            LiftConstantScalarOperands,
+            InsertReshapeForReduceOps,
+        ]
+
+    @classmethod
+    def get_export_passes(cls):
+        """Return export pipeline pass classes. Override in subclasses to add backend-specific passes."""
+        passes = [
+            DecomposeBinaryAlpha,
+            DecomposeCDist,
+            DecomposePDist,
+            DecomposePad,
+            DecomposeScaledDotProductAttention,
+            DecomposeRoll,
+            DecomposeSelectScatter,
+            DecomposeThreshold,
+            DecomposeTriu,
+            DecomposeLinalgVectorNorm,
+            DecomposeExpM1,
+            DecomposeFill,
+            DecomposeVar,
+            # DecomposeFloorDivide does not apply to the annotation pipeline,
+            # since the CPU QDQ model would reduce accuracy.
+            # We keep div and floor operations in floating-point to maintain precision.
+            # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
+            DecomposeFloorDivide,
+            DecomposeWrapWithAutocast,
+            ConvertSquareToPow,
+            LiftConstantScalarOperands,
+            InsertReshapeForReduceOps,
+        ]
+        return passes
+
+    @classmethod
+    def get_preprocess_passes(
+        cls,
+        use_mha2sha: bool = False,
+    ):
+        """Return preprocess pipeline pass classes. Override in subclasses to add backend-specific passes."""
+        passes = [
+            FoldQDQ,
+            ConvertMhaToSha,
+            InsertRequantize,
+            InsertIOQDQ,
+            LayoutTransform,
+            FuseConsecutiveCast,
+            FuseConsecutiveTranspose,
+        ]
+        if not use_mha2sha:
+            passes.remove(ConvertMhaToSha)
+        return passes
+
+    @classmethod
+    def get_passes_dependency_for_capture_program(cls):
+        """Return ordering constraints between edge-program passes.
+
+        This is a classmethod that can be invoked without instantiating the
+        pass manager, e.g. ``QnnHtpPassManager.get_passes_dependency_for_capture_program()``.
+
+        Each entry maps a pass class to the list of passes that must run
+        **before** it. These constraints are resolved by
+        :meth:`get_to_edge_transform_passes` via
+        ``PassManager.solve_constraints()``.
+
+        Returns:
+            dict[type[ExportPass], list[type[ExportPass]]]: Mapping from a
+                pass to its prerequisite passes.
+
+        Note:
+            Subclasses should override this method to add backend-specific
+            dependencies via
+            ``super().get_passes_dependency_for_capture_program()`` + update.
+        """
+        return {
+            AnnotateAvgPool1D: [RemoveRedundancy],
+            AnnotateGetAttr: [
+                CanonicalizeConv,
+                ConvertLinearToConv2d,
+                I64toI32,
+                LayoutTransform,
+            ],
+            AnnotateQuantAttrs: [
+                ConvertBmmToMatmul,
+                RecomposePixelUnshuffle,
+                RemoveRedundancy,
+            ],
+            AnnotateStack: [RemoveRedundancy],
+            AnnotateUnbind: [RemoveRedundancy],
+            CanonicalizeConv: [FoldQDQ],
+            ConvertBmmToMatmul: [RecomposePixelUnshuffle],
+            ConvertLinearToConv2d: [FoldQDQ],
+            DecomposeAcos: [RemoveRedundancy],
+            DecomposeAddmm: [RemoveRedundancy],
+            DecomposeAny: [RemoveRedundancy],
+            DecomposeAtan2: [RemoveRedundancy],
+            DecomposeColIm: [FoldQDQ],
+            DecomposePDist: [RemoveRedundancy],
+            DecomposeDiagonal: [RemoveRedundancy],
+            DecomposeDivMode: [RemoveRedundancy],
+            DecomposeFill: [RemoveRedundancy],
+            DecomposeHyperbolicVariants: [RemoveRedundancy],
+            DecomposeLogVariants: [RemoveRedundancy],
+            DecomposeMaxPool3d: [RemoveRedundancy],
+            DecomposePad: [RemoveRedundancy],
+            DecomposeRemainder: [RemoveRedundancy],
+            DecomposeTan: [RemoveRedundancy],
+            DecomposeTrunc: [RemoveRedundancy],
+            ExpandBroadcastTensorShape: [FoldQDQ],
+            FixedLinearKeepDim: [FoldQDQ],
+            FoldQDQ: [AnnotateQuantAttrs, AnnotateStack, AnnotateUnbind],
+            I64toI32: [
+                LiftConstantScalarOperands,
+                RemoveRedundancy,
+            ],
+            InsertCastForFpActQuantizedWeight: [FoldQDQ, LayoutTransform],
+            LayoutTransform: [
+                AnnotateQuantAttrs,
+                ExpandBroadcastTensorShape,
+                FixedLinearKeepDim,
+            ],
+            RecomposePadMaxPool2d: [DecomposeMaxPool3d, FoldQDQ],
+            RecomposePixelUnshuffle: [RemoveRedundancy],
+            RecomposeRmsNorm: [RemoveRedundancy],
+            TagQuantIO: [LayoutTransform],
+            ResolveDebugHandle: [
+                TagQuantIO
+            ],  # IMPORTANT: Please always ensure ResolveDebugHandle is the last executed pass.
+        }
+
+    @classmethod
+    def get_capture_program_passes(cls):
+        """Build an ordered mapping of passes with activation flags and init defaults.
+
+        This is a classmethod that can be invoked without instantiating the
+        pass manager, e.g. ``QnnHtpPassManager.get_capture_program_passes()``.
+
+        Introspects each pass's ``__init__`` signature to extract default
+        keyword arguments, which are later used by
+        :meth:`get_to_edge_transform_passes` to instantiate active passes.
+
+        Returns:
+            OrderedDict[type[ExportPass], dict]: Keys are pass classes; values
+                contain ``QCOM_PASS_ACTIVATE_KEY`` (bool) and
+                ``QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY`` (dict of param defaults).
+        """
+        passes = OrderedDict()
+        for p, act in cls.get_default_pass_activations():
+            init_signature = inspect.signature(p.__init__)
+
+            args_kwargs_defaults = {
+                k: v.default if v.default is not inspect.Parameter.empty else None
+                for k, v in init_signature.parameters.items()
+                if k != "self"
+            }
+
+            passes[p] = {
+                QCOM_PASS_ACTIVATE_KEY: act,
+                QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: args_kwargs_defaults,
+            }
+
+        return passes
+
+    # TODO: Move these passes into qnn_partitioner and qnn_preprocess to
+    # prevent users from needing to call custom APIs like capture_program
+    def get_to_edge_transform_passes(
+        self,
+        exported_program: ExportedProgram,
+        passes_job: OrderedDict = None,
+        dep_table: Dict = None,
+        compiler_specs=None,
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
+        convert_linear_to_conv2d: bool = False,
+    ):
+        self._reset()
+        passes_job = (
+            passes_job if passes_job is not None else self.get_capture_program_passes()
+        )
+        if ConvertLinearToConv2d in passes_job and convert_linear_to_conv2d:
+            passes_job[ConvertLinearToConv2d][QCOM_PASS_ACTIVATE_KEY] = True
+        dep_table = (
+            dep_table
+            if dep_table is not None
+            else self.get_passes_dependency_for_capture_program()
+        )
+        for that, these in dep_table.items():
+            for this in these:
+                self.add_constraint(this_before_that_pass_constraint(this, that))
+        for p in passes_job:
+            self.add_pass(p)
+        self.solve_constraints()
+
+        sorted_passes = self.passes
+        self._reset()
+        for p in sorted_passes:
+            if not passes_job[p][QCOM_PASS_ACTIVATE_KEY]:
+                continue
+
+            kwargs = passes_job[p][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY]
+            if "edge_program" in kwargs:
+                kwargs["edge_program"] = exported_program
+            if "compiler_specs" in kwargs:
+                kwargs["compiler_specs"] = compiler_specs
+            if "skip_node_id_set" in kwargs:
+                kwargs["skip_node_id_set"] = skip_node_id_set
+            if "skip_node_op_set" in kwargs:
+                kwargs["skip_node_op_set"] = skip_node_op_set
+            self.add_pass(p(**kwargs))
+        self._validate_edge_passes()
+        return self.passes
+
+    def _validate_edge_passes(self) -> None:
+        assert isinstance(
+            self.passes[-1], ResolveDebugHandle
+        ), "Please ensure ResolveDebugHandle is the last executed edge pass."
+
+    def _instantiate_passes(self, pass_classes, **available_kwargs):
+        """Instantiate pass classes, injecting only kwargs each __init__ accepts."""
+        self._reset()
+        for p_cls in pass_classes:
+            init_params = inspect.signature(p_cls.__init__).parameters
+            kwargs = {k: v for k, v in available_kwargs.items() if k in init_params}
+            self.add_pass(p_cls(**kwargs))
+
+    def transform_for_annotation_pipeline(
+        self,
+        graph_module: GraphModule,
+    ):
+        self._instantiate_passes(
+            self.get_annotation_passes(),
+            quantization_capture=True,
+        )
+        return self._transform(graph_module)
+
+    def transform_for_export_pipeline(
+        self,
+        exported_program: ExportedProgram,
+    ):
+        self._instantiate_passes(
+            self.get_export_passes(),
+            edge_program=exported_program,
+            quantization_capture=True,
+        )
+        self._transform(exported_program.graph_module)
+        ep = lift_constant_tensor_pass(exported_program)
+        return ep
+
+    def transform_for_to_edge_pipeline(
+        self,
+        exported_program: ExportedProgram,
+        passes_job: OrderedDict = None,
+        dep_table: Dict = None,
+        convert_linear_to_conv2d: bool = False,
+    ):
+        transform_passes = self.get_to_edge_transform_passes(
+            exported_program,
+            passes_job=passes_job,
+            dep_table=dep_table,
+            convert_linear_to_conv2d=convert_linear_to_conv2d,
+        )
+        for p in transform_passes:
+            p(exported_program.graph_module)
+        lift_constant_tensor_pass(exported_program)
+        exported_program._graph_signature = _get_updated_graph_signature(
+            exported_program.graph_signature,
+            exported_program.graph_module,
+        )
+        exported_program._validate()
+
+        return exported_program
+
+    def transform_for_preprocess_pipeline(
+        self,
+        exported_program: ExportedProgram,
+        use_mha2sha=False,
+    ):
+        self._instantiate_passes(
+            self.get_preprocess_passes(use_mha2sha),
+            edge_program=exported_program,
+            force_fold=True,
+            insert_permute=True,
+        )
+        self._transform(exported_program.graph_module)
+        exported_program._graph_signature = _get_updated_graph_signature(
+            exported_program.graph_signature,
+            exported_program.graph_module,
+        )
+        return exported_program.graph_module
+
+
+@functools.lru_cache(maxsize=1)
+def _get_backend_pass_manager_map():
+    """Lazy import to avoid circular dependencies with backend subclasses."""
+    from executorch.backends.qualcomm._passes.backends.gpu.qnn_gpu_pass_manager import (
+        QnnGpuPassManager,
+    )
+    from executorch.backends.qualcomm._passes.backends.htp.qnn_htp_pass_manager import (
+        QnnHtpPassManager,
+    )
+    from executorch.backends.qualcomm._passes.backends.lpai.qnn_lpai_pass_manager import (
+        QnnLpaiPassManager,
+    )
+
+    return {
+        QnnExecuTorchBackendType.kGpuBackend: QnnGpuPassManager,
+        QnnExecuTorchBackendType.kHtpBackend: QnnHtpPassManager,
+        QnnExecuTorchBackendType.kLpaiBackend: QnnLpaiPassManager,
+    }
+
+
+def get_qnn_pass_manager_cls(
+    backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kHtpBackend,
+) -> type[QnnPassManager]:
+    """Return the QnnPassManager subclass for the given backend type.
+
+    Use this to call classmethods (e.g. ``get_capture_program_passes``,
+    ``get_passes_dependency_for_capture_program``) without instantiation.
+
+    Args:
+        backend_type: The QNN backend to target. Defaults to kHtpBackend.
+
+    Returns:
+        The QnnPassManager subclass (not an instance) for the requested
+        backend. Unrecognized backend types fall back to the base
+        QnnPassManager.
+    """
+    return _get_backend_pass_manager_map().get(backend_type, QnnPassManager)

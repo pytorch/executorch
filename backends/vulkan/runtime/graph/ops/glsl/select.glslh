@@ -1,0 +1,95 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef SELECT_GLSLH
+#define SELECT_GLSLH
+
+#ifdef USING_BUFFER
+
+/*
+ * Converts output tensor indices to input tensor indices for the select operation
+ * on buffer storage.
+ *
+ * This is done by "inserting" the select index at the selected_dim in the input
+ * tensor index.
+ *
+ * Parameters assumed to be defined:
+ * - inp: BufferMetadata
+ * - selected_dim
+ * - index
+ */
+TensorIndex out_tidx_to_in_tidx(const TensorIndex out_tidx) {
+  TensorIndex in_tidx;
+  initialize(in_tidx);
+
+  int in_size = int(size_at(inp, selected_dim));
+  int adjusted_index = index;
+  if (index < 0) {
+    adjusted_index = index + in_size;
+  }
+
+  // Copy indices before selected_dim
+  for (int d = 0; d < selected_dim; d++) {
+    in_tidx.data[div_4(d)][mod_4(d)] = idx_at(out_tidx, d);
+  }
+
+  // Insert the selected index
+  in_tidx.data[div_4(selected_dim)][mod_4(selected_dim)] = adjusted_index;
+
+  // Copy indices after selected_dim (shifted by 1)
+  for (int d = selected_dim; d < int_ndim(inp) - 1; d++) {
+    in_tidx.data[div_4(d + 1)][mod_4(d + 1)] = idx_at(out_tidx, d);
+  }
+
+  return in_tidx;
+}
+
+#else // texture storage
+
+/*
+ * Converts output tensor indices to input tensor indices for the select operation
+ * on texture storage.
+ *
+ * This is done by "inserting" the select index at the selected_dim in the input
+ * tensor index.
+ *
+ * Parameters assumed to be defined:
+ * - inp: TextureMetadata
+ * - selected_dim
+ * - index
+ */
+TensorIndex4D out_tidx_to_in_tidx(const TensorIndex4D out_tidx) {
+  TensorIndex4D in_tidx;
+  in_tidx.data = ivec4(0);
+
+  int adjusted_index = index;
+  if (index < 0) {
+    adjusted_index = index + safe_idx(inp.sizes, selected_dim);
+  }
+
+  // Handle different dimensions for selection
+  if (selected_dim == 0) {
+    // Select from width dimension
+    in_tidx.data = ivec4(adjusted_index, out_tidx.data.x, out_tidx.data.y, out_tidx.data.z);
+  } else if (selected_dim == 1) {
+    // Select from height dimension
+    in_tidx.data = ivec4(out_tidx.data.x, adjusted_index, out_tidx.data.y, out_tidx.data.z);
+  } else if (selected_dim == 2) {
+    // Select from channel dimension
+    in_tidx.data = ivec4(out_tidx.data.x, out_tidx.data.y, adjusted_index, out_tidx.data.z);
+  } else if (selected_dim == 3) {
+    // Select from batch dimension
+    in_tidx.data = ivec4(out_tidx.data.x, out_tidx.data.y, out_tidx.data.z, adjusted_index);
+  }
+
+  return in_tidx;
+}
+
+#endif // USING_BUFFER
+
+#endif // SELECT_GLSLH

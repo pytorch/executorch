@@ -1,0 +1,40 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
+
+oncall("executorch")
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quant",
+    srcs = [
+        "cuda_packers.py",
+        "quant/quantize.py",
+        "quant/recipe.py",
+    ],
+    base_module = "executorch.examples.models.gemma4_31b",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cuda:coalesced_int4_tensor",
+        "//executorch/backends/cuda:dp4a_planar_int5_tensor",
+        "//executorch/backends/cuda:dp4a_planar_int6_tensor",
+        "//executorch/extension/llm/export:gguf",
+        "//executorch/extension/llm/export:int4",
+        "//executorch/extension/llm/export:quant",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_library,
+    name = "quantize_and_save",
+    srcs = ["quantize_and_save.py"],
+    base_module = "executorch.examples.models.gemma4_31b",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/extension/llm/export:load",
+        "//executorch/extension/llm/export:quant",
+        "//pytorch/ao:torchao",
+        "fbsource//third-party/pypi/safetensors:safetensors",
+    ],
+)

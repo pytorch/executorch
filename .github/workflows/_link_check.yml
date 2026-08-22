@@ -1,0 +1,147 @@
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      base_ref:
+        description: >
+          Base branch commit. Pull requests lint from its merge base with ref, pushes
+          lint from it directly. Empty, or all zeros, means check the whole tree.
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  lint-urls:
+    if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-url-lint') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          # Only the merge base path needs history, and it costs ~25s. Quote the
+          # branches: bare 0 is falsy, so `&& 0 || 1` would always yield 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      - name: Lint URLs
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+          FROM_MERGE_BASE: ${{ github.event_name == 'pull_request' }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            if [ "$FROM_MERGE_BASE" = "true" ]; then
+              git fetch --no-tags origin "$BASE_REF"
+              # Where the branch left the base branch, not the base branch tip, or a
+              # branch cut before recent commits is blamed for every line it merely
+              # lacks. No merge base means no usable range, so leave args empty for a
+              # whole tree scan: the scripts treat a bad range as nothing to check.
+              if merge_base=$(git merge-base "$BASE_REF" "$HEAD_REF"); then
+                args=("$merge_base" "$HEAD_REF")
+              fi
+            else
+              git fetch --no-tags --depth=1 origin "$BASE_REF"
+              args=("$BASE_REF" "$HEAD_REF")
+            fi
+          fi
+          ./scripts/lint_urls.sh "${args[@]}" || {
+            echo
+            echo "URL lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-url-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the URL you want to skip checking."
+            exit 1
+          }
+
+  lint-xrefs:
+    if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'skip-xref-lint') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          # Only the merge base path needs history, and it costs ~25s. Quote the
+          # branches: bare 0 is falsy, so `&& 0 || 1` would always yield 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      - name: Lint cross-references
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+          FROM_MERGE_BASE: ${{ github.event_name == 'pull_request' }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            if [ "$FROM_MERGE_BASE" = "true" ]; then
+              git fetch --no-tags origin "$BASE_REF"
+              # Where the branch left the base branch, not the base branch tip, or a
+              # branch cut before recent commits is blamed for every line it merely
+              # lacks. No merge base means no usable range, so leave args empty for a
+              # whole tree scan: the scripts treat a bad range as nothing to check.
+              if merge_base=$(git merge-base "$BASE_REF" "$HEAD_REF"); then
+                args=("$merge_base" "$HEAD_REF")
+              fi
+            else
+              git fetch --no-tags --depth=1 origin "$BASE_REF"
+              args=("$BASE_REF" "$HEAD_REF")
+            fi
+          fi
+          ./scripts/lint_xrefs.sh "${args[@]}" || {
+            echo
+            echo "Xref lint failed."
+            echo "If this is a transient outage, you can bypass it by adding the \`skip-xref-lint\` label to your PR."
+            echo "Or add \`@lint-ignore\` somewhere on the same line as the reference you want to skip checking."
+            exit 1
+          }
+
+  lint-file-size:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          # Only the merge base path needs history, and it costs ~25s. Quote the
+          # branches: bare 0 is falsy, so `&& 0 || 1` would always yield 1.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      - name: Lint file sizes
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+          HEAD_REF: ${{ inputs.ref }}
+          FROM_MERGE_BASE: ${{ github.event_name == 'pull_request' }}
+        run: |
+          args=()
+          # A push creating a tag or branch reports an all zero SHA no remote can serve.
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
+            if [ "$FROM_MERGE_BASE" = "true" ]; then
+              git fetch --no-tags origin "$BASE_REF"
+              # Where the branch left the base branch, not the base branch tip, or a
+              # branch cut before recent commits is blamed for every line it merely
+              # lacks. No merge base means no usable range, so leave args empty for a
+              # whole tree scan: the scripts treat a bad range as nothing to check.
+              if merge_base=$(git merge-base "$BASE_REF" "$HEAD_REF"); then
+                args=("$merge_base" "$HEAD_REF")
+              fi
+            else
+              git fetch --no-tags --depth=1 origin "$BASE_REF"
+              args=("$BASE_REF" "$HEAD_REF")
+            fi
+          fi
+          chmod +x ./scripts/lint_file_size.sh
+          ./scripts/lint_file_size.sh "${args[@]}" || {
+            echo
+            echo "File size lint failed: some files exceed the 1 MB limit."
+            echo "If you really need large files, consider using Git LFS or storing them elsewhere."
+            echo "If you really need to get unblocked and check in the file, can add it to the EXCEPTIONS list in scripts/lint_file_size.sh."
+            exit 1
+          }

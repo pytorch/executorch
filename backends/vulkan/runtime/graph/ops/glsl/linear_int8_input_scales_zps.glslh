@@ -1,0 +1,59 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines common functions and structs to be used across matrix multiplication
+ * operators.
+ */
+
+#ifndef LINEAR_INT8_INPUT_SCALES_ZPS_GLSLH
+#define LINEAR_INT8_INPUT_SCALES_ZPS_GLSLH
+
+#include "common.glslh"
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct Int8InputScales {
+  VEC4_T data[TILE_M4];
+};
+
+struct Int8InputZeroPoints {
+  ivec4 data[TILE_M4];
+};
+
+#ifdef DEBUG_MODE
+
+void printInt8InputScales(const Int8InputScales scales) {
+  debugPrintfEXT("input_scales: \\n");
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    debugPrintfEXT(
+        "  %f, %f, %f, %f, ",
+        scales.data[m4].x,
+        scales.data[m4].y,
+        scales.data[m4].z,
+        scales.data[m4].w);
+  }
+  debugPrintfEXT("\\n");
+}
+
+void printInt8InputZeroPoints(const Int8InputZeroPoints zero_points) {
+  debugPrintfEXT("input_zero_points: \\n");
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    debugPrintfEXT(
+        "  %d, %d, %d, %d, ",
+        zero_points.data[m4].x,
+        zero_points.data[m4].y,
+        zero_points.data[m4].z,
+        zero_points.data[m4].w);
+  }
+  debugPrintfEXT("\\n");
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_INT8_INPUT_SCALES_ZPS_GLSLH

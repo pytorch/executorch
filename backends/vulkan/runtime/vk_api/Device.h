@@ -1,0 +1,136 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+// @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
+
+#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+
+#include <string>
+#include <vector>
+
+namespace vkcompute {
+namespace vkapi {
+
+enum class DeviceType : uint32_t {
+  UNKNOWN,
+  NVIDIA,
+  MALI,
+  ADRENO,
+  SWIFTSHADER,
+};
+
+struct PhysicalDevice final {
+  // Handles
+  VkInstance instance;
+  VkPhysicalDevice handle;
+
+  // Properties obtained from Vulkan
+  VkPhysicalDeviceProperties properties;
+  VkPhysicalDeviceMemoryProperties memory_properties;
+
+  // Additional features available from extensions
+#ifdef VK_KHR_16bit_storage
+  VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
+#endif /* VK_KHR_16bit_storage */
+#ifdef VK_KHR_8bit_storage
+  VkPhysicalDevice8BitStorageFeatures shader_8bit_storage;
+#endif /* VK_KHR_8bit_storage */
+#ifdef VK_KHR_shader_float16_int8
+  VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
+#endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_integer_dot_product
+  VkPhysicalDeviceShaderIntegerDotProductFeatures
+      shader_int_dot_product_features;
+  VkPhysicalDeviceShaderIntegerDotProductProperties
+      shader_int_dot_product_properties;
+#endif /* VK_KHR_shader_integer_dot_product */
+
+#ifdef VK_KHR_cooperative_matrix
+  VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperative_matrix_features;
+  // True when VK_COMPONENT_TYPE_SINT8_KHR appears in the enumerated coopmat
+  // property list — required for coopmat<int8> shaders (e.g. dq8ca_q4gsw).
+  bool supports_int8_coopmat;
+#endif /* VK_KHR_cooperative_matrix */
+
+#ifdef VK_NV_cooperative_matrix2
+  VkPhysicalDeviceCooperativeMatrix2FeaturesNV cooperative_matrix2_features;
+#endif /* VK_NV_cooperative_matrix2 */
+
+#ifdef VK_EXT_subgroup_size_control
+  VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroup_size_control_features;
+  VkPhysicalDeviceSubgroupSizeControlPropertiesEXT
+      subgroup_size_control_properties;
+#endif /* VK_EXT_subgroup_size_control */
+
+  // Available GPU queues
+  std::vector<VkQueueFamilyProperties> queue_families;
+
+  // Metadata
+  uint32_t num_compute_queues;
+  uint32_t api_version_major;
+  uint32_t api_version_minor;
+  bool supports_int16_shader_types;
+  bool supports_int64_shader_types;
+  bool supports_float64_shader_types;
+  bool has_unified_memory;
+  bool has_timestamps;
+  float timestamp_period;
+  size_t min_ubo_alignment;
+
+  // Subgroup properties (queried via VkPhysicalDeviceSubgroupProperties).
+  // Populated from VK_VERSION_1_1+ devices; otherwise left at safe defaults.
+  uint32_t subgroup_size;
+  VkSubgroupFeatureFlags supported_subgroup_ops;
+  VkShaderStageFlags supported_subgroup_stages;
+
+  // Subgroup size control (VK_EXT_subgroup_size_control / Vulkan 1.3 core).
+  // Populated only if the extension/feature is supported; default to safe
+  // values otherwise. min/max set to subgroup_size when the extension is
+  // missing so callers can use the same range queries unconditionally.
+  uint32_t min_subgroup_size;
+  uint32_t max_subgroup_size;
+  VkShaderStageFlags required_subgroup_size_stages;
+  bool supports_subgroup_size_control;
+  bool supports_compute_full_subgroups;
+
+  // Device identity
+  std::string device_name;
+  DeviceType device_type;
+
+  explicit PhysicalDevice(VkInstance instance, VkPhysicalDevice);
+
+ private:
+  void query_extensions_vk_1_0();
+  void query_extensions_vk_1_1();
+
+ public:
+  void override_device_name(const std::string& new_name);
+};
+
+struct DeviceHandle final {
+  VkDevice handle;
+
+  explicit DeviceHandle(VkDevice);
+  ~DeviceHandle();
+};
+
+void find_requested_device_extensions(
+    VkPhysicalDevice physical_device,
+    std::vector<const char*>& enabled_extensions,
+    const std::vector<const char*>& requested_extensions);
+
+std::string get_device_type_str(const VkPhysicalDeviceType type);
+
+std::string get_memory_properties_str(const VkMemoryPropertyFlags flags);
+
+std::string get_queue_family_properties_str(const VkQueueFlags flags);
+
+} // namespace vkapi
+} // namespace vkcompute

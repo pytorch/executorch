@@ -1,0 +1,9 @@
+---
+Language: ObjC
+ColumnLimit: 120
+AlignAfterOpenBracket: Align
+ObjCBinPackProtocolList: Auto
+ObjCBlockIndentWidth: 2
+ObjCBreakBeforeNestedBlockParam: true
+ObjCSpaceAfterProperty: false
+ObjCSpaceBeforeProtocolList: false

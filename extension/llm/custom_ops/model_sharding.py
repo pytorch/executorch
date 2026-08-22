@@ -1,0 +1,130 @@
+# Copyright (c) Qualcomm Innovation Center, Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+# pyre-ignore-all-errors
+import re
+from typing import List
+
+import executorch.extension.llm.custom_ops.op_fallback  # noqa: F401
+
+import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_PASS_ACTIVATE_KEY,
+    QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY,
+    QCOM_QUANT_ATTRS,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
+from torch.export.exported_program import ExportedProgram
+
+
+class SplitGraph(ExportPass):
+    """
+    Class to split the model to multiple partitions.
+    Because there is limited memory on the device, it could
+    not load all llama model in one pte.
+    """
+
+    def __init__(
+        self,
+        shard_layers: List[int],
+        pattern=r"layers\.(\d+)",
+        layer_prefix_offsets: dict = None,
+    ):
+        super().__init__()
+        self.shard_layers = shard_layers
+        self.pattern = pattern
+        # Maps nn_module_stack prefix -> offset to convert local layer index to
+        # global layer index. Required when a model has multiple sub-decoders
+        # whose layers are independently numbered (e.g. Gemma4 self_decoder
+        # layers 0-14 and cross_decoder layers 0-19 that map to global 15-34).
+        self.layer_prefix_offsets = layer_prefix_offsets or {}
+
+    def _get_global_layer(self, full_qualified_name: str):
+        for prefix, offset in self.layer_prefix_offsets.items():
+            m = re.match(rf"^{re.escape(prefix)}\.(\d+)", full_qualified_name)
+            if m:
+                return int(m.group(1)) + offset
+        m = re.search(self.pattern, full_qualified_name)
+        return int(m.group(1)) if m else None
+
+    def _insert_fallback_op(
+        self, graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
+        """
+        Insert fallback op before layer that needs to be shard.
+        Example:
+            There is 12 layers llama model and num_sharding is 3.
+            The first partition will contain layers [0, 4) and embedding.
+            The second partition will contain layers [4, 8).
+            The third partition will contain layers [8, 12) and output.
+        """
+        prev_node = None
+        prev_layer = None
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function" or "nn_module_stack" not in node.meta:
+                continue
+
+            module_values_list = list(node.meta["nn_module_stack"].values())
+            full_qualified_name = module_values_list[-1][0]
+            # Search which layer this node belongs to
+            cur_layer = self._get_global_layer(full_qualified_name)
+            if cur_layer is None:
+                continue
+
+            # Check the current node which is the last node of the layer
+            if cur_layer in self.shard_layers and prev_layer == cur_layer - 1:
+                with graph_module.graph.inserting_after(prev_node):
+                    users = list(prev_node.users.keys())
+                    inserted_node = graph_module.graph.create_node(
+                        "call_function",
+                        exir_ops.edge.llama.fallback.default,
+                        (prev_node,),
+                    )
+                    inserted_node.meta["val"] = prev_node.meta["val"]
+                    if prev_node.meta.get(QCOM_QUANT_ATTRS, None):
+                        inserted_node.meta[QCOM_QUANT_ATTRS] = prev_node.meta[
+                            QCOM_QUANT_ATTRS
+                        ]
+                    for user in users:
+                        user.replace_input_with(prev_node, inserted_node)
+
+            prev_layer = cur_layer
+            prev_node = node
+
+    def call(self, graph_module: torch.fx.GraphModule):
+        self._insert_fallback_op(graph_module)
+        graph_module.recompile()
+        return PassResult(graph_module, True)
+
+
+def split_graph(
+    edge_program: ExportedProgram,
+    num_layers: int,
+    shares: int,
+    pattern=r"layers\.(\d+)",
+    layer_prefix_offsets: dict = None,
+):
+    graph_module = edge_program.graph_module
+    shard_layers = list(range(0, num_layers, int(num_layers / shares)))
+    return SplitGraph(
+        shard_layers, pattern=pattern, layer_prefix_offsets=layer_prefix_offsets
+    )(graph_module)
+
+
+def get_split_graph_pass(
+    num_layers: int,
+    shares: int,
+    pattern=r"layers\.(\d+)",
+    layer_prefix_offsets: dict = None,
+):
+    shard_layers = list(range(0, num_layers, int(num_layers / shares)))
+    kwargs = {"shard_layers": shard_layers, "pattern": pattern}
+    if layer_prefix_offsets:
+        kwargs["layer_prefix_offsets"] = layer_prefix_offsets
+    return SplitGraph, {
+        QCOM_PASS_ACTIVATE_KEY: True,
+        QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: kwargs,
+    }

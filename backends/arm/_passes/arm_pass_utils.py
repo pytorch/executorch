@@ -1,0 +1,427 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+import operator
+import traceback
+from inspect import isclass
+from typing import cast, Optional, Sequence
+
+import torch
+import torch.fx
+
+from executorch.backends.arm._passes.dim_maps import (
+    _normalize_dims,
+    normalize_view_shape,
+)
+from executorch.backends.arm.common.debug import get_node_debug_info
+from executorch.backends.arm.common.type import ensure_type
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.exir import ExportedProgram
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import NodeMetadata
+from torch._export.utils import (
+    get_buffer,
+    get_lifted_tensor_constant,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
+)
+from torch._ops import OpOverload
+from torch._subclasses.fake_tensor import FakeTensor
+from torch.export.graph_signature import InputKind
+
+_Dim = int | torch.SymInt
+
+
+def is_submodule_node(node: torch.fx.Node):
+    if node.op not in ("get_attr", "placeholder"):
+        return False
+    owning_module = node.graph.owning_module
+    if owning_module is None or not isinstance(node.target, str):
+        return False
+    try:
+        owning_module.get_submodule(node.target)
+    except AttributeError:
+        return False
+    return True
+
+
+def is_get_attr_node(node: torch.fx.Node) -> bool:
+    """Returns true if the given node is a get attr node for a tensor of the
+    model.
+    """
+    return (
+        isinstance(node, torch.fx.Node)
+        and node.op == "get_attr"
+        and not is_submodule_node(node)
+    )
+
+
+def get_getitem_users(
+    source_node: torch.fx.Node, max_users: int
+) -> dict[int, torch.fx.Node | None]:
+    getitem_users: dict[int, torch.fx.Node | None] = {i: None for i in range(max_users)}
+    for user in source_node.users:
+        if user.target == operator.getitem:
+            getitem_users[cast(int, user.args[1])] = user
+
+    return getitem_users
+
+
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_get_attr_node(node)
+        or is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
+    )
+
+
+def get_constant_placeholder_kind(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> InputKind:
+    if is_param(exp_prog, node):
+        return InputKind.PARAMETER
+    if is_buffer(exp_prog, node):
+        return InputKind.BUFFER
+    if is_lifted_tensor_constant(exp_prog, node):
+        return InputKind.CONSTANT_TENSOR
+
+    raise RuntimeError("Node is neither PARAMETER, BUFFER nor CONSTANT_TENSOR")
+
+
+def is_persistent_buffer(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool | None:
+    if is_buffer(exp_prog, node):
+        buffer_name = exp_prog.graph_signature.inputs_to_buffers[node.name]
+        if buffer_name in exp_prog.graph_signature.non_persistent_buffers:
+            return False
+        else:
+            return True
+
+    return None
+
+
+def get_param_tensor(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> Optional[torch.Tensor]:
+    if node is None:
+        return None
+    elif is_param(exp_prog, node):
+        return get_param(exp_prog, node)
+    elif is_buffer(exp_prog, node):
+        return get_buffer(exp_prog, node)
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return get_lifted_tensor_constant(exp_prog, node)
+    elif is_get_attr_node(node):
+        target_node = ensure_type(str, node.target)
+        # This is a hack to support both lifted and unlifted graph
+        try:
+            return getattr(node.graph.owning_module, target_node)
+        except AttributeError:
+            return getattr(exp_prog.graph_module, target_node)
+    raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def expand_around_channel(param: Sequence[int] | int, spatial_rank: int) -> list[int]:
+    """Expand a scalar or 1-D parameter around the channel dimension into a
+    broadcastable shape while preserving the channel location.
+    """
+    if isinstance(param, int):
+        return [param] * spatial_rank
+
+    param_list = list(param)
+    if len(param_list) == 1 and spatial_rank > 1:
+        param_list = param_list * spatial_rank
+    return param_list
+
+
+def create_node(
+    graph: torch.fx.Graph,
+    op_target: OpOverload | EdgeOpOverload,
+    args: tuple = (),
+    kwargs: Optional[dict] = None,
+    quantize: bool = False,
+    q_params: Optional[tuple] = None,
+    from_node: Optional[torch.fx.Node] = None,
+    inherit_qparams: bool = False,
+):
+    """Adds a node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node. If quantize is true and q_params is not None, a q
+    dq pair is inserted after the newly created node.
+
+    """
+
+    node = graph.create_node(
+        "call_function",
+        op_target,
+        args=args,
+        kwargs=kwargs or {},
+    )
+
+    new_meta = {}
+    if from_node:
+        keys = from_node.meta.keys()
+        for key in keys:
+            new_meta[key] = from_node.meta[key]
+        if not inherit_qparams:
+            if "input_qparams" in new_meta:
+                new_meta["input_qparams"] = {}
+            if "output_qparams" in new_meta:
+                new_meta["output_qparams"] = {}
+    elif inherit_qparams:
+        raise ValueError("inherit_qparams is only valid when from_node is given")
+
+    old_stack_trace = new_meta.get("stack_trace", "")
+    new_meta["stack_trace"] = f"{old_stack_trace}\n{traceback.format_stack()[-2]}"
+    node.meta = new_meta
+
+    if quantize and q_params:
+        return insert_q_dq_pair(graph, node, q_params, from_node)
+    return node
+
+
+def create_shape_node(
+    graph: torch.fx.Graph,
+    op_target: EdgeOpOverload,
+    args: tuple = (),
+    kwargs: Optional[dict] = None,
+    from_node: Optional[torch.fx.Node] = None,
+):
+    """Adds a shape node to 'graph'.
+
+    graph.inserting_before/after() should be used before the call to decide
+    where to insert the node.
+
+    """
+    node = create_node(
+        graph=graph,
+        op_target=op_target,
+        args=args,
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    node.meta[TosaSpecialDtype.meta_key()] = TosaSpecialDtype.SHAPE
+    return node
+
+
+def insert_q_dq_pair(
+    graph: torch.fx.Graph,
+    anchor: torch.fx.Node,
+    q_params: tuple,
+    from_node: Optional[torch.fx.Node] = None,
+):
+    """Inserts a q dq node pair after the node 'anchor'."""
+
+    with graph.inserting_after(anchor):
+        q = create_node(
+            graph=graph,
+            op_target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(),  # We add the argument last
+            from_node=from_node if from_node else anchor,
+        )
+        q.meta = anchor.meta
+    with graph.inserting_after(q):
+        dq = create_node(
+            graph=graph,
+            op_target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(q,) + q_params,
+            from_node=from_node if from_node else anchor,
+        )
+        dq.meta = q.meta
+    anchor.replace_all_uses_with(dq)
+    # We add this last so the replace all uses above does not replace the quantized
+    # node's first use
+    q.args = (anchor,) + q_params
+    return dq
+
+
+def meta_without_qparams(meta: NodeMetadata) -> NodeMetadata:
+    """Return a copy of NodeMetadata with input/output qparams cleared."""
+    plain_meta_dict = dict(meta.data)
+    plain_meta_dict["input_qparams"] = {}
+    plain_meta_dict["output_qparams"] = {}
+    return NodeMetadata(plain_meta_dict)
+
+
+def refresh_permute_view_meta(node: torch.fx.Node) -> None:
+    """Compute new meta-vals, specifically preserving SymInts for view/permute
+    nodes.
+    """
+    input_node = node.all_input_nodes[0]
+    input_val = input_node.meta.get("val")
+    if input_val is None or node.target not in {
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    }:
+        return
+
+    if not isinstance(input_val, torch.Tensor):
+        node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+        return
+
+    # Compute new meta shapes to preserve SymInts.
+    match node.target:
+        case exir_ops.edge.aten.view_copy.default:
+            node.meta["val"] = input_val.new_empty(
+                tuple(
+                    normalize_view_shape(
+                        input_val.shape, cast(Sequence[_Dim], node.args[1])
+                    )
+                )
+            )
+        case exir_ops.edge.aten.permute_copy.default:
+            dims = _normalize_dims(
+                cast(Sequence[int], node.args[1]), len(input_val.shape)
+            )
+            node.meta["val"] = input_val.new_empty(
+                tuple(input_val.shape[dim] for dim in dims)
+            )
+        case _:
+            node.meta["val"] = node.target(input_val, *node.args[1:])  # type: ignore[operator]
+
+
+def insert_scalar(
+    graph: torch.fx.Graph,
+    value: int | float,
+    meta: NodeMetadata | dict,
+    from_node: torch.fx.Node,
+    is_tfa_pass: bool = False,
+) -> torch.fx.Node | int | float:
+    """Insert an `aten.full` scalar node for direct graph-rewrite passes."""
+
+    if is_tfa_pass:
+        return value
+
+    kwargs = {}
+    val = None
+    if "val" in meta:
+        val = meta["val"]
+        if isinstance(val, tuple):
+            val = val[0]
+        kwargs = {"device": val.device, "dtype": val.dtype}
+
+    scalar = create_node(
+        graph=graph,
+        op_target=exir_ops.edge.aten.full.default,
+        args=((1,), value),
+        kwargs=kwargs,
+        from_node=from_node,
+    )
+    if val is not None:
+        scalar.meta["val"] = torch.full((1,), value, **kwargs)
+    return scalar
+
+
+def get_first_fake_tensor(node: torch.fx.Node) -> FakeTensor:
+    """Returns a FakeTensor from the meta field of 'node'.
+
+    If the node contains many fake tensors, return the first one.
+
+    """
+    if isinstance(
+        node.meta["val"], (Sequence, torch.fx.immutable_collections.immutable_list)
+    ):
+        fake_tensor = node.meta["val"][0]
+    else:
+        fake_tensor = node.meta["val"]
+
+    if not isinstance(fake_tensor, FakeTensor):
+        raise TypeError(
+            f'Expected a FakeTensor in meta["val"] of node {node}, but got '
+            f"{type(fake_tensor).__name__}\n"
+            f"{get_node_debug_info(node)}"
+        )
+
+    return fake_tensor
+
+
+def get_node_arg(args: list | dict, key: int | str | type, default_value=None):
+    """Help-function for getting a value from node.args/ kwargs, three cases:
+
+    1. By position in node.args - Returns arg at given position or default_value if index is one out of bounds
+    2. By key in node.kwargs - Returns kwarg with given key or default_value if it deos not exist
+    3. By type in node.args - Returns first arg of args of given type. Useful for cases where arg postions may differ but types are unique.
+
+    """
+    if isinstance(key, int):
+        if 0 <= key < len(args):
+            return args[key]
+        elif key == len(args):
+            if default_value is not None:
+                return default_value
+            else:
+                raise RuntimeError(f"No defult value given for index {key}")
+        else:
+            raise RuntimeError(
+                f"Out of bounds index {key} for getting value in args (of size {len(args)})"
+            )
+    elif isinstance(key, str):
+        return args.get(key, default_value)  # type: ignore[union-attr]
+    elif isclass(key):
+        for arg in args:
+            if isinstance(arg, key):
+                return arg
+        if default_value is not None:
+            return default_value
+        else:
+            raise RuntimeError(f"No arg of type {key}")
+    else:
+        raise RuntimeError("Invalid type")
+
+
+def set_node_arg(node: torch.fx.Node, i: int | str, value):
+    """Help-function for setting a value in node.args/ kwargs.
+
+    If the index is one larger than the list size, the value is instead appended
+    to the list.
+
+    """
+    if isinstance(i, int):
+        if 0 <= i < len(node.args):
+            args = list(node.args)
+            args[i] = value
+            node.args = tuple(args)
+            return
+        elif i == len(node.args):
+            node.args = node.args + (value,)
+        else:
+            raise RuntimeError(
+                f"Out of bounds index {i} for setting value in {node} args (of size {len(node.args)})"
+            )
+    elif isinstance(i, str):
+        kwargs = dict(node.kwargs)
+        kwargs[i] = value
+        node.kwargs = kwargs
+    else:
+        raise RuntimeError("Invalid type")
+
+
+def to_2tuple(value):
+    """Normalizes scalars, and 1-element sequences to a tuple of length 2."""
+    if isinstance(value, int):
+        return (value, value)
+    if len(value) == 1:
+        return (value[0], value[0])
+    return tuple(value)
+
+
+def permute_fake_tensor_metadata(
+    fake_tensor: FakeTensor, permute_dims: tuple[int, ...]
+) -> FakeTensor:
+    permuted_shape = tuple(fake_tensor.shape[dim] for dim in permute_dims)
+    meta_tensor = torch.empty(
+        permuted_shape,
+        dtype=fake_tensor.dtype,
+        device="meta",
+        requires_grad=fake_tensor.requires_grad,
+    )
+    return FakeTensor(fake_tensor.fake_mode, meta_tensor, fake_tensor.fake_device)

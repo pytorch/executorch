@@ -1,0 +1,237 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+cmake_minimum_required(VERSION 3.19)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
+# Source root directory for executorch.
+if(NOT EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+endif()
+
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+  list(APPEND _common_compile_options
+       "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-march=armv8.2-a+dotprod>"
+  )
+endif()
+
+include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
+include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
+
+#
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
+#
+executorch_load_build_variables()
+
+set(_common_include_directories
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..,${CMAKE_CURRENT_SOURCE_DIR}/runtime/core/portable_type/c10>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR},${CMAKE_INSTALL_INCLUDEDIR}/executorch/runtime/core/portable_type/c10>
+)
+
+list(APPEND _common_include_directories
+     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/ao>
+)
+
+# Custom op libraries
+set(custom_ops_libs pthreadpool)
+list(APPEND custom_ops_libs cpuinfo)
+list(APPEND custom_ops_libs cpublas)
+list(APPEND custom_ops_libs eigen_blas)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv7)$")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_neon.c"
+  )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)")
+  list(APPEND _custom_ops__srcs
+       "extension/llm/custom_ops/spinquant/third-party/FFHT/fht_avx.c"
+  )
+else()
+  message(
+    FATAL_ERROR
+      "Unsupported CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR}. (If \
+32-bit x86, try using fht_avx.c and send a PR if it works!)"
+  )
+endif()
+
+list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
+
+if(NOT EXECUTORCH_BUILD_XNNPACK)
+  list(APPEND custom_ops_libs extension_threadpool)
+else()
+  list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
+endif()
+
+add_library(custom_ops ${_custom_ops__srcs})
+find_package_torch_headers()
+target_include_directories(custom_ops PRIVATE "${_common_include_directories}")
+target_include_directories(
+  custom_ops
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
+          ${TORCH_INCLUDE_DIRS}
+)
+target_link_libraries(custom_ops PUBLIC ${custom_ops_libs} executorch_core)
+
+# The MoE kernel always compiles with a reference fallback (unpack + dequant +
+# cpublas::gemm) using the torchao weight_packing headers from third-party/ao
+# (already on the include path).  Pass
+# -DEXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON to additionally link the
+# optimized torchao linear_operator (fused INT8-dyn-act GEMM, aarch64 NEON
+# dotprod).
+option(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE
+       "Link the optimized torchao linear kernel for llama::quantized_moe_ffn"
+       OFF
+)
+if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+  if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
+    message(
+      FATAL_ERROR
+        "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+        "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
+        "defined. Build the torchao ops or set this option OFF."
+    )
+  endif()
+  # Compile definition and link must be gated on the same condition, else the
+  # ENABLE_QUANTIZED_MOE_FFN path compiles without the library that defines it.
+  target_compile_definitions(custom_ops PUBLIC ENABLE_QUANTIZED_MOE_FFN=1)
+  target_link_libraries(
+    custom_ops PUBLIC torchao_ops_linear_8bit_act_xbit_weight_executorch
+  )
+endif()
+
+target_compile_options(custom_ops PUBLIC ${_common_compile_options})
+
+install(
+  TARGETS custom_ops
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
+  # Add a AOT library
+  find_package_torch()
+  add_library(
+    custom_ops_aot_lib SHARED
+    ${_custom_ops__srcs}
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_moe_aot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_fast_hadamard_transform_aten.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop_aot.cpp
+  )
+  # This lib compiles real PyTorch headers, which require C++20.
+  set_target_properties(custom_ops_aot_lib PROPERTIES CXX_STANDARD 20)
+  target_include_directories(
+    custom_ops_aot_lib PRIVATE "${_common_include_directories}"
+  )
+  target_include_directories(
+    custom_ops_aot_lib
+    PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../../../include>
+            ${TORCH_INCLUDE_DIRS}
+  )
+  # TODO: This only works if we install portable_lib.so to
+  # <site-packages>/executorch/extension/pybindings/. torch is three directories
+  # up from here, and this library links it directly, so the hop has to be
+  # recorded or the only route is the absolute path from the machine that built
+  # the wheel.
+  if(APPLE)
+    set(RPATH
+        "@loader_path/../../pybindings;@loader_path/../../../../torch/lib"
+    )
+  else()
+    set(RPATH "$ORIGIN/../../pybindings:$ORIGIN/../../../../torch/lib")
+  endif()
+  if(EXECUTORCH_BUILD_SHARED)
+    # Also on the built artifact, not only on install. Packaging copies this
+    # library out of the build tree rather than running an install step, so
+    # without this the built file carries whatever the linker recorded. Scoped
+    # to the shared build so a build that does not opt in keeps the parent's
+    # install-only behaviour.
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES BUILD_RPATH "${RPATH}" INSTALL_RPATH
+                                                           "${RPATH}"
+    )
+  else()
+    set_target_properties(
+      custom_ops_aot_lib PROPERTIES INSTALL_RPATH "${RPATH}"
+    )
+  endif()
+  executorch_target_shared_runtime_path(
+    custom_ops_aot_lib "extension/llm/custom_ops"
+    "executorch/extension/llm/custom_ops"
+  )
+  if(TARGET portable_lib)
+    # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
+    # the ops in PyTorch and ExecuTorch through pybind
+    target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
+  elseif(NOT EXECUTORCH_BUILD_SHARED)
+    # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
+    # ops in PyTorch
+    target_link_libraries(
+      custom_ops_aot_lib PUBLIC executorch_core kernels_util_all_deps
+    )
+  else()
+    target_link_libraries(custom_ops_aot_lib PUBLIC kernels_util_all_deps)
+  endif()
+  executorch_target_link_shared_runtime(custom_ops_aot_lib)
+
+  target_link_libraries(
+    custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
+                              extension_threadpool
+  )
+  if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE)
+    if(NOT TARGET torchao_ops_linear_8bit_act_xbit_weight_executorch)
+      message(
+        FATAL_ERROR
+          "EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE=ON requires target "
+          "torchao_ops_linear_8bit_act_xbit_weight_executorch, which is not "
+          "defined. Build the torchao ops or set this option OFF."
+      )
+    endif()
+    target_compile_definitions(
+      custom_ops_aot_lib PUBLIC ENABLE_QUANTIZED_MOE_FFN=1
+    )
+    target_link_libraries(
+      custom_ops_aot_lib
+      PUBLIC torchao_ops_linear_8bit_act_xbit_weight_executorch
+    )
+  endif()
+  if(WIN32)
+    # There is no direct replacement for libpthread.so on Windows. For the
+    # Windows build, link directly against pthreadpool and cpuinfo.
+    target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
+  endif()
+  target_compile_options(
+    custom_ops_aot_lib
+    PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+           /GR
+           /wd4996>
+           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+           -fPIC
+           -frtti
+           -fexceptions>
+           ${_common_compile_options}
+  )
+
+  install(
+    TARGETS custom_ops_aot_lib
+    EXPORT ExecuTorchTargets
+    LIBRARY DESTINATION executorch/extension/llm/custom_ops
+  )
+endif()
+
+add_subdirectory(spinquant/third-party/FFHT)
+if(BUILD_TESTING)
+  add_subdirectory(spinquant/test)
+endif()

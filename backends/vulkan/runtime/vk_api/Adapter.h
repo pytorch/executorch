@@ -1,0 +1,456 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+// @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
+
+#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/Device.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
+
+#include <array>
+
+namespace vkcompute {
+namespace vkapi {
+
+//
+// A Vulkan Adapter represents a logical device and all its properties. It
+// manages all relevant properties of the underlying physical device, a
+// handle to the logical device, and a number of compute queues available to
+// the device. It is primarily responsible for managing the VkDevice handle
+// which points to the logical device object on the GPU.
+//
+// This class is primarily used by the Runtime class, which holds one Adapter
+// instance for each physical device visible to the VkInstance. Upon
+// construction, this class will populate the physical device properties, but
+// will not create the logical device until specifically requested via the
+// init_device() function.
+//
+// init_device() will create the logical device and obtain the VkDevice handle
+// for it. It will also create a number of compute queues up to the amount
+// requested when the Adapter instance was constructed.
+//
+// Contexts (which represent one thread of execution) will request a compute
+// queue from an Adapter. The Adapter will then select a compute queue to
+// assign to the Context, attempting to balance load between all available
+// queues. This will allow different Contexts (which typically execute on
+// separate threads) to run concurrently.
+//
+
+#define NUM_QUEUE_MUTEXES 4
+
+class Adapter final {
+ public:
+  explicit Adapter(
+      VkInstance instance,
+      PhysicalDevice physical_device,
+      const uint32_t num_queues,
+      const std::string& cache_data_path);
+
+  explicit Adapter(
+      VkInstance instance,
+      VkPhysicalDevice physical_device,
+      VkDevice logical_device,
+      const uint32_t num_queues,
+      const std::string& cache_data_path);
+
+  Adapter(const Adapter&) = delete;
+  Adapter& operator=(const Adapter&) = delete;
+
+  Adapter(Adapter&&) = delete;
+  Adapter& operator=(Adapter&&) = delete;
+
+  ~Adapter();
+
+  struct Queue {
+    uint32_t family_index;
+    uint32_t queue_index;
+    VkQueueFlags capabilities;
+    VkQueue handle;
+  };
+
+ private:
+  // Use a mutex to manage queue usage info since
+  // it can be accessed from multiple threads
+  std::mutex queue_usage_mutex_;
+  // Physical Device Info
+  PhysicalDevice physical_device_;
+  // Queue Management
+  std::vector<Queue> queues_;
+  std::vector<uint32_t> queue_usage_;
+  std::array<std::mutex, NUM_QUEUE_MUTEXES> queue_mutexes_;
+  // Handles
+  VkInstance instance_;
+  DeviceHandle device_;
+  // Device-level resource caches
+  ShaderLayoutCache shader_layout_cache_;
+  ShaderCache shader_cache_;
+  PipelineLayoutCache pipeline_layout_cache_;
+  ComputePipelineCache compute_pipeline_cache_;
+  // Memory Management
+  SamplerCache sampler_cache_;
+  Allocator vma_;
+  // Miscellaneous
+  bool linear_tiling_3d_enabled_;
+  bool owns_device_;
+
+ public:
+  // Physical Device metadata
+
+  inline VkPhysicalDevice physical_handle() const {
+    return physical_device_.handle;
+  }
+
+  inline VkDevice device_handle() const {
+    return device_.handle;
+  }
+
+  inline bool has_unified_memory() const {
+    return physical_device_.has_unified_memory;
+  }
+
+  inline uint32_t num_compute_queues() const {
+    return physical_device_.num_compute_queues;
+  }
+
+  inline bool timestamp_compute_and_graphics() const {
+    return physical_device_.has_timestamps;
+  }
+
+  inline float timestamp_period() const {
+    return physical_device_.timestamp_period;
+  }
+
+  // Device Identity
+  inline const std::string& device_name() const {
+    return physical_device_.device_name;
+  }
+
+  inline vkapi::DeviceType device_type() const {
+    return physical_device_.device_type;
+  }
+
+  // Driver-reported physical device type. Use device_type() above for
+  // vendor-specific quirks; this for capability-tier decisions.
+  inline bool is_integrated_gpu() const {
+    return physical_device_.properties.deviceType ==
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+  }
+
+  // Queue Management
+
+  Queue request_queue();
+  void return_queue(Queue&);
+
+  // Caches
+
+  inline ShaderLayoutCache& shader_layout_cache() {
+    return shader_layout_cache_;
+  }
+
+  inline ShaderCache& shader_cache() {
+    return shader_cache_;
+  }
+
+  inline PipelineLayoutCache& pipeline_layout_cache() {
+    return pipeline_layout_cache_;
+  }
+
+  inline ComputePipelineCache& compute_pipeline_cache() {
+    return compute_pipeline_cache_;
+  }
+
+  // Memory Allocation
+
+  inline SamplerCache& sampler_cache() {
+    return sampler_cache_;
+  }
+
+  inline Allocator& vma() {
+    return vma_;
+  }
+
+  inline bool linear_tiling_3d_enabled() const {
+    return linear_tiling_3d_enabled_;
+  }
+
+  // Physical Device Features
+
+  inline bool supports_16bit_storage_buffers() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_16bit_storage
+    return physical_device_.shader_16bit_storage.storageBuffer16BitAccess ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_16bit_storage */
+  }
+
+  inline bool supports_8bit_storage_buffers() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_8bit_storage
+    return physical_device_.shader_8bit_storage.storageBuffer8BitAccess ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_8bit_storage */
+  }
+
+  inline bool supports_float16_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_float16_int8
+    return physical_device_.shader_float16_int8_types.shaderFloat16 == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_float16_int8 */
+  }
+
+  inline bool supports_int8_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_float16_int8
+    return physical_device_.shader_float16_int8_types.shaderInt8 == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_float16_int8 */
+  }
+
+  inline bool supports_int8_dot_product() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_KHR_shader_integer_dot_product
+    return physical_device_.shader_int_dot_product_features
+               .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
+  inline bool supports_nv_cooperative_matrix2() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_NV_cooperative_matrix2
+    return physical_device_.cooperative_matrix2_features
+               .cooperativeMatrixWorkgroupScope == VK_TRUE &&
+        physical_device_.cooperative_matrix2_features
+            .cooperativeMatrixFlexibleDimensions == VK_TRUE &&
+        physical_device_.cooperative_matrix2_features
+            .cooperativeMatrixTensorAddressing == VK_TRUE;
+#else
+    return false;
+#endif /* VK_NV_cooperative_matrix2 */
+  }
+
+  inline bool supports_cooperative_matrix() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    return physical_device_.cooperative_matrix_features.cooperativeMatrix ==
+        VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+  // True when VK_COMPONENT_TYPE_SINT8_KHR is enumerated in the device's
+  // cooperative matrix property list — required for coopmat<int8> shaders.
+  inline bool supports_int8_cooperative_matrix() const {
+#if defined(ETVK_FORCE_NO_EXTENSIONS)
+    return false;
+#elif defined(VK_KHR_cooperative_matrix)
+    return physical_device_.supports_int8_coopmat;
+#else
+    return false;
+#endif /* VK_KHR_cooperative_matrix */
+  }
+
+  inline bool supports_int16_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+    return physical_device_.supports_int16_shader_types;
+  }
+
+  inline bool supports_int64_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+    return physical_device_.supports_int64_shader_types;
+  }
+
+  inline bool supports_float64_shader_types() {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+    return physical_device_.supports_float64_shader_types;
+  }
+
+  inline bool has_full_float16_buffers_support() {
+    return supports_16bit_storage_buffers() && supports_float16_shader_types();
+  }
+
+  inline bool has_full_int8_buffers_support() {
+    return supports_8bit_storage_buffers() && supports_int8_shader_types();
+  }
+
+  inline size_t min_ubo_alignment() const {
+    return physical_device_.min_ubo_alignment;
+  }
+
+  // Subgroup properties
+
+  inline uint32_t subgroup_size() const {
+    return physical_device_.subgroup_size;
+  }
+
+  inline bool supports_subgroup_compute_basic() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_BASIC_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_shuffle() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_SHUFFLE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_ballot() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_vote() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_VOTE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_arithmetic() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_ARITHMETIC_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_shuffle_relative() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_clustered() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_CLUSTERED_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline bool supports_subgroup_compute_quad() const {
+    return (physical_device_.supported_subgroup_ops &
+            VK_SUBGROUP_FEATURE_QUAD_BIT) != 0 &&
+        (physical_device_.supported_subgroup_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  // Subgroup size control (VK_EXT_subgroup_size_control / Vulkan 1.3 core).
+
+  inline uint32_t min_subgroup_size() const {
+    return physical_device_.min_subgroup_size;
+  }
+
+  inline uint32_t max_subgroup_size() const {
+    return physical_device_.max_subgroup_size;
+  }
+
+  inline bool supports_subgroup_size_control() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+    return physical_device_.supports_subgroup_size_control;
+#else
+    return false;
+#endif /* VK_EXT_subgroup_size_control */
+  }
+
+  inline bool supports_compute_full_subgroups() const {
+#ifdef ETVK_FORCE_NO_EXTENSIONS
+    return false;
+#endif
+#ifdef VK_EXT_subgroup_size_control
+    return physical_device_.supports_compute_full_subgroups;
+#else
+    return false;
+#endif /* VK_EXT_subgroup_size_control */
+  }
+
+  inline bool supports_required_subgroup_size_for_compute() const {
+    return supports_subgroup_size_control() &&
+        (physical_device_.required_subgroup_size_stages &
+         VK_SHADER_STAGE_COMPUTE_BIT) != 0;
+  }
+
+  inline uint32_t max_texture2d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension2D;
+  }
+
+  inline uint32_t max_texture3d_dim() const {
+    return physical_device_.properties.limits.maxImageDimension3D;
+  }
+
+  inline uint32_t max_buffer_numel() const {
+    return physical_device_.properties.limits.maxStorageBufferRange;
+  }
+
+  // Command Buffer Submission
+
+  void submit_cmd(
+      const Queue&,
+      VkCommandBuffer,
+      VkFence fence = VK_NULL_HANDLE,
+      VkSemaphore wait_semaphore = VK_NULL_HANDLE,
+      VkSemaphore signal_semaphore = VK_NULL_HANDLE);
+
+  void override_device_name(const std::string& new_name);
+
+  std::string stringize() const;
+  friend std::ostream& operator<<(std::ostream&, const Adapter&);
+};
+
+// Resolve the shader-declared required subgroup size into a concrete value
+// (or 0 = no requirement) given the adapter capabilities. Throws
+// ShaderNotSupportedError when the shader declares a required subgroup size
+// but the adapter cannot honor it (extension unsupported, or value out of
+// the adapter's [min, max] range). Silent fallback would create a
+// correctness/perf landmine, so callers must be prepared for this throw.
+uint32_t resolve_required_subgroup_size(
+    const ShaderInfo& shader,
+    Adapter* adapter);
+
+} // namespace vkapi
+} // namespace vkcompute

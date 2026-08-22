@@ -1,0 +1,46 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT_ACCUM_GLSLH
+#define LINEAR_INT_ACCUM_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+// Stores integer accumulators for an output tile.
+struct Int32Accum {
+  ivec4 data[TILE_M][TILE_N4];
+};
+
+void initialize(out Int32Accum out_accum) {
+  [[unroll]] for (int y = 0; y < TILE_M; ++y) {
+    [[unroll]] for (int x4 = 0; x4 < TILE_N4; ++x4) {
+      out_accum.data[y][x4] = ivec4(0);
+    }
+  }
+}
+
+#ifdef DEBUG_MODE
+
+void printInt32Accum(const Int32Accum tile) {
+  debugPrintfEXT("int accum: \\n");
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "  %d, %d, %d, %d,",
+          tile.data[m][n4].x,
+          tile.data[m][n4].y,
+          tile.data[m][n4].z,
+          tile.data[m][n4].w);
+    }
+    debugPrintfEXT("\\n");
+  }
+}
+
+#endif
+
+#endif // LINEAR_INT_ACCUM_GLSLH

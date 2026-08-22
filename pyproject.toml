@@ -1,0 +1,179 @@
+[build-system]
+requires = [
+  "cmake>=3.24,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "packaging>=24.2", # Lower bound required by setuptools
+  "patchelf; sys_platform == 'linux'",  # Writes the runtime search paths that let the shipped libraries find each other.
+  "pip>=23",  # For building the pip package.
+  "pyyaml",  # Imported by the kernel codegen tools.
+  "setuptools>=77.0.3",  # For building the pip package contents.
+  "wheel",  # For building the pip package archive.
+  "zstd",  # Imported by resolve_buck.py.
+  "certifi",  # Imported by resolve_buck.py.
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "executorch"
+dynamic = [
+  # setup.py will set the version.
+  'version',
+  # setup.py sets dependencies, which vary by build mode (the
+  # EXECUTORCH_BUILD_MINIMAL wheel declares a slimmer runtime set).
+  'dependencies',
+]
+description = "On-device AI across mobile, embedded and edge for PyTorch"
+readme = "README-wheel.md"
+authors = [
+  {name="PyTorch Team", email="packages@pytorch.org"},
+]
+license = {text = "BSD-3-Clause"}
+
+keywords = ["pytorch", "machine learning"]
+# PyPI package information.
+classifiers = [
+    # How mature is this project? Common values are
+    #   3 - Alpha
+    #   4 - Beta
+    #   5 - Production/Stable
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    # Update this as we support more versions of python.
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+requires-python = ">=3.10,<3.15"
+
+# Runtime dependencies are declared dynamically (see `dynamic` above) and
+# computed in setup.py, so the EXECUTORCH_BUILD_MINIMAL wheel can ship a slimmer
+# set than the full wheel. See `_base_dependencies()` / `_minimal_dependencies()`
+# in setup.py.
+
+[project.optional-dependencies]
+vgf = [
+  # AoT vgf dependencies
+  # Keep this in sync with AoT deps from backends/arm/requirements-arm-vgf.txt and
+  # backends/arm/requirements-arm-tosa.txt.
+  "ai_ml_emulation_layer_for_vulkan==0.10.0",
+  "ai_ml_sdk_model_converter==0.10.0",
+  "ml_dtypes==0.5.1",
+  "tosa-tools==2026.5.0",
+]
+ethos_u = [
+  # AoT ethos_u dependencies
+  # Keep this in sync with AoT deps backends/arm/requirements-arm-ethos-u.txt and
+  # backends/arm/requirements-arm-tosa.txt.
+  "ethos-u-vela==5.1.0",
+  "ml_dtypes==0.5.1",
+  "tosa-tools==2026.5.0",
+]
+openvino = [
+  "openvino>=2025.1.0,<2026.0.0; platform_system == 'Linux'",
+]
+
+[project.urls]
+# The keys are arbitrary but will be visible on PyPI.
+Homepage = "https://pytorch.org/executorch/"
+Repository = "https://github.com/pytorch/executorch"
+Issues = "https://github.com/pytorch/executorch/issues"
+Changelog = "https://github.com/pytorch/executorch/releases"
+
+# Tell setuptools to generate commandline wrappers for tools that we install
+# under data/bin in the pip package. This will put these commands on the user's
+# path.
+[project.scripts]
+flatc = "executorch.data.bin:flatc"
+
+# TODO(dbort): Could use py_modules to restrict the set of modules we
+# package, and package_data to restrict the set up non-python files we
+# include. See also setuptools/discovery.py for custom finders.
+[tool.setuptools]
+license-files = ["LICENSE"]
+
+[tool.setuptools.package-dir]
+# Tell setuptools to follow the symlink: src/executorch/* -> * for all first level
+# modules such as src/executorch/exir -> exir. This helps us to semi-compliant with
+# the "src layout" convention for python packages, which is also discussed in
+# https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/.
+# In the long term we should move all the modules under the src/executorch/ folder.
+#
+# Doing this also allows us to import from executorch.exir directly in
+# editable mode.
+"executorch" = "src/executorch"
+
+[tool.setuptools.package-data]
+# TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
+# don't need.
+# TODO(RobertKalmar): When test[s] dirs pruned the PROJECT_DIR resolution in backends.nxp.tests_models.config.py can
+#  avoid exporting and reading env variable.
+"*" = [
+  # Some backends like XNNPACK need their .fbs files.
+  "*.fbs",
+  # Some kernel libraries need their .yaml files.
+  "*.yaml",
+]
+"executorch.backends.arm.vgf.shaders" = [
+  "*.glsl",
+  "*.spirv.b64",
+]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc"]
+
+[tool.usort]
+# Do not try to put "first-party" imports in their own section.
+first_party_detection = false
+
+[tool.black]
+# Emit syntax compatible with older versions of python instead of only the range
+# specified by `requires-python`. TODO: Remove this once we support these older
+# versions of python and can expand the `requires-python` range.
+# py314 is intentionally omitted: black 24.4.2 does not recognize it, and the
+# newer black that does (>=26) reformats the whole repo. Add py314 here when the
+# tree is reformatted to the newer black stable style.
+target-version = ["py38", "py39", "py310", "py311", "py312", "py313"]
+
+[tool.docformatter]
+black = true
+wrap-summaries = 80
+wrap-descriptions = 80
+style = "sphinx"
+close-quotes-on-newline = true
+blank = true
+
+[tool.ruff.lint]
+select = ["D"]
+ignore = [
+  # Allow incremental adoption on legacy modules.
+  "D100",
+  "D104",
+  "D107",
+  # Keep the formatter-compatible rule pair for class docstring spacing.
+  "D203",
+  "D213",
+  # Numpy-style section rules conflict with Google-style docstrings.
+  "D406",
+  "D407",
+  "D408",
+  "D409",
+  "D410",
+  "D411",
+  "D412",
+  "D413",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

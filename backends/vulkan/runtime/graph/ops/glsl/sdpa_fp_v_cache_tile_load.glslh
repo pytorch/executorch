@@ -1,0 +1,105 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Shared V tile load for both LLM SDPA and fused SDPA (no transpose).
+ *
+ * Layout selection (caller must #define V_LAYOUT before including):
+ *   DSHB (0) — fused SDPA: [B, H, L, D] → WHCN {D, L, H, B}
+ *              index = (head * L + l) * D4 + d4
+ *   DHSB (1) — LLM SDPA:  [B, L, H, D] → WHCN {D, H, L, B}
+ *              index = (l * H + head) * D4 + d4
+ *
+ * Optional macros:
+ *   SDPA_V_BUF       — tensor name (default: t_v)
+ *   V_CACHE_BUFFER / V_BUFFER — use buffer path; otherwise texture
+ */
+
+#ifndef SDPA_FP_V_CACHE_TILE_LOAD_GLSLH
+#define SDPA_FP_V_CACHE_TILE_LOAD_GLSLH
+
+#ifndef DSHB
+#define DSHB 0
+#define DHSB 1
+#endif
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_weight_tile.glslh"
+
+#ifndef SDPA_V_BUF
+#define SDPA_V_BUF t_v
+#endif
+
+// Determine whether buffer mode is active. Both V_CACHE_BUFFER (LLM) and
+// V_BUFFER (fused) activate the buffer path.
+#if defined(V_CACHE_BUFFER) || defined(V_BUFFER)
+#define _SDPA_V_USE_BUFFER
+#endif
+
+LINEAR_FP_WEIGHT_TILE_VEC4_T load_v_cache_d4(
+    const int d4,
+    const int c,
+    const int kv_h,
+    const int D4,
+    const int C,
+    const int KV_H) {
+#ifdef _SDPA_V_USE_BUFFER
+  #if V_LAYOUT == DSHB
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(kv_h * C * D4) + (c * D4) + d4]);
+  #elif V_LAYOUT == DHSB
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(SDPA_V_BUF[(c * KV_H * D4) + (kv_h * D4) + d4]);
+  #endif
+#else // texture
+  #if V_LAYOUT == DSHB
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, c, kv_h), 0));
+  #elif V_LAYOUT == DHSB
+    return LINEAR_FP_WEIGHT_TILE_VEC4_T(texelFetch(SDPA_V_BUF, ivec3(d4, kv_h, c), 0));
+  #endif
+#endif
+}
+
+void load_v_cache_tile_no_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_K; ++c) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
+      tile.data[c][d4] =
+          load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+    }
+  }
+}
+
+void load_v_cache_tile_with_checks(
+    out FPWeightTile tile,
+    const int d4_start,
+    const int c_start,
+    const int kv_h,
+    const int D4,
+    const int context_len,
+    const int C,
+    const int KV_H) {
+  [[unroll]] for (int c = 0; c < TILE_K; ++c) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
+      if (d4_start + d4 < D4 && c_start + c < context_len) {
+        tile.data[c][d4] =
+            load_v_cache_d4(d4_start + d4, c_start + c, kv_h, D4, C, KV_H);
+      } else {
+        tile.data[c][d4] = LINEAR_FP_WEIGHT_TILE_VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_V_CACHE_TILE_LOAD_GLSLH

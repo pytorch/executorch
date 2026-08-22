@@ -1,0 +1,60 @@
+type_name = float; log_n = 1; best_time = 3.8273900000e-08; best_desc = plain_unmerged
+type_name = float; log_n = 2; best_time = 3.8694400000e-08; best_desc = plain_unmerged
+type_name = float; log_n = 3; best_time = 4.4120100000e-08; best_desc = greedy_merged
+type_name = float; log_n = 4; best_time = 4.6617800000e-08; best_desc = greedy_merged
+type_name = float; log_n = 5; best_time = 4.8970800000e-08; best_desc = greedy_merged
+type_name = float; log_n = 6; best_time = 5.3648500000e-08; best_desc = greedy_merged
+type_name = float; log_n = 7; best_time = 7.1866600000e-08; best_desc = greedy_merged_recursive 7
+type_name = float; log_n = 8; best_time = 1.0585600000e-07; best_desc = greedy_merged_recursive 6
+type_name = float; log_n = 9; best_time = 1.7403800000e-07; best_desc = greedy_merged
+type_name = float; log_n = 10; best_time = 3.4412700000e-07; best_desc = greedy_merged_recursive 10
+type_name = float; log_n = 11; best_time = 6.5679200000e-07; best_desc = greedy_merged_recursive 11
+type_name = float; log_n = 12; best_time = 1.3143800000e-06; best_desc = greedy_merged
+type_name = float; log_n = 13; best_time = 2.8488300000e-06; best_desc = greedy_merged_recursive 11
+type_name = float; log_n = 14; best_time = 6.1163700000e-06; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 15; best_time = 1.3664400000e-05; best_desc = greedy_merged_recursive 13
+type_name = float; log_n = 16; best_time = 3.0120900000e-05; best_desc = greedy_merged_recursive 13
+type_name = float; log_n = 17; best_time = 6.5561000000e-05; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 18; best_time = 1.4176100000e-04; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 19; best_time = 3.0320000000e-04; best_desc = greedy_merged_recursive 13
+type_name = float; log_n = 20; best_time = 6.7070400000e-04; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 21; best_time = 1.4708400000e-03; best_desc = greedy_merged_recursive 9
+type_name = float; log_n = 22; best_time = 3.9836500000e-03; best_desc = greedy_merged_recursive 11
+type_name = float; log_n = 23; best_time = 8.8893400000e-03; best_desc = greedy_merged_recursive 9
+type_name = float; log_n = 24; best_time = 1.9483500000e-02; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 25; best_time = 4.5779600000e-02; best_desc = greedy_merged_recursive 7
+type_name = float; log_n = 26; best_time = 9.7643700000e-02; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 27; best_time = 2.1200800000e-01; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 28; best_time = 4.9995900000e-01; best_desc = greedy_merged_recursive 7
+type_name = float; log_n = 29; best_time = 1.0615600000e+00; best_desc = greedy_merged_recursive 12
+type_name = float; log_n = 30; best_time = 2.2532100000e+00; best_desc = greedy_merged_recursive 6
+type_name = double; log_n = 1; best_time = 3.8275100000e-08; best_desc = plain_unmerged
+type_name = double; log_n = 2; best_time = 4.1286300000e-08; best_desc = greedy_merged
+type_name = double; log_n = 3; best_time = 4.3412600000e-08; best_desc = greedy_merged
+type_name = double; log_n = 4; best_time = 4.5500500000e-08; best_desc = greedy_merged_recursive 4
+type_name = double; log_n = 5; best_time = 4.9231800000e-08; best_desc = greedy_merged
+type_name = double; log_n = 6; best_time = 6.2857100000e-08; best_desc = greedy_merged
+type_name = double; log_n = 7; best_time = 8.9013300000e-08; best_desc = greedy_merged
+type_name = double; log_n = 8; best_time = 1.4163900000e-07; best_desc = greedy_merged
+type_name = double; log_n = 9; best_time = 2.7611500000e-07; best_desc = greedy_merged
+type_name = double; log_n = 10; best_time = 5.2217100000e-07; best_desc = greedy_merged
+type_name = double; log_n = 11; best_time = 1.0466200000e-06; best_desc = greedy_merged
+type_name = double; log_n = 12; best_time = 2.3401300000e-06; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 13; best_time = 5.0560300000e-06; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 14; best_time = 1.1394900000e-05; best_desc = greedy_merged_recursive 12
+type_name = double; log_n = 15; best_time = 2.5470800000e-05; best_desc = greedy_merged_recursive 12
+type_name = double; log_n = 16; best_time = 5.7387600000e-05; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 17; best_time = 1.2497400000e-04; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 18; best_time = 2.6934700000e-04; best_desc = greedy_merged_recursive 12
+type_name = double; log_n = 19; best_time = 6.0233800000e-04; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 20; best_time = 1.3345100000e-03; best_desc = greedy_merged_recursive 9
+type_name = double; log_n = 21; best_time = 3.6883500000e-03; best_desc = greedy_merged_recursive 7
+type_name = double; log_n = 22; best_time = 8.6217800000e-03; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 23; best_time = 1.9016200000e-02; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 24; best_time = 4.5002100000e-02; best_desc = greedy_merged_recursive 10
+type_name = double; log_n = 25; best_time = 9.7061600000e-02; best_desc = greedy_merged_recursive 8
+type_name = double; log_n = 26; best_time = 2.1355500000e-01; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 27; best_time = 4.8974200000e-01; best_desc = greedy_merged_recursive 9
+type_name = double; log_n = 28; best_time = 1.0586200000e+00; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 29; best_time = 2.1763100000e+00; best_desc = greedy_merged_recursive 11
+type_name = double; log_n = 30; best_time = 4.8801600000e+00; best_desc = greedy_merged_recursive 9

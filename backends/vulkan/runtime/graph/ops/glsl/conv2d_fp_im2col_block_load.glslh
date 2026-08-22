@@ -1,0 +1,169 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_IM2COL_BLOCK_LOAD
+#define CONV2D_FP_IM2COL_BLOCK_LOAD
+
+/*
+ * Defines utilities to load data for a 4x4 im2col matrix block from an
+ * input image and store the data as a FPInputTile.
+ *
+ * Requires:
+ * - t_input to be defined in the shader layout, representing the texture of the
+ *   source image
+ * - conv2d_params to be defined in the shader layout
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+#extension GL_EXT_debug_printf : require
+
+#include "indexing.glslh"
+#include "conv2d_common.glslh"
+#include "conv2d_fp_im2col_block.glslh"
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_input_texel(const TensorIndex4D tidx) {
+  // Assumes batch size is 1 and channels packing
+  return texelFetch(
+      t_input, ivec3(tidx.data.x, tidx.data.y, div_4(tidx.data.z)), 0);
+}
+
+T load_input_texel_element(const TensorIndex4D tidx) {
+  const int channels_texel_idx = div_4(tidx.data.z);
+  const int texel_comp = mod_4(tidx.data.z);
+  // Assumes batch size is 1 and channels packing
+  return texelFetch(
+      t_input,
+      ivec3(tidx.data.x, tidx.data.y, channels_texel_idx),
+      0)[texel_comp];
+}
+
+// k4 -> group of 4 input channels idx
+// m -> flattened batch, output width, output height dim idx
+/*
+ * Fast impl for when the input image's channels per group is a multiple of 4.
+ * In this case, it is guaranteed that a texel loaded from the input can be
+ * stored directly to the output without any additional filtering.
+ */
+void load_im2col_block_fast(
+    out FPIm2ColBlock block,
+    const int k4,
+    const int m4,
+    const int logical_K,
+    const int M) {
+  Im2ColMatrixIdx im2col_idx;
+  im2col_idx.col = mul_4(k4); // k
+  im2col_idx.row = mul_4(m4); // m
+
+  // Due to the assumption that in_channels_per_group % 4 == 0, it is
+  // guaranteed that the next 4 columns (including this one) is part of the
+  // same group.
+  im2col_idx.group_idx = im2col_idx.col / conv2d_params_K_per_group;
+  im2col_idx.col_idx_in_group = im2col_idx.col % conv2d_params_K_per_group;
+
+  [[unroll]] for (int m_off = 0; m_off < 4; ++m_off) {
+    if (im2col_idx.row >= M) {
+      block.data[m_off] = VEC4_T(0);
+      continue;
+    }
+
+    TensorIndex4D input_tidx;
+    im2col_idx_to_input_tidx(input_tidx, im2col_idx);
+
+    // Load the texel
+    block.data[m_off] = load_input_texel(input_tidx);
+
+    im2col_idx.row++;
+  }
+}
+
+/*
+ * If input image channels is not a multiple of 4, then it is likely that for
+ * some matrix texels, the source data is split between different texels of the
+ * source image. In this case it's better to retreive each element individually.
+ */
+void load_im2col_block_slow(
+    out FPIm2ColBlock block,
+    const int k4,
+    const int m4,
+    const int logical_K,
+    const int M) {
+  Im2ColMatrixIdx im2col_idx_base;
+  im2col_idx_base.col = mul_4(k4);
+  im2col_idx_base.row = mul_4(m4);
+
+  im2col_idx_base.group_idx = im2col_idx_base.col / conv2d_params_K_per_group;
+  im2col_idx_base.col_idx_in_group =
+      im2col_idx_base.col % conv2d_params_K_per_group;
+
+  [[unroll]] for (int m_off = 0; m_off < 4; ++m_off) {
+    [[unroll]] for (int k_off = 0; k_off < 4; ++k_off) {
+      Im2ColMatrixIdx im2col_idx = im2col_idx_base;
+      im2col_idx.row += m_off;
+      im2col_idx.col_idx_in_group += k_off;
+
+      // bounds checking
+      if (im2col_idx.col_idx_in_group >= conv2d_params_logical_K_per_group ||
+          im2col_idx.row >= M) {
+        block.data[m_off][k_off] = T(0);
+        continue;
+      }
+
+      TensorIndex4D input_tidx;
+      im2col_idx_to_input_tidx(input_tidx, im2col_idx);
+
+      block.data[m_off][k_off] = load_input_texel_element(input_tidx);
+    }
+  }
+}
+
+void load_im2col_block(
+    out FPIm2ColBlock block,
+    const int k4,
+    const int m4,
+    const int logical_K,
+    const int M) {
+  if (mod_4(conv2d_params_in_channels_per_group) == 0) {
+    load_im2col_block_fast(block, k4, m4, logical_K, M);
+  } else {
+    load_im2col_block_slow(block, k4, m4, logical_K, M);
+  }
+}
+
+void load_input_im2col_tile(
+    out FPInputTile tile,
+    const int k4_start,
+    const int m4_start,
+    const int logical_K,
+    const int M) {
+  FPIm2ColBlock block;
+#if TILE_K4 == 1
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    load_im2col_block(block, k4_start, m4_start + m4, logical_K, M);
+    for (int row = 0; row < 4; ++row) {
+      const int m = mul_4(m4) + row;
+      tile.data[m][0] = block.data[row];
+    }
+  }
+
+#else
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      load_im2col_block(block, k4_start + k4, m4_start + m4, logical_K, M);
+      for (int row = 0; row < 4; ++row) {
+        const int m = mul_4(m4) + row;
+        tile.data[m][k4] = block.data[row];
+      }
+    }
+  }
+
+#endif
+}
+
+#endif // CONV2D_FP_IM2COL_BLOCK_LOAD

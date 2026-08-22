@@ -1,0 +1,1430 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
+
+
+# This file contains all the functions that reorder ops in the graph module.
+
+from collections import defaultdict
+from math import prod
+from typing import Callable, cast, DefaultDict, List, Optional, Tuple
+
+import torch
+import torch.fx
+from executorch.backends.cadence.aot.compiler_utils import get_placeholders, get_shape
+from executorch.backends.cadence.aot.pass_utils import (
+    get_arg,
+    get_overload_packet,
+    RemoveOrReplacePassInterface,
+)
+from executorch.backends.cadence.aot.utils import get_edge_overload_packet
+from executorch.backends.transforms.postpone_permute_below_squeeze_view import (
+    PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView as _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.tensor import num_bytes_from_shape_and_dtype
+
+# A list of ops that can be trivially quantized
+trivially_quantizable_ops_overloadpkt = {
+    exir_ops.edge.aten.chunk,
+    exir_ops.edge.aten.clone,
+    exir_ops.edge.aten.contiguous,
+    exir_ops.edge.aten.expand_copy,
+    exir_ops.edge.aten.permute_copy,
+    exir_ops.edge.aten.select_copy,
+    exir_ops.edge.aten.slice_copy,
+    exir_ops.edge.aten.squeeze_copy,
+    exir_ops.edge.aten.transpose_copy,
+    exir_ops.edge.aten.unfold_copy,
+    exir_ops.edge.aten.unsqueeze_copy,
+    exir_ops.edge.aten.view_copy,
+    torch.ops.aten.chunk,
+    torch.ops.aten.clone,
+    torch.ops.aten.contiguous,
+    torch.ops.aten.expand_copy,
+    torch.ops.aten.permute,
+    torch.ops.aten.permute_copy,
+    torch.ops.aten.select_copy,
+    torch.ops.aten.slice,
+    torch.ops.aten.slice_copy,
+    torch.ops.aten.squeeze,
+    torch.ops.aten.squeeze_copy,
+    torch.ops.aten.transpose,
+    torch.ops.aten.transpose_copy,
+    torch.ops.aten.unsqueeze,
+    torch.ops.aten.unsqueeze_copy,
+    torch.ops.aten.view,
+    torch.ops.aten.view_copy,
+}
+
+# slice-equivalent ops
+slice_or_select_overloadpkt = {
+    torch.ops.aten.slice_copy,
+    torch.ops.aten.select_copy,
+    exir_ops.edge.aten.slice_copy,
+    exir_ops.edge.aten.select_copy,
+}
+
+
+class AdvanceQuantizeOpAboveDefInBranchPass(ExportPass):
+    """
+    If the graph is branched with the following pattern:
+    I = ...
+    S1 = slice(I)
+    Q1 = quantize(S1)
+    S2 = slice(I)
+    Q2 = quantize(S2)
+    S3 = slice(I)
+    Q3 = quantize(S3)
+    ...
+    such that the elements in the slices S1 + S2 + S3 is greater than I,
+    we can advance the quantize above their defs (i.e., all the slice nodes),
+    and reorder the pattern to the following:
+    I = ...
+    Q1 = quantize(I)
+    S1 = slice(Q1)
+    Q1 = requantize(S1)
+    S2 = slice(Q1)
+    Q2 = requantize(S2)
+    S3 = slice(Q1)
+    Q3 = requantize(S3)
+    ...
+    Note that the other passes won't do this transformation because they expect
+    a linear chain of def-use, which is not true here; the uses of I are
+    branched.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.graph_module = None
+
+    # Starting at node, iterate through its successors, bypassing any trivially
+    # quantizable op. If all the descendents are quantize ops, return them.
+    def get_descendent_quant_ops(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+        # The list of quant ops that are descendents of node, such that the only
+        # nodes in the path from node --> quant are trivially quantizable ops.
+        descendent_quant_ops = []
+        # The list of trivially quantizable ops in the path from node --> quant op.
+        trivial_quantized_ops = []
+
+        users = list(node.users.keys())
+        while users:
+            user = users.pop(0)
+            user_target = get_overload_packet(user.target)
+            # Record a quant op successor
+            if user_target in {
+                torch.ops.quantized_decomposed.quantize_per_tensor,
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
+            }:
+                descendent_quant_ops.append(user)
+            # If the successor is a trivially quantizable op, consider its users
+            # instead.
+            elif user_target in trivially_quantizable_ops_overloadpkt:
+                trivial_quantized_ops.append(user)
+                users.extend(list(user.users.keys()))
+            # Otherwise all successors of node are not quant op, so break the loop.
+            else:
+                descendent_quant_ops.clear()
+                break
+
+        # If all the nodes in trivial_quantize_ops of the node were slice ops,
+        # ensure that the advance is still profitable.
+        if descendent_quant_ops and all(
+            get_overload_packet(x.target) in slice_or_select_overloadpkt
+            for x in trivial_quantized_ops
+        ):
+            # Profitability metric: the sum of all the output slices must be at
+            # least half the input node slice.
+            slice_sizes = [
+                prod(list(y))
+                for x in trivial_quantized_ops
+                if (y := get_shape(self.graph_module, x)) is not None
+            ]
+            node_shape = get_shape(self.graph_module, node)
+            node_size = prod(list(node_shape)) if node_shape is not None else 0
+            if node_size > 2 * sum(slice_sizes):
+                descendent_quant_ops.clear()
+
+        return descendent_quant_ops
+
+    def advance_quantize_op(self, graph_module: torch.fx.GraphModule):
+        graph = graph_module.graph
+        for node in graph.nodes:
+            # We are only interested in call functions and placeholders
+            if node.op not in {"placeholder", "call_function"}:
+                continue
+            # If the node is trivially quantizable, skip it
+            if (
+                get_overload_packet(node.target)
+                in trivially_quantizable_ops_overloadpkt
+            ):
+                continue
+            # Get the descendent quant ops that are connected to the current
+            # node via trivially quantizable ops.
+            descendent_quant_ops = self.get_descendent_quant_ops(node)
+            if not descendent_quant_ops:
+                continue
+
+            # Get the insertion point below which we need to insert anything.
+            # if node is a placeholder, we will only insert a new node after
+            # all the placeholders in the graph.
+            insertion_pt = (
+                get_placeholders(graph)[-1] if node.op == "placeholder" else node
+            )
+
+            # If the node only has a single quant op as descendent, we can
+            # simply hoist the quant op below the current node as its single
+            # child.
+            if len(descendent_quant_ops) == 1:
+                quant_node = descendent_quant_ops.pop()
+                # Replace the uses of quant node with its predecessor
+                quant_node.replace_all_uses_with(quant_node.args[0])  # pyre-fixme[6]
+                # Hoist the quant node after the current node. Make sure that
+                # the insertion is after placeholders
+                with graph.inserting_after(insertion_pt):
+                    dom_quant_args = (node,) + quant_node.args[1:]
+                    dom_quant_node = graph.call_function(
+                        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+                    )
+                    dom_quant_node.meta = node.meta
+                    node.replace_all_uses_with(dom_quant_node)
+                    dom_quant_node.args = dom_quant_args
+                graph.erase_node(quant_node)
+                continue
+
+            # Otherwise we have the quant descendents. Cluster them into sets
+            # that have the same scale, zero_point, and dtype. We use quant_dict
+            # for the clustering
+            quant_dict: DefaultDict[Tuple, int] = defaultdict(int)
+            for quant_node in descendent_quant_ops:
+                quant_dict[quant_node.args[1:]] += 1
+            rep_args = sorted(quant_dict.keys(), key=lambda x: x[1]).pop()
+
+            # Create a new quant node that dominates all the nodes in
+            # descendent_quant_ops. Make sure that the insertion is after
+            # all the placeholders.
+            with graph.inserting_after(insertion_pt):
+                dom_quant_args = (node,) + rep_args
+                dom_quant_node = graph.call_function(
+                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+                )
+                dom_quant_node.meta = node.meta
+                node.replace_all_uses_with(dom_quant_node)
+                dom_quant_node.args = dom_quant_args
+
+            # Finally, convert each of the quant node to a dequant/quant pair that
+            # requantizes the data flowing through dom_quant_node.
+            # TODO: Once requantize is implemented for PT2, replace the
+            # dequant/quant pair here with a single requantize node
+            for quant_node in descendent_quant_ops:
+                with graph.inserting_before(quant_node):
+                    dequant_node = graph.call_function(
+                        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+                    )
+                    dequant_node.args = (quant_node.args[0],) + rep_args
+                    quant_node.args = (dequant_node,) + quant_node.args[1:]
+
+        graph_module.recompile()
+        graph_module.graph.eliminate_dead_code()
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.graph_module = graph_module
+        self.advance_quantize_op(graph_module)
+        result = super().call(graph_module)
+        return result
+
+
+class AdvanceQuantizeOpAboveDefChainPass(ExportPass):
+    """
+    Advances a quantize op above data-movement ops to reduce data volume.
+
+    Handles two cases:
+
+    1. Linear chain: if the input to a quantize op is a chain of trivially
+       quantizable ops (view, transpose, permute, slice), rewrite
+       data_movement(fp32) -> quantize to quantize -> data_movement(quantized)
+       so the data movement operates on smaller quantized tensors.
+
+    2. Cat: if the input to a quantize op is a cat with a single user (the
+       quantize), advance the quantize above the cat by quantizing each cat
+       input individually.  A later pass can clean up any redundant
+       dequant-quant pairs on the inputs.
+
+    3. Caller-supplied ops: advance the quantize above a value-preserving op by
+       quantizing selected direct floating-point tensor inputs. The caller is
+       responsible for supplying only inputs that support the quantized dtype.
+
+    For the cat case, SplitDequantizedCatPass should run first to ensure
+    each cat has at most one quantize consumer.
+    """
+
+    def __init__(
+        self,
+        extra_quantizable_ops: dict[EdgeOpOverload, tuple[int, ...]] | None = None,
+    ) -> None:
+        super().__init__()
+        self.graph_module = None
+        self._extra_quantizable_ops = extra_quantizable_ops or {}
+
+    # Return true if advancing the quantize node is feasible
+    def advancing_feasible(self, quant_node: torch.fx.Node):
+        assert quant_node.op == "call_function" and len(quant_node.args) >= 1
+        # Get the input of the quant node. Only proceed if it's a torch node.
+        inp = quant_node.args[0]
+        if not isinstance(inp, torch.fx.Node):
+            return False
+
+        # Return false if the input to the quantize node is (1) not trivially
+        # quantizable, or (2) has more than one user.
+        inp_users = list(inp.users.keys())
+        inp_overloadpkt = None
+        if isinstance(inp.target, EdgeOpOverload):
+            inp_overloadpkt = get_edge_overload_packet(inp.target)
+        else:
+            inp_overloadpkt = get_overload_packet(inp.target)
+
+        if (
+            inp_overloadpkt not in trivially_quantizable_ops_overloadpkt
+            or len(inp_users) != 1
+        ):
+            return False
+
+        # Advancing quantize op above slice nodes is tricky. If we advance the
+        # quantize node above slice, then we will quantize the input to the slice
+        # op, which can be expensive. We only bypass nop slice at present.
+        if inp_overloadpkt in slice_or_select_overloadpkt:
+            sliced_tensor = inp.args[0]
+            assert isinstance(sliced_tensor, torch.fx.Node)
+            slice_input_shape = get_shape(self.graph_module, sliced_tensor)
+            slice_output_shape = get_shape(self.graph_module, inp)
+            # If we could not glean the shapes, or the slice op is a nop, bail
+            if (
+                slice_output_shape is None
+                or slice_input_shape is None
+                or prod(list(slice_output_shape)) < prod(list(slice_input_shape))
+            ):
+                return False
+
+        # All the conditions satisfied, we advance.
+        return True
+
+    def _advance_above_cat(
+        self, quant_node: torch.fx.Node, cat_node: torch.fx.Node
+    ) -> None:
+        """Advance a quantize op above a cat by quantizing each cat input."""
+        graph = quant_node.graph
+        quant_params = quant_node.args[1:]
+
+        cat_inputs = cat_node.args[0]
+        assert isinstance(cat_inputs, (list, tuple))
+
+        new_inputs: list[torch.fx.Node] = []
+        for inp in cat_inputs:
+            # cat concatenates tensors, so every input must be a node.
+            assert isinstance(inp, torch.fx.Node)
+
+            with graph.inserting_before(cat_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=(inp, *quant_params),
+                )
+                # This copies the fp32 input's meta, so meta["val"] keeps the
+                # fp32 dtype rather than the quantized output dtype. That's fine:
+                # nothing in this pass reads dtype from meta (only shape, which
+                # is correct), and call() re-runs super().call() to re-propagate
+                # fake tensors, making meta dtype-consistent before we return.
+                new_quant.meta = inp.meta.copy()
+            new_inputs.append(new_quant)
+
+        dim = get_arg(cat_node, "dim", int)
+        with graph.inserting_before(quant_node):
+            new_cat = graph.call_function(
+                # pyre-ignore[6]
+                cat_node.target,
+                args=(new_inputs, dim),
+            )
+            new_cat.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_cat)
+        graph.erase_node(quant_node)
+
+    def _advance_above_extra_quantizable_op(
+        self,
+        quant_node: torch.fx.Node,
+        op_node: torch.fx.Node,
+        quantizable_input_indices: tuple[int, ...],
+    ) -> bool:
+        graph = quant_node.graph
+        new_op_args = list(op_node.args)
+        quantized_input = False
+
+        for index in quantizable_input_indices:
+            assert 0 <= index < len(op_node.args)
+            arg = op_node.args[index]
+            assert isinstance(arg, torch.fx.Node)
+            value = arg.meta["val"]
+            assert isinstance(value, torch.Tensor)
+            if not value.dtype.is_floating_point:
+                continue
+
+            quant_args = list(quant_node.args)
+            quant_args[0] = arg
+            with graph.inserting_before(op_node):
+                new_quant = graph.call_function(
+                    # pyre-ignore[6]
+                    quant_node.target,
+                    args=tuple(quant_args),
+                    kwargs=quant_node.kwargs,
+                )
+                # We will correct the dtype when we run
+                # ExportPass call at the end.
+                new_quant.meta = arg.meta.copy()
+            new_op_args[index] = new_quant
+            quantized_input = True
+
+        if not quantized_input:
+            return False
+
+        with graph.inserting_before(quant_node):
+            new_op = graph.call_function(
+                # pyre-ignore[6]
+                op_node.target,
+                args=tuple(new_op_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta = quant_node.meta.copy()
+
+        quant_node.replace_all_uses_with(new_op)
+        graph.erase_node(quant_node)
+        return True
+
+    def advance_quantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
+        graph = graph_module.graph
+        modified = False
+        for node in reversed(graph.nodes):
+            if get_overload_packet(node.target) not in (
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+                torch.ops.quantized_decomposed.quantize_per_tensor,
+                exir_ops.edge.cadence.quantize_per_tensor,
+                torch.ops.cadence.quantize_per_tensor,
+            ):
+                continue
+
+            inp = node.args[0]
+            if (
+                isinstance(inp, torch.fx.Node)
+                and get_overload_packet(inp.target)
+                in (exir_ops.edge.aten.cat, torch.ops.aten.cat)
+                and len(inp.users) == 1
+            ):
+                self._advance_above_cat(node, inp)
+                modified = True
+                continue
+
+            if (
+                isinstance(inp, torch.fx.Node)
+                and inp.target in self._extra_quantizable_ops
+                and len(inp.users) == 1
+                and self._advance_above_extra_quantizable_op(
+                    node,
+                    inp,
+                    self._extra_quantizable_ops[inp.target],
+                )
+            ):
+                modified = True
+                continue
+
+            if not self.advancing_feasible(node):
+                continue
+
+            trivially_quantizable_op = node.args[0]
+            # The input to the quant node must now be the input to the trivially
+            # quantizable op.
+            quant_args = list(node.args)
+            quant_args[0] = trivially_quantizable_op.args[0]
+
+            # Insert the new quant node with updated args before the current
+            # quant node.
+            with graph.inserting_before(node):
+                quant_node = graph.call_function(node.target, args=tuple(quant_args))
+                quant_node.meta = node.meta
+            # Move the trivially quantizable node after the quant node
+            with graph.inserting_after(node):
+                tq_args = list(trivially_quantizable_op.args)
+                tq_args[0] = quant_node
+                tq_node = graph.call_function(
+                    trivially_quantizable_op.target,
+                    args=tuple(tq_args),
+                    kwargs=trivially_quantizable_op.kwargs,
+                )
+                tq_node.meta = trivially_quantizable_op.meta
+            # Replace all uses of node with newly created tq_node
+            node.replace_all_uses_with(tq_node)
+            # We can safely remove the quant node and trivially quantizable op
+            graph.erase_node(node)
+            graph.erase_node(trivially_quantizable_op)
+            modified = True
+
+        return modified
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        self.graph_module = graph_module
+        modified = self.advance_quantize_op(graph_module)
+        if modified:
+            graph_module.recompile()
+            graph_module.graph.eliminate_dead_code()
+            return super().call(graph_module)
+
+        return PassResult(graph_module, False)
+
+
+class PostponeDequantizeOpBelowUseChainPass(ExportPass):
+    """
+    If the consumer of dequantize is a linear chain of view, transpose, permute,
+    or slice ops that are trivially quantized, we can convert the pattern
+    dequantize(int8/uint8) -> view/transpose/permute/slice(fp32) to
+    view/transpose/permute/slice(int8/uint8) -> dequantize(int8/uint8)
+    The benefit of such reordering is that the view/transpose/permute/slice
+    will move far less data.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.graph_module = None
+
+    # Return true if postponing the dequantize node is feasible
+    def postponing_feasible(self, dequant_node: torch.fx.Node):
+        users = list(dequant_node.users.keys())
+        # Check if the dequantize op has a single user, and that user is
+        # trivially quantizable.
+        trivially_quantizable_users = all(
+            get_overload_packet(user.target) in trivially_quantizable_ops_overloadpkt
+            for user in users
+        )
+        if len(users) == 1:
+            return trivially_quantizable_users
+
+        # Otherwise check if all the users are slice op
+        if not all(
+            get_overload_packet(user.target) in slice_or_select_overloadpkt
+            for user in users
+        ):
+            return False
+
+        dequant_shape = get_shape(self.graph_module, dequant_node)
+        slice_shapes = [
+            shape
+            for user in users
+            if (shape := get_shape(self.graph_module, user))
+            and (
+                # skip slices that are the size of the sliced tensor itself.
+                # They should technically get removed in the later passes as nop.
+                shape is None
+                or dequant_shape is None
+                or prod(list(shape)) != prod(list(dequant_shape))
+            )
+        ]
+
+        if dequant_shape is not None and all(
+            shape is not None for shape in slice_shapes
+        ):
+            dequant_bytes = num_bytes_from_shape_and_dtype(dequant_shape, torch.float32)
+            slice_bytes = sum(
+                [
+                    num_bytes_from_shape_and_dtype(shape, torch.float32)
+                    for shape in slice_shapes
+                ]
+            )
+            if slice_bytes <= dequant_bytes:
+                return True
+
+        # If the users of each slice op is quantize op, then we can postpone
+        # dequantize, and convert slice -> dequantize -> quantize to
+        # slice -> requantize.
+        users = [x for y in users for x in y.users if x.op != "output"]
+        return all(
+            get_overload_packet(x.target)
+            in {
+                exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+                exir_ops.edge.quantized_decomposed.quantize_per_channel,
+                exir_ops.edge.cadence.quantize_per_tensor,
+            }
+            for x in users
+        )
+
+    def postpone_dequantize_op(self, graph_module: torch.fx.GraphModule) -> bool:
+        # Different supported dequant ops have their own default variants
+        packet_to_overload_map = {
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor: "default",
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel: "default",
+            exir_ops.edge.cadence.dequantize_per_tensor: "default",
+        }
+        graph = graph_module.graph
+        modified = False
+        for node in graph.nodes:
+            overload_packet = get_overload_packet(node.target)
+            if (
+                overload_packet not in packet_to_overload_map.keys()
+                or not self.postponing_feasible(node)
+            ):
+                continue
+
+            for user in node.users:
+                with graph.inserting_after(user):
+                    dequant_node = graph.call_function(
+                        getattr(
+                            overload_packet, packet_to_overload_map[overload_packet]
+                        ),
+                        args=(user, *node.args[1:]),
+                    )
+                    dequant_node.meta = user.meta.copy()
+                    # Remove meta["debug_handle"] on new node if it exists.
+                    # Reassign it at the caller level by calling generate_missing_debug_handles
+                    dequant_node.meta.pop("debug_handle", None)
+                    user.replace_all_uses_with(dequant_node)
+                    dequant_node.args = (user, *node.args[1:])
+
+            pred = node.args[0]
+            node.replace_all_uses_with(pred)
+            graph.erase_node(node)
+            modified = True
+
+        graph_module.recompile()
+        return modified
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        # The logic in postpone_dequantize_op that handles branching checks the shape
+        # of the dequant node, which isn't available if that node was already postponed
+        # in the same pass invokation. The shape information is recreated by tracing in
+        # super().call(), meaning that every branch in the graph that we wish to postpone
+        # dequant past requires retracing. We iterate the pass until it no longer modifies
+        # the graph (up to 3 times max, to avoid potential infinite loops)
+        self.graph_module = graph_module
+        iter_count = 0
+        local_modified = False
+        overall_modified = False
+
+        while local_modified or iter_count == 0:
+            local_modified = self.postpone_dequantize_op(self.graph_module)
+            overall_modified |= local_modified
+
+            if local_modified:
+                self.graph_module = super().call(self.graph_module).graph_module
+
+            iter_count += 1
+            if iter_count == 3:
+                break
+
+        return PassResult(self.graph_module, overall_modified)
+
+
+class SinkOpsCloserToUsePass(RemoveOrReplacePassInterface):
+    """
+    Assume that the dequantize op D = dequantize(I) has only a single user.
+    If the current graph looks like
+    I = ...;
+    D = dequantize(I);
+    ...
+    Y = use(D);
+    then we can postpone the dequantize op closer to its use, and convert the
+    graph to:
+    I = ...;
+    ...
+    D = dequantize(I);
+    Y = use(D);
+
+    The transformation is valid since D had a single user. The benfit comes from
+    the fact that now we have I in the live range instead of D, which has a
+    much smaller size.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.aten.dequantize,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        # The sinkable node must have a single user
+        users = list(node.users.keys())
+        if len(users) != 1:
+            return False
+
+        # Insert the dequant node just before its user
+        with node.graph.inserting_before(users[0]):
+            # Target is guaranteed to be a callable since it's from our targets list
+            target_callable = node.target
+            assert callable(target_callable), "Target must be callable"
+            new_node = node.graph.call_function(
+                target_callable, args=node.args, kwargs=node.kwargs
+            )
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
+        node.graph.erase_node(node)
+
+        return True
+
+
+class HoistOpsCloserToDefPass(RemoveOrReplacePassInterface):
+    """
+    Assume that the input I to a quantize op Q = quantize(I) has only a single
+    use, the quantize node itself.
+    If the current graph looks like
+    I = ...;
+    ...
+    Q = quantize(I);
+    X = use(Q);
+    then we can hoist the quantize op closer to its def, and convert the
+    graph to:
+    I = ...;
+    Q = quantize(I);
+    ...
+    X = use(Q);
+
+    The transformation is valid since I had a single user. The benefit comes from
+    the fact that now we have Q in the live range instead of I, which has a
+    much smaller size. The same transformation also applies to slice/select op.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.aten.slice_copy.Tensor,
+            exir_ops.edge.aten.select_copy.int,
+        ]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        def_node = node.args[0]
+        if not isinstance(def_node, torch.fx.Node):
+            return False
+
+        # The def node must have a single user
+        users = list(def_node.users.keys())
+        if len(users) != 1:
+            return False
+
+        # Get the node args as list
+        args = list(node.args)
+
+        # If the graph has placeholders, we do not want to hoist above the
+        # last placeholder. Otherwise we will shrink the live range of the
+        # def_node considerably, which could lead to reuse of input memory.
+        insertion_point = (
+            get_placeholders(node.graph)[-1]
+            if def_node.op == "placeholder"
+            else def_node
+        )
+
+        # If the node is quantize_per_channel, we need to hoist the scale
+        # and zero_point tensors as well.
+        if (
+            node.target
+            == exir_ops.edge.quantized_decomposed.quantize_per_channel.default
+        ):
+            scale, zero_point = args[1], args[2]
+            if not isinstance(scale, torch.fx.Node) or not isinstance(
+                zero_point, torch.fx.Node
+            ):
+                return False
+            with node.graph.inserting_after(insertion_point):
+                zero_point_copy = node.graph.node_copy(zero_point)
+                scale_copy = node.graph.node_copy(scale)
+                args[1], args[2] = scale_copy, zero_point_copy
+                insertion_point = zero_point_copy
+
+        # Insert the quant node just after insertion_point
+        with node.graph.inserting_after(insertion_point):
+            # Target is guaranteed to be a callable since it's from our targets list
+            target_callable = node.target
+            assert callable(target_callable), "Target must be callable"
+            new_node = node.graph.call_function(
+                target_callable, args=tuple(args), kwargs=node.kwargs
+            )
+            new_node.meta = node.meta
+        node.replace_all_uses_with(new_node)
+        node.graph.erase_node(node)
+
+        return True
+
+
+class PostponePermuteOpBelowSqueezeOrUnsqueezeLikeView(
+    _SharedPostponePermuteOpBelowSqueezeOrUnsqueezeLikeView
+):
+    pass
+
+
+class MovePermuteAfterConcat(RemoveOrReplacePassInterface):
+    """Move matching single-use permutes after a cat.
+
+    For example,
+
+        cat(
+            [
+                permute(x[80, 16, 32], [1, 2, 0]),  # [16, 32, 80]
+                permute(y[1, 16, 32], [1, 2, 0]),   # [16, 32, 1]
+            ],
+            dim=2,
+        )  # [16, 32, 81]
+
+    becomes
+
+        permute(cat([x, y], dim=0), [1, 2, 0])
+                # cat: [81, 16, 32], output: [16, 32, 81]
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    @staticmethod
+    def _match_inputs(
+        cat_node: torch.fx.Node,
+    ) -> Optional[Tuple[List[torch.fx.Node], Tuple[int, ...]]]:
+        inputs = get_arg(
+            cat_node,
+            "tensors",
+            # pyre-ignore[6]
+            list[torch.fx.Node] | tuple[torch.fx.Node, ...],
+        )
+        # Moving one reused permute after cat makes it process the larger output.
+        if inputs and all(inp is inputs[0] for inp in inputs):
+            return None
+
+        unpermuted_inputs: List[torch.fx.Node] = []
+        common_permutation: Optional[Tuple[int, ...]] = None
+        for permute_node in inputs:
+            if (
+                permute_node.target != exir_ops.edge.aten.permute_copy.default
+                or len(permute_node.users) != 1
+            ):
+                return None
+
+            permute_input = cast(torch.fx.Node, permute_node.args[0])
+            dims = get_arg(
+                permute_node,
+                "dims",
+                # pyre-ignore[6]
+                list[int] | tuple[int, ...],
+            )
+            rank = len(dims)
+            permutation = tuple(dim % rank for dim in dims)
+            if common_permutation is None:
+                common_permutation = permutation
+            elif permutation != common_permutation:
+                return None
+            unpermuted_inputs.append(permute_input)
+
+        return unpermuted_inputs, cast(Tuple[int, ...], common_permutation)
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        match = self._match_inputs(node)
+        if match is None:
+            return False
+        inputs, permutation = match
+
+        output_cat_dim = get_arg(node, "dim", int) % len(permutation)
+        input_cat_dim = permutation[output_cat_dim]
+        graph = node.graph
+
+        with graph.inserting_before(node):
+            new_cat = graph.call_function(
+                exir_ops.edge.aten.cat.default,
+                args=(inputs, input_cat_dim),
+            )
+            new_cat.meta["val"] = exir_ops.edge.aten.cat.default(
+                [inp.meta["val"] for inp in inputs], input_cat_dim
+            )
+            new_permute = graph.call_function(
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_cat, list(permutation)),
+            )
+            new_permute.meta = node.meta.copy()
+
+        node.replace_all_uses_with(new_permute)
+        return True
+
+
+class MoveSliceBeforePermutePass(RemoveOrReplacePassInterface):
+    """Move slice_copy ops before permute_copy to reduce permute data volume.
+
+    Rewrites permute(input, perm) -> slice(dim=D) into
+    slice(input, dim=perm[D]) -> permute(sliced, perm), so the permute
+    operates on a smaller tensor.
+
+    Scans slice nodes and matches upstream permutes. This also handles
+    chained cases (permute -> slice -> slice) in one pass: each slice
+    independently checks its input for a permute.
+
+    Cost model: dim-0 slices are nop-eligible (zero-copy pointer offset
+    after MakeSliceAndCatDimOutermostPass).  Moving such a slice loses the
+    nop, so we only move it when the permute savings outweigh the nop loss,
+    i.e. when the slice removes more than half the data (full > 2 * sliced).
+    Non-dim-0 slices have no nop opportunity, so any permute savings is
+    pure win.
+    """
+
+    STRIDED_SLICE_COST_FACTOR: int = 2
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        permute_node = get_arg(node, "input", torch.fx.Node)
+        if permute_node.target != exir_ops.edge.aten.permute_copy.default:
+            return False
+
+        if len(permute_node.users) != 1:
+            return False
+
+        perm = cast(list[int], permute_node.args[1])
+        permute_input = permute_node.args[0]
+        assert isinstance(permute_input, torch.fx.Node)
+
+        slice_dim = get_arg(node, "dim", int)
+
+        full_size = prod(permute_node.meta["val"].shape)
+        sliced_size = prod(node.meta["val"].shape)
+        if slice_dim == 0 and full_size <= self.STRIDED_SLICE_COST_FACTOR * sliced_size:
+            return False
+
+        new_dim = perm[slice_dim]
+        graph = node.graph
+
+        with graph.inserting_before(permute_node):
+            new_slice_args = (
+                permute_input,
+                new_dim,
+                get_arg(node, "start"),
+                get_arg(node, "end"),
+                get_arg(node, "step", int),
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                permute_input.meta["val"], *new_slice_args[1:]
+            )
+            new_permute = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.permute_copy.default,
+                args=(new_slice, perm),
+            )
+            new_permute.meta["val"] = exir_ops.edge.aten.permute_copy.default(
+                new_slice.meta["val"], perm
+            )
+
+        node.replace_all_uses_with(new_permute)
+        return True
+
+
+class MoveSliceBeforeViewPass(RemoveOrReplacePassInterface):
+    """Move a slice_copy above a view_copy when the slice is re-expressible as a
+    single slice on one dim of the pre-view tensor.
+
+    Rewrites  view(x) -> slice(dim=d, start, end, step)  into
+    slice(x, dim=d', start', end', step') -> view(sliced, slice_out_shape), so the
+    slice lands directly on x. This may be useful in attention patterns, where
+    we view outputs of a large linear into a new shape where the number of
+    attention heads are the last dim, and we need to run independent computation
+    per head. Moving the slice before the view can allow us to then directly slice
+    the constant linear weights.
+
+    A view is a contiguous reshape: it never moves or reorders elements, it only
+    re-groups the shared row-major index space into different dims. A slice keeps
+    an arithmetic progression of indices (start, start+step, ...) along one viewed
+    dim, and that progression collapses back to a *single* slice on one pre-view
+    dim exactly when the row-major strides line up. ``_derive_pre_view_slice``
+    handles the three cases that qualify:
+
+      * untouched dim: the viewed dim is left unchanged by the view -- same size
+        and same inner stride as some pre-view dim -- so the slice copies over
+        verbatim (any step).
+      * contiguous: the viewed dim and a pre-view dim span the same flat extent
+        (a split's outermost factor, or a merge that aligns), so a contiguous
+        (step==1) slice maps to a contiguous pre-view slice.
+      * strided: the viewed dim is an innermost factor of a pre-view dim
+        (identical inner stride) selected width-1, so it maps to a strided
+        pre-view slice with step == the viewed dim's size.
+
+    Everything else -- middle factors, wider strided selections -- is block-strided
+    (runs separated by gaps), which no single slice can express, so it is left
+    unchanged.
+
+    Each slice is handled independently, so a view that fans out to several slices
+    is rewritten one slice at a time and the now-dead view is removed by dead-code
+    elimination -- there is no single-user requirement on the view.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        view_node = get_arg(node, "input", torch.fx.Node)
+        if view_node.target != exir_ops.edge.aten.view_copy.default:
+            return False
+
+        x_node = get_arg(view_node, "input", torch.fx.Node)
+        pre_view_shape = tuple(x_node.meta["val"].shape)
+        post_view_shape = tuple(view_node.meta["val"].shape)
+        if 0 in pre_view_shape or 0 in post_view_shape:
+            return False
+
+        dim = get_arg(node, "dim", int)
+        if dim < 0:
+            dim += len(post_view_shape)
+        post_view_size = post_view_shape[dim]
+
+        bounds = self._normalize_slice(node, post_view_size)
+        if bounds is None:
+            return False
+        start, stop, step = bounds
+
+        # The slice's own output shape gives the selected-element count along the
+        # sliced dim directly -- it is exactly output_shape[dim].
+        slice_out_shape = tuple(node.meta["val"].shape)
+        post_view_count = slice_out_shape[dim]
+        if post_view_count == 0:
+            return False
+
+        # Row-major stride of the sliced viewed dim, and of every pre-view dim.
+        post_view_stride = prod(post_view_shape[dim + 1 :])
+        pre_view_strides = self._row_major_strides(pre_view_shape)
+
+        derived = self._derive_pre_view_slice(
+            pre_view_shape,
+            pre_view_strides,
+            post_view_stride,
+            post_view_size,
+            start,
+            stop,
+            step,
+            post_view_count,
+        )
+        if derived is None:
+            return False
+        pre_view_dim, pre_view_start, pre_view_stop, pre_view_step = derived
+
+        graph = node.graph
+        with graph.inserting_before(node):
+            new_slice_args = (
+                x_node,
+                pre_view_dim,
+                pre_view_start,
+                pre_view_stop,
+                pre_view_step,
+            )
+            new_slice = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=new_slice_args,
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                x_node.meta["val"], *new_slice_args[1:]
+            )
+            new_view = graph.create_node(
+                "call_function",
+                exir_ops.edge.aten.view_copy.default,
+                args=(new_slice, list(slice_out_shape)),
+            )
+            new_view.meta["val"] = exir_ops.edge.aten.view_copy.default(
+                new_slice.meta["val"], list(slice_out_shape)
+            )
+
+        node.replace_all_uses_with(new_view)
+        return True
+
+    @staticmethod
+    def _row_major_strides(shape: tuple[int, ...]) -> list[int]:
+        """Row-major (contiguous) strides for ``shape``."""
+        strides = [1] * len(shape)
+        acc = 1
+        for i in range(len(shape) - 1, -1, -1):
+            strides[i] = acc
+            acc *= shape[i]
+        return strides
+
+    def _normalize_slice(
+        self, node: torch.fx.Node, post_view_size: int
+    ) -> Optional[tuple[int, int, int]]:
+        """Resolve the slice to concrete, clamped ``(start, stop, step)`` ints, or
+        None if the bounds are dynamic or the step is non-positive (neither of
+        which this pass handles)."""
+        step = get_arg(node, "step")
+
+        if not isinstance(step, int):
+            return None
+
+        if step <= 0:
+            return None
+
+        raw_start = get_arg(node, "start")
+        raw_stop = get_arg(node, "end")
+
+        # Make sure raw_start/raw_stop are not symbolic.
+        if (raw_start is not None and not isinstance(raw_start, int)) or (
+            raw_stop is not None and not isinstance(raw_stop, int)
+        ):
+            return None
+
+        start = 0 if raw_start is None else raw_start
+        stop = post_view_size if raw_stop is None else raw_stop
+        if start < 0:
+            start += post_view_size
+        if stop < 0:
+            stop += post_view_size
+        start = max(0, min(start, post_view_size))
+        stop = max(0, min(stop, post_view_size))
+        return start, stop, step
+
+    def _derive_pre_view_slice(
+        self,
+        pre_view_shape: tuple[int, ...],
+        pre_view_strides: list[int],
+        post_view_stride: int,
+        post_view_size: int,
+        start: int,
+        stop: int,
+        step: int,
+        post_view_count: int,
+    ) -> tuple[int, int, int, int] | None:
+        """Return ``(dim, start, stop, step)`` for the single pre-view-tensor slice
+        equivalent to slicing the viewed dim, or None if no single pre-view slice
+        reproduces it.
+
+        Both shapes index the same row-major flat space, so the sliced viewed dim
+        (size ``post_view_size``, inner stride ``post_view_stride``) lines up with
+        one pre-view dim (size ``pre_view_size``, inner stride ``pre_view_stride``)
+        in one of three ways.
+        """
+        for pre_view_dim, (pre_view_stride, pre_view_size) in enumerate(
+            zip(pre_view_strides, pre_view_shape)
+        ):
+            # Untouched: the viewed dim is identical to this pre-view dim (same
+            # size and same inner stride), so the slice applies verbatim, any step.
+            if pre_view_stride == post_view_stride and pre_view_size == post_view_size:
+                return pre_view_dim, start, stop, step
+
+            # Contiguous: the viewed dim and this pre-view dim span the same flat
+            # extent (same period), and the selected band aligns to this dim's
+            # boundaries. A contiguous (step==1) viewed slice
+            # [start, start+post_view_count) is the flat band [start*
+            # post_view_stride, (start+post_view_count)*post_view_stride), a
+            # contiguous slice on this pre-view dim iff both ends are multiples of
+            # its stride.
+            if (
+                step == 1
+                and post_view_size * post_view_stride == pre_view_size * pre_view_stride
+            ):
+                flat_start = start * post_view_stride
+                flat_stop = (start + post_view_count) * post_view_stride
+                if (
+                    flat_start % pre_view_stride == 0
+                    and flat_stop % pre_view_stride == 0
+                ):
+                    return (
+                        pre_view_dim,
+                        flat_start // pre_view_stride,
+                        flat_stop // pre_view_stride,
+                        1,
+                    )
+
+            # Strided is the ONLY way the reshape itself introduces a stride, and
+            # it requires a width-1 selection (post_view_count == 1): the viewed
+            # dim is an innermost factor of this pre-view dim (identical inner
+            # stride), so fixing that single factor index and letting the rest of
+            # the pre-view dim run yields a uniform stride equal to the viewed dim's
+            # size. Any wider selection (post_view_count > 1) of an inner factor
+            # leaves runs separated by gaps -- block-strided, not a single slice --
+            # so width-1 is required.
+            if (
+                post_view_count == 1
+                and post_view_size > 1
+                and pre_view_stride == post_view_stride
+                and pre_view_size % post_view_size == 0
+            ):
+                pre_view_count = pre_view_size // post_view_size
+                pre_view_stop = start + (pre_view_count - 1) * post_view_size + 1
+                return pre_view_dim, start, pre_view_stop, post_view_size
+        return None
+
+
+class PropagateSlice(RemoveOrReplacePassInterface):
+    """Propagate slice_copy before element-wise ops when the cost model
+    indicates it reduces total data movement.
+
+    Supported ops (extensible via dispatch table):
+        - quantize_per_tensor: unary element-wise
+        - dequantize_per_tensor: unary element-wise
+        - add.Tensor: binary with broadcast — slices non-broadcasting inputs
+        - mul.Tensor: binary with broadcast — slices non-broadcasting inputs
+
+    Handles any slice dim and any step size.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        elementwise_targets = [
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
+        ]
+        binary_targets = [
+            exir_ops.edge.aten.add.Tensor,
+            exir_ops.edge.aten.mul.Tensor,
+        ]
+        self._dispatch: dict[
+            EdgeOpOverload,
+            tuple[
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+                Callable[[torch.fx.Node, torch.fx.Node], bool],
+            ],
+        ] = {}
+        for t in elementwise_targets:
+            self._dispatch[t] = (
+                self._should_swap_elementwise,
+                self._swap_elementwise_slice,
+            )
+
+        for t in binary_targets:
+            self._dispatch[t] = (
+                self._should_swap_binary_elementwise,
+                self._swap_binary_elementwise_slice,
+            )
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.slice_copy.Tensor]
+
+    def _should_swap_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        op_input = get_arg(op_node, "input", torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        with graph.inserting_before(op_node):
+            new_slice = graph.call_function(
+                exir_ops.edge.aten.slice_copy.Tensor,
+                args=(op_input, slice_dim, slice_start, slice_end, slice_step),
+            )
+            new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                op_input.meta["val"], slice_dim, slice_start, slice_end, slice_step
+            )
+
+            new_args = list(op_node.args)
+            new_args[0] = new_slice
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                new_slice.meta["val"],
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args[1:]
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def _should_swap_binary_elementwise(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        if lhs.meta["val"].shape == rhs.meta["val"].shape:
+            return False
+        full_size = prod(op_node.meta["val"].shape)
+        sliced_size = prod(slice_node.meta["val"].shape)
+        return sliced_size < full_size
+
+    def _swap_binary_elementwise_slice(
+        self, op_node: torch.fx.Node, slice_node: torch.fx.Node
+    ) -> bool:
+        lhs, rhs = op_node.args[0], op_node.args[1]
+        assert isinstance(lhs, torch.fx.Node) and isinstance(rhs, torch.fx.Node)
+        graph = slice_node.graph
+
+        slice_dim = get_arg(slice_node, "dim", int)
+        slice_start = get_arg(slice_node, "start")
+        slice_end = get_arg(slice_node, "end")
+        slice_step = get_arg(slice_node, "step", int)
+
+        output_shape = op_node.meta["val"].shape
+
+        new_args = list(op_node.args)
+        with graph.inserting_before(op_node):
+            for i, inp in enumerate([lhs, rhs]):
+                if inp.meta["val"].shape[slice_dim] == output_shape[slice_dim]:
+                    new_slice = graph.call_function(
+                        exir_ops.edge.aten.slice_copy.Tensor,
+                        args=(inp, slice_dim, slice_start, slice_end, slice_step),
+                    )
+                    new_slice.meta["val"] = exir_ops.edge.aten.slice_copy.Tensor(
+                        inp.meta["val"], slice_dim, slice_start, slice_end, slice_step
+                    )
+                    new_args[i] = new_slice
+
+            target = cast(EdgeOpOverload, op_node.target)
+            new_op = graph.call_function(
+                target,
+                args=tuple(new_args),
+                kwargs=op_node.kwargs,
+            )
+            new_op.meta["val"] = target(
+                *[
+                    a.meta["val"] if isinstance(a, torch.fx.Node) else a
+                    for a in new_args
+                ],
+                **{
+                    k: v.meta["val"] if isinstance(v, torch.fx.Node) else v
+                    for k, v in op_node.kwargs.items()
+                },
+            )
+
+        slice_node.replace_all_uses_with(new_op)
+        graph.erase_node(slice_node)
+        graph.erase_node(op_node)
+        return True
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        parent = get_arg(node, "input", torch.fx.Node)
+        if len(parent.users) != 1:
+            return False
+        if not isinstance(parent.target, EdgeOpOverload):
+            return False
+
+        entry = self._dispatch.get(parent.target)
+        if entry is None:
+            return False
+
+        should_swap, do_swap = entry
+        return should_swap(parent, node) and do_swap(parent, node)
+
+
+_QUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor,
+    exir_ops.edge.cadence.quantize_per_tensor,
+}
+
+_DEQUANT_OVERLOAD_PACKETS = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor,
+    exir_ops.edge.cadence.dequantize_per_tensor,
+}
+
+
+class SplitDequantizedCatPass(RemoveOrReplacePassInterface):
+    """Split a cat node so that quantize consumers get their own copy.
+
+    Fires when a cat has all floating-point inputs, at least one dequantize
+    input, and at least one quantize consumer.  Quant consumers are grouped
+    by matching qparams; each group receives a dedicated duplicate of the
+    cat node.  Non-quant consumers stay on the original cat, whose
+    semantics are unchanged.
+
+    A later pass (e.g. AdvanceQuantizeOpAboveDefChainPass extended for cat)
+    can then hoist each quant above its single-consumer cat copy without
+    affecting the non-quant paths.
+    """
+
+    @property
+    def targets(self) -> list[EdgeOpOverload]:
+        return [exir_ops.edge.aten.cat.default]
+
+    def maybe_remove_or_replace(self, node: torch.fx.Node) -> bool:
+        cat_inputs = node.args[0]
+        if not isinstance(cat_inputs, (list, tuple)):
+            return False
+
+        has_dequant_input = False
+        for inp in cat_inputs:
+            assert isinstance(inp, torch.fx.Node)
+            val = inp.meta["val"]
+            if val is None or not val.is_floating_point():
+                return False
+            if get_overload_packet(inp.target) in _DEQUANT_OVERLOAD_PACKETS:
+                has_dequant_input = True
+
+        if not has_dequant_input:
+            return False
+
+        quant_groups: DefaultDict[Tuple, List[torch.fx.Node]] = defaultdict(list)
+        for user in list(node.users.keys()):
+            if get_overload_packet(user.target) in _QUANT_OVERLOAD_PACKETS:
+                quant_groups[user.args[1:]].append(user)
+
+        if not quant_groups:
+            return False
+
+        graph = node.graph
+        dim = get_arg(node, "dim", int)
+        for quant_consumers in quant_groups.values():
+            with graph.inserting_after(node):
+                dup_cat = graph.call_function(
+                    exir_ops.edge.aten.cat.default,
+                    args=(list(cat_inputs), dim),
+                )
+                dup_cat.meta = node.meta.copy()
+
+            for q_node in quant_consumers:
+                q_node.replace_input_with(node, dup_cat)
+
+        return True
+
+
+# The following class consolidates functions to reoder ops (i.e., either hoist
+# or sink some ops in the graph).
+class CadenceReorderOpsInGraph:
+    passes = [
+        # Hoist/sink nodes closer to their SSA def/use
+        HoistOpsCloserToDefPass,
+        SinkOpsCloserToUsePass,
+        MovePermuteAfterConcat,
+        # For quantize/dequantize ops, move them above/below their def chain.
+        # This is a more aggressive optimization than just hoisting/sinking
+        # nodes closer to their def/use.
+        AdvanceQuantizeOpAboveDefChainPass,
+        PostponeDequantizeOpBelowUseChainPass,
+        # These passes work on branches instead of linear chains to advance
+        # quantize op beyond their def.
+        AdvanceQuantizeOpAboveDefInBranchPass,
+    ]

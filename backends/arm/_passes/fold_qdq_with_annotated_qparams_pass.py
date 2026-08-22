@@ -1,0 +1,517 @@
+# Copyright 2024-2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+
+import copy
+
+from typing import cast, ClassVar, Optional, Set, Type
+
+import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+    set_node_arg,
+)
+from executorch.backends.arm._passes.fuse_constant_ops_pass import (
+    ComputeConstantOpsAOTPass,
+)
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
+from executorch.backends.arm.common.annotation_meta import ArmAnnotationInfo
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
+from executorch.exir import ExportedProgram
+
+from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx import GraphModule, Node
+
+
+def _get_special_dtype(qspec: QuantArgs) -> TosaSpecialDtype | None:
+    if qspec.dtype == torch.int8:
+        if qspec.qmax == 7 and qspec.qmin == -7:
+            return TosaSpecialDtype.INT4
+    return None
+
+
+def _merge_qparams(qspec_1: QuantArgs, qspec_2: QuantArgs) -> QuantArgs:
+    """Merge two QuantArgs when inputs are quantized differently.
+
+    Requires same dtype; picks the first's parameters by default.
+
+    """
+    if qspec_1.dtype != qspec_2.dtype:
+        raise RuntimeError(
+            f"Cannot merge qparams of different dtypes: {qspec_1.dtype} vs {qspec_2.dtype}"
+        )
+    return qspec_1
+
+
+def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
+    """Get the input quantization parameters from a node, set by the
+    'FoldAndAnnotateQParamsPass'.
+
+    Raises a ValueError if the node doesn't have any parameters set.
+
+    """
+    if "input_qparams" not in node.meta.keys():
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    input_qparams = cast(dict[int, QuantArgs], node.meta["input_qparams"])
+    if len(input_qparams) == 0:
+        raise ValueError(
+            f"No input quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    return input_qparams
+
+
+def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
+    """Get the output quantization parameters from a node, set by the
+    'FoldAndAnnotateQParamsPass'.
+
+    Raises a ValueError if the node doesn't have any parameters set.
+
+    """
+    if "output_qparams" not in node.meta.keys():
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    output_qparams = cast(dict[int, QuantArgs], node.meta["output_qparams"])
+    if len(output_qparams) == 0:
+        raise ValueError(
+            f"No output quantization parameter found in node {node}\n"
+            f"original_aten={node.meta.get('original_aten', 'None')}"
+        )
+    return output_qparams
+
+
+class FoldAndAnnotateQParamsPass(ArmPass):
+    """A pass that walks the graph and removes any DQ and Q nodes before and
+    after the target node. The quantization parameters from the DQ/Q nodes are
+    stored as meta values to be accessible for later lowering and serialization
+    passes. The assumption is that the quantization annotation adds DQ nodes for
+    all tensor inputs to the target one Q node to the output.
+
+     Example ('executorch_exir_dialects_edge__ops_' prefix removed from operators for readability):
+
+        x_q: "i8[5]" = quantized_decomposed_quantize_per_tensor_default(x, 0.05487706884741783, -128, -128, 127, torch.int8)
+
+        x_dq: "f32[5]" = quantized_decomposed_dequantize_per_tensor_default(x_q, 0.05487706884741783, -128, -128, 127, torch.int8)
+        aten_add_tensor: "f32[5]" = ops_aten_add_Tensor(x_dq, x_dq)
+        aten_add_tensor_q: "i8[5]" = quantized_decomposed_quantize_per_tensor_default(aten_add_tensor, 0.05487706884741783, -128, -128, 127, torch.int8)
+
+        output_dq: "f32[5]" = quantized_decomposed_dequantize_per_tensor_default(aten_add_tensor_q, 0.05487706884741783, -128, -128, 127, torch.int8)
+
+     Becomes:
+        x_q: "i8[5]" = quantized_decomposed_quantize_per_tensor_default(x, 0.05487706884741783, -128, -128, 127, torch.int8)
+
+        aten_add_tensor: "i8[5]" = aten_add_Tensor(x_q, x_q)
+
+        output_dq: "f32[5]" = quantized_decomposed_dequantize_per_tensor_default(aten_add_tensor_q, 0.05487706884741783, -128, -128, 127, torch.int8)
+
+    The quantization parameters for x_dq and aten_add_tensor_q are stored in meta for the aten_add_tensor node.
+
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertTableOpsPass,
+        RemoveNoopPass,
+    }
+    _default_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        exir_ops.edge.aten.add.Tensor,
+        exir_ops.edge.aten.sub.Tensor,
+    )
+    _mixed_profile_partial_binary_qdq_targets: ClassVar[tuple[object, ...]] = (
+        *_default_partial_binary_qdq_targets,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.div.Tensor,
+        exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.maximum.default,
+        exir_ops.edge.aten.mm.default,
+        exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.eq.Tensor,
+        exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.aten.gt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.grid_sampler_2d.default,
+    )
+
+    def __init__(
+        self,
+        exported_program: Optional[ExportedProgram] = None,
+        *args,
+        preserve_partial_binary_tensor_qdq: bool = False,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.exported_program = exported_program
+        self.preserve_partial_binary_tensor_qdq = preserve_partial_binary_tensor_qdq
+
+    def _extract_input_params(
+        self, arg_list: list[Node]
+    ) -> tuple[Optional[QuantArgs], set[Node]]:
+        input_qparams: Optional[QuantArgs] = None
+        nodes_to_remove: set[Node] = set()
+        for arg in arg_list:
+            if not isinstance(arg, Node):
+                return None, set()
+            arg_quant: Optional[QuantArgs] = None
+            if arg.target in DQ_OPS:
+                args = arg.args
+                scales = args[1]
+                if (
+                    isinstance(scales, Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, scales)
+                ):
+                    scales = get_param_tensor(self.exported_program, scales)
+                zps = args[2]
+                if (
+                    isinstance(zps, Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, zps)
+                ):
+                    zps = get_param_tensor(self.exported_program, zps)
+                arg_quant = QuantArgs.from_operator(
+                    arg.target, (args[0], scales, zps, *args[3:])
+                )
+                nodes_to_remove.add(arg)
+            if arg_quant is not None:
+                if input_qparams is None:
+                    input_qparams = arg_quant
+                elif input_qparams != arg_quant:
+                    input_qparams = _merge_qparams(input_qparams, arg_quant)
+        return input_qparams, nodes_to_remove
+
+    def _annotate_input_params(
+        self,
+        graph_module: GraphModule,
+        node: Node,
+        index: int,
+        input_qparams: QuantArgs,
+        nodes_to_remove: set[Node],
+        remove_qdq: bool = True,
+    ) -> None:
+        node.meta["input_qparams"][index] = input_qparams
+
+        if not remove_qdq:
+            return
+
+        for dq in nodes_to_remove:
+            if dq.target not in DQ_OPS:
+                raise RuntimeError(f"Expected one of {DQ_OPS} dq_op, got {dq.target}")
+            node.replace_input_with(dq, cast(Node, dq.args[0]))
+            if not dq.users:
+                graph_module.graph.erase_node(dq)
+
+        special = _get_special_dtype(input_qparams)
+        if special:
+            node.all_input_nodes[index].meta[TosaSpecialDtype.meta_key()] = special
+
+    def fold_and_annotate_arg(
+        self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
+    ) -> None:
+        input_qparams, nodes_to_remove = self._extract_input_params(arg_list)
+        if input_qparams is None:
+            return
+        self._annotate_input_params(
+            graph_module, node, i, input_qparams, nodes_to_remove
+        )
+
+    def _extract_arg_input_params(
+        self, arg: object
+    ) -> tuple[Optional[QuantArgs], set[Node]]:
+        if isinstance(arg, (list, tuple)):
+            return self._extract_input_params(list(arg))
+        if isinstance(arg, Node):
+            return self._extract_input_params([arg])
+        return None, set()
+
+    def _has_partial_binary_tensor_qdq_inputs(
+        self, node: Node, input_qparams: dict[int, QuantArgs]
+    ) -> bool:
+        targets = (
+            self._mixed_profile_partial_binary_qdq_targets
+            if self.preserve_partial_binary_tensor_qdq
+            else self._default_partial_binary_qdq_targets
+        )
+        if node.target not in targets:
+            return False
+
+        lhs_idx, rhs_idx = 0, 1
+        if lhs_idx >= len(node.args) or rhs_idx >= len(node.args):
+            return False
+        if not isinstance(node.args[lhs_idx], Node) or not isinstance(
+            node.args[rhs_idx], Node
+        ):
+            return False
+        return (lhs_idx in input_qparams) != (rhs_idx in input_qparams)
+
+    def _handle_control_flow_node(self, node: Node, graph_module: GraphModule):
+        """Fold outmost quant nodes inside submodule.
+
+        placeholders => qs => dqs => ... => qs => dqs => output
+        becomes
+        placeholders => dqs => ... => qs => output,
+        With output_qparams meta in the placeholders, and input_qparams meta in the output node.
+
+        """
+        match node.target:
+            case torch.ops.higher_order.cond:
+                submodule_nodes = cast(list[Node], node.args[1:3])
+                args = cast(list[Node], node.args[-1])
+            case torch.ops.higher_order.while_loop:
+                submodule_nodes = cast(list[Node], node.args[0:2])
+                args = cast(list[Node], node.args[-2])
+            case _:
+                raise ValueError(f"Unhandled target {node.target}")
+        submodules = (
+            graph_module.get_submodule(str(submodule_node.target))
+            for submodule_node in submodule_nodes
+        )
+        for submodule in submodules:
+            submodule = cast(GraphModule, submodule)
+            output_node = submodule.graph.output_node()
+            output_node.meta["input_qparams"] = {}
+            nodes_to_remove = []
+            arg_id = 0
+            for submodule_node in submodule.graph.nodes:
+                # Remove initial q nodes and ending dq nodes in the module.
+                submodule_node = cast(Node, submodule_node)
+                if (
+                    submodule_node.target in Q_OPS
+                    and list(submodule_node.all_input_nodes)[0].op == "placeholder"
+                ):
+                    input_node = cast(Node, submodule_node.args[0])
+                    input_node.meta["val"] = submodule_node.meta["val"]
+                    quant_args = QuantArgs.from_operator(
+                        submodule_node.target, submodule_node.args
+                    )
+                    input_node.meta["output_qparams"] = {0: quant_args}
+
+                    submodule_node.replace_all_uses_with(input_node)
+                    nodes_to_remove.append(submodule_node)
+                if submodule_node.target in DQ_OPS:
+                    has_non_output_user = False
+                    for user in copy.copy(submodule_node.users):
+                        if user.op != "output":
+                            has_non_output_user = True
+                        else:
+                            input_node = cast(Node, submodule_node.args[0])
+                            submodule_node.replace_all_uses_with(input_node)
+                            arg_index = cast(list[Node], output_node.args[0]).index(
+                                input_node
+                            )
+                            quant_args = QuantArgs.from_operator(
+                                submodule_node.target, submodule_node.args
+                            )
+                            output_node.meta["input_qparams"][arg_index] = quant_args
+
+                    # Remove dq node if it only has the output node as its user.
+                    if not has_non_output_user:
+                        nodes_to_remove.append(submodule_node)
+                # Placeholders without users won't be retraced with correct dtype, do it manually.
+                # Control flow node input is matched to placeholder nodes in the submodule by index.
+                # This means it will break if another pass inserts a placeholder before this pass.
+                if submodule_node.op == "placeholder":
+                    if len(submodule_node.users) == 0:
+                        submodule_node.meta["val"] = args[arg_id].meta["val"]
+                    arg_id += 1
+                    if arg_id > len(args):
+                        raise RuntimeError(
+                            "Submodule had more placeholders than calling node had inputs."
+                            " This is probably due to a placeholder being inserted in a pass."
+                        )
+            for node_to_remove in nodes_to_remove:
+                submodule.graph.erase_node(node_to_remove)
+        return
+
+    @staticmethod
+    def is_foldable(node: Node) -> bool:
+        if node.op != "call_function":
+            return False
+        # Don't fold chains of quant-ops into each other.
+        if node.target in (*Q_OPS, *DQ_OPS):
+            return False
+
+        # Always fold q-dq into constant ops.
+        if node.target in (
+            exir_ops.edge.aten.full_like.default,
+            *ComputeConstantOpsAOTPass.targeted_ops,
+        ):
+            return True
+
+        # We should not fold q-dq nodes into non-quantized nodes.
+        if not (
+            ArmAnnotationInfo.CUSTOM_META_KEY in node.meta.get("custom", {})
+            and ArmAnnotationInfo(
+                node.meta["custom"][ArmAnnotationInfo.CUSTOM_META_KEY]
+            ).quantized
+        ):
+            return False
+        return True
+
+    @staticmethod
+    def _correct_output_dtype(node: torch.fx.Node):
+        if node.target not in {
+            exir_ops.edge.aten.sum.dim_IntList,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        }:
+            return
+        if len(node.meta["output_qparams"]) == 0:
+            return
+        output_qparams = cast(QuantArgs, node.meta["output_qparams"][0])
+
+        if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+            if output_qparams.scale != 1.0 or output_qparams.zp != 0.0:
+                raise ValueError(
+                    f"Expected quantized {node.target} '{node.name}' to have unit scale and zero point."
+                )
+
+        set_node_arg(node, "dtype", output_qparams.dtype)
+
+    def call(self, graph_module: GraphModule) -> PassResult:  # noqa: C901
+
+        # Loop over the graph nodes and find any node in the 'targeted_ops' list.
+        graph_modified = False
+        metadata_modified = False
+        for n in graph_module.graph.nodes:
+            n = cast(Node, n)
+            if not FoldAndAnnotateQParamsPass.is_foldable(n):
+                continue
+
+            # Make sure we haven't already set qparams meta information on the node
+            if "input_qparams" in n.meta:
+                raise RuntimeError(
+                    f'Unexpected key "input_qparams" found in meta for node {n}. '
+                    "input_qparams should not have been set at this point"
+                )
+            if "output_qparams" in n.meta:
+                raise RuntimeError(
+                    f'Unexpected key "output_qparams" found in meta for node {n}. '
+                    "output_qparams should not have been set at this point"
+                )
+
+            input_qparams: dict[int, QuantArgs] = {}
+            input_nodes_to_remove: dict[int, set[Node]] = {}
+            input_nodes_seen: set[Node] = set()
+            for i, arg in enumerate(n.args):
+                qparams, nodes_to_remove = self._extract_arg_input_params(arg)
+                if qparams is not None:
+                    input_qparams[i] = qparams
+                    input_nodes_to_remove[i] = nodes_to_remove - input_nodes_seen
+                    input_nodes_seen.update(nodes_to_remove)
+
+            preserve_qdq = self._has_partial_binary_tensor_qdq_inputs(n, input_qparams)
+            graph_modified = graph_modified or not preserve_qdq
+            metadata_modified = True
+
+            # for the inputs and outputs search the graph for quantization info and
+            # store the information in a dict with order of the _tensor_ inputs as key,
+            # ignoring any other arguments to the target node.
+            n.meta["input_qparams"] = {}
+            n.meta["output_qparams"] = {}
+            for i, qparams in input_qparams.items():
+                self._annotate_input_params(
+                    graph_module,
+                    n,
+                    i,
+                    qparams,
+                    input_nodes_to_remove[i],
+                    remove_qdq=not preserve_qdq,
+                )
+
+            # Copy the users, since we are modifying it.
+            users_copy = copy.copy(n.users)
+            for i, user in enumerate(users_copy):
+                if user.target not in Q_OPS:
+                    continue
+
+                # quantization node found here, store the quantization parameters in meta value
+                n.meta["output_qparams"][i] = QuantArgs.from_operator(
+                    user.target, user.args
+                )
+
+                if not preserve_qdq:
+                    user.replace_all_uses_with(n)
+                    graph_module.graph.erase_node(user)
+
+            # Some op(s) contain a "dtype" key in their node kwargs. Set this
+            # to the type of output qparams.
+            FoldAndAnnotateQParamsPass._correct_output_dtype(n)
+
+            if n.target in (
+                torch.ops.higher_order.cond,
+                torch.ops.higher_order.while_loop,
+            ):
+                self._handle_control_flow_node(n, graph_module)
+
+        # retrace the graph to update the fake tensor types
+        if graph_modified:
+            graph_module = super().call(graph_module).graph_module
+
+        return PassResult(graph_module, metadata_modified or graph_modified)
+
+
+class QuantizeClampArgumentsPass(ArmPass):
+    """This pass makes sure that the arguments to clamp.default are quantized
+    correctly.
+
+    More specifically, this pass:
+        - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
+
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        modified = False
+        # Loop over the graph nodes and find full.default nodes.
+        for n in graph_module.graph.nodes:
+            n = cast(Node, n)
+            if n.target not in {
+                exir_ops.edge.aten.clamp.default,
+            }:
+                continue
+
+            try:
+                output_qparams = get_output_qparams(n)
+            except ValueError:
+                continue
+            if len(output_qparams) == 0:
+                continue
+
+            # Qparams are stored per user index; use the first entry.
+            qargs = next(iter(output_qparams.values()))
+
+            if n.target == exir_ops.edge.aten.clamp.default:
+                # Quantize the min and max arguments of clamp, if they are not None
+                min_val = n.args[1]
+                max_val = None if len(n.args) <= 2 else n.args[2]
+
+                if min_val is not None:
+                    quantized_min_val = qargs.quantize_value(min_val).item()
+                    n.update_arg(1, quantized_min_val)
+
+                if max_val is not None:
+                    quantized_max_val = qargs.quantize_value(max_val).item()
+                    n.update_arg(2, quantized_max_val)
+
+                modified = True
+
+        if modified:
+            # Retrace to refresh fake tensor metadata after updating clamp min/max.
+            graph_module = super().call(graph_module).graph_module
+
+        return PassResult(graph_module, modified)

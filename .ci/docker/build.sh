@@ -1,0 +1,142 @@
+#!/bin/bash
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+set -exu
+
+FULL_IMAGE_NAME="$1"
+shift
+
+IMAGE_NAME=$(echo "${FULL_IMAGE_NAME}" | sed 's/ci-image://')
+
+echo "Building ${IMAGE_NAME} Docker image"
+
+OS=ubuntu
+OS_VERSION=22.04
+CLANG_VERSION=""
+GCC_VERSION=""
+PYTHON_VERSION=3.10
+MINICONDA_VERSION=23.10.0-1
+BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+
+case "${IMAGE_NAME}" in
+  executorch-ubuntu-22.04-gcc11)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc9-nopytorch)
+    LINTRUNNER=""
+    GCC_VERSION=9
+    SKIP_PYTORCH=yes
+    ;;
+  executorch-ubuntu-22.04-clang12)
+    LINTRUNNER=""
+    CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-android)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-gcc11-aarch64-arm-sdk)
+    ARM_SDK=yes
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-linter)
+    LINTRUNNER=yes
+    CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-22.04-arm-sdk)
+    ARM_SDK=yes
+    CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-24.04-arm-sdk)
+    OS_VERSION=24.04
+    ARM_SDK=yes
+    CLANG_VERSION=18
+    PYTHON_VERSION=3.12
+    MINICONDA_VERSION=24.1.2-0
+    ;;
+  executorch-ubuntu-22.04-zephyr-sdk)
+    ZEPHYR_SDK=yes
+    GCC_VERSION=11
+    ;;
+  executorch-ubuntu-22.04-qnn-sdk)
+    QNN_SDK=yes
+    CLANG_VERSION=12
+    ;;
+  executorch-ubuntu-22.04-mediatek-sdk)
+    MEDIATEK_SDK=yes
+    CLANG_VERSION=12
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-clang12-android)
+    LINTRUNNER=""
+    CLANG_VERSION=12
+    # From https://developer.android.com/ndk/downloads
+    ANDROID_NDK_VERSION=r28c
+    ;;
+  executorch-ubuntu-22.04-cuda-windows)
+    LINTRUNNER=""
+    GCC_VERSION=11
+    CUDA_WINDOWS_CROSS_COMPILE=yes
+    CUDA_VERSION=13.0
+    SKIP_PYTORCH=yes
+    ;;
+  executorch-ubuntu-24.04-gcc14)
+    LINTRUNNER=""
+    OS_VERSION=24.04
+    GCC_VERSION=14
+    ;;
+  executorch-ubuntu-26.04-gcc14)
+    LINTRUNNER=""
+    OS_VERSION=26.04
+    GCC_VERSION=14
+    ;;
+  *)
+    echo "Invalid image name ${IMAGE_NAME}"
+    exit 1
+esac
+
+TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+BUILD_DOCS=1
+
+if [[ -n "${GCC_VERSION:-}" && -z "${SKIP_PYTORCH:-}" ]]; then
+  PYTORCH_BUILD_MAX_JOBS=6
+fi
+
+# Copy requirements-lintrunner.txt from root to here
+cp ../../requirements-lintrunner.txt ./
+
+docker build \
+  --no-cache \
+  --progress=plain \
+  --build-arg "OS_VERSION=${OS_VERSION}" \
+  --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
+  --build-arg "GCC_VERSION=${GCC_VERSION}" \
+  --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
+  --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
+  --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "PYTORCH_BUILD_MAX_JOBS=${PYTORCH_BUILD_MAX_JOBS:-}" \
+  --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
+  --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
+  --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
+  --build-arg "ARM_SDK=${ARM_SDK:-}" \
+  --build-arg "ZEPHYR_SDK=${ZEPHYR_SDK:-}" \
+  --build-arg "QNN_SDK=${QNN_SDK:-}" \
+  --build-arg "MEDIATEK_SDK=${MEDIATEK_SDK:-}" \
+  --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
+  --build-arg "SKIP_PYTORCH=${SKIP_PYTORCH:-}" \
+  --build-arg "CUDA_WINDOWS_CROSS_COMPILE=${CUDA_WINDOWS_CROSS_COMPILE:-}" \
+  --build-arg "CUDA_VERSION=${CUDA_VERSION:-}" \
+  -f "${OS}"/Dockerfile \
+  "$@" \
+  .

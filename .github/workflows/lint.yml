@@ -1,0 +1,128 @@
+name: Lint
+
+on:
+  pull_request:
+    branches-ignore:
+      - nightly
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  get-changed-files:
+    if: github.repository_owner == 'pytorch'
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
+  lintrunner-mypy:
+    needs: [get-changed-files]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: |
+      needs.get-changed-files.outputs.changed-files == '*' ||
+      contains(needs.get-changed-files.outputs.changed-files, '.py') ||
+      contains(needs.get-changed-files.outputs.changed-files, '.pyi')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Checkout torchao submodule
+        run: git submodule update --init third-party/ao
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-lintrunner.txt
+
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
+          pip install -r requirements-lintrunner.txt
+          USE_CPP=0 pip install --no-build-isolation third-party/ao
+          pip install pytest numpy parameterized huggingface_hub transformers timm expecttest types-requests
+          pip install torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Generate mypy stubs for C++ bindings
+        run: |
+          cp extension/pybindings/pybindings.pyi extension/pybindings/_C.pyi
+
+      - name: Run mypy
+        run: |
+          lintrunner init
+          RC=0
+          if ! lintrunner --force-color --all-files --take MYPY --tee-json=lint.json 2> /dev/null; then
+            echo ""
+            echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --take MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
+            echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
+            RC=1
+          fi
+
+          # Use jq to massage the JSON lint output into GitHub Actions workflow commands.
+          jq --raw-output \
+            '"::\(if .severity == "advice" or .severity == "disabled" then "warning" else .severity end) file=\(.path),line=\(.line),col=\(.char),title=\(.code) \(.name)::" + (.description | gsub("\\n"; "%0A"))' \
+            lint.json || true
+
+          exit $RC
+
+  lintrunner:
+    needs: [get-changed-files]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-lintrunner.txt
+
+      - name: Install lintrunner and linters
+        run: |
+          pip install lintrunner==0.12.7 lintrunner-adapters==0.14.1
+          pip install -r requirements-lintrunner.txt
+          lintrunner init
+
+      - name: Run linters
+        env:
+          CHANGED_FILES: ${{ needs.get-changed-files.outputs.changed-files }}
+        run: |
+          RC=0
+          if [ "$CHANGED_FILES" = '*' ]; then
+            LINTRUNNER_FILES="--all-files"
+          else
+            LINTRUNNER_FILES="${CHANGED_FILES}"
+          fi
+          if ! lintrunner --force-color ${LINTRUNNER_FILES} --skip MYPY --tee-json=lint.json 2> /dev/null; then
+            echo ""
+            echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --skip MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
+            echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
+            RC=1
+          fi
+
+          # Use jq to massage the JSON lint output into GitHub Actions workflow commands.
+          jq --raw-output \
+            '"::\(if .severity == "advice" or .severity == "disabled" then "warning" else .severity end) file=\(.path),line=\(.line),col=\(.char),title=\(.code) \(.name)::" + (.description | gsub("\\n"; "%0A"))' \
+            lint.json || true
+
+          exit $RC
+
+  link-check:
+    uses: ./.github/workflows/_link_check.yml
+    with:
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      base_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}

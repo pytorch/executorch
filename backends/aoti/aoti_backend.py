@@ -1,0 +1,382 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+import contextlib
+import hashlib
+import os
+import typing
+from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
+
+import torch
+from executorch.backends.aoti.passes.replace_view_copy_with_view import (
+    ReplaceViewCopyWithViewPass,
+)
+from executorch.exir._serialize._named_data_store import NamedDataStore
+from executorch.exir._warnings import experimental
+from executorch.exir.backend.backend_details import ExportedProgram, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import contains_any_call_fn_target_op
+from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+from torch.export.passes import move_to_device_pass
+
+
+class COMPILE_SPEC_KEYS(Enum):
+    METHOD_NAME = "method_name"
+
+
+@experimental(
+    "This API and all of aoti-driven backend related functionality are experimental."
+)
+class AotiBackend(ABC):
+    """
+    Base mixin class for AOTInductor-based backends.
+
+    This class provides common functionality for compiling models using AOTInductor
+    with different device targets (CUDA, Metal, etc.).
+
+    This is a mixin class, not an actual backend object, for aoti-driven backends.
+    Concrete backends (e.g., CudaBackend, MetalBackend) should inherit from both
+    BackendDetails and AotiBackend to get the full functionality.
+    """
+
+    @classmethod
+    @abstractmethod
+    def get_device_name(cls) -> str:
+        """Return the device name for this backend (e.g., 'cuda', 'metal')."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_supported_fallback_kernels(cls) -> Dict[str, Any]:
+        """Return the set of supported fallback kernels for this backend."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_decomposition_table(cls) -> Dict[Any, Any]:
+        """Return the decomposition table for this backend."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_aoti_compile_options(
+        cls, compile_specs: List[CompileSpec]
+    ) -> Dict[str, typing.Any]:
+        """Return the AOTInductor compilation options for this backend."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_custom_passes(cls, compile_specs: List[CompileSpec]) -> List[typing.Any]:
+        """Return the list of custom passes to apply after ReplaceViewCopyWithViewPass and before decomposition."""
+        pass
+
+    @classmethod
+    def save_data_externally(cls) -> bool:
+        """
+        Return whether to save the named data map to an external .ptd file.
+
+        If True, the SO blob and weights blob will be saved to a separate .ptd file
+        (e.g., aoti_cuda_blob.ptd) that must be provided at runtime.
+        If False, the data will be merged into the .pte file.
+
+        Default is False (merge with .pte file). Subclasses can override this.
+        """
+        return False
+
+    @classmethod
+    def get_extra_aoti_compile_context_manager(
+        cls, compile_specs: Optional[List[CompileSpec]] = None
+    ):
+        """Return extra context manager to apply during aoti_compile stage. By default returns an empty context manager.
+
+        Subclasses may inspect ``compile_specs`` to opt into behaviors that
+        only apply to specific methods/models (e.g. low-memory export).
+        """
+        return contextlib.nullcontext()
+
+    @classmethod
+    def codesign_so(cls, so_path: str, compile_specs: List[CompileSpec]) -> None:
+        """Sign the compiled .so before packing into .pte.
+
+        Called after AOTInductor compilation, before the .so bytes are read
+        and packed into the named data store. Override in platform-specific
+        backends to apply code signing (e.g., macOS codesign for Hardened
+        Runtime compatibility).
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
+    def load_weights_blob(
+        cls, blob_path: str, compile_specs: List[CompileSpec]
+    ) -> tuple[Any, str]:
+        """Load an AOTI weights blob and return its data and SHA-256 digest."""
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        os.remove(blob_path)
+        return blob_data, hashlib.sha256(blob_data).hexdigest()
+
+    @classmethod
+    def materialize_weights_blob(
+        cls, paths: Any, compile_specs: List[CompileSpec]
+    ) -> Any:
+        """Materialize backend-specific weight outputs into an AOTI blob."""
+        return paths
+
+    @classmethod
+    def move_program_to_device(
+        cls,
+        edge_program: ExportedProgram,
+        device: str,
+        compile_specs: List[CompileSpec],
+    ) -> ExportedProgram:
+        """Move the exported program to the target device for compilation.
+
+        Default implementation moves everything (params, buffers, constants) via
+        ``move_to_device_pass``. Concrete backends may override to keep large
+        non-parameter tensors off the device during a low-memory export.
+        """
+        return move_to_device_pass(edge_program, device)
+
+    @classmethod
+    def release_moved_tensors(
+        cls,
+        device_edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> None:
+        """Release device memory held by tensors that ``move_to_device_pass``
+        placed on the target device.
+
+        Called at the end of ``preprocess`` so that the next ``preprocess``
+        call (e.g. for the next method in a multi-method export) can reuse
+        the freed memory. Override in concrete backends (e.g. ``CudaBackend``)
+        to actually free device memory.
+
+        Default: no-op.
+        """
+        return
+
+    @classmethod
+    @contextlib.contextmanager
+    def collect_unsupported_fallback_kernels(cls, missing_fallback_kernels: Set[str]):
+        """
+        Context manager to collect unsupported fallback kernels during compilation.
+        Monitors both extern kernel calls and runtime lookup.
+        """
+        supported_kernels = cls.get_supported_fallback_kernels()
+
+        original_generate_c_shim_extern_kernel_call = (
+            CppWrapperCpu.generate_c_shim_extern_kernel_call
+        )
+        original_generate_fallback_kernel_with_runtime_lookup_aot = (
+            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot
+        )
+
+        def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
+            self, kernel: str, *args: Any, **kwargs: Any
+        ) -> None:
+            if kernel not in supported_kernels:
+                missing_fallback_kernels.add(kernel)
+
+            return original_generate_c_shim_extern_kernel_call(
+                self, kernel, *args, **kwargs
+            )
+
+        def generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels(
+            self, op_overload: Any, *args: Any, **kwargs: Any
+        ) -> None:
+            kernel_name = getattr(op_overload, "_name", str(op_overload))
+            if kernel_name not in supported_kernels:
+                missing_fallback_kernels.add(kernel_name)
+
+            return original_generate_fallback_kernel_with_runtime_lookup_aot(
+                self, op_overload, *args, **kwargs
+            )
+
+        CppWrapperCpu.generate_c_shim_extern_kernel_call = (
+            generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels
+        )
+        CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = generate_fallback_kernel_with_runtime_lookup_aot_and_collect_unsupported_kernels
+
+        try:
+            yield
+        finally:
+            CppWrapperCpu.generate_c_shim_extern_kernel_call = (
+                original_generate_c_shim_extern_kernel_call
+            )
+            CppWrapperCpu.generate_fallback_kernel_with_runtime_lookup_aot = (
+                original_generate_fallback_kernel_with_runtime_lookup_aot
+            )
+
+    @classmethod
+    def preprocess(
+        cls,
+        edge_program: ExportedProgram,
+        compile_specs: List[CompileSpec],
+    ) -> PreprocessResult:
+        """
+        Preprocess the edge program and compile it using AOTInductor.
+        Weights are always separated from the SO file.
+        """
+        device_name = cls.get_device_name()
+        decomposition_table = cls.get_decomposition_table()
+        options = cls.get_aoti_compile_options(compile_specs)
+
+        # Move the edge_program to the target device. Routed through a hook so
+        # backends can keep large non-parameter tensors (e.g. KV-cache buffers)
+        # off the device during a low-memory export.
+        device_edge_program = cls.move_program_to_device(
+            edge_program,
+            device_name if device_name != "metal" else "mps",
+            compile_specs,
+        )
+
+        # Replace view_copy with view
+        ReplaceViewCopyWithViewPass()(device_edge_program.graph_module)
+
+        # Apply custom backend-specific passes
+        custom_passes = cls.get_custom_passes(compile_specs)
+        for custom_pass in custom_passes:
+            if getattr(custom_pass, "requires_exported_program", False):
+                custom_pass(device_edge_program)
+            else:
+                custom_pass(device_edge_program.graph_module)
+
+        # ``run_decompositions`` retraces the complete ExportedProgram even
+        # when none of the table's operators occur in the graph. The in-place
+        # passes above preserve graph inputs and outputs, so the existing graph
+        # signature remains valid when the decomposition table cannot apply.
+        if contains_any_call_fn_target_op(
+            device_edge_program.graph_module, decomposition_table
+        ):
+            device_edge_program = device_edge_program.run_decompositions(
+                decomposition_table
+            )
+
+        edge_program_module = device_edge_program.module()
+
+        # Grab all input placeholders from the graph
+        user_input_names = device_edge_program.graph_signature.user_inputs
+        user_input_placeholders = []
+        for node in device_edge_program.graph.nodes:
+            if node.op == "placeholder" and node.name in user_input_names:
+                user_input_placeholders.append(node.meta["val"])
+
+        # Track missing fallback kernels
+        missing_fallback_kernels: Set[str] = set()
+
+        # Compile with fallback kernel collection
+        with cls.collect_unsupported_fallback_kernels(
+            missing_fallback_kernels
+        ), torch.no_grad(), cls.get_extra_aoti_compile_context_manager(compile_specs):
+            paths = torch._inductor.aot_compile(
+                edge_program_module, tuple(user_input_placeholders), options=options
+            )
+
+            paths = cls.materialize_weights_blob(paths, compile_specs)
+
+            if len(missing_fallback_kernels) > 0:
+                formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
+                method_name = cls.method_name_from_compile_specs(compile_specs)
+                raise RuntimeError(
+                    f"Method {method_name} missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
+                    "Please add them to the AOTI backend."
+                )
+
+        # Extract paths - weights are always separated
+        so_path = None
+        blob_path = None
+
+        if isinstance(paths, list):
+            for path in paths:
+                if path.endswith(".wrapper.so"):
+                    so_path = path
+                elif path.endswith(".wrapper_weights.blob"):
+                    blob_path = path
+        else:
+            so_path = paths
+
+        if so_path is None or blob_path is None:
+            raise RuntimeError(
+                f"Could not find required files in compiled paths, got {paths}"
+            )
+
+        # Sign the .so for platform-specific requirements (e.g., macOS Hardened Runtime)
+        cls.codesign_so(so_path, compile_specs)
+
+        # Read SO file
+        with open(so_path, "rb") as f:
+            so_data = f.read()
+
+        blob_data, weights_blob_hash = cls.load_weights_blob(blob_path, compile_specs)
+
+        # Create named data store
+        named_data_store = NamedDataStore()
+
+        # Key each blob by a content hash so partitions in one method get distinct
+        # keys (a method-name-only key collides). Runtime recovers them from
+        # processed_bytes below.
+        so_blob_key = hashlib.sha256(so_data).hexdigest() + "_so_blob"
+        weights_blob_key = weights_blob_hash + "_weights_blob"
+
+        named_data_store.add_named_data(so_blob_key, so_data, 1, None)
+        # Determine whether to save named data externally based on backend setting
+        # External: save to separate .ptd file, otherwise merge with .pte file
+        external_tag = (
+            f"aoti_{device_name}_blob" if cls.save_data_externally() else None
+        )
+
+        named_data_store.add_named_data(weights_blob_key, blob_data, 1, external_tag)
+
+        # Clean up the generated files
+        os.remove(so_path)
+
+        # Release device memory held by tensors that ``move_to_device_pass``
+        # placed on the target device. Default impl is a no-op; concrete
+        # backends (e.g. CudaBackend) override this to free GPU memory before
+        # the next preprocess call (e.g. for the next method).
+        cls.release_moved_tensors(device_edge_program, compile_specs)
+
+        # The runtime cannot recompute these hash keys, so carry them (one per line).
+        processed_bytes = (so_blob_key + "\n" + weights_blob_key).encode("utf-8")
+
+        return PreprocessResult(
+            processed_bytes=processed_bytes,
+            debug_handle_map={},
+            data_store_output=named_data_store.get_named_data_store_output(),
+        )
+
+    @classmethod
+    def generate_method_name_compile_spec(
+        cls,
+        method_name: str,
+    ) -> CompileSpec:
+        """
+        Generate a CompileSpec for the given method name.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.METHOD_NAME.value,
+            method_name.encode("utf-8"),
+        )
+
+    @classmethod
+    def method_name_from_compile_specs(
+        cls,
+        compile_specs: List[CompileSpec],
+    ) -> str:
+        """
+        Extract the method name from the compile specs.
+        """
+        for spec in compile_specs:
+            if spec.key == COMPILE_SPEC_KEYS.METHOD_NAME.value:
+                return spec.value.decode("utf-8")
+        raise RuntimeError(
+            f"Could not find method name in compile specs: {compile_specs}"
+        )
