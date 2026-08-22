@@ -2013,7 +2013,7 @@ document.write(`
 <h1>Arm Ethos-U Backend<a class="headerlink" href="#arm-ethos-u-backend" title="Link to this heading">#</a></h1>
 <p>The Arm® Ethos™-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
 <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55">Arm® Ethos™-U55 NPU</a>, <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65">Arm® Ethos™-U65 NPU</a>, and
-<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85">Arm® Ethos™-U85 NPU</a>, leveraging <a class="reference external" href="https://www.mlplatform.org/tosa/">TOSA</a> and the
+<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85">Arm® Ethos™-U85 NPU</a>, leveraging <a class="reference external" href="https://github.com/arm/tosa-specification">TOSA</a> and the
 <a class="reference external" href="https://pypi.org/project/ethos-u-vela/">ethos-u-vela</a> graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
 please refer to the <a class="reference internal" href="#tutorials/ethos-u-getting-started.md"><span class="xref myst">Arm Ethos-U Backend Tutorial</span></a>. <!-- @lint-ignore --></p>
 <section id="features">
@@ -2037,7 +2037,7 @@ please refer to the <a class="reference internal" href="#tutorials/ethos-u-getti
 </div>
 <p>For the AOT flow, compilation of a model to <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format using the Ethos-U backend, the requirements are:</p>
 <ul class="simple">
-<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://gitlab.arm.com/tosa/tosa-tools">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
 <li><p><a class="reference external" href="https://pypi.org/project/ethos-u-vela/">Ethos-U Vela graph compiler</a> for compiling TOSA flatbuffers into an Ethos-U command stream.</p></li>
 </ul>
 <p>And for building and running the example application available in <code class="docutils literal notranslate"><span class="pre">examples/arm/executor_runner/</span></code> through the standalone CMake entry point:</p>
