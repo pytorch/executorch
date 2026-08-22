@@ -2390,11 +2390,13 @@ setup(
                     is_dynamic_lib=True,
                     dependent_cmake_flags=["EXECUTORCH_BUILD_KERNELS_LLM_AOT"],
                 ),
+                # A Windows import library for the delegate's shim DLL. Lowering for
+                # Windows is a cross compile, so a Linux CUDA build needs it too.
                 BuiltFile(
                     src_dir="backends/cuda/runtime/",
                     src_name="aoti_cuda_shims.lib",
                     dst="executorch/data/lib/",
-                    dependent_cmake_flags=[],
+                    dependent_cmake_flags=["EXECUTORCH_BUILD_CUDA"],
                 ),
                 BuiltFile(
                     src_dir="%CMAKE_CACHE_DIR%/backends/cuda/%BUILD_TYPE%/",
