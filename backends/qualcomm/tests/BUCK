@@ -60,6 +60,21 @@ fbcode_target(_kind = runtime.python_library,
 )
 
 fbcode_target(_kind = runtime.python_test,
+    name = "test_builders_utils",
+    srcs = [
+        "test_builders_utils.py",
+    ],
+    env = {} if runtime.is_oss else {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+    },
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qualcomm/builders:builders",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_test,
     name = "test_passes",
     srcs = [
         "test_passes.py",
