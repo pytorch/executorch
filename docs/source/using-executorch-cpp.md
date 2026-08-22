@@ -278,6 +278,24 @@ when the model is loaded.
 You should not need `LD_LIBRARY_PATH`. The shipped libraries record where their neighbours live, so
 they find each other once the program links against the installed package.
 
+On Linux, linking the runtime asks the linker for `DT_RUNPATH` rather than the older `DT_RPATH`.
+That is deliberate: `DT_RPATH` is searched before `LD_LIBRARY_PATH` and applies to a dependency's
+own dependencies, so it would stop you pointing an instrumented or locally built library at your
+application. `DT_RUNPATH` leaves you that control.
+
+The setting is a property of the whole link rather than of one library, so it applies to the search
+paths your own project adds as well. If your application relies on `DT_RPATH` being searched
+transitively, ask for it after the runtime:
+
+```cmake
+add_library(prefer_rpath INTERFACE)
+target_link_options(prefer_rpath INTERFACE "LINKER:--disable-new-dtags")
+target_link_libraries(app PRIVATE executorch::runtime prefer_rpath)
+```
+
+The order matters. A target's own link options are emitted before those of its dependencies, and the
+last of the two settings decides the tag for every entry in the link.
+
 ### Running on a GPU with the CUDA package
 
 The CUDA build is a separate package. Releases cover CUDA 12.6, 13.0 and 13.2, so pick the index
@@ -289,8 +307,7 @@ pip install executorch torch \
   --extra-index-url https://pypi.org/simple
 ```
 
-CUDA wheels are built for Python 3.10 through 3.13. On a newer Python there is no CUDA wheel to
-install, so pip falls back to the CPU one.
+CUDA wheels are built for Python 3.10 through 3.14, which is every Python this project supports.
 
 The second index is required: a bare `--index-url` replaces PyPI rather than adding to it, and some
 dependencies are only on PyPI. The torch you install has to come from the same CUDA index, because

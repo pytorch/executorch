@@ -61,7 +61,7 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --model-id "unsloth/gemma-3-1b-it" \
     --output gemma3_offgraph.pte \
     --use-offgraph-cache \
-    --max-seq-len 1024
+    --max-ctx-len 1024
 
 # Gemma 4 text-only export
 python -m executorch.backends.mlx.examples.llm.export_llm_hf \
@@ -88,7 +88,7 @@ pip install -U "transformers @ git+https://github.com/huggingface/transformers.g
 |--------|---------|-------------|
 | `--model-id` | `unsloth/Llama-3.2-1B-Instruct` | HuggingFace model ID |
 | `--output` | *(required)* | Output .pte file path |
-| `--max-seq-len` | `1024` | Maximum sequence length for KV cache |
+| `--max-ctx-len` | `1024` | Maximum context length / KV cache capacity |
 | `--dtype` | `bf16` | Model dtype (`fp32`, `fp16`, `bf16`) |
 | `--qlinear` | None | Quantization for linear layers (`4w`, `8w`, `nvfp4`) |
 | `--qembedding` | None | Quantization for embedding layers (`4w`, `8w`, `nvfp4`) |
@@ -96,7 +96,7 @@ pip install -U "transformers @ git+https://github.com/huggingface/transformers.g
 | `--use-custom-sdpa` | `False` | Use MLX custom SDPA (`mlx::custom_sdpa`) |
 | `--use-custom-kv-cache` | `False` | Use MLX custom KV cache (`mlx::kv_cache_update`) |
 | `--use-offgraph-cache` | `False` | Use the off-graph KV cache (`kvcache::update_and_attend`); replaces the two flags above |
-| `--prefill-chunk-size` | `512` | Off-graph: tokens per prefill step, published as `get_prefill_chunk_size` for the runner. It is the largest single write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the exported sequence length |
+| `--prefill-chunk-size` | `512` | Max tokens per forward step. Bounds the traced `seq_len` dimension and is published as `get_prefill_chunk_size` for the runner. It is also the largest single cache write, so a ring layer is sized `window + chunk - 1`; it may not exceed the sliding window or the context length. Ignored on the optimum-executorch path, which owns its own `seq_len` bound |
 
 Off-graph exports keep no cache in the `.pte`, so the pybindings `run_llm_hf`
 cannot run them — use [`mlx_run_llm_hf`](#mlx_run_llm_hf-c) below, which builds
@@ -169,7 +169,7 @@ python -m executorch.backends.mlx.examples.llm.export_llm_hf \
     --model-id unsloth/gemma-3-1b-it \
     --output gemma3_offgraph.pte \
     --use-offgraph-cache \
-    --max-seq-len 1024
+    --max-ctx-len 1024
 
 cmake-out/backends/mlx/examples/llm/mlx_run_llm_hf \
     --pte gemma3_offgraph.pte \
