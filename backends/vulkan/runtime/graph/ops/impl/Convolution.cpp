@@ -349,6 +349,32 @@ utils::uvec3 create_conv2d_global_wg_size(
   }
 }
 
+// Determines which convolution method a dispatch uses.
+//
+// The shader name alone is not enough: the sliding window and depthwise
+// shaders are also named "conv2d", so a name test that accepts "conv2d"
+// matches all of them. The pointwise case is therefore confirmed against the
+// weight's spatial extent. Shared by the global and local workgroup size
+// functions below so that the two cannot disagree about the same dispatch.
+Conv2dMethod conv2d_method_from_dispatch(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const ValueRef weight_data) {
+  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
+      (shader.kernel_name.find("conv2d") != std::string::npos &&
+       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
+    const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
+    if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
+      return Conv2dMethod::Pointwise;
+    }
+    return Conv2dMethod::SlidingWindow;
+  }
+  if (shader.kernel_name.find("conv_transpose2d") != std::string::npos) {
+    return Conv2dMethod::Transposed;
+  }
+  return Conv2dMethod::SlidingWindow;
+}
+
 // Custom global workgroup size function for conv2d
 utils::uvec3 conv2d_global_wg_size(
     ComputeGraph* graph,
@@ -358,23 +384,8 @@ utils::uvec3 conv2d_global_wg_size(
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef weight_data = resize_args.at(0);
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    // Check if it's pointwise by examining weight sizes
-    const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
-    if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
-      method = Conv2dMethod::Pointwise;
-    } else {
-      method = Conv2dMethod::SlidingWindow;
-    }
-  } else if (shader.kernel_name.find("conv_transpose2d") != std::string::npos) {
-    method = Conv2dMethod::Transposed;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const Conv2dMethod method =
+      conv2d_method_from_dispatch(graph, shader, weight_data);
 
   // Determine stride_equals_dilation from shader name
   bool stride_equals_dilation =
@@ -402,17 +413,10 @@ utils::uvec3 conv2d_local_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)args;
-  (void)resize_args;
 
-  // Determine method from shader name
-  Conv2dMethod method;
-  if (shader.kernel_name.find("conv2d_pw") != std::string::npos ||
-      (shader.kernel_name.find("conv2d") != std::string::npos &&
-       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
-    method = Conv2dMethod::Pointwise;
-  } else {
-    method = Conv2dMethod::SlidingWindow;
-  }
+  const ValueRef weight_data = resize_args.at(0);
+  const Conv2dMethod method =
+      conv2d_method_from_dispatch(graph, shader, weight_data);
 
   if (method == Conv2dMethod::Pointwise) {
     uint32_t local_wg_size_y = 1;
