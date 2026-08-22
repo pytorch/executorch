@@ -68,7 +68,8 @@ if sys.platform == "win32":
         os.add_dll_directory(pybindings_dir)
     except Exception as e:
         logger.error(
-            "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
+            "Failed to add the pybinding extension DLL to the search path. "
+            "The extension may not work: %s",
             e,
         )
 
