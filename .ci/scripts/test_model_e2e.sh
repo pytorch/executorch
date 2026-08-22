@@ -7,6 +7,9 @@
 
 # Test CUDA/Metal/XNNPACK models end-to-end, optionally exporting artifacts first.
 
+# scratch debug only: keep the runner unstripped so a backtrace names functions
+export PK_NO_STRIP=1
+
 show_help() {
   cat << EOF
 Usage: test_model_e2e.sh <device> <hf_model> <quant_name> [model_dir] [mode]
@@ -473,6 +476,30 @@ EOF
     fi
     ;;
 esac
+
+echo "::group::pk-debug linkage"
+ldd "$RUNNER_BIN" || true
+echo "exe aoti_torch_ dynamic symbols: $(nm -D --defined-only "$RUNNER_BIN" 2>/dev/null | grep -c aoti_torch_)"
+for so in cmake-out/lib/libaoti_cuda_shims.so cmake-out/lib64/libextension_cuda.so cmake-out/lib/libextension_cuda.so; do
+  if [ -f "$so" ]; then
+    echo "$so aoti_torch_ dynamic symbols: $(nm -D --defined-only "$so" 2>/dev/null | grep -c aoti_torch_)"
+  fi
+done
+for sym in aoti_torch_delete_tensor_object aoti_torch_empty_strided aoti_torch_create_tensor_from_blob_v2; do
+  echo "  $sym: exe=$(nm -D --defined-only "$RUNNER_BIN" 2>/dev/null | grep -c " $sym$") shims=$(nm -D --defined-only cmake-out/lib/libaoti_cuda_shims.so 2>/dev/null | grep -c " $sym$")"
+done
+echo "::endgroup::"
+
+echo "::group::pk-debug gdb backtrace"
+if ! command -v gdb >/dev/null 2>&1; then
+  { dnf install -y gdb || yum install -y gdb || conda install -y -q gdb; } >/dev/null 2>&1 || true
+fi
+if command -v gdb >/dev/null 2>&1; then
+  eval gdb -q -batch -ex \"set confirm off\" -ex run -ex \"bt 60\" -ex \"info sharedlibrary\" --args "$RUNNER_BIN" $RUNNER_ARGS 2>&1 | tail -150 || true
+else
+  echo "gdb is not available in this image"
+fi
+echo "::endgroup::"
 
 OUTPUT=$(eval $RUNNER_BIN $RUNNER_ARGS 2>&1)
 EXIT_CODE=$?
