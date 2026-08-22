@@ -20,3 +20,15 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             ],
         )
+
+        runtime.cxx_test(
+            name = "adamw_test" + aten_suffix,
+            srcs = [
+                "adamw_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/training/optimizer:adamw" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            ],
+        )
